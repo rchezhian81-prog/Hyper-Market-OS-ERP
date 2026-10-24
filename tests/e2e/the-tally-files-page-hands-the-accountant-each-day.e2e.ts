@@ -3,9 +3,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
-import { startInboxShop, ok, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { startInboxShop, ok, MGR, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { validateTallyImport } from '../../packages/tally-export/src/index';
+import { actionDetails } from '../../services/identity/src/approval-requests';
+import { rupees } from '../../apps/web-erp/src/tally-files-session';
+import { Pool } from 'pg';
+import { SqlEventStore } from '../../packages/persistence/src/event-store';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
+import { makeEvent } from '../../packages/contracts/src/event';
+import { STREAM } from '../../services/api/src/adapters';
 
 /**
  * OB-293 (owner, 23 Oct 2026: "a daily Tally import file first") · M23-FR-04 · M32-FR-04 — the Tally files page, in a
@@ -13,8 +20,9 @@ import { validateTallyImport } from '../../packages/tally-export/src/index';
  * sees the dead letter FIRST — the day whose petty-cash journal touches a ledger nobody named, with that reason in words
  * — and every ended day's file with what it carries; downloads a ready day as Tally XML (which Tally's import check
  * accepts); once the ledger is named, requeues the dead day with what was fixed (a requeue without words is refused on
- * the page) and makes the files; reads the month's trial balance, balanced; Tamil. A store manager reads but cannot make
- * or requeue; a cashier reads nothing. Needs DATABASE_URL and Chromium; else it SKIPS.
+ * the page) and makes the files; reads the month's trial balance, balanced, with the dairy department's sales off the
+ * ledger and its cost "not known" (no buying cost yet — OB-340); Tamil. A store manager reads but cannot make or requeue;
+ * a cashier reads nothing. Needs DATABASE_URL and Chromium; else it SKIPS.
  */
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
@@ -35,14 +43,32 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
   let browser: Browser;
   let shop: InboxShop;
   let accounts: string[] = [];
+  let platform: Pool | undefined;
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
+    const TENANT = randomUUID();
+    platform = new Pool({ connectionString: DATABASE_URL, max: 2 });
     shop = await startInboxShop({
-      databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
+      databaseUrl: DATABASE_URL!, tenantId: TENANT, signingKey: KEY,
       page: { path: '/tally-files', html: 'tally-files.html', dataGlobal: 'tallyFilesData' },
       seed: async (cloud) => {
         await cloud.grant('u-acc', 'accountant');
         await cloud.grant('u-cash', 'cashier');
+        // OB-340: a dairy department owns the category P1 is in (a structural change: asked by IT, approved by the owner).
+        // The IT role, laid on the ledger by the operator (the owner may not hand out platform_admin's own permissions).
+        const at = new Date().toISOString();
+        await new SqlEventStore(pgPoolClient(platform!)).append(TENANT, STREAM.identity, makeEvent({
+          id: `grant-it-${TENANT}`, type: 'RoleGranted', occurredAt: at, idempotencyKey: `grant-${TENANT}-platform_admin-u-it`, source: 'test/ob-340',
+          payload: { userId: 'u-it', roleId: 'platform_admin', branchScope: 'all', request: { grantId: 'platform_admin-u-it', userId: 'u-it', roleId: 'platform_admin', branchScope: 'all', requestedBy: 'operator', approvedBy: 'operator', requestedAt: at } },
+        }));
+        await ok(cloud.request({ method: 'POST', path: '/v1/org/nodes/D-dairy', userId: OWNER, idempotencyKey: 'dept', body: { kind: 'department', name: 'Dairy', parentId: 'br-1' } }), 'department');
+        await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/tax-classes/04059020/rates/2017-07-01', userId: OWNER, idempotencyKey: 'tax', body: { rateBps: 1800 } }), 'tax class');
+        await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/products/P1/publish', userId: OWNER, idempotencyKey: 'p1', body: { product: { sku: 'SKU-P1', name: 'Ghee 500 ml', baseUom: 'ea', primaryCategoryId: 'dairy-cat', taxClass: '04059020', lifecycle: 'draft' }, categories: [{ categoryId: 'dairy-cat', name: 'Dairy', parentId: null }] } }), 'product');
+        const link = { categoryIds: ['dairy-cat'], reason: 'the dairy counter' };
+        const asked = await cloud.request({ method: 'POST', path: '/v1/approvals/requests', userId: 'u-it', idempotencyKey: 'ask-link', body: { kind: 'org_structure_change', subjectRef: 'department:D-dairy', details: actionDetails(link, { departmentId: 'D-dairy' }), valueMinor: null, summary: 'dairy owns dairy-cat', reason: 'synthetic' } });
+        const requestId = (asked.body as { requestId: string }).requestId;
+        await ok(cloud.request({ method: 'POST', path: `/v1/approvals/requests/${requestId}/decide`, userId: OWNER, idempotencyKey: 'decide-link', body: { decision: 'approved', reason: 'checked' } }), 'approve link');
+        await ok(cloud.request({ method: 'POST', path: '/v1/org/departments/D-dairy/categories', userId: 'u-it', idempotencyKey: 'link', body: { ...link, approvalId: requestId } }), 'link');
         await ok(cloud.request({ method: 'POST', path: '/v1/sales', userId: 'u-cash', idempotencyKey: 'bank-S1', body: sale('S1', DAY_OK, 118_000) }), 'sale S1');
         await ok(cloud.request({ method: 'POST', path: '/v1/sales', userId: 'u-cash', idempotencyKey: 'bank-S2', body: sale('S2', DAY_DEAD, 59_000) }), 'sale S2');
         await ok(cloud.request({ method: 'PUT', path: '/v1/finance/posting-map', userId: 'u-acc', idempotencyKey: 'map', body: DEFAULT_RETAIL_POSTING_MAP }), 'posting map');
@@ -62,7 +88,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 300_000);
-  afterAll(async () => { await browser?.close(); await shop?.stop(); });
+  afterAll(async () => { await browser?.close(); await shop?.stop(); await platform?.end(); });
 
   it('dead letter first with its reason; a ready day downloads as importable Tally XML; requeue with words, make, trial balance; Tamil; the manager and the cashier', async () => {
     const context = await browser.newContext({ acceptDownloads: true });
@@ -122,10 +148,22 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     await page.locator('#tb-rows tr').first().waitFor({ timeout: 15_000 });
     expect(await page.textContent('#tb-status')).toBe('✓ Balanced — debit and credit agree to the paisa.');
     expect(await page.locator('#tb-rows tr[data-account="shop_expenses"] td').nth(2).innerText()).toBe('₹50.00');
+    // OB-340: the dairy department's sales straight off the ledger (each ghee line's net without GST); no buying cost yet,
+    // so its cost and margin are "not known" by name — never a zero; and the departments tie to the ledger's revenue.
+    const dairy = page.locator('#dept-rows tr[data-department="D-dairy"] td');
+    await dairy.first().waitFor({ timeout: 15_000 });
+    const net = (DAY_OK.slice(0, 7) === DAY_DEAD.slice(0, 7) ? 100_000 : 0) + 50_000;
+    expect(await page.textContent('#dept-tie')).toBe('✓ The departments and the rest add up to the revenue in the ledger.');
+    expect(await dairy.nth(0).innerText()).toBe('Dairy ⚠ No buying cost yet for: P1');
+    expect(await dairy.nth(1).innerText()).toBe(rupees(net));
+    expect(await dairy.nth(2).innerText()).toBe('○ not known');
+    expect(await dairy.nth(3).innerText()).toBe('○ not known');
 
     await page.click('#lang');
     expect(await page.textContent('#page-h')).toBe('டேலி கோப்புகள்');
     expect(await page.textContent('#tb-status')).toBe('✓ Balanced — debit and credit agree to the paisa.'); // a past answer is not re-worded
+    expect(await page.textContent('#dept-h')).toBe('துறை வாரியான விற்பனையும் லாபமும்');
+    expect(await dairy.nth(2).innerText()).toBe('○ தெரியவில்லை');
     expect(await fixed.innerText()).toMatch(/இறக்குமதிக்குத் தயார்/);
     expect(errors).toEqual([]);
     await context.close();

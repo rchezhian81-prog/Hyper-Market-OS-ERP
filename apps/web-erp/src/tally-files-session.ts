@@ -6,7 +6,8 @@
 // holds by family, and the DEAD LETTER — a day Tally could not be given, kept with the reason, never dropped. The
 // accountant downloads a day's XML to import into Tally (each download is recorded by head office), REQUEUES a dead
 // day once the cause is fixed (with what was fixed — the original stays on the record), and can ask for one pass now.
-// It also reads a month's trial balance (GET /v1/finance/periods/:period/trial-balance). Nothing is read on open, and
+// It also reads a month's trial balance (GET /v1/finance/periods/:period/trial-balance) and, with it, each department's
+// sales, cost and margin tied to the ledger (OB-340; a cost that is not known is said). Nothing is read on open, and
 // nothing is a zero that was not counted: no ledger names means "waiting for the ledger names", said in words.
 
 import type { ViewerIdentity } from './browser-entry';
@@ -36,9 +37,20 @@ export interface OutboxRead {
 }
 export interface TallyFile { readonly fileName: string; readonly xml: string; readonly sha256: string; readonly downloadedBefore: readonly { readonly by: string; readonly at: string }[] }
 export interface TrialBalanceRow { readonly account: string; readonly accountClass: string | null; readonly periodDebitMinor: number; readonly periodCreditMinor: number; readonly closingNetDebitMinor: number }
+/** OB-340: one department's month — its sales as the ledger holds them, its goods' cost at the average buying cost, margin. */
+export interface DepartmentRow {
+  readonly departmentId: string; readonly name: string | null; readonly salesMinor: number;
+  readonly costMinor: number | null; readonly marginMinor: number | null; readonly marginBps: number | null; readonly notCosted: readonly string[];
+}
+export interface DepartmentsRead {
+  readonly departments: readonly DepartmentRow[]; readonly notInADepartmentMinor: number; readonly ledgerRevenueMinor: number;
+  readonly ties: boolean; readonly detail: string;
+}
 export interface TrialBalanceRead {
   readonly period: string; readonly rows: readonly TrialBalanceRow[]; readonly balanced: boolean; readonly outByMinor: number;
   readonly totals: { readonly closingDebitMinor: number; readonly closingCreditMinor: number }; readonly detail: string;
+  /** OB-340: null when head office composes no department section. */
+  readonly departments?: DepartmentsRead | null;
 }
 
 export const TALLY_FILES_COPY = {
@@ -55,6 +67,9 @@ export const TALLY_FILES_COPY = {
     deadH: 'Dead letter — days Tally could not be given', filesH: 'Every day\'s file', noDead: 'Nothing in the dead letter.', noFiles: 'No day has ended since the books began — there is no file yet.',
     tbH: 'Trial balance for a month', monthL: 'Month (YYYY-MM)', tbRead: 'Show the trial balance', badMonth: 'Write the month as YYYY-MM.',
     accountK: 'Account', classK: 'Class', closingK: 'Closing', balanced: 'Balanced — debit and credit agree to the paisa.', outBy: 'OUT BY', unclassed: 'not classed',
+    deptH: 'Department sales and margin', deptK: 'Department', salesK: 'Sales (without GST)', costK: 'Cost (average buying cost)', marginK: 'Margin',
+    notKnown: 'not known', notCostedK: 'No buying cost yet for', notInDeptK: 'Sales no department owns', ledgerK: 'Revenue in the ledger',
+    deptTies: 'The departments and the rest add up to the revenue in the ledger.', deptNoTie: 'The departments do NOT add up to the revenue in the ledger — a person must look.',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read the books.', cannotConfigure: 'Your role cannot make or requeue Tally files.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or changed.',
   },
@@ -71,6 +86,9 @@ export const TALLY_FILES_COPY = {
     deadH: 'தோல்விப் பட்டியல் — டேலிக்குக் கொடுக்க முடியாத நாட்கள்', filesH: 'ஒவ்வொரு நாளின் கோப்பும்', noDead: 'தோல்விப் பட்டியலில் எதுவும் இல்லை.', noFiles: 'கணக்குகள் தொடங்கியதிலிருந்து எந்த நாளும் முடியவில்லை — இன்னும் கோப்பு இல்லை.',
     tbH: 'ஒரு மாதத்தின் இருப்பாய்வு', monthL: 'மாதம் (YYYY-MM)', tbRead: 'இருப்பாய்வைக் காட்டு', badMonth: 'மாதத்தை YYYY-MM என எழுதுங்கள்.',
     accountK: 'கணக்கு', classK: 'வகை', closingK: 'இறுதி இருப்பு', balanced: 'சமநிலை — பற்றும் வரவும் காசு வரை ஒத்துப்போகின்றன.', outBy: 'வித்தியாசம்', unclassed: 'வகைப்படுத்தப்படவில்லை',
+    deptH: 'துறை வாரியான விற்பனையும் லாபமும்', deptK: 'துறை', salesK: 'விற்பனை (ஜிஎஸ்டி இல்லாமல்)', costK: 'அடக்கவிலை (சராசரி கொள்முதல் விலையில்)', marginK: 'லாபம்',
+    notKnown: 'தெரியவில்லை', notCostedK: 'இன்னும் கொள்முதல் விலை இல்லாதவை', notInDeptK: 'எந்தத் துறைக்கும் சொந்தமில்லாத விற்பனை', ledgerK: 'பேரேட்டில் உள்ள வருவாய்',
+    deptTies: 'துறைகளும் மீதமும் சேர்ந்து பேரேட்டின் வருவாய்க்குச் சமம்.', deptNoTie: 'துறைகள் பேரேட்டின் வருவாய்க்குச் சமமாக இல்லை — ஒருவர் சரிபார்க்க வேண்டும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு கணக்குகளைப் படிக்க முடியாது.', cannotConfigure: 'உங்கள் பங்கு டேலி கோப்புகளை உருவாக்கவோ மீண்டும் வரிசையில் வைக்கவோ முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை, மாற்றப்படவில்லை.',
   },

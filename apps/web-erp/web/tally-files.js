@@ -2,7 +2,8 @@
 // (apps/web-erp/src/tally-files-session.ts, in the bundle as window.tallyFiles) asks head office on a click; this page
 // lists the dead letter FIRST (a day Tally could not be given, with the reason, never hidden), then every day's file with
 // what it carries by family; downloads a day's XML; requeues a dead day with the words of what was fixed; and shows a
-// month's trial balance. Every state is an icon AND words. Every word has a Tamil twin.
+// month's trial balance with each department's sales, cost and margin tied to the ledger (OB-340). Every state is an icon
+// AND words. Every word has a Tamil twin.
 
 const $ = (id) => document.getElementById(id);
 const api = window.tallyFiles ?? null;
@@ -60,7 +61,8 @@ function paint() {
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['read-text', 'read'], ['run-text', 'run'],
     ['posted-k', 'postedK'], ['queued-k', 'queuedK'], ['dead-k', 'deadK'], ['company-k', 'companyK'], ['dead-h', 'deadH'], ['files-h', 'filesH'],
     ['tb-h', 'tbH'], ['tb-month-l', 'monthL'], ['tb-read-text', 'tbRead'], ['tb-account-h', 'accountK'], ['tb-class-h', 'classK'],
-    ['tb-debit-h', 'debitK'], ['tb-credit-h', 'creditK'], ['tb-closing-h', 'closingK']]) $(id).textContent = t(k);
+    ['tb-debit-h', 'debitK'], ['tb-credit-h', 'creditK'], ['tb-closing-h', 'closingK'],
+    ['dept-h', 'deptH'], ['dept-k', 'deptK'], ['dept-sales-h', 'salesK'], ['dept-cost-h', 'costK'], ['dept-margin-h', 'marginK']]) $(id).textContent = t(k);
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.tallyFilesData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
@@ -82,6 +84,25 @@ function paint() {
       tr.append(text('td', r.account), text('td', r.accountClass ?? `○ ${t('unclassed')}`), text('td', api.rupees(r.periodDebitMinor), 'num'), text('td', api.rupees(r.periodCreditMinor), 'num'), text('td', api.rupees(r.closingNetDebitMinor), 'num'));
       return tr;
     }));
+  }
+  // OB-340: each department's sales as the ledger holds them, its goods' cost at the average buying cost, and the margin —
+  // a cost that is not known is said in words (never a zero), and the tie to the ledger's revenue is shown.
+  const d = tb?.departments ?? null;
+  $('dept-wrap').hidden = d === null || d.departments.length === 0;
+  if (d !== null && d.departments.length > 0) {
+    $('dept-tie').className = d.ties ? 'status good' : 'status err';
+    $('dept-tie').textContent = d.ties ? `✓ ${t('deptTies')}` : `⚠ ${t('deptNoTie')}`;
+    $('dept-rows').replaceChildren(...d.departments.map((r) => {
+      const tr = document.createElement('tr'); tr.dataset.department = r.departmentId;
+      const name = text('td', r.name ?? r.departmentId);
+      if (r.notCosted.length > 0) name.append(text('span', ` ⚠ ${t('notCostedK')}: ${r.notCosted.join(', ')}`, 'why'));
+      const pct = r.marginBps === null ? '' : ` (${(r.marginBps / 100).toFixed(1)}%)`;
+      tr.append(name, text('td', api.rupees(r.salesMinor), 'num'),
+        text('td', r.costMinor === null ? `○ ${t('notKnown')}` : api.rupees(r.costMinor), 'num'),
+        text('td', r.marginMinor === null ? `○ ${t('notKnown')}` : `${api.rupees(r.marginMinor)}${pct}`, 'num'));
+      return tr;
+    }));
+    $('dept-rest').textContent = `${t('notInDeptK')}: ${api.rupees(d.notInADepartmentMinor)} · ${t('ledgerK')}: ${api.rupees(d.ledgerRevenueMinor)}`;
   }
 }
 
