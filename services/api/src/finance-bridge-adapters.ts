@@ -402,6 +402,14 @@ export async function finBridgeCloseChecks(input: Base, tenantId: string, period
   return { checks, notChecked };
 }
 
+/**
+ * OB-341 (owner, 24 Oct 2026): the supplier payment route takes what the supplier's advances already settled off what is
+ * owed — the register's applications, net of reversals (hook spread into the payment route's registration in main.ts).
+ */
+export function finBridgePaymentHooks(input: Base): { readonly advancesApplied: (tenantId: string, supplierId: string) => Promise<number> } {
+  return { advancesApplied: async (t, supplierId) => appliedForSupplier(await advanceJournalsOf(input.store, t), supplierId) };
+}
+
 /** WF-18 / D10-FR-01: what supplier advances have taken off the payables control (spread into the payables check). */
 export async function advanceApplicationsAgainstPayables(input: Base, tenantId: string, control: string | null): Promise<{ readonly registerMinor: number; readonly ledgerMinor: number }> {
   const journals = await advanceJournalsOf(input.store, tenantId);
