@@ -14,16 +14,18 @@
 // returns (401 / 403 / 404 / 409 / 429). Shared value shapes (Money and Quantity in minor units, the event envelope,
 // the currency and unit lists) come from `packages/contracts`.
 //
-// What they do NOT yet state, and say so in the document rather than hiding it (P-08): a per-endpoint request or reply
-// body schema. No route declares one today — bodies are validated in each handler — so each body is described as an
-// open JSON object with `x-body-schema: "not declared"`. Declaring them is per-domain work, named in the report.
-// Deterministic: no timestamp, stable ordering, so the files change only when the surface does.
+// Request and reply BODY schemas: the money routes — sales intake, refunds, supplier payments and advances, purchase
+// orders, journals and the day book — declare theirs (`api-body-schemas.ts`, `x-body-schema: "declared"`), checked against
+// the real handlers by tests/integration/money-route-schemas-match-the-handlers.test.ts. Every other route does not yet,
+// and the document says so rather than hiding it (P-08): its body is an open JSON object with `x-body-schema: "not
+// declared"`. Deterministic: no timestamp, stable ordering, so the files change only when the surface does.
 
 import type { Route, Method } from '../../kernel/src/index';
 import { API_DOMAINS, MAJOR_VERSION } from './api-manifest';
 import { CURRENCY_PRECISION } from '../../../packages/contracts/src/money';
 import { UOM_PRECISION } from '../../../packages/contracts/src/quantity';
 import { TENDER_KINDS } from '../../../packages/contracts/src/enums';
+import { DECLARED_BODIES } from './api-body-schemas';
 
 const WRITES: readonly Method[] = ['POST', 'PUT', 'PATCH', 'DELETE'];
 export const CONTRACT_DOCUMENT_VERSION = '1.0.0';
@@ -93,6 +95,7 @@ export function buildOpenApi(routes: readonly Route[]): Record<string, Json> {
   for (const r of sorted) if (!templateOf.has(skeleton(r.path))) templateOf.set(skeleton(r.path), r.path);
   const paths: Record<string, Record<string, Json>> = {};
   const usedIds = new Set<string>();
+  const declaredSchemas: Record<string, Json> = {};
   for (const r of sorted) {
     const template = templateOf.get(skeleton(r.path))!;
     const key = template.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
@@ -113,6 +116,23 @@ export function buildOpenApi(routes: readonly Route[]): Record<string, Json> {
     if (paramNames(template).length > 0) responses['404'] = respRef('NotFound');
     if (write && r.idempotent === true) responses['409'] = respRef('Conflict');
     if (write) responses['400'] = respRef('Unreadable');
+    // The money routes' declared bodies (api-body-schemas.ts): the request it reads and the reply it gives on success.
+    const declared = DECLARED_BODIES[`${r.method} ${r.path}`];
+    let requestBody: Json = { $ref: '#/components/requestBodies/Body' };
+    if (declared !== undefined) {
+      const reply = `${declared.name}Reply`;
+      declaredSchemas[reply] = { ...(declared.reply.schema as Record<string, Json>), 'x-body-schema': 'declared' };
+      const content: Json = { description: declared.reply.description, content: { 'application/json': { schema: ref(reply) } } };
+      responses[declared.reply.status] = content;
+      if (declared.reply.alsoStatus !== undefined) responses[declared.reply.alsoStatus] = content;
+      if (declared.request !== undefined) {
+        const request = `${declared.name}Request`;
+        declaredSchemas[request] = { ...(declared.request as Record<string, Json>), 'x-body-schema': 'declared' };
+        requestBody = { required: true, content: { 'application/json': { schema: ref(request) } } };
+      } else {
+        requestBody = { required: false, description: 'This route reads no body.', content: { 'application/json': { schema: { type: 'object' } } } };
+      }
+    }
     const op: Record<string, Json> = {
       operationId: id,
       tags: [`${r.api} ${API_DOMAINS[r.api].name}`],
@@ -123,7 +143,8 @@ export function buildOpenApi(routes: readonly Route[]): Record<string, Json> {
       ...(write ? { 'x-idempotent': r.idempotent === true } : {}),
       ...(r.shownOnce === undefined ? {} : { 'x-shown-once': [...r.shownOnce] }),
       ...(parameters.length === 0 ? {} : { parameters }),
-      ...(write ? { requestBody: { $ref: '#/components/requestBodies/Body' } } : {}),
+      ...(write ? { requestBody } : {}),
+      ...(declared === undefined ? {} : { 'x-body-schema': 'declared' }),
       responses,
     };
     (paths[key] ??= {})[r.method.toLowerCase()] = op;
@@ -153,7 +174,7 @@ export function buildOpenApi(routes: readonly Route[]): Record<string, Json> {
         Conflict: errorReply('The Idempotency-Key was used for a different request, or the change conflicts with one recorded a moment ago.'),
         Unreadable: errorReply('The body could not be read as this request; nothing was saved.'),
       },
-      schemas: sharedSchemas(),
+      schemas: { ...sharedSchemas(), ...Object.fromEntries(Object.keys(declaredSchemas).sort().map((k) => [k, declaredSchemas[k]!])) },
     },
   };
 }

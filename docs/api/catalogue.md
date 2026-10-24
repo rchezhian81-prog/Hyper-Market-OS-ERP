@@ -7,9 +7,12 @@
 > [`openapi.json`](openapi.json) (OpenAPI 3.1 — every endpoint, its permission, feature, step-up and
 > Idempotency-Key header, and the shared error shape) and [`asyncapi.json`](asyncapi.json) (AsyncAPI 3.0 —
 > the §30.2 events and the signed webhooks published to partners), kept equal to the router by
-> `tests/guardrails/the-openapi-and-asyncapi-documents-equal-the-router.test.ts`. Per-endpoint request and
-> reply body schemas are **not yet declared** and are marked `x-body-schema: "not declared"`. This catalogue
-> fixes the conventions and the domain/event map.
+> `tests/guardrails/the-openapi-and-asyncapi-documents-equal-the-router.test.ts`. The **money routes** declare
+> their request and reply body schemas (`x-body-schema: "declared"`, from `services/platform/src/api-body-schemas.ts`):
+> sales intake, refunds, supplier payments and advances, purchase orders, journals and the day book — each checked
+> against its real handler by `tests/integration/money-route-schemas-match-the-handlers.test.ts`. Every other
+> endpoint's body is **not yet declared** and is marked `x-body-schema: "not declared"`. This catalogue fixes the
+> conventions and the domain/event map.
 
 ## 1. Conventions — all APIs
 - **Versioned (P-06):** major version in the path (`/v1/…`); additive-only within a major;
@@ -403,5 +406,6 @@ build; it is not invented ahead of the roadmap.)*
 
 ## 6. Deferred
 Per-endpoint request/reply body schemas (and per-event payload schemas) are declared per domain as each
-release is built; until then the generated OpenAPI/AsyncAPI documents mark each body `not declared`. R4/R5/R7 domains (Customer/CRM, OMS/Fulfilment, AI) are named at family level here
+release is built; the money routes declare theirs now (above), and until a route does the generated OpenAPI/AsyncAPI
+documents mark its body `not declared`. R4/R5/R7 domains (Customer/CRM, OMS/Fulfilment, AI) are named at family level here
 and expanded when their release is reached.

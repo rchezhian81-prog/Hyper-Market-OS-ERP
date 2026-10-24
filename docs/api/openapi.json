@@ -18708,9 +18708,38 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": false,
+          "description": "This route reads no body.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "200": {
+            "description": "Vouchers posted (201), or nothing new to post (200). Every source is in a journal or a named exception.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayBookPostingReply"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Vouchers posted (201), or nothing new to post (200). Every source is in a journal or a named exception.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayBookPostingReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -22344,9 +22373,27 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JournalRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "201": {
+            "description": "Posted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -24962,9 +25009,37 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierAdvanceRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "200": {
+            "description": "Paid and posted (201), or already recorded (200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierAdvanceReply"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Paid and posted (201), or already recorded (200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierAdvanceReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -25039,9 +25114,37 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierAdvanceApplicationRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "200": {
+            "description": "Set against the bill (201), or already recorded (200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierAdvanceApplicationReply"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Set against the bill (201), or already recorded (200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierAdvanceApplicationReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -67027,9 +67130,37 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseOrderProposalRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "200": {
+            "description": "Proposed (201), or the same order already proposed (200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseOrderProposalReply"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Proposed (201), or the same order already proposed (200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseOrderProposalReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -67165,9 +67296,27 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseOrderIssueRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "200": {
+            "description": "Issued by a second person, or already issued (alreadyIssued).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseOrderIssueReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -68578,9 +68727,37 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierPaymentRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "200": {
+            "description": "Recorded (201), or the same payment already recorded (200, alreadyRecorded).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierPaymentReply"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recorded (201), or the same payment already recorded (200, alreadyRecorded).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierPaymentReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -71227,9 +71404,27 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaleIntakeRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "202": {
+            "description": "Banked. Findings about the sale are listed, never a refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleIntakeReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -71545,9 +71740,27 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Body"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaleReturnRequest"
+              }
+            }
+          }
         },
+        "x-body-schema": "declared",
         "responses": {
+          "201": {
+            "description": "Recorded: the refund, what went back to stock, what may still come back.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleReturnReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -79344,6 +79557,1414 @@
             "x-body-schema": "not declared"
           }
         }
+      },
+      "DayBookPostingReply": {
+        "type": "object",
+        "required": [
+          "tradingDay",
+          "postedTo",
+          "journals",
+          "exceptions",
+          "skipped"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "tradingDay": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "YYYY-MM-DD"
+          },
+          "postedTo": {
+            "type": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "description": "YYYY-MM"
+          },
+          "postedLate": {
+            "type": "object",
+            "required": [],
+            "additionalProperties": true,
+            "properties": {
+              "belongsTo": {
+                "type": "string",
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                "description": "YYYY-MM"
+              }
+            }
+          },
+          "journals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "entryId",
+                "kind",
+                "period",
+                "documentDate",
+                "lines"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "entryId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sourceKind": {
+                  "type": "string",
+                  "enum": [
+                    "sale",
+                    "return",
+                    "loyalty"
+                  ]
+                },
+                "sources": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                  "description": "YYYY-MM"
+                },
+                "documentDate": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "description": "YYYY-MM-DD"
+                },
+                "belongsTo": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                  "description": "YYYY-MM"
+                },
+                "components": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "accountCode",
+                      "debitMinor",
+                      "creditMinor"
+                    ],
+                    "additionalProperties": true,
+                    "properties": {
+                      "accountCode": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "debitMinor": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "creditMinor": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "centre": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "A branch or department of the organisation (M23-FR-01); a centre it does not have is refused 422 unknown_centre."
+                      }
+                    }
+                  }
+                },
+                "postedBy": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "narrative": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "netByDepartment": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "OB-340: each department's exact net on a sale or sale-return voucher."
+                }
+              }
+            }
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "exceptionId",
+                "reason",
+                "sourceIds"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "exceptionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sourceIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "zeroValue": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "counted": {
+            "type": "object",
+            "required": [],
+            "additionalProperties": true,
+            "properties": {
+              "sales": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "returns": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "JournalReply": {
+        "type": "object",
+        "required": [
+          "entryId",
+          "postedTo"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "entryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "postedTo": {
+            "type": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "description": "YYYY-MM"
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "JournalRequest": {
+        "type": "object",
+        "required": [
+          "entryId",
+          "period",
+          "documentDate",
+          "narrative",
+          "lines"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "entryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "description": "YYYY-MM"
+          },
+          "documentDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "YYYY-MM-DD"
+          },
+          "narrative": {
+            "type": "string",
+            "minLength": 1
+          },
+          "postedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "accountCode",
+                "debitMinor",
+                "creditMinor"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "accountCode": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "debitMinor": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "creditMinor": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "centre": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "A branch or department of the organisation (M23-FR-01); a centre it does not have is refused 422 unknown_centre."
+                }
+              }
+            },
+            "minItems": 2
+          }
+        },
+        "description": "Debits must equal credits; a closed month takes nothing (422 with the reason).",
+        "x-body-schema": "declared"
+      },
+      "PurchaseOrderIssueReply": {
+        "type": "object",
+        "required": [
+          "order"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "order": {
+            "type": "object",
+            "required": [
+              "poId",
+              "supplierId",
+              "lines",
+              "totalMinor",
+              "currency",
+              "status"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "poId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "number": {
+                "type": "string",
+                "minLength": 1
+              },
+              "supplierId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deliverToLocationId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requisitionedBy": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [],
+                  "additionalProperties": true,
+                  "properties": {
+                    "productId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "orderedQty": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              },
+              "totalMinor": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "currency": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "proposed",
+                  "issued"
+                ]
+              },
+              "approvedBy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "openCommitment": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "alreadyIssued": {
+            "type": "boolean"
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "PurchaseOrderIssueRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approvalId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "PurchaseOrderProposalReply": {
+        "type": "object",
+        "required": [
+          "order"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "order": {
+            "type": "object",
+            "required": [
+              "poId",
+              "supplierId",
+              "lines",
+              "totalMinor",
+              "currency",
+              "status"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "poId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "number": {
+                "type": "string",
+                "minLength": 1
+              },
+              "supplierId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deliverToLocationId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requisitionedBy": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [],
+                  "additionalProperties": true,
+                  "properties": {
+                    "productId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "orderedQty": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              },
+              "totalMinor": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "currency": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "proposed",
+                  "issued"
+                ]
+              },
+              "approvedBy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "openCommitment": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "alreadyProposed": {
+            "type": "boolean"
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "PurchaseOrderProposalRequest": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "supplierId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deliverToLocationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "orderedQty"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "orderedQty": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "uom": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "unitCost": {
+                  "type": "object",
+                  "required": [
+                    "minor",
+                    "currency"
+                  ],
+                  "additionalProperties": true,
+                  "properties": {
+                    "minor": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "per": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            },
+            "minItems": 1
+          },
+          "blanketAgreementId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requisitionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "buyingScope": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "description": "A new order needs supplierId, deliverToLocationId and lines with a unit cost; a call-off release of a blanket agreement names blanketAgreementId and carries no price.",
+        "x-body-schema": "declared"
+      },
+      "SaleIntakeReply": {
+        "type": "object",
+        "required": [
+          "banked",
+          "saleId",
+          "alreadyBanked",
+          "exceptions"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "banked": {
+            "const": true
+          },
+          "saleId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "alreadyBanked": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [],
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "critical",
+                    "material",
+                    "informational"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "SaleIntakeRequest": {
+        "type": "object",
+        "required": [
+          "saleId",
+          "totalMinor",
+          "committedAt",
+          "lines",
+          "tenders",
+          "packVersion"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "saleId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "receiptNumber": {
+            "type": "string",
+            "minLength": 1
+          },
+          "laneId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cashierId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tradingDay": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "YYYY-MM-DD"
+          },
+          "committedAt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "ISO-8601 time the lane committed the sale (locally first — hard rule #1)."
+          },
+          "totalMinor": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 1
+          },
+          "packVersion": {
+            "type": "number"
+          },
+          "roundOffMinor": {
+            "type": "integer"
+          },
+          "customerRef": {
+            "type": "string",
+            "minLength": 1
+          },
+          "oldErpBillNumber": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "quantityMinor",
+                "uom",
+                "unitPriceMinor",
+                "lineTotalMinor"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "quantityMinor": {
+                  "type": "integer"
+                },
+                "uom": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "unitPriceMinor": {
+                  "type": "integer"
+                },
+                "lineTotalMinor": {
+                  "type": "integer",
+                  "description": "What the lane charged for the line, AFTER its own discount."
+                },
+                "batchId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "batchExpiry": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "description": "YYYY-MM-DD"
+                },
+                "hsnCode": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "taxRateBps": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cessMinor": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "huid": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "tenders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "amountMinor"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "A tender kind (components/schemas/TenderKind lists the known ones)."
+                },
+                "amountMinor": {
+                  "type": "integer"
+                },
+                "ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "machineRef": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "points": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "card": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "tokenRef",
+                    "last4",
+                    "network"
+                  ],
+                  "description": "The ONLY card facts a sale carries (hard rule #3): a provider token reference, the last four digits and the network. Never a card number, CVV or expiry.",
+                  "properties": {
+                    "tokenRef": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "last4": {
+                      "type": "string",
+                      "pattern": "^\\d{4}$"
+                    },
+                    "network": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "A sale as the lane committed it. Refused 400 not_readable_as_a_sale only when it cannot be read as one.",
+        "x-body-schema": "declared"
+      },
+      "SaleReturnReply": {
+        "type": "object",
+        "required": [
+          "returnId",
+          "refundStatus",
+          "restockedLines",
+          "remaining",
+          "refundSource"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "returnId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "refundStatus": {
+            "type": "string",
+            "enum": [
+              "settled",
+              "pending"
+            ]
+          },
+          "restockedLines": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many returned lines went back to sellable stock."
+          },
+          "remaining": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "returnableMinor"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uom": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "soldMinor": {
+                  "type": "integer"
+                },
+                "alreadyReturnedMinor": {
+                  "type": "integer"
+                },
+                "returnableMinor": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "refundSource": {
+            "type": "string",
+            "enum": [
+              "to_source",
+              "exception_approved",
+              "not_known",
+              "not_checked"
+            ]
+          },
+          "storeCredit": {
+            "type": "object",
+            "required": [
+              "instrumentId",
+              "balanceMinor"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "instrumentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "balanceMinor": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "SaleReturnRequest": {
+        "type": "object",
+        "required": [
+          "returnId",
+          "reasonCode",
+          "lines",
+          "refundMinor",
+          "refundTender"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "returnId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "refundMinor": {
+            "type": "integer"
+          },
+          "refundTender": {
+            "type": "string"
+          },
+          "processedAt": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string",
+            "description": "The approval a second person gave in their own session (ADR-0022) — never a typed name."
+          },
+          "customerRef": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outOfWindowApprovedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "quantityMinor"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uom": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "quantityMinor": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "disposition": {
+                  "type": "string",
+                  "enum": [
+                    "resell",
+                    "quarantine",
+                    "damaged",
+                    "scrap"
+                  ]
+                },
+                "condition": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "batchId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Who processed it is the signed-in caller and the approval threshold is the shop's policy — neither is read from the body.",
+        "x-body-schema": "declared"
+      },
+      "SupplierAdvanceApplicationReply": {
+        "type": "object",
+        "required": [
+          "application",
+          "entryId",
+          "alreadyRecorded"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "application": {
+            "type": "object",
+            "required": [
+              "change",
+              "advanceId",
+              "supplierId",
+              "amountMinor",
+              "on"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "change": {
+                "type": "string",
+                "enum": [
+                  "paid",
+                  "applied"
+                ]
+              },
+              "advanceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "supplierId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "amountMinor": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "on": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "YYYY-MM-DD"
+              },
+              "poId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "bank_transfer",
+                  "cheque",
+                  "upi",
+                  "cash"
+                ]
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1
+              },
+              "approvedBy": {
+                "type": "string",
+                "minLength": 1
+              },
+              "applicationId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "invoiceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reverses": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "entryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "leftMinor": {
+            "type": "integer"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "SupplierAdvanceApplicationRequest": {
+        "type": "object",
+        "required": [
+          "amountMinor",
+          "appliedOn"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "amountMinor": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "invoiceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "appliedOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "YYYY-MM-DD"
+          },
+          "reverses": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "description": "Against a bill: { amountMinor, invoiceId, appliedOn }; to undo one: { reverses, amountMinor, appliedOn }.",
+        "x-body-schema": "declared"
+      },
+      "SupplierAdvanceReply": {
+        "type": "object",
+        "required": [
+          "advance",
+          "entryId",
+          "alreadyRecorded"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "advance": {
+            "type": "object",
+            "required": [
+              "change",
+              "advanceId",
+              "supplierId",
+              "amountMinor",
+              "on"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "change": {
+                "type": "string",
+                "enum": [
+                  "paid",
+                  "applied"
+                ]
+              },
+              "advanceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "supplierId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "amountMinor": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "on": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "YYYY-MM-DD"
+              },
+              "poId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "bank_transfer",
+                  "cheque",
+                  "upi",
+                  "cash"
+                ]
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1
+              },
+              "approvedBy": {
+                "type": "string",
+                "minLength": 1
+              },
+              "applicationId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "invoiceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reverses": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "entryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "description": "YYYY-MM"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "SupplierAdvanceRequest": {
+        "type": "object",
+        "required": [
+          "supplierId",
+          "amountMinor",
+          "paidOn",
+          "method",
+          "reference"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "supplierId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "amountMinor": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "paidOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "YYYY-MM-DD"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "bank_transfer",
+              "cheque",
+              "upi",
+              "cash"
+            ]
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1
+          },
+          "poId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approvalId": {
+            "type": "string",
+            "description": "The supplier_payment approval a second person gave (§28)."
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "SupplierPaymentReply": {
+        "type": "object",
+        "required": [
+          "payment",
+          "alreadyRecorded",
+          "owedMinor"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "payment": {
+            "type": "object",
+            "required": [
+              "paymentId",
+              "supplierId",
+              "amountMinor",
+              "paidOn",
+              "method"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "paymentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "supplierId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "amountMinor": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "currency": {
+                "const": "INR"
+              },
+              "paidOn": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "YYYY-MM-DD"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "bank_transfer",
+                  "cheque",
+                  "upi",
+                  "cash"
+                ]
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1
+              },
+              "approvedBy": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          },
+          "owedMinor": {
+            "type": "integer"
+          },
+          "advancesAppliedMinor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "OB-341: what the supplier's advances had already settled."
+          },
+          "balanceToPayMinor": {
+            "type": "integer",
+            "description": "OB-341: owed less advances, after this payment."
+          },
+          "netPaidMinor": {
+            "type": "integer"
+          }
+        },
+        "x-body-schema": "declared"
+      },
+      "SupplierPaymentRequest": {
+        "type": "object",
+        "required": [
+          "amountMinor",
+          "paidOn",
+          "method",
+          "reference"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "amountMinor": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "paidOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "YYYY-MM-DD"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "bank_transfer",
+              "cheque",
+              "upi",
+              "cash"
+            ]
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approvalId": {
+            "type": "string",
+            "description": "The supplier_payment approval a second person gave (§28)."
+          }
+        },
+        "description": "OB-341: refused 422 payment_exceeds_balance above what is owed LESS what advances already settled.",
+        "x-body-schema": "declared"
       }
     }
   }

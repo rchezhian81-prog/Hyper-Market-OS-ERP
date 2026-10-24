@@ -10,6 +10,7 @@ import { PUBLISHED_TO_PARTNERS } from '../../services/api/src/adapters';
 import { KNOWN_EVENT_TYPES } from '../../packages/contracts/src/event';
 import { OUTBOUND_API_VERSION } from '../../services/platform/src/outbound-webhooks';
 import { buildOpenApi, buildAsyncApi, renderContract } from '../../services/platform/src/api-contracts';
+import { DECLARED_BODIES } from '../../services/platform/src/api-body-schemas';
 
 const PACK_KEY = ['sre', 'local', 'test', 'pack', 'signing', 'key'].join('-').padEnd(48, '0');
 const OPENAPI = fileURLToPath(new URL('../../docs/api/openapi.json', import.meta.url));
@@ -51,6 +52,24 @@ describe('the OpenAPI document is the router (M32-FR-01)', () => {
       expect(key?.required === true, `${o.method} ${o.path} idempotency header`).toBe(o.op['x-idempotent'] === true);
     }
     expect(ops.some((o) => o.op['x-idempotent'] === true)).toBe(true);
+  });
+
+  it('the money routes declare their request and reply bodies (sales, refunds, payments, orders, journals); every other body says "not declared"', () => {
+    const full = buildOpenApi(routes) as { paths: Record<string, Record<string, { 'x-body-schema'?: string; requestBody?: { $ref?: string; content?: Record<string, { schema: { $ref?: string } }> }; responses: Record<string, { content?: Record<string, { schema: { $ref?: string } }> }> }>>; components: { schemas: Record<string, { 'x-body-schema'?: string }> } };
+    const opOf = (key: string) => {
+      const [method, path] = key.split(' ') as [string, string];
+      return full.paths[path.replace(/:([A-Za-z0-9_]+)/g, '{$1}')]?.[method.toLowerCase()];
+    };
+    for (const [key, d] of Object.entries(DECLARED_BODIES)) {
+      const op = opOf(key);
+      expect(op?.['x-body-schema'], key).toBe('declared');
+      expect(op?.responses[d.reply.status]?.content?.['application/json']?.schema.$ref, key).toBe(`#/components/schemas/${d.name}Reply`);
+      if (d.request !== undefined) expect(op?.requestBody?.content?.['application/json']?.schema.$ref, key).toBe(`#/components/schemas/${d.name}Request`);
+      expect(full.components.schemas[`${d.name}Reply`]?.['x-body-schema'], key).toBe('declared');
+    }
+    const undeclaredWrite = routes.find((r) => r.method === 'POST' && DECLARED_BODIES[`${r.method} ${r.path}`] === undefined)!;
+    expect(opOf(`${undeclaredWrite.method} ${undeclaredWrite.path}`)?.requestBody?.$ref).toBe('#/components/requestBodies/Body');
+    expect(full.components.schemas['OpenBody']?.['x-body-schema']).toBe('not declared');
   });
 
   it('every $ref resolves inside the document', () => {
