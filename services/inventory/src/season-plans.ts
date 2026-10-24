@@ -140,6 +140,8 @@ export function seasonPlanRoutes(deps: SeasonPlanDeps): readonly Route[] {
           }
         }
         // Judged for every store first, then written — a refusal saves nothing anywhere.
+        // The word "drop" below is a range decision inside an idempotency key; no SQL is built here (same finding as assortment.ts).
+        // nosemgrep: javascript.express.security.injection.tainted-sql-string
         for (const entry of entries) await deps.recordRangeEntry(ctx.tenantId, entry.storeId, entry, `cluster-drop-${zoneId}-${entry.storeId}-${productId}-${entry.effectiveFrom}`);
         return { status: 201, body: { zoneId, productId, decisions } };
       },
