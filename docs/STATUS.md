@@ -46,7 +46,6 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - BIS gate (OB-325) and expiry date tap (OB-298);
   - FSSAI on the bill;
   - scan timing;
-  - delivery sale (OB-299);
   - an expired batch refused on return;
   - a sealed day evidence pack;
   - the B2C dynamic QR, built off (OB-326).
@@ -85,7 +84,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 **Tested.** Each lane ran its own unit, integration (in memory and on real PostgreSQL, with cold restarts), browser, guardrail and fail-before checks. On the combined branch, tsc and all 1,681 guardrail and navigation tests pass. The full CI gate runs on the pull request. Nothing here was run on real Windows, a real printer, a real card machine or a real Tally, and there was no staff UAT. The till builder's last full-suite run was cut off by a container restart, so CI gives that proof.
 
 **Next (running):**
-- the till side of bundles, B15 and B17-by-state (OB-348), HSN class approval (OB-347), and the tier multiplier and online points at the till (OB-346);
+- the till delivery sale (OB-299, not yet built); the till side of bundles, B15 and B17-by-state (OB-348), HSN class approval (OB-347), and the tier multiplier and online points at the till (OB-346);
 - customer and delivery follow-ups: code and ETA on My order, routing at placement, 250 m radius (OB-343), settlement posting, referrals (OB-351), scan-and-go to the lane (OB-350);
 - finance follow-ups: department sales (OB-340), advances at payment (OB-341), deploy jobs passing the signature (OB-342), money-route schemas;
 - loss prevention, workforce, facilities and adoption (OB-301, OB-317, OB-320, OB-323).
