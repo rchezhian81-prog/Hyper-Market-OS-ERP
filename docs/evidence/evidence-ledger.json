@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1658,
+  "testFiles": 1663,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1775,8 +1775,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 27,
-        "integration": 33,
-        "realDb": 19,
+        "integration": 35,
+        "realDb": 21,
         "browser": 6,
         "connected": 2,
         "device": 0,
@@ -1816,6 +1816,7 @@
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
@@ -1823,6 +1824,7 @@
           "tests/integration/credit-note-reconciliation.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/day-close-reconcile-on-sync.test.ts",
+          "tests/integration/department-sales-and-margin-tie-to-the-ledger.test.ts",
           "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
@@ -1851,10 +1853,12 @@
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/credit-note-reconciliation.test.ts",
+          "tests/integration/department-sales-and-margin-tie-to-the-ledger.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
@@ -2330,7 +2334,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 10,
-        "integration": 17,
+        "integration": 18,
         "realDb": 8,
         "browser": 2,
         "connected": 1,
@@ -2356,6 +2360,7 @@
           "tests/integration/integration-gateway.test.ts",
           "tests/integration/managed-secrets-tenant-isolation.test.ts",
           "tests/integration/managed-secrets.test.ts",
+          "tests/integration/money-route-schemas-match-the-handlers.test.ts",
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/observed-health.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
@@ -3202,8 +3207,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 2,
-        "integration": 12,
-        "realDb": 7,
+        "integration": 13,
+        "realDb": 8,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -3215,6 +3220,7 @@
           "tests/unit/trial-balance-and-centres.test.ts"
         ],
         "integration": [
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/budgets-and-the-fixed-asset-register.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
@@ -3229,6 +3235,7 @@
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/budgets-and-the-fixed-asset-register.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -4717,8 +4724,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 13,
-        "realDb": 9,
+        "integration": 14,
+        "realDb": 10,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -4730,6 +4737,7 @@
         ],
         "integration": [
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
@@ -4745,6 +4753,7 @@
         ],
         "realDb": [
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
