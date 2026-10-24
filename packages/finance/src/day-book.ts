@@ -20,6 +20,7 @@
 import { postJournal, type PostingInput, type PostingMap, type JournalEntry as PostedJournal } from './posting';
 import { extractInclusiveGst } from './inclusive-tax';
 import { PAYABLES_POSTING_RULES } from './payables';
+import { splitByWeights } from './trial-balance';
 import type { CurrencyCode } from '../../contracts/src/money';
 
 export type DayBookSourceKind = 'sale' | 'return' | 'loyalty';
@@ -133,6 +134,17 @@ export interface DayBookAggregate {
   readonly sourceKind: DayBookSourceKind;
   readonly sourceIds: readonly string[];
   readonly components: Readonly<Record<string, number>>;
+  /**
+   * OB-340 (owner, 24 Oct 2026): on a `sale` or `sale_return` voucher, the part of its `net` (the taxable value, after each
+   * line's own discount) that belongs to each department — each line's exact net to its product's department. What no
+   * department owns is not listed here (it is the `net` less these). Absent when no line is in a department.
+   */
+  readonly netByDepartment?: Readonly<Record<string, number>>;
+  /**
+   * OB-340: returns whose net could not be put in departments line by line (lines in more than one department and no
+   * original sale to weight them by) — their net stays with the store, said here by id, never guessed.
+   */
+  readonly departmentNotKnown?: readonly string[];
 }
 
 export interface DayBookInput {
@@ -151,6 +163,11 @@ export interface DayBookInput {
   readonly alreadyPosted: ReadonlyMap<string, ReadonlySet<string>>;
   /** The day's valued loyalty facts (PF-09 step 3). Absent → none. */
   readonly loyalty?: readonly DayBookLoyalty[];
+  /**
+   * OB-340: which department owns a product (through its category), or nothing when none does. Absent → the day book does
+   * not split by department at all (as before).
+   */
+  readonly departmentOf?: (productId: string) => string | undefined;
 }
 
 export interface DayBook {
@@ -179,8 +196,11 @@ export function splitInclusive(amountMinor: number, rateBps: number): TaxSplit {
   return { total: b.grossMinor, net: b.taxableMinor, tax: b.totalTaxMinor, cgst: part('CGST'), sgst: part('SGST') };
 }
 
+/** OB-340: one line's exact net (taxable value after its discount), for the department split. */
+interface LineNet { readonly productId: string; readonly netMinor: number }
+
 type Split =
-  | { readonly ok: true; readonly split: TaxSplit }
+  | { readonly ok: true; readonly split: TaxSplit; readonly lineNets?: readonly LineNet[] }
   | { readonly ok: false; readonly reason: DayBookExceptionReason; readonly detail: string };
 
 const refuse = (reason: DayBookExceptionReason, detail: string): Split => ({ ok: false, reason, detail });
@@ -191,6 +211,7 @@ function splitSale(sale: DayBookSale, taxRateOf: DayBookInput['taxRateOf']): Spl
   }
   let lineSum = 0;
   let acc = ZERO;
+  const lineNets: LineNet[] = [];
   for (const line of sale.lines) {
     if (!Number.isInteger(line.lineTotalMinor) || line.lineTotalMinor < 0) {
       return refuse('negative_line', `sale ${sale.saleId}: line ${line.productId} totals ${line.lineTotalMinor} — a sale line cannot be negative`);
@@ -201,7 +222,9 @@ function splitSale(sale: DayBookSale, taxRateOf: DayBookInput['taxRateOf']): Spl
       return refuse('tax_rate_unknown', `sale ${sale.saleId}: ${line.productId} has no GST rate on the line and none in the catalogue`);
     }
     try {
-      acc = addSplit(acc, splitInclusive(line.lineTotalMinor, rate));
+      const part = splitInclusive(line.lineTotalMinor, rate);
+      acc = addSplit(acc, part);
+      lineNets.push({ productId: line.productId, netMinor: part.net });
     } catch (err) {
       return refuse('tax_split_failed', `sale ${sale.saleId}: ${line.productId} at ${rate} bps — ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -215,7 +238,7 @@ function splitSale(sale: DayBookSale, taxRateOf: DayBookInput['taxRateOf']): Spl
   if (tendered !== sale.totalMinor) {
     return refuse('tenders_do_not_sum_to_total', `sale ${sale.saleId}: the tenders add to ${tendered} against a total of ${sale.totalMinor}`);
   }
-  return { ok: true, split: acc };
+  return { ok: true, split: acc, lineNets };
 }
 
 /** The value a return credits back: the refund, or on an exchange what was applied plus any refunded balance. */
@@ -254,31 +277,45 @@ function splitReturn(ret: DayBookReturn, original: DayBookSale | undefined, taxR
     }
     rates.push(rate);
   }
+  // OB-340: each returned line's weight at the ORIGINAL price (per-unit incl × qty returned) — what a multi-rate refund and
+  // a single-rate refund's department split are both weighted by.
+  const weightsAtOriginal = (): number[] => ret.lines.map((l) => {
+    const o = originalByProduct.get(l.productId);
+    const perUnit = o !== undefined && o.quantityMinor > 0 ? o.lineTotalMinor / o.quantityMinor : 0;
+    return Math.max(0, Math.round(perUnit * l.quantityMinor));
+  });
   try {
     if (new Set(rates).size === 1) {
-      return { ok: true, split: splitInclusive(value, rates[0]!) };
+      const split = splitInclusive(value, rates[0]!);
+      // One line takes the whole net; several are weighted by what they cost on the original sale (exact, largest remainder).
+      if (ret.lines.length === 1) return { ok: true, split, lineNets: [{ productId: ret.lines[0]!.productId, netMinor: split.net }] };
+      const w = original === undefined ? [] : weightsAtOriginal();
+      if (w.length === 0 || w.reduce((s, x) => s + x, 0) <= 0) return { ok: true, split };
+      const shares = splitByWeights(split.net, w.map((weightMinor, i) => ({ centre: String(i).padStart(6, '0'), weightMinor })));
+      return { ok: true, split, lineNets: ret.lines.map((l, i) => ({ productId: l.productId, netMinor: shares.get(String(i).padStart(6, '0')) ?? 0 })) };
     }
     if (original === undefined) {
       return refuse('refund_split_unknown', `return ${ret.returnId}: its lines carry different GST rates and there is no original sale to weight the refund by`);
     }
     // Weight each line by the returned portion's value at the ORIGINAL price (per-unit incl × qty returned).
-    const weights = ret.lines.map((l) => {
-      const o = originalByProduct.get(l.productId);
-      const perUnit = o !== undefined && o.quantityMinor > 0 ? o.lineTotalMinor / o.quantityMinor : 0;
-      return Math.max(0, Math.round(perUnit * l.quantityMinor));
-    });
+    const weights = weightsAtOriginal();
     const totalWeight = weights.reduce((s, w) => s + w, 0);
     if (totalWeight <= 0) {
       return refuse('refund_split_unknown', `return ${ret.returnId}: none of its lines is priced on the original sale, so the refund cannot be weighted`);
     }
     let allocated = 0;
     let acc = ZERO;
-    ret.lines.forEach((_, i) => {
+    const lineNets: LineNet[] = [];
+    ret.lines.forEach((l, i) => {
       const part = i === ret.lines.length - 1 ? value - allocated : Math.round((value * weights[i]!) / totalWeight);
       allocated += part;
-      if (part > 0) acc = addSplit(acc, splitInclusive(part, rates[i]!));
+      if (part > 0) {
+        const s = splitInclusive(part, rates[i]!);
+        acc = addSplit(acc, s);
+        lineNets.push({ productId: l.productId, netMinor: s.net });
+      }
     });
-    return { ok: true, split: acc };
+    return { ok: true, split: acc, lineNets };
   } catch (err) {
     return refuse('tax_split_failed', `return ${ret.returnId}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -289,15 +326,29 @@ interface Accumulator {
   readonly sourceKind: DayBookSourceKind;
   readonly sourceIds: string[];
   readonly components: Record<string, number>;
+  readonly byDepartment: Record<string, number>;
+  readonly departmentNotKnown: string[];
 }
 
 /** Sum the day per posting kind. Pure. Every input ends up in an aggregate, an exception, `skipped` or `zeroValue`. */
 export function buildDayBook(input: DayBookInput): DayBook {
   const acc = new Map<string, Accumulator>();
-  const add = (kind: string, sourceKind: DayBookSourceKind, sourceId: string, components: Readonly<Record<string, number>>): void => {
-    const a = acc.get(kind) ?? { kind, sourceKind, sourceIds: [], components: {} };
+  const add = (kind: string, sourceKind: DayBookSourceKind, sourceId: string, components: Readonly<Record<string, number>>, lineNets?: readonly LineNet[] | null): void => {
+    const a = acc.get(kind) ?? { kind, sourceKind, sourceIds: [], components: {}, byDepartment: {}, departmentNotKnown: [] };
     if (!a.sourceIds.includes(sourceId)) a.sourceIds.push(sourceId);
     for (const [name, value] of Object.entries(components)) a.components[name] = (a.components[name] ?? 0) + value;
+    // OB-340: each line's exact net to its product's department (null: the lines could not be told apart — said by id).
+    const departmentOf = input.departmentOf;
+    if (departmentOf !== undefined && lineNets !== undefined) {
+      if (lineNets === null) {
+        a.departmentNotKnown.push(sourceId);
+      } else {
+        for (const l of lineNets) {
+          const d = departmentOf(l.productId);
+          if (d !== undefined && d !== '' && l.netMinor !== 0) a.byDepartment[d] = (a.byDepartment[d] ?? 0) + l.netMinor;
+        }
+      }
+    }
     acc.set(kind, a);
   };
   const exceptions: DayBookException[] = [];
@@ -314,7 +365,7 @@ export function buildDayBook(input: DayBookInput): DayBook {
     touched.push(sale.saleId);
     // OB-279: the sale voucher takes the bill's ROUNDED total; the round off is its own component, up or down.
     const roundOff = sale.roundOffMinor ?? 0;
-    if (!covered('sale', sale.saleId)) add('sale', 'sale', sale.saleId, { ...s.split, total: s.split.total + roundOff, round_off_up: Math.max(0, roundOff), round_off_down: Math.max(0, -roundOff) });
+    if (!covered('sale', sale.saleId)) add('sale', 'sale', sale.saleId, { ...s.split, total: s.split.total + roundOff, round_off_up: Math.max(0, roundOff), round_off_down: Math.max(0, -roundOff) }, s.lineNets);
     for (const t of tenders) {
       if (!covered(`tender:${t.kind}`, sale.saleId)) add(`tender:${t.kind}`, 'sale', sale.saleId, { amount: t.amountMinor });
     }
@@ -327,7 +378,7 @@ export function buildDayBook(input: DayBookInput): DayBook {
     const s = splitReturn(ret, original, input.taxRateOf);
     if (!s.ok) { exceptions.push({ sourceKind: 'return', sourceIds: [ret.returnId], reason: s.reason, detail: s.detail }); continue; }
     touched.push(ret.returnId);
-    if (!covered('sale_return', ret.returnId)) add('sale_return', 'return', ret.returnId, { ...s.split });
+    if (!covered('sale_return', ret.returnId)) add('sale_return', 'return', ret.returnId, { ...s.split }, s.split.net === 0 ? undefined : (s.lineNets ?? null));
     for (const leg of legs) {
       if (!covered(`refund:${leg.kind}`, ret.returnId)) add(`refund:${leg.kind}`, 'return', ret.returnId, { amount: leg.amountMinor });
     }
@@ -343,7 +394,11 @@ export function buildDayBook(input: DayBookInput): DayBook {
   const aggregates = [...acc.values()]
     .filter((a) => Object.values(a.components).some((v) => v !== 0))
     .sort((a, b) => a.kind.localeCompare(b.kind))
-    .map((a) => ({ kind: a.kind, sourceKind: a.sourceKind, sourceIds: [...a.sourceIds], components: { ...a.components } }));
+    .map((a): DayBookAggregate => ({
+      kind: a.kind, sourceKind: a.sourceKind, sourceIds: [...a.sourceIds], components: { ...a.components },
+      ...(Object.keys(a.byDepartment).length === 0 ? {} : { netByDepartment: Object.fromEntries(Object.entries(a.byDepartment).sort(([x], [y]) => x.localeCompare(y))) }),
+      ...(a.departmentNotKnown.length === 0 ? {} : { departmentNotKnown: [...a.departmentNotKnown] }),
+    }));
   const inAnAggregate = new Set(aggregates.flatMap((a) => a.sourceIds));
   const zeroValue = touched.filter((id) => !inAnAggregate.has(id));
   return {
@@ -385,6 +440,43 @@ export function postDayBook(book: DayBook, map: PostingMap, currency: CurrencyCo
     }
   }
   return { journals, exceptions };
+}
+
+/** A ledger line of a day-book voucher; `centre` names the department a line's net belongs to (OB-340). */
+export interface DayBookLedgerLine {
+  readonly accountCode: string;
+  readonly debitMinor: number;
+  readonly creditMinor: number;
+  readonly centre?: string;
+}
+
+/**
+ * OB-340: the voucher's lines for the ledger. Each leg the mapping fed from the `net` component (the revenue line of a sale
+ * or a sale return) is carried as one line per department — that department's exact net, naming it as its centre — and a
+ * line for what no department owns (no centre: the store's, as before). Every other line is unchanged, so the voucher
+ * balances exactly as the engine posted it, and every account's total is the same to the paisa.
+ */
+export function dayBookLedgerLines(aggregate: DayBookAggregate, entry: PostedJournal, map: PostingMap): readonly DayBookLedgerLine[] {
+  const plain = entry.lines.map((l): DayBookLedgerLine => ({
+    accountCode: l.account, debitMinor: l.side === 'debit' ? l.amount.minor : 0, creditMinor: l.side === 'credit' ? l.amount.minor : 0,
+  }));
+  const parts = Object.entries(aggregate.netByDepartment ?? {}).filter(([, v]) => v !== 0).sort(([a], [b]) => a.localeCompare(b));
+  const rule = map.rules.find((r) => r.kind === aggregate.kind);
+  if (parts.length === 0 || rule === undefined || parts.some(([, v]) => v < 0)) return plain;
+  // The engine posts the rule's legs in order, leaving out the zero ones — so the n-th non-zero leg is the n-th line.
+  const legs = rule.legs.filter((leg) => (aggregate.components[leg.component] ?? 0) !== 0);
+  if (legs.length !== entry.lines.length || legs.some((leg, i) => leg.account !== entry.lines[i]!.account || leg.side !== entry.lines[i]!.side)) return plain;
+  const inDepartments = parts.reduce((s, [, v]) => s + v, 0);
+  return legs.flatMap((leg, i): DayBookLedgerLine[] => {
+    const line = plain[i]!;
+    const amount = line.debitMinor + line.creditMinor;
+    if (leg.component !== 'net' || inDepartments > amount) return [line];
+    const at = (v: number, centre?: string): DayBookLedgerLine => ({
+      accountCode: line.accountCode, debitMinor: leg.side === 'debit' ? v : 0, creditMinor: leg.side === 'credit' ? v : 0, ...(centre === undefined ? {} : { centre }),
+    });
+    const rest = amount - inDepartments;
+    return [...parts.map(([d, v]) => at(v, d)), ...(rest > 0 ? [at(rest)] : [])];
+  });
 }
 
 /** What the accountant's mapping may be. Shape-checked here; WHICH accounts is the CA's call, never ours. */

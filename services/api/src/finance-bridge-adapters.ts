@@ -17,7 +17,12 @@ import type { PostingMap } from '../../../packages/finance/src/posting';
 import type { GlJournal } from '../../../packages/tally-export/src/index';
 import { gstAccountsOf } from '../../../packages/tally-export/src/index';
 import type { CentreAttribution, LedgerJournal } from '../../../packages/finance/src/trial-balance';
-import { STREAM, streamName, financeAdapter, orgStructureAdapter, storeOfLocationResolver, alertLifecycleAdapter, effectiveGrants, rebatesAdapter, payablesAdapter, supplierMasterAdapter, approvalRequestsAdapter, periodBooksAdapter } from './adapters';
+import { STREAM, streamName, financeAdapter, orgStructureAdapter, storeOfLocationResolver, alertLifecycleAdapter, effectiveGrants, rebatesAdapter, payablesAdapter, supplierMasterAdapter, approvalRequestsAdapter, periodBooksAdapter, categoryRegisterAdapter, productMasterAdapter, averageBuyingCosts } from './adapters';
+import { DEPARTMENT_LINKS_STREAM } from './p1-identity-adapters';
+import { currentLinks, type DepartmentLinkRecord } from '../../platform/src/org-departments';
+import { departmentOfCategory } from '../../../packages/org/src/departments';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import type { DepartmentCost } from '../../../packages/finance/src/trial-balance';
 import { stockAdjustmentSources } from '../../finance/src/period-books';
 import { OWNER_ROLE_ID } from './roles';
 import { tallyExportAdapter } from './p3-procure-adapters';
@@ -111,8 +116,71 @@ export function finBridgeSweep(input: Base): (tenantId: string, at: string) => P
 
 // ── M23-FR-01 — trial balance and centres ────────────────────────────────────────────────────────────────────────
 
-interface SaleForCentre { readonly saleId: string; readonly locationId?: string; readonly totalMinor: number }
-interface ReturnForCentre { readonly returnId: string; readonly originalSaleId: string | null; readonly refundMinor: number }
+interface SaleForCentre { readonly saleId: string; readonly locationId?: string; readonly totalMinor: number; readonly lines?: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom?: string }[] }
+interface ReturnForCentre { readonly returnId: string; readonly originalSaleId: string | null; readonly refundMinor: number; readonly locationId?: string; readonly lines?: readonly { readonly productId: string; readonly quantityMinor: number }[] }
+
+// ── OB-340 — which department owns a product, through its category (the organisation's department ownership) ──────
+
+/** Product → its department now: the product's primary category, owned by a department directly or through a parent. */
+export async function departmentResolver(input: Base, tenantId: string): Promise<(productId: string) => string | undefined> {
+  const [records, categories, products] = await Promise.all([
+    payloads<DepartmentLinkRecord>(input.store, tenantId, DEPARTMENT_LINKS_STREAM, 'DepartmentCategoriesSet'),
+    categoryRegisterAdapter(input).categories(tenantId),
+    productMasterAdapter(input).products(tenantId),
+  ]);
+  const links = currentLinks(records);
+  if (links.length === 0) return () => undefined;
+  const parentOf = new Map(categories.map((c) => [c.categoryId, c.parentId] as const));
+  const categoryOf = new Map(products.map((p) => [p.productId, p.primaryCategoryId] as const));
+  const memo = new Map<string, string | undefined>();
+  return (productId) => {
+    if (!memo.has(productId)) memo.set(productId, departmentOfCategory(links, (c) => parentOf.get(c) ?? null, categoryOf.get(productId) ?? null));
+    return memo.get(productId);
+  };
+}
+
+/** The day book's department split (spread into its registration in main.ts): each line's net to its product's department. */
+export function finBridgeDayBookHooks(input: Base): { readonly departmentOf: (tenantId: string) => Promise<(productId: string) => string | undefined> } {
+  return { departmentOf: (t) => departmentResolver(input, t) };
+}
+
+/**
+ * OB-340: what each department's goods sold in the month cost — every line of the sales the month's day-book vouchers carry,
+ * at its average buying cost as it stood at the month's close (OB-39, the profitability report's rule), less the goods the
+ * month's returns brought back. A product with no average makes its department's cost "not known", by name — never zero.
+ */
+async function departmentCostsOf(input: Base, tenantId: string, period: string, journals: readonly LedgerJournal[]): Promise<readonly DepartmentCost[]> {
+  const vouchers = journals.filter((j) => j.period === period) as (LedgerJournal & { dayBook?: { kind: string; sourceIds: readonly string[] } })[];
+  const saleIds = new Set(vouchers.filter((j) => j.dayBook?.kind === 'sale').flatMap((j) => j.dayBook!.sourceIds));
+  const returnIds = new Set(vouchers.filter((j) => j.dayBook?.kind === 'sale_return').flatMap((j) => j.dayBook!.sourceIds));
+  if (saleIds.size === 0 && returnIds.size === 0) return [];
+  const [departmentOf, { storeOf }, avg] = await Promise.all([departmentResolver(input, tenantId), storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId, { throughPeriod: period })]);
+  const sales = new Map((await payloads<SaleForCentre>(input.store, tenantId, STREAM.sales, 'SaleCommitted')).map((x) => [x.saleId, x] as const));
+  const acc = new Map<string, { cost: number; notCosted: Set<string> }>();
+  const add = (productId: string, quantityMinor: number, uom: string, storeId: string, sign: 1 | -1): void => {
+    const d = departmentOf(productId);
+    if (d === undefined) return;
+    const a = acc.get(d) ?? { cost: 0, notCosted: new Set<string>() };
+    const unit = avg.costOf(productId, storeId);
+    if (unit === undefined) a.notCosted.add(productId);
+    else a.cost += sign * valueAtUnitCost(quantityMinor, uom, unit);
+    acc.set(d, a);
+  };
+  const storeOfSale = (x: SaleForCentre | undefined): string => (x?.locationId === undefined || x.locationId === '' ? 'no-branch-named' : storeOf(x.locationId));
+  for (const id of saleIds) {
+    const sale = sales.get(id);
+    for (const l of sale?.lines ?? []) add(l.productId, l.quantityMinor, l.uom ?? 'ea', storeOfSale(sale), 1);
+  }
+  if (returnIds.size > 0) {
+    for (const r of await payloads<ReturnForCentre>(input.store, tenantId, STREAM.returns, 'ReturnRecorded')) {
+      if (!returnIds.has(r.returnId)) continue;
+      const sale = r.originalSaleId === null ? undefined : sales.get(r.originalSaleId);
+      const storeId = sale !== undefined ? storeOfSale(sale) : (r.locationId === undefined || r.locationId === '' ? 'no-branch-named' : storeOf(r.locationId));
+      for (const l of r.lines ?? []) add(l.productId, l.quantityMinor, sale?.lines?.find((x) => x.productId === l.productId)?.uom ?? 'ea', storeId, -1);
+    }
+  }
+  return [...acc.entries()].map(([departmentId, a]) => ({ departmentId, costMinor: a.notCosted.size > 0 ? null : a.cost, notCosted: [...a.notCosted].sort() }));
+}
 
 /** The centres the organisation has: its branches and departments (and every store head office knows). */
 async function knownCentresOf(input: Base, tenantId: string): Promise<{ readonly centres: readonly { centre: string; kind: string; name: string }[]; readonly ids: ReadonlySet<string> }> {
@@ -131,6 +199,12 @@ export function ledgerReportAdapter(input: Base): LedgerReportDeps {
     accountClasses: (t) => accountClassesOf(input, t),
     centres: async (t) => (await knownCentresOf(input, t)).centres,
     periodState: async (t, period) => (await financeAdapter(input).periodStates(t)).get(period) ?? 'open',
+    // OB-340: the organisation's departments, the revenue accounts in force, and what each department's goods cost.
+    departmentFacts: async (t, period, journals) => {
+      const [nodes, map, costs] = await Promise.all([orgStructureAdapter(input).nodes(t), postingMapOf(store, t), departmentCostsOf(input, t, period, journals)]);
+      const revenueAccounts = [...new Set((map?.rules ?? []).filter((r) => r.kind === 'sale' || r.kind === 'sale_return').flatMap((r) => r.legs.filter((l) => l.component === 'net').map((l) => l.account)))].sort();
+      return { departments: nodes.filter((n) => n.kind === 'department').map((n) => ({ departmentId: n.nodeId, name: n.name })), revenueAccounts, costs };
+    },
     attributor: async (t) => {
       const { storeOf } = await storeOfLocationResolver(input, t);
       const saleStore = new Map<string, { store: string | undefined; totalMinor: number }>();

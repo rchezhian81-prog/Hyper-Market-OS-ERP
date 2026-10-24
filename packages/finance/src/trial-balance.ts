@@ -235,3 +235,102 @@ export function centreReport(input: {
     attributedBps: totalDebit === 0 ? null : Math.round(((totalDebit - unassignedDebit) * 10_000) / totalDebit),
   };
 }
+
+// ── OB-340 — department sales and margin, tied to the ledger ─────────────────────────────────────────────────────────
+
+/** What one department's sold goods cost at the average buying cost (OB-39), worked out by head office from the sold lines. */
+export interface DepartmentCost {
+  readonly departmentId: string;
+  /** Goods sold less goods back, each at its average buying cost; null when any of them has no cost (never a zero). */
+  readonly costMinor: number | null;
+  /** The products sold in the department with no average buying cost — why the cost is not known. */
+  readonly notCosted: readonly string[];
+}
+
+export interface DepartmentSalesRow {
+  readonly departmentId: string;
+  readonly name: string | null;
+  /** Credits less debits on the revenue accounts on lines that name this department — the ledger's own figure. */
+  readonly salesMinor: number;
+  readonly costMinor: number | null;
+  /** Sales less cost, only when the cost is known (P-08: never a margin on a guessed cost). */
+  readonly marginMinor: number | null;
+  /** Margin as basis points of sales; null when either is not known or sales are zero. */
+  readonly marginBps: number | null;
+  readonly notCosted: readonly string[];
+  readonly journals: number;
+}
+
+export interface DepartmentSales {
+  readonly period: string;
+  /** The accounts revenue posts to (the `net` legs of the sale and sale-return rules in the mapping in force). */
+  readonly revenueAccounts: readonly string[];
+  readonly departments: readonly DepartmentSalesRow[];
+  /** Revenue on lines that name no department — products no department owns, and every journal that is not a till sale. */
+  readonly notInADepartmentMinor: number;
+  /** The month's revenue as the ledger holds it: credits less debits on the revenue accounts across every journal. */
+  readonly ledgerRevenueMinor: number;
+  /** Departments plus not-in-a-department equal the ledger — computed and shown, never assumed. */
+  readonly ties: boolean;
+  /** Returns whose net could not be told apart by department (left with the store), by id. */
+  readonly departmentNotKnown: readonly string[];
+}
+
+/**
+ * OB-340 (owner, 24 Oct 2026): each department's sales for a month straight off the posted journals — the day book carries
+ * every sale and sale-return line's exact net to its product's department, as a revenue line naming the department — and
+ * its margin against what its goods cost at the average buying cost (OB-39, the profitability report's rule). Pure.
+ * With no revenue account given (no mapping yet), the accounts are those the department lines themselves were posted to.
+ */
+export function departmentSales(input: {
+  readonly period: string;
+  readonly journals: readonly (LedgerJournal & { readonly dayBook?: { readonly departmentNotKnown?: readonly string[] } })[];
+  readonly departments: readonly { readonly departmentId: string; readonly name: string }[];
+  readonly revenueAccounts: readonly string[];
+  readonly costs?: readonly DepartmentCost[];
+}): DepartmentSales {
+  const ids = new Set(input.departments.map((d) => d.departmentId));
+  const inMonth = input.journals.filter((j) => j.period === input.period);
+  const accounts = new Set(input.revenueAccounts);
+  if (accounts.size === 0) {
+    for (const j of inMonth) for (const l of j.lines) if (l.centre !== undefined && ids.has(l.centre) && j.dayBook !== undefined) accounts.add(l.accountCode);
+  }
+  const sales = new Map<string, number>();
+  const journalsOf = new Map<string, Set<string>>();
+  let notIn = 0;
+  let ledger = 0;
+  const notKnown: string[] = [];
+  for (const j of inMonth) {
+    for (const id of j.dayBook?.departmentNotKnown ?? []) notKnown.push(id);
+    for (const l of j.lines) {
+      if (!accounts.has(l.accountCode)) continue;
+      const v = l.creditMinor - l.debitMinor;
+      ledger += v;
+      const d = l.centre !== undefined && ids.has(l.centre) ? l.centre : undefined;
+      if (d === undefined) { notIn += v; continue; }
+      sales.set(d, (sales.get(d) ?? 0) + v);
+      const js = journalsOf.get(d) ?? new Set<string>();
+      js.add(j.entryId);
+      journalsOf.set(d, js);
+    }
+  }
+  const costOf = new Map((input.costs ?? []).map((c) => [c.departmentId, c] as const));
+  const rows = input.departments.map((d): DepartmentSalesRow => {
+    const salesMinor = sales.get(d.departmentId) ?? 0;
+    const c = costOf.get(d.departmentId);
+    // A department that sold nothing cost nothing; one that sold with no worked-out cost is "not known", never zero.
+    const costMinor = c === undefined ? (salesMinor === 0 ? 0 : null) : c.costMinor;
+    const marginMinor = costMinor === null ? null : salesMinor - costMinor;
+    return {
+      departmentId: d.departmentId, name: d.name, salesMinor, costMinor, marginMinor,
+      marginBps: marginMinor === null || salesMinor === 0 ? null : Math.round((marginMinor * 10_000) / salesMinor),
+      notCosted: c?.notCosted ?? [], journals: journalsOf.get(d.departmentId)?.size ?? 0,
+    };
+  }).sort((a, b) => a.departmentId.localeCompare(b.departmentId));
+  const inDepartments = rows.reduce((s, r) => s + r.salesMinor, 0);
+  return {
+    period: input.period, revenueAccounts: [...accounts].sort(), departments: rows,
+    notInADepartmentMinor: notIn, ledgerRevenueMinor: ledger, ties: inDepartments + notIn === ledger,
+    departmentNotKnown: [...new Set(notKnown)].sort(),
+  };
+}
