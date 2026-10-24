@@ -80378,7 +80378,7 @@
                     "last4",
                     "network"
                   ],
-                  "description": "The ONLY card facts a sale carries (hard rule #3): a provider token reference, the last four digits and the network. Never a card number, CVV or expiry.",
+                  "description": "The ONLY card facts a sale carries (hard rule #3): a provider token reference, the last four digits and the network — never the full card, its security code or its expiry.",
                   "properties": {
                     "tokenRef": {
                       "type": "string",

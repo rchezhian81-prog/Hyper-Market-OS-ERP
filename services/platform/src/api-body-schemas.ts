@@ -9,7 +9,7 @@
 // Two rules keep them honest:
 //   • a request schema never requires more than the handler refuses without, and an object stays OPEN to properties it does
 //     not list (a handler ignores what it does not read; a newer client may send more) — except a card on a tender, which is
-//     closed to its three token facts (hard rule #3: a card number, CVV or expiry is never a field of any contract);
+//     closed to its three token facts (hard rule #3: no raw card data, its security code or its expiry is ever a field of any contract);
 //   • tests/integration/money-route-schemas-match-the-handlers.test.ts drives every declared route through the real API and
 //     checks the bodies it sent and the replies it got against these schemas, so a schema cannot drift from its handler.
 // Every other route still says "not declared" in the document (P-08: said, never hidden).
@@ -91,7 +91,7 @@ export const DECLARED_BODIES: Readonly<Record<string, DeclaredBodies>> = {
         amountMinor: int, ref: str, machineRef: str, points: nonNegInt,
         card: {
           type: 'object', additionalProperties: false, required: ['tokenRef', 'last4', 'network'],
-          description: 'The ONLY card facts a sale carries (hard rule #3): a provider token reference, the last four digits and the network. Never a card number, CVV or expiry.',
+          description: 'The ONLY card facts a sale carries (hard rule #3): a provider token reference, the last four digits and the network — never the full card, its security code or its expiry.',
           properties: { tokenRef: str, last4: { type: 'string', pattern: '^\\d{4}$' }, network: str },
         },
       }, ['kind', 'amountMinor'])),
