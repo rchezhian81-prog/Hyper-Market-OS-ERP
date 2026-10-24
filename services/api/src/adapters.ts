@@ -1218,6 +1218,19 @@ export function gstr1SubmissionAdapter(input: {
  * `OutwardSupplyRecorded` fact; GSTR-1 folds over them. Idempotent per document — a re-record collapses,
  * and a correction is a new document / credit note, never an overwrite (hard rule #2).
  */
+/**
+ * OB-34 "A": the value of the points a member had paid with that this return gave back to them — head office's give-back
+ * fact on the original sale's loyalty stream — or 0. One reading for the day book and the GST return alike, so both
+ * reverse the same returned value.
+ */
+async function pointsGivenBackOn(store: EventStore, tenantId: string, originalSaleId: string | null, returnId: string): Promise<number> {
+  if (originalSaleId === null) return 0;
+  const given = (await store.readStream(tenantId, streamName(STREAM.loyalty, 'sale', originalSaleId)))
+    .filter((e) => e.event.type === 'LoyaltyReturnGaveBack').map((e) => payloadOf<ReturnGiveBack>(e))
+    .find((g) => g.returnId === returnId);
+  return given === undefined || given.valueMinor <= 0 ? 0 : given.valueMinor;
+}
+
 export function gstReturnsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -1269,7 +1282,7 @@ export function gstReturnsAdapter(input: {
 
     // RETURNS-netting for GSTR-1 (A5, CGST s.34): the returned tax lines whose return was PROCESSED in the
     // window, each reversing the tax at the rate it was SOLD. A return reverses in the proportion it was
-    // charged, so the ACTUAL refund is allocated across the return's lines by their original sale value, and
+    // charged, so the RETURNED VALUE is allocated across the return's lines by their original sale value, and
     // the HSN + rate come off the ORIGINAL sale's frozen line (a rate change since the sale must not rewrite
     // the reversal). A return whose original sale is not on file, or a line whose original carried no HSN,
     // has no frozen facts here and falls to the catalogue table / `unmapped` on the returns side — surfaced,
@@ -1278,11 +1291,14 @@ export function gstReturnsAdapter(input: {
       const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from: fromIso, to: toIso });
       const out: PeriodSoldLine[] = [];
       for (const e of returns) {
-        const ret = payloadOf<{
-          readonly originalSaleId: string | null; readonly refundMinor: number; readonly processedAt: string;
-          readonly lines: readonly { readonly productId: string; readonly uom: string; readonly quantityMinor: number }[];
-        }>(e);
+        const ret = payloadOf<ReturnRecord>(e);
         const day = ret.processedAt.slice(0, 10);
+        // The value the return reverses is the SAME the day book reverses (`returnedValue`, OB-34 "A"): the money
+        // refunded, or on an exchange what was applied plus any refunded balance — PLUS the points the member had paid
+        // with that this return gave back. Allocating only `refundMinor` reversed the GST on the money share alone, so
+        // a return of goods partly paid with points left output tax on the return that the books had already reversed.
+        const pointsGivenBackMinor = await pointsGivenBackOn(input.store, tenantId, ret.originalSaleId, ret.returnId);
+        const valueMinor = returnedValueOf({ ...ret, ...(pointsGivenBackMinor > 0 ? { pointsGivenBackMinor } : {}) });
         const held = ret.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${ret.originalSaleId}`);
         const saleLines = held === undefined ? [] : (held.event.payload as {
           readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly unitPriceMinor: number; readonly lineTotalMinor: number; readonly hsnCode?: string; readonly taxRateBps?: number }[];
@@ -1298,7 +1314,7 @@ export function gstReturnsAdapter(input: {
         let allocated = 0;
         ret.lines.forEach((l, i) => {
           const lineRefund = totalWeight <= 0 ? 0
-            : (i === ret.lines.length - 1 ? ret.refundMinor - allocated : Math.round((ret.refundMinor * weights[i]!) / totalWeight));
+            : (i === ret.lines.length - 1 ? valueMinor - allocated : Math.round((valueMinor * weights[i]!) / totalWeight));
           allocated += lineRefund;
           if (lineRefund <= 0) return; // nothing to reverse on this line
           const o = origByProduct.get(l.productId);
@@ -12123,11 +12139,8 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
       // OB-34 "A": the value of the points each return gave back to the member (head office's give-back fact, on the
       // sale's loyalty stream) rides on the return, so the day book reverses the whole returned value.
       return Promise.all(returns.map(async (r) => {
-        if (r.originalSaleId === null) return r;
-        const given = (await input.store.readStream(tenantId, streamName(STREAM.loyalty, 'sale', r.originalSaleId)))
-          .filter((e) => e.event.type === 'LoyaltyReturnGaveBack').map((e) => payloadOf<ReturnGiveBack>(e))
-          .find((g) => g.returnId === r.returnId);
-        return given === undefined || given.valueMinor <= 0 ? r : { ...r, pointsGivenBackMinor: given.valueMinor };
+        const pointsGivenBackMinor = await pointsGivenBackOn(input.store, tenantId, r.originalSaleId, r.returnId);
+        return pointsGivenBackMinor > 0 ? { ...r, pointsGivenBackMinor } : r;
       }));
     },
     originalSales: async (tenantId, saleIds) => {
