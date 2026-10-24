@@ -468,10 +468,15 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       const orderId = (await ordersOf(current)).at(0)!.orderId;
       // Asking where it is writes nothing: the only new call is one authenticated GET of the customer's own order.
       const posts = rec.apiCalls.filter((c) => c.method === 'POST').length;
+      const before = rec.apiCalls.length;
       await page.click('#track-order');
       await page.locator('#delivery-say', { hasText: 'No driver has your order yet' }).waitFor({ timeout: 10_000 });
       expect(rec.apiCalls.filter((c) => c.method === 'POST')).toHaveLength(posts);
-      expect(rec.apiCalls.at(-1)).toEqual({ method: 'GET', path: `/v1/storefront/orders/${orderId}`, auth: true });
+      // OB-294 follow-up: asking also reads the order's own delivery code and arrival time — every new call is an
+      // authenticated GET of this customer's own order, and the order itself is among them.
+      const asked = rec.apiCalls.slice(before);
+      expect(asked.every((c) => c.method === 'GET' && c.auth && c.path.startsWith(`/v1/storefront/orders/${orderId}`))).toBe(true);
+      expect(asked).toContainEqual({ method: 'GET', path: `/v1/storefront/orders/${orderId}`, auth: true });
 
       // The store confirms, packs and dispatches it; the driver sets off.
       await staff(`/v1/orders/${orderId}/transition`, OWNER, { event: 'confirm' });

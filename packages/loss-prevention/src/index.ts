@@ -17,3 +17,7 @@ export * from './fraud-signals';
 export * from './cases';
 export * from './auto-open-from-shortage';
 export * from './worklist';
+// OB-288 (audit-2 P4): the four detectors over the shop's stored registers, reconciled to their records (M15-FR-02),
+// and the owner's related-party list and its match on GSTIN, phone and bank account (M15-FR-03 · OB-301).
+export * from './signal-sources';
+export * from './related-party';

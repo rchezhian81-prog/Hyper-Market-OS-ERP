@@ -41,7 +41,7 @@ export interface BoardRoute {
   readonly cash: { readonly fromStops: { readonly expectedMinor: number; readonly collectedMinor: number; readonly cashHeldMinor: number }; readonly settlement: unknown; readonly handover: { readonly countedMinor: number; readonly varianceMinor: number; readonly material: boolean } | null };
 }
 export interface Board { readonly runDate: string; readonly routes: readonly BoardRoute[]; readonly held: readonly { readonly orderId: string; readonly standing: string }[]; readonly plan: { readonly unplanned: Plan['unplanned'] } | null }
-export interface ControlNumber { readonly key: string; readonly value: unknown; readonly state: 'set' | 'not_set'; readonly words: { readonly en: string; readonly ta: string }; readonly setBy?: string }
+export interface ControlNumber { readonly key: string; readonly value: unknown; readonly state: 'set' | 'default' | 'not_set'; readonly words: { readonly en: string; readonly ta: string }; readonly setBy?: string; readonly decidedBy?: string }
 export interface Controls { readonly numbers: readonly ControlNumber[]; readonly notSet: readonly string[] }
 export interface ContributionRow { readonly orderId: string; readonly standing: string; readonly gate: { readonly detail: string; readonly assessment: { readonly contributionMinor: number } | null; readonly missing: readonly string[] } }
 export interface ContributionRead { readonly thresholdMinor: number | null; readonly thresholdState: 'set' | 'not_set'; readonly orders: readonly ContributionRow[] }
@@ -67,6 +67,13 @@ export const DISPATCH_COPY = {
     codeK: 'Code', fenceK: 'Where', photoK: 'Pictures kept', noProofYet: 'no door yet',
     code_matched: 'matched', code_wrong: 'WRONG', code_not_issued: 'no code issued', code_not_given: 'not a code proof',
     fence_inside: 'at the address', fence_outside: 'AWAY from the address', fence_radius_not_set: 'radius not set', fence_no_device_location: 'no phone location', fence_no_address_location: 'no address on record',
+    // OB-343 · OB-344: every flag on a stop in words — a wrong code or a hand-over away from the address is never a code word.
+    defaultK: 'the shop’s default', needsLook: 'Needs a person to look:',
+    flag_delivery_code_wrong: 'the code the driver typed is NOT the customer’s', flag_delivery_code_not_issued: 'a code was typed but none was issued for this order',
+    flag_delivery_code_missing: 'no code was given', flag_outside_geofence: 'handed over away from the address (farther than the radius)',
+    flag_proof_image_missing: 'the photo or signature did not arrive', flag_geofence_mismatch: 'the phone said it was away from the address',
+    flag_delivered_without_proof_kind: 'delivered with no proof', flag_contribution_flagged: 'the order loses money (contribution rule)',
+    flag_driver_unknown: 'the driver named is not known', flag_driver_lacks_authority: 'the driver named may not deliver',
     heldH: 'Orders held under the contribution rule', showHeld: 'Show the contribution rule', thresholdK: 'Owner’s threshold', notSet: 'Not set — the rule only flags',
     approve: 'Approve', decline: 'Decline', decisionL: 'Reason', decided: 'Recorded:',
     st_held: 'Held — needs a manager', st_declined: 'Declined', st_approved: 'Approved', st_clear: 'Clear', st_flag_only: 'Flag only', st_not_assessed: 'Not assessed',
@@ -97,6 +104,12 @@ export const DISPATCH_COPY = {
     codeK: 'குறியீடு', fenceK: 'இடம்', photoK: 'வைத்த படங்கள்', noProofYet: 'இன்னும் வாசல் இல்லை',
     code_matched: 'பொருந்தியது', code_wrong: 'தவறு', code_not_issued: 'குறியீடு வழங்கப்படவில்லை', code_not_given: 'குறியீட்டு நிரூபணம் அல்ல',
     fence_inside: 'முகவரியில்', fence_outside: 'முகவரியிலிருந்து தொலைவில்', fence_radius_not_set: 'ஆரம் அமைக்கப்படவில்லை', fence_no_device_location: 'ஃபோன் இடம் இல்லை', fence_no_address_location: 'பதிவில் முகவரி இல்லை',
+    defaultK: 'கடையின் இயல்பு மதிப்பு', needsLook: 'ஒருவர் பார்க்க வேண்டும்:',
+    flag_delivery_code_wrong: 'டிரைவர் உள்ளிட்ட குறியீடு வாடிக்கையாளருடையது அல்ல', flag_delivery_code_not_issued: 'குறியீடு உள்ளிடப்பட்டது, ஆனால் இந்த ஆர்டருக்கு வழங்கப்படவில்லை',
+    flag_delivery_code_missing: 'குறியீடு கொடுக்கப்படவில்லை', flag_outside_geofence: 'முகவரியிலிருந்து தொலைவில் ஒப்படைக்கப்பட்டது (ஆரத்திற்கு அப்பால்)',
+    flag_proof_image_missing: 'படம் அல்லது கையொப்பம் வரவில்லை', flag_geofence_mismatch: 'ஃபோன் முகவரியிலிருந்து தொலைவில் இருப்பதாகச் சொன்னது',
+    flag_delivered_without_proof_kind: 'நிரூபணம் இல்லாமல் டெலிவரி', flag_contribution_flagged: 'ஆர்டர் நஷ்டம் தருகிறது (பங்களிப்பு விதி)',
+    flag_driver_unknown: 'குறிப்பிட்ட டிரைவர் தெரியவில்லை', flag_driver_lacks_authority: 'குறிப்பிட்ட டிரைவர் டெலிவரி செய்ய அனுமதி இல்லை',
     heldH: 'பங்களிப்பு விதியின் கீழ் நிறுத்திய ஆர்டர்கள்', showHeld: 'பங்களிப்பு விதியைக் காட்டு', thresholdK: 'உரிமையாளரின் வரம்பு', notSet: 'அமைக்கப்படவில்லை — விதி கொடி மட்டும் காட்டும்',
     approve: 'அனுமதி', decline: 'மறு', decisionL: 'காரணம்', decided: 'பதிவானது:',
     st_held: 'நிறுத்தப்பட்டது — மேலாளர் தேவை', st_declined: 'மறுக்கப்பட்டது', st_approved: 'அனுமதிக்கப்பட்டது', st_clear: 'சரி', st_flag_only: 'கொடி மட்டும்', st_not_assessed: 'மதிப்பிடப்படவில்லை',
@@ -110,6 +123,11 @@ export const DISPATCH_COPY = {
   },
 } as const;
 export const dispatchWords = (lang: Lang, key: string): string => (DISPATCH_COPY[lang] as Record<string, string>)[key] ?? (DISPATCH_COPY.en as Record<string, string>)[key] ?? key;
+/** A stop's flags in the reader's words (OB-343 · OB-344) — a flag with no words is shown as itself, never hidden. */
+export const flagWords = (lang: Lang, flags: readonly string[]): readonly string[] => flags.map((f) => {
+  const w = dispatchWords(lang, `flag_${f}`);
+  return w === `flag_${f}` ? f.replace(/_/g, ' ') : w;
+});
 export const dispatchOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => dispatchWords(lang, k), out);
 
 /** Rupees with paise, Indian grouping — from whole paise. */

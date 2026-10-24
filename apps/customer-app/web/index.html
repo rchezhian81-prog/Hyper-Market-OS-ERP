@@ -133,6 +133,9 @@
       .stars button[aria-pressed='true'] { background: var(--good); color: var(--on-accent); }
       footer.legal { padding: 8px 16px 16px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
       footer.legal a { color: var(--ink); min-height: var(--tap); display: inline-flex; align-items: center; }
+      /* ── OB-350: scan-and-go — the code the till keys, large and plain ── */
+      .big-code { font-size: 2.4rem; font-weight: 700; letter-spacing: 0.3em; text-align: center; margin: 8px 0; font-variant-numeric: tabular-nums; }
+      #sg-lines .row button { min-height: 56px; min-width: 56px; }
       /* ── OB-288 wave 3: offers, repeat orders, addresses, occasions, help, suggestions, barcode ── */
       .quote { display: grid; gap: 4px; margin: 0; }
       .quote div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
@@ -176,6 +179,7 @@
       <button id="tab-basket" type="button">Basket</button>
       <button id="tab-order" type="button">My order</button>
       <button id="tab-account" type="button">My account</button>
+      <button id="tab-scan" type="button">Scan and go</button>
       <button id="tab-privacy" type="button">My information</button>
     </nav>
 
@@ -308,11 +312,14 @@
         <!-- OB-77: where the driver says my delivery is, and as of when — read back from the shop, never guessed. -->
         <button id="track-order" class="wide" type="button" hidden>Where is my order?</button>
         <p class="say" id="delivery-say" role="status" aria-live="polite" hidden></p>
-        <!-- The delivery code and the arrival time — "not given yet" until the shop's delivery record carries them. -->
+        <!-- OB-294 · D08-FR-05: head office's 4-digit code for MY order and the driver's last stop with an ETA — "not given yet"
+             until head office gives them; asked on a tap, never on a timer. -->
+        <button id="handover-show" class="wide" type="button" hidden>Show my delivery code and arrival time</button>
         <dl class="say duties" id="handover" hidden>
           <div><dt id="handover-code-label">Delivery code</dt><dd id="handover-code">—</dd></div>
           <div><dt id="handover-eta-label">Arriving</dt><dd id="handover-eta">—</dd></div>
         </dl>
+        <p class="note" id="handover-say" role="status" aria-live="polite"></p>
         <!-- A05: answers from the shop's own records, marked as automatic; anything else goes to a person. -->
         <h2 id="ask-title">Ask the shop's assistant</h2>
         <div class="pick" id="ask-topics" role="radiogroup" aria-labelledby="ask-title"></div>
@@ -394,6 +401,20 @@
         <button id="occasion-save" class="wide" type="button">Save the day</button>
         <p class="note" id="occasion-say" role="status" aria-live="polite"></p>
 
+        <!-- OB-351 · M17-FR-02: invite a friend — my code, the rewards ("not set" until the owner enters them), my referrals. -->
+        <h2 id="referral-title">Invite a friend</h2>
+        <p class="lead" id="referral-lead"></p>
+        <dl class="say duties" id="referral-box" hidden>
+          <div><dt id="referral-code-label">My code</dt><dd id="referral-code">—</dd></div>
+          <div><dt id="referral-mine-label">I earn</dt><dd id="referral-mine">—</dd></div>
+          <div><dt id="referral-friend-label">My friend earns</dt><dd id="referral-friend">—</dd></div>
+        </dl>
+        <div class="rows" id="referrals"></div>
+        <label for="referral-claim-code" id="referral-claim-label">A friend gave me a code</label>
+        <input id="referral-claim-code" autocomplete="off" autocapitalize="characters" maxlength="12" />
+        <button id="referral-claim" class="wide" type="button">Use my friend's code</button>
+        <p class="note" id="referral-say" role="status" aria-live="polite"></p>
+
         <h2 id="ai-title">Suggestions</h2>
         <p class="say ai-notice" id="ai-lead"></p>
         <div class="consent">
@@ -405,6 +426,36 @@
         </div>
         <div class="rows" id="bought-before"></div>
         <p class="note" id="ai-say" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- OB-350 · R8-3: scan-and-go — the phone builds the basket and shows the total; payment and the bag check are at a
+           till lane, where the till re-prices every line. Nothing on a timer; every word in English and Tamil. -->
+      <section id="view-scan" hidden>
+        <h1 id="sg-title">Scan and go</h1>
+        <p class="lead" id="sg-lead"></p>
+        <button id="sg-scan" class="primary wide" type="button" hidden>Scan a barcode</button>
+        <div id="sg-scan-box" hidden>
+          <video id="sg-video" playsinline muted></video>
+          <button id="sg-scan-stop" class="wide" type="button">Stop scanning</button>
+        </div>
+        <label for="sg-typed" id="sg-typed-label">Or type the number under the barcode</label>
+        <input id="sg-typed" inputmode="numeric" autocomplete="off" maxlength="14" />
+        <button id="sg-add" class="wide" type="button">Add to my scan-and-go basket</button>
+        <p class="note" id="sg-say" role="status" aria-live="polite"></p>
+        <div class="rows" id="sg-lines"></div>
+        <dl class="say duties" id="sg-totals">
+          <div><dt id="sg-shelf-label">On the shelf (before offers)</dt><dd id="sg-shelf">—</dd></div>
+          <div><dt id="sg-shop-label">The shop's price</dt><dd id="sg-shop">—</dd></div>
+        </dl>
+        <p class="note" id="sg-price-note"></p>
+        <button id="sg-quote" class="wide" type="button">See the shop's price</button>
+        <button id="sg-till" class="primary wide" type="button">Go to a till</button>
+        <div class="say done" id="sg-code-box" hidden>
+          <p id="sg-code-label">Show this code at the till</p>
+          <p class="big-code" id="sg-code" aria-live="polite">——————</p>
+          <p class="note" id="sg-code-say"></p>
+        </div>
+        <button id="sg-new" class="wide" type="button" hidden>Start a new basket</button>
       </section>
 
       <!--
@@ -463,5 +514,6 @@
     <script type="module" src="./app.js"></script>
     <script type="module" src="./online-store.js"></script>
     <script type="module" src="./customer-commerce.js"></script>
+    <script type="module" src="./scan-and-go.js"></script>
   </body>
 </html>

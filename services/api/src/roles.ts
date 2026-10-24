@@ -219,10 +219,33 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // the synced route re-checks the PERSON named from their own grants, so this releases nothing by itself.
       'quality.hold.release.sync',
       // ── OB-288 integration follow-ups — end
+      // ── OB-288 customer & delivery follow-ups — begin
+      // OB-350: held ONLY so the owner can approve granting a store computer its role (no-escalation rule) — the recall
+      // itself is the box's: it names the till and the cashier the box verified.
+      'storefront.scango.recall',
+      // ── OB-288 customer & delivery follow-ups — end
       // ── OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
       // OB-295: the loyalty programme's tiers and points expiry are the owner's numbers alone.
       'loyalty.programme.configure',
       // ── OB-288 wave 3 — end
+      // ── OB-288 LP, workforce, facilities and adoption — begin
+      // OB-301: the owner keeps the related-party list, approves an order with a related party, sets the staff-discount cap
+      // and the service-desk till; a manager records a staff member's own customer account. M15-FR-03: the owner or the
+      // accountant records an employee's salary account for the duplicate-account control.
+      'lp.relatedparty.manage', 'purchase.relatedparty.approve', 'lp.staffpurchase.manage', 'lp.staffaccount.record', 'hr.salaryaccount.record',
+      // M25-FR-03/04 · QG-09 · D11-FR-04/06 · OB-320/323: training and competency, the role curriculum (the owner's to
+      // approve), floor champions (the owner names them), the adoption gate, the help centre and acknowledgement, the
+      // emergency contacts and drills, the appointment letter's words (the owner's) and making a letter.
+      'workforce.training.manage', 'workforce.curriculum.approve', 'workforce.champion.name', 'workforce.adoption.read',
+      'workforce.help.read', 'workforce.sop.ack.self', 'workforce.emergency.manage',
+      'hr.appointmentletter.wording', 'hr.appointmentletter.issue',
+      // Held ONLY so the owner can approve granting the store computer these (no-escalation rule, OB-36): the help library
+      // it pulls for its offline help page, and the acknowledgements it relays (head office re-checks each person).
+      'workforce.help.pull', 'workforce.sop.ack.sync',
+      // …and the manual equipment reading and the stock loss captured on its served pages with the line down (M26-FR-02 ·
+      // M28-FR-01): head office re-checks each person and runs its own reading and write-off routes.
+      'facilities.reading.sync', 'inventory.writeoff.sync',
+      // ── OB-288 LP, workforce, facilities and adoption — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
@@ -493,6 +516,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // B23: read the online store's duties and publish a complete listing; WF-16: work online returns.
       'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
       // ── R4 Lane 2 — end
+      // ── OB-288 LP, workforce, facilities and adoption — begin
+      // OB-301: the manager records a staff member's own customer account (never their own).
+      'lp.staffaccount.record',
+      // M25-FR-03/04 · QG-09 · D11-FR-06 · OB-323: assign and record training (competency by a second person), read the
+      // adoption gate, read and acknowledge their own SOPs, record an emergency drill, make an appointment letter.
+      'workforce.training.manage', 'workforce.adoption.read', 'workforce.help.read', 'workforce.sop.ack.self', 'hr.appointmentletter.issue',
+      // ── OB-288 LP, workforce, facilities and adoption — end
     ],
   },
   {
@@ -576,6 +606,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
       'workforce.consent.self', 'workforce.attendance.mark',
       // ── R3 Lane 4 — end
+      // ── OB-288 LP, workforce, facilities and adoption — begin
+      // M25-FR-04: a cashier reads the SOPs for their own role and acknowledges them, for themselves only.
+      'workforce.help.read', 'workforce.sop.ack.self',
+      // ── OB-288 LP, workforce, facilities and adoption — end
     ],
   },
   {
@@ -667,6 +701,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // M03-FR-03 §28 "tax change with Finance approval": the accountant approves a GST rate change the catalogue keeper asked for.
       'catalogue.tax.approve',
       // ── OB-288 P2 — end
+      // ── OB-288 LP, workforce, facilities and adoption — begin
+      // M15-FR-03: the accountant records an employee's salary account (never their own) for the duplicate-account control.
+      'hr.salaryaccount.record',
+      // M25-FR-04: the accountant reads the SOPs for their own role and acknowledges them.
+      'workforce.help.read', 'workforce.sop.ack.self',
+      // ── OB-288 LP, workforce, facilities and adoption — end
     ],
   },
   {
@@ -816,6 +856,20 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // re-checks that person's own quality.hold.release), and read which batches are held. Never place a hold.
       'quality.hold.release.sync',
       // ── OB-288 integration follow-ups — end
+      // ── OB-288 customer & delivery follow-ups — begin
+      // OB-350: bring a customer's scan-and-go basket up at a till lane, for the cashier the box verified — once. The till
+      // re-prices every line from its own pack; nothing here takes money.
+      'storefront.scango.recall',
+      // ── OB-288 customer & delivery follow-ups — end
+      // ── OB-288 LP, workforce, facilities and adoption — begin
+      // M25-FR-04 "help works offline": the box pulls the help library for its help page and relays an acknowledgement a
+      // person gave there (head office re-checks that person's own right to acknowledge).
+      'workforce.help.pull', 'workforce.sop.ack.sync',
+      // M26-FR-02 "readings cache/queue" · M28-FR-01 "queued; approval on sync": the box pulls its store's monitored
+      // equipment and relays a manual reading and a captured stock loss (head office re-checks each person; a big loss
+      // waits there for a second person).
+      'facilities.asset.read', 'facilities.reading.sync', 'inventory.writeoff.sync',
+      // ── OB-288 LP, workforce, facilities and adoption — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

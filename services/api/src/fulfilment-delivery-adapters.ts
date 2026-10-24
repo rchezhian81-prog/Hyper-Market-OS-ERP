@@ -26,15 +26,19 @@ import type { SlotBooking } from '../../orders/src/delivery-service';
 import {
   STREAM, streamName, ordersAdapter, ordersForExport, catalogueAdapter, warehouseAdapter, assignmentsAdapter, fulfilmentWaveAdapter,
   driverRunAdapter, dispatchAdapter, deliveryServiceAdapter, serviceabilityAdapter, syncedGoodsReceiptAdapter, permissionsHeldBy, assignedStoresOf,
+  financeAdapter,
 } from './adapters';
+import type { StoredPostingMap } from '../../finance/src/day-book';
+import type { JournalEntry } from '../../finance/src/index';
 import { latestRoutes } from '../../fulfilment/src/assignments';
 import { latestStops, type DoorProofInput } from '../../fulfilment/src/driver-runs';
 import { deliveryControlsRoutes, foldControls, judgeOnce, type ControlsChange, type ContributionDecision, type ContributionRecord, type DeliveryControlsDeps } from '../../fulfilment/src/delivery-controls';
 import { deliveryProofRoutes, codeFor, type DeliveryProofDeps, type IssuedCode, type OrderStop, type ProofImage } from '../../fulfilment/src/delivery-proof';
 import { waveBuilderRoutes, type CandidateOrder, type WaveBuilderDeps } from '../../fulfilment/src/wave-builder';
 import { dispatchBoardRoutes, type DeliveryBooking, type DispatchBoardDeps } from '../../fulfilment/src/dispatch-board';
-import { orderRoutingRoutes, type OrderRoutingDeps, type RoutingDecision, type RoutingLocation } from '../../fulfilment/src/order-routing';
-import { fleetSettlementRoutes, type FleetSettlementDeps, type FleetSettlementStep } from '../../fulfilment/src/fleet-settlement';
+import { orderRoutingRoutes, decideRoute, keepRoute, type OrderRoutingDeps, type RoutingDecision, type RoutingLocation } from '../../fulfilment/src/order-routing';
+import type { StorefrontRouting } from '../../orders/src/storefront';
+import { fleetSettlementRoutes, type FleetSettlementDeps, type FleetSettlementStep, type FleetJournal } from '../../fulfilment/src/fleet-settlement';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -61,6 +65,8 @@ const S = {
   routing: (orderId: string) => streamName(STREAM.delivery, 'routing', orderId),
   routingSlot: (locationId: string, slot: string) => streamName(STREAM.delivery, 'routing-slot', locationId, slot),
   fleet: (routeId: string) => streamName(STREAM.delivery, 'fleet-settlement', routeId),
+  /** D09-FR-06: every route that has a settlement step — so the books can find every movement without a scan. */
+  fleetIndex: streamName(STREAM.delivery, 'fleet-settlement-index'),
 };
 
 const digest = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 32);
@@ -85,6 +91,7 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
   const assignments = assignmentsAdapter({ store, now });
   const runs = driverRunAdapter({ store, now });
   const costs = syncedGoodsReceiptAdapter({ store, now });
+  const fin = financeAdapter({ store, now });
   const audit = input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit };
 
   const ordersAt = async (tenantId: string, storeId: string): Promise<readonly CandidateOrder[]> =>
@@ -333,7 +340,18 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
     },
     stopUpdates: async (t, r) => runs.stopUpdates(t, r),
     steps: (t, routeId) => payloads<FleetSettlementStep>(store, t, S.fleet(routeId), 'FleetSettlementStep'),
-    recordStep: (t, s) => put(store, t, S.fleet(s.routeId), 'FleetSettlementStep', `${s.routeId}|${s.step}|${s.by}|${s.at}`, s.at, s),
+    recordStep: async (t, s) => {
+      await put(store, t, S.fleet(s.routeId), 'FleetSettlementStep', `${s.routeId}|${s.step}|${s.by}|${s.at}`, s.at, s);
+      // The index holds the route once (keyed on it), however many steps it has.
+      await put(store, t, S.fleetIndex, 'FleetSettlementRouteIndexed', s.routeId, s.at, { routeId: s.routeId });
+    },
+    // D09-FR-06: the settlement reaches the books through the accountant's posting map (the same gate referrals use).
+    books: {
+      periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal,
+      settledRoutes: async (t) => [...new Set((await payloads<{ routeId: string }>(store, t, S.fleetIndex, 'FleetSettlementRouteIndexed')).map((x) => x.routeId))].sort(),
+      postingMap: async (t) => (await payloads<StoredPostingMap>(store, t, STREAM.finance, 'PostingMapDefined')).at(-1),
+      fleetJournals: async (t) => (await payloads<JournalEntry | FleetJournal>(store, t, STREAM.finance, 'JournalPosted')).filter((j): j is FleetJournal => 'fleet' in j),
+    },
   };
 
   return { controls, proof, judgeDoorProof, waveBuilder, board, routing, fleet, latestStops };
@@ -356,4 +374,17 @@ export function fulfilmentDeliveryRoutes(input: FulDelInput): readonly Route[] {
 /** Spread into the driver-run relay's deps: the code and the proof location judged when the phone's stop reaches head office. */
 export function fulDelDriverRunHooks(input: Omit<FulDelInput, 'store'> & { readonly store: EventStore }): { readonly judgeDoorProof: ReturnType<typeof fulDelDeps>['judgeDoorProof'] } {
   return { judgeDoorProof: fulDelDeps(input).judgeDoorProof };
+}
+
+/**
+ * D09-FR-01 · OB-300 (follow-up, 24 Oct 2026): the branch routing the storefront consults when a customer PLACES a delivery
+ * order — the same `routeOrder` on the same facts as `POST /v1/storefront/route-order/:orderId`, and the decision kept on
+ * the same register, so a placed order holds its branch's place in the slot.
+ */
+export function fulDelStorefrontRouting(input: Omit<FulDelInput, 'store'> & { readonly store: EventStore }): StorefrontRouting {
+  const d = fulDelDeps(input);
+  return {
+    decide: (t, req) => decideRoute(d.routing, t, req),
+    keep: (t, branchId, decision) => keepRoute(d.routing, t, branchId, decision),
+  };
 }

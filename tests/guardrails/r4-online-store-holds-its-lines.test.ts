@@ -66,7 +66,8 @@ describe('guardrail: the online store holds its lines (R4 Lane 2)', () => {
     // OB-322: the only speech engine is the phone's own recogniser — picked in the bundle's entry, driven in voice-search.ts;
     // no other file names it. The camera is asked for only by the barcode screen, which sends nothing anywhere.
     const SPEECH_OK = ['apps/customer-app/src/voice-search.ts', 'apps/customer-app/src/browser-entry.ts'];
-    const CAMERA_OK = ['apps/customer-app/web/customer-commerce.js', 'apps/customer-app/src/barcode-scan.ts', 'apps/customer-app/src/browser-entry.ts'];
+    // OB-350: scan-and-go is the second barcode screen — it reads the code on the phone and sends only ids and counts.
+    const CAMERA_OK = ['apps/customer-app/web/customer-commerce.js', 'apps/customer-app/web/scan-and-go.js', 'apps/customer-app/src/barcode-scan.ts', 'apps/customer-app/src/browser-entry.ts'];
     const files = readdirSync('apps/customer-app/src').map((x) => join('apps/customer-app/src', x)).concat(readdirSync('apps/customer-app/web').filter((x) => x.endsWith('.js') && !x.endsWith('.bundle.js')).map((x) => join('apps/customer-app/web', x))); // the bundle is built from src
     for (const f of files) {
       if (!SPEECH_OK.includes(f)) expect(code(f), f).not.toMatch(/SpeechRecognition/);

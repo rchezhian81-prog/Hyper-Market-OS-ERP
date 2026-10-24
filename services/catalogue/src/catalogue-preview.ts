@@ -28,6 +28,7 @@ import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till
 import { liquorReason } from '../../../packages/restricted-sales/src/liquor';
 import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
 import { cessRateOn, type CessRate, type CessRatePeriod } from '../../../packages/finance/src/cess';
+import type { BundleDefinition } from '../../../packages/product/src/bundles';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
@@ -58,6 +59,11 @@ export interface CataloguePreviewDeps {
    * product of that HSN, signed. Absent → no product carries a cess (a deployment that has not wired it).
    */
   readonly cessSchedule?: (tenantId: string, hsnCode: string) => Promise<readonly CessRatePeriod[]> | readonly CessRatePeriod[];
+  /**
+   * OB-306 (M03-FR-02): the own-barcode bundles in force (`bundlesInForce`). Each one whose bundle product reaches the pack
+   * rides it, signed, so the till explodes a bundle sale into its components offline. Absent → no bundles carried.
+   */
+  readonly bundles?: (tenantId: string) => Promise<readonly BundleDefinition[]> | readonly BundleDefinition[];
   readonly now: () => string;
 }
 
@@ -242,12 +248,24 @@ export async function assembleCatalogueSnapshot(
   const promotions = (deps.promotions === undefined ? [] : await deps.promotions(opts.tenantId))
     .filter((p) => p.status === 'active' && Date.parse(p.endsAt) >= at)
     .sort((a, b) => (a.id < b.id ? -1 : 1));
-  const withTobacco = unconfirmed.length === 0 ? built : {
-    ...built,
-    excluded: [...built.excluded, ...unconfirmed.map((r) => ({ productId: r.productId, sku: r.sku, reason: 'tobacco_warning_not_confirmed' as const }))],
-  };
+  // B17 · OB-348: the liquor left out above is an EXCLUSION too, with its reason — the shrink check and the preview count it.
+  const leftOut = [
+    ...unconfirmed.map((r) => ({ productId: r.productId, sku: r.sku, reason: 'tobacco_warning_not_confirmed' as const })),
+    ...notSold.map((n) => ({ productId: n.productId, sku: n.sku, reason: 'liquor_not_sold' as const })),
+  ];
+  const withTobacco = leftOut.length === 0 ? built : { ...built, excluded: [...built.excluded, ...leftOut] };
   const withOffers = promotions.length === 0 ? withTobacco : { ...withTobacco, snapshot: { ...withTobacco.snapshot, promotions } };
-  return notSold.length === 0 ? withOffers : { ...withOffers, notSold };
+  // OB-306: the bundles whose bundle product made it into this pack — the latest version of each, by bundle product.
+  const inPack = new Set(withOffers.snapshot.products.map((p) => p.productId));
+  const latestBundles = new Map<string, BundleDefinition>();
+  for (const d of deps.bundles === undefined ? [] : await deps.bundles(opts.tenantId)) {
+    if (!inPack.has(d.bundleProductId)) continue;
+    const cur = latestBundles.get(d.bundleProductId);
+    if (cur === undefined || d.version > cur.version) latestBundles.set(d.bundleProductId, d);
+  }
+  const bundles = [...latestBundles.values()].sort((a, b) => (a.bundleProductId < b.bundleProductId ? -1 : 1));
+  const withBundles = bundles.length === 0 ? withOffers : { ...withOffers, snapshot: { ...withOffers.snapshot, bundles } };
+  return notSold.length === 0 ? withBundles : { ...withBundles, notSold };
 }
 
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {

@@ -186,6 +186,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       // OB-288 P2: a GST rate change (Finance approves) and a supplier's funding of an offer.
       tax_rate_change: { en: APPROVALS_COPY.en.kindTaxRateChange, ta: APPROVALS_COPY.ta.kindTaxRateChange },
       promotion_funding: { en: APPROVALS_COPY.en.kindPromotionFunding, ta: APPROVALS_COPY.ta.kindPromotionFunding },
+      // OB-288 till side (OB-347): a published product's tax class changed — Finance approves.
+      hsn_class_change: { en: APPROVALS_COPY.en.kindHsnClassChange, ta: APPROVALS_COPY.ta.kindHsnClassChange },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

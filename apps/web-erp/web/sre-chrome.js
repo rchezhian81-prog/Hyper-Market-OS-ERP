@@ -527,6 +527,10 @@
     'risk-acceptance': 'hand',
     'gates': 'badge-check', // OB-288 gates lane (QG-12) — an icon already in the set
     'access-review': 'users-round', // OB-288 lane 1 · P1 — an icon already in the set
+    'help': 'book-open', // OB-288 LP/workforce package — an icon already in the set
+    'adoption': 'clipboard-check', // OB-288 LP/workforce package — an icon already in the set
+    'appointment-letters': 'file-text', // OB-288 LP/workforce package — an icon already in the set
+    'related-parties': 'shield-check', // OB-288 LP/workforce package — an icon already in the set
     'tally-files': 'book-open', // OB-288 P5 (OB-293) — an icon already in the set
     'dispatch': 'truck', // OB-288 fulfilment & delivery — an icon already in the set
     'loyalty-desk': 'badge-check', // OB-288 wave 3 (OB-329 · OB-295) — an icon already in the set

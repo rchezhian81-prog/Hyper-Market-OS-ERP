@@ -16,7 +16,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { routeOrder, type FulfilmentLocation, type FulfilmentMethod, type LocationStock, type RouteResult, type SlotCapacity } from '../../../packages/orders/src/fulfilment-plan';
+import { routeOrder, metresBetween, type FulfilmentLocation, type FulfilmentMethod, type LocationStock, type RouteResult, type SlotCapacity } from '../../../packages/orders/src/fulfilment-plan';
 
 /** A branch or dark store as the manager recorded it. */
 export interface RoutingLocation extends FulfilmentLocation {
@@ -58,6 +58,69 @@ const isLatLon = (v: unknown): v is Record<string, unknown> & { lat: number; lon
   && Number.isFinite(v['lat']) && Number.isFinite(v['lon']) && Math.abs(v['lat']) <= 90 && Math.abs(v['lon']) <= 180;
 const wholePos = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
 const METHODS: readonly FulfilmentMethod[] = ['pickup', 'scheduled_delivery', 'express_delivery'];
+
+/** What routing a basket needs: who, how, where to, which slot, what. */
+export interface RouteRequest {
+  readonly orderId: string;
+  readonly method: FulfilmentMethod;
+  readonly deliverTo?: { readonly lat: number; readonly lon: number };
+  readonly slotStartsAt: string | null;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+  readonly expressPromiseMinutes?: number;
+}
+
+/** The decision for a basket — or undefined when head office has recorded no branch (routing is not in use yet). */
+export interface RouteAnswer {
+  readonly result: RouteResult;
+  /** The branches that deliver to this address, nearest first (for a delivery) — what "in range" means here. */
+  readonly inRangeNearestFirst: readonly string[];
+  readonly locations: readonly RoutingLocation[];
+}
+
+/**
+ * D09-FR-01 · OB-300: run the tested `routeOrder` on head office's own facts — the branches recorded, what each can promise
+ * now, each one's room in the slot. Nothing is recorded or reserved here; the caller records the decision it acts on.
+ */
+export async function decideRoute(deps: Pick<OrderRoutingDeps, 'locations' | 'availableAt' | 'routedTo' | 'released'>, tenantId: string, req: RouteRequest): Promise<RouteAnswer | undefined> {
+  const locations = await deps.locations(tenantId);
+  if (locations.length === 0) return undefined;
+  const productIds = [...new Set(req.lines.map((l) => l.productId))];
+  const stock: LocationStock[] = [];
+  const slots: SlotCapacity[] = [];
+  for (const loc of locations) {
+    stock.push(...await deps.availableAt(tenantId, loc.locationId, productIds));
+    if (req.slotStartsAt !== null && loc.capacityPerSlot !== undefined) {
+      let booked = 0;
+      for (const d of await deps.routedTo(tenantId, loc.locationId, req.slotStartsAt)) {
+        if (d.orderId !== req.orderId && !(await deps.released(tenantId, d.orderId))) booked += 1;
+      }
+      slots.push({ slotId: req.slotStartsAt, locationId: loc.locationId, method: req.method, capacity: loc.capacityPerSlot, booked });
+    }
+  }
+  const result = routeOrder({
+    orderId: req.orderId, method: req.method, lines: req.lines, locations, stock, slots,
+    ...(req.deliverTo === undefined ? {} : { deliverTo: req.deliverTo }),
+    ...(req.expressPromiseMinutes === undefined ? {} : { expressPromiseMinutes: req.expressPromiseMinutes }),
+  });
+  const inRangeNearestFirst = req.deliverTo === undefined ? [] : locations
+    .filter((l) => l.acceptsDelivery)
+    .map((l) => ({ l, m: metresBetween(l, req.deliverTo!) }))
+    .filter((x) => x.m <= x.l.deliveryRadiusMetres)
+    .sort((a, b) => a.m - b.m || a.l.locationId.localeCompare(b.l.locationId))
+    .map((x) => x.l.locationId);
+  return { result, inRangeNearestFirst, locations };
+}
+
+/** Keep a routing decision, with its audit line — the one the order was placed (or refused) on. */
+export async function keepRoute(deps: Pick<OrderRoutingDeps, 'recordDecision' | 'recordAudit'>, tenantId: string, branchId: string | null, decision: RoutingDecision): Promise<void> {
+  await deps.recordDecision(tenantId, decision);
+  await deps.recordAudit?.(tenantId, {
+    actorId: decision.customerRef, action: 'order.route', objectType: 'online_order', objectId: decision.orderId,
+    at: decision.at, origin: { tenantId, branchId }, before: null,
+    after: { outcome: decision.result.outcome, locationId: decision.result.locationId ?? '', method: decision.method, detail: decision.result.detail },
+    correlationId: decision.orderId,
+  });
+}
 
 export function orderRoutingRoutes(deps: OrderRoutingDeps): readonly Route[] {
   return [
@@ -129,36 +192,17 @@ export function orderRoutingRoutes(deps: OrderRoutingDeps): readonly Route[] {
         const method = b['method'] as FulfilmentMethod;
         const slotStartsAt = isStr(b['slotStartsAt']) ? new Date(Date.parse(b['slotStartsAt'])).toISOString() : null;
         const want = (lines as { productId: string; quantityMinor: number }[]).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor }));
-        const productIds = [...new Set(want.map((l) => l.productId))];
-        const locations = await deps.locations(ctx.tenantId);
-        if (locations.length === 0) {
-          throw apiError(409, { code: 'no_locations_recorded', whatHappened: 'Head office has no branch or dark store recorded for routing, so it cannot say which can fulfil this.', wasItSaved: 'not_saved', nextSafeAction: 'Order from the store the app shows. Nothing was decided.' });
-        }
-        const stock: LocationStock[] = [];
-        const slots: SlotCapacity[] = [];
-        for (const loc of locations) {
-          stock.push(...await deps.availableAt(ctx.tenantId, loc.locationId, productIds));
-          if (slotStartsAt !== null && loc.capacityPerSlot !== undefined) {
-            let booked = 0;
-            for (const d of await deps.routedTo(ctx.tenantId, loc.locationId, slotStartsAt)) {
-              if (d.orderId !== orderId && !(await deps.released(ctx.tenantId, d.orderId))) booked += 1;
-            }
-            slots.push({ slotId: slotStartsAt, locationId: loc.locationId, method, capacity: loc.capacityPerSlot, booked });
-          }
-        }
-        const result = routeOrder({
-          orderId, method, lines: want, locations, stock, slots,
+        const answer = await decideRoute(deps, ctx.tenantId, {
+          orderId, method, slotStartsAt, lines: want,
           ...(isLatLon(b['deliverTo']) ? { deliverTo: { lat: b['deliverTo'].lat, lon: b['deliverTo'].lon } } : {}),
           ...(wholePos(b['expressPromiseMinutes']) ? { expressPromiseMinutes: b['expressPromiseMinutes'] } : {}),
         });
+        if (answer === undefined) {
+          throw apiError(409, { code: 'no_locations_recorded', whatHappened: 'Head office has no branch or dark store recorded for routing, so it cannot say which can fulfil this.', wasItSaved: 'not_saved', nextSafeAction: 'Order from the store the app shows. Nothing was decided.' });
+        }
+        const result = answer.result;
         const decision: RoutingDecision = { orderId, customerRef: ctx.userId, method, slotStartsAt, result, at: deps.now() };
-        await deps.recordDecision(ctx.tenantId, decision);
-        await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: 'order.route', objectType: 'online_order', objectId: orderId,
-          at: decision.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: null,
-          after: { outcome: result.outcome, locationId: result.locationId ?? '', method, detail: result.detail },
-          correlationId: orderId,
-        });
+        await keepRoute(deps, ctx.tenantId, ctx.branchId ?? null, decision);
         return {
           status: 200,
           body: {

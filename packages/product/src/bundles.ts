@@ -105,3 +105,73 @@ export function explodeBundleLine(definition: BundleDefinition, bundlesSold: num
     productId: c.productId, quantityMinor: c.quantityMinor * bundlesSold, fromBundle: definition.bundleProductId, bundleVersion: definition.version,
   }));
 }
+
+// ── OB-306 · OB-288 till side: the explosion a SALE LINE carries ───────────────────────────────────────────────────────
+//
+// The till explodes a bundle line with the definition its signed pack carries (`explodeBundleLine`) and FREEZES the result
+// on the line it records: which bundle, which version, and what each component took off the shelf (with the component's
+// unit). Head office writes one `sold` movement per component from it — and a return of the bundle puts back the same
+// components, in proportion to the bundles returned. Pure.
+
+/** One component's stock on a bundle line, in the component's base-unit minor units. */
+export interface LineBundleComponent {
+  readonly productId: string;
+  readonly quantityMinor: number;
+  /** The component's base unit, as the till's pack holds it (absent when the pack did not say). */
+  readonly uom?: string;
+}
+
+/** The explosion a bundle line carries: the bundle, the definition version it was sold under, and its components. */
+export interface LineBundle {
+  readonly bundleProductId: string;
+  readonly version: number;
+  readonly components: readonly LineBundleComponent[];
+}
+
+/** The explosion to record on a line of `bundlesSold` bundles, or undefined when nothing can be taken (0, not whole). */
+export function lineBundleOf(definition: BundleDefinition, bundlesSold: number, uomOf?: (productId: string) => string | undefined): LineBundle | undefined {
+  const exploded = explodeBundleLine(definition, Math.abs(bundlesSold));
+  if (exploded.length === 0) return undefined;
+  return {
+    bundleProductId: definition.bundleProductId, version: definition.version,
+    components: exploded.map((c) => {
+      const uom = uomOf?.(c.productId);
+      return { productId: c.productId, quantityMinor: c.quantityMinor, ...(uom === undefined || uom === '' ? {} : { uom }) };
+    }),
+  };
+}
+
+const posWhole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+const textOf = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+
+/** Read an untrusted explosion off a record. Anything malformed is refused whole — never half a bundle. */
+export function readLineBundle(raw: unknown): LineBundle | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const bundleProductId = textOf(r['bundleProductId']);
+  if (bundleProductId === undefined || !posWhole(r['version']) || !Array.isArray(r['components']) || r['components'].length === 0) return undefined;
+  const components: LineBundleComponent[] = [];
+  for (const c of r['components'] as unknown[]) {
+    const o = (c !== null && typeof c === 'object' ? c : {}) as Record<string, unknown>;
+    const productId = textOf(o['productId']);
+    if (productId === undefined || !posWhole(o['quantityMinor'])) return undefined;
+    const uom = textOf(o['uom']);
+    components.push({ productId, quantityMinor: o['quantityMinor'], ...(uom === undefined ? {} : { uom }) });
+  }
+  return { bundleProductId, version: r['version'], components };
+}
+
+/**
+ * The part of a sold explosion `returned` bundles out of `sold` give back — each component in proportion. Undefined when it
+ * does not divide exactly (a bundle line is whole bundles, so it always does for an honest record).
+ */
+export function returnedLineBundle(sold: LineBundle, soldBundles: number, returnedBundles: number): LineBundle | undefined {
+  if (!posWhole(soldBundles) || !posWhole(returnedBundles) || returnedBundles > soldBundles) return undefined;
+  const components: LineBundleComponent[] = [];
+  for (const c of sold.components) {
+    const per = c.quantityMinor / soldBundles;
+    if (!Number.isSafeInteger(per)) return undefined;
+    components.push({ ...c, quantityMinor: per * returnedBundles });
+  }
+  return { ...sold, components };
+}

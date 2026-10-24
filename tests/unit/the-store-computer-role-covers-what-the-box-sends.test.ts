@@ -52,6 +52,11 @@ const PULLS: readonly [Method, string][] = [
   ['GET', '/v1/production/recipes'],
   ['GET', '/v1/facilities/food-safety/status'],
   ['GET', '/v1/warehouse/transfers'],
+  // OB-350: a cashier recalls a customer's scan-and-go basket at the till (edge/store-edge/src/phone-baskets.ts).
+  ['POST', '/v1/store/scan-and-go/123456/recall'],
+  // OB-288 LP/workforce package: the monitored rooms (facilities page readings) and the help library (help page).
+  ['GET', '/v1/facilities/equipment-feed'],
+  ['GET', '/v1/hr/workforce/help-library'],
 ];
 
 describe('the store computer role (OB-36 "A")', () => {

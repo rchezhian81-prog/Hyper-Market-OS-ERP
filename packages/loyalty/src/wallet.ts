@@ -38,6 +38,12 @@ export interface MemberWallet {
   readonly storeCreditMinor: number;
   /** The till spends head office has already applied to these balances (their `spendRefFor` refs). */
   readonly appliedSpendRefs: readonly string[];
+  /**
+   * OB-295 (M17-FR-01): the tier the member's own 12-month spend reaches as head office built the feed, and its points
+   * multiplier (basis points, 10 000 = 1×). Absent while the owner has set no tiers (OFF) — the till then says "not set".
+   * A member below the lowest tier carries `name: null` at 1×.
+   */
+  readonly tier?: { readonly name: string | null; readonly multiplierBps: number };
 }
 
 export interface WalletFeed {
@@ -79,9 +85,18 @@ export function readWalletFeed(raw: unknown): WalletFeed | undefined {
       || !Array.isArray(m['appliedSpendRefs']) || !(m['appliedSpendRefs'] as unknown[]).every((s) => typeof s === 'string')) {
       return undefined;
     }
+    // OB-295: a tier rides only when well-formed (a name or null, a multiplier from 1× to 10×); anything else refuses the feed.
+    let tier: MemberWallet['tier'];
+    if (m['tier'] !== undefined) {
+      const t = m['tier'];
+      if (!isObj(t) || !(t['name'] === null || (typeof t['name'] === 'string' && t['name'].trim() !== ''))
+        || !Number.isSafeInteger(t['multiplierBps']) || (t['multiplierBps'] as number) < 10_000 || (t['multiplierBps'] as number) > 100_000) return undefined;
+      tier = { name: t['name'] as string | null, multiplierBps: t['multiplierBps'] as number };
+    }
     members.push({
       memberRef: m['memberRef'], points: m['points'], storeCreditMinor: m['storeCreditMinor'],
       appliedSpendRefs: [...(m['appliedSpendRefs'] as string[])],
+      ...(tier === undefined ? {} : { tier }),
     });
   }
   return {
@@ -105,6 +120,12 @@ export interface WalletAvailability {
   readonly capRemainingMinor: number;
   /** The age of the copy: head office's clock when it built it. */
   readonly asOf?: string;
+  /**
+   * OB-295: the member's tier and its points multiplier as the copy says — absent while the owner has set no tiers ("not
+   * set"; every member earns the base rule). Head office applies the multiplier when the bill earns; this is what the till shows.
+   */
+  readonly tierName?: string | null;
+  readonly tierMultiplierBps?: number;
 }
 
 export function walletAvailable(input: {
@@ -132,6 +153,7 @@ export function walletAvailable(input: {
   return {
     known: true, points, pointValuePaise: value, pointsValueMinor: points * value, storeCreditMinor,
     spentTodayMinor, capRemainingMinor: Math.max(0, feed.rule.tillSpendCapPaise - spentTodayMinor), asOf: feed.generatedAt,
+    ...(wallet?.tier === undefined ? {} : { tierName: wallet.tier.name, tierMultiplierBps: wallet.tier.multiplierBps }),
   };
 }
 

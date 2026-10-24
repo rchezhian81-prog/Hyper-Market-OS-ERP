@@ -16711,6 +16711,42 @@
         }
       }
     },
+    "/v1/facilities/equipment-feed": {
+      "get": {
+        "operationId": "getFacilitiesEquipmentFeed",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "facilities.asset.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"facilities.asset.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/facilities/equipment/{assetId}": {
       "get": {
         "operationId": "getFacilitiesEquipmentByAssetId",
@@ -17021,6 +17057,83 @@
           },
           "403": {
             "description": "Not \"facilities.reading.record\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/facilities/equipment/{assetId}/readings/{readingId}/synced": {
+      "post": {
+        "operationId": "postFacilitiesEquipmentByAssetIdReadingsByReadingIdSynced",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "facilities.reading.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"facilities.reading.sync\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -17467,6 +17580,42 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/facilities/office": {
+      "get": {
+        "operationId": "getFacilitiesOffice",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "facilities.asset.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"facilities.asset.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -20579,6 +20728,100 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/finance/fleet-settlements": {
+      "get": {
+        "operationId": "getFinanceFleetSettlements",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "finance.period.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"finance.period.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/finance/fleet-settlements/post": {
+      "post": {
+        "operationId": "postFinanceFleetSettlementsPost",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "finance.journal.post",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"finance.journal.post\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
@@ -27264,6 +27507,42 @@
         }
       }
     },
+    "/v1/fraud-signals/stored": {
+      "get": {
+        "operationId": "getFraudSignalsStored",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.case.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.case.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/fraud-signals/thresholds": {
       "get": {
         "operationId": "getFraudSignalsThresholds",
@@ -29481,6 +29760,381 @@
         }
       }
     },
+    "/v1/hr/workforce/access-match": {
+      "get": {
+        "operationId": "getHrWorkforceAccessMatch",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/adoption-gate": {
+      "get": {
+        "operationId": "getHrWorkforceAdoptionGate",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.adoption.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.adoption.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/appointment-letters": {
+      "get": {
+        "operationId": "getHrWorkforceAppointmentLetters",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.appointmentletter.issue",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.appointmentletter.issue\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/appointment-letters/wording": {
+      "get": {
+        "operationId": "getHrWorkforceAppointmentLettersWording",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.appointmentletter.issue",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.appointmentletter.issue\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postHrWorkforceAppointmentLettersWording",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.appointmentletter.wording",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.appointmentletter.wording\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/appointment-letters/{letterId}": {
+      "get": {
+        "operationId": "getHrWorkforceAppointmentLettersByLetterId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.appointmentletter.issue",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "letterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.appointmentletter.issue\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/appointment-letters/{letterId}/signed-scan": {
+      "post": {
+        "operationId": "postHrWorkforceAppointmentLettersByLetterIdSignedScan",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.appointmentletter.issue",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "letterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.appointmentletter.issue\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/appointment-letters/{letterId}/signed-scan/{scanId}": {
+      "get": {
+        "operationId": "getHrWorkforceAppointmentLettersByLetterIdSignedScanByScanId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.appointmentletter.issue",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "letterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scanId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.appointmentletter.issue\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/hr/workforce/assigned-tasks": {
       "get": {
         "operationId": "getHrWorkforceAssignedTasks",
@@ -30526,6 +31180,274 @@
         }
       }
     },
+    "/v1/hr/workforce/curriculum": {
+      "get": {
+        "operationId": "getHrWorkforceCurriculum",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/curriculum/{roleId}": {
+      "post": {
+        "operationId": "postHrWorkforceCurriculumByRoleId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.curriculum.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.curriculum.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/emergency-contacts": {
+      "post": {
+        "operationId": "postHrWorkforceEmergencyContacts",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.emergency.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.emergency.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/emergency-drills": {
+      "get": {
+        "operationId": "getHrWorkforceEmergencyDrills",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/emergency-drills/{drillId}": {
+      "post": {
+        "operationId": "postHrWorkforceEmergencyDrillsByDrillId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.training.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "drillId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.training.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/hr/workforce/employees/{employeeId}": {
       "post": {
         "operationId": "postHrWorkforceEmployeesByEmployeeId",
@@ -30572,6 +31494,152 @@
           },
           "403": {
             "description": "Not \"workforce.roster.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/employees/{employeeId}/appointment-letters/{letterId}": {
+      "post": {
+        "operationId": "postHrWorkforceEmployeesByEmployeeIdAppointmentLettersByLetterId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.appointmentletter.issue",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "employeeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "letterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.appointmentletter.issue\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/employees/{employeeId}/salary-account": {
+      "post": {
+        "operationId": "postHrWorkforceEmployeesByEmployeeIdSalaryAccount",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.salaryaccount.record",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "employeeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.salaryaccount.record\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -30683,6 +31751,357 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/floor-champions": {
+      "get": {
+        "operationId": "getHrWorkforceFloorChampions",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/floor-champions/{departmentId}": {
+      "post": {
+        "operationId": "postHrWorkforceFloorChampionsByDepartmentId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.champion.name",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "departmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.champion.name\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/help": {
+      "get": {
+        "operationId": "getHrWorkforceHelp",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.help.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.help.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/help-library": {
+      "get": {
+        "operationId": "getHrWorkforceHelpLibrary",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.help.pull",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.help.pull\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/help/built-in": {
+      "get": {
+        "operationId": "getHrWorkforceHelpBuiltIn",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.sop.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.sop.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/help/built-in/{sopId}/publish": {
+      "post": {
+        "operationId": "postHrWorkforceHelpBuiltInBySopIdPublish",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "sopId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/help/sops/{sopId}": {
+      "post": {
+        "operationId": "postHrWorkforceHelpSopsBySopId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "sopId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -31056,6 +32475,42 @@
         }
       }
     },
+    "/v1/hr/workforce/productivity": {
+      "get": {
+        "operationId": "getHrWorkforceProductivity",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.incentive.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.incentive.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/hr/workforce/roster": {
       "get": {
         "operationId": "getHrWorkforceRoster",
@@ -31174,6 +32629,42 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/salary-accounts": {
+      "get": {
+        "operationId": "getHrWorkforceSalaryAccounts",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "hr.salaryaccount.record",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"hr.salaryaccount.record\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -31750,6 +33241,75 @@
         }
       }
     },
+    "/v1/hr/workforce/sops/{sopId}/acknowledge": {
+      "post": {
+        "operationId": "postHrWorkforceSopsBySopIdAcknowledge",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.sop.ack.self",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "sopId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.sop.ack.self\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/hr/workforce/sops/{sopId}/acknowledgements/{employeeId}": {
       "post": {
         "operationId": "postHrWorkforceSopsBySopIdAcknowledgementsByEmployeeId",
@@ -31804,6 +33364,83 @@
           },
           "403": {
             "description": "Not \"workforce.roster.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/sops/{sopId}/acknowledgements/{employeeId}/synced": {
+      "post": {
+        "operationId": "postHrWorkforceSopsBySopIdAcknowledgementsByEmployeeIdSynced",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.sop.ack.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "sopId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "employeeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.sop.ack.sync\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -32105,6 +33742,249 @@
           },
           "403": {
             "description": "Not \"workforce.completion.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/training": {
+      "get": {
+        "operationId": "getHrWorkforceTraining",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/training/{assignmentId}": {
+      "post": {
+        "operationId": "postHrWorkforceTrainingByAssignmentId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.training.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.training.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/training/{assignmentId}/competency": {
+      "post": {
+        "operationId": "postHrWorkforceTrainingByAssignmentIdCompetency",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.training.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.training.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/training/{assignmentId}/completion": {
+      "post": {
+        "operationId": "postHrWorkforceTrainingByAssignmentIdCompletion",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.training.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.training.manage\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -40372,6 +42252,111 @@
         }
       }
     },
+    "/v1/inventory/write-off-captures": {
+      "get": {
+        "operationId": "getInventoryWriteOffCaptures",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "waste.view",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"waste.view\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/inventory/write-off-captures/{writeOffId}/decide": {
+      "post": {
+        "operationId": "postInventoryWriteOffCapturesByWriteOffIdDecide",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.movement.append",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "writeOffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/inventory/write-off-threshold": {
       "get": {
         "operationId": "getInventoryWriteOffThreshold",
@@ -40546,6 +42531,75 @@
           },
           "403": {
             "description": "Not \"inventory.movement.append\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/inventory/write-off/{writeOffId}/synced": {
+      "post": {
+        "operationId": "postInventoryWriteOffByWriteOffIdSynced",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.writeoff.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "writeOffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.writeoff.sync\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -41215,6 +43269,180 @@
         }
       }
     },
+    "/v1/loss-prevention/related-parties": {
+      "get": {
+        "operationId": "getLossPreventionRelatedParties",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.relatedparty.manage",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.relatedparty.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loss-prevention/related-parties/{partyId}": {
+      "post": {
+        "operationId": "postLossPreventionRelatedPartiesByPartyId",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.relatedparty.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.relatedparty.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loss-prevention/related-parties/{partyId}/take-off": {
+      "post": {
+        "operationId": "postLossPreventionRelatedPartiesByPartyIdTakeOff",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.relatedparty.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.relatedparty.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/loss-prevention/rule-feedback": {
       "get": {
         "operationId": "getLossPreventionRuleFeedback",
@@ -41346,6 +43574,275 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loss-prevention/staff-purchases/accounts": {
+      "get": {
+        "operationId": "getLossPreventionStaffPurchasesAccounts",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.case.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.case.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loss-prevention/staff-purchases/accounts/{employeeId}": {
+      "post": {
+        "operationId": "postLossPreventionStaffPurchasesAccountsByEmployeeId",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.staffaccount.record",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "employeeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.staffaccount.record\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loss-prevention/staff-purchases/exceptions": {
+      "get": {
+        "operationId": "getLossPreventionStaffPurchasesExceptions",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.case.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.case.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loss-prevention/staff-purchases/policy": {
+      "get": {
+        "operationId": "getLossPreventionStaffPurchasesPolicy",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.case.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.case.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postLossPreventionStaffPurchasesPolicy",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "lp.staffpurchase.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"lp.staffpurchase.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loss-prevention/staff-purchases/till-policy": {
+      "get": {
+        "operationId": "getLossPreventionStaffPurchasesTillPolicy",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "store.pack.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"store.pack.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -42380,6 +44877,134 @@
     "/v1/loyalty/programme/tiers": {
       "put": {
         "operationId": "putLoyaltyProgrammeTiers",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.programme.configure",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.programme.configure\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loyalty/referral-programme": {
+      "get": {
+        "operationId": "getLoyaltyReferralProgramme",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.coupon.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.coupon.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loyalty/referral-rewards": {
+      "get": {
+        "operationId": "getLoyaltyReferralRewards",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.coupon.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.coupon.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postLoyaltyReferralRewards",
         "tags": [
           "API-06 Customer / Loyalty"
         ],
@@ -44257,6 +46882,100 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/referral": {
+      "get": {
+        "operationId": "getMeReferral",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/referral/claim": {
+      "post": {
+        "operationId": "postMeReferralClaim",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
@@ -62525,6 +65244,111 @@
         }
       }
     },
+    "/v1/pricing/relabel-tasks": {
+      "get": {
+        "operationId": "getPricingRelabelTasks",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.task.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.task.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/pricing/relabel-tasks/{taskId}/done": {
+      "post": {
+        "operationId": "postPricingRelabelTasksByTaskIdDone",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.task.complete.own",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.task.complete.own\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/privacy/breach/assess": {
       "post": {
         "operationId": "postPrivacyBreachAssess",
@@ -67463,6 +70287,124 @@
           },
           "403": {
             "description": "Not \"purchase.order.receive\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/related-party": {
+      "get": {
+        "operationId": "getPurchaseOrdersByPoIdRelatedParty",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.commitment.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.commitment.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/purchase/orders/{poId}/related-party-approval": {
+      "post": {
+        "operationId": "postPurchaseOrdersByPoIdRelatedPartyApproval",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.relatedparty.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "poId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.relatedparty.approve\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -75404,6 +78346,75 @@
         }
       }
     },
+    "/v1/store/scan-and-go/{code}/recall": {
+      "post": {
+        "operationId": "postStoreScanAndGoByCodeRecall",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.scango.recall",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.scango.recall\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/stored-value/households/{ownerRef}/balance": {
       "get": {
         "operationId": "getStoredValueHouseholdsByOwnerRefBalance",
@@ -76695,6 +79706,111 @@
         "parameters": [
           {
             "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/storefront/scan-and-go/baskets": {
+      "get": {
+        "operationId": "getStorefrontScanAndGoBaskets",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/storefront/scan-and-go/baskets/{basketId}": {
+      "post": {
+        "operationId": "postStorefrontScanAndGoBasketsByBasketId",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "basketId",
             "in": "path",
             "required": true,
             "schema": {

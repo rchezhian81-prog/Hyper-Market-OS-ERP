@@ -5,6 +5,80 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 wave 4 (24 October 2026): till side, customer and delivery follow-ups, finance follow-ups, loss prevention, workforce and facilities
+
+**What changed**
+- PR #806 (waves 2–3) merged after CI caught and fixed:
+  - a committed merge-conflict marker, now refused by a new guardrail;
+  - a SAST false positive, triaged on one line;
+  - four combined-branch test expectations;
+  - EANs with wrong check digits in five journey tests and in the box's demo smoke script;
+  - a real GST-return bug. Returns paid partly with points, and exchanges, under-reversed output GST, so the shop would have overpaid. The return now reverses the same value as the books (WF-18 check, no tolerance).
+- **Finance follow-ups:**
+  - department sales at exact line net (OB-340);
+  - supplier advances subtracted at payment, so a bill can no longer be paid twice (OB-341);
+  - the release signature reaches the box (OB-342, Mr Sivakumar's steps in the runbook);
+  - money-route body schemas.
+- **Till side:**
+  - bundles exploded per component on sale and return (OB-306);
+  - no tobacco offer (B15);
+  - bank offers off until R4 (OB-349);
+  - liquor refused by state (OB-348);
+  - HSN class change needs Finance (OB-347);
+  - tier multiplier in the wallet feed (OB-295);
+  - online orders earn once delivered (OB-346);
+  - delivery sale at the till with the owner's fee line (OB-299).
+- **Customer and delivery:**
+  - code and ETA on My order;
+  - routing at placement;
+  - 250 m radius (OB-343);
+  - flags in words (OB-344);
+  - fleet settlement posted;
+  - referrals, off until the rewards are set (OB-351);
+  - scan-and-go paid at a till lane (OB-350).
+- **Loss prevention, workforce and facilities:**
+  - stored fraud signals;
+  - related parties need the owner before a PO (OB-301);
+  - staff salary accounts in the duplicate check;
+  - staff-buying rule;
+  - access match, training and competency;
+  - role curriculum and the QG-09 adoption gate (OB-320);
+  - floor champions;
+  - offline help centre;
+  - emergency procedures;
+  - appointment letters (OB-323);
+  - facilities office with offline readings;
+  - offline write-offs;
+  - relabel tasks on price change.
+- **Decisions:** OB-352 to OB-354 recorded.
+
+**Tested.** On the combined branch:
+- tsc is clean;
+- all 1,698 guardrail and catalogue tests pass;
+- the till browser journeys pass (6/6).
+
+Each lane ran its own unit, PostgreSQL and cold-restart, browser and fail-before checks. The full gate runs in CI on the pull request. Not run on real Windows, a printer, a card machine or real Tally; no staff UAT.
+
+**Next:**
+- the staff-buying rule at the till (the `judgeStaffPurchase` hook);
+- store state from the GSTIN (OB-354);
+- the till delivery address from the app, else the desk (OB-352);
+- department labour hours and the relabel owner (owner decisions);
+- the remaining audit packages: commercial desks, owner reporting and imports, SaaS and rollout, store devices and self-checkout, C8/C9;
+- the store-box migration screen's backup and limits.
+
+**Owner inputs** (all shown as "not set"):
+- staff discount cap and service-desk tills;
+- curriculum approval per role;
+- floor champions;
+- emergency contacts;
+- appointment-letter words;
+- referral rewards;
+- delivery fee product;
+- store state.
+
+**Blocked:** nothing in software.
+
 ## OB-288 waves 2 and 3 (23–24 October 2026): AI governance, finance bridge, integration follow-ups, till bill and GST, catalogue and pricing, customer commerce, fulfilment and delivery
 
 **What changed**

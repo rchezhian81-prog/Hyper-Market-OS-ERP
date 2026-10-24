@@ -38,6 +38,7 @@
 // and the customer is told that rather than shown a completed refund for money that has not moved.
 
 import type { Ledger } from '../../../packages/ledger/src/ledger';
+import { lineBundleOf, type BundleDefinition } from '../../../packages/product/src/bundles';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import {
   assertReturnValid, commitReturn, expiredOfProduct, recallOfProduct, returnLineHoldReason, type CommitReturnInput, type CommittedReturn, type ReturnRecallCheck,
@@ -176,6 +177,13 @@ export interface TillConfig {
    * The same pack's `expiredBatches` (M13-FR-02 · M10-FR-01): a returned unit of a batch head office moved to EXPIRED is held
    * the same way, marked `expiredHeld` — only when the unit's batch is known, as at the scan.
    */
+  /**
+   * OB-306 (M03-FR-02): a product's own-barcode bundle definition, and each product's base unit, from the lane's signed pack.
+   * A returned bundle line carries its components (`explodeBundleLine`) so the stock goes back component by component;
+   * head office prefers the explosion frozen on the original bill. Absent → no product is a bundle here.
+   */
+  readonly bundleOf?: (productId: string) => BundleDefinition | undefined;
+  readonly baseUomOf?: (productId: string) => string | undefined;
   readonly recallOf?: (productId: string) => {
     readonly recallBlock?: boolean; readonly blockedBatches?: readonly string[]; readonly expiredBatches?: readonly { readonly batchId: string }[];
   } | undefined;
@@ -322,6 +330,11 @@ export function createTillSession(
         productId: l.productId, uom: l.uom, quantityMinor: Math.abs(l.quantityMinor),
         disposition: hold === null ? l.disposition : 'quarantine',
         ...(typeof l.batchId === 'string' && l.batchId !== '' ? { batchId: l.batchId } : {}),
+        // OB-306: a returned bundle comes back as its components (from the lane's signed pack).
+        ...((def) => {
+          const b = def === undefined ? undefined : lineBundleOf(def, Math.abs(l.quantityMinor), (id) => config.baseUomOf?.(id));
+          return b === undefined ? {} : { bundle: b };
+        })(config.bundleOf?.(l.productId)),
         // What the cashier chose, kept beside what the recall (or the expired batch) made of it (evidence, M15 · P-08).
         ...(hold === 'recall' ? { recallHeld: true, chosenDisposition: l.disposition } : {}),
         ...(hold === 'expired' ? { expiredHeld: true, chosenDisposition: l.disposition } : {}),

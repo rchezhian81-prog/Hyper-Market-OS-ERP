@@ -70,6 +70,13 @@ export interface PosDeps {
    * on the sale. Never refuses — its outcome rides on the reply. Absent → no loyalty here (a composition without it).
    */
   readonly loyaltyOnSale?: (tenantId: string, sale: IncomingSale) => Promise<unknown>;
+  /** OB-348 (B17): the shop's state from store setup, which the intake judges liquor by. Absent → "not set". */
+  readonly shopStateOf?: (tenantId: string) => Promise<string | undefined>;
+  /**
+   * OB-299 (M12-FR-02): a bill the till marked for delivery becomes ONE delivery job — booked once, on a resend too. Runs
+   * after the sale is banked; never refuses the sale (its outcome rides on the reply). Absent → no delivery job here.
+   */
+  readonly deliveryOnSale?: (tenantId: string, sale: IncomingSale) => Promise<unknown>;
   /**
    * What the sale's points and store-credit tenders do to the member's balances (PF-09 step 3 · M17-FR-01/03): applied
    * once per sale and kind, never refused, never below zero. A part the true balance could not cover comes back as a
@@ -208,6 +215,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           now: deps.now(),
           ...(cashierGrants === undefined ? {} : { cashierGrants }),
           ...(cashierSeal === undefined ? {} : { cashierSeal }),
+          ...(await (async () => { const st = await deps.shopStateOf?.(ctx.tenantId); return st === undefined || st === '' ? {} : { shopState: st }; })()),
         } satisfies IntakeContext);
 
         // NEW-3 (C10 · hard rule #3): what is KEPT never holds card data. The intake above judged the sale as it arrived
@@ -293,9 +301,20 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           }
         }
 
+        // OB-299: a bill marked for delivery becomes its delivery job — once per sale (idempotent), on a resend too, so a crash
+        // between banking and booking heals on the store computer's resend. Only the bill head office BANKED is booked.
+        let delivery: unknown;
+        if (deps.deliveryOnSale !== undefined && notThisBill === undefined) {
+          try {
+            delivery = await deps.deliveryOnSale(ctx.tenantId, loyaltyBill);
+          } catch (err) {
+            delivery = { outcome: 'not_booked', detail: `The sale is banked, but its delivery job was not booked: ${err instanceof Error ? err.message : String(err)}. The store computer's resend will try again.` };
+          }
+        }
+
         // 202, not 201: the sale is banked and there may be work attached to it. A 4xx here would
         // tell a till that a sale which happened did not.
-        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }), ...(notThisBill ?? {}), ...(time.ignored === undefined ? {} : { storeComputerTakenAtIgnored: time.ignored }) } };
+        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(delivery === undefined ? {} : { delivery }), ...(spends === undefined ? {} : { spends }), ...(notThisBill ?? {}), ...(time.ignored === undefined ? {} : { storeComputerTakenAtIgnored: time.ignored }) } };
       },
     },
     {

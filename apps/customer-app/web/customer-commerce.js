@@ -6,9 +6,10 @@
 //     customers bought together, and in-stock alternatives MARKED as AI with the plain notice; nothing is added unless
 //     you tap Add.
 //   • CAMERA BARCODE (D08-FR-02) and the VOICE SWITCH (OB-322): what was read or heard becomes an ordinary search.
-//   • MY ORDER: the delivery code and arrival time ("not given yet" until the shop gives them); the shop's assistant
+//   • MY ORDER: head office's delivery code for my order and the driver's last stop with an ETA ("not given yet" until given); the shop's assistant
 //     answering a chosen question from the shop's own records, marked as automatic, and "ask a person" (A05).
-//   • MY ACCOUNT: repeat orders (OB-303), addresses and "remove saved payment" (M20-FR-04), occasions (M21-FR-02), and
+//   • MY ACCOUNT: repeat orders (OB-303), addresses and "remove saved payment" (M20-FR-04), occasions (M21-FR-02), invite a
+//     friend (OB-351 — my code, the rewards "not set" until the shop sets them), and
 //     the AI suggestions opt-in (OB-314) — one switch, both ways.
 // No prompt, confirm or alert; nothing on a background timer; every state in words; every word in English and Tamil.
 
@@ -35,6 +36,14 @@ const W = {
     ideasTitle: 'Ideas for your basket', ideasBtn: 'Show ideas', ideasEmpty: 'Put something in your basket first.', ideasNone: 'No ideas for this basket just now.',
     goesWith: 'Goes well with', aiAlt: 'In stock instead', add: 'Add', added: 'Added to your basket:',
     handoverCode: 'Delivery code', handoverEta: 'Arriving', notGivenYet: 'not given yet',
+    referralTitle: 'Invite a friend', referralLead: 'Give your code to a friend. When their first online order is delivered, you both earn the shop’s referral reward — once.',
+    referralCode: 'My code', referralMine: 'I earn', referralFriend: 'My friend earns', rewardNotSet: 'not set yet — nothing is given until the shop sets it',
+    referralClaimLabel: 'A friend gave me a code', referralClaim: 'Use my friend’s code', why_bad_referral_code: 'A referral code is 8 letters and digits, as your friend’s app shows it. Nothing was sent.',
+    referralClaimed: 'Recorded. When your first online order is delivered, you and your friend each earn the reward.', referralEmpty: 'Nobody has used your code yet.',
+    rs_waiting_for_first_delivery: 'waiting for their first delivery', rs_earned_reward_not_set: 'earned — the reward is not set yet', rs_rewarded: 'rewarded', referredBy: 'I was referred:', aFriend: 'A friend',
+    handoverShow: 'Show my delivery code and arrival time', handoverUsed: 'used — this order is finished', handoverWhy: 'Read these four numbers to the driver when your order arrives. Do not share them before then.',
+    handoverCollect: 'This order is collected from the store, so it has no delivery code.', etaNotOnRoute: 'not on a driver’s route yet', etaReached: 'the driver has been to your door',
+    etaAbout: 'about {time} (an estimate on straight-line distances)', lastStop: 'The driver’s last stop was at {time}; {n} stop(s) before yours.', noStopYet: 'The driver has not finished a stop yet; {n} stop(s) before yours.',
     askTitle: 'Ask the shop\'s assistant', ask: 'Ask', askPerson: 'Ask a person instead', topic_order_status: 'Where is my order?', topic_return_policy: 'What can I return?', topic_delivery_charges: 'What does delivery cost?',
     askPick: 'Choose a question first. Nothing was sent.', askNoOrder: 'There is no order in this app yet to ask about.', askSent: 'Sent to the shop — a person will reply. Reference:',
     askEscalate: 'The assistant cannot answer this just now. Ask a person and the shop will reply.', personSummary: 'Please help me with:',
@@ -74,6 +83,14 @@ const W = {
     ideasTitle: 'உங்கள் கூடைக்கான யோசனைகள்', ideasBtn: 'யோசனைகளைக் காட்டு', ideasEmpty: 'முதலில் கூடையில் ஏதாவது சேருங்கள்.', ideasNone: 'இப்போது இந்தக் கூடைக்கு யோசனைகள் இல்லை.',
     goesWith: 'இதனுடன் பொருந்துவது', aiAlt: 'பதிலாகக் கையிருப்பில் உள்ளது', add: 'சேர்', added: 'உங்கள் கூடையில் சேர்க்கப்பட்டது:',
     handoverCode: 'விநியோகக் குறியீடு', handoverEta: 'வந்து சேரும் நேரம்', notGivenYet: 'இன்னும் கொடுக்கப்படவில்லை',
+    referralTitle: 'நண்பரை அழையுங்கள்', referralLead: 'உங்கள் குறியீட்டை நண்பரிடம் கொடுங்கள். அவரது முதல் ஆன்லைன் ஆர்டர் டெலிவரி ஆனதும், நீங்கள் இருவரும் கடையின் பரிந்துரைப் பரிசைப் பெறுவீர்கள் — ஒருமுறை மட்டும்.',
+    referralCode: 'என் குறியீடு', referralMine: 'நான் பெறுவது', referralFriend: 'என் நண்பர் பெறுவது', rewardNotSet: 'இன்னும் அமைக்கப்படவில்லை — கடை அமைக்கும் வரை எதுவும் வழங்கப்படாது',
+    referralClaimLabel: 'ஒரு நண்பர் எனக்குக் குறியீடு கொடுத்தார்', referralClaim: 'நண்பரின் குறியீட்டைப் பயன்படுத்து', why_bad_referral_code: 'பரிந்துரைக் குறியீடு உங்கள் நண்பரின் செயலியில் காட்டுவது போல 8 எழுத்துகளும் எண்களும் கொண்டது. எதுவும் அனுப்பப்படவில்லை.',
+    referralClaimed: 'பதிவானது. உங்கள் முதல் ஆன்லைன் ஆர்டர் டெலிவரி ஆனதும், நீங்களும் உங்கள் நண்பரும் பரிசைப் பெறுவீர்கள்.', referralEmpty: 'இன்னும் யாரும் உங்கள் குறியீட்டைப் பயன்படுத்தவில்லை.',
+    rs_waiting_for_first_delivery: 'அவர்களின் முதல் டெலிவரிக்காகக் காத்திருக்கிறது', rs_earned_reward_not_set: 'பெறப்பட்டது — பரிசு இன்னும் அமைக்கப்படவில்லை', rs_rewarded: 'பரிசு வழங்கப்பட்டது', referredBy: 'நான் பரிந்துரைக்கப்பட்டேன்:', aFriend: 'ஒரு நண்பர்',
+    handoverShow: 'என் விநியோகக் குறியீடும் வரும் நேரமும் காட்டு', handoverUsed: 'பயன்படுத்தப்பட்டது — இந்த ஆர்டர் முடிந்தது', handoverWhy: 'உங்கள் ஆர்டர் வரும்போது இந்த நான்கு எண்களை டிரைவரிடம் படித்துச் சொல்லுங்கள். அதற்கு முன் யாரிடமும் பகிர வேண்டாம்.',
+    handoverCollect: 'இந்த ஆர்டர் கடையில் பெறப்படுகிறது, எனவே விநியோகக் குறியீடு இல்லை.', etaNotOnRoute: 'இன்னும் டிரைவரின் வழியில் இல்லை', etaReached: 'டிரைவர் உங்கள் வாசலுக்கு வந்துவிட்டார்',
+    etaAbout: 'சுமார் {time} (நேர்கோட்டுத் தூரத்தில் ஒரு மதிப்பீடு)', lastStop: 'டிரைவரின் கடைசி நிறுத்தம் {time}; உங்களுக்கு முன் {n} நிறுத்தம்(கள்).', noStopYet: 'டிரைவர் இன்னும் ஒரு நிறுத்தத்தையும் முடிக்கவில்லை; உங்களுக்கு முன் {n} நிறுத்தம்(கள்).',
     askTitle: 'கடையின் உதவியாளரிடம் கேளுங்கள்', ask: 'கேள்', askPerson: 'பதிலாக ஒருவரிடம் கேளுங்கள்', topic_order_status: 'என் ஆர்டர் எங்கே?', topic_return_policy: 'எதைத் திருப்பி அனுப்பலாம்?', topic_delivery_charges: 'விநியோகக் கட்டணம் என்ன?',
     askPick: 'முதலில் ஒரு கேள்வியைத் தேர்ந்தெடுங்கள். எதுவும் அனுப்பப்படவில்லை.', askNoOrder: 'கேட்பதற்கு இந்தச் செயலியில் இன்னும் ஆர்டர் இல்லை.', askSent: 'கடைக்கு அனுப்பப்பட்டது — ஒருவர் பதில் அளிப்பார். குறிப்பு:',
     askEscalate: 'உதவியாளரால் இப்போது இதற்குப் பதில் அளிக்க முடியவில்லை. ஒருவரிடம் கேளுங்கள், கடை பதில் அளிக்கும்.', personSummary: 'இதில் எனக்கு உதவுங்கள்:',
@@ -273,19 +290,41 @@ function paintAnswer() {
 function paintOrderExtras() {
   paintAnswer();
   say('handover-code-label', t('handoverCode')); say('handover-eta-label', t('handoverEta'));
+  words('handover-show', 'handoverShow', 'key-round');
   words('ask-title', 'askTitle'); words('ask', 'ask', 'circle-help'); words('ask-person', 'askPerson', 'headphones');
   radios('ask-topics', 'ask-topic', rules().helpTopics, (v) => t(`topic_${v}`));
   paintHandover();
 }
-// The last "Where is my order?" answer the customer asked for (app.js) — the slot reads it, and never reads on its own.
-let lastTracked = null;
+// OB-294 · D08-FR-05: the last hand-over head office gave for my order — asked on a tap (or with "Where is my order?"),
+// never on a timer; repainted in the other language without asking again.
+let lastHandover = null;
+let trackedSeen = null;
+const clockOf = (iso) => new Date(iso).toLocaleTimeString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { hour: '2-digit', minute: '2-digit' });
 function paintHandover() {
-  if (shop()?.commerce.heldOrderId() === undefined) { el('handover').hidden = true; return; }
-  const h = rules().deliveryHandover(lastTracked?.ok ? lastTracked.value.delivery : null);
-  el('handover').hidden = false;
-  el('handover-code').textContent = h.code ?? t('notGivenYet'); el('handover-code').dataset.given = String(h.code !== null);
-  el('handover-eta').textContent = h.eta === null ? t('notGivenYet') : new Date(h.eta).toLocaleTimeString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { hour: '2-digit', minute: '2-digit' });
+  if (shop()?.commerce.heldOrderId() === undefined) { el('handover').hidden = true; el('handover-show').hidden = true; return; }
+  el('handover').hidden = false; el('handover-show').hidden = false;
+  const value = lastHandover?.ok ? lastHandover.value : null;
+  if (value !== null && value.delivery === false) {
+    el('handover-code').textContent = t('handoverCollect'); el('handover-code').dataset.given = 'false';
+    el('handover-eta').textContent = '—'; say('handover-say', ''); return;
+  }
+  const h = rules().deliveryHandover(value?.code ?? null, value?.eta ?? null);
+  el('handover-code').textContent = h.code === null ? t('notGivenYet') : h.used ? `${h.code} (${t('handoverUsed')})` : h.code;
+  el('handover-code').dataset.given = String(h.code !== null);
+  el('handover-eta').dataset.state = h.etaState ?? 'not_given';
+  el('handover-eta').textContent = h.eta !== null ? t('etaAbout').replace('{time}', clockOf(h.eta))
+    : h.etaState === 'not_on_a_route' ? t('etaNotOnRoute') : h.etaState === 'reached' ? t('etaReached') : t('notGivenYet');
+  const progress = h.stopsBeforeYou === null ? '' : (h.lastStopAt === null ? t('noStopYet') : t('lastStop').replace('{time}', clockOf(h.lastStopAt))).replace('{n}', String(h.stopsBeforeYou));
+  say('handover-say', lastHandover !== null && !lastHandover.ok ? refusalWords(lastHandover) : [h.code !== null && !h.used ? t('handoverWhy') : '', progress].filter(Boolean).join(' '));
 }
+async function askHandover() {
+  const orderId = shop()?.commerce.heldOrderId();
+  if (orderId === undefined) return;
+  el('handover-show').disabled = true;
+  try { lastHandover = await shop().commerce.handover(orderId); } finally { el('handover-show').disabled = false; }
+  paintHandover();
+}
+el('handover-show').addEventListener('click', () => { void askHandover(); });
 el('ask').addEventListener('click', async () => {
   const topic = picked('ask-topics');
   if (topic === undefined) { say('ask-say', t('askPick')); return; }
@@ -413,6 +452,42 @@ el('occasion-save').addEventListener('click', async () => {
   if (out.ok) { el('occasion-yes').checked = false; await paintOccasions(); }
 });
 
+// ── OB-351 · M17-FR-02: invite a friend ──────────────────────────────────────────────────────────────────────────
+const inrOf = (minor) => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const rewardWords = (reward) => { const r = rules().referralWhy(reward); return r.set ? inrOf(r.amountMinor) : t('rewardNotSet'); };
+async function paintReferral() {
+  words('referral-title', 'referralTitle'); say('referral-lead', t('referralLead'));
+  say('referral-code-label', t('referralCode')); say('referral-mine-label', t('referralMine')); say('referral-friend-label', t('referralFriend'));
+  say('referral-claim-label', t('referralClaimLabel')); words('referral-claim', 'referralClaim', 'users');
+  const out = await shop().commerce.referral();
+  if (!out.ok) { el('referral-box').hidden = true; el('referrals').replaceChildren(); say('referral-say', refusalWords(out)); return; }
+  const v = out.value;
+  el('referral-box').hidden = false;
+  el('referral-code').textContent = v.code;
+  el('referral-mine').textContent = rewardWords(v.rewards?.referrer); el('referral-mine').dataset.set = String(v.rewards?.referrer?.state === 'set');
+  el('referral-friend').textContent = rewardWords(v.rewards?.referred); el('referral-friend').dataset.set = String(v.rewards?.referred?.state === 'set');
+  // Counts and states only — the shop never shows who used my code.
+  const rows = (v.myReferrals ?? []).map((r) => {
+    const row = node('div', `${r.standing === 'rewarded' ? '✓' : '⏱'} ${t('aFriend')} — ${t(`rs_${r.standing}`)}${r.rewardMinor === null ? '' : ` · ${inrOf(r.rewardMinor)}`}`, 'row');
+    row.dataset.standing = r.standing; return row;
+  });
+  if (v.iWasReferred) {
+    const r = v.iWasReferred;
+    const row = node('div', `${t('referredBy')} ${t(`rs_${r.standing}`)}${r.rewardMinor === null ? '' : ` · ${inrOf(r.rewardMinor)}`}`, 'row referred');
+    row.dataset.standing = r.standing; rows.unshift(row);
+  }
+  el('referrals').replaceChildren(...(rows.length === 0 ? [node('p', t('referralEmpty'), 'note')] : rows));
+  // A customer referred once cannot be referred again: the claim field goes.
+  for (const id of ['referral-claim', 'referral-claim-code', 'referral-claim-label']) el(id).hidden = v.iWasReferred !== null && v.iWasReferred !== undefined;
+}
+el('referral-claim').addEventListener('click', async () => {
+  const out = await shop().commerce.claimReferral(el('referral-claim-code').value);
+  if (!out.ok) { say('referral-say', refusalWords(out)); return; }
+  el('referral-claim-code').value = '';
+  say('referral-say', t('referralClaimed'));
+  await paintReferral();
+});
+
 let aiOptedIn = false;
 async function paintAi() {
   const out = await shop().commerce.suggestions();
@@ -432,7 +507,12 @@ el('ai-switch').addEventListener('click', async () => {
 // ── The hook app.js calls ─────────────────────────────────────────────────────────────────────────────────────────
 
 window.shopCommerce = {
-  tracked: (t) => { lastTracked = t; if (rules() !== undefined) paintHandover(); },
+  // A NEW "Where is my order?" answer (the customer's tap) also asks for the hand-over; a repaint of the same answer only paints.
+  tracked: (t) => {
+    if (rules() === undefined) return;
+    if (t !== trackedSeen && t?.ok === true) { trackedSeen = t; void askHandover(); return; }
+    paintHandover();
+  },
   render: (view) => {
     if (shop() === undefined || rules() === undefined) return;
     paintVoice(); void paintScan();
@@ -442,7 +522,7 @@ window.shopCommerce = {
       paintAccountWords();
       if (!signedIn()) { say('account-say', t('signIn')); return; }
       say('account-say', '');
-      void paintRepeatOrders(); void paintAddresses(); void paintPaying(); void paintOccasions(); void paintAi();
+      void paintRepeatOrders(); void paintAddresses(); void paintPaying(); void paintOccasions(); void paintReferral(); void paintAi();
     }
   },
 };

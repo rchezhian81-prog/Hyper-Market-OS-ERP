@@ -89,6 +89,12 @@ export interface IncomingSaleLine {
   readonly cessMinor?: number;
   /** B8 (OB-298): who confirmed the date printed on a perishable's pack at the till, and when. A record. */
   readonly packDateCheck?: { readonly confirmedBy?: string; readonly confirmedAt?: string };
+  /**
+   * OB-306 (M03-FR-02): when the line is an own-barcode BUNDLE, the till's explosion of it from its signed pack — the bundle,
+   * the definition version and what each component took off the shelf. Head office writes one `sold` movement per component
+   * from it (`sale-stock.ts`). A record; a malformed one is ignored and the line moves as itself.
+   */
+  readonly bundle?: { readonly bundleProductId?: string; readonly version?: number; readonly components?: readonly { readonly productId?: string; readonly quantityMinor?: number; readonly uom?: string }[] };
   /** B14: the pack size a tobacco line was judged against at the till. A record. */
   readonly packCheck?: { readonly packMinimumMinor?: number };
   /** B19: a carry-bag line's material and thickness as the till judged them. A record. */
@@ -117,6 +123,11 @@ export interface IncomingTender {
 }
 
 export interface IncomingSale {
+  /**
+   * OB-299 (M12-FR-02): the customer paid in full at the till and the bill is to be DELIVERED — the delivery-fee product and
+   * what its line charged. Head office books it as one delivery job after banking (`deliveryOnSale`). A record.
+   */
+  readonly delivery?: { readonly requested: true; readonly feeProductId?: string; readonly feeMinor?: number };
   readonly saleId: string;
   readonly receiptNumber: string;
   readonly laneId: string;
@@ -205,6 +216,8 @@ export type SaleExceptionKind =
   /** B14: a tobacco line below one whole pack, or not a whole number of packs (OB-160), was sold — loose cigarettes.
    *  **Critical**: COTPA s.7. */
   | 'tobacco_sold_below_pack'
+  /** B17 · OB-348: liquor was sold — refused by the shop's state (Tamil Nadu: TASMAC). **Critical**: against state law. */
+  | 'liquor_sold'
   /** B13 (OB-138): a gold piece was sold with no hallmark HUID on head office's product. **Critical**: BIS hallmarking. */
   | 'gold_sold_without_huid'
   /** B13: a HUID head office already holds a sale for was sold again — one hallmarked piece, sold twice. **Critical**. */
@@ -332,6 +345,8 @@ export interface IntakeContext {
    * the cloud's backstop for a piece sold at another store, or by a till whose store computer did not know.
    */
   readonly huidsSoldElsewhere?: ReadonlyMap<string, string>;
+  /** OB-348 (B17): the shop's state from store setup — liquor is judged by its rule. Absent → "not set" (still refused). */
+  readonly shopState?: string;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -456,6 +471,17 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
         `${line.productId} was sold and is not in the catalogue`,
         'Either it was added at the lane or the catalogue has lost it. The sale stands either way — find out which before the stock figure is trusted.',
         { productId: line.productId });
+      // B17 · OB-348: a product head office does not hold, sold under an alcoholic-drink HSN the till froze on the line, is
+      // liquor all the same — judged by the shop's state and raised critical (a liquor product never reaches a pack).
+      const liquor = productRuleRefusals({
+        productId: line.productId, description: line.productId, quantityMinor: line.quantityMinor, uom: line.uom, unitPriceMinor: line.unitPriceMinor,
+        ...(text(line.hsnCode) === '' ? {} : { hsnCode: text(line.hsnCode) }),
+      }, ctx.shopState === undefined ? {} : { shopState: ctx.shopState }).find((r) => r.reason === 'liquor_not_sold');
+      if (liquor !== undefined) {
+        add('liquor_sold', 'critical', `${line.productId}: ${liquor.detail}`,
+          'ACT NOW: liquor was sold, which the shop\'s state does not allow (Tamil Nadu: only TASMAC may sell liquor). Find the till that sold it and why its pack carried it, and keep the receipt for the record.',
+          { productId: line.productId });
+      }
       continue;
     }
 
@@ -555,8 +581,17 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       // L1: a carry bag is judged in head office's catalogue unit, whatever unit the line says.
       ...(typeof product.baseUom === 'string' && product.baseUom !== '' ? { catalogueUom: product.baseUom } : {}),
       ...(product.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
-    });
+      // B17 · OB-348: the HSN in head office's own catalogue, else the one the till froze on the line.
+      ...((h) => (h === undefined ? {} : { hsnCode: h }))(text(product.hsnCode) !== '' ? text(product.hsnCode) : text(line.hsnCode) !== '' ? text(line.hsnCode) : undefined),
+    }, ctx.shopState === undefined ? {} : { shopState: ctx.shopState });
     for (const r of legal) {
+      if (r.reason === 'liquor_not_sold') {
+        add('liquor_sold', 'critical',
+          `${product.sku}: ${r.detail}`,
+          'ACT NOW: liquor was sold, which the shop\'s state does not allow (Tamil Nadu: only TASMAC may sell liquor). Take it off sale, find why the till did not stop it (an old till, or a pack that predates the rule), and keep the receipt for the record.',
+          { productId: line.productId });
+        continue;
+      }
       if (r.reason === 'banned_single_use_plastic' || r.reason === 'carry_bag_below_min_thickness' || r.reason === 'carry_bag_not_priced' || r.reason === 'carry_bag_discounted') {
         add('unlawful_plastic_sold', 'critical',
           `${product.sku}: ${r.detail}`,

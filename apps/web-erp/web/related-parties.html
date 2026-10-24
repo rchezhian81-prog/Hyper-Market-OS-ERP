@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Related parties and staff buying</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Related parties and staff buying (M15-FR-03 · OB-301). A THIN CLIENT over head office's related-party list, the
+      staff-buying rules, the staff members' own customer accounts and the staff salary accounts. Its session is
+      apps/web-erp/src/related-parties-session.ts. Nothing is read before the person asks; every save is an explicit click
+      in the person's own name, re-checked by head office. Bank accounts are only ever shown masked.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Related parties and staff buying</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Related parties and staff buying</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="parties" hidden aria-labelledby="parties-h">
+        <h3 id="parties-h"></h3>
+        <div class="row-form">
+          <label for="p-id"><span id="p-id-l"></span><input id="p-id" autocomplete="off" /></label>
+          <label for="p-name"><span id="p-name-l"></span><input id="p-name" autocomplete="off" /></label>
+          <label for="p-kind"><span id="p-kind-l"></span><select id="p-kind"><option value="firm" id="p-kind-firm"></option><option value="person" id="p-kind-person"></option></select></label>
+          <label for="p-relation"><span id="p-relation-l"></span><input id="p-relation" autocomplete="off" /></label>
+          <label for="p-gstins"><span id="p-gstins-l"></span><input id="p-gstins" autocomplete="off" /></label>
+          <label for="p-phones"><span id="p-phones-l"></span><input id="p-phones" autocomplete="off" inputmode="tel" /></label>
+          <label for="p-accounts"><span id="p-accounts-l"></span><input id="p-accounts" autocomplete="off" /></label>
+        </div>
+        <button id="p-save" type="button"><span id="p-save-text"></span></button>
+        <p class="status" id="p-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="p-rows"></ul>
+        <h3 id="m-h"></h3>
+        <ul class="rows" id="m-rows"></ul>
+      </section>
+
+      <section id="staff" hidden aria-labelledby="staff-h">
+        <h3 id="staff-h"></h3>
+        <p class="meta" id="s-now"></p>
+        <div class="row-form" id="s-form">
+          <label for="s-cap"><span id="s-cap-l"></span><input id="s-cap" autocomplete="off" inputmode="decimal" /></label>
+          <label for="s-desk"><span id="s-desk-l"></span><input id="s-desk" autocomplete="off" /></label>
+        </div>
+        <button id="s-save" type="button"><span id="s-save-text"></span></button>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
+        <h3 id="a-h"></h3>
+        <div class="row-form" id="a-form">
+          <label for="a-emp"><span id="a-emp-l"></span><input id="a-emp" autocomplete="off" /></label>
+          <label for="a-ref"><span id="a-ref-l"></span><input id="a-ref" autocomplete="off" /></label>
+        </div>
+        <button id="a-save" type="button"><span id="a-save-text"></span></button>
+        <p class="status" id="a-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="a-rows"></ul>
+      </section>
+
+      <section id="salary" hidden aria-labelledby="salary-h">
+        <h3 id="salary-h"></h3>
+        <div class="row-form">
+          <label for="w-emp"><span id="w-emp-l"></span><input id="w-emp" autocomplete="off" /></label>
+          <label for="w-ref"><span id="w-ref-l"></span><input id="w-ref" autocomplete="off" /></label>
+        </div>
+        <button id="w-save" type="button"><span id="w-save-text"></span></button>
+        <p class="status" id="w-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="w-rows"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./related-parties.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

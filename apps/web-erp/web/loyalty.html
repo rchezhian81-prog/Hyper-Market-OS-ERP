@@ -120,6 +120,20 @@
         </div>
         <p class="status" id="expiry-status" role="status" aria-live="polite"></p>
       </section>
+
+      <!-- OB-351 · M17-FR-02: the two referral rewards, "not set" until the owner enters them — nothing is given until then. -->
+      <section aria-labelledby="referral-h">
+        <h3 id="referral-h">Referral rewards</h3>
+        <p class="lead" id="referral-lead"></p>
+        <p class="status" id="referral-say"></p>
+        <div class="row-form">
+          <label for="referrer-rupees"><span id="l-referrer-rupees">The customer who referred earns (₹)</span><input id="referrer-rupees" inputmode="decimal" autocomplete="off" /></label>
+          <label for="referred-rupees"><span id="l-referred-rupees">The new customer earns (₹)</span><input id="referred-rupees" inputmode="decimal" autocomplete="off" /></label>
+          <label for="referral-reason"><span id="l-referral-reason">Why</span><input id="referral-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="save-referral" type="button"><span id="save-referral-text">Save the rewards</span></button>
+        </div>
+        <p class="status" id="referral-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./loyalty.js" type="module"></script>

@@ -83,6 +83,21 @@ export function qualityHoldWork(input: ScreenInput): Record<string, unknown> {
   return { qualityHolds: { ...asOf(held, input.now), holds }, qualityReleasesHere: releasedHere };
 }
 
+/** M26-FR-02: the store's monitored rooms and cabinets and their ranges as head office last said — or null. */
+export function equipmentWork(input: ScreenInput): Record<string, unknown> {
+  const held = input.workFeeds?.equipment;
+  if (held === undefined) return { equipment: null };
+  return { equipment: { ...asOf(held, input.now), items: held.feed.body['equipment'] } };
+}
+
+/** M25-FR-04: the help library as head office last said — every SOP with its words, the store's people and their acks — or null. */
+export function helpWork(input: ScreenInput): Record<string, unknown> {
+  const held = input.workFeeds?.help;
+  if (held === undefined) return { library: null };
+  const b = held.feed.body;
+  return { library: { ...asOf(held, input.now), sops: b['sops'], people: b['people'], acknowledgements: b['acknowledgements'], emergencyContacts: b['emergencyContacts'], contactsSet: b['contactsSet'] } };
+}
+
 /**
  * The transfers the warehouse handheld may work: waiting to be SENT from this store, and on the road to be COUNTED IN at
  * this store — only this store's own end (head office names the store at each end). Null when the box was never told.

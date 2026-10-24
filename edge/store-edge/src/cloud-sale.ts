@@ -111,7 +111,19 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
       ? { roundOffMinor: r['roundOffMinor'] } : {}),
     // OB-264: the old ERP's bill number keyed on a mirror sale — only in its kept form (Rule 46(b), no personal data).
     ...(isOldErpBillNumber(r['oldErpBillNumber']) ? { oldErpBillNumber: r['oldErpBillNumber'] } : {}),
+    // OB-299: a bill the till marked for delivery — the fee product and what it charged. Head office books it once.
+    ...((d) => (d === undefined ? {} : { delivery: d }))(deliveryOf(r['delivery'])),
   };
+}
+
+/** OB-299: the delivery mark as the till wrote it — `requested: true` with the fee product, or nothing. */
+function deliveryOf(v: unknown): IncomingSale['delivery'] | undefined {
+  if (!isObject(v)) return undefined;
+  const d = v as Rec;
+  if (d['requested'] !== true) return undefined;
+  const feeProductId = str(d['feeProductId']);
+  const feeMinor = int(d['feeMinor']);
+  return { requested: true, ...(feeProductId === undefined ? {} : { feeProductId }), ...(feeMinor === undefined || feeMinor < 0 ? {} : { feeMinor }) };
 }
 
 const isTime = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v));

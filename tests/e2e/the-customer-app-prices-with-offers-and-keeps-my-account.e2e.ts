@@ -19,7 +19,7 @@ import { HELP_ANSWER_NOTICE } from '../../services/orders/src/storefront-account
  *     what to pay; a bad code refused on the phone; paying pays exactly that price (taken as paid, no mismatch) and the
  *     coupon is spent once — a second customer is told it is used up;
  *   • D08-FR-03: "If something is out" saved; A04 · AI-NFR-11: ideas carry the AI notice;
- *   • My order: the delivery code and arrival time read "not given yet"; A05: a chosen question answered from the shop's
+ *   • My order: "not given yet" until the tap, then head office's own 4-digit code for MY order and the ETA (OB-294); A05: a chosen question answered from the shop's
  *     records with the automatic-answer notice, and "ask a person" raises a case;
  *   • My account: a repeat order from the basket (refused without a day, then saved; pause, resume, cancel — OB-303); an
  *     address saved and removed; "remove saved payment" says nothing is saved; an occasion only with the yes, removed in
@@ -205,7 +205,19 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app prices with the till\'s
       // ── My order: the delivery code slot, and the shop's assistant ──
       await page.click('#tab-order');
       await page.locator('#handover:not([hidden])').waitFor({ timeout: 10_000 });
+      // Nothing is asked on open: "not given yet" until the customer taps (OB-294 · D08-FR-05).
       expect([await text('#handover-code'), await text('#handover-eta')]).toEqual(['not given yet', 'not given yet']);
+      expect(await page.locator('#handover-show svg.sre-icon').count()).toBe(1);
+      await page.click('#handover-show');
+      await page.locator('#handover-code[data-given="true"]').waitFor({ timeout: 10_000 });
+      // Head office's own code for MY order — the same four digits the shop holds; the ETA in head office's words.
+      const issued = (await ok(req('GET', `/v1/storefront/orders/${orders[0]!.orderId}/delivery-code`, undefined, SUBJECT), 'my code')).body as { code: string };
+      expect(issued.code).toMatch(/^\d{4}$/);
+      expect(await text('#handover-code')).toBe(issued.code);
+      expect(await text('#handover-eta')).toBe('not on a driver’s route yet');
+      expect(await text('#handover-say')).toBe('Read these four numbers to the driver when your order arrives. Do not share them before then.');
+      // Another customer cannot read it — refused and recorded.
+      expect((await req('GET', `/v1/storefront/orders/${orders[0]!.orderId}/delivery-code`, undefined, OTHER_CUSTOMER)).status).toBe(403);
       await page.click('#ask');
       expect(await text('#ask-say')).toBe('Choose a question first. Nothing was sent.');
       await page.check('#ask-topics input[value="delivery_charges"]');
@@ -218,7 +230,10 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app prices with the till\'s
 
       // ── Tamil ──
       await page.click('#lang');
-      expect(await text('#handover-code')).toBe('இன்னும் கொடுக்கப்படவில்லை');
+      // The same code, repainted in Tamil without asking again; the ETA and the advice in Tamil.
+      expect(await text('#handover-code')).toBe(issued.code);
+      expect(await text('#handover-eta')).toBe('இன்னும் டிரைவரின் வழியில் இல்லை');
+      expect(await text('#handover-say')).toBe('உங்கள் ஆர்டர் வரும்போது இந்த நான்கு எண்களை டிரைவரிடம் படித்துச் சொல்லுங்கள். அதற்கு முன் யாரிடமும் பகிர வேண்டாம்.');
       expect(await text('#ask-notice')).toBe(HELP_ANSWER_NOTICE.ta);
       await page.click('#tab-basket');
       expect(await text('#offers-title')).toBe('சலுகைகளும் உங்கள் விலையும்');

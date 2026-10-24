@@ -85,9 +85,18 @@
         <ul class="rows" id="rows" aria-label="Every assigned task, worst first"></ul>
         <p class="muted" id="none" hidden></p>
       </section>
+      <!-- D11-FR-03: a price change raises relabel tasks; a person puts the new label up and closes the task with the photo. -->
+      <section aria-labelledby="relabel-h" id="relabel" hidden>
+        <h3 id="relabel-h"></h3>
+        <p class="muted" id="relabel-lead"></p>
+        <p class="muted" id="relabel-open"></p>
+        <ul class="rows" id="relabel-rows"></ul>
+        <p class="status" id="relabel-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./store-tasks.js" type="module"></script>
+    <script src="./relabel.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

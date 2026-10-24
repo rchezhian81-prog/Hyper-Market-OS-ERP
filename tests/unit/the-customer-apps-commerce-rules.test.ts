@@ -70,12 +70,24 @@ describe('repeat orders (OB-303)', () => {
   });
 });
 
-describe('the delivery code and arrival time', () => {
-  it('are "not given yet" (null) until the delivery record carries them — never invented', () => {
-    expect(deliveryHandover(null)).toEqual({ code: null, eta: null });
-    expect(deliveryHandover({ status: 'out_for_delivery' })).toEqual({ code: null, eta: null });
-    expect(deliveryHandover({ handoverCode: '4821', eta: '2026-10-23T10:30:00.000Z' })).toEqual({ code: '4821', eta: '2026-10-23T10:30:00.000Z' });
-    expect(deliveryHandover({ handoverCode: 'abcd', eta: 'soon' })).toEqual({ code: null, eta: null });
+describe('the delivery code and arrival time (OB-294 · D08-FR-05)', () => {
+  const none = { code: null, used: false, eta: null, etaState: null, lastStopAt: null, stopsBeforeYou: null };
+  it('are "not given yet" (null) until head office gives them — never invented', () => {
+    expect(deliveryHandover(null)).toEqual(none);
+    expect(deliveryHandover(null, null)).toEqual(none);
+    expect(deliveryHandover({ code: 'abcd' }, { state: 'somewhere', estimatedArrivalAt: 'soon' })).toEqual(none);
+    expect(deliveryHandover({ code: '48211' })).toEqual(none); // four digits, never more
+  });
+  it('shows head office\'s code, and the estimate only while the driver is on the way', () => {
+    expect(deliveryHandover({ code: '0421', used: false }, { state: 'not_on_a_route', estimatedArrivalAt: null, lastStopStampedAt: null, stopsBeforeYou: 0 }))
+      .toEqual({ ...none, code: '0421', etaState: 'not_on_a_route' });
+    expect(deliveryHandover({ code: '0421' }, { state: 'on_the_way', estimatedArrivalAt: '2026-10-25T10:30:00.000Z', lastStopStampedAt: '2026-10-25T10:05:00.000Z', stopsBeforeYou: 2 }))
+      .toEqual({ code: '0421', used: false, eta: '2026-10-25T10:30:00.000Z', etaState: 'on_the_way', lastStopAt: '2026-10-25T10:05:00.000Z', stopsBeforeYou: 2 });
+    // Reached: no estimate any more; the last stamp is still said.
+    expect(deliveryHandover({ code: '0421', used: true }, { state: 'reached', estimatedArrivalAt: null, lastStopStampedAt: '2026-10-25T10:31:00.000Z', stopsBeforeYou: 0 }))
+      .toEqual({ code: '0421', used: true, eta: null, etaState: 'reached', lastStopAt: '2026-10-25T10:31:00.000Z', stopsBeforeYou: null });
+    // The code stands even when the ETA could not be read.
+    expect(deliveryHandover({ code: '9999' }, null)).toEqual({ ...none, code: '9999' });
   });
 });
 

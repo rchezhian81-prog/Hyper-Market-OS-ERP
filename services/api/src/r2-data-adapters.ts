@@ -122,6 +122,12 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'packages/identity/src/access-binding.ts', field: 'phoneNumber', whose: 'user', protection: 'held_by_identity_server', evidence: 'a claim read from the signed token for one request' },
   // The shop's own details
   { file: 'packages/receipt/src/presets.ts', field: 'phone', whose: 'shop', protection: 'not_personal', evidence: 'the shop\'s own number, printed on its bill' },
+  // OB-288 LP/workforce package (M15-FR-03 · OB-301): the supplier's phone, read from the supplier master for one request to
+  // match the owner's related-party list; only a one-way fingerprint of the facts is kept with an approval. (The related
+  // people's own numbers are shown masked on every screen, maskPii.)
+  { file: 'packages/loss-prevention/src/related-party.ts', field: 'phone', whose: 'supplier_contact', protection: 'not_kept', evidence: 'read from the supplier master for one request to match the related-party list; an approval keeps only a SHA-256 fingerprint of the facts' },
+  // The shop's emergency contacts (D11-FR-06): the fire service, the ambulance, the shop's own numbers, set by the owner.
+  { file: 'services/finance/src/help-centre.ts', field: 'phone', whose: 'shop', protection: 'not_personal', evidence: 'the shop\'s emergency numbers (fire service, ambulance, the shop\'s own lines) printed on its procedures' },
   // Suppliers' contact details — kept in the supplier master as typed. The owner decided (OB-153 "A", 16 Oct 2026, in
   // writing) that a supplier's phone, email and address in the supplier master are BUSINESS data, not personal data; the
   // C7 check passes them by that decision, and the guardrail holds the citation to the decisions register.

@@ -117,6 +117,13 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // narrow release-only right. Head office re-checks the person and re-runs its release engine; a refusal is kept,
   // visible. There is deliberately NO hold-placing event: the store computer can never put a batch on hold.
   QualityHoldReleaseDecided: { surfaces: ['manager'] },
+  // OB-288 LP/workforce package (§31 · P-01): work done on the ERP pages the box serves, with the line down — a manual
+  // equipment reading on the facilities page (M26-FR-02 "readings cache/queue"), a stock loss on the write-off capture page
+  // (M28-FR-01 "queued; approval on sync": a big one waits at head office for a second person), and an SOP acknowledgement
+  // on the help page (M25-FR-04 "help works offline"). Head office re-checks each person and runs its own routes.
+  EquipmentReadingRecorded: { surfaces: ['manager'] },
+  WriteOffCaptured: { surfaces: ['manager'] },
+  SopAcknowledged: { surfaces: ['manager'] },
 });
 
 /**

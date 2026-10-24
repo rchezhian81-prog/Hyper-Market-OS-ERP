@@ -44,9 +44,11 @@ describe('B17 — liquor is never published, by flag, by category or by HSN', ()
 
   it('the till refuses a liquor line offline by its flag or its HSN, before anything else', () => {
     expect(TILL_RULE_FLAG_KEYS).toContain('liquor');
-    const byFlag = tillLineRefusals({ productId: 'beer', description: 'Beer 650ml', quantityMinor: 1, uom: 'ea', unitPriceMinor: 15_000, regulatedFlags: { liquor: true } }, {});
+    // OB-348: judged by the shop's state — Tamil Nadu refuses (TASMAC); with no state set it is refused all the same.
+    const byFlag = tillLineRefusals({ productId: 'beer', description: 'Beer 650ml', quantityMinor: 1, uom: 'ea', unitPriceMinor: 15_000, regulatedFlags: { liquor: true } }, { shopState: 'TN' });
     expect(byFlag.map((r) => r.reason)).toEqual(['liquor_not_sold']);
     expect(byFlag[0]!.laneMessage).toMatch(/TASMAC/);
+    expect(tillLineRefusals({ productId: 'beer', description: 'Beer 650ml', quantityMinor: 1, uom: 'ea', unitPriceMinor: 15_000, regulatedFlags: { liquor: true } }, {})[0]!.laneMessage).toMatch(/state is not set/);
     const byHsn = tillLineRefusals({ productId: 'beer', description: 'Beer 650ml', quantityMinor: 1, uom: 'ea', unitPriceMinor: 15_000, hsnCode: '22030000', regulatedFlags: { minimumAge: 21 } }, {});
     expect(byHsn.map((r) => r.reason)).toEqual(['liquor_not_sold']);
     expect(tillLineRefusals({ productId: 'soap', description: 'Soap', quantityMinor: 1, uom: 'ea', unitPriceMinor: 4_000, hsnCode: '3401' }, {})).toEqual([]);

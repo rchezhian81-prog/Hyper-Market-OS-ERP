@@ -236,6 +236,14 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     makerPermission: 'promotion.launch', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
   },
   // ── OB-288 P2 — end
+  // ── OB-288 till side — begin
+  // OB-347 (owner, 24 Oct 2026, in writing): changing a PUBLISHED product's tax (HSN) class is asked by the person who keeps
+  // the catalogue and approved by Finance (`catalogue.tax.approve`: the accountant or the owner) — never the maker.
+  hsn_class_change: {
+    kind: 'hsn_class_change', label: 'Change the tax (HSN) class of a published product',
+    makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
+  },
+  // ── OB-288 till side — end
 });
 
 /** A maker's request, as recorded. */

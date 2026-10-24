@@ -10,3 +10,5 @@ export * from './till-gate';
 // OB-288 P2: B17 liquor is not sold at all (TASMAC); B15 tobacco is never promoted (COTPA s.5).
 export * from './liquor';
 export * from './advertising';
+// OB-301 (M15-FR-03): staff buy only at the service desk, under the owner's cap, never billing themselves.
+export * from './staff-purchase';

@@ -74,8 +74,12 @@ describe.each(backings)('delivery proof is captured and checked (M19-FR-03 · OB
     expect((await relay(s1.stopId, stopUpdate(r1.routeId, s1.stopId, 'ORD-1', 'out_for_delivery'))).status).toBe(202);
     const d1 = await relay(s1.stopId, stopUpdate(r1.routeId, s1.stopId, 'ORD-1', 'delivered', { proofKind: 'otp', proofCode: code1, deviceFix: { lat: DOORS.near.lat + 0.0001, lon: DOORS.near.lon, accuracyMetres: 10 } }));
     expect(d1.status).toBe(202);
-    // The owner has not set the radius: the distance is said, nothing is decided.
-    expect((d1.body as { proofCheck: unknown }).proofCheck).toEqual({ code: 'matched', fence: { result: 'radius_not_set', distanceMetres: expect.any(Number), accuracyMetres: 10 }, imageSha256: null });
+    // OB-343 (owner, 24 Oct 2026): the shop's default radius is 250 metres until the owner enters another — the phone
+    // about 11 m from the door is inside it.
+    expect((d1.body as { proofCheck: unknown }).proofCheck).toEqual({ code: 'matched', fence: { result: 'inside', distanceMetres: expect.any(Number), radiusMetres: 250, accuracyMetres: 10 }, imageSha256: null });
+    const defaults = await shop.ok('GET', '/v1/delivery/controls', DISPATCHER);
+    expect((defaults['numbers'] as { key: string }[]).find((n) => n.key === 'geofenceRadiusMetres')).toMatchObject({ value: 250, state: 'default', decidedBy: 'OB-343' });
+    expect(defaults['notSet']).toEqual(['contributionThresholdMinor', 'costPerDropMinor', 'costPerKmMinor', 'fleetRate']);
     expect((d1.body as { flags: string[] }).flags).toEqual([]);
     // A malformed code from a phone cannot be read at all — kept at the store for a person, never guessed.
     expect(codeOf(await relay(s2.stopId, stopUpdate(r1.routeId, s2.stopId, 'ORD-2', 'delivered', { proofKind: 'otp', proofCode: '12' })))).toBe('not_readable_as_a_stop_outcome');

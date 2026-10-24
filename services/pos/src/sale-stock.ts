@@ -11,6 +11,7 @@
 
 import type { Movement } from '../../inventory/src/index';
 import type { IncomingSale } from './sale-intake';
+import { readLineBundle, returnedLineBundle, type LineBundle } from '../../../packages/product/src/bundles';
 
 /** Where the sale's stock leaves from, and how that was decided — stated, never inferred later. */
 export interface SaleStockLocation {
@@ -62,6 +63,26 @@ export function saleStockMovements(sale: IncomingSale, location: SaleStockLocati
   const out: Movement[] = [];
   sale.lines.forEach((line, i) => {
     if (!Number.isInteger(line.quantityMinor) || line.quantityMinor <= 0) return;
+    // OB-306 (M03-FR-02): an own-barcode BUNDLE holds no stock — it leaves the shelf as its components, one `sold` movement
+    // each, from the explosion the till froze on the line (its signed pack's definition). Keyed on the line AND the
+    // component, so a resent sale collapses to the same movements.
+    const bundle = readLineBundle(line.bundle);
+    if (bundle !== undefined) {
+      bundle.components.forEach((c, j) => {
+        out.push({
+          movementId: `sale-${sale.saleId}-${i}-c${j}`,
+          productId: c.productId,
+          locationId: location.locationId,
+          kind: 'sold',
+          quantityMinor: c.quantityMinor,
+          uom: c.uom ?? 'ea',
+          occurredAt: sale.committedAt,
+          enteredBy: sale.cashierId,
+          reason: `component of bundle ${bundle.bundleProductId} (definition v${bundle.version}), ${line.quantityMinor} sold on line ${i + 1}${location.basis === 'unplaced' ? ` — held at lane ${sale.laneId}'s unplaced location` : ''}`,
+        });
+      });
+      return;
+    }
     out.push({
       movementId: `sale-${sale.saleId}-${i}`,
       productId: line.productId,
@@ -93,7 +114,30 @@ export interface ReturnForStock {
     readonly batchId?: string | null;
     readonly batchExpiry?: string;
     readonly condition?: string;
+    /** OB-306: a returned BUNDLE's components, in proportion to the bundles returned (`bundlesOfReturn`). */
+    readonly bundle?: unknown;
   }[];
+}
+
+/**
+ * OB-306: put each returned bundle line's components on it — from the explosion frozen on the ORIGINAL bill (the definition
+ * the customer bought under), in proportion to the bundles coming back; else the explosion the till put on the return (its
+ * pack's definition) when the original bill carries none. A line that is not a bundle comes back as it is. Pure.
+ */
+export function bundlesOfReturn<L extends { readonly productId: string; readonly quantityMinor: number; readonly bundle?: unknown }>(
+  sale: { readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly bundle?: unknown }[] } | undefined,
+  lines: readonly L[],
+): readonly (L & { readonly bundle?: LineBundle })[] {
+  return lines.map((line) => {
+    const soldLine = sale?.lines.find((l) => l.productId === line.productId && readLineBundle(l.bundle) !== undefined);
+    const sold = soldLine === undefined ? undefined : readLineBundle(soldLine.bundle);
+    const fromBill = sold === undefined || soldLine === undefined ? undefined : returnedLineBundle(sold, soldLine.quantityMinor, Math.abs(line.quantityMinor));
+    const fromTill = readLineBundle(line.bundle);
+    const bundle = fromBill ?? fromTill;
+    const { bundle: _drop, ...rest } = line as L & { bundle?: unknown };
+    void _drop;
+    return (bundle === undefined ? rest : { ...rest, bundle }) as L & { readonly bundle?: LineBundle };
+  });
 }
 
 /**
@@ -150,6 +194,24 @@ export function returnStockMovements(ret: ReturnForStock, location: SaleStockLoc
   ret.lines.forEach((line, i) => {
     if (line.disposition !== 'resell') return;
     if (!Number.isInteger(line.quantityMinor) || line.quantityMinor <= 0) return;
+    // OB-306: a resold bundle goes back on the shelf as its components — one `returned` movement each.
+    const bundle = readLineBundle(line.bundle);
+    if (bundle !== undefined) {
+      bundle.components.forEach((c, j) => {
+        out.push({
+          movementId: `return-${ret.returnId}-${i}-c${j}`,
+          productId: c.productId,
+          locationId: location.locationId,
+          kind: 'returned',
+          quantityMinor: c.quantityMinor,
+          uom: c.uom ?? 'ea',
+          occurredAt: ret.processedAt,
+          enteredBy: ret.processedBy,
+          reason: `component of bundle ${bundle.bundleProductId} (definition v${bundle.version}), ${line.quantityMinor} returned on line ${i + 1}`,
+        });
+      });
+      return;
+    }
     out.push({
       movementId: `return-${ret.returnId}-${i}`,
       productId: line.productId,

@@ -342,7 +342,8 @@ import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks,
 // OB-288 P2 (catalogue, pricing and product legal guards): M03-FR-01–04 · M04-FR-04 · M05-FR-03/04 · D02-FR-02/04 · B15 · B17.
 import { p2CatalogueRoutes, p2TaxClassHooks, p2PromotionHooks, p2SeasonSweep } from './p2-catalogue-adapters';
 import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep, finBridgeDayBookHooks, finBridgePaymentHooks } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
-import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
+import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
+import { customerFollowupsRoutes } from './customer-followups-adapters'; // OB-288 customer & delivery follow-ups — referrals (OB-351), scan-and-go (OB-350)
 import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
 import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
@@ -350,6 +351,8 @@ import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
 import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
+import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
+import { lpWorkforceSurface } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -554,7 +557,9 @@ export function buildSurface(deps: {
   const orderFulfilment = store === undefined ? undefined
     : orderFulfilmentAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
   const afterOrderFact = orderFulfilment === undefined ? undefined
-    : (t: string, orderId: string, by: string) => applyOrderFulfilment(orderFulfilment, t, orderId, by);
+    : (t: string, orderId: string, by: string) => applyOrderFulfilment(orderFulfilment, t, orderId, by)
+      // OB-346: a delivered online order earns at the till rate, once (keyed on its sale) — never failing the command.
+      .then(async (r) => { await earnOnDelivery(loyaltyEffects, { store: store!, now })(t, r).catch(() => undefined); return r; });
   const probes = deps.probes ?? (async () => []);
   // One durable settings instance, shared so the config-history / rollback routes operate on the SAME
   // versioned store the setup answers write to (a setting change and its rollback share one history).
@@ -573,7 +578,7 @@ export function buildSurface(deps: {
   // What a sale and a return do to a member's points (PF-09-a) — one composition shared by the sale and return routes.
   const loyaltyEffects = store === undefined ? undefined : withLoyaltyTiers(loyaltyEffectsAdapter({ store, now, rule: loyaltyRule }), { store, now }); // OB-295 tiers
   // What the store computers may let a member spend, and what a till spend does when its sale arrives (PF-09 step 3).
-  const loyaltyWallets = store === undefined ? undefined : loyaltyWalletsAdapter({ store, now, rule: loyaltyRule });
+  const loyaltyWallets = store === undefined ? undefined : withWalletTiers(loyaltyWalletsAdapter({ store, now, rule: loyaltyRule }), { store, now }); // OB-295: tiers in the till's feed
   // The named-report producers over governed source records (EA-06) — shared by the report route and the governed drill
   // (EA-05), so a drill reaches exactly the records the report's figure was summed from.
   const producers = store === undefined ? undefined : reportProducers({ store, now, calendar: shopCalendar, loyaltyRule, storeSync: (t) => storeSyncView(store, t, now) });
@@ -781,7 +786,7 @@ export function buildSurface(deps: {
     // Product-master authoring (M03-FR-01/03) — compliance-gated publish + read, event-sourced store.
     ...productMasterRoutes(store === undefined
       ? { publish: () => {}, product: empty(undefined), products: empty([]), categoryRegister: { categories: empty([]), define: () => {}, permissionsOfUser: empty(undefined), now } }
-      : productMasterAdapter({ store, now })),
+      : { ...productMasterAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) /* OB-347: a published product's HSN class changes with Finance's approval */ }),
     // Head office's own category list (SF-06-b · OB-24 "A" · M03-FR-01): the owner defines; a manager proposes for the
     // owner's approval. Every product publish is judged against it.
     ...categoryRoutes(store === undefined
@@ -1187,6 +1192,7 @@ export function buildSurface(deps: {
         // Verifier r18 OB85-2: the bill-number high-water resumes from its persisted snapshot (O(prefixes) per pack build).
         ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
         b2cDynamicQr: b2cDynamicQrSettingOf(settings), // A22 (OB-326, switched off)
+        tillPolicies: tillSidePoliciesOf(settings), // OB-288 till side: OB-348 shop state · OB-299 delivery-fee product
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1253,6 +1259,7 @@ export function buildSurface(deps: {
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
       // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
       huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
+      shopStateOf: shopStateOf(settings), deliveryOnSale: tillDeliveryOnSale({ store, now }), // OB-288 till side: OB-348 · OB-299
     }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
@@ -1447,6 +1454,7 @@ export function buildSurface(deps: {
       // answer the customer's listing gives (B23 · A26, r4-online-adapters).
       ...(store === undefined ? {} : { onlineListed: onlineListedAdapter({ store, now, signer }) }),
       ...(store === undefined ? {} : { pricing: onlinePricingAdapter({ store, now, pointValuePaise: async (t: string) => (await loyaltyRule(t)).pointValuePaise }) }), // OB-288 wave 3 · WF-13
+      ...(store === undefined ? {} : { routing: fulDelStorefrontRouting({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }) }), // D09-FR-01 · OB-300 at placement
     }),
     // FUL-03: how the store delivers, as head office holds it — set by the owner/manager, read by staff.
     ...deliveryServiceRoutes(store === undefined
@@ -1771,6 +1779,7 @@ export function buildSurface(deps: {
     ...p2CatalogueRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
     ...financeBridgeRoutes({ store, now }), // OB-288 P5
     ...fulfilmentDeliveryRoutes({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 fulfilment & delivery
+    ...customerFollowupsRoutes({ store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 customer & delivery follow-ups (OB-350 · OB-351)
     ...opsMessagingRoutes({ store, now }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
@@ -2170,6 +2179,7 @@ export function buildSurface(deps: {
   aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
   customerCommerceSurface(surface, { store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }); // OB-288 wave 3 (M16-FR-04 · M17-FR-01/02 · M18-FR-04 · M20 · M21-FR-01/02 · WF-13 · D08 · OB-295/303/311/314/322/329)
   tillBillSurface(surface, { store, now }); // Till bill and GST (audit-1 P5 · audit-2 P3)
+  lpWorkforceSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 LP, workforce, facilities and adoption (M15-FR-02/03 · M25 · M26 · M28-FR-01 · QG-09 · D11 · OB-301/317/320/323)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));

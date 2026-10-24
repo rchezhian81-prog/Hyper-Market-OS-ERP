@@ -26,6 +26,7 @@ import { FINDINGS_PUSH_ROLE_ID } from './roles';
 import { gateDecisionRoutes, type GateDecisionDeps } from '../../compliance/src/gate-decisions';
 import type { OtherGateBlocker } from '../../compliance/src/risk';
 import { STREAM, streamName, riskRegisterAdapter, drReadinessAdapter } from './adapters';
+import { adoptionGateBlockers } from './lp-workforce-adapters'; // QG-09 adoption reading (OB-288 LP/workforce package)
 
 export const FINDINGS_STREAM = streamName(STREAM.compliance, 'findings');
 export const FINDING_SCANS_STREAM = streamName(STREAM.compliance, 'finding-scans');
@@ -87,7 +88,7 @@ export async function gateBlockersBeyondRisks(store: EventStore, now: () => stri
   const fromRecovery: OtherGateBlocker[] = recovery.verdict === 'GO' ? [] : [{
     gate: 'QG-08', kind: 'check', ref: 'recovery-gate', reason: `QG-08 rehearsals not all passed — ${recovery.why}`,
   }];
-  return [...fromFindings, ...fromRecovery];
+  return [...fromFindings, ...fromRecovery, ...await adoptionGateBlockers(store, now, tenantId)]; // QG-09 (OB-288 LP/workforce package)
 }
 
 export function gateDecisionAdapter(input: { readonly store: EventStore; readonly now: () => string }): GateDecisionDeps {

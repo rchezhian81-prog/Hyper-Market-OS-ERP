@@ -56,6 +56,8 @@ export interface SoldLine {
   readonly batchId?: string;
   /** PF-14 — that batch's use-by/expiry date (YYYY-MM-DD), where captured. */
   readonly batchExpiry?: string;
+  /** OB-306: the bundle explosion the till froze on the line — a return of the bundle gives back its components. */
+  readonly bundle?: unknown;
 }
 
 /** An original bill, as this box recorded it. */

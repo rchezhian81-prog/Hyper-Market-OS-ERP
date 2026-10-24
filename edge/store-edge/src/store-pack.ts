@@ -1022,6 +1022,16 @@ export interface PackPolicies {
    * number and IFSC it has given (a missing one is absent, and the till then prints no QR and says which is not set).
    */
   readonly b2cDynamicQr?: { readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string };
+  /**
+   * OB-348 (B17): the shop's state, an ISO 3166-2:IN code (TN for Tamil Nadu), from store setup (owner-approved). The till and
+   * this box judge liquor by its rule. Absent → "not set" (liquor refused, and said so).
+   */
+  readonly shopState?: string;
+  /**
+   * OB-299 (M12-FR-02): the catalogue product whose signed price is the till's delivery-fee line (₹0 allowed). Absent →
+   * "not set": the till refuses to mark a bill for delivery and says the owner has not set the fee.
+   */
+  readonly tillDeliveryFeeProductId?: string;
 }
 
 /** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */

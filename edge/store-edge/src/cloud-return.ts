@@ -15,6 +15,8 @@
 // there is no pack version to stamp — the refund's authority is decided at the lane and re-checked in
 // the cloud, and the edge adds nothing of its own to it.
 
+import { readLineBundle, type LineBundle } from '../../../packages/product/src/bundles';
+
 type Rec = Record<string, unknown>;
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
@@ -26,6 +28,8 @@ export interface CloudReturnLine {
   readonly uom: string;
   readonly quantityMinor: number;
   readonly disposition: string;
+  /** OB-306: a returned bundle's components as the till exploded them from its pack (head office prefers the bill's). */
+  readonly bundle?: LineBundle;
 }
 
 /** The synced-return payload: exactly the fields `POST /v1/sales/:saleId/returns/synced` reads. */
@@ -115,6 +119,7 @@ function toCloudLine(l: unknown): CloudReturnLine {
     uom: str(r['uom']) ?? '',
     quantityMinor: int(r['quantityMinor']) ?? 0,
     disposition: str(r['disposition']) ?? '',
+    ...((b) => (b === undefined ? {} : { bundle: b }))(readLineBundle(r['bundle'])),
   };
 }
 

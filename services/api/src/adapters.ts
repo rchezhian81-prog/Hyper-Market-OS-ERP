@@ -49,6 +49,7 @@ import type { PackHierarchyDeps } from '../../catalogue/src/pack-hierarchy';
 import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
 import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview';
 import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
+import type { BundleDefinition } from '../../../packages/product/src/bundles'; // OB-288 till side (OB-306)
 import { cessRateStore, frozenCessOf } from './till-bill-stores'; // Till bill and GST (A7)
 import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
@@ -2516,6 +2517,7 @@ export function cataloguePreviewAdapter(input: {
     blockedProducts: saleBlocksAdapter(input).blockedProducts,
     expiredBatches: saleBlocksAdapter(input).expiredBatches, // M10-FR-01 follow-up: expired batches refused on a batch-bearing code
     cessSchedule: cessRateStore(input).schedule, // Till bill and GST (A7): the cess in force rides the pack
+    bundles: (t) => allOf<BundleDefinition>(input.store, t, streamName(STREAM.catalogue, 'bundles'), 'BundleDefined'), // OB-306: bundles ride the signed pack to the tills
     ...(input.pricing === undefined ? {} : { pricing: input.pricing }),
     now: input.now,
   };
@@ -3326,6 +3328,7 @@ export function returnsAdapter(input: {
           productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, lineTotalMinor: l.lineTotalMinor,
           ...(typeof l.batchId === 'string' && l.batchId !== '' ? { batchId: l.batchId } : {}),
           ...(typeof l.batchExpiry === 'string' && l.batchExpiry !== '' ? { batchExpiry: l.batchExpiry } : {}),
+          ...(l.bundle === undefined ? {} : { bundle: l.bundle }), // OB-306: a returned bundle gives back its components
         })),
         tenders: s.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amountMinor })),
       } satisfies OriginalSale;

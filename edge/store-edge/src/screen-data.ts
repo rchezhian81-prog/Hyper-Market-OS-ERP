@@ -59,7 +59,7 @@ import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolic
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 import { permissionsOf } from './screen-navigation';
-import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
+import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, equipmentWork, helpWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
 import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 
@@ -71,6 +71,8 @@ export const SCREENS = Object.freeze([
   'held-returns',
   // OB-288 integration follow-up: the Recalls and trace page (M10-FR-03/04 · lane 2 · P1), served from the store box too.
   'recall-trace',
+  // OB-288 LP/workforce package: the role help centre (M25-FR-04 "help works offline"), served from the store box too.
+  'help',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -219,6 +221,8 @@ export interface TillCatalogue {
   readonly embeddedRules?: SignedPack['snapshot']['embeddedRules'];
   /** SF-01: the switched-on offers head office signed into the pack — the till applies them offline, by its own clock. */
   readonly promotions?: SignedPack['snapshot']['promotions'];
+  /** OB-306: the own-barcode bundles head office signed into the pack — the till explodes a bundle sale into its components. */
+  readonly bundles?: SignedPack['snapshot']['bundles'];
 }
 
 /**
@@ -254,6 +258,7 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
       ...(snapshot.scope === undefined ? {} : { scope: snapshot.scope }),
       ...(snapshot.embeddedRules === undefined ? {} : { embeddedRules: snapshot.embeddedRules }),
       ...(snapshot.promotions === undefined ? {} : { promotions: snapshot.promotions }),
+      ...(snapshot.bundles === undefined ? {} : { bundles: snapshot.bundles }),
       products: snapshot.products.map((p) => ({
         productId: p.productId,
         sku: p.sku,
@@ -457,6 +462,8 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
     // SF-01: the offers ride through to the lane as signed — before, the box rebuilt the catalogue field by field and
     // an offer head office launched never reached a scanner.
     ...(till.promotions === undefined ? {} : { promotions: till.promotions }),
+    // OB-306: the bundle definitions ride through as signed, so the till explodes a bundle line offline.
+    ...(till.bundles === undefined ? {} : { bundles: till.bundles }),
     products,
     barcodes,
     // Named, never silently dropped: a product missing from the till is a product nobody can sell.
@@ -1895,8 +1902,27 @@ export function writeOffCapturePayload(input: ScreenInput): Record<string, unkno
     materialThresholdMinor: policy.materialThresholdMinor ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR,
   };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // M28-FR-01 "queued; approval on sync": the store this box is, so the screen can save a loss on its own queue with the
+  // line down for this store computer to carry (head office values it and asks the second person).
+  const store = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
+  if (store !== undefined) payload['storeId'] = store;
 
   return payload;
+}
+
+/**
+ * The role help centre served from the store box (M25-FR-04 · OB-288 LP/workforce package · §31 "SOP/help cached on
+ * device"). The library is head office's last word (the help feed: every published SOP with its English and Tamil
+ * words, the store's people and their roles, their latest acknowledgements, the emergency contacts) with how old it is;
+ * a person signed in at the office screens is the viewer (`asSignedInPerson` fills who and what they hold), and the page
+ * shows the SOPs for THEIR roles. An acknowledgement given here rides this box's device queue to head office. `null` only
+ * when the box does not know its own store.
+ */
+export function helpPayload(input: ScreenInput): Record<string, unknown> | null {
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+  const store = policies?.storeId ?? policies?.branchId;
+  if (store === undefined) return null;
+  return { permissions: [], storeId: store, ...helpWork(input) };
 }
 
 /**
@@ -2122,6 +2148,10 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     ...((l) => (l === undefined ? {} : { fssaiLicence: l }))(fssaiLicenceOf(policies?.fssaiLicence)),
     // A22 (OB-326): the B2C dynamic QR — only when switched on; each detail only when it is text.
     ...((q) => (q === undefined ? {} : { b2cDynamicQr: q }))(b2cDynamicQrOf(policies?.b2cDynamicQr)),
+    // OB-348 (B17): the shop's state, which the till judges liquor by — `null` when the store pack does not say ("not set").
+    shopState: textOf((policies as { readonly shopState?: unknown } | undefined)?.shopState) ?? null,
+    // OB-299 (M12-FR-02): the product whose signed price is the delivery-fee line — `null` when the owner has not set it.
+    tillDeliveryFeeProductId: textOf((policies as { readonly tillDeliveryFeeProductId?: unknown } | undefined)?.tillDeliveryFeeProductId) ?? null,
   };
 }
 
@@ -2501,6 +2531,8 @@ export function facilitiesPayload(input: ScreenInput): Record<string, unknown> |
   Object.assign(payload, foodSafetyWork(input));
   // OB-333: the batches on quality hold a person may release here with the line down, and those released here already.
   Object.assign(payload, qualityHoldWork(input));
+  // M26-FR-02 "readings cache/queue": the store's monitored rooms and cabinets, for a manual reading with the line down.
+  Object.assign(payload, equipmentWork(input));
   const fsStore = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
   if (fsStore !== undefined) payload['storeId'] = fsStore;
 
@@ -2729,6 +2761,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'return-governance': 'returnGovernanceData',
   'held-returns': 'heldReturnsData',
   'recall-trace': 'recallTraceData',
+  help: 'helpData',
   'cash-office': 'cashOfficeData',
   'risk-acceptance': 'riskAcceptanceData',
   'day-reopen': 'dayReopenData',
@@ -2788,6 +2821,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   // WF-11: the same reviewer identity as the refund exceptions; the worklist and every decision are head office's.
   'held-returns': returnGovernancePayload,
   'recall-trace': recallTracePayload,
+  help: helpPayload,
   'cash-office': cashOfficePayload,
   'risk-acceptance': riskAcceptancePayload,
   'day-reopen': dayReopenPayload,

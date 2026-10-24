@@ -80,8 +80,8 @@ describe('the till session hands a basket over and takes it back whole (audit PF
 
   it('prices, tax, HSN code, age requirement and the age answer survive the round trip; the total is the same', async () => {
     const a = session();
-    a.confirmAge(18, '2026-10-09T09:59:00Z', 'BEER');
-    a.scan({ productId: 'BEER', description: 'Beer 650ml', unitPrice: money(18_000, 'INR'), quantityMinor: 2, uom: 'ea', taxRate: taxRateFromPercent(28), hsnCode: '22030000', minimumAge: 18 });
+    a.confirmAge(18, '2026-10-09T09:59:00Z', 'ENERGY'); // B17 · OB-348: a beer is refused at the scan now, so an 18+ energy drink
+    a.scan({ productId: 'ENERGY', description: 'Energy drink 250ml', unitPrice: money(18_000, 'INR'), quantityMinor: 2, uom: 'ea', taxRate: taxRateFromPercent(28), hsnCode: '22029920', minimumAge: 18 });
     a.scan({ productId: 'DAL', description: 'Toor dal 1kg', unitPrice: money(12_000, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(5) });
     const before = a.totals();
     const held = a.basketToHold();
@@ -92,7 +92,7 @@ describe('the till session hands a basket over and takes it back whole (audit PF
     b.restoreHeld(back.lines, back.ageAnswers);
     expect(b.totals()).toEqual(before);
     expect(b.ageConfirmedAtLeast()).toBe(18);
-    expect(b.basketToHold().lines.map((l) => [l.productId, l.unitPriceMinor, l.taxBps, l.hsnCode, l.minimumAge])).toEqual([['BEER', 18_000, 2_800, '22030000', 18], ['DAL', 12_000, 500, undefined, undefined]]);
+    expect(b.basketToHold().lines.map((l) => [l.productId, l.unitPriceMinor, l.taxBps, l.hsnCode, l.minimumAge])).toEqual([['ENERGY', 18_000, 2_800, '22029920', 18], ['DAL', 12_000, 500, undefined, undefined]]);
     // And it can be paid: the age-restricted line is covered by the answer that came back with it.
     const sale = await b.commit('S-1', 'R-1', '2026-10-09T10:05:00Z', [{ kind: 'cash', amount: b.totals().payable, status: 'settled' }]);
     expect(sale.total.minor).toBe(before.payable.minor);

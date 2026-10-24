@@ -52,6 +52,8 @@
       /* The raiser's own requests still in play — carry one on to record it once it is approved. */
       .losses { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .losses h3 { margin:0; font-size:17px; }
+      .woq-form { display:grid; gap:8px; } .woq-form label, .losses label { display:grid; gap:4px; font-size:14px; color:var(--muted); }
+      .woq-form input, .woq-form select, .losses textarea { min-height:var(--tap); box-sizing:border-box; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); font:inherit; }
       .losses p.lead { margin:0; font-size:14px; }
       .loss-requests { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       .loss-request { display:grid; gap:6px; padding:12px; border-radius:10px; background:var(--bg); border:1px solid var(--line); }
@@ -147,11 +149,37 @@
         <p class="lead" id="your-losses-lead"></p>
         <ul class="loss-requests" id="loss-requests"></ul>
       </section>
+      <!-- M28-FR-01 offline: a loss saved on this screen with the line down, carried by the store computer (approval on sync). -->
+      <section class="losses" id="woq" hidden aria-labelledby="woq-title">
+        <h3 id="woq-title"></h3>
+        <p class="lead" id="woq-lead"></p>
+        <form id="woq-form" class="woq-form">
+          <label for="woq-product"><span id="woq-product-l"></span><input id="woq-product" autocomplete="off" /></label>
+          <label for="woq-location"><span id="woq-location-l"></span><input id="woq-location" autocomplete="off" /></label>
+          <label for="woq-qty"><span id="woq-qty-l"></span><input id="woq-qty" type="number" min="1" step="1" inputmode="numeric" /></label>
+          <label for="woq-uom"><span id="woq-uom-l"></span><input id="woq-uom" value="ea" autocomplete="off" /></label>
+          <label for="woq-type"><span id="woq-type-l"></span><select id="woq-type"></select></label>
+          <label for="woq-reason"><span id="woq-reason-l"></span><select id="woq-reason"></select></label>
+          <label for="woq-evidence"><span id="woq-evidence-l"></span><input id="woq-evidence" autocomplete="off" /></label>
+          <button id="woq-save" class="act primary" type="submit"><span id="woq-save-text"></span></button>
+        </form>
+        <p class="result" id="woq-result" hidden role="status" aria-live="polite"><span class="icon" id="woq-result-icon" aria-hidden="true"></span><span id="woq-result-text"></span></p>
+        <h3 id="woq-saved-h"></h3>
+        <ul class="loss-requests" id="woq-saved"></ul>
+      </section>
+
+      <!-- M28-FR-01 "approval on sync": captured losses at head office waiting for a second person who is not the raiser. -->
+      <section class="losses" id="wod" hidden aria-labelledby="wod-title">
+        <h3 id="wod-title"></h3>
+        <ul class="loss-requests" id="wod-rows"></ul>
+        <p class="lead" id="wod-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./write-off-capture.js" type="module"></script>
+    <script src="./write-off-queue.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

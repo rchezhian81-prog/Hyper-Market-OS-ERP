@@ -69,6 +69,8 @@ export interface GateProduct {
   /** OB-173: the product's price in THIS box's catalogue — a carry bag is never charged below it. */
   readonly unitPriceMinor?: number;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
+  /** B17 · OB-348: the product's HSN in THIS box's catalogue — an alcoholic-drink heading is liquor, flagged or not. */
+  readonly hsnCode?: string;
 }
 
 export type TillRulesAnswer =
@@ -82,7 +84,11 @@ export type TillRulesAnswer =
  */
 export function checkTillRules(
   record: Record<string, unknown>,
-  ctx: { readonly products: ReadonlyMap<string, GateProduct>; readonly scales: LaneScales; readonly today: string; readonly soldHuids?: ReadonlySet<string> },
+  ctx: {
+    readonly products: ReadonlyMap<string, GateProduct>; readonly scales: LaneScales; readonly today: string; readonly soldHuids?: ReadonlySet<string>;
+    /** OB-348 (B17): the shop's state from this box's store pack — liquor is judged by its rule. Absent → "not set". */
+    readonly shopState?: string;
+  },
 ): TillRulesAnswer {
   const lines = Array.isArray(record['lines']) ? (record['lines'] as unknown[]) : [];
   // B13: a HUID this box has sold, or one an earlier line of THIS bill already carries, is sold — refused before the disk.
@@ -108,7 +114,9 @@ export function checkTillRules(
       // NEW-2 (B6): weighed or not is THIS box's catalogue's answer, whatever unit the record wrote (or left out).
       ...(product?.baseUom === undefined ? {} : { catalogueUom: product.baseUom }),
       ...(product?.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
-    }, { scales: ctx.scales, today: ctx.today, soldHuids: sold });
+      // B17 · OB-348: the HSN in this box's catalogue, else the one the record froze on the line.
+      ...((h) => (h === undefined ? {} : { hsnCode: h }))(product?.hsnCode ?? text(l['hsnCode'])),
+    }, { scales: ctx.scales, today: ctx.today, soldHuids: sold, ...(ctx.shopState === undefined ? {} : { shopState: ctx.shopState }) });
     const first = refusals[0];
     if (first !== undefined) {
       return { ok: false, refusedBecause: first.reason, productId, laneMessage: `Do not take payment. ${first.laneMessage} Nothing was saved.` };

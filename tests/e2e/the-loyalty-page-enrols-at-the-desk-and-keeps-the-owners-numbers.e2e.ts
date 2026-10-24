@@ -13,6 +13,7 @@ import { startInboxShop, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop'
  *     stays "not on record"; a given one is kept; the desk then finds the member — points, "tiers: not set", "expiry: not set";
  *   • the owner enters two tiers and 12 months' expiry (a save without a reason is refused); the member then shows the tier
  *     their 12-month spend reaches; the expiry run says what it did;
+ *   • OB-351: the two referral rewards read "not set — nothing is given" until the owner enters them (rupees, with a reason);
  *   • a store manager reads the programme but cannot change it (the owner-only line is shown, the saves are off).
  * Needs DATABASE_URL and Chromium; else it SKIPS.
  */
@@ -107,13 +108,27 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Loyalt
       await page.click('#find');
       await page.locator('#found .tier', { hasText: 'No tier yet' }).waitFor({ timeout: 15_000 });
       expect(await page.textContent('#found .next')).toBe('↑ ₹10,000.00 more to reach Silver');
+      // ── OB-351: the referral rewards, each "not set" — nothing is given — until the owner enters it.
+      await page.locator('#referral-say[data-referrer="not_set"][data-referred="not_set"]').waitFor({ timeout: 15_000 });
+      expect(await page.textContent('#referral-say')).toBe('○ The customer who referred earns: not set — nothing is given · The new customer earns: not set — nothing is given');
+      await page.fill('#referrer-rupees', '5o');
+      await page.click('#save-referral');
+      expect(await page.textContent('#referral-status')).toBe('⚠ Enter a reward in rupees (for example 50 or 25.50) in at least one box. 0 means no reward on that side. Nothing was sent.');
+      await page.fill('#referrer-rupees', '50');
+      await page.click('#save-referral');
+      expect(await page.textContent('#referral-status')).toBe('⚠ Say why first. Nothing was sent.');
+      await page.fill('#referral-reason', 'launch the referral programme');
+      await page.click('#save-referral');
+      await page.locator('#referral-say[data-referrer="set"]').waitFor({ timeout: 15_000 });
+      expect(await page.textContent('#referral-say')).toMatch(/^○ The customer who referred earns: ₹50\.00 · The new customer earns: not set — nothing is given · Last set by /);
       // Icons beside the words.
-      for (const id of ['enrol', 'find', 'save-tiers', 'save-expiry', 'run-expiry']) expect(await page.locator(`#${id} svg.sre-icon`).count(), id).toBe(1);
+      for (const id of ['enrol', 'find', 'save-tiers', 'save-expiry', 'run-expiry', 'save-referral']) expect(await page.locator(`#${id} svg.sre-icon`).count(), id).toBe(1);
 
       await page.click('#lang');
       expect(await page.textContent('#enrol-h')).toBe('வாடிக்கையாளரைச் சேர்');
       expect(await page.textContent('#notice-text')).toMatch(/^SRE ஹைப்பர் மார்க்கெட் லாயல்டியில் சேருதல்/);
       expect(await page.textContent('#ca-text')).toMatch(/பட்டயக் கணக்காளர்/);
+      expect(await page.textContent('#referral-h')).toBe('பரிந்துரைப் பரிசுகள்');
       expect(errors).toEqual([]);
     } finally { await owner.close(); }
 
@@ -125,7 +140,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Loyalt
       await page.locator('#tiers-say[data-state="set"]').waitFor({ timeout: 15_000 });
       expect(await page.isVisible('#owner-only')).toBe(true);
       expect(await page.textContent('#owner-only')).toBe('○ Only the owner can change these numbers.');
-      for (const id of ['save-tiers', 'save-expiry', 'add-tier']) expect(await page.isDisabled(`#${id}`), id).toBe(true);
+      for (const id of ['save-tiers', 'save-expiry', 'add-tier', 'save-referral']) expect(await page.isDisabled(`#${id}`), id).toBe(true);
+      await page.locator('#referral-say[data-referrer="set"]').waitFor({ timeout: 15_000 }); // the manager reads the rewards
       expect(await page.isDisabled('#enrol')).toBe(false);
     } finally { await mgr.close(); }
   });

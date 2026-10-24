@@ -312,6 +312,16 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // manager on duty, each with the recommended action). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A10 · API-13).
   { id: 'workforce', label: 'Workforce', labelTa: 'பணியாளர்கள்', path: '/workforce', requires: 'ai.proposal.read', group: 'People' },
+  // ── OB-288 LP/workforce package — begin
+  // M25-FR-04 · D11-FR-06: the role help centre and emergency procedures — the box serves it (it works with the line down).
+  { id: 'help', label: 'Help and procedures', labelTa: 'உதவி மற்றும் நடைமுறைகள்', path: '/help', requires: 'workforce.help.read', group: 'People' },
+  // QG-09 · M25-FR-01/03 · D11-FR-04 · OB-317 · OB-320: training, competency, curriculum, champions and the adoption gate.
+  { id: 'adoption', label: 'Training and adoption', labelTa: 'பயிற்சி மற்றும் ஏற்பு', path: '/adoption', requires: 'workforce.roster.read', group: 'People', served: 'unserved' },
+  // C17 · OB-323: appointment letters made from the staff record, with the signed copy kept.
+  { id: 'appointment-letters', label: 'Appointment letters', labelTa: 'நியமனக் கடிதங்கள்', path: '/appointment-letters', requires: 'hr.appointmentletter.issue', group: 'People', served: 'unserved' },
+  // M15-FR-03 · OB-301: the related-party list, staff buying rules, staff and salary accounts.
+  { id: 'related-parties', label: 'Related parties and staff buying', labelTa: 'தொடர்புடையவர்களும் பணியாளர் கொள்முதலும்', path: '/related-parties', requires: 'lp.case.read', group: 'Operations', served: 'unserved' },
+  // ── OB-288 LP/workforce package — end
   // The device apps the store computer serves (OB-16, "one application"): the till, the owner's figures and the three
   // handhelds open from the same rail. Each is gated on the permission its own gate checks; the box serves all five.
   { id: 'till', label: 'Till', labelTa: 'கல்லா', path: '/pos/', requires: 'pos.sale.read', group: 'Devices' },
