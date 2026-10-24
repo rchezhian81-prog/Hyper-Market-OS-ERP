@@ -172,7 +172,8 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app scans and goes, and inv
       expect(await text('#sg-shelf-label')).toBe('அலமாரியில் (சலுகைகளுக்கு முன்)');
       await page.click('#tab-account');
       await page.locator('#referral-title', { hasText: 'நண்பரை அழையுங்கள்' }).waitFor({ timeout: 10_000 });
-      expect(await text('#referral-friend')).toBe('இன்னும் அமைக்கப்படவில்லை — கடை அமைக்கும் வரை எதுவும் வழங்கப்படாது');
+      // The referral box re-paints after the tab opens (it re-reads the programme): wait for its Tamil words, never read early.
+      await expect.poll(() => text('#referral-friend'), { timeout: 10_000 }).toBe('இன்னும் அமைக்கப்படவில்லை — கடை அமைக்கும் வரை எதுவும் வழங்கப்படாது');
       expect(errors).toEqual([]);
       // No price was ever sent from the phone for scan-and-go: the basket write carried ids and counts only.
       expect(store.writes.some((w) => w.path.startsWith('/v1/storefront/scan-and-go/baskets/'))).toBe(true);
