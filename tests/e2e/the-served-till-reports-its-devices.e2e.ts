@@ -61,7 +61,9 @@ describe.skipIf(!HAVE_BROWSER)('the served till reports its devices (D04-FR-05)'
     // The manager's Today, before any till has reported: not known — never "all fine".
     const manager = await context.newPage();
     await manager.goto(`${base}/manager`, { waitUntil: 'load' });
-    await manager.waitForFunction(() => ((globalThis as unknown as Doc).document.getElementById('attention')?.textContent ?? '').includes('Till devices'), undefined, { timeout: 10_000 });
+    // The manager's page paints its Today from the box's reads; on a busy CI runner that first paint has taken over 10 s
+    // (the #807 merge run). The wait is for the words, never a fixed sleep, so a quick runner is not slowed.
+    await manager.waitForFunction(() => ((globalThis as unknown as Doc).document.getElementById('attention')?.textContent ?? '').includes('Till devices'), undefined, { timeout: 30_000 });
     expect(await manager.textContent('#attention')).toContain('Till devices: Not known');
 
     // The till computer's device adapter (hardware-side; a stand-in here) says the printer is out of paper.
@@ -94,7 +96,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till reports its devices (D04-FR-05)'
 
     // The manager reloads Today: the failed printer is in the attention list, named.
     await manager.reload({ waitUntil: 'load' });
-    await manager.waitForFunction(() => ((globalThis as unknown as Doc).document.getElementById('attention')?.textContent ?? '').includes('paper out'), undefined, { timeout: 10_000 });
+    await manager.waitForFunction(() => ((globalThis as unknown as Doc).document.getElementById('attention')?.textContent ?? '').includes('paper out'), undefined, { timeout: 30_000 });
     expect(await manager.textContent('#attention')).toContain('1 till device(s) failed or not working properly — lane-1: printer has failed — paper out');
-  }, 60_000);
+  }, 120_000);
 });
