@@ -5,8 +5,10 @@
 //     a manager reads the branches they hold.
 //   • TRAINING AND COMPETENCY (M25-FR-03 · D11-FR-04) — assign a curriculum item, record its completion (never the trainee
 //     about themselves), and a SECOND person signs competency (`packages/workforce/src/training.ts`).
-//   • PRODUCTIVITY (M25-FR-03 · OB-317) — sales per labour hour from the roster and the banked bills, per department
-//     where the hours can be attributed; whole-store otherwise (`packages/workforce/src/productivity.ts`).
+//   • PRODUCTIVITY (M25-FR-03 · OB-317) — sales per labour hour from the roster and the banked bills, per department by
+//     each person's HOME DEPARTMENT on the staff record (OB-357); a person with none is "not attributed", by name, and
+//     counts to the whole store (`packages/workforce/src/productivity.ts`). The home department is set by a manager
+//     (`POST /v1/hr/workforce/employees/:employeeId/home-department`) — a live department of the person's own store.
 //   • THE ROLE CURRICULUM (OB-320) — proposed from the shop's own sheets and the owner guide, one list per role; the
 //     owner approves a role's list on screen (versioned) before it counts.
 //   • FLOOR CHAMPIONS (D11-FR-04) — the owner names one per department; "not set" until he does.
@@ -17,7 +19,7 @@
 // signed or approved automatically (P-05).
 
 import type { Route, RequestContext } from '../../kernel/src/index';
-import { apiError, notFound, scopeOf } from '../../kernel/src/index';
+import { apiError, assertBranchInScope, notFound, scopeOf } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Employee, ShiftRequirement, ShiftAssignment, SopAcknowledgement } from '../../../packages/workforce/src/workforce';
 import { accessMatch, type AccessGrant } from '../../../packages/workforce/src/access-match';
@@ -25,7 +27,7 @@ import {
   trainingRows, checkCompletion, checkCompetency, currentCurricula, readCurriculumItems,
   type TrainingAssignment, type TrainingCompletion, type CompetencySignOff, type ApprovedCurriculum, type CurriculumItem,
 } from '../../../packages/workforce/src/training';
-import { rosteredMinutes, productivityReport } from '../../../packages/workforce/src/productivity';
+import { rosteredMinutes, productivityReport, departmentLabour } from '../../../packages/workforce/src/productivity';
 import { adoptionGate, proposedCurricula, currentChampions, type FloorChampion, type PublishedSop, type AdoptionGateReading } from '../../../packages/workforce/src/adoption-gate';
 import { BUILT_IN_SOPS, OWNER_GUIDE_PARTS } from '../../../packages/workforce/src/sop-library.generated';
 import { STAFF_SIGN_IN_ROLES } from '../../../packages/workforce/src/access-match';
@@ -48,7 +50,10 @@ export interface WorkforceEnablementDeps {
   readonly curricula: (tenantId: string) => Promise<readonly ApprovedCurriculum[]>;
   readonly recordCurriculum: (tenantId: string, c: ApprovedCurriculum) => Promise<void>;
 
-  readonly departments: (tenantId: string) => Promise<readonly { readonly departmentId: string; readonly name: string }[]>;
+  /** The live departments, each with the store it belongs to (a department belongs to one store). */
+  readonly departments: (tenantId: string) => Promise<readonly { readonly departmentId: string; readonly name: string; readonly branchId?: string }[]>;
+  /** OB-357: write one staff record (the roster's own register — latest per employee). Absent → the home department cannot be set here. */
+  readonly putEmployee?: (tenantId: string, employee: Employee, key: string) => Promise<void>;
   readonly champions: (tenantId: string) => Promise<readonly FloorChampion[]>;
   readonly recordChampion: (tenantId: string, c: FloorChampion) => Promise<void>;
 
@@ -206,8 +211,10 @@ export function workforceEnablementRoutes(deps: WorkforceEnablementDeps): readon
         if (Date.parse(from) >= Date.parse(to)) bad('window_backwards', 'The first day is after the last day.');
         const [{ shifts, assignments }, employees, sales] = await Promise.all([deps.shifts(ctx.tenantId), deps.employees(ctx.tenantId), deps.salesByDepartment(ctx.tenantId, from, to)]);
         const labour = rosteredMinutes({ shifts, assignments, employees, from, to });
-        const report = productivityReport({ from, to, labour, totalSalesMinor: sales.totalMinor, departments: sales.departments, unownedSalesMinor: sales.unownedMinor });
-        return { status: 200, body: { ...report, asAt: now, note: 'Labour hours are the rostered hours. How a rostered hour belongs to a department is an owner decision not yet made, so each department\'s rate is "not attributed" and the whole-store rate is shown.' } };
+        // OB-357: each person's hours count to their home department on the staff record; none → "not attributed", by name.
+        const split = departmentLabour({ byEmployee: labour.byEmployee, employees, liveDepartments: new Set(sales.departments.map((d) => d.departmentId)) });
+        const report = productivityReport({ from, to, labour, totalSalesMinor: sales.totalMinor, departments: sales.departments, unownedSalesMinor: sales.unownedMinor, departmentMinutes: split.departmentMinutes, notAttributed: split.notAttributed });
+        return { status: 200, body: { ...report, asAt: now, note: 'Labour hours are the rostered hours; each person\'s count to their home department on the staff record (OB-357). A person with no home department is shown "not attributed" and counts to the whole store only.' } };
       },
     },
 
@@ -280,6 +287,36 @@ export function workforceEnablementRoutes(deps: WorkforceEnablementDeps): readon
         await deps.recordChampion(ctx.tenantId, c);
         await seal(ctx, 'workforce.floor_champion.named', 'department', departmentId, { employeeId: employeeId ?? 'not set' });
         return { status: 201, body: { champion: c } };
+      },
+    },
+
+    {
+      // OB-357: a person's home department on the staff record. Body: { departmentId } — a live department of the person's
+      // own store — or { departmentId: null } to take it off (their hours are then "not attributed"). A manager in scope.
+      api: 'API-11', method: 'POST', path: '/v1/hr/workforce/employees/:employeeId/home-department',
+      permission: 'workforce.roster.manage', idempotent: true,
+      handler: async (ctx) => {
+        const employeeId = (ctx.params['employeeId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (employeeId === '' || !(b['departmentId'] === null || isStr(b['departmentId']))) bad('not_readable_as_a_home_department', 'Give the home department: { departmentId } — or null to take it off.');
+        if (deps.putEmployee === undefined) refuse(503, 'staff_record_not_writable_here', 'This head office cannot write the staff record.', 'Nothing was saved.');
+        const e = (await deps.employees(ctx.tenantId)).find((x) => x.employeeId === employeeId);
+        if (e === undefined) throw notFound(`employee ${employeeId} on the staff list`);
+        assertBranchInScope(ctx, e.branchId);
+        const departmentId = b['departmentId'] === null ? null : (b['departmentId'] as string).trim();
+        if (departmentId !== null) {
+          const d = (await deps.departments(ctx.tenantId)).find((x) => x.departmentId === departmentId);
+          if (d === undefined) throw notFound(`department ${departmentId}`);
+          if (d.branchId !== undefined && d.branchId !== e.branchId) {
+            refuse(422, 'department_at_another_store', `${d.name} (${departmentId}) belongs to ${d.branchId}; ${e.name} works at ${e.branchId}. A home department is one of the person's own store.`, 'Choose a department of their store. Nothing was saved.');
+          }
+        }
+        const { homeDepartmentId: _was, ...rest } = e;
+        void _was;
+        const next: Employee = { ...rest, ...(departmentId === null ? {} : { homeDepartmentId: departmentId }) };
+        await deps.putEmployee!(ctx.tenantId, next, ctx.idempotencyKey ?? `home-dept-${employeeId}-${deps.now()}`);
+        await seal(ctx, 'workforce.home_department.set', 'employee', employeeId, { homeDepartmentId: departmentId ?? 'not set', before: e.homeDepartmentId ?? 'not set' });
+        return { status: 200, body: { employee: next } };
       },
     },
 

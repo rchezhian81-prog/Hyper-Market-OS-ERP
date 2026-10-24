@@ -7,7 +7,7 @@ import { SyncOutbox } from '../../packages/sync/src/index';
 import type { Promotion } from '../../packages/promotions/src/promotions';
 import { BANK_OFFERS, BANK_OFFERS_RELEASE } from '../../packages/promotions/src/bank-offers';
 import type { BundleDefinition } from '../../packages/product/src/bundles';
-import { liquorRuleForState, isIndianStateCode } from '../../packages/restricted-sales/src/liquor';
+import { liquorRuleForState, isIndianStateCode, shopStateFromGstin, GST_STATE_CODE_TO_STATE, INDIAN_STATES, RECORDED_STATE_LIQUOR_RULES } from '../../packages/restricted-sales/src/liquor';
 import { tillLineRefusals, productRuleRefusals } from '../../packages/restricted-sales/src/till-gate';
 import { buildCatalogueSnapshot } from '../../packages/catalogue/src/snapshot-builder';
 import { CatalogueCache } from '../../packages/catalogue/src/catalogue';
@@ -17,7 +17,7 @@ import { toCloudSale } from '../../edge/store-edge/src/cloud-sale';
 import { toCloudReturn } from '../../edge/store-edge/src/cloud-return';
 import { acceptSale, type IncomingSale, type IntakeContext } from '../../services/pos/src/index';
 import { saleStockMovements, returnStockMovements, bundlesOfReturn } from '../../services/pos/src/sale-stock';
-import { setupItem, validateSetupAnswer } from '../../packages/tenant/src/setup';
+import { setupItem } from '../../packages/tenant/src/setup';
 import { HIGH_IMPACT_SETTINGS } from '../../services/platform/src/governed-config';
 import type { CatalogueProduct } from '../../packages/catalogue/src/catalogue';
 
@@ -178,7 +178,7 @@ describe('B17 · OB-348 — liquor, by the shop\'s state', () => {
     // The same rule by itself, and the pure gate with the state passed through.
     expect(productRuleRefusals({ productId: 'p', description: 'p', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1, hsnCode: '2204' }, { shopState: 'TN' })[0]?.reason).toBe('liquor_not_sold');
     expect(tillLineRefusals({ productId: 'p', description: 'Wine', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1, regulatedFlags: { liquor: true } }, { shopState: 'KA' })[0]?.laneMessage)
-      .toBe('Wine is liquor. Liquor cannot be sold: no liquor rule is recorded for Karnataka. Keep it off the bill and tell the manager.');
+      .toBe('Wine is liquor. Liquor cannot be sold: no liquor rule is recorded in writing for Karnataka. Keep it off the bill and tell the manager.');
     // Non-alcoholic beer (2202) is not caught.
     expect(productRuleRefusals({ productId: 'p', description: 'p', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1, hsnCode: '22029990' })).toEqual([]);
   });
@@ -197,13 +197,33 @@ describe('B17 · OB-348 — liquor, by the shop\'s state', () => {
     expect(built.snapshot.products.map((p) => p.productId)).toEqual(['p-rice']);
   });
 
-  it('the shop\'s state is a store-setup answer, owner-approved: empty is "not set"; only a state code is accepted', () => {
-    const item = setupItem('store.state')!;
-    expect(item.setting.defaultValue).toBe('');
-    expect(() => validateSetupAnswer(item, 'TN')).not.toThrow();
-    expect(() => validateSetupAnswer(item, '')).not.toThrow();
-    expect(() => validateSetupAnswer(item, 'Tamil Nadu')).toThrow(/TN for Tamil Nadu/);
-    expect(HIGH_IMPACT_SETTINGS['store.state']).toMatch(/liquor/);
+  it('OB-354: there is no business-wide state setting — each store\'s state is read from its GSTIN', () => {
+    expect(setupItem('store.state')).toBeUndefined();
+    expect(HIGH_IMPACT_SETTINGS['store.state']).toBeUndefined();
+    expect(shopStateFromGstin('33AAACS1111A2ZG')).toEqual({ known: true, state: 'TN', gstStateCode: '33', gstin: '33AAACS1111A2ZG' });
+    expect(shopStateFromGstin(' 29aaacs1111a1z6 ')).toMatchObject({ known: true, state: 'KA', gstStateCode: '29' });
+    expect(shopStateFromGstin('25AAACS1111A1Z6')).toMatchObject({ known: true, state: 'DH' }); // Daman and Diu, merged in 2020
+    expect(shopStateFromGstin(undefined)).toEqual({ known: false, why: 'no_gstin' });
+    expect(shopStateFromGstin('')).toEqual({ known: false, why: 'no_gstin' });
+    expect(shopStateFromGstin('97AAACS1111A1Z6')).toMatchObject({ known: false, why: 'not_a_state_code', gstStateCode: '97' });
+    expect(shopStateFromGstin('28AAACS1111A1Z6')).toMatchObject({ known: false, why: 'not_a_state_code' });
+    // Every GST state code maps to a state the liquor rule knows.
+    for (const [code, iso] of Object.entries(GST_STATE_CODE_TO_STATE)) expect(INDIAN_STATES[iso], code).toBeDefined();
+  });
+
+  it('OB-353: liquor is refused in EVERY state; only Tamil Nadu\'s rule is recorded in writing, and it refuses', () => {
+    expect(RECORDED_STATE_LIQUOR_RULES.map((r) => [r.state, r.rule])).toEqual([['TN', 'refused']]);
+    expect(RECORDED_STATE_LIQUOR_RULES[0]!.recordedIn).toMatch(/OB-353/);
+    for (const state of Object.keys(INDIAN_STATES)) {
+      const rule = liquorRuleForState(state);
+      expect(rule.refused, state).toBe(true);
+      expect(rule.basis, state).toBe(state === 'TN' ? 'state_monopoly' : 'no_rule_recorded_for_state');
+      expect(rule.laneWords.en, state).toMatch(/Liquor (is not sold|cannot be sold)/);
+      expect(rule.laneWords.ta, state).toMatch(/மதுபானம்/);
+    }
+    expect(liquorRuleForState('KA').why).toMatch(/recorded in writing for Karnataka/);
+    expect(liquorRuleForState(undefined)).toMatchObject({ refused: true, basis: 'state_not_set' });
+    expect(liquorRuleForState(undefined).laneWords.en).toMatch(/GSTIN/);
   });
 });
 

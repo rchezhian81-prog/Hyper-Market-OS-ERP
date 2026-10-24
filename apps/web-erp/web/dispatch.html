@@ -103,6 +103,18 @@
         </div>
       </section>
 
+      <!-- OB-352: the bills the till marked for delivery — the app customer chooses; otherwise the desk enters it from the slip. -->
+      <section aria-labelledby="till-jobs-h" id="till-jobs-section">
+        <h3 id="till-jobs-h">Deliveries from the till</h3>
+        <p class="muted" id="till-jobs-lead"></p>
+        <div class="row-form">
+          <label for="till-day"><span id="till-day-l">Slot day (YYYY-MM-DD)</span><input id="till-day" autocomplete="off" inputmode="numeric" /></label>
+          <button id="show-till-jobs" type="button"><span id="show-till-jobs-text">Show the till deliveries</span></button>
+        </div>
+        <p class="status" id="till-jobs-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="till-jobs" hidden></ul>
+      </section>
+
       <section aria-labelledby="board-h">
         <h3 id="board-h">The day’s routes</h3>
         <div class="row-form"><button id="show-board" type="button"><span id="show-board-text">Show the routes</span></button></div>

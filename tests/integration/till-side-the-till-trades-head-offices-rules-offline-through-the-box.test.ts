@@ -11,14 +11,13 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { issueTillPins, signInTill, signInAtLane, operatorHeader, receiptNumberAt } from '../support/till-operator';
-import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **OB-288 till side — the till trades on head office's new catalogue rules with the network CUT, through a REAL store
  * computer, across a COLD RESTART of the box, and head office books what it sent exactly once.** In memory (head office
  * behind a fetch shim) and, with DATABASE_URL, on real PostgreSQL through the production API over HTTP:
  *
- *   • head office sets the shop's state (owner-approved, OB-348) and the delivery-fee product (OB-299), defines an own-
+ *   • head office records the store's GSTIN (its state, OB-354 · OB-348) and the delivery-fee product (OB-299), defines an own-
  *     barcode bundle (OB-306) and publishes the signed pack; the box takes the pack and the store setup, and serves the till
  *     the shop's state, the fee product and the bundle;
  *   • with the network down, the real `bootPos` till rings two combos (exploded on the record from the pack's definition)
@@ -62,12 +61,13 @@ async function setUp(cloud: Cloud): Promise<void> {
     return r;
   };
   await ok('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' }, 'org-c1');
-  await ok('POST', `/v1/org/nodes/${STORE}`, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' }, 'org-s1');
+  // OB-354: the store's state is read from its GSTIN (33 = Tamil Nadu) — no separate setting.
+  await ok('POST', '/v1/org/gst-registrations/33AAACS1111A2ZG', { companyId: 'C1', legalName: 'Synthetic SRE TN' }, 'gst-tn');
+  await ok('POST', `/v1/org/nodes/${STORE}`, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1', gstin: '33AAACS1111A2ZG' }, 'org-s1');
   await ok('POST', `/v1/stores/${STORE}/settings`, SETTINGS, 'settings');
   await cloud.grant('u-box', 'store_computer', [STORE]);
   await cloud.grant(CASHIER, 'cashier', [STORE]);
-  // OB-348: the shop's state — the co-owner asks, the owner approves (never the maker). OB-299: the fee product.
-  expect((await ownerApprovedSettingOn(cloud as never, 'store.state', { value: 'TN' }, OWNER)).status).toBe(200);
+  // OB-299: the fee product (below). OB-348 · OB-354: the state came from the GSTIN above.
   for (const [hsn, bps] of [['1006', 0], ['0713', 500], ['1507', 500], ['2106', 1200], ['996813', 1800]] as const) {
     await ok('POST', `/v1/catalogue/tax-classes/${hsn}/rates/2017-07-01`, { rateBps: bps }, `tax-${hsn}`);
   }

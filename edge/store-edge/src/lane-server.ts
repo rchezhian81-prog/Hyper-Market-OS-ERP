@@ -562,6 +562,13 @@ export function startLaneServer(input: {
    */
   readonly tillRules?: { check(record: Record<string, unknown>): import('./lane-scales').TillRulesAnswer };
   /**
+   * OB-301 (M15-FR-03): a staff member's own shopping, judged before the disk from the store pack's staff-purchase policy
+   * (`staff-purchase-gate.ts`): never rung by themselves, only at the service desk, never above the owner's discount cap —
+   * each "not set" until the owner sets it. `laneId` is THIS box's lane, never the one the record claims. Absent → not
+   * judged here (head office's exception list still shows it).
+   */
+  readonly staffPurchases?: { check(record: Record<string, unknown>, laneId: string): import('./staff-purchase-gate').StaffPurchaseAnswer };
+  /**
    * OB-252 (owner, 20 Oct 2026, "Guest sales only"): read live — the store pack's `policies.guestSalesOnly` or this box's
    * own `EDGE_GUEST_SALES_ONLY=1`. While true, this box keeps no customer on a sale or a refund: a keyed number is dropped
    * before the disk and the answer says so (`loyalty: 'guest_sales_only'`); points, store credit and a store-credit refund
@@ -1558,6 +1565,11 @@ export function startLaneServer(input: {
         // itself is dropped — only this box makes one. A number that is not one, or a box with no loyalty, keeps no
         // member and the sale goes ahead (hard rule #1); the answer says which.
         let loyaltyNote: 'member_named' | 'number_not_valid' | 'loyalty_not_on_this_box' | 'guest_sales_only' | undefined;
+        let deliveryPath: 'customer_app' | 'delivery_desk' | undefined;
+        /** What a saved record's answer also says: the member note, and (OB-352) how a delivery bill gets its address. */
+        const noted = <O extends { readonly committed: boolean }>(o: O): O => ({
+          ...o, ...(loyaltyNote === undefined ? {} : { loyalty: loyaltyNote }), ...(deliveryPath === undefined || !o.committed ? {} : { deliveryPath }),
+        });
         const guestOnly = input.guestSalesOnly?.() === true;
         if (!isTag && !isReturn && parsed !== null && typeof parsed === 'object') {
           const { customerMobile, customerRef: _tillSent, ...rest } = parsed as Record<string, unknown>;
@@ -1573,6 +1585,13 @@ export function startLaneServer(input: {
             }
           }
           parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
+          // OB-352: a bill marked for delivery — does its member have the app (this box's copy of the members says)? Then
+          // the customer chooses the address and slot in the app; otherwise the till prints a delivery slip for the desk.
+          const asked = (rest['delivery'] ?? null) as { requested?: unknown } | null;
+          if (asked !== null && typeof asked === 'object' && asked.requested === true) {
+            const td = typeof rest['tradingDay'] === 'string' ? rest['tradingDay'] : '';
+            deliveryPath = memberRef !== undefined && input.loyalty?.availability(memberRef, td).appLinked === true ? 'customer_app' : 'delivery_desk';
+          }
         }
         // OB-256 · OB-258: the MIRROR PILOT's tender, decided before anything else is spent — the same rule the till ran.
         if (!isTag && parsed !== null && typeof parsed === 'object') {
@@ -1746,6 +1765,18 @@ export function startLaneServer(input: {
           }
         }
 
+        // OB-301 (M15-FR-03): a staff member's own shopping — after the member is named and the cashier verified, before the
+        // disk. The lane is this box's own, so a till cannot name itself the service desk.
+        if (!isTag && !isReturn && input.staffPurchases !== undefined && parsed !== null && typeof parsed === 'object') {
+          const r = parsed as Record<string, unknown>;
+          const laneId = input.operators?.laneId ?? (typeof r['laneId'] === 'string' ? r['laneId'] : '');
+          const staff = input.staffPurchases.check(r, laneId);
+          if (!staff.ok) {
+            send(res, 200, { committed: false, refusedBecause: staff.refusedBecause, refusals: staff.refusals, notSet: staff.notSet, laneMessage: staff.laneMessage, laneMessageTa: staff.laneMessageTa }, cors);
+            return;
+          }
+        }
+
         // The bill's number (audit PF-04): one this box issued to this lane, not on another record. A sale carries it as
         // `receiptNumber` (the till's record calls it `number`), a refund as `number`. Checked before the disk; its use is noted once the record is there.
         let numberUse: UseCheck | undefined;
@@ -1805,7 +1836,7 @@ export function startLaneServer(input: {
                 if (numberUse?.ok === true) await numberUse.record();
                 if (tenderUse?.ok === true) await tenderUse.record();
               }
-              send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
+              send(res, 200, withCardNote(noted(outcome), cardDataRemoved), cors);
             });
           } catch (e) {
             send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
@@ -1837,7 +1868,7 @@ export function startLaneServer(input: {
                 if (numberUse?.ok === true) await numberUse.record();
                 if (tenderUse?.ok === true) await tenderUse.record();
               }
-              send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
+              send(res, 200, withCardNote(noted(outcome), cardDataRemoved), cors);
             });
           } catch (e) {
             send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
@@ -1861,7 +1892,7 @@ export function startLaneServer(input: {
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.
-          send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
+          send(res, 200, withCardNote(noted(outcome), cardDataRemoved), cors);
         } catch (e) {
           send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
         }

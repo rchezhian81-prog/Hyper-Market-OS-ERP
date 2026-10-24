@@ -23,6 +23,8 @@ import {
 } from '../../../packages/b2b/src/documents';
 import type { NumberFormat } from '../../../packages/numbering/src/numbering';
 import { GST_STATE_NAMES } from '../../../packages/finance/src/gst-states';
+import type { LineToPrice, PricingResult, PriceSource } from '../../../packages/b2b/src/contracts';
+import { actionDetails } from '../../identity/src/approval-requests';
 
 /**
  * A stored document. A quotation also carries the window its price holds for (`convertQuotation` needs
@@ -39,7 +41,26 @@ export type StoredB2BDocument = B2BDocument & {
   readonly salespersonId?: string;
   /** A8: why a tax invoice carries no GST split (the supplier's State is not on record) — said, never a guessed split. */
   readonly gstNotJudged?: string;
+  /** M22-FR-01 (OB-288 commercial desks): where each quoted line's price came from — the contract, the price list, or typed. */
+  readonly pricedFrom?: readonly { readonly lineId: string; readonly priceSource: PriceSource; readonly contractId?: string }[];
 };
+
+/**
+ * M22-FR-01 (OB-288 commercial desks): the credit gate with the customer's contract worked out from its own dates, and an
+ * over-limit (or blocked expired-contract) order cleared only by a second person's approval given in their own session.
+ */
+export interface B2BCreditGate {
+  (tenantId: string, input: {
+    readonly customerId: string; readonly orderId: string; readonly valueMinor: number; readonly maker: string;
+    readonly approvalId?: unknown; readonly details: Readonly<Record<string, unknown>>;
+  }): Promise<{
+    readonly allowed: boolean;
+    readonly verdict: 'ok' | 'over_limit' | 'contract_expired' | 'no_account';
+    readonly detail: string;
+    /** Spend the approval that cleared it — once, after every other rule passed and before anything is written. */
+    readonly spend?: () => Promise<void>;
+  }>;
+}
 
 /**
  * FUL-09: the stock a B2B order moves — the ordinary stock every other channel sells from (P-02). A sales order HOLDS what
@@ -104,6 +125,14 @@ export interface B2BDocumentsDeps {
    * from it → the invoice carries no split and SAYS why (`gstNotJudged`). Absent → no split (as before).
    */
   readonly supplierStateCode?: (tenantId: string, locationId: string | undefined) => Promise<string | undefined>;
+  /**
+   * M22-FR-01 (OB-288 commercial desks): price a quotation's lines from the record — the contract in force, else the shop's
+   * price list, else the typed price (said). Present → a desk line may leave its price out; a typed price that differs from
+   * the record is refused by name.
+   */
+  readonly pricing?: (tenantId: string, input: { readonly customerId: string; readonly locationId?: string; readonly at: string; readonly lines: readonly LineToPrice[] }) => Promise<PricingResult>;
+  /** M22-FR-01: the contract-aware credit gate with a second person's override. Present → used instead of `creditAllowed`. */
+  readonly creditGate?: B2BCreditGate;
   readonly now: () => string;
 }
 
@@ -111,20 +140,23 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const isInt = (v: unknown): v is number => Number.isInteger(v);
 
 /** Read the request lines as B2BLine[], or null if any line is malformed (a 400, not a business refusal). */
-function asLines(v: unknown): B2BLine[] | null {
+function asLines(v: unknown, priceMayBeLeftOut = false): (B2BLine & { readonly typed: boolean })[] | null {
   if (!Array.isArray(v)) return null;
-  const lines: B2BLine[] = [];
+  const lines: (B2BLine & { readonly typed: boolean })[] = [];
   for (const raw of v) {
     if (raw === null || typeof raw !== 'object') return null;
     const l = raw as Record<string, unknown>;
+    const priceGiven = l['unitPriceMinor'] !== undefined;
     if (!isStr(l['lineId']) || !isStr(l['productId']) || !isStr(l['description'])
-      || !isInt(l['qty']) || !isInt(l['unitPriceMinor']) || (l['unitPriceMinor'] as number) < 0
+      || !isInt(l['qty']) || (priceGiven && (!isInt(l['unitPriceMinor']) || (l['unitPriceMinor'] as number) < 0))
+      || (!priceGiven && !priceMayBeLeftOut)
       || !isInt(l['taxRateBps']) || (l['taxRateBps'] as number) < 0) {
       return null;
     }
     lines.push({
       lineId: l['lineId'] as string, productId: l['productId'] as string, description: l['description'] as string,
-      qty: l['qty'] as number, unitPriceMinor: l['unitPriceMinor'] as number, taxRateBps: l['taxRateBps'] as number,
+      qty: l['qty'] as number, unitPriceMinor: priceGiven ? l['unitPriceMinor'] as number : 0, taxRateBps: l['taxRateBps'] as number,
+      typed: priceGiven,
     });
   }
   return lines;
@@ -168,10 +200,14 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       permission: 'b2b.document.issue', idempotent: true,
       entitlement: 'b2b',
       handler: async (ctx) => {
-        const b = (ctx.body ?? {}) as { fromQuotationId?: unknown; locationId?: unknown; salespersonId?: unknown };
+        const b = (ctx.body ?? {}) as { fromQuotationId?: unknown; locationId?: unknown; salespersonId?: unknown; approvalId?: unknown };
+        const customerId = ctx.params['customerId'] ?? ''; const documentId = ctx.params['documentId'] ?? '';
         const doc = await convertToSalesOrder(deps, {
-          tenantId: ctx.tenantId, customerId: ctx.params['customerId'] ?? '', documentId: ctx.params['documentId'] ?? '',
+          tenantId: ctx.tenantId, customerId, documentId,
           fromQuotationId: b.fromQuotationId, locationId: b.locationId, salespersonId: b.salespersonId,
+          // M22-FR-01: an over-limit (or blocked expired-contract) order goes through only on a second person's approval,
+          // asked with exactly this body (kind b2b_credit_override) and given in the approver's own session.
+          maker: ctx.userId, approvalId: b.approvalId, details: actionDetails(ctx.body, { customerId, documentId }),
         });
         return { status: 201, body: { documentId: doc.documentId, number: doc.number, kind: doc.kind, derivedFrom: doc.derivedFrom, grossMinor: doc.grossMinor, ...(doc.locationId === undefined ? {} : { locationId: doc.locationId, stock: 'held' }), ...(doc.salespersonId === undefined ? {} : { salespersonId: doc.salespersonId }) } };
       },
@@ -340,19 +376,53 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
 export async function issueQuotationDocument(deps: B2BDocumentsDeps, input: {
   readonly tenantId: string; readonly customerId: string; readonly documentId: string;
   readonly lines: unknown; readonly validForDays?: unknown; readonly locationId?: unknown;
+  /**
+   * M22-FR-01 (OB-288 commercial desks): price the lines from the record (`deps.pricing`). Default true when pricing is
+   * wired. A recurring run passes false: it repeats the lines and prices of a quotation a second person approved, and its
+   * conversion still meets the contract-aware credit gate.
+   */
+  readonly priceFromRecord?: boolean;
 }): Promise<StoredB2BDocument> {
   const { tenantId, customerId, documentId } = input;
-  const lines = asLines(input.lines);
-  if (lines === null) {
+  const priced = deps.pricing !== undefined && input.priceFromRecord !== false;
+  const read = asLines(input.lines, priced);
+  if (read === null) {
     throw apiError(400, {
       code: 'not_readable_as_a_quotation',
-      whatHappened: 'A quotation needs lines, each with a line id, product id, description and whole qty / unit price / tax rate.',
+      whatHappened: priced
+        ? 'A quotation needs lines, each with a line id, product id, description, whole qty and tax rate; the unit price may be left out (it is then taken from the customer\'s contract or the shop\'s price list).'
+        : 'A quotation needs lines, each with a line id, product id, description and whole qty / unit price / tax rate.',
       wasItSaved: 'not_saved',
       nextSafeAction: 'Send well-formed lines. Nothing was recorded and no number was drawn.',
     });
   }
   const validForDays = isInt(input.validForDays) && (input.validForDays as number) > 0 ? (input.validForDays as number) : undefined;
   const at = deps.now();
+  const locationId = isStr(input.locationId) ? input.locationId : undefined;
+
+  // M22-FR-01: the price is the record's — the contract in force, else the shop's price list; a typed price that differs
+  // is refused by name, and a lapsed "block" contract refuses the quotation. No number is drawn on a refusal.
+  let lines: B2BLine[] = read.map((l) => ({ lineId: l.lineId, productId: l.productId, description: l.description, qty: l.qty, unitPriceMinor: l.unitPriceMinor, taxRateBps: l.taxRateBps }));
+  let pricedFrom: StoredB2BDocument['pricedFrom'];
+  if (priced) {
+    const result = await deps.pricing!(tenantId, {
+      customerId, at, ...(locationId === undefined ? {} : { locationId }),
+      lines: read.map((l) => ({ lineId: l.lineId, productId: l.productId, ...(l.typed ? { typedPriceMinor: l.unitPriceMinor } : {}) })),
+    });
+    if (!result.ok) {
+      throw apiError(result.code === 'contract_expired' ? 409 : 422, {
+        code: `quotation_${result.code}`,
+        whatHappened: result.detail,
+        wasItSaved: 'not_saved',
+        nextSafeAction: result.code === 'contract_expired'
+          ? 'Renew the contract (a new one, approved by a second person), then quote again. No number was drawn.'
+          : 'Leave the price out to use the price on record, or change the record first. No number was drawn.',
+      });
+    }
+    const byLine = new Map(result.lines.map((p) => [p.lineId, p]));
+    lines = lines.map((l) => ({ ...l, unitPriceMinor: byLine.get(l.lineId)?.unitPriceMinor ?? l.unitPriceMinor }));
+    pricedFrom = result.lines.map((p) => ({ lineId: p.lineId, priceSource: p.priceSource, ...(p.contractId === undefined ? {} : { contractId: p.contractId }) }));
+  }
 
   // Validate WITHOUT drawing a number — a rejected quotation must leave no gap in the series.
   const probe = issueQuotation({ documentId, customerId, tenantId, lines, format: FORMAT.quotation, seq: 0, at, ...(validForDays === undefined ? {} : { validForDays }) });
@@ -371,7 +441,7 @@ export async function issueQuotationDocument(deps: B2BDocumentsDeps, input: {
   const doc = result.document;
   if (doc === undefined || result.validUntil === undefined) throw notFound(`quotation ${documentId}`); // unreachable — the probe issued
   // FUL-09: the store it is quoted from (optional) — the store an order made from it holds and dispatches stock at.
-  const stored: StoredB2BDocument = { ...doc, validUntil: result.validUntil, ...(isStr(input.locationId) ? { locationId: input.locationId } : {}) };
+  const stored: StoredB2BDocument = { ...doc, validUntil: result.validUntil, ...(locationId === undefined ? {} : { locationId }), ...(pricedFrom === undefined ? {} : { pricedFrom }) };
   await deps.recordDocument(tenantId, customerId, stored);
   return stored;
 }
@@ -384,6 +454,8 @@ export async function issueQuotationDocument(deps: B2BDocumentsDeps, input: {
 export async function convertToSalesOrder(deps: B2BDocumentsDeps, input: {
   readonly tenantId: string; readonly customerId: string; readonly documentId: string;
   readonly fromQuotationId: unknown; readonly locationId: unknown; readonly salespersonId: unknown;
+  /** M22-FR-01 (OB-288 commercial desks): who is converting, and the second person's approval of an over-limit order. */
+  readonly maker?: string; readonly approvalId?: unknown; readonly details?: Readonly<Record<string, unknown>>;
 }): Promise<StoredB2BDocument> {
   const { tenantId, customerId, documentId } = input;
   const named = isStr(input.fromQuotationId) ? await deps.document(tenantId, customerId, input.fromQuotationId) : undefined;
@@ -407,13 +479,31 @@ export async function convertToSalesOrder(deps: B2BDocumentsDeps, input: {
     throw notFound(`quotation ${String(input.fromQuotationId)} for ${customerId}`);
   }
   const alreadyConvertedFrom = await deps.convertedQuotationIds(tenantId, customerId);
-  const creditAllowed = await deps.creditAllowed(tenantId, customerId, quotation.grossMinor);
+  // M22-FR-01: the contract-aware gate (its expiry worked out from its dates; an over-limit order cleared only by a second
+  // person's approval) when wired; else the plain credit check.
+  const gate = deps.creditGate === undefined || alreadyConvertedFrom.includes(quotation.documentId) ? undefined
+    : await deps.creditGate(tenantId, {
+      customerId, orderId: documentId, valueMinor: quotation.grossMinor, maker: input.maker ?? 'system',
+      ...(input.approvalId === undefined ? {} : { approvalId: input.approvalId }),
+      details: input.details ?? { customerId, documentId, fromQuotationId: input.fromQuotationId },
+    });
+  const creditAllowed = gate !== undefined ? gate.allowed : await deps.creditAllowed(tenantId, customerId, quotation.grossMinor);
   const at = deps.now();
 
   // Decide WITHOUT drawing a number — a refused conversion (expired, already converted, credit blocked)
   // leaves the sales-order series with no gap.
   const probe = convertQuotation({ documentId, quotation, customerId, format: FORMAT.sales_order, seq: 0, validUntil: quotation.validUntil, at, alreadyConvertedFrom, creditAllowed });
   if (!probe.converted) {
+    if (probe.outcome === 'credit_blocked' && gate !== undefined && gate.verdict !== 'ok') {
+      throw apiError(422, {
+        code: `conversion_${gate.verdict}`,
+        whatHappened: gate.detail,
+        wasItSaved: 'not_saved',
+        nextSafeAction: gate.verdict === 'no_account'
+          ? 'Set the customer\'s credit account (or approve a contract that sets it) first. Nothing was recorded and no number was drawn.'
+          : 'Ask for approval (kind b2b_credit_override, with exactly this order) — the owner decides an order above the limit — then send the approvalId. Nothing was recorded and no number was drawn.',
+      });
+    }
     throw apiError(422, {
       code: `conversion_${probe.outcome}`,
       whatHappened: probe.detail,
@@ -421,6 +511,8 @@ export async function convertToSalesOrder(deps: B2BDocumentsDeps, input: {
       nextSafeAction: probe.outcome === 'expired' ? 'Re-quote rather than re-price. Nothing was recorded.' : 'Nothing was recorded and no number was drawn.',
     });
   }
+  // Every rule passed: the approval that cleared an over-limit order is spent — once — before anything is written.
+  await gate?.spend?.();
   // FUL-09: the stock, all of it, before a number is drawn — a bulk order the shelf cannot supply is refused, not oversold.
   const locationId = isStr(locationGiven) ? locationGiven : undefined;
   if (deps.stock !== undefined && locationId !== undefined) {

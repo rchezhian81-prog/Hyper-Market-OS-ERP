@@ -237,7 +237,12 @@ export function checkPartnerCompliance(input: {
   };
 }
 
-export type SubmissionKind = 'rfq_response' | 'catalogue' | 'asn' | 'invoice' | 'po_acknowledgement' | 'claim';
+/**
+ * `delivery_status` (M24-FR-02 "delivery status updates", OB-288 commercial desks): the supplier tells the buyer an order is
+ * dispatched, in transit or delayed, with the date it now expects to arrive. A statement of fact the buyer reads on the
+ * order — it commits nothing (receiving still counts what arrives), so it needs no review.
+ */
+export type SubmissionKind = 'rfq_response' | 'catalogue' | 'asn' | 'invoice' | 'po_acknowledgement' | 'claim' | 'delivery_status';
 
 export type SubmissionOutcome =
   | 'accepted'
@@ -281,6 +286,8 @@ export function acceptSubmission(input: {
     invoice: 'submit_invoice',
     po_acknowledgement: 'acknowledge_orders',
     claim: 'raise_claim',
+    // The order-communication grant: a login that may acknowledge an order may say where its delivery has got to.
+    delivery_status: 'acknowledge_orders',
   };
   const base = { submissionId: input.submissionId, requiresReview: false };
 

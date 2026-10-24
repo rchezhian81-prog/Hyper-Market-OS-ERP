@@ -341,6 +341,7 @@ import { lane2OfflineRoutes } from './lane2-offline-adapters'; // OB-288 lane 2 
 import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks, p3Segregation, p3RebateHooks } from './p3-procure-adapters';
 // OB-288 P2 (catalogue, pricing and product legal guards): M03-FR-01–04 · M04-FR-04 · M05-FR-03/04 · D02-FR-02/04 · B15 · B17.
 import { p2CatalogueRoutes, p2TaxClassHooks, p2PromotionHooks, p2SeasonSweep } from './p2-catalogue-adapters';
+import { commercialDesksRoutes, commercialDeskB2BHooks, withSupplierPartnerIndex, commercialDesksSweep, commercialDeskContractState } from './commercial-desks-adapters'; // OB-288 commercial desks — B2B contracts and desk, supplier review desk, concessions
 import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep, finBridgeDayBookHooks, finBridgePaymentHooks } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
 import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
 import { customerFollowupsRoutes } from './customer-followups-adapters'; // OB-288 customer & delivery follow-ups — referrals (OB-351), scan-and-go (OB-350)
@@ -352,8 +353,12 @@ import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — 
 import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
-import { lpWorkforceSurface } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption
+import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
+import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
+import { ownerReportingSurface, ownerReportingSweep } from './owner-reporting-adapters'; // OB-288 lane 4 · P2 owner reporting
+import { dataInTemplates, dataInCommitDeps, dataOutDomains } from './data-in-adapters'; // OB-288 lane 4 · P2 data in (OB-315) and out (M30-FR-02)
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
+import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
 import { gatesRoutes, gateBlockersBeyondRisks, twoSignatureAdapter } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
@@ -401,6 +406,7 @@ const REPORTING_RECORDS: readonly Producer[] = [
   // slots, routes and delivery steps (M18/M19), and the assistant's proposals with people's decisions on them (EA-08).
   'supplier_invoices_captured', 'stock_counted_on_the_shelves', 'what_is_thrown_away_recorded', 'expiry_dates_recorded',
   'customers_identified_at_the_till', 'campaigns_and_complaints_recorded', 'online_orders_and_deliveries', 'ai_decisions_recorded',
+  'access_changes_and_incidents_recorded', // OB-288 P2 · D13-FR-06: the identity ledger, support and remote sessions, incidents and findings
 ];
 /** The named reports head office can work out — each with a producer over governed source rows (EA-06). */
 const REPORTING_PRODUCED: readonly string[] = PRODUCED_AT_HEAD_OFFICE;
@@ -531,6 +537,7 @@ export function buildSurface(deps: {
     commissionOnInvoice: (tenantId, i) => accrueFromInvoice(commissionRuleAdapter({ store: st, now }), tenantId, {
       salespersonId: i.salespersonId, invoiceId: i.invoice.documentId, invoiceNumber: i.invoice.number, netMinor: i.invoice.netMinor,
     }),
+    ...commercialDeskB2BHooks({ store: st, now }), // OB-288 commercial desks — M22-FR-01: priced from the contract; the owner's credit override
   });
   const ordersDeps: OrdersDeps & PaymentRefundDeps & StorefrontDeps & ExceptionOwnershipDeps = store === undefined ? {
     onHand: empty(new Map()), outstanding: empty([]), holdReservations: () => {},
@@ -578,7 +585,7 @@ export function buildSurface(deps: {
   // What a sale and a return do to a member's points (PF-09-a) — one composition shared by the sale and return routes.
   const loyaltyEffects = store === undefined ? undefined : withLoyaltyTiers(loyaltyEffectsAdapter({ store, now, rule: loyaltyRule }), { store, now }); // OB-295 tiers
   // What the store computers may let a member spend, and what a till spend does when its sale arrives (PF-09 step 3).
-  const loyaltyWallets = store === undefined ? undefined : withWalletTiers(loyaltyWalletsAdapter({ store, now, rule: loyaltyRule }), { store, now }); // OB-295: tiers in the till's feed
+  const loyaltyWallets = store === undefined ? undefined : withWalletAppLinks(withWalletTiers(loyaltyWalletsAdapter({ store, now, rule: loyaltyRule }), { store, now }), { store, now }); // OB-295: tiers in the till's feed · OB-352: who has the app
   // The named-report producers over governed source records (EA-06) — shared by the report route and the governed drill
   // (EA-05), so a drill reaches exactly the records the report's figure was summed from.
   const producers = store === undefined ? undefined : reportProducers({ store, now, calendar: shopCalendar, loyaltyRule, storeSync: (t) => storeSyncView(store, t, now) });
@@ -940,7 +947,7 @@ export function buildSurface(deps: {
     ...dataImportRoutes(store === undefined
       ? { commits: () => [], recordCommit: () => {}, now }
       : {
-          ...dataImportAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }),
+          ...dataImportAdapter({ store, now }), ...dataInCommitDeps({ store, now }) /* OB-315 */, approvals: approvalRequestsAdapter({ store, now }),
           permissionsOfUser: (t: string, u: string) => purchaseAdapter({ store, now }).permissionsOfUser(t, u),
           // SF-06-a (OB-23 "C"): the templates head office supports, each over head office's own registers.
           templates: [supplierInvoiceTemplate({
@@ -961,7 +968,7 @@ export function buildSurface(deps: {
             categories: async (t) => (await categoryRegisterAdapter({ store, now }).categories(t)).map(engineCategory),
             products: async (t) => productMasterAdapter({ store, now }).products(t),
             versionsOf: (t, id) => productVersionsOf(store, t, id),
-          })],
+          }), ...dataInTemplates({ store, now, memberKey: loyaltyKey }) /* OB-315: suppliers, price lists, opening stock, customers, loyalty balances */],
         }),
     // Domain data export (M30-FR-02) — your data is yours: every authorised domain exports to an open
     // CSV + JSON schema, the caller's own authority deciding allowed / branch scope / sensitive
@@ -971,7 +978,7 @@ export function buildSurface(deps: {
     ...dataExportRoutes(store === undefined
       ? { domains: [], access: () => new AccessControl([], []), exports: () => [], recordExport: () => {}, now }
       : {
-          domains: buildExportDomains({
+          domains: [...dataOutDomains({ store, now }) /* OB-288 lane 4 · P2 · M30-FR-02 */, ...buildExportDomains({
             products: async (t) => productMasterAdapter({ store, now }).products(t),
             importCommits: (t) => dataImportAdapter({ store, now }).commits(t),
             // SF-10: the further governed domains, each from its own ledger's read model.
@@ -1018,7 +1025,7 @@ export function buildSurface(deps: {
                 totalEmployerContributionMinor: p.payslip.statutory.totalEmployerContributionMinor, netPayMinor: p.payslip.netPayMinor,
               }));
             },
-          }),
+          })],
           access: tenantAccessResolver(store, ROLE_CATALOGUE),
           ...dataExportAdapter({ store, now }),
         }),
@@ -1026,7 +1033,7 @@ export function buildSurface(deps: {
       partner: empty(undefined), partnerForUser: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
       recordAudit: () => {}, auditEntries: empty([]), now,
-    } : supplierPortalAdapter({ store, now })),
+    } : withSupplierPartnerIndex(supplierPortalAdapter({ store, now }), { store, now })), // OB-288 commercial desks — the buyer's one queue
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
@@ -1192,7 +1199,9 @@ export function buildSurface(deps: {
         // Verifier r18 OB85-2: the bill-number high-water resumes from its persisted snapshot (O(prefixes) per pack build).
         ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
         b2cDynamicQr: b2cDynamicQrSettingOf(settings), // A22 (OB-326, switched off)
-        tillPolicies: tillSidePoliciesOf(settings), // OB-288 till side: OB-348 shop state · OB-299 delivery-fee product
+        tillPolicies: tillSidePoliciesOf(settings, { store, now }), // OB-288 till side: OB-348/OB-354 shop state from the GSTIN · OB-299 delivery-fee product
+        staffPurchase: staffPurchaseTillPolicyOf({ store, now }), // OB-301: the staff-purchase policy, judged by the box before its disk
+        rollout: rolloutPackSection({ store }), // OB-288 P4 (R8-9 · OB-316): this store's rollout switches, read by the till offline
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1259,7 +1268,7 @@ export function buildSurface(deps: {
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
       // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
       huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
-      shopStateOf: shopStateOf(settings), deliveryOnSale: tillDeliveryOnSale({ store, now }), // OB-288 till side: OB-348 · OB-299
+      shopStateOf: shopStateOf({ store, now }), deliveryOnSale: tillDeliveryOnSale({ store, now }), // OB-288 till side: OB-348 · OB-299
     }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
@@ -1576,7 +1585,7 @@ export function buildSurface(deps: {
     ...pendingTenderRoutes({ now }),
     ...b2bCreditRoutes(store === undefined ? {
       account: empty(undefined), outstandingMinor: empty(0), recordAccount: () => {}, recordReceivable: () => {}, now,
-    } : b2bCreditAdapter({ store, now })),
+    } : { ...b2bCreditAdapter({ store, now }), contractState: commercialDeskContractState({ store, now }) }), // OB-288 commercial desks — expiry from the register
     ...b2bCollectionsRoutes(store === undefined ? {
       invoices: empty([]), outstandingMinor: empty(0), recordInvoice: () => {}, recordPayment: () => {}, now,
     } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney }),
@@ -1778,8 +1787,10 @@ export function buildSurface(deps: {
     ...p3ProcureRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
     ...p2CatalogueRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
     ...financeBridgeRoutes({ store, now }), // OB-288 P5
+    ...commercialDesksRoutes({ store, now }), // OB-288 commercial desks (M22 · M24 · M27)
     ...fulfilmentDeliveryRoutes({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 fulfilment & delivery
     ...customerFollowupsRoutes({ store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 customer & delivery follow-ups (OB-350 · OB-351)
+    ...tillDeliveryJobsRoutes({ store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-352
     ...opsMessagingRoutes({ store, now }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
@@ -2180,6 +2191,8 @@ export function buildSurface(deps: {
   customerCommerceSurface(surface, { store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }); // OB-288 wave 3 (M16-FR-04 · M17-FR-01/02 · M18-FR-04 · M20 · M21-FR-01/02 · WF-13 · D08 · OB-295/303/311/314/322/329)
   tillBillSurface(surface, { store, now }); // Till bill and GST (audit-1 P5 · audit-2 P3)
   lpWorkforceSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 LP, workforce, facilities and adoption (M15-FR-02/03 · M25 · M26 · M28-FR-01 · QG-09 · D11 · OB-301/317/320/323)
+  ownerReportingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 4 · P2 (M29-FR-01/03/04 · M28-FR-04 · D13)
+  saasRolloutSurface(surface, { store, now, plans: PROPOSED_PLANS, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P4 (M36-FR-01/03 · D12-FR-05/06 · R8-2 · R8-9 · C8 · C9 · OB-316/321/324)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));
@@ -2655,6 +2668,9 @@ export async function startApi(
       financeBridge: async (t: string, at: string) => (await finBridgeSweep({ store, now })(t, at)) + (await opsMessagingSweep({ store, now })(t, at)), // OB-288 P5 — the daily Tally file outbox; an overdue CERT-In report
       seasonEnd: p2SeasonSweep({ store, now }), // OB-288 P2 · D02-FR-02 — a season whose last day has passed ends into clearance
       customerCommerce: customerCommerceSweep({ store, now }), // OB-288 wave 3 — points expiry (OB-295), repeat orders (OB-303), order notices, journeys
+      commercialDesks: commercialDesksSweep({ store, now }), // OB-288 commercial desks — concession expiry (M27-FR-04), B2B contracts ending
+      ownerReporting: ownerReportingSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))), routes: () => built.router!.list() }), // OB-288 lane 4 · P2 — owner exception alerts (M29-FR-03), scheduled reports (M29-FR-04)
+      saasRollout: saasRolloutSweep({ store, now, plans: PROPOSED_PLANS }), // OB-288 P4 — the hourly usage record (OB-321) and the customer-data volume watch (C9)
       say: (line) => { out(`${line}\n`); },
     }),
   });

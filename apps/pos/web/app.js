@@ -284,6 +284,8 @@ const WORDS = {
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
     // OB-271: real trading — the legal tax invoice on paper, the card machine's approval number, a card refund on the machine.
     realTradingStrip: 'Real trading: this till\'s bill is the legal GST tax invoice. After each sale press "Print bill" and give the paper to the customer.',
+    staffPurchaseTitle: 'Staff shopping — not saved',
+    printSlip: 'Print delivery slip', slipPrintFailed: 'The delivery slip did not print — check the printer, then press "Print delivery slip" again. The sale is saved.',
     printBill: 'Print bill',
     printDuplicate: 'Print again (DUPLICATE)',
     reprintOption: 'Reprint the last bill',
@@ -505,6 +507,8 @@ const WORDS = {
     declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
     noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
     realTradingStrip: 'உண்மை வியாபாரம்: இந்தக் கல்லாவின் பில் சட்டப்படியான GST வரி விலைப்பட்டியல். ஒவ்வொரு விற்பனைக்குப் பிறகும் "பில் அச்சிடு" அழுத்தி, அச்சிட்ட பில்லை வாடிக்கையாளரிடம் கொடுக்கவும்.',
+    staffPurchaseTitle: 'பணியாளர் பொருட்கள் — சேமிக்கப்படவில்லை',
+    printSlip: 'டெலிவரி சீட்டை அச்சிடு', slipPrintFailed: 'டெலிவரி சீட்டு அச்சாகவில்லை — பிரிண்டரைப் பார்த்து, மீண்டும் "டெலிவரி சீட்டை அச்சிடு" அழுத்தவும். விற்பனை சேமிக்கப்பட்டது.',
     printBill: 'பில் அச்சிடு',
     printDuplicate: 'மீண்டும் அச்சிடு (நகல்)',
     reprintOption: 'கடைசி பில்லை மீண்டும் அச்சிடு',
@@ -572,6 +576,10 @@ function saleRefusal(e) {
     if (lang !== 'ta') return { title: t('invoiceRefusedTitle'), words: e.laneMessage };
     const parts = [...new Set(e.problems.map((p) => INVOICE_PROBLEM_TA[p.code] || p.words))];
     return { title: t('invoiceRefusedTitle'), words: `${INVOICE_PROBLEM_TA.lead} ${parts.join('; ')}.` };
+  }
+  // OB-301: a staff member's own shopping the store computer refused — its own heading, and its own Tamil words.
+  if (e && e.refusedBecause === 'staff_purchase_refused') {
+    return { title: t('staffPurchaseTitle'), words: lang === 'ta' && e.laneMessageTa ? e.laneMessageTa : e.laneMessage };
   }
   return { title: e && e.notSavedTitle ? t('notSavedTitle') : t('read'), words: e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e) };
 }
@@ -839,6 +847,8 @@ function tell(title, message, tone = STOP, bill = null, printable = false) {
   const actions = el('print-actions');
   if (actions) {
     actions.hidden = !printable;
+    el('print-bill').hidden = !printable;
+    if (el('print-slip')) el('print-slip').hidden = true; // OB-352: shown again by offerSlip() after a delivery bill
     el('print-bill').textContent = t('printBill');
     el('print-duplicate').textContent = t('printDuplicate');
     el('print-duplicate').hidden = !printable || !printedBills.has(lastInvoiceNumber());
@@ -1521,6 +1531,7 @@ el('tender').addEventListener('click', async () => {
     const sold = huidLines();
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString()).catch(lostAnswer);
     tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)), SUCCESS, saleBill(), realTradingOn());
+    offerSlip();
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1690,6 +1701,39 @@ if (el('print-bill')) {
   el('print-duplicate').addEventListener('click', () => { printBill(true); });
 }
 
+/**
+ * OB-352 (owner, 24 Oct 2026): after a bill marked for delivery — its slip under the bill. A customer with the app gets one
+ * line (they choose the address and slot in the app); otherwise the slip the delivery desk fills in, with "Print delivery
+ * slip". The till keeps no address and no phone number: the slip has blank lines to be written by hand.
+ */
+function offerSlip() {
+  const slip = typeof session.deliverySlip === 'function' ? session.deliverySlip(lang) : null;
+  const button = el('print-slip');
+  if (slip === null || !button) return;
+  const shown = el('refusal-receipt');
+  shown.textContent = `${shown.textContent ? `${shown.textContent}\n\n` : ''}${slip.lines.join('\n')}`;
+  shown.hidden = false;
+  if (slip.path !== 'delivery_desk') return;
+  el('print-actions').hidden = false;
+  if (!realTradingOn()) { el('print-bill').hidden = true; el('print-duplicate').hidden = true; }
+  const icon = mark('truck', 18);
+  button.replaceChildren(...(icon ? [icon] : []), document.createTextNode(t('printSlip')));
+  button.hidden = false;
+}
+/** OB-352: print the delivery slip on paper (the browser's own print, as the bill prints). The sale is already saved. */
+function printSlip() {
+  const slip = typeof session.deliverySlip === 'function' ? session.deliverySlip(lang) : null;
+  if (slip === null) return;
+  const area = el('print-area');
+  area.className = 'print-area paper-80';
+  area.dataset.copy = 'delivery-slip';
+  area.dataset.number = slip.receiptNumber;
+  area.lang = lang;
+  area.replaceChildren(...slip.lines.map((words, i) => { const row = document.createElement('div'); row.className = i === 0 ? 'pr-title' : 'pr-line'; row.textContent = words; return row; }));
+  try { window.print(); } catch { tell(t('printFailedTitle'), t('slipPrintFailed'), STOP, slip.lines.join('\n')); }
+}
+if (el('print-slip')) el('print-slip').addEventListener('click', () => { printSlip(); });
+
 function withReceiptNotice(receipt) {
   const notice = session.receiptNotice ? session.receiptNotice() : undefined;
   return notice ? `${receipt}\n\n${notice}` : receipt;
@@ -1798,6 +1842,7 @@ async function takeCardOrUpi(kind, payable) {
       atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}), ...(machineRef ? { machineRef } : {}),
     }).catch(lostAnswer);
     tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, saleBill(), realTradingOn());
+    offerSlip();
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1884,6 +1929,7 @@ async function splitPayment(payable) {
     const soldGold = huidLines();
     const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts }).catch(lostAnswer);
     tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, saleBill(), realTradingOn());
+    offerSlip();
     session.newSale();
     void refreshBadge();
     selectedLineId = null;

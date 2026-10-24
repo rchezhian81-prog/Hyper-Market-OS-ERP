@@ -27,7 +27,12 @@ import {
 export type { PartnerDocument, StatementLine, PartnerAuditEntry } from '../../../packages/supplier-portal/src/index';
 
 const GRANTS: readonly PortalGrant[] = ['view_orders', 'acknowledge_orders', 'submit_asn', 'submit_invoice', 'submit_catalogue', 'respond_rfq', 'raise_claim', 'view_statement'];
-const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim'];
+const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim', 'delivery_status'];
+/** M24-FR-02 (OB-288 commercial desks): where a supplier's delivery has got to. */
+export const DELIVERY_STATUSES = ['dispatched', 'in_transit', 'delayed'] as const;
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
+/** M24-FR-01 (OB-288 commercial desks): the proposals a buyer accepts or rejects that feed nothing by themselves. */
+const DECIDED_ONLY: readonly SubmissionKind[] = ['catalogue', 'rfq_response', 'claim'];
 const DOCUMENT_KINDS: readonly PartnerDocumentKind[] = ['fssai_licence', 'gst_registration', 'insurance', 'trade_licence', 'bank_mandate', 'quality_certificate'];
 const LINE_KINDS: readonly StatementLine['kind'][] = ['invoice', 'credit_note', 'payment', 'debit_note'];
 const LINE_STATUSES: readonly StatementLine['status'][] = ['open', 'settled', 'disputed'];
@@ -118,13 +123,22 @@ const poOf = (document: Readonly<Record<string, unknown>> | undefined): string |
 
 /** Read an invoice / ASN document's SHAPE (its arithmetic is head office's to re-check at review); other kinds: any object. */
 function documentProblem(kind: SubmissionKind, document: unknown, required: boolean): string | undefined {
-  if (document === undefined) return required && FEEDING.includes(kind) ? `a${kind === 'asn' ? 'n ASN' : 'n invoice'} submission needs its document` : undefined;
+  if (document === undefined) {
+    if (kind === 'delivery_status') return 'a delivery status needs its document: { poId, status, expectedOn, note? }';
+    return required && FEEDING.includes(kind) ? `a${kind === 'asn' ? 'n ASN' : 'n invoice'} submission needs its document` : undefined;
+  }
   if (!isObjRec(document)) return 'the document is not readable';
   if (document['supplierId'] !== undefined) return 'the document names a supplier — the supplier is the partner the submission is from, never a field';
   if (document['poId'] !== undefined && !isStr(document['poId'])) return 'poId must be text';
   if (kind === 'invoice') {
     if (!isStr(document['invoiceId']) || !isNonNegIntV(document['declaredTotalMinor']) || !Array.isArray(document['lines']) || document['lines'].length === 0) {
       return 'an invoice document needs { invoiceId, declaredTotalMinor, lines: [{ productId, quantity, unitPriceMinor, lineTotalMinor, uom? }], poId? }';
+    }
+  }
+  if (kind === 'delivery_status') {
+    if (!isStr(document['poId']) || typeof document['status'] !== 'string' || !(DELIVERY_STATUSES as readonly string[]).includes(document['status'])
+      || !isDate(document['expectedOn']) || (document['note'] !== undefined && !(typeof document['note'] === 'string' && document['note'].length <= 300))) {
+      return 'a delivery status needs { poId, status: dispatched | in_transit | delayed, expectedOn: YYYY-MM-DD (when it should now arrive), note? (up to 300 characters) }';
     }
   }
   if (kind === 'asn') {
@@ -303,7 +317,7 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
     submissionId: s.submissionId, kind: s.kind, requiresReview: s.requiresReview, receivedAt: s.receivedAt,
     ...(s.submittedBy === undefined ? {} : { submittedBy: s.submittedBy }),
     ...(s.document === undefined ? {} : { document: s.document }),
-    review: review === undefined ? (s.document !== undefined && FEEDING.includes(s.kind) ? 'awaiting_buyer' : null) : review,
+    review: review === undefined ? ((s.document !== undefined && FEEDING.includes(s.kind)) || (s.requiresReview && DECIDED_ONLY.includes(s.kind)) ? 'awaiting_buyer' : null) : review,
   });
 
   return [
@@ -374,8 +388,12 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
         }
         const submission = (await deps.submissions(ctx.tenantId, partnerId)).find((s) => s.submissionId === submissionId);
         if (submission === undefined) throw notFound(`submission ${submissionId} from supplier ${partnerId}`);
-        if (submission.document === undefined || !FEEDING.includes(submission.kind)) {
-          throw apiError(409, { code: 'nothing_to_feed', whatHappened: `Submission ${submissionId} is a ${submission.kind.replace(/_/g, ' ')}${submission.document === undefined ? ' with no document' : ''} — only an invoice or an ASN with its document feeds purchasing.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was decided.' });
+        // M24-FR-01 (OB-288 commercial desks): a catalogue / cost proposal, an RFQ reply or a claim is ACCEPTED or REJECTED by
+        // a buyer with a reason — the decision is kept beside it and feeds nothing by itself ("nothing commits without buyer
+        // acceptance"); an invoice / ASN with its document feeds purchasing once accepted (SF-09).
+        const decidedOnly = DECIDED_ONLY.includes(submission.kind) && submission.requiresReview;
+        if (!decidedOnly && (submission.document === undefined || !FEEDING.includes(submission.kind))) {
+          throw apiError(409, { code: 'nothing_to_feed', whatHappened: `Submission ${submissionId} is a ${submission.kind.replace(/_/g, ' ')}${submission.document === undefined ? ' with no document' : ''} — only an invoice or an ASN with its document feeds purchasing, and only a catalogue, an RFQ reply or a claim waits for a buyer's decision.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was decided.' });
         }
         const prior = await reviewOf(ctx.tenantId, partnerId, submissionId);
         if (prior !== undefined) {
@@ -385,10 +403,10 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
         if (submission.submittedBy === ctx.userId) {
           throw apiError(403, { code: 'self_review', whatHappened: `${ctx.userId} submitted ${submissionId} and cannot also review it (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'A different buyer reviews it. Nothing was decided.' });
         }
-        const doc = submission.document;
+        const doc = submission.document ?? {};
         let fed: SubmissionReview['fed'] = null;
         const at = deps.now();
-        if (decision === 'accepted') {
+        if (decision === 'accepted' && !decidedOnly) {
           if (submission.kind === 'invoice') {
             if (deps.captureInvoice === undefined) throw apiError(503, { code: 'invoice_register_unavailable', whatHappened: 'The supplier-invoice register is not wired here.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was decided.' });
             const out = await deps.captureInvoice(ctx.tenantId, {

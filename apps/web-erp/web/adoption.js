@@ -7,7 +7,7 @@
 const $ = (id) => document.getElementById(id);
 const api = window.adoption ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, open: false, gate: false, approve: false, train: false, champion: false, productivity: false };
+const may = session?.may ?? { named: false, open: false, gate: false, approve: false, train: false, champion: false, productivity: false, homeDepartment: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
@@ -105,20 +105,33 @@ function paintProductivity() {
   const s = text('li', `${t('store')}: ${api.rupees(prod.store.salesMinor)} · ${api.hoursOf(prod.store.labourMinutes)} ${t('hours')} · ${rate(prod.store.rate)}`); s.dataset.row = 'store'; ul.append(s);
   for (const d of prod.departments) { const li = text('li', `${d.name}: ${api.rupees(d.salesMinor)} · ${d.labourMinutes === null ? t('notAttributed') : `${api.hoursOf(d.labourMinutes)} ${t('hours')} · ${rate(d.rate)}`}`); li.dataset.row = d.departmentId; ul.append(li); }
   ul.append(text('li', `${t('unowned')} ${api.rupees(prod.unownedSalesMinor)}`));
+  // OB-357: the hours of people with no home department — by name, never guessed into a department.
+  const na = prod.notAttributed;
+  if (na !== undefined && na.labourMinutes > 0) {
+    const li = text('li', `⚠ ${t('notAttributedH')} ${api.hoursOf(na.labourMinutes)} ${t('hours')} — ${na.people.map((p) => `${p.name} (${p.employeeId}, ${api.hoursOf(p.labourMinutes)}${p.why === 'home_department_not_live' ? `, ${t('notLive')}` : ''})`).join('; ')}`);
+    li.dataset.row = 'not-attributed'; ul.append(li);
+  }
+}
+/** OB-357: the department choices for a home department — the live departments head office lists. */
+function paintHomeDepartments() {
+  const sel = $('hd-dept'); const was = sel.value;
+  const none = document.createElement('option'); none.value = ''; none.textContent = t('homeNone');
+  const opts = (champs?.departments ?? []).map((d) => { const o = document.createElement('option'); o.value = d.departmentId; o.textContent = `${d.name} (${d.departmentId})`; return o; });
+  sel.replaceChildren(none, ...opts); sel.value = was;
 }
 
 function paint() {
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['gate-h', 'gateH'], ['th-role', 'role'], ['th-people', 'people'], ['th-cur', 'curriculum'], ['th-missing', 'missing'], ['gate-read-text', 'readGate'], ['cur-h', 'curriculumH'], ['train-h', 'trainingH'], ['t-emp-l', 'employee'], ['t-item-l', 'item'], ['t-due-l', 'due'], ['t-assign-text', 'assign'], ['champ-h', 'championsH'], ['access-h', 'accessH'], ['x-read-text', 'checkAccess'], ['prod-h', 'productivityH'], ['pr-from-l', 'from'], ['pr-to-l', 'to'], ['pr-read-text', 'readProductivity']]) $(id).textContent = t(key);
-  paintGate(); paintCurriculum(); paintTraining(); paintChampions(); paintAccess(); paintProductivity();
+  for (const [id, key] of [['gate-h', 'gateH'], ['th-role', 'role'], ['th-people', 'people'], ['th-cur', 'curriculum'], ['th-missing', 'missing'], ['gate-read-text', 'readGate'], ['cur-h', 'curriculumH'], ['train-h', 'trainingH'], ['t-emp-l', 'employee'], ['t-item-l', 'item'], ['t-due-l', 'due'], ['t-assign-text', 'assign'], ['champ-h', 'championsH'], ['access-h', 'accessH'], ['x-read-text', 'checkAccess'], ['prod-h', 'productivityH'], ['pr-from-l', 'from'], ['pr-to-l', 'to'], ['pr-read-text', 'readProductivity'], ['hd-h', 'homeH'], ['hd-emp-l', 'homeEmployee'], ['hd-dept-l', 'homeDept'], ['hd-set-text', 'homeSet']]) $(id).textContent = t(key);
+  paintGate(); paintCurriculum(); paintTraining(); paintChampions(); paintAccess(); paintProductivity(); paintHomeDepartments();
 }
 async function loadGate() { if (!may.gate) return; const o = await session.gate(); if (o.result === 'ok') gate = o.value; else say('page-status', o); paintGate(); }
 async function loadCurriculum() { const o = await session.curriculum(); if (o.result === 'ok') cur = o.value; else say('cur-status', o); paintCurriculum(); }
 async function loadTraining() { const o = await session.training(); if (o.result === 'ok') training = o.value; else say('t-status', o); paintTraining(); }
-async function loadChampions() { const o = await session.champions(); if (o.result === 'ok') champs = o.value; else say('c-status', o); paintChampions(); }
+async function loadChampions() { const o = await session.champions(); if (o.result === 'ok') champs = o.value; else say('c-status', o); paintChampions(); paintHomeDepartments(); }
 
-for (const [id, name] of [['gate-read', 'refresh-cw'], ['t-assign', 'list-plus'], ['x-read', 'shield-check'], ['pr-read', 'chart-column']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+for (const [id, name] of [['gate-read', 'refresh-cw'], ['t-assign', 'list-plus'], ['x-read', 'shield-check'], ['pr-read', 'chart-column'], ['hd-set', 'user-round']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (!may.named) $('page-status').textContent = t('nobody');
@@ -135,5 +148,9 @@ else {
   if (may.productivity) {
     $('prod').hidden = false;
     $('pr-read').addEventListener('click', async () => { const o = await session.productivity($('pr-from').value, $('pr-to').value); if (o.result === 'ok') { prod = o.value; $('pr-status').textContent = ''; } else say('pr-status', o); paintProductivity(); });
+  }
+  if (may.homeDepartment) {
+    $('home-dept').hidden = false;
+    $('hd-set').addEventListener('click', async () => { const out = await session.setHomeDepartment($('hd-emp').value, $('hd-dept').value); say('hd-status', out); });
   }
 }

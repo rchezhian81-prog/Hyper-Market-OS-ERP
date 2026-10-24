@@ -485,6 +485,7 @@
     'basket-affinity': 'shopping-basket',
     'demand-events': 'calendar-days',
     'morning-brief': 'book-open',
+    'owner-alerts': 'shield-alert', // OB-288 lane 4 · P2 — an icon already in the set
     // ── end R4 Lane 3 ──
     // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
     'supplier-scorecard': 'list-checks',
@@ -531,11 +532,15 @@
     'adoption': 'clipboard-check', // OB-288 LP/workforce package — an icon already in the set
     'appointment-letters': 'file-text', // OB-288 LP/workforce package — an icon already in the set
     'related-parties': 'shield-check', // OB-288 LP/workforce package — an icon already in the set
+    'rollout': 'sliders', // OB-288 P4 — an icon already in the set
     'tally-files': 'book-open', // OB-288 P5 (OB-293) — an icon already in the set
     'dispatch': 'truck', // OB-288 fulfilment & delivery — an icon already in the set
     'loyalty-desk': 'badge-check', // OB-288 wave 3 (OB-329 · OB-295) — an icon already in the set
     'order-refunds': 'indian-rupee', // OB-288 wave 3 (M18-FR-04) — an icon already in the set
     'campaigns': 'send', // OB-288 wave 3 (M21-FR-01) — an icon already in the set
+    'b2b': 'building', // OB-288 commercial desks (M22) — an icon already in the set
+    'supplier-submissions': 'package-check', // OB-288 commercial desks (M24) — an icon already in the set
+    'concessions': 'store', // OB-288 commercial desks (M27) — an icon already in the set
     'approval-rules': 'sliders', // OB-288 lane 1 · P1 — an icon already in the set
     'day-reopen': 'lock',
     'data-io': 'arrow-up-down',

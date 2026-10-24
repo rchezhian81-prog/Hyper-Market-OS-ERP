@@ -54,6 +54,8 @@ importers:
 
   packages/api-client: {}
 
+  packages/partner-sdk: {}
+
   services/ai: {}
 
   services/api: {}

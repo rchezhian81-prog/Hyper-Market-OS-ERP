@@ -224,6 +224,27 @@
   (`supplier.portal.review`) runs the tested `findProbing` over the tenant-wide audit trail — a buyer's,
   per-tenant view of who is **trying doors** (one refusal is a mis-click; a pattern of them is not). A
   no-grant refusal is audited but is not probing; a retried mis-click collapses to one attempt.
+- **Supplier-submission desk and delivery status (API-03, M24-FR-01/02 · OB-288 commercial desks):** a supplier sends a
+  `delivery_status` submission (`{ poId, status: dispatched | in_transit | delayed, expectedOn, note? }`, the
+  `acknowledge_orders` grant, its own order only) — a statement of fact the buyer reads, reviewed by nobody. The buyer
+  decides every supplier's waiting submissions from one queue (`GET /v1/supplier-portal/review-queue`, `supplier.portal.review`):
+  an invoice / ASN with its document feeds purchasing once accepted; a catalogue / cost proposal, an RFQ reply or a claim is
+  accepted or rejected with a reason and feeds nothing by itself. `GET /v1/supplier-portal/orders/:poId/delivery-status`
+  reads one order's updates (`latest: null` when the supplier has said nothing yet).
+- **B2B contract register and desk (API-09, M22-FR-01/02 · OB-288 commercial desks):** `POST /v1/b2b/contracts/:customerId/:contractId`
+  (`b2b.contract.manage`) records a contract PROPOSED; with an `approvalId` of kind `b2b_contract` (another contract manager's,
+  given in their own session) it is APPROVED and in force on its own dates — never rewritten afterwards. A quotation line left
+  unpriced is priced from the contract in force, else the price list (customer > store); a typed price that differs is refused
+  (`quotation_not_the_contract_price` / `quotation_not_the_price_on_record`); a lapsed `block` contract refuses
+  (`quotation_contract_expired`). An order over the credit limit is refused (`conversion_over_limit`) until the order-taker
+  sends an `approvalId` of kind `b2b_credit_override`, which only the owner may give (`b2b.credit.override`, OB-290).
+  `GET /v1/b2b/desk` and `GET /v1/b2b/desk/:customerId` are the desk's reads.
+- **Partner integration: versioned JSON API and CSV — no EDI (API-03/API-11, M24-FR-04 · OB-312):** high-volume partners
+  exchange orders, ASNs and invoices through this **versioned JSON API** (partner API keys, the isolated sandbox and
+  certification under `/v1/platform/partners/*`) and the **CSV** import/export files. **EDI (EDIFACT, ANSI X12, GS1 EANCOM)
+  is NOT built and is not offered.** The owner decided in writing (OB-312, 23 Oct 2026) that the JSON API and CSV are
+  sufficient, and deferred EDI until a named supplier asks for it, with **R8** as the target release. A partner asking for
+  EDI is told this; nothing here accepts or emits an EDI message.
 - **Operational health & alerting (API-11, M35-FR-03/04 · §32):** `POST /v1/platform/operational-health`
   (`platform.health.read`) runs the tested `checkHealth` over the evidence the edge reports — sync lag,
   outbox depth, dead letters, catalogue/backup age, integrations — and holds two lines that matter more
@@ -405,6 +426,9 @@ build; it is not invented ahead of the roadmap.)*
   versioned, idempotent adapters with retry + dead-letter.
 
 ## 6. Deferred
+**EDI (M24-FR-04) — deferred in writing to R8 (OB-312, 23 Oct 2026):** no EDIFACT / X12 / EANCOM. Partners use the versioned
+JSON API and CSV until a named supplier asks for EDI.
+
 Per-endpoint request/reply body schemas (and per-event payload schemas) are declared per domain as each
 release is built; the money routes declare theirs now (above), and until a route does the generated OpenAPI/AsyncAPI
 documents mark its body `not declared`. R4/R5/R7 domains (Customer/CRM, OMS/Fulfilment, AI) are named at family level here

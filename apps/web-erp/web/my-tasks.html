@@ -64,9 +64,18 @@
         <ul class="rows" id="rows" aria-label="The tasks assigned to me"></ul>
         <p class="muted" id="none" hidden></p>
       </section>
+      <!-- OB-358: the shelf relabel tasks that go to me — my department's floor champion, or the store manager. -->
+      <section aria-labelledby="relabel-h" id="relabel" data-scope="mine" hidden>
+        <h3 id="relabel-h"></h3>
+        <p class="muted" id="relabel-lead"></p>
+        <p class="muted" id="relabel-open"></p>
+        <ul class="rows" id="relabel-rows"></ul>
+        <p class="status" id="relabel-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./my-tasks.js" type="module"></script>
+    <script src="./relabel.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

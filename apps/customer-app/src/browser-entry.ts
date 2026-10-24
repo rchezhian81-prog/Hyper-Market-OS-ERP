@@ -299,6 +299,9 @@ export interface CommerceShop {
   saveAddress(label: string, landmark: string): Promise<MineOutcome<unknown> | { readonly ok: false; readonly refusal: 'no_location' }>;
   useAddress(location: { readonly lat: number; readonly lon: number }): void;
   removeAddress(addressId: string): Promise<MineOutcome<unknown>>;
+  /** OB-352: the bills the till marked for delivery in my name — each waiting for me to choose a saved address and a slot. */
+  tillDeliveries(): Promise<MineOutcome<unknown>>;
+  chooseTillDelivery(orderId: string, addressId: string, slotStartsAt: string): Promise<MineOutcome<unknown>>;
   paymentMethods(): Promise<MineOutcome<unknown>>;
   /** M21-FR-02: an occasion I give with my yes, and remove in one tap. */
   occasions(): Promise<MineOutcome<unknown>>;
@@ -704,6 +707,11 @@ export function bootShop(
       useAddress: (location) => { deliveryLocation = { lat: location.lat, lon: location.lon }; },
       removeAddress: async (addressId) => {
         const a = await commerceCall({ method: 'POST', path: `me/addresses/${encodeURIComponent(addressId)}/remove`, body: {}, idempotencyKey: `address-remove-${addressId}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      tillDeliveries: async () => { const a = await commerceCall({ method: 'GET', path: 'me/till-deliveries' }); return a.ok ? { ok: true, value: a.body } : a; },
+      chooseTillDelivery: async (orderId, addressId, slotStartsAt) => {
+        const a = await commerceCall({ method: 'POST', path: `me/till-deliveries/${encodeURIComponent(orderId)}/delivery`, body: { addressId, slotStartsAt }, idempotencyKey: `till-delivery-${orderId}-${addressId}-${slotStartsAt}` });
         return a.ok ? { ok: true, value: a.body } : a;
       },
       paymentMethods: async () => { const a = await commerceCall({ method: 'GET', path: 'me/payment-methods' }); return a.ok ? { ok: true, value: a.body } : a; },

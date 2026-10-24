@@ -87,7 +87,9 @@ export type ShopCommercePath =
   | `me/occasions${string}` | 'me/help/answers' | `me/ai-suggestions?${string}`
   // OB-294 · D08-FR-05: my delivery order's code and ETA. OB-351: my referral. OB-350: my scan-and-go basket.
   | `storefront/orders/${string}/delivery-code` | `storefront/orders/${string}/delivery-eta`
-  | `me/referral${string}` | `storefront/scan-and-go${string}`;
+  | `me/referral${string}` | `storefront/scan-and-go${string}`
+  // OB-352: a bill the till marked for delivery — I choose the address (one I saved) and the slot.
+  | `me/till-deliveries${string}`;
 
 export interface ShopCommerceRequest {
   readonly token: string;

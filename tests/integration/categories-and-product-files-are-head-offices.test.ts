@@ -137,7 +137,7 @@ describe('SF-06-b — a product file loads real products', () => {
     const res = await post(h, '/v1/import/commit', 'u-mgr', { jobId: 'J-M', templateId: 'product-v1', text: csv(SOAP_ROW), approvalId: 'whatever' });
     expect(res.status).toBe(403);
     expect(codeOf(res)).toBe('import_target_not_permitted');
-    expect(((await get(h, '/v1/import/templates')).body as { templates: { id: string }[] }).templates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1', 'product-update-v1']);
+    expect(((await get(h, '/v1/import/templates')).body as { templates: { id: string }[] }).templates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1', 'product-update-v1', 'supplier-v1', 'price-list-v1', 'opening-stock-v1', 'customer-v1', 'loyalty-opening-v1']); // OB-315
   });
 
   it('ROLLBACK: the products are discontinued (a new version — kept as evidence); refused once a product has a barcode', async () => {

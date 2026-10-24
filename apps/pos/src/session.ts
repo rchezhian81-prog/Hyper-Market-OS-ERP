@@ -147,6 +147,35 @@ export class TaxInvoiceRefusedError extends Error {
 /** What the till says when a customer number or loyalty is asked for while guest sales only is on (OB-252). */
 export const GUEST_SALES_ONLY_WORDS = 'Guest sales only on this till during the pilot: no customer mobile number and no loyalty points or store credit. Ring the sale as a guest. The old billing system keeps loyalty as today.';
 
+/**
+ * OB-352 (owner, 24 Oct 2026, in writing): the bill's delivery — how its address and slot will be given. A member with the
+ * app chooses them in the app; otherwise the till prints this DELIVERY SLIP for the delivery desk, who enters them at head
+ * office against the job (`till-<saleId>`). The slip carries only the job, the bill and blank lines to be written by hand —
+ * the till keeps no address and no phone number (P-04).
+ */
+export interface DeliverySlip {
+  readonly path: 'customer_app' | 'delivery_desk';
+  readonly jobRef: string;
+  readonly receiptNumber: string;
+  readonly committedAt: string;
+  readonly itemLines: number;
+  /** The lines as they print (or show), in the language asked. */
+  readonly lines: readonly string[];
+}
+
+const SLIP_WORDS = {
+  en: {
+    title: 'DELIVERY SLIP', job: 'Delivery job', bill: 'Bill', at: 'Billed', items: 'Item lines', paid: 'Paid in full at the till — the door collects nothing.',
+    write: 'Write clearly, then hand this slip to the delivery desk:', name: 'Name', address: 'Address', landmark: 'Landmark', phone: 'Phone', slot: 'Delivery slot (day and time)',
+    app: 'The customer chooses the delivery address and slot in the SRE app (Deliveries from the shop).',
+  },
+  ta: {
+    title: 'டெலிவரி சீட்டு', job: 'டெலிவரி பணி', bill: 'பில்', at: 'பில் நேரம்', items: 'பொருள் வரிகள்', paid: 'கவுண்டரில் முழுத் தொகையும் செலுத்தப்பட்டது — வீட்டில் எதுவும் வசூலிக்கப்படாது.',
+    write: 'தெளிவாக எழுதி, இந்தச் சீட்டை டெலிவரி மேசையில் கொடுக்கவும்:', name: 'பெயர்', address: 'முகவரி', landmark: 'அடையாளம்', phone: 'தொலைபேசி', slot: 'டெலிவரி நேரம் (நாள், நேரம்)',
+    app: 'வாடிக்கையாளர் டெலிவரி முகவரியையும் நேரத்தையும் SRE செயலியில் தேர்வு செய்வார் (கடையிலிருந்து டெலிவரி).',
+  },
+} as const;
+
 /** OB-299: the words the till says when the owner has not set the delivery fee. */
 export const DELIVERY_FEE_NOT_SET_WORDS = 'Delivery from the till is not set up: the owner has not set the delivery fee. Take the sale as a normal sale, or ask the manager.';
 
@@ -394,9 +423,15 @@ export class SessionStateError extends Error {
  * with the customer still standing there. It carries the cashier's words rather than a code.
  */
 export class LocalCommitRefusedError extends Error {
-  constructor(public readonly saleId: string, public readonly laneMessage: string) {
+  /** OB-301: the store computer's own Tamil words for this refusal, when it gave them (the screen shows them in Tamil). */
+  readonly laneMessageTa?: string;
+  /** Why the store computer refused, when it said (e.g. `staff_purchase_refused`). */
+  readonly refusedBecause?: string;
+  constructor(public readonly saleId: string, public readonly laneMessage: string, from?: { readonly laneMessageTa?: string; readonly refusedBecause?: string }) {
     super(`sale ${saleId} was not committed locally: ${laneMessage}`);
     this.name = 'LocalCommitRefusedError';
+    if (from?.laneMessageTa !== undefined) this.laneMessageTa = from.laneMessageTa;
+    if (from?.refusedBecause !== undefined) this.refusedBecause = from.refusedBecause;
   }
 }
 
@@ -513,6 +548,10 @@ export class PosSession {
   private loyaltyMobile: string | undefined;
   /** This basket's own reference (audit PF-06): the bill a card/UPI attempt is recorded against, until the next sale. */
   private billRefValue: string | undefined;
+  /** OB-352: how the last saved delivery bill gets its address and slot, and its slip. */
+  private lastSlipValue: Omit<DeliverySlip, 'lines'> | undefined;
+  /** OB-352: what the store computer said about the bill being saved now (customer app or delivery desk). */
+  private pendingDeliveryPath: 'customer_app' | 'delivery_desk' | undefined;
   /** OB-299: the bill is marked for delivery — the fee line added for it (by its line id). */
   private deliveryMark: { readonly feeProductId: string; readonly feeLineId: string } | undefined;
   /** Evaluation instant for effective-dated promotions, when the caller fixed one (`setNow`); else the lane's clock. */
@@ -579,12 +618,13 @@ export class PosSession {
     const outcome = await this.durable(pending.saleId, pending.record);
     if (outcome.committed) {
       this.awaiting = undefined;
+      this.pendingDeliveryPath = outcome.deliveryPath;
       return pending.finish();
     }
     if (outcome.unconfirmed === true) throw new SaleUnconfirmedError(pending.saleId, pending.number, outcome.laneMessage);
     this.awaiting = undefined;
     this.state = pending.before;
-    throw new LocalCommitRefusedError(pending.saleId, outcome.laneMessage);
+    throw new LocalCommitRefusedError(pending.saleId, outcome.laneMessage, outcome);
   }
 
   /** Set the connection state shown on the badge (the lane observes it; sales never wait on it). */
@@ -1146,6 +1186,7 @@ export class PosSession {
     }
     // A bill is never shown for a sale that did not commit: the last one is forgotten until this one is on the disk.
     this.lastBillValue = undefined;
+    this.lastSlipValue = undefined;
     const totals = this.totals();
     if (totals.lineCount === 0) {
       throw new EmptyBasketError();
@@ -1422,6 +1463,14 @@ export class PosSession {
         tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
         ...(taxInvoice === undefined ? {} : { taxInvoice }),
       });
+      // OB-352: a delivery bill's slip — the job head office books from it, and which path gives its address and slot.
+      // When the store computer did not say (an older box), the slip is printed: the desk can always enter it.
+      const delivered = this.deliveryLine();
+      this.lastSlipValue = delivered === undefined ? undefined : Object.freeze({
+        path: this.pendingDeliveryPath ?? 'delivery_desk', jobRef: `till-${saleId}`, receiptNumber: number, committedAt,
+        itemLines: active.filter((l) => l.lineId !== delivered.lineId).length,
+      });
+      this.pendingDeliveryPath = undefined;
       return sale;
     };
 
@@ -1433,8 +1482,29 @@ export class PosSession {
       this.state = 'unconfirmed';
       throw new SaleUnconfirmedError(saleId, number, outcome.laneMessage);
     }
-    if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
+    if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage, outcome);
+    this.pendingDeliveryPath = outcome.deliveryPath;
     return finish();
+  }
+
+  /**
+   * OB-352: the delivery slip of the bill this till last saved, when it was marked for delivery — in the language asked.
+   * On the customer-app path it is one line telling the customer to choose in the app (nothing to fill in); otherwise the
+   * slip with blank lines for the delivery desk. Undefined for a bill not for delivery.
+   */
+  deliverySlip(language: 'en' | 'ta' = 'en'): DeliverySlip | undefined {
+    const s = this.lastSlipValue;
+    if (s === undefined) return undefined;
+    const w = SLIP_WORDS[language];
+    const blank = '________________________';
+    const lines = s.path === 'customer_app'
+      ? [w.title, `${w.job}: ${s.jobRef}`, `${w.bill}: ${s.receiptNumber}`, w.app]
+      : [
+        w.title, `${w.job}: ${s.jobRef}`, `${w.bill}: ${s.receiptNumber}`, `${w.at}: ${s.committedAt.replace('T', ' ').slice(0, 16)}`,
+        `${w.items}: ${s.itemLines}`, w.paid, w.write, `${w.name}: ${blank}`, `${w.address}: ${blank}`, `${blank}`,
+        `${w.landmark}: ${blank}`, `${w.phone}: ${blank}`, `${w.slot}: ${blank}`,
+      ];
+    return { ...s, lines };
   }
 
   /** Suspend the basket for later recall (≤ 3 interactions). */

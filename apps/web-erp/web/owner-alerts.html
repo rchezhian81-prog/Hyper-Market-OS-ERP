@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Owner alerts and scheduled reports</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Owner alerts and scheduled reports (OB-288 lane 4 · P2 · M29-FR-03 · M29-FR-04). A THIN CLIENT over head office's five
+      owner exception-alert thresholds (each "not set" until the owner enters it), the day's exceptions from the synced
+      records, and the owner's scheduled reports and exports. Its session is apps/web-erp/src/owner-alerts-session.ts.
+      Nothing is read before the person may see it; every save is an explicit click in the person's own name.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 56px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .notset { color: var(--warn-ink, var(--ink)); font-weight: 600; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Owner alerts and scheduled reports</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Owner alerts and scheduled reports</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="thresholds" hidden aria-labelledby="thresholds-h">
+        <h3 id="thresholds-h"></h3>
+        <ul class="rows" id="t-rows"></ul>
+        <p class="status" id="t-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="today" hidden aria-labelledby="today-h">
+        <h3 id="today-h"></h3>
+        <ul class="rows" id="d-rows"></ul>
+        <ul class="rows" id="d-alerts"></ul>
+        <button id="d-check" type="button" hidden><span id="d-check-text"></span></button>
+        <p class="status" id="d-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="schedules" hidden aria-labelledby="schedules-h">
+        <h3 id="schedules-h"></h3>
+        <ul class="rows" id="s-rows"></ul>
+        <div class="row-form" id="s-form" hidden>
+          <label for="s-id"><span id="s-id-l"></span><input id="s-id" autocomplete="off" /></label>
+          <label for="s-kind"><span id="s-kind-l"></span><select id="s-kind"><option value="report" id="s-kind-report"></option><option value="export" id="s-kind-export"></option></select></label>
+          <label for="s-target"><span id="s-target-l"></span><input id="s-target" autocomplete="off" /></label>
+          <label for="s-time"><span id="s-time-l"></span><input id="s-time" autocomplete="off" inputmode="numeric" placeholder="21:00" /></label>
+          <label for="s-lang"><span id="s-lang-l"></span><select id="s-lang"><option value="en">English</option><option value="ta">தமிழ்</option></select></label>
+        </div>
+        <div class="row-form">
+          <button id="s-save" type="button" hidden><span id="s-save-text"></span></button>
+          <button id="s-run" class="quiet" type="button" hidden><span id="s-run-text"></span></button>
+        </div>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./owner-alerts.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

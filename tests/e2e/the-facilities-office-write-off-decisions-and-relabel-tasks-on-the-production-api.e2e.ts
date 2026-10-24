@@ -33,6 +33,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
       alsoPages: [
         { path: '/write-off-capture', html: 'write-off-capture.html', dataGlobal: 'writeOffCaptureData' },
         { path: '/store-tasks', html: 'store-tasks.html', dataGlobal: 'storeOpsData' },
+        { path: '/my-tasks', html: 'my-tasks.html', dataGlobal: 'storeOpsData' },
       ],
       seed: async (cloud) => {
         const post = (path: string, userId: string, body: unknown, method: 'POST' | 'PUT' = 'POST', branchId?: string) =>
@@ -126,6 +127,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
     await waitText(page, '#relabel-open', '2 to change');
     const first = page.locator('#relabel-rows li[data-product="p-salt"]').first();
     expect((await first.textContent()) ?? '').toContain('₹18.00');
+    // OB-358: who it is for — no department of the store owns salt here, so the store manager, said why; mine marked.
+    const forWho = (await first.locator('.for').textContent()) ?? '';
+    expect(forWho).toContain('For: the store manager');
+    expect(forWho).toContain('no department owns this product here');
+    expect(forWho).toContain('✓ yours');
+    expect(await first.locator('.for').getAttribute('data-assignee')).toBe('store_manager');
     await first.locator('input.rl-price').fill('20');
     await first.locator('input.rl-photo').fill('photo-l1');
     await first.locator('button[type="submit"]').click();
@@ -136,5 +143,15 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
     expect((await page.textContent('#relabel-rows')) ?? '').toContain('Changed by u-mgr · ');
     expect(errors).toEqual([]);
     await close();
+    // OB-358: My tasks — the store manager's own relabel tasks (the one still open, and the one done); Tamil heading.
+    const mine = await open('u-mgr', '/my-tasks');
+    await mine.page.waitForSelector('#relabel:not([hidden])');
+    await waitText(mine.page, '#relabel-h', 'Shelf labels to change — mine');
+    await waitText(mine.page, '#relabel-open', '1 to change');
+    expect(await mine.page.locator('#relabel-rows li').count()).toBe(2);
+    await mine.page.click('#lang');
+    await waitText(mine.page, '#relabel-h', 'மாற்ற வேண்டிய அலமாரி லேபிள்கள் — என்னுடையவை');
+    expect(mine.errors).toEqual([]);
+    await mine.close();
   }, 120_000);
 });

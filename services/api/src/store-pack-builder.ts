@@ -30,6 +30,7 @@ import type { SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
 import { readStoreSettings } from '../../platform/src/store-packs';
 import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView, PRODUCT_UPDATE_SPEC, PRODUCT_UPDATE_LABEL } from '../../purchase/src/import-templates';
+import { DOMAIN_TEMPLATE_VIEWS } from '../../purchase/src/import-templates-domains'; // OB-315: suppliers, price lists, opening stock, customers, loyalty balances
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
@@ -63,10 +64,22 @@ export interface StorePackBuildInput {
   /** A22 (OB-326, switched off): the shop's B2C dynamic QR switch and details from store setup. Absent → never sent. */
   readonly b2cDynamicQr?: (tenantId: string) => Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string }>;
   /**
-   * OB-348 · OB-299 (OB-288 till side): the shop's state (liquor is judged by it) and the till's delivery-fee product, from
-   * store setup. Each rides the policies only when set — absent is "not set", and the till says so. Absent → never sent.
+   * OB-348 · OB-354 · OB-299 (OB-288 till side): THIS store's state (read from its GSTIN; liquor is judged by it) and the
+   * till's delivery-fee product (store setup). Each rides the policies only when set — absent is "not set", and the till
+   * says so. Absent → never sent.
    */
-  readonly tillPolicies?: (tenantId: string) => Promise<{ readonly shopState?: string; readonly tillDeliveryFeeProductId?: string }>;
+  readonly tillPolicies?: (tenantId: string, storeId: string) => Promise<{ readonly shopState?: string; readonly tillDeliveryFeeProductId?: string }>;
+  /**
+   * OB-301 (M15-FR-03): the owner's staff-purchase policy (the discount cap and the service-desk tills, each `null` = "not
+   * set") and the staff members' own customer accounts — what the store computer judges a staff member's shopping by,
+   * offline, before its disk (`edge/store-edge/src/staff-purchase-gate.ts`). Always sent when wired, "not set" included.
+   */
+  readonly staffPurchase?: (tenantId: string) => Promise<{
+    readonly staffDiscountCapBps: number | null; readonly serviceDeskLaneIds: readonly string[] | null;
+    readonly staffAccounts: readonly { readonly customerRef: string; readonly employeeId: string }[];
+  }>;
+  /** OB-288 P4 (R8-9 · OB-316): this store's rollout switches per branch and lane — the till reads its lane's offline. Absent → never sent. */
+  readonly rollout?: (tenantId: string, storeId: string) => Promise<unknown>;
 }
 
 /**
@@ -126,8 +139,11 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     // A22 (OB-326): the B2C dynamic QR rides only when the shop switched it on — with the details it has given.
     const b2cQr = input.b2cDynamicQr === undefined ? undefined : await input.b2cDynamicQr(tenantId);
     // OB-348 · OB-299: the shop's state and the delivery-fee product, only when set.
-    const till = input.tillPolicies === undefined ? {} : await input.tillPolicies(tenantId);
+    const till = input.tillPolicies === undefined ? {} : await input.tillPolicies(tenantId, storeId);
+    // OB-301: the staff-purchase policy, "not set" parts included, so the box refuses as the rule says.
+    const staffPurchase = input.staffPurchase === undefined ? undefined : await input.staffPurchase(tenantId);
     sections['policies'] = {
+      ...(staffPurchase === undefined ? {} : { staffPurchase }),
       ...(till.shopState === undefined ? {} : { shopState: till.shopState }),
       ...(till.tillDeliveryFeeProductId === undefined ? {} : { tillDeliveryFeeProductId: till.tillDeliveryFeeProductId }),
       ...(b2cQr === undefined || !b2cQr.on ? {} : { b2cDynamicQr: b2cQr }),
@@ -220,6 +236,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       templateView({ spec: PRODUCT_SPEC, label: PRODUCT_LABEL, financial: false }),
       // M30 round 8: changing EXISTING products by file (previewed field by field, undone to the version replaced).
       templateView({ spec: PRODUCT_UPDATE_SPEC, label: PRODUCT_UPDATE_LABEL, financial: false }),
+      ...DOMAIN_TEMPLATE_VIEWS, // OB-315
     ],
   };
   const rules = input.rules === undefined ? undefined : await input.rules(tenantId, storeId);
@@ -413,5 +430,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     sections['fundingReceivedMinor'] = Object.fromEntries(contracts.map((c) => [c.contractId, received[c.contractId]?.minor ?? 0]));
   }
 
+  // OB-288 P4 (R8-9 · OB-316): the rollout switches — always sent once wired, so a till tells "nothing on" from "not told".
+  if (input.rollout !== undefined) sections['rollout'] = await input.rollout(tenantId, storeId);
   return sections;
 }

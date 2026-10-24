@@ -13,12 +13,15 @@ function text(tag, words, cls) { const n = document.createElement(tag); n.textCo
 const rupees = (m) => `₹${(m / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const when = (iso) => (typeof iso === 'string' ? iso.replace('T', ' ').slice(0, 16) : '');
 let read = null;
+// OB-358: on the My tasks page the section reads only the tasks that go to me (data-scope="mine").
+const mine = () => el('relabel')?.dataset.scope === 'mine';
+const mayRead = () => session !== null && (mine() ? session.may.readMine : session.may.read);
 
 function field(words, control) { const l = document.createElement('label'); l.append(text('span', words), control); return l; }
 function paint() {
-  if (session === null || !session.may.read) { el('relabel').hidden = true; return; }
+  if (!mayRead()) { el('relabel').hidden = true; return; }
   el('relabel').hidden = false;
-  el('relabel-h').textContent = w('relabelH'); el('relabel-lead').textContent = w('relabelLead');
+  el('relabel-h').textContent = w(mine() ? 'relabelMineH' : 'relabelH'); el('relabel-lead').textContent = w('relabelLead');
   if (read === null) return;
   el('relabel-open').textContent = `${read.open} ${w('open')}`;
   el('relabel-rows').replaceChildren(...(read.tasks.length === 0 ? [text('li', w('none'), 'muted')] : read.tasks.map((r) => {
@@ -26,6 +29,8 @@ function paint() {
     const head = document.createElement('div'); head.className = 'head';
     head.append(text('strong', `${w('product')} ${r.productId} · ${w('newPrice')} ${rupees(r.priceMinor)}`), text('span', r.done !== null ? `✓ ${w('done')}` : r.dueNow ? `⚠ ${w('dueNow')}` : w('notYet'), 'state'));
     li.append(head, text('span', `${r.branchId} · ${w('place')}: ${r.locationId ?? w('notOnPlan')} · ${w('from')} ${when(r.dueAt)} · ${w(r.because)}`, 'facts'));
+    // OB-358: who it is for — the department's floor champion, else the store manager (and why); the reader's own marked.
+    const forWho = text('span', api.assigneeWords(lang(), r), 'facts for'); forWho.dataset.assignee = r.assignee ? r.assignee.to : 'none'; li.append(forWho);
     if (r.done !== null) li.append(text('span', `${w('done')} ${w('doneBy')} ${r.done.doneBy} · ${when(r.done.doneAt)} · ${rupees(r.done.shelfPriceMinor)}`, 'facts'));
     else if (session.may.close) {
       const form = document.createElement('form');
@@ -46,8 +51,8 @@ function paint() {
   })));
 }
 async function load() {
-  if (session === null || !session.may.read) return;
-  const o = await session.tasks();
+  if (!mayRead()) return;
+  const o = await (mine() ? session.mine() : session.tasks());
   if (o.result === 'ok') read = o.value; else el('relabel-status').textContent = api.outcomeWords(lang(), o);
   paint();
 }

@@ -205,6 +205,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
       'org.structure.approve', 'platform.config.approve', 'identity.access.review',
       // ── OB-288 lane 1 · P1 — end
+      // ── OB-288 P4 (multi-tenant SaaS and rollout) — begin
+      // M36-FR-01 · OB-321: read the shop's usage meter (for information). M36-FR-03: APPROVE the shop's account closure the IT
+      // administrator asked for (never his own). C8 · OB-324: export the consent record and import a consent manager's.
+      // C9 · OB-324: read the customer-data volume watch (the threshold is the CA's).
+      'platform.metering.read', 'platform.tenant.close.approve', 'customer.consent.export', 'customer.consent.import', 'privacy.volume.read',
+      // ── OB-288 P4 — end
       // ── OB-288 P2 (catalogue, pricing and product legal guards) — begin
       // M03-FR-03 §28: the owner may approve a GST rate change someone else asked for (never their own).
       'catalogue.tax.approve',
@@ -246,8 +252,19 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // M28-FR-01): head office re-checks each person and runs its own reading and write-off routes.
       'facilities.reading.sync', 'inventory.writeoff.sync',
       // ── OB-288 LP, workforce, facilities and adoption — end
+      // ── OB-288 commercial desks (M22 · M24 · M27) — begin
+      // M22-FR-01 "contract/credit changes approved; separation from order-taking": the owner and the accountant propose and
+      // approve B2B contracts (never their own); everyone at the B2B desk reads them. OB-290: an order above a customer's
+      // credit limit (or on a lapsed "block" contract) goes to the OWNER — `b2b.credit.override` is the owner's alone.
+      'b2b.contract.manage', 'b2b.contract.read', 'b2b.credit.override',
+      // ── OB-288 commercial desks — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
+      // ── OB-288 lane 4 · P2 (owner reporting and data in/out) — begin
+      // M29-FR-03: the five exception-alert thresholds are the owner's alone (each "not set" until he enters it), and he may
+      // run the alert check by hand. M29-FR-04: only the owner schedules reports and exports, each run made as him.
+      'owner.alert.manage', 'owner.report.schedule',
+      // ── OB-288 lane 4 · P2 — end
       'refund.exception.read',
       'notification.send.check', 'notification.budget.set', // PA-08: the messaging budget is the owner's (M31 open item)
       'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
@@ -387,6 +404,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
+      // ── OB-288 commercial desks (M22 · M24 · M27) — begin
+      // M22-FR-01: the manager who takes B2B orders READS the contract they are priced from; never proposes or approves one.
+      'b2b.contract.read',
+      // ── OB-288 commercial desks — end
       // FUL-10: reads a customer's record and PROPOSES merges / household links; approving a merge is the owner's.
       'customer.profile.read', 'customer.identity.manage',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.commitment.read',
@@ -649,6 +670,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // sign-in at the identity server, and see who has one. It grants no authority: roles stay the owner's
       // maker-checker act (`identity.role.grant` is absent here, by design).
       'platform.person.provision', 'platform.person.read',
+      // ── OB-288 P4 (multi-tenant SaaS and rollout) — begin
+      // M36-FR-01: read the usage meter. M36-FR-03: ASK to close the shop's account (the owner approves).
+      'platform.metering.read', 'platform.tenant.close',
+      // ── OB-288 P4 — end
     ],
   },
   {
@@ -707,6 +732,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // M25-FR-04: the accountant reads the SOPs for their own role and acknowledges them.
       'workforce.help.read', 'workforce.sop.ack.self',
       // ── OB-288 LP, workforce, facilities and adoption — end
+      // ── OB-288 commercial desks (M22 · M24 · M27) — begin
+      // M22-FR-01: the accountant proposes B2B contracts and approves the owner's (never their own) — Finance's half of
+      // "contract/credit changes approved". The credit override above a limit stays the owner's (OB-290).
+      'b2b.contract.manage', 'b2b.contract.read',
+      // ── OB-288 commercial desks — end
     ],
   },
   {
@@ -745,6 +775,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // and reads the registers. Nothing else.
       'payroll.legal.read', 'payroll.legal.configure', 'epr.register.read', 'epr.settings.configure',
       // ── R4 Lane 1 — end
+      // ── OB-288 P4 (multi-tenant SaaS and rollout) — begin
+      // C9 · OB-324: the CA sets the customer-data volume threshold (with its basis) and reads the watch. Nothing else.
+      'privacy.volume.read', 'privacy.volume.threshold.set',
+      // ── OB-288 P4 — end
     ],
   },
   {

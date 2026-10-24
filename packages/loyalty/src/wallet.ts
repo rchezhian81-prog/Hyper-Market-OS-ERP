@@ -44,6 +44,8 @@ export interface MemberWallet {
    * A member below the lowest tier carries `name: null` at 1×.
    */
   readonly tier?: { readonly name: string | null; readonly multiplierBps: number };
+  /** OB-352: the membership is tied to an app account (the customer has the SRE app). Absent → not tied. */
+  readonly appLinked?: true;
 }
 
 export interface WalletFeed {
@@ -93,10 +95,13 @@ export function readWalletFeed(raw: unknown): WalletFeed | undefined {
         || !Number.isSafeInteger(t['multiplierBps']) || (t['multiplierBps'] as number) < 10_000 || (t['multiplierBps'] as number) > 100_000) return undefined;
       tier = { name: t['name'] as string | null, multiplierBps: t['multiplierBps'] as number };
     }
+    // OB-352: "has the app" rides only as `true`; anything else but absent refuses the feed.
+    if (m['appLinked'] !== undefined && m['appLinked'] !== true) return undefined;
     members.push({
       memberRef: m['memberRef'], points: m['points'], storeCreditMinor: m['storeCreditMinor'],
       appliedSpendRefs: [...(m['appliedSpendRefs'] as string[])],
       ...(tier === undefined ? {} : { tier }),
+      ...(m['appLinked'] === true ? { appLinked: true as const } : {}),
     });
   }
   return {
@@ -126,6 +131,8 @@ export interface WalletAvailability {
    */
   readonly tierName?: string | null;
   readonly tierMultiplierBps?: number;
+  /** OB-352: whether the member has the app, as the copy says (only when the copy is known). */
+  readonly appLinked?: boolean;
 }
 
 export function walletAvailable(input: {
@@ -154,6 +161,7 @@ export function walletAvailable(input: {
     known: true, points, pointValuePaise: value, pointsValueMinor: points * value, storeCreditMinor,
     spentTodayMinor, capRemainingMinor: Math.max(0, feed.rule.tillSpendCapPaise - spentTodayMinor), asOf: feed.generatedAt,
     ...(wallet?.tier === undefined ? {} : { tierName: wallet.tier.name, tierMultiplierBps: wallet.tier.multiplierBps }),
+    appLinked: wallet?.appLinked === true,
   };
 }
 

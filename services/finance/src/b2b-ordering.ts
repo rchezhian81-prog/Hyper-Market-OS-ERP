@@ -254,7 +254,7 @@ export function b2bOrderingRoutes(deps: B2BOrderingDeps): readonly Route[] {
             if (template === undefined) throw notFound(`template quotation ${s.templateQuotationId}`);
             // The day's quotation repeats the template's lines, prices and store — issued once per day, reused on a retry.
             const quoted = await deps.documents.document(ctx.tenantId, s.customerId, quotationId)
-              ?? await issueQuotationDocument(deps.documents, { tenantId: ctx.tenantId, customerId: s.customerId, documentId: quotationId, lines: template.lines, validForDays: 1, ...(template.locationId === undefined ? {} : { locationId: template.locationId }) });
+              ?? await issueQuotationDocument(deps.documents, { tenantId: ctx.tenantId, customerId: s.customerId, documentId: quotationId, lines: template.lines, validForDays: 1, priceFromRecord: false, ...(template.locationId === undefined ? {} : { locationId: template.locationId }) });
             const order = await convertToSalesOrder(deps.documents, { tenantId: ctx.tenantId, customerId: s.customerId, documentId: orderId, fromQuotationId: quoted.documentId, locationId: undefined, salespersonId: s.salespersonId });
             run = { ...base, outcome: 'generated', orderId: order.documentId };
           } catch (e) {

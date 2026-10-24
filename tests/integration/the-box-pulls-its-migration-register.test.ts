@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge } from '../../edge/store-edge/src/main';
+import { bootMigration, type MigrationData } from '../../apps/web-erp/src/browser-entry';
 
 /**
  * **The box pulls its migration register (Stage C3b) — MG-04 · MG-06 · MG-10 · §31 · P-01 · P-08.**
@@ -170,6 +171,53 @@ describe('the box pulls its migration register (C3b)', () => {
     expect(refused.reason).not.toContain(TOKEN);
     expect(await servedMigrationScreen(edge.screens!.port)).toBeNull(); // nothing was ever taken
     await edge.stop();
+  });
+
+  it('MG-11: the backup and the owner\'s rollback limits ride the register; the box judges the backup by its OWN clock; absent stays "not known" (failed); a reboot offline keeps them', async () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    const LIMITS = { controlTotalDifferenceMinor: 100_00, edgeOutageMinutes: 30, windowMinutes: 240, backupMaxAgeHours: 24, version: 1, setBy: 'u-owner', setAt: GENERATED };
+    const checksOf = (screen: Record<string, unknown>) => Object.fromEntries(bootMigration(screen as MigrationData)!.cutover().derived.checks
+      .filter((c) => c.check === 'backup_verified' || c.check === 'rollback_limits_agreed').map((c) => [c.check, c.state]));
+
+    // Nothing sent about either: both "not known" — which the gate counts as FAILED, never as passed.
+    served = { status: 200, body: JSON.stringify(FEED) };
+    const dir = await tempDir();
+    const edge = (await startEdge(envFor(dir), () => {}))!;
+    await edge.refreshMigrationFeed!();
+    const none = (await servedMigrationScreen(edge.screens!.port))!;
+    expect(none).not.toHaveProperty('backup');
+    expect(none).not.toHaveProperty('rollbackLimits');
+    expect(checksOf(none)).toEqual({ backup_verified: 'not_known', rollback_limits_agreed: 'not_known' });
+    expect(bootMigration(none as MigrationData)!.cutover().decision.go).toBe(false);
+
+    // The owner's limits and a good backup an hour old: both pass, the limits' four numbers in the evidence.
+    served = { status: 200, body: JSON.stringify({ ...FEED, generatedAt: '2026-09-02T20:00:00.000Z', rollbackLimits: LIMITS, backups: [{ backupId: 'B-2', at: hoursAgo(1), ok: true, encrypted: true, offsite: true }, { backupId: 'B-1', at: hoursAgo(30), ok: false, encrypted: true, offsite: false }] }) };
+    expect((await edge.refreshMigrationFeed!()).status).toBe('updated');
+    const good = (await servedMigrationScreen(edge.screens!.port))!;
+    expect(good['rollbackLimits']).toEqual(LIMITS);
+    expect(good['backup']).toMatchObject({ state: 'passed', backupId: 'B-2' });
+    expect(checksOf(good)).toEqual({ backup_verified: 'passed', rollback_limits_agreed: 'passed' });
+    const evidence = bootMigration(good as MigrationData)!.cutover().derived.checks.find((c) => c.check === 'rollback_limits_agreed')!.evidence;
+    expect(evidence).toMatch(/10000 paise, 30 minute\(s\) cut off, 240 minute\(s\) from GO, a backup at most 24 hour\(s\) old/);
+    await edge.stop();
+
+    // A limit not set yet: that check FAILS, naming it; the backup cannot be judged recent without its limit → not known.
+    served = { status: 200, body: JSON.stringify({ ...FEED, generatedAt: '2026-09-03T20:00:00.000Z', rollbackLimits: { ...LIMITS, backupMaxAgeHours: null }, backups: [{ backupId: 'B-2', at: hoursAgo(1), ok: true, encrypted: true, offsite: true }] }) };
+    const dir2 = await tempDir();
+    const second = (await startEdge(envFor(dir2), () => {}))!;
+    await second.refreshMigrationFeed!();
+    const unset = (await servedMigrationScreen(second.screens!.port))!;
+    expect(checksOf(unset)).toEqual({ backup_verified: 'not_known', rollback_limits_agreed: 'failed' });
+    expect(bootMigration(unset as MigrationData)!.cutover().derived.checks.find((c) => c.check === 'rollback_limits_agreed')!.evidence).toMatch(/not set yet: How old the last good backup may be/);
+    await second.stop();
+
+    // A reboot on the first disk with the cloud gone: the limits and the backup are still shown — and the backup is judged
+    // again by the box's clock now (an hour old, inside 24), not by what the cloud said when it sent it.
+    const rebooted = (await startEdge(envFor(dir, 'http://127.0.0.1:1'), () => {}))!;
+    const back = (await servedMigrationScreen(rebooted.screens!.port))!;
+    expect(back['rollbackLimits']).toEqual(LIMITS);
+    expect(checksOf(back)).toEqual({ backup_verified: 'passed', rollback_limits_agreed: 'passed' });
+    await rebooted.stop();
   });
 
   it('the register rides the sync loop: the timer\'s pass pulls it right after the catalogue, and a failure there cannot stop the loop', async () => {

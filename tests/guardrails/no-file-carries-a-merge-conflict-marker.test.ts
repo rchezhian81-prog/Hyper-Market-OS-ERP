@@ -37,7 +37,7 @@ describe('guardrail: no committed file carries a merge-conflict marker', () => {
       for (const line of markersIn(text)) offences.push(`${file}:${line}`);
     }
     expect(offences, `merge-conflict markers left in:\n${offences.join('\n')}`).toEqual([]);
-  });
+  }, 60_000); // it reads every tracked file — a busy runner needs more than the default 5 s
 
   it('knows a marker when it sees one, and does not mistake a heading rule or an arrow for one', () => {
     expect(markersIn("a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> branch\n")).toEqual([2, 6]);

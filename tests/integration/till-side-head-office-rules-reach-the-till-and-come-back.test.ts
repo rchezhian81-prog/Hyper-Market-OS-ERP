@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { ApiHarness } from '../support/api-harness';
 import { useRestartableBackings } from '../support/p3-backings';
-import { ownerApprovedSetting, SETUP_ASKER } from '../support/owner-approved-setting';
-import { aStoreWithRules } from '../support/store-rules';
+import { SETUP_ASKER } from '../support/owner-approved-setting';
+import { storeRules } from '../support/store-rules';
 import { STREAM, customerAdapter, ordersAdapter } from '../../services/api/src/adapters';
 import type { SignedPack } from '../../services/catalogue/src/pack';
 
@@ -11,8 +11,10 @@ import type { SignedPack } from '../../services/catalogue/src/pack';
  * **OB-288 till-side completion — head office's half, through the real routes, on the in-memory store and (with
  * DATABASE_URL) on real PostgreSQL, each with a COLD RESTART of head office reading the same records.**
  *
- *   • OB-348 (B17) — the shop's state is a high-impact setting: the administrator asks, the owner approves (never the
- *     maker), and it rides the store pack to the store computer; a sale under a liquor HSN is banked and raised CRITICAL;
+ *   • OB-348 (B17) · OB-354 · OB-353 — each store's state is read from its OWN GSTIN (the first two digits) and rides that
+ *     store's pack; there is no business-wide state setting any more; a sale under a liquor HSN is banked and raised
+ *     CRITICAL in its store's state's words — Tamil Nadu's recorded refusal (TASMAC), and "no rule recorded in writing"
+ *     for any other state;
  *   • OB-306 — a bundle defined at head office rides the SIGNED pack; a bill whose bundle line carries the till's explosion
  *     takes stock off each component (the bundle holds none); a return of one bundle puts back its components;
  *   • OB-347 — changing a published product's HSN class needs Finance (the accountant or the owner), never the maker;
@@ -27,6 +29,8 @@ const AT = new Date().toISOString();
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
 const SETTINGS = { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: 'S1' };
 const codeOf = (r: { body: unknown }): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
+const TN_GSTIN = '33AAACS1111A2ZG';
+const KA_GSTIN = '29AAACS1111A1Z6';
 
 async function shop(h: ApiHarness) {
   const T = randomUUID();
@@ -39,9 +43,19 @@ async function shop(h: ApiHarness) {
     const [bare, qs] = path.split('?');
     const query = Object.fromEntries(new URLSearchParams(qs ?? ''));
     // The store computer's credential names its store (a fresh head office after a restart is told it again here).
-    return on.request({ method, path: bare!, userId, tenantId: T, ...(userId === 'u-box' ? { branchId: 'S1' } : {}), ...(method === 'GET' ? { query } : { idempotencyKey: `k-${randomUUID()}`, body: body ?? {} }) });
+    return on.request({ method, path: bare!, userId, tenantId: T, ...(userId === 'u-box' ? { branchId: 'S1' } : userId === 'u-box2' ? { branchId: 'S2' } : userId === 'u-box3' ? { branchId: 'S3' } : {}), ...(method === 'GET' ? { query } : { idempotencyKey: `k-${randomUUID()}`, body: body ?? {} }) });
   };
-  await aStoreWithRules(h, T, 'u-owner', 'S1', 0);
+  // OB-354: the organisation — S1 registered in Tamil Nadu (GSTIN 33…), S2 in Karnataka (29…), S3 with no GSTIN yet.
+  for (const [id, body] of [
+    ['C1', { kind: 'company', name: 'SRE Retail' }],
+  ] as const) expect((await call('POST', `/v1/org/nodes/${id}`, body)).status).toBe(201);
+  for (const [g, name] of [[TN_GSTIN, 'SRE TN'], [KA_GSTIN, 'SRE KA']] as const) {
+    expect((await call('POST', `/v1/org/gst-registrations/${g}`, { companyId: 'C1', legalName: `Synthetic ${name}` })).status).toBe(201);
+  }
+  expect((await call('POST', '/v1/org/nodes/S1', { kind: 'branch', name: 'Store 1 (TN)', parentId: 'C1', companyId: 'C1', gstin: TN_GSTIN })).status).toBe(201);
+  expect((await call('POST', '/v1/org/nodes/S2', { kind: 'branch', name: 'Store 2 (KA)', parentId: 'C1', companyId: 'C1', gstin: KA_GSTIN })).status).toBe(201);
+  expect((await call('POST', '/v1/org/nodes/S3', { kind: 'branch', name: 'Store 3 (registration pending)', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
+  await storeRules(h, T, 'u-owner', 'S1', 0);
   // Head office grants a store-scoped role only at a store it knows: the store first, then its computer.
   await h.provisionRole(T, 'u-box', 'store_computer', ['S1']);
   expect((await call('POST', '/v1/stores/S1/settings', SETTINGS)).status).toBe(201);
@@ -69,31 +83,47 @@ const bill = (saleId: string, lines: readonly Record<string, unknown>[], totalMi
 });
 
 describe.each(backings)('OB-288 till side — head office\'s rules reach the till and come back — on $name', ({ harness }) => {
-  it('OB-348: the shop\'s state is owner-approved and rides the store pack; a liquor-HSN sale banks and is raised critical', async () => {
+  it('OB-354 · OB-353: each store\'s state is read from its GSTIN and rides its own pack; a liquor-HSN sale banks and is raised critical in that state\'s words', async () => {
     const h = harness();
     const { T, call } = await shop(h);
     await h.provisionRole(T, SETUP_ASKER, 'platform_admin');
-    // The administrator alone cannot set it — high-impact (OB-336 pattern) — and "Tamil Nadu" in words is not a code.
-    const alone = await call('PUT', '/v1/platform/setup/store.state', { value: 'TN' }, SETUP_ASKER);
-    expect(codeOf(alone)).toBe('high_impact_change_needs_owner_approval');
-    expect((await ownerApprovedSetting(h, T, 'store.state', { value: 'Tamil Nadu' })).status).toBe(422);
-    expect((await ownerApprovedSetting(h, T, 'store.state', { value: 'TN' })).status).toBe(200);
+    await h.provisionRole(T, 'u-box2', 'store_computer', ['S2']);
+    await h.provisionRole(T, 'u-box3', 'store_computer', ['S3']);
+    for (const s of ['S2', 'S3']) expect((await call('POST', `/v1/stores/${s}/settings`, { ...SETTINGS, warehouseId: s })).status).toBe(201);
+    // There is no business-wide state setting any more: the old key is not a setup question (OB-354).
+    expect((await call('PUT', '/v1/platform/setup/store.state', { value: 'TN' }, SETUP_ASKER)).status).toBeGreaterThanOrEqual(400);
 
-    // (Store setup is durable in a deployment; this harness keeps it in memory, so the pack is read from the same instance —
-    // the real-stack proof restarts head office over PostgreSQL.)
+    // Each store's pack names ITS state, from its own GSTIN — a cold restart of head office reads the same.
     const again = harness(h);
-    const pack = await call('GET', '/v1/store-packs/S1', undefined, 'u-box');
-    expect(pack.status, JSON.stringify(pack.body)).toBe(200);
-    expect((pack.body as { sections: { policies: Record<string, unknown> } }).sections.policies).toMatchObject({ shopState: 'TN' });
+    const policiesOf = async (storeId: string, box: string, on: ApiHarness) => {
+      const pack = await call('GET', `/v1/store-packs/${storeId}`, undefined, box, on);
+      expect(pack.status, JSON.stringify(pack.body)).toBe(200);
+      return (pack.body as { sections: { policies: Record<string, unknown> } }).sections.policies;
+    };
+    const p1 = await policiesOf('S1', 'u-box', again);
+    expect(p1).toMatchObject({ shopState: 'TN' });
     // The delivery-fee product is not set: nothing is sent, and the till says "not set".
-    expect((pack.body as { sections: { policies: Record<string, unknown> } }).sections.policies['tillDeliveryFeeProductId']).toBeUndefined();
+    expect(p1['tillDeliveryFeeProductId']).toBeUndefined();
+    expect(await policiesOf('S2', 'u-box2', again)).toMatchObject({ shopState: 'KA' });
+    // No GSTIN on record: no state is sent — "not set" at the till, and liquor refused there too.
+    expect((await policiesOf('S3', 'u-box3', again))['shopState']).toBeUndefined();
 
-    // A bill that reached head office with a line under HSN 2203 (an old till): banked — it happened — and raised critical.
-    const sold = await call('POST', '/v1/sales', bill('S-LIQ', [{ productId: 'p-beer', quantityMinor: 1, uom: 'ea', unitPriceMinor: 15_000, lineTotalMinor: 15_000, hsnCode: '2203' }], 15_000), 'u-meena', again);
-    expect(sold.status).toBe(202);
-    const found = (sold.body as { exceptions: { kind: string; severity: string; detail: string }[] }).exceptions.find((e) => e.kind === 'liquor_sold');
-    expect(found).toMatchObject({ severity: 'critical' });
-    expect(found!.detail).toMatch(/TASMAC/);
+    // A bill that reached head office with a line under HSN 2203 (an old till): banked — it happened — and raised critical,
+    // judged by the state of the store it was rung at.
+    const beer = [{ productId: 'p-beer', quantityMinor: 1, uom: 'ea', unitPriceMinor: 15_000, lineTotalMinor: 15_000, hsnCode: '2203' }];
+    const liquorFinding = async (saleId: string, locationId: string) => {
+      const sold = await call('POST', '/v1/sales', { ...bill(saleId, beer, 15_000), locationId }, 'u-meena', again);
+      expect(sold.status).toBe(202);
+      return (sold.body as { exceptions: { kind: string; severity: string; detail: string }[] }).exceptions.find((e) => e.kind === 'liquor_sold');
+    };
+    const tn = await liquorFinding('S-LIQ', 'S1');
+    expect(tn).toMatchObject({ severity: 'critical' });
+    expect(tn!.detail).toMatch(/TASMAC/);
+    const ka = await liquorFinding('S-LIQ-KA', 'S2');
+    expect(ka).toMatchObject({ severity: 'critical' });
+    expect(ka!.detail).toMatch(/no liquor rule has been recorded in writing for Karnataka/);
+    const none = await liquorFinding('S-LIQ-S3', 'S3');
+    expect(none!.detail).toMatch(/state is not set .*GSTIN/);
   }, 120_000);
 
   it('OB-306: a bundle rides the signed pack; a bundle bill takes stock off each component; a return of one puts them back', async () => {

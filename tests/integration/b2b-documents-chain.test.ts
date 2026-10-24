@@ -90,13 +90,14 @@ describe('b2b document chain: a number is drawn only on success, conversion is a
     // No credit account set — credit control has not cleared them.
     const noAccount = await order(h, A, 'u-owner', 'CUST1', 'so-a', 'q1');
     expect(noAccount.status).toBe(422);
-    expect(codeOf(noAccount)).toBe('conversion_credit_blocked');
+    // OB-288 commercial desks: the contract-aware credit gate names WHY credit control has not cleared it.
+    expect(codeOf(noAccount)).toBe('conversion_no_account');
 
     // A limit below the order value — still blocked (over limit, no approver).
     await setLimit(h, A, 'u-owner', 'CUST1', 50_000);
     const overLimit = await order(h, A, 'u-owner', 'CUST1', 'so-b', 'q1');
     expect(overLimit.status).toBe(422);
-    expect(codeOf(overLimit)).toBe('conversion_credit_blocked');
+    expect(codeOf(overLimit)).toBe('conversion_over_limit');
 
     // A sufficient limit — now it clears and the order is drawn.
     await setLimit(h, A, 'u-owner', 'CUST1', 200_000);

@@ -37,11 +37,15 @@ export interface MigrationFeed {
   readonly parallelDaySignatures?: readonly unknown[];
   /** OB-263 · MG-05: the department of the newest applied department slice — the pilot department. */
   readonly pilotDepartment?: { readonly categoryId: string; readonly name: string; readonly loadId?: string };
+  /** MG-11: the owner's rollback limits (each `null` = "not set"). Absent → not known at the box. */
+  readonly rollbackLimits?: Readonly<Record<string, unknown>>;
+  /** MG-11: the backup job's latest reports, newest first. Absent → not known at the box. */
+  readonly backups?: readonly unknown[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const LIST_SECTIONS = ['exceptions', 'totals', 'refusedDecisions', 'parallelDays', 'parallelDifferences', 'rollbacks', 'exclusions', 'parallelDaySignatures'] as const;
+const LIST_SECTIONS = ['exceptions', 'totals', 'refusedDecisions', 'parallelDays', 'parallelDifferences', 'rollbacks', 'exclusions', 'parallelDaySignatures', 'backups'] as const;
 
 /**
  * Read a body as a feed, or say it is not one. Strict on the fields the box INTERPRETS (tenant, clock, the
@@ -59,6 +63,7 @@ export function readMigrationFeed(body: unknown): MigrationFeed | undefined {
   for (const s of LIST_SECTIONS) if (body[s] !== undefined && !Array.isArray(body[s])) return undefined;
   for (const s of ['loadOperator', 'rollbackDemonstratedAt'] as const) if (body[s] !== undefined && !isStr(body[s])) return undefined;
   if (body['verification'] !== undefined && !isObj(body['verification'])) return undefined;
+  if (body['rollbackLimits'] !== undefined && !isObj(body['rollbackLimits'])) return undefined;
   // OB-263: interpreted (the evening check filters by it), so read strictly.
   const dept = body['pilotDepartment'];
   if (dept !== undefined && (!isObj(dept) || !isStr(dept['categoryId']) || !isStr(dept['name']) || (dept['loadId'] !== undefined && !isStr(dept['loadId'])))) return undefined;

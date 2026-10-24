@@ -25,7 +25,8 @@ import { presentStatus, type StatusPresentation } from '../../../packages/a11y/s
 
 // ── the raw feeds, exactly as the cloud hands them over (the screen consumes the served JSON) ───────────────
 
-export type SubmissionKind = 'rfq_response' | 'catalogue' | 'asn' | 'invoice' | 'po_acknowledgement' | 'claim';
+// OB-288 commercial desks (M24-FR-02): `delivery_status` — the supplier told us where an order's delivery has got to.
+export type SubmissionKind = 'rfq_response' | 'catalogue' | 'asn' | 'invoice' | 'po_acknowledgement' | 'claim' | 'delivery_status';
 
 /** One thing the supplier sent (`…/me/submissions`). `requiresReview` true = the buyer has not decided yet. */
 export interface SubmissionView {
@@ -80,7 +81,7 @@ export type CopyKey =
   | 'statementHeading' | 'notAccessible'
   | 'openingLabel' | 'invoicedLabel' | 'creditedLabel' | 'debitedLabel' | 'paidLabel' | 'closingLabel' | 'disputedLabel'
   | 'reconciledLabel' | 'notReconciledLabel' | 'disputedSeparate'
-  | 'kindRfq' | 'kindCatalogue' | 'kindAsn' | 'kindInvoice' | 'kindPoAck' | 'kindClaim'
+  | 'kindRfq' | 'kindCatalogue' | 'kindAsn' | 'kindInvoice' | 'kindPoAck' | 'kindClaim' | 'kindDelivery'
   | 'awaitingState' | 'processedState'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'notIdentified' | 'staleShell' | 'sampleData';
@@ -96,7 +97,7 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     disputedLabel: 'Disputed (shown separately)',
     reconciledLabel: 'Balance reconciles', notReconciledLabel: 'Balance does not reconcile — please raise it with us',
     disputedSeparate: 'A disputed amount is shown on its own — it is neither owed nor written off until it is settled.',
-    kindRfq: 'RFQ reply', kindCatalogue: 'Catalogue', kindAsn: 'Delivery note', kindInvoice: 'Invoice', kindPoAck: 'Order acknowledgement', kindClaim: 'Claim',
+    kindRfq: 'RFQ reply', kindCatalogue: 'Catalogue', kindAsn: 'Delivery note', kindInvoice: 'Invoice', kindPoAck: 'Order acknowledgement', kindClaim: 'Claim', kindDelivery: 'Delivery update',
     awaitingState: 'Waiting on us', processedState: 'Processed',
     scrReady: 'Showing your account', scrEmpty: 'Nothing to show yet — you have sent us nothing and your statement is clear.',
     stateNotPermitted: 'This login is not a supplier login for this portal.',
@@ -113,7 +114,7 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     disputedLabel: 'தகராறு (தனியாகக் காட்டப்படுகிறது)',
     reconciledLabel: 'இருப்பு பொருந்துகிறது', notReconciledLabel: 'இருப்பு பொருந்தவில்லை — தயவுசெய்து எங்களிடம் தெரிவிக்கவும்',
     disputedSeparate: 'தகராறில் உள்ள தொகை தனியாகக் காட்டப்படுகிறது — தீர்க்கப்படும் வரை அது செலுத்த வேண்டியதோ தள்ளுபடி செய்யப்பட்டதோ அல்ல.',
-    kindRfq: 'RFQ பதில்', kindCatalogue: 'பட்டியல்', kindAsn: 'விநியோகக் குறிப்பு', kindInvoice: 'விலைப்பட்டியல்', kindPoAck: 'ஆர்டர் ஒப்புகை', kindClaim: 'உரிமைகோரல்',
+    kindRfq: 'RFQ பதில்', kindCatalogue: 'பட்டியல்', kindAsn: 'விநியோகக் குறிப்பு', kindInvoice: 'விலைப்பட்டியல்', kindPoAck: 'ஆர்டர் ஒப்புகை', kindClaim: 'உரிமைகோரல்', kindDelivery: 'டெலிவரி நிலவரம்',
     awaitingState: 'எங்களிடம் காத்திருக்கிறது', processedState: 'செயலாக்கப்பட்டது',
     scrReady: 'உங்கள் கணக்கைக் காட்டுகிறது', scrEmpty: 'இன்னும் காட்ட எதுவும் இல்லை — நீங்கள் எதையும் அனுப்பவில்லை, உங்கள் அறிக்கையும் தெளிவாக உள்ளது.',
     stateNotPermitted: 'இந்த உள்நுழைவு இந்த போர்ட்டலுக்கான சப்ளையர் உள்நுழைவு அல்ல.',
@@ -126,7 +127,7 @@ export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(SUPPLIER_
 
 const KIND_KEY: Record<SubmissionKind, CopyKey> = {
   rfq_response: 'kindRfq', catalogue: 'kindCatalogue', asn: 'kindAsn', invoice: 'kindInvoice',
-  po_acknowledgement: 'kindPoAck', claim: 'kindClaim',
+  po_acknowledgement: 'kindPoAck', claim: 'kindClaim', delivery_status: 'kindDelivery',
 };
 
 // ── the presented shapes the view renders ────────────────────────────────────────────────────────────────

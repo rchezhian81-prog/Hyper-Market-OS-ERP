@@ -138,8 +138,12 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
         assertBranchInScope(ctx, employee.branchId);
         const existing = (await deps.roster(ctx.tenantId)).employees.find((e) => e.employeeId === employeeId);
         if (existing !== undefined) assertBranchInScope(ctx, existing.branchId);
-        await deps.putEmployee(ctx.tenantId, employee, ctx.idempotencyKey ?? `emp-${employeeId}-${deps.now()}`);
-        return { status: 200, body: { employee } };
+        // OB-357: the home department is set by its own route (which checks the department); an upsert keeps it — unless
+        // the person moves store, when it no longer fits and is taken off (their hours then show "not attributed").
+        const kept: Employee = existing?.homeDepartmentId !== undefined && existing.branchId === employee.branchId
+          ? { ...employee, homeDepartmentId: existing.homeDepartmentId } : employee;
+        await deps.putEmployee(ctx.tenantId, kept, ctx.idempotencyKey ?? `emp-${employeeId}-${deps.now()}`);
+        return { status: 200, body: { employee: kept } };
       },
     },
     {

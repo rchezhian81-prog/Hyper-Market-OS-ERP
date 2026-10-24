@@ -56,6 +56,10 @@ const W = {
     wd0: 'Sun', wd1: 'Mon', wd2: 'Tue', wd3: 'Wed', wd4: 'Thu', wd5: 'Fri', wd6: 'Sat',
     addressesTitle: 'My addresses', addressesLead: 'A label and where it is, to about 100 metres. Nothing more.', addressesNone: 'No saved addresses.',
     addressLabel: 'Name this place (for example, Home)', landmarkLabel: 'A landmark (optional)', addressSave: 'Save where I am now', addressSaved: 'Saved.', addressNeedsLocation: 'Use my location first (in the basket). Nothing was sent.',
+    tillDelTitle: 'Deliveries from the shop', tillDelLead: 'Bills from the shop\'s till that are to be delivered to you. Choose one of your saved addresses and a time.',
+    tillDelNone: 'No delivery from the shop is waiting for you.', tillDelBill: 'Bill', tillDelAddress: 'Deliver to', tillDelSlot: 'Time', tillDelBook: 'Book this delivery',
+    tillDelBooked: 'Booked for', tillDelNeedAddress: 'Save an address first (above), then choose it here.', tillDelNoSlot: 'No delivery time is open today or tomorrow — ask the shop.', tillDelSaved: 'Booked.',
+    tillDelNotLinked: 'Your membership is not tied to this app yet — ask at the service desk.',
     addressNeedsLabel: 'Give the place a name first. Nothing was sent.', use: 'Deliver here', remove: 'Remove', removed: 'Removed.', usingAddress: 'Orders will be delivered to:',
     payingTitle: 'Paying', payingSay: 'The shop keeps no card details. Nothing is saved for paying, so there is nothing to remove. You pay through the payment provider\'s own screen each time.',
     payingRemove: 'Remove a saved payment', payingRemoved: 'Nothing was saved for paying, so nothing needed removing.',
@@ -103,6 +107,10 @@ const W = {
     wd0: 'ஞாயி', wd1: 'திங்', wd2: 'செவ்', wd3: 'புத', wd4: 'வியா', wd5: 'வெள்', wd6: 'சனி',
     addressesTitle: 'என் முகவரிகள்', addressesLead: 'ஒரு பெயரும் அது இருக்கும் இடமும், சுமார் 100 மீட்டர் வரை. அதற்கு மேல் எதுவும் இல்லை.', addressesNone: 'சேமித்த முகவரிகள் இல்லை.',
     addressLabel: 'இந்த இடத்திற்குப் பெயரிடுங்கள் (எ.கா. வீடு)', landmarkLabel: 'ஒரு அடையாளம் (விருப்பம்)', addressSave: 'நான் இப்போது இருக்கும் இடத்தைச் சேமி', addressSaved: 'சேமிக்கப்பட்டது.', addressNeedsLocation: 'முதலில் என் இருப்பிடத்தைப் பயன்படுத்துங்கள் (கூடையில்). எதுவும் அனுப்பப்படவில்லை.',
+    tillDelTitle: 'கடையிலிருந்து டெலிவரிகள்', tillDelLead: 'உங்களுக்கு டெலிவரி செய்ய வேண்டிய கடை கவுண்டர் பில்கள். நீங்கள் சேமித்த முகவரிகளில் ஒன்றையும் ஒரு நேரத்தையும் தேர்வு செய்யுங்கள்.',
+    tillDelNone: 'உங்களுக்காகக் காத்திருக்கும் கடை டெலிவரி இல்லை.', tillDelBill: 'பில்', tillDelAddress: 'டெலிவரி இடம்', tillDelSlot: 'நேரம்', tillDelBook: 'இந்த டெலிவரியைப் பதிவு செய்',
+    tillDelBooked: 'பதிவான நேரம்', tillDelNeedAddress: 'முதலில் ஒரு முகவரியைச் சேமித்து (மேலே), பிறகு இங்கே தேர்வு செய்யுங்கள்.', tillDelNoSlot: 'இன்றோ நாளையோ டெலிவரி நேரம் இல்லை — கடையிடம் கேளுங்கள்.', tillDelSaved: 'பதிவானது.',
+    tillDelNotLinked: 'உங்கள் உறுப்பினர் கணக்கு இன்னும் இந்தச் செயலியுடன் இணைக்கப்படவில்லை — சேவை மேசையில் கேளுங்கள்.',
     addressNeedsLabel: 'முதலில் இடத்திற்குப் பெயரிடுங்கள். எதுவும் அனுப்பப்படவில்லை.', use: 'இங்கே விநியோகம் செய்', remove: 'நீக்கு', removed: 'நீக்கப்பட்டது.', usingAddress: 'ஆர்டர்கள் இங்கே விநியோகம் செய்யப்படும்:',
     payingTitle: 'பணம் செலுத்துதல்', payingSay: 'கடை எந்த அட்டை விவரங்களையும் வைத்திருப்பதில்லை. பணம் செலுத்துவதற்கு எதுவும் சேமிக்கப்படவில்லை, எனவே நீக்க எதுவும் இல்லை. ஒவ்வொரு முறையும் கட்டண வழங்குநரின் சொந்தத் திரையில் செலுத்துவீர்கள்.',
     payingRemove: 'சேமித்த கட்டண முறையை நீக்கு', payingRemoved: 'பணம் செலுத்துவதற்கு எதுவும் சேமிக்கப்படவில்லை, எனவே எதையும் நீக்க வேண்டியதில்லை.',
@@ -426,6 +434,36 @@ el('address-save').addEventListener('click', async () => {
   if (out.ok) { el('address-label').value = ''; el('address-landmark').value = ''; await paintAddresses(); }
 });
 
+/** OB-352: the till's delivery bills in my name — choose a saved address and a slot; once booked, the shop plans it. */
+async function paintTillDeliveries() {
+  say('till-del-title', t('tillDelTitle')); say('till-del-lead', t('tillDelLead'));
+  const out = await shop().commerce.tillDeliveries();
+  if (!out.ok) { el('till-dels').replaceChildren(); say('till-del-say', refusalWords(out)); return; }
+  const v = out.value;
+  const list = v.deliveries ?? [];
+  el('till-dels-empty').hidden = list.length > 0;
+  el('till-dels-empty').textContent = v.linked === false ? t('tillDelNotLinked') : t('tillDelNone');
+  const when = (iso) => new Date(iso).toLocaleString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  el('till-dels').replaceChildren(...list.map((d) => {
+    const row = document.createElement('div'); row.className = 'row'; row.dataset.tillDelivery = d.orderId; row.dataset.status = d.status;
+    row.append(node('span', `${t('tillDelBill')} ${d.receiptNumber}`, 'name'));
+    if (d.status === 'booked' && d.given) { row.append(node('span', `✓ ${t('tillDelBooked')} ${when(d.given.slotStartsAt)}`, 'note')); return row; }
+    if ((v.addresses ?? []).length === 0) { row.append(node('span', t('tillDelNeedAddress'), 'note')); return row; }
+    if ((v.openSlots ?? []).length === 0) { row.append(node('span', t('tillDelNoSlot'), 'note')); return row; }
+    const field = (labelWords, control) => { const l = document.createElement('label'); l.append(document.createTextNode(labelWords), control); return l; };
+    const address = document.createElement('select'); address.className = 'td-address';
+    for (const a of v.addresses) { const o = document.createElement('option'); o.value = a.addressId; o.textContent = `${a.label}${a.landmark ? ` — ${a.landmark}` : ''}`; address.append(o); }
+    const slot = document.createElement('select'); slot.className = 'td-slot';
+    for (const s of v.openSlots) { const o = document.createElement('option'); o.value = s.startsAt; o.textContent = when(s.startsAt); slot.append(o); }
+    row.append(field(t('tillDelAddress'), address), field(t('tillDelSlot'), slot), button(t('tillDelBook'), 'truck', async () => {
+      const r = await shop().commerce.chooseTillDelivery(d.orderId, address.value, slot.value);
+      say('till-del-say', r.ok ? t('tillDelSaved') : refusalWords(r));
+      if (r.ok) await paintTillDeliveries();
+    }, 'book'));
+    return row;
+  }));
+}
+
 async function paintPaying() {
   const out = await shop().commerce.paymentMethods();
   // The shop's answer decides; the words are this screen's, in this language. Nothing saved is the only state there is.
@@ -522,7 +560,7 @@ window.shopCommerce = {
       paintAccountWords();
       if (!signedIn()) { say('account-say', t('signIn')); return; }
       say('account-say', '');
-      void paintRepeatOrders(); void paintAddresses(); void paintPaying(); void paintOccasions(); void paintReferral(); void paintAi();
+      void paintRepeatOrders(); void paintAddresses(); void paintTillDeliveries(); void paintPaying(); void paintOccasions(); void paintReferral(); void paintAi();
     }
   },
 };

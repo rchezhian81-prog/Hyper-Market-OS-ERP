@@ -34,8 +34,8 @@ export const HIGH_IMPACT_SETTINGS: Readonly<Record<string, string>> = Object.fre
   'locale.time_zone': 'the shop\'s clock — which day "today" is for every report, close and alert (OB-336)',
   'loyalty.till_spend_cap_paise': 'the most a member may spend at the till per day, offline too — an offline limit (OB-336)',
   'catalogue.bulk_publish_threshold': 'how many products one catalogue publish may change before it needs a fresh second-factor sign-in (OB-336)',
-  // OB-348 (owner, 24 Oct 2026): the shop's state decides the liquor rule at every till — owner-approved, never the maker's.
-  'store.state': 'the state the shop trades in — it decides the liquor rule at every till, offline too (OB-348)',
+  // OB-354 (owner, 24 Oct 2026): there is no shop-state setting — each store's state is read from its GSTIN, which is the
+  // organisation record's (OB-348's liquor rule follows it).
 });
 
 /** Switches whose name begins with one of these are high-impact (M01-FR-03: payments, pricing, offline limits). */

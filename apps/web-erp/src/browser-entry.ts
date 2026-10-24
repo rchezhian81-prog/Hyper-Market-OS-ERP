@@ -22,6 +22,9 @@ import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { wireLpWorkforcePages } from './lpw-browser-wiring';
+import { wireCommercialDeskPages } from './commercial-desks-browser-wiring'; // OB-288 commercial desks
+import { wireOwnerReportingPages } from './owner-reporting-browser-wiring'; // OB-288 lane 4 · P2
+import { wireSaasPages } from './saas-browser-wiring'; // OB-288 P4: Trial switches and shop account
 import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import {
@@ -295,6 +298,7 @@ import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/s
 import {
   createMigrationSession, type MigrationPorts, type MigrationSession, type DaySignatureView, type WitnessView,
 } from './migration-session';
+import type { BackupStanding, RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
 import type {
   ControlTotal, HistoryExclusion, LegacyArchive, LegacySource, MigrationException,
   ParallelDayResult, ParallelDifference, TeamMember,
@@ -329,6 +333,7 @@ import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, area
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
 import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, type DispatchSession } from './dispatch-session';
+import { createTillDeskSession, tillDeskWords, tillDeskOutcomeWords, type TillDeskSession } from './till-delivery-desk-session'; // OB-352
 // OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
 import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approvedTemplates, SEGMENTS as CAMPAIGN_SEGMENTS, CHANNELS as CAMPAIGN_CHANNELS, type CampaignsSession } from './campaigns-session';
 import { createLoyaltyDeskSession, loyaltyDeskWords, loyaltyDeskOutcomeWords, rupees as loyaltyRupees, multiplierWords as loyaltyMultiplierWords, type LoyaltyDeskSession } from './loyalty-desk-session';
@@ -4805,6 +4810,12 @@ export interface MigrationData {
   readonly parallelDaySignatures?: readonly DaySignatureView[];
   /** The twelve-domain witness figures (STEP-1 §4 item 5). */
   readonly verification?: WitnessView;
+  /**
+   * MG-11 (OB-288 P5): the backup judged against the owner's age limit by the box's own clock, and the owner's rollback
+   * limits — head office's records, carried by the box. Absent → NOT KNOWN, which the cutover gate counts as failed.
+   */
+  readonly backup?: BackupStanding;
+  readonly rollbackLimits?: RollbackLimits;
 }
 
 /**
@@ -4832,6 +4843,9 @@ export function migrationPortsFromData(data: MigrationData | undefined, outbox: 
     openAssessments: () => data?.openAssessments,
     daySignatures: () => data?.parallelDaySignatures,
     verification: () => data?.verification,
+    // MG-11: NOT defaulted — absent stays not known, and the check fails.
+    backup: () => data?.backup,
+    rollbackLimits: () => data?.rollbackLimits,
     // A signature made on this page is committed here and queued (hard rule #1). The screen draws
     // the working copy, and the sync agent drains this to the cloud. A signature that lives only
     // in the tab is not a signature — which is exactly what the first version produced.
@@ -5119,6 +5133,8 @@ interface ManagerWindow {
   // OB-288 fulfilment & delivery: the Dispatch office page.
   dispatchData?: ViewerIdentity;
   dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords };
+  /** OB-352: the delivery desk's till jobs on the Dispatch page. */
+  tillDeliveryDesk?: { readonly session: TillDeskSession; readonly words: typeof tillDeskWords; readonly outcomeWords: typeof tillDeskOutcomeWords };
   approvalRules?: {
     readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
     readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
@@ -6963,6 +6979,8 @@ if (browserWindow !== undefined) {
   // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
   browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
   browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords };
+  // OB-352: the delivery desk's till jobs, on the same page.
+  browserWindow.tillDeliveryDesk = { session: createTillDeskSession({ viewer: browserWindow.dispatchData }), words: tillDeskWords, outcomeWords: tillDeskOutcomeWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
   browserWindow.approvalRules = {
     session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,
@@ -6990,4 +7008,9 @@ if (browserWindow !== undefined) {
   // write-offs and relabel tasks — each page's tested session, attached in its own file (lpw-browser-wiring.ts).
   // The help page's window.helpData (the box writes it: screen-data GLOBAL_FOR.help) is read there, with the rest.
   wireLpWorkforcePages(browserWindow as unknown as Record<string, unknown> & { laneWriteBase?: string }, viewerIdentity);
+  // OB-288 commercial desks: Business customers, Supplier submissions and Concessions (commercial-desks-browser-wiring.ts).
+  wireCommercialDeskPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wireOwnerReportingPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // OB-288 lane 4 · P2 — owner alerts and schedules
+  // OB-288 P4 (R8-9 · M36-FR-01 · C8 · C9): the Trial switches and shop account page — its session, in its own file.
+  wireSaasPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
 }

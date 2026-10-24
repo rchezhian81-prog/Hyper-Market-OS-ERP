@@ -39,6 +39,13 @@ export interface CommitOutcome {
   readonly detail: string;
   /** What the cashier is told, in words that work with a customer watching. */
   readonly laneMessage: string;
+  /** The same in Tamil, when the refusal carries its own Tamil words (the screen otherwise shows `laneMessage`). */
+  readonly laneMessageTa?: string;
+  /**
+   * OB-352: for a saved bill marked for delivery, how its address and slot will be given — the customer's app (the bill's
+   * member has the app, as the store computer's copy of the members says) or the delivery desk from the till's slip.
+   */
+  readonly deliveryPath?: 'customer_app' | 'delivery_desk';
   /**
    * The lane could not CONFIRM whether the write happened — a reply was lost, not a refusal (RR-F02).
    * `committed` is false because it is not confirmed committed, but this is explicitly NOT a definite

@@ -39,6 +39,12 @@ export interface B2BCreditDeps {
   readonly outstandingMinor: (tenantId: string, customerId: string) => Promise<number> | number;
   readonly recordAccount: (tenantId: string, customerId: string, creditLimitMinor: number, currency: CurrencyCode, at: string, paymentTermsDays?: number) => Promise<void> | void;
   readonly recordReceivable: (tenantId: string, customerId: string, m: RecordedReceivable) => Promise<void> | void;
+  /**
+   * OB-288 commercial desks (M22-FR-01): the customer's contract, worked out from the register's own dates. Present and
+   * answering → the request's `contractExpired` / `contractPolicy` flags are ignored (expiry is never told to the system).
+   * Undefined → no approved contract on record (the flags, if any, are read as before).
+   */
+  readonly contractState?: (tenantId: string, customerId: string) => Promise<{ readonly expired: boolean; readonly policy: 'block' | 'fallback' } | undefined>;
   readonly now: () => string;
 }
 
@@ -130,13 +136,17 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
           }
           : undefined;
 
+        // M22-FR-01: with a contract on record, its expiry is worked out from its dates — the request's flags are ignored.
+        const onRecord = await deps.contractState?.(ctx.tenantId, customerId);
+        const expired = onRecord !== undefined ? onRecord.expired : b.contractExpired === true;
+        const policy = onRecord !== undefined ? onRecord.policy : b.contractPolicy === 'fallback' ? 'fallback' : 'block';
         const decision = checkCredit({
           id: b.orderId, customerId, takenBy: ctx.userId,
           creditLimit: money(account.creditLimitMinor, account.currency),
           outstanding: money(outstanding, account.currency),
           orderValue: money(b.orderValueMinor as number, account.currency),
-          ...(b.contractExpired === true ? { contractExpired: true } : {}),
-          ...(b.contractPolicy === 'fallback' ? { contractPolicy: 'fallback' as const } : {}),
+          ...(expired ? { contractExpired: true } : {}),
+          ...(policy === 'fallback' ? { contractPolicy: 'fallback' as const } : {}),
           ...(approval === undefined ? {} : { approval }),
         });
 
@@ -146,6 +156,7 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
             orderId: b.orderId, customerId, verdict: decision.verdict satisfies CreditVerdict,
             allowed: decision.allowed, requiresApproval: decision.requiresApproval,
             availableCreditMinor: decision.availableCredit.minor, outstandingMinor: outstanding,
+            contractFrom: onRecord !== undefined ? 'the contract register' : 'the request',
           },
         };
       },

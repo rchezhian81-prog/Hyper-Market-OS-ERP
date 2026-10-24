@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Concessions</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Concessions — counters inside the shop run by someone else (M27-FR-01..04 · OB-288 package 3 · OB-304: switched off
+      until the owner turns it on). A THIN CLIENT over head office's concession contracts, deposits, period charge,
+      settlement and expiry alerts. Its session is apps/web-erp/src/concession-session.ts. A contract trades only once a
+      second person approves it; a deposit is their money; every write is a click in the person's own name.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1120px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      textarea { min-height: 96px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .figs { display: flex; gap: 16px; flex-wrap: wrap; }
+      .figs > div { display: grid; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Concessions</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Concessions</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="counters" hidden aria-labelledby="counters-h">
+        <h3 id="counters-h"></h3>
+        <ul class="rows" id="c-rows"></ul>
+        <ul class="rows" id="c-asked"></ul>
+        <button id="raise" type="button" class="quiet" hidden><span id="raise-text"></span></button>
+        <p class="status" id="c-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="contract" hidden aria-labelledby="contract-h">
+        <h3 id="contract-h"></h3>
+        <div class="row-form">
+          <label for="f-id"><span id="f-id-l"></span><input id="f-id" autocomplete="off" /></label>
+          <label for="f-who"><span id="f-who-l"></span><input id="f-who" autocomplete="off" /></label>
+          <label for="f-name"><span id="f-name-l"></span><input id="f-name" autocomplete="off" /></label>
+          <label for="f-branch"><span id="f-branch-l"></span><input id="f-branch" autocomplete="off" /></label>
+          <label for="f-start"><span id="f-start-l"></span><input id="f-start" type="date" /></label>
+          <label for="f-end"><span id="f-end-l"></span><input id="f-end" type="date" /></label>
+          <label for="f-basis"><span id="f-basis-l"></span><select id="f-basis"><option value="fixed_rent" id="f-basis-rent"></option><option value="revenue_share" id="f-basis-share"></option><option value="higher_of_both" id="f-basis-higher"></option></select></label>
+          <label for="f-rent"><span id="f-rent-l"></span><input id="f-rent" inputmode="decimal" autocomplete="off" /></label>
+          <label for="f-share"><span id="f-share-l"></span><input id="f-share" inputmode="decimal" autocomplete="off" /></label>
+          <label for="f-util"><span id="f-util-l"></span><input id="f-util" inputmode="decimal" autocomplete="off" /></label>
+          <label for="f-deposit"><span id="f-deposit-l"></span><input id="f-deposit" inputmode="decimal" autocomplete="off" /></label>
+          <label for="f-ins"><span id="f-ins-l"></span><input id="f-ins" type="date" /></label>
+          <label for="f-lic"><span id="f-lic-l"></span><input id="f-lic" type="date" /></label>
+        </div>
+        <div class="actions">
+          <button id="f-save" type="button" class="quiet"><span id="f-save-text"></span></button>
+          <button id="f-ask" type="button"><span id="f-ask-text"></span></button>
+        </div>
+        <p class="status" id="f-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="deposit" hidden aria-labelledby="deposit-h">
+        <h3 id="deposit-h"></h3>
+        <div class="row-form">
+          <label for="d-who"><span id="d-who-l"></span><input id="d-who" autocomplete="off" /></label>
+          <label for="d-kind"><span id="d-kind-l"></span><select id="d-kind"><option value="received" id="d-kind-in"></option><option value="refunded" id="d-kind-out"></option><option value="forfeited" id="d-kind-forfeit"></option></select></label>
+          <label for="d-amount"><span id="d-amount-l"></span><input id="d-amount" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <button id="d-save" type="button"><span id="d-save-text"></span></button>
+        <p class="status" id="d-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="money" hidden aria-labelledby="money-h">
+        <h3 id="money-h"></h3>
+        <div class="row-form">
+          <label for="m-contract"><span id="m-contract-l"></span><select id="m-contract"></select></label>
+          <label for="m-from"><span id="m-from-l"></span><input id="m-from" type="date" /></label>
+          <label for="m-to"><span id="m-to-l"></span><input id="m-to" type="date" /></label>
+          <label for="m-metered"><span id="m-metered-l"></span><input id="m-metered" inputmode="decimal" autocomplete="off" /></label>
+          <label for="m-banked"><span id="m-banked-l"></span><input id="m-banked" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <div class="actions">
+          <button id="m-charge" type="button" class="quiet"><span id="m-charge-text"></span></button>
+          <button id="m-settle" type="button"><span id="m-settle-text"></span></button>
+        </div>
+        <p class="status" id="m-status" role="status" aria-live="polite"></p>
+        <div class="figs" id="m-figs"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./concessions.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

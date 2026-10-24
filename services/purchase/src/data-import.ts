@@ -31,7 +31,8 @@ import { fingerprintOf, namedSecondPersonRefusal, openApproval, type ApprovalPor
 import { validateImport, commitImport, type ValidateInput, type ImportPreview } from '../../../packages/import/src/import-job';
 import { parseDelimited, MalformedFileError, MissingHeaderError } from '../../../packages/import/src/delimited';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
-import { effectRef, templateView, type RegisteredTemplate, type ImportEffect, type ImportEffectRef } from './import-templates';
+import { effectRef, templateView, isBaseEffect, type RegisteredTemplate, type ImportEffect, type ImportEffectRef, type DomainImportEffect } from './import-templates';
+import { fingerprint } from '../../../packages/migration/src/export-diff';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -66,12 +67,43 @@ export interface ImportRollbackRecord {
   readonly effects: readonly ImportEffectRef[];
 }
 
+/**
+ * OB-315: one DRY RUN — the file checked against head office's own registers and rules, nothing applied — kept with
+ * every row-by-row exception, by the named person who ran it. Never deleted (hard rule #6). A personal-data cell is kept
+ * only as a fingerprint (MG-09's rule), never its value.
+ */
+export interface ImportDryRunRecord {
+  readonly runId: string;
+  readonly templateId: string;
+  readonly domain: string;
+  readonly ranBy: string;
+  readonly at: string;
+  readonly totalRows: number;
+  readonly validCount: number;
+  readonly errorRowCount: number;
+  readonly errors: readonly { readonly line: number; readonly column: string; readonly kind: string; readonly message: string }[];
+  readonly duplicatesForReview: readonly { readonly line: number; readonly key: string }[];
+  readonly commitReady: boolean;
+  readonly contentFingerprint: string;
+  readonly sumMinor?: number;
+  readonly reconciles?: boolean;
+}
+
 export interface DataImportDeps {
   readonly commits: (tenantId: string) => Promise<readonly ImportCommitRecord[]> | readonly ImportCommitRecord[];
   /** Write the job's record AND the real records it applies, in ONE atomic save (SF-06-a). */
   readonly recordCommit: (tenantId: string, record: ImportCommitRecord, key: string, effects: readonly ImportEffect[]) => Promise<void> | void;
   /** Write the rollback's record AND its compensating records, in ONE atomic save. */
   readonly recordRollback?: (tenantId: string, record: ImportRollbackRecord) => Promise<void> | void;
+  /**
+   * OB-315: the same, for the further domains (suppliers, price lists, opening stock, customers, loyalty balances) — the
+   * job's record and every record its domain keeps, in ONE atomic save. Absent: a template of those domains is refused.
+   */
+  readonly recordDomainCommit?: (tenantId: string, record: ImportCommitRecord, key: string, effects: readonly DomainImportEffect[]) => Promise<void> | void;
+  readonly recordDomainRollback?: (tenantId: string, record: ImportRollbackRecord) => Promise<void> | void;
+  /** OB-315: the dry-run register — every dry run with its row-by-row exceptions, kept (append-only). */
+  readonly dryRuns?: (tenantId: string) => Promise<readonly ImportDryRunRecord[]> | readonly ImportDryRunRecord[];
+  readonly recordDryRun?: (tenantId: string, record: ImportDryRunRecord) => Promise<void> | void;
   /** The templates head office supports — the ONLY ones an import may use. Empty on a bare stub: then every import is refused. */
   readonly templates?: readonly RegisteredTemplate[];
   /** The permissions a named user holds — the uploader must also hold the target module's own permission. */
@@ -259,12 +291,16 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
           uploadedBy, approvedBy: approval.decidedBy, rowsApplied: result.rowsApplied,
           ...(preview.sumMinor !== undefined ? { sumMinor: preview.sumMinor } : {}),
           ...(preview.reconciles !== undefined ? { reconciles: preview.reconciles } : {}),
-          at, rows: preview.validRows, effects: effects.map(effectRef),
+          // OB-315 · P-04: a template that reads personal data keeps only what its domain keeps (never a mobile number).
+          at, rows: template.storedRow === undefined ? preview.validRows : preview.validRows.map((r) => template.storedRow!(ctx.tenantId, r)), effects: effects.map(effectRef),
         };
         // Keyed by the JOB, not the request: an import job commits once, so two commits of one job racing on the same
         // approval (the same action — the engine lets it retry after a lost write) land ONE record, never a second. The
         // real records go in the same save — a job record with no target, or a target with no job, cannot exist.
-        await deps.recordCommit(ctx.tenantId, record, `job-${jobId}`, effects);
+        // OB-315: the further domains are written by their own committer — the same one save for the job and its records.
+        if (effects.every(isBaseEffect)) await deps.recordCommit(ctx.tenantId, record, `job-${jobId}`, effects as readonly ImportEffect[]);
+        else if (deps.recordDomainCommit !== undefined && effects.every((e) => !isBaseEffect(e))) await deps.recordDomainCommit(ctx.tenantId, record, `job-${jobId}`, effects as readonly DomainImportEffect[]);
+        else throw apiError(503, { code: 'import_target_not_wired', whatHappened: `Head office has no writer for what "${template.label}" loads, so nothing was applied.`, wasItSaved: 'not_saved', nextSafeAction: 'Run the load on the full head-office service. Nothing was saved.' });
         return { status: 200, body: { jobId, committed: true, rowsApplied: result.rowsApplied, effects: record.effects, at } };
       },
     },
@@ -284,7 +320,9 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
           throw apiError(409, { code: 'import_already_rolled_back', whatHappened: `Import job '${jobId}' was already rolled back on ${job.rolledBack.at}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing to undo.' });
         }
         const template = templates.find((t) => t.spec.id === job.templateId);
-        if (template === undefined || job.effects === undefined || deps.recordRollback === undefined) {
+        const domainJob = job.effects !== undefined && job.effects.length > 0 && job.effects.every((e) => e.kind !== 'supplier_invoice' && e.kind !== 'product' && e.kind !== 'product_update');
+        const writer = domainJob ? deps.recordDomainRollback : deps.recordRollback;
+        if (template === undefined || job.effects === undefined || writer === undefined) {
           throw apiError(422, { code: 'import_not_reversible', whatHappened: `Import job '${jobId}' wrote no records head office can undo (it was committed before loads wrote real records, or its template is no longer supported).`, wasItSaved: 'not_saved', nextSafeAction: 'Correct the affected records by hand, each through its own screen.' });
         }
         if (!isStr(b['reason'])) {
@@ -305,8 +343,48 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
         const record: ImportRollbackRecord = {
           jobId, requestedBy: ctx.userId, approvedBy: opened.decision.decidedBy, reason: (b['reason'] as string).trim(), at: deps.now(), effects: job.effects,
         };
-        await deps.recordRollback(ctx.tenantId, record);
+        await writer(ctx.tenantId, record);
         return { status: 200, body: { jobId, rolledBack: true, effects: job.effects, at: record.at } };
+      },
+    },
+    {
+      // OB-315 — DRY RUN: the same check as validate, KEPT: every row-by-row exception, by the signed-in person, never
+      // deleted. Nothing is applied. A personal-data cell (a customer's mobile) is kept only as a fingerprint.
+      api: 'API-03', method: 'POST', path: '/v1/import/dry-runs/:runId',
+      permission: 'purchase.import.read', idempotent: true,
+      handler: async (ctx) => {
+        if (deps.recordDryRun === undefined) throw apiError(503, { code: 'dry_runs_not_kept_here', whatHappened: 'This head office cannot keep dry runs.', wasItSaved: 'not_saved', nextSafeAction: 'Use POST /v1/import/validate to check the file.' });
+        const runId = (ctx.params['runId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const template = readTemplate(b, templates);
+        const read = readValidateInput(b, template);
+        if ('error' in read) throw read.error;
+        const prior = (await deps.dryRuns?.(ctx.tenantId) ?? []).find((r) => r.runId === runId);
+        if (prior !== undefined) return { status: 200, body: { dryRun: prior, alreadyKept: true } };
+        const preview = await previewOf(template, ctx.tenantId, read.input);
+        const personal = new Set(template.personalColumns ?? []);
+        const keyed = (key: string): string => (template.spec.keyColumns.some((k) => personal.has(k)) ? `fingerprint ${fingerprint(key)}` : key);
+        const record: ImportDryRunRecord = {
+          runId, templateId: template.spec.id, domain: template.spec.domain, ranBy: ctx.userId, at: deps.now(),
+          totalRows: preview.totalRows, validCount: preview.validCount, errorRowCount: preview.errorRowCount,
+          errors: preview.errors.map((e) => ({ line: e.line, column: e.column, kind: e.kind, message: personal.has(e.column) ? e.message.replace(/"[^"]*"/g, '"(personal data — not kept)"') : e.message })),
+          duplicatesForReview: preview.duplicatesForReview.map((d) => ({ line: d.line, key: keyed(d.key) })),
+          commitReady: preview.commitReady, contentFingerprint: importContentFingerprint(read.input),
+          ...(preview.sumMinor !== undefined ? { sumMinor: preview.sumMinor } : {}),
+          ...(preview.reconciles !== undefined ? { reconciles: preview.reconciles } : {}),
+        };
+        await deps.recordDryRun(ctx.tenantId, record);
+        // The answer is to the person who ran it — it carries the file's own rows back; the KEPT record does not.
+        return { status: 201, body: { dryRun: record, preview: { ...preview, validRows: template.storedRow === undefined ? preview.validRows : preview.validRows.map((r) => template.storedRow!(ctx.tenantId, r)) } } };
+      },
+    },
+    {
+      // OB-315 — the kept dry runs, newest first, each with its exceptions.
+      api: 'API-03', method: 'GET', path: '/v1/import/dry-runs',
+      permission: 'purchase.import.read',
+      handler: async (ctx) => {
+        const all = [...(await deps.dryRuns?.(ctx.tenantId) ?? [])].sort((a, b) => b.at.localeCompare(a.at));
+        return { status: 200, body: { dryRuns: all, total: all.length, asAt: deps.now() } };
       },
     },
     {

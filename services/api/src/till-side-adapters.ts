@@ -1,8 +1,9 @@
 // OB-288 · till-side completion — head office's wiring for the catalogue rules carried onto the till, and the till's
 // delivery sale. One import line in `main.ts`; every function here is a hook spread into an existing route's deps there.
 //
-//   • OB-348 (B17) — the shop's state (`store.state`, owner-approved) rides the store pack to the store computer and its
-//     tills, and head office's sale intake judges liquor by it (`shopStateOf`, `tillSidePoliciesOf`).
+//   • OB-348 (B17) · OB-354 — each STORE's state, read from the store's own GSTIN (its first two digits, the GST state
+//     code), rides that store's pack to its store computer and tills, and head office's sale intake judges liquor by the
+//     state of the store the sale was rung at (`shopStateOf`, `tillSidePoliciesOf`). Never one business-wide setting.
 //   • OB-299 (M12-FR-02) — a bill the till marked for delivery, paid in full there, becomes ONE delivery job when the sale
 //     reaches head office through the store computer: an order on the orders register (state `confirmed`, delivery, the
 //     goods lines), its payment recorded as made at the till so the door collects nothing, booked once on any resend
@@ -17,7 +18,7 @@
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { SETTINGS, type TenantSetting } from '../../../packages/tenant/src/settings';
-import { isIndianStateCode } from '../../../packages/restricted-sales/src/liquor';
+import { shopStateFromGstin } from '../../../packages/restricted-sales/src/liquor';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import type { PlacedOrder } from '../../orders/src/index';
 import type { LoyaltyWalletDeps } from '../../customer/src/loyalty-wallets';
@@ -25,8 +26,10 @@ import { earnOnSale, type LoyaltyEffectsDeps, type LoyaltyOutcome } from '../../
 import { tierMultiplierAt } from '../../customer/src/loyalty-programme';
 import type { FulfilmentApplied } from '../../fulfilment/src/order-fulfilment';
 import { TILL_BILL_PAYMENT_PREFIX } from '../../fulfilment/src/order-fulfilment';
-import { ordersAdapter, storeOfPack } from './adapters';
+import { ordersAdapter, orgStructureAdapter, saleStockLocationOf, storeOfPack } from './adapters';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { appMemberOf, loyaltyProgrammeAdapter } from './customer-commerce-adapters';
+import { recordTillDeliveryJob } from './till-delivery-adapters';
 
 interface Base { readonly store: EventStore; readonly now: () => string }
 type Settings = { value<T>(tenantId: string, setting: TenantSetting<T>): Promise<T> };
@@ -35,19 +38,33 @@ const text = (v: unknown): string | undefined => (typeof v === 'string' && v.tri
 
 // ── OB-348 · OB-299: what store setup sends the store computer ──────────────────────────────────────────────────────
 
-/** OB-348: the shop's state from store setup — a state code, or undefined ("not set"). */
-export function shopStateOf(settings: Settings) {
-  return async (tenantId: string): Promise<string | undefined> => {
-    const v = text(await settings.value(tenantId, SETTINGS.STORE_STATE));
-    return v !== undefined && isIndianStateCode(v) ? v : undefined;
+/**
+ * OB-354: a store's state, read from the GSTIN on its own record in the organisation (the branch the place belongs to) —
+ * an ISO state code, or undefined ("not set": no GSTIN on record, or none whose first two digits are a state's code).
+ */
+export function storeStateOf(input: Pick<Base, 'store' | 'now'>) {
+  return async (tenantId: string, placeId: string): Promise<string | undefined> => {
+    const nodes = await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId);
+    const branchId = branchOfLocationIn(nodes)(placeId);
+    const read = shopStateFromGstin(nodes.find((n) => n.nodeId === branchId)?.gstin);
+    return read.known ? read.state : undefined;
   };
 }
 
-/** OB-348 · OB-299: the till's policies from store setup, for the store pack — each only when set. */
-export function tillSidePoliciesOf(settings: Settings) {
-  const state = shopStateOf(settings);
-  return async (tenantId: string): Promise<{ readonly shopState?: string; readonly tillDeliveryFeeProductId?: string }> => {
-    const shopState = await state(tenantId);
+/** OB-348 · OB-354: the state of the store a sale was rung at — where its stock leaves from (the one rule) — for the intake. */
+export function shopStateOf(input: Pick<Base, 'store' | 'now'>) {
+  const stateOf = storeStateOf(input);
+  return async (tenantId: string, sale: IncomingSale): Promise<string | undefined> => {
+    const where = await saleStockLocationOf(input.store, tenantId, sale);
+    return where.basis === 'unplaced' ? undefined : stateOf(tenantId, where.locationId);
+  };
+}
+
+/** OB-348 · OB-354 · OB-299: the till's policies for ONE store's pack — its state (from its GSTIN) and the fee product, each only when set. */
+export function tillSidePoliciesOf(settings: Settings, input: Pick<Base, 'store' | 'now'>) {
+  const state = storeStateOf(input);
+  return async (tenantId: string, storeId: string): Promise<{ readonly shopState?: string; readonly tillDeliveryFeeProductId?: string }> => {
+    const shopState = await state(tenantId, storeId);
     const fee = text(await settings.value(tenantId, SETTINGS.TILL_DELIVERY_FEE_PRODUCT));
     return { ...(shopState === undefined ? {} : { shopState }), ...(fee === undefined ? {} : { tillDeliveryFeeProductId: fee }) };
   };
@@ -73,11 +90,14 @@ export const tillDeliveryOrderId = (saleId: string): string => `till-${saleId}`;
  */
 export function tillDeliveryOnSale(input: Base) {
   const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: 0 });
+  const recordJob = recordTillDeliveryJob(input.store);
   return async (tenantId: string, sale: IncomingSale): Promise<TillDeliveryOutcome | undefined> => {
     if (sale.delivery?.requested !== true) return undefined;
     const orderId = tillDeliveryOrderId(sale.saleId);
     const placed = await orders.placedOrder(tenantId, orderId);
     if (placed !== undefined) {
+      // OB-352: the job register entry, once (a resend after a crash between the two completes it).
+      await recordJob(tenantId, { orderId, saleId: sale.saleId, receiptNumber: sale.receiptNumber, locationId: placed.locationId, ...(text(sale.customerRef) === undefined ? {} : { memberRef: text(sale.customerRef)! }), bookedAt: placed.placedAt });
       return { outcome: 'already_booked', orderId, detail: `Bill ${sale.receiptNumber} is already delivery job ${orderId}; nothing was booked twice.` };
     }
     const feeProductId = text(sale.delivery.feeProductId);
@@ -101,6 +121,9 @@ export function tillDeliveryOnSale(input: Base) {
       amountMinor: sale.totalMinor, result: 'authorised', recordedBy: sale.cashierId !== '' ? sale.cashierId : 'store-computer', recordedAt: sale.committedAt,
     });
     await orders.recordPlaced(tenantId, order);
+    // OB-352: the job waits for its address and slot — the customer's app when the bill's member has the app, else the
+    // delivery desk from the till's delivery slip. The member code the bill named is kept with it (never a phone number).
+    await recordJob(tenantId, { orderId, saleId: sale.saleId, receiptNumber: sale.receiptNumber, locationId, ...(text(sale.customerRef) === undefined ? {} : { memberRef: text(sale.customerRef)! }), bookedAt: sale.committedAt });
     return {
       outcome: 'booked', orderId,
       detail: `Bill ${sale.receiptNumber} (₹${(sale.totalMinor / 100).toFixed(2)}, paid in full at the till) is delivery job ${orderId} with ${goods.size} item line(s). The door collects nothing.`,

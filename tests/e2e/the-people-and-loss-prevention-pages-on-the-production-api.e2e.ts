@@ -41,6 +41,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the people
         await cloud.grant('u-mgr', 'store_manager');
         await cloud.grant('u-cash', 'cashier', undefined, ['br-1']);
         await ok(cloud.request({ method: 'POST', path: '/v1/hr/workforce/employees/u-cash', userId: 'u-mgr', idempotencyKey: 'emp-cash', body: { name: 'Asha', branchId: 'br-1', roles: ['cashier'], active: true, hourlyRateMinor: 12_500 } }), 'employee');
+        // OB-357: a department of br-1, and a shift today with Asha on it — her hours, before she has a home department.
+        await ok(cloud.request({ method: 'POST', path: '/v1/org/nodes/D-dairy', userId: 'u-owner', idempotencyKey: 'dept-dairy', body: { kind: 'department', name: 'Dairy', parentId: 'br-1' } }), 'department');
+        await ok(cloud.request({ method: 'POST', path: '/v1/hr/workforce/shifts/SH-1', userId: 'u-mgr', idempotencyKey: 'shift-1', body: { branchId: 'br-1', startsAt: `${TODAY}T02:30:00.000Z`, endsAt: `${TODAY}T10:30:00.000Z`, requiredRoles: [{ role: 'cashier', count: 1 }] } }), 'shift');
+        await ok(cloud.request({ method: 'POST', path: '/v1/hr/workforce/shifts/SH-1/assignments/u-cash', userId: 'u-mgr', idempotencyKey: 'assign-1', body: { role: 'cashier' } }), 'assign');
         await ok(cloud.request({ method: 'POST', path: '/v1/hr/workforce/help/built-in/SOP-01/publish', userId: 'u-mgr', idempotencyKey: 'pub-1', body: {} }), 'publish SOP-01');
         await ok(cloud.request({ method: 'POST', path: '/v1/hr/workforce/help/built-in/SOP-03/publish', userId: 'u-mgr', idempotencyKey: 'pub-3', body: {} }), 'publish SOP-03');
       },
@@ -119,9 +123,26 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the people
     await cashier.locator('button[data-approve="cashier"]').click();
     await waitText(page, '#cur-status', 'Saved.');
     await waitText(page, '#cur-roles .role-block[data-role="cashier"]', 'approved, version 1');
+    // OB-357: sales per labour hour — Asha has no home department yet: her 8 hours are "not attributed", by name.
+    await page.fill('#pr-from', TODAY); await page.fill('#pr-to', TODAY);
+    await page.click('#pr-read');
+    await waitText(page, '#pr-rows li[data-row="not-attributed"]', 'Asha (u-cash, 8)');
+    expect(await page.locator('#pr-read svg').count()).toBe(1);
+    // The manager sets her home department on the staff record; the hours then count to dairy.
+    await page.waitForSelector('#home-dept:not([hidden])');
+    await page.fill('#hd-emp', 'u-cash');
+    await page.waitForFunction(() => (globalThis as unknown as { document: { querySelector(s: string): { options: { length: number } } | null } }).document.querySelector('#hd-dept')!.options.length > 1);
+    await page.selectOption('#hd-dept', 'D-dairy');
+    expect(await page.locator('#hd-set svg').count()).toBe(1);
+    await page.click('#hd-set');
+    await waitText(page, '#hd-status', 'Saved.');
+    await page.click('#pr-read');
+    await waitText(page, '#pr-rows li[data-row="D-dairy"]', '8 rostered hours');
+    expect(await page.locator('#pr-rows li[data-row="not-attributed"]').count()).toBe(0);
     expect(await auditPage(page, { expectLang: 'en' }), 'the adoption page').toEqual([]);
     await page.click('#lang');
     expect(await page.textContent('#page-h')).toBe('பயிற்சி மற்றும் ஏற்பு');
+    expect(await page.textContent('#hd-h')).toBe('சொந்தப் பிரிவு (பணியாளர் பதிவில்)');
     expect(errors).toEqual([]);
     await close();
   }, 120_000);

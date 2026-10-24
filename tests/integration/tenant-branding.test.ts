@@ -37,7 +37,6 @@ describe('white-label branding, end to end (M36-FR-02, API-11)', () => {
     const set = await putBrand(h, A, 'u-owner', {
       productName: 'SRE Hyper Market', legalName: 'SRE Hyper Market Pvt Ltd',
       colours: { primary: '#1a4d2e', onPrimary: '#ffffff' },
-      terminology: { branch: 'showroom' },
     });
     expect(set.status).toBe(200);
 
@@ -54,10 +53,15 @@ describe('white-label branding, end to end (M36-FR-02, API-11)', () => {
     await h.seedOwner(A, 'u-owner');
     await putBrand(h, A, 'u-owner', { productName: 'SRE Hyper Market' }, 'valid');
 
-    // "tax invoice" carries a legal meaning and cannot be renamed.
+    // OB-321 (owner, 23 Oct 2026): white-label is the name, the logo and the colours only — wording is refused by name,
+    // so "tax invoice" can never be renamed, and neither can any other term or document text.
     const protectedTerm = await putBrand(h, A, 'u-owner', { terminology: { 'tax invoice': 'bill' } }, 'protected');
     expect(protectedTerm.status).toBe(422);
-    expect(codeOf(protectedTerm)).toBe('branding_refused');
+    expect(codeOf(protectedTerm)).toBe('outside_the_white_label_scope');
+    for (const [field, value] of [['terminology', { branch: 'showroom' }], ['templateSetId', 'tpl-2'], ['supportEmail', 'help@example.test']] as const) {
+      const r = await putBrand(h, A, 'u-owner', { productName: 'SRE Hyper Market', [field]: value }, `scope-${field}`);
+      expect([r.status, codeOf(r)], field).toEqual([422, 'outside_the_white_label_scope']);
+    }
 
     // A colour pair a cashier cannot read at 8pm is blocked at publish (WCAG AA).
     const lowContrast = await putBrand(h, A, 'u-owner', { colours: { primary: '#777777', onPrimary: '#ffffff' } }, 'contrast');

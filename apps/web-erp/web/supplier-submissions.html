@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Supplier submissions</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Supplier submissions — the buyer's one queue (M24-FR-01/02 · OB-288 package 3). A THIN CLIENT over head office's
+      review queue, the review route and the suppliers' delivery updates. Its session is
+      apps/web-erp/src/supplier-submissions-session.ts. Nothing a supplier sends takes effect until a buyer accepts it;
+      every decision carries a reason and is made in the buyer's own name, never the submitter's.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1120px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      textarea { min-height: 96px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .figs { display: flex; gap: 16px; flex-wrap: wrap; }
+      .figs > div { display: grid; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Supplier submissions</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Supplier submissions</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <button id="refresh" type="button" class="quiet" hidden><span id="refresh-text"></span></button>
+      </section>
+
+      <section id="queue" hidden aria-labelledby="queue-h">
+        <h3 id="queue-h"></h3>
+        <p class="status" id="q-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="q-rows"></ul>
+      </section>
+
+      <section id="deliveries" hidden aria-labelledby="deliveries-h">
+        <h3 id="deliveries-h"></h3>
+        <ul class="rows" id="dl-rows"></ul>
+        <h3 id="lookup-h"></h3>
+        <div class="row-form">
+          <label for="po-id"><span id="po-id-l"></span><input id="po-id" autocomplete="off" /></label>
+        </div>
+        <button id="po-look" type="button"><span id="po-look-text"></span></button>
+        <p class="status" id="po-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="po-rows"></ul>
+      </section>
+
+      <section id="decided" hidden aria-labelledby="decided-h">
+        <h3 id="decided-h"></h3>
+        <ul class="rows" id="dc-rows"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./supplier-submissions.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
