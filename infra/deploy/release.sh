@@ -157,7 +157,10 @@ if [ "$PHASE" = 1 ]; then
     rm -rf "$SIG_DIR"
     say "release signature verified for $SHA (tree $TREE)."
   else
-    say "release signature NOT CHECKED on this box (SRE_RELEASE_PUBKEY is not set) — see docs/runbooks/automatic-deployment.md."
+    # OB-342: until the box is given the custodian's public key it deploys either way and says so — and says whether the
+    # release arrived signed, so the custodian can see the signing works before the box starts enforcing it.
+    if [ "$SIGNATURE" = "unreadable" ]; then ARRIVED="arrived with an unreadable signature"; elif [ -n "$SIGNATURE" ]; then ARRIVED="arrived signed"; else ARRIVED="arrived NOT SIGNED"; fi
+    say "release signature NOT CHECKED on this box (SRE_RELEASE_PUBKEY is not set; the release $ARRIVED) — see docs/runbooks/automatic-deployment.md."
   fi
   # WF-20: back up BEFORE anything changes. A backup that fails stops the release here, with the box untouched.
   if [ -n "$SRE_PREDEPLOY_BACKUP_CMD" ]; then

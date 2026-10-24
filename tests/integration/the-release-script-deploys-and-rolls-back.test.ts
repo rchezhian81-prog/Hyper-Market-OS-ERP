@@ -396,7 +396,15 @@ describe('the release script deploys a merged commit and rolls a broken one back
     const unchecked = run([V2, 'octocat', '307']);
     expect(unchecked.code, unchecked.out).toBe(0);
     expect(unchecked.out).toContain('release signature NOT CHECKED on this box');
+    expect(unchecked.out).toContain('the release arrived NOT SIGNED');
     expect(head()).toBe(V2);
+    // OB-342: the custodian has set the secret but the box has no public key yet — the signed release deploys (the demo
+    // keeps updating), and the box says it did not check and that the release arrived signed.
+    await writeFile(upResults, 'ok\n');
+    const signedButUnchecked = run([], { SSH_ORIGINAL_COMMAND: `release ${V3} octocat 308 ${signed(V3, release.pem)}` });
+    expect(signedButUnchecked.code, signedButUnchecked.out).toBe(0);
+    expect(signedButUnchecked.out).toContain('release signature NOT CHECKED on this box (SRE_RELEASE_PUBKEY is not set; the release arrived signed)');
+    expect(head()).toBe(V3);
   }, 60_000);
 
   it('signing: the script never signs without a key, and its self-test refuses tampering and another key', () => {

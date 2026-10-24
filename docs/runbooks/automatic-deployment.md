@@ -179,19 +179,42 @@ computers' saved history. The administrator adds it to the box's settings file O
 
 - **What is signed:** three lines that pin a merged commit exactly — `sre-release-v1`, `commit=<sha>`, `tree=<tree id>`
   (git's digest of every file). `scripts/release-signing.mjs sign <sha>` signs them with Ed25519.
-- **The private key** is held by the release-signing custodian (an owner decision: who) and lives ONLY as the GitHub
-  secret `RELEASE_SIGNING_KEY` (a PEM made with `openssl genpkey -algorithm ed25519`). Never in the repository, a
-  settings file, an image or a log. With no secret, the build says *NOT SIGNED* on every merge.
+- **The private key** is held by the release-signing custodian — **the named IT custodian, Mr Sivakumar** (owner
+  decision OB-342, 24 Oct 2026, in writing) — and lives ONLY as the GitHub secret `RELEASE_SIGNING_KEY` (a PEM made
+  with `openssl genpkey -algorithm ed25519`). Never in the repository, a settings file, an image, a chat, an e-mail or
+  a log. With no secret, the build says *NOT SIGNED* on every merge and carries on — a missing secret never fails the
+  build, and the demo keeps updating.
 - **The build:** every run self-tests the signer with a throwaway key; on a merge to main it signs the commit and keeps
   `manifest.txt` and `signature.txt` as the `release-signature` artefact. If the public key is committed at
-  `infra/deploy/release-signing.pub`, the build also checks its own signature against it.
+  `infra/deploy/release-signing.pub`, the build also checks its own signature against it. The signature (a public value,
+  not a secret) is handed to the canary and full-rollout jobs, which pass it to `release.sh` as the **4th argument**
+  (`release <sha> <actor> <run> <signature>`); with no signature they say *NOT SIGNED* and send three words.
 - **The box:** put the PUBLIC key on the box and set `SRE_RELEASE_PUBKEY=/opt/sre/release-signing.pub` in
-  `/opt/sre/deploy.conf`. From then on `release.sh` deploys only `release <sha> <actor> <run> <signature>` whose
-  signature verifies, checked with `openssl` over the lines the box rebuilds from its own fetch, before the backup or
-  anything else: unsigned or not verifying → exit **77**, the box untouched. A box without the setting says *release
-  signature NOT CHECKED* on every run.
-- **Not yet wired:** the canary and full-rollout jobs do not yet pass the signature as the fourth word, so do NOT set
-  `SRE_RELEASE_PUBKEY` on a box until they do (every release would be refused, safely, with 77).
+  `/opt/sre/deploy.conf`. From then on `release.sh` deploys only a release whose signature verifies, checked with
+  `openssl` over the lines the box rebuilds from its own fetch, before the backup or anything else: unsigned or not
+  verifying → exit **77**, the box untouched. A box without the setting deploys either way and says *release signature
+  NOT CHECKED* on every run — and whether the release *arrived signed* or *arrived NOT SIGNED*.
+
+### The custodian's steps (Mr Sivakumar) — once, in this order
+
+1. **Make the key pair** on the custodian's own computer, never on a shared one:
+   `openssl genpkey -algorithm ed25519 -out release-signing.key` and
+   `openssl pkey -in release-signing.key -pubout -out release-signing.pub`.
+2. **Put the private key in the GitHub secret store**: repository Settings → Secrets and variables → Actions → New
+   repository secret, name `RELEASE_SIGNING_KEY`, value the whole content of `release-signing.key`. Then keep the key
+   file offline (an encrypted USB drive in the office safe) and delete every other copy. Never paste it anywhere else.
+3. **Check the next merge says signed**: in the build's summary for the next merge to main, the security-scans job says
+   *Release … signed*, and the deploy steps say *(signed)*. The demo box log says *NOT CHECKED … the release arrived
+   signed*. If it still says *NOT SIGNED*, the secret's name is wrong.
+4. **Commit the PUBLIC key** (`release-signing.pub`, which is not a secret) at `infra/deploy/release-signing.pub`
+   through a pull request, so the build checks its own signature against it.
+5. **Only then turn the check on at each box**: copy `release-signing.pub` to `/opt/sre/release-signing.pub` and add
+   `SRE_RELEASE_PUBKEY=/opt/sre/release-signing.pub` to `/opt/sre/deploy.conf` — the canary box first, then the demo
+   box. The next release log says *release signature verified*. Before step 3 shows *signed*, do NOT set it: every
+   release would be refused (safely, exit 77, the box untouched).
+6. **If the key is lost or leaked**: make a new pair (step 1), replace the secret (step 2), commit the new public key
+   (step 4), replace the box's public key (step 5), and record it as an incident (below). Releases signed with the old
+   key are then refused by the box.
 
 ## When something went wrong — the incident record (WF-20, M35-FR-04)
 

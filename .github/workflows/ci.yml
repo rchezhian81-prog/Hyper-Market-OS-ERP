@@ -414,6 +414,9 @@ jobs:
     # findings report for the security register, and refuses a missing report (P-08). Every scan runs even when an
     # earlier one fails, so one red scanner never hides another; the last step gives the verdict.
     runs-on: ubuntu-latest
+    # OB-342: the merged commit's release signature (a public value, empty when not signed) for the canary and release jobs.
+    outputs:
+      release-signature: ${{ steps.sign.outputs.signature }}
     env:
       SEMGREP_VERSION: '1.178.0'
       SEMGREP_RULES_COMMIT: a84ff9cc2453ca91d581380de4b8b3f272f6f4be
@@ -509,6 +512,9 @@ jobs:
         run: node scripts/release-signing.mjs selftest "$GITHUB_SHA"
 
       - name: Release signing — sign this merged commit (main only; needs the RELEASE_SIGNING_KEY secret)
+        # OB-342 (owner, 24 Oct 2026): the key holder is the named IT custodian; the key lives only in the GitHub secret
+        # store. With no secret the release says NOT SIGNED and the build carries on (never fails for a missing key).
+        id: sign
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
@@ -520,6 +526,7 @@ jobs:
             exit 0
           fi
           node scripts/release-signing.mjs sign "$GITHUB_SHA" > release-signature/signature.txt
+          echo "signature=$(cat release-signature/signature.txt)" >> "$GITHUB_OUTPUT"
           if [ -f infra/deploy/release-signing.pub ]; then
             node scripts/release-signing.mjs verify "$GITHUB_SHA" infra/deploy/release-signing.pub "$(cat release-signature/signature.txt)"
           else
@@ -721,17 +728,22 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          # OB-342: the release signature the security-scans job made (empty when not signed) — the release script's 4th argument.
+          RELEASE_SIGNATURE: ${{ needs.security-scans.outputs.release-signature }}
         run: |
           umask 077
           mkdir -p "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$DEPLOY_HOST_KEY" > "$HOME/.ssh/deploy_known_hosts"
+          if [ -z "$RELEASE_SIGNATURE" ]; then
+            echo "::notice::NOT SIGNED — $GITHUB_SHA carries no release signature (the release-signing secret is not set). A box without SRE_RELEASE_PUBKEY deploys it and says NOT CHECKED; a box with it refuses it."
+          fi
           ssh -i "$HOME/.ssh/deploy_key" \
               -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
               -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
-              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID"
-          echo "Canary: $GITHUB_SHA deployed to the canary box and stayed healthy through its bake." >> "$GITHUB_STEP_SUMMARY"
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"}
+          echo "Canary: $GITHUB_SHA ($([ -n "$RELEASE_SIGNATURE" ] && echo signed || echo not signed)) deployed to the canary box and stayed healthy through its bake." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clean up the key material
         if: always()
@@ -786,6 +798,8 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          # OB-342: the release signature the security-scans job made (empty when not signed) — the release script's 4th argument.
+          RELEASE_SIGNATURE: ${{ needs.security-scans.outputs.release-signature }}
         run: |
           umask 077
           mkdir -p "$HOME/.ssh"
@@ -793,12 +807,15 @@ jobs:
           # PINNED from the secret (no first-use trust — a wrong box is refused, not asked about).
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$DEPLOY_HOST_KEY" > "$HOME/.ssh/deploy_known_hosts"
+          if [ -z "$RELEASE_SIGNATURE" ]; then
+            echo "::notice::NOT SIGNED — $GITHUB_SHA carries no release signature (the release-signing secret is not set). A box without SRE_RELEASE_PUBKEY deploys it and says NOT CHECKED; a box with it refuses it."
+          fi
           ssh -i "$HOME/.ssh/deploy_key" \
               -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
               -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
-              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID"
-          echo "Deployed $GITHUB_SHA to the demo box (merged by $GITHUB_ACTOR)." >> "$GITHUB_STEP_SUMMARY"
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"}
+          echo "Deployed $GITHUB_SHA ($([ -n "$RELEASE_SIGNATURE" ] && echo signed || echo not signed)) to the demo box (merged by $GITHUB_ACTOR)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clean up the key material
         if: always()

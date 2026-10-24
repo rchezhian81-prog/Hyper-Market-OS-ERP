@@ -50,4 +50,25 @@ describe('releases are signed in the build and checked on the box (WF-20 · AID-
     expect(RELEASE.match(/exit 77/g)?.length).toBe(2);
     expect(RELEASE).toContain('release signature NOT CHECKED on this box');
   });
+
+  it('OB-342: the canary and release jobs hand the signature to the box as the 4th argument — and a missing secret never fails the build', () => {
+    // The signature leaves the signing step as a public job output; the private key stays in that one step.
+    expect(scans).toContain('release-signature: ${{ steps.sign.outputs.signature }}');
+    expect(scans).toContain('id: sign');
+    expect(scans).toContain('echo "signature=$(cat release-signature/signature.txt)" >> "$GITHUB_OUTPUT"');
+    // No secret: said NOT SIGNED and the step ends green (exit 0), before any signing is attempted.
+    const sign = scans.slice(scans.indexOf('id: sign'));
+    expect(sign.indexOf('if [ -z "$RELEASE_SIGNING_KEY" ]; then')).toBeLessThan(sign.indexOf('node scripts/release-signing.mjs sign'));
+    expect(sign.slice(sign.indexOf('if [ -z "$RELEASE_SIGNING_KEY" ]; then'), sign.indexOf('node scripts/release-signing.mjs sign'))).toMatch(/NOT SIGNED[\s\S]*exit 0/);
+    for (const name of ['canary', 'release']) {
+      const j = job(name);
+      expect(j, name).toContain('RELEASE_SIGNATURE: ${{ needs.security-scans.outputs.release-signature }}');
+      expect(j, name).toContain('release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"}');
+      expect(j, name).toContain('NOT SIGNED');
+      expect(j, name).toMatch(/needs: \[[^\]]*security-scans/);
+      expect(j, name).not.toContain('RELEASE_SIGNING_KEY');
+    }
+    // The box says whether the release arrived signed while it does not check (the demo keeps updating either way).
+    expect(RELEASE).toContain('the release $ARRIVED');
+  });
 });
