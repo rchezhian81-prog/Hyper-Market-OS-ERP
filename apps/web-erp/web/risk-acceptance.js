@@ -112,6 +112,8 @@ function paint() {
   el('reviewer-state').className = `status tone-${view.reviewer.status.tone}`;
   el('reviewer-icon').textContent = view.reviewer.status.icon;
   el('reviewer-words').textContent = view.reviewer.words;
+  // Read aloud as one status, like every other status on the page: the colour never carries the meaning alone.
+  el('reviewer-state').setAttribute('aria-label', view.reviewer.status.announcement || view.reviewer.words);
   el('namer').hidden = !view.mayNameReviewer;
   if (view.mayNameReviewer) {
     el('name-heading').textContent = t('nameHeading');
