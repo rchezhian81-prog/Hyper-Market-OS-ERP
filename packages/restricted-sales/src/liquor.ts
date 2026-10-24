@@ -39,3 +39,85 @@ export function liquorReason(facts: LiquorFacts): string | undefined {
 
 /** The words every refusal uses — the same at head office and at the till. */
 export const LIQUOR_NOT_SOLD = 'Liquor is not sold: retail liquor in Tamil Nadu is a TASMAC state monopoly, and SRE does not sell any alcoholic drink (B17).';
+
+// ── OB-348 (owner, 24 Oct 2026, in writing): the liquor rule is the SHOP'S STATE's ────────────────────────────────────
+//
+// "Refused by the shop's state; Tamil Nadu refused; each shop records its state." The state is a high-impact store setting
+// (`store.state`, owner-approved — the OB-336 pattern). The rule here is the table of states whose rule this system has
+// been TOLD: Tamil Nadu refuses (TASMAC monopoly, OWNER_DECISIONS D3). For any other state no rule has been recorded, so
+// liquor is refused there too until the owner records one — never sold on a guess. A shop whose state is not set is refused
+// as well, and the words say "not set" (P-08). There is no override.
+
+/** The states and union territories of India by their ISO 3166-2:IN codes — what the shop's state setting accepts. */
+export const INDIAN_STATES: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({
+  AN: { en: 'Andaman and Nicobar Islands', ta: 'அந்தமான் நிக்கோபார் தீவுகள்' }, AP: { en: 'Andhra Pradesh', ta: 'ஆந்திரப் பிரதேசம்' },
+  AR: { en: 'Arunachal Pradesh', ta: 'அருணாசலப் பிரதேசம்' }, AS: { en: 'Assam', ta: 'அசாம்' }, BR: { en: 'Bihar', ta: 'பீகார்' },
+  CH: { en: 'Chandigarh', ta: 'சண்டிகர்' }, CT: { en: 'Chhattisgarh', ta: 'சத்தீஸ்கர்' },
+  DH: { en: 'Dadra and Nagar Haveli and Daman and Diu', ta: 'தாத்ரா நகர் ஹவேலி மற்றும் தமன் தியு' }, DL: { en: 'Delhi', ta: 'டெல்லி' },
+  GA: { en: 'Goa', ta: 'கோவா' }, GJ: { en: 'Gujarat', ta: 'குஜராத்' }, HR: { en: 'Haryana', ta: 'ஹரியானா' },
+  HP: { en: 'Himachal Pradesh', ta: 'இமாச்சலப் பிரதேசம்' }, JK: { en: 'Jammu and Kashmir', ta: 'ஜம்மு காஷ்மீர்' },
+  JH: { en: 'Jharkhand', ta: 'ஜார்கண்ட்' }, KA: { en: 'Karnataka', ta: 'கர்நாடகா' }, KL: { en: 'Kerala', ta: 'கேரளா' },
+  LA: { en: 'Ladakh', ta: 'லடாக்' }, LD: { en: 'Lakshadweep', ta: 'இலட்சத்தீவுகள்' }, MP: { en: 'Madhya Pradesh', ta: 'மத்தியப் பிரதேசம்' },
+  MH: { en: 'Maharashtra', ta: 'மகாராஷ்டிரா' }, MN: { en: 'Manipur', ta: 'மணிப்பூர்' }, ML: { en: 'Meghalaya', ta: 'மேகாலயா' },
+  MZ: { en: 'Mizoram', ta: 'மிசோரம்' }, NL: { en: 'Nagaland', ta: 'நாகாலாந்து' }, OR: { en: 'Odisha', ta: 'ஒடிசா' },
+  PY: { en: 'Puducherry', ta: 'புதுச்சேரி' }, PB: { en: 'Punjab', ta: 'பஞ்சாப்' }, RJ: { en: 'Rajasthan', ta: 'ராஜஸ்தான்' },
+  SK: { en: 'Sikkim', ta: 'சிக்கிம்' }, TN: { en: 'Tamil Nadu', ta: 'தமிழ்நாடு' }, TG: { en: 'Telangana', ta: 'தெலங்கானா' },
+  TR: { en: 'Tripura', ta: 'திரிபுரா' }, UP: { en: 'Uttar Pradesh', ta: 'உத்தரப் பிரதேசம்' }, UT: { en: 'Uttarakhand', ta: 'உத்தராகண்ட்' },
+  WB: { en: 'West Bengal', ta: 'மேற்கு வங்காளம்' },
+});
+
+/** True when a value is one of the state codes above (upper case, as stored). */
+export function isIndianStateCode(v: unknown): v is string {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(INDIAN_STATES, v);
+}
+
+/** Why a state refuses liquor, as recorded. Only Tamil Nadu has a recorded rule (OB-348). */
+const RECORDED_STATE_RULES: Readonly<Record<string, string>> = Object.freeze({
+  TN: 'in Tamil Nadu retail liquor is a TASMAC state monopoly',
+});
+
+/** How the shop's state rules on liquor. Every outcome today is a refusal; `basis` says which kind. */
+export interface StateLiquorRule {
+  readonly refused: true;
+  readonly basis: 'state_monopoly' | 'state_not_set' | 'no_rule_recorded_for_state';
+  /** The state code as the setting holds it, when it is one. */
+  readonly state?: string;
+  /** For the record. */
+  readonly why: string;
+  /** For the cashier, English and Tamil. */
+  readonly laneWords: { readonly en: string; readonly ta: string };
+}
+
+/** The liquor rule for the shop's state (`store.state`). Absent / not a state code → "not set", and refused. */
+export function liquorRuleForState(state: string | null | undefined): StateLiquorRule {
+  const code = typeof state === 'string' ? state.trim().toUpperCase() : '';
+  if (!isIndianStateCode(code)) {
+    return {
+      refused: true, basis: 'state_not_set',
+      why: 'the shop\'s state is not set, so no state rule permits it — liquor is refused until the owner sets the state (OB-348)',
+      laneWords: {
+        en: 'Liquor cannot be sold: the shop\'s state is not set. Keep it off the bill and tell the manager.',
+        ta: 'மதுபானம் விற்க முடியாது: கடையின் மாநிலம் அமைக்கப்படவில்லை. பில்லில் சேர்க்க வேண்டாம்; மேலாளரிடம் சொல்லுங்கள்.',
+      },
+    };
+  }
+  const name = INDIAN_STATES[code]!;
+  const recorded = RECORDED_STATE_RULES[code];
+  if (recorded !== undefined) {
+    return {
+      refused: true, basis: 'state_monopoly', state: code, why: `${recorded} (OB-348)`,
+      laneWords: {
+        en: `Liquor is not sold here: ${recorded}. Keep it off the bill and tell the manager.`,
+        ta: 'மதுபானம் இங்கு விற்கப்படுவதில்லை: தமிழ்நாட்டில் மதுபான சில்லறை விற்பனை டாஸ்மாக் நிறுவனத்திற்கு மட்டுமே. பில்லில் சேர்க்க வேண்டாம்; மேலாளரிடம் சொல்லுங்கள்.',
+      },
+    };
+  }
+  return {
+    refused: true, basis: 'no_rule_recorded_for_state', state: code,
+    why: `no liquor rule has been recorded for ${name.en}, so it is refused until the owner records one (OB-348)`,
+    laneWords: {
+      en: `Liquor cannot be sold: no liquor rule is recorded for ${name.en}. Keep it off the bill and tell the manager.`,
+      ta: `மதுபானம் விற்க முடியாது: ${name.ta} மாநிலத்திற்கு மதுபான விதி பதிவு செய்யப்படவில்லை. பில்லில் சேர்க்க வேண்டாம்; மேலாளரிடம் சொல்லுங்கள்.`,
+    },
+  };
+}

@@ -90,6 +90,7 @@ import { phoneOperatorsOf, personNamedBy } from './handheld-sign-in';
 import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
+import { httpPhoneBaskets } from './phone-baskets';
 import { PaymentAttempts, type PaymentProviderPort } from './payment-attempts';
 import { PeripheralReports } from './peripheral-health';
 import { LoyaltyWallets } from './loyalty-wallets';
@@ -285,9 +286,19 @@ function gateProductsOf(pack: StorePack, cataloguePack: Parameters<typeof tillCa
   const held = gateIndex.get(key);
   if (held !== undefined) return held;
   const catalogue = tillCatalogue(pack, cataloguePack, now);
-  const map = new Map((catalogue?.products ?? []).map((p) => [p.productId, { name: p.name, baseUom: p.uom, unitPriceMinor: p.unitPriceMinor, ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }) }] as const));
+  const map = new Map((catalogue?.products ?? []).map((p) => [p.productId, {
+    name: p.name, baseUom: p.uom, unitPriceMinor: p.unitPriceMinor, ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }),
+    // B17 · OB-348: the HSN, so an alcoholic-drink heading is refused before the disk even without a liquor flag.
+    ...(p.hsnCode === undefined ? {} : { hsnCode: p.hsnCode }),
+  }] as const));
   gateIndex.set(key, map);
   return map;
+}
+
+/** OB-348 (B17): the shop's state as this box's store pack names it — text, or absent ("not set"). */
+function shopStateOf(pack: StorePack): string | undefined {
+  const v = pack.policies.known ? (pack.policies.value as { readonly shopState?: unknown }).shopState : undefined;
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
 }
 
 const BASE_INTERVAL_MS = 15_000;
@@ -1705,6 +1716,10 @@ export async function startEdge(
         },
       },
     }),
+    // OB-350: scan-and-go baskets from head office, under this box's own credential — only when a cloud is configured.
+    ...(settings['CLOUD_API_URL'] === undefined || settings['CLOUD_API_TOKEN'] === undefined ? {} : {
+      phoneBaskets: httpPhoneBaskets({ baseUrl: settings['CLOUD_API_URL'], token: settings['CLOUD_API_TOKEN'], fetch: globalThis.fetch.bind(globalThis) }),
+    }),
     ...(heldBills === null ? {} : {
       heldBills: {
         hold: (i) => heldBills.hold(i),
@@ -1770,6 +1785,8 @@ export async function startEdge(
           scales: laneScalesFor(pack, laneIdOfThisBox()),
           today: tradingDate(wallClockIn(now), makeTradingDayRule('00:00')),
           soldHuids: soldHuids.asSet(),
+          // OB-348 (B17): liquor is judged by the shop's state, as this box's store pack names it.
+          ...((st) => (st === undefined ? {} : { shopState: st }))(shopStateOf(pack)),
         });
       },
     },

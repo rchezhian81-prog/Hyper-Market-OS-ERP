@@ -84,6 +84,13 @@ export interface OrderFulfilmentDeps {
   readonly recordSettlement: (tenantId: string, s: FulfilmentSettlement) => Promise<void> | void;
 }
 
+/**
+ * OB-299 (M12-FR-02 · OB-288 till side): the payment reference a bill PAID IN FULL AT THE TILL is recorded under when it is
+ * booked as a delivery job. The till's own sale already carries the stock and the money, so the hand-over of such an order
+ * posts no second sale and the door collects nothing.
+ */
+export const TILL_BILL_PAYMENT_PREFIX = 'till-bill:';
+
 export type FulfilmentWait =
   | 'not_packed' | 'not_confirmed' | 'order_cancelled' | 'awaiting_handback' | 'no_door_outcome' | 'unpaid_pickup';
 
@@ -185,6 +192,21 @@ export async function applyOrderFulfilment(deps: OrderFulfilmentDeps, tenantId: 
   const prepaid = pay.state === 'authorised';
   if (!prepaid && collected) {
     return answer('unpaid_pickup', `Order ${orderId} was collected with no online payment — it is paid at the till, and the till's own sale carries its stock and money. Nothing posted here.`);
+  }
+  // OB-299: a bill paid in full at the till — its own sale already moved the stock and took the money. The hand-over moves
+  // the order on and releases nothing twice; it posts NO second sale and no refund (goods that come back are a till return).
+  if (prepaid && pay.providerRef?.startsWith(TILL_BILL_PAYMENT_PREFIX) === true) {
+    const held = await deps.orderReservations(tenantId, orderId, order.locationId);
+    if (held.length > 0) await deps.releaseReservations(tenantId, held);
+    if (!collected) await step(outcome === 'returned' ? 'return' : 'deliver');
+    const settled: FulfilmentSettlement = {
+      orderId, outcome, keptMinor: 0, lines, tenders: [], paidMinor: pay.paidMinor, refundDueMinor: 0, codDueMinor: 0, codOverMinor: 0,
+      releasedReservations: held.length, by, at: deps.now(),
+    };
+    await deps.recordSettlement(tenantId, settled);
+    return answer(undefined, outcome === 'returned'
+      ? `Order ${orderId} came back undelivered. It was paid at the till (${pay.providerRef}); take the goods back at the till as a return against that bill — nothing was posted here.`
+      : `Order ${orderId} ${outcome === 'partially_delivered' ? 'was partly delivered' : 'was delivered'}. It was paid in full at the till (${pay.providerRef}), whose sale already carries its stock and money — no second sale was posted.`, settled);
   }
   const paidMinor = prepaid ? pay.paidMinor : 0;
   const attempts = await deps.doorAttempts(tenantId, orderId);

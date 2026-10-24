@@ -60,6 +60,11 @@ export interface LoyaltyWalletDeps {
   /** The spend's own fact, once it is done. Idempotent on the ref. */
   readonly recordSpendApplied: (tenantId: string, fact: SpendApplied) => Promise<void>;
   readonly now: () => string;
+  /**
+   * OB-295: the member's tier and multiplier at an instant (`tierMultiplierAt`) — undefined while the owner has set no
+   * tiers (OFF). Absent → the feed carries no tier, as before.
+   */
+  readonly tierAt?: (tenantId: string, memberRef: string, at: string) => Promise<{ readonly tierName: string | null; readonly multiplierBps: number } | undefined>;
 }
 
 /** The current state of every member code — the latest fact per code. */
@@ -74,20 +79,24 @@ export async function buildWalletFeed(deps: LoyaltyWalletDeps, tenantId: string)
   const rule = await deps.rule(tenantId);
   const members = currentMembers(await deps.allMembers(tenantId));
   const wallets: MemberWallet[] = [];
+  const generatedAt = deps.now();
   for (const m of members) {
-    const [points, credit, spends] = await Promise.all([
+    const [points, credit, spends, tier] = await Promise.all([
       deps.pointsBalance(tenantId, m.memberRef), deps.storeCredit(tenantId, m.memberRef), deps.spendsApplied(tenantId, m.memberRef),
+      deps.tierAt === undefined ? Promise.resolve(undefined) : deps.tierAt(tenantId, m.memberRef, generatedAt),
     ]);
     wallets.push({
       memberRef: m.memberRef,
       points: Math.max(0, points ?? 0),
       storeCreditMinor: credit.reduce((n, c) => n + Math.max(0, balanceOf(c.movements, c.instrument.instrumentId)), 0),
       appliedSpendRefs: spends.map((s) => s.ref),
+      // OB-295: the member's tier and multiplier — only while the owner has tiers set (off until then).
+      ...(tier === undefined ? {} : { tier: { name: tier.tierName, multiplierBps: tier.multiplierBps } }),
     });
   }
   wallets.sort((a, b) => a.memberRef.localeCompare(b.memberRef));
   return {
-    tenantId, generatedAt: deps.now(),
+    tenantId, generatedAt,
     rule: { pointsPer100Inr: rule.pointsPer100Inr, pointValuePaise: rule.pointValuePaise, tillSpendCapPaise: rule.tillSpendCapPaise ?? 0 },
     members: wallets,
   };

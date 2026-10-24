@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Training and adoption</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Training and adoption (QG-09 · M25-FR-01/03 · D11-FR-04 · OB-317 · OB-320). A THIN CLIENT over head office's adoption
+      gate, the role curriculum the owner approves, training with a second person's competency sign-off, floor champions,
+      access against the staff list and sales per labour hour. Its session is apps/web-erp/src/adoption-session.ts. Every
+      act is an explicit click in the person's own name, re-checked by head office.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .verdict { font-weight: 700; font-size: 17px; margin: 0; }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 15px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      .role-block { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; margin-bottom: 8px; }
+      .role-block label { display: flex; gap: 8px; align-items: center; font-weight: 400; min-height: var(--tap); }
+      .role-block input[type=checkbox] { min-height: 24px; width: 24px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Training and adoption</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Training and adoption</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="gate" hidden aria-labelledby="gate-h">
+        <h3 id="gate-h"></h3>
+        <p class="verdict" id="gate-verdict" role="status" aria-live="polite"></p>
+        <ul class="rows" id="gate-why"></ul>
+        <div class="table-wrap"><table id="gate-roles"><thead><tr><th id="th-role"></th><th id="th-people"></th><th id="th-cur"></th><th id="th-missing"></th></tr></thead><tbody></tbody></table></div>
+        <button id="gate-read" type="button" class="quiet"><span id="gate-read-text"></span></button>
+      </section>
+      <section id="cur" hidden aria-labelledby="cur-h">
+        <h3 id="cur-h"></h3>
+        <div id="cur-roles"></div>
+        <p class="status" id="cur-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="train" hidden aria-labelledby="train-h">
+        <h3 id="train-h"></h3>
+        <div class="row-form" id="train-form">
+          <label for="t-emp"><span id="t-emp-l"></span><input id="t-emp" autocomplete="off" /></label>
+          <label for="t-item"><span id="t-item-l"></span><input id="t-item" autocomplete="off" /></label>
+          <label for="t-due"><span id="t-due-l"></span><input id="t-due" type="date" /></label>
+        </div>
+        <button id="t-assign" type="button"><span id="t-assign-text"></span></button>
+        <p class="status" id="t-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="t-rows"></ul>
+      </section>
+      <section id="champ" hidden aria-labelledby="champ-h">
+        <h3 id="champ-h"></h3>
+        <ul class="rows" id="c-rows"></ul>
+        <p class="status" id="c-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="access" hidden aria-labelledby="access-h">
+        <h3 id="access-h"></h3>
+        <button id="x-read" type="button" class="quiet"><span id="x-read-text"></span></button>
+        <p class="status" id="x-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="x-rows"></ul>
+      </section>
+      <section id="prod" hidden aria-labelledby="prod-h">
+        <h3 id="prod-h"></h3>
+        <div class="row-form">
+          <label for="pr-from"><span id="pr-from-l"></span><input id="pr-from" type="date" /></label>
+          <label for="pr-to"><span id="pr-to-l"></span><input id="pr-to" type="date" /></label>
+        </div>
+        <button id="pr-read" type="button" class="quiet"><span id="pr-read-text"></span></button>
+        <p class="status" id="pr-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="pr-rows"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./adoption.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

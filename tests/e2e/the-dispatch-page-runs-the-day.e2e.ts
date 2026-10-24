@@ -16,7 +16,8 @@ import { makeEvent } from '../../packages/contracts/src/event';
  * orders waiting, ticks them and builds a wave for the picker (the lines from the bins and the pack); sees the wave's
  * progress; enters the drivers on shift and the day's speed, plans the day from head office's own orders and hands the
  * route to its driver; sees the route on the board; reads the contribution rule ("not set — the rule only flags"); the
- * owner enters the proof-location radius, which was "not set". Tamil. A cashier is offered nothing. Needs DATABASE_URL and
+ * owner's proof-location radius reads the shop's default (OB-343, 250 m) until he enters one; a door with a wrong code
+ * handed over far away is recorded and flagged on the board in words (OB-344). Tamil. A cashier is offered nothing. Needs DATABASE_URL and
  * Chromium; else it SKIPS.
  */
 
@@ -123,17 +124,37 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Dispat
     expect(await page.innerText('#board li.row')).toMatch(/With the driver/);
     expect(await page.innerText('#board li.row')).toMatch(/no door yet/);
 
+    // ── OB-343 · OB-344: the driver's phone reaches head office with a WRONG code, handed over ~4 km from the door. It is
+    // recorded (never refused) and the board flags it in words — against the shop's default radius of 250 metres.
+    const cloud = shop.cloud();
+    const day = (await cloud.request({ method: 'GET', path: `/v1/delivery/dispatch/${runDate}/board?storeId=br-1`, userId: OWNER })).body as { routes: { routeId: string; stops: { stopId: string; orderRef: string }[] }[] };
+    const route = day.routes[0]!; const stop = route.stops.find((x) => x.orderRef === 'ORD-1')!;
+    const issued = ((await cloud.request({ method: 'GET', path: '/v1/storefront/orders/ORD-1/delivery-code', userId: 'c-1' })).body as { code: string }).code;
+    for (const [state, extra] of [['out_for_delivery', {}], ['delivered', { proofKind: 'otp', proofCode: issued === '0000' ? '0001' : '0000', deviceFix: { lat: 11.06, lon: 76.99, accuracyMetres: 8 } }]] as const) {
+      const r = await cloud.request({ method: 'POST', path: `/v1/delivery/routes/${encodeURIComponent(route.routeId)}/stops/${encodeURIComponent(stop.stopId)}/synced`, userId: OWNER, idempotencyKey: `door-${state}`, body: {
+        routeId: route.routeId, stopId: stop.stopId, driverId: 'u-driver', orderRef: 'ORD-1', state, codExpectedMinor: 0, codCollectedMinor: 0, codMethod: null, proofKind: null,
+        geofenceMismatch: false, failureReason: null, contributionFlag: null, currency: 'INR', occurredAt: new Date().toISOString(), ...extra,
+      } });
+      expect(r.status, JSON.stringify(r.body)).toBe(202);
+    }
+    await page.click('#show-board');
+    const flagged = page.locator('#board li.flagged[data-order="ORD-1"]');
+    await flagged.waitFor({ timeout: 15_000 });
+    expect(await flagged.locator('.flag-words').getAttribute('data-flags')).toBe('delivery_code_wrong outside_geofence');
+    expect(await flagged.locator('.flag-words').innerText()).toBe(' · ⚠ Needs a person to look: the code the driver typed is NOT the customer’s; handed over away from the address (farther than the radius)');
+    expect(await flagged.innerText()).toMatch(/Code: .* WRONG · Where: ⚠ AWAY from the address \(\d+ m\)/);
+
     // ── The contribution rule: not set — the rule only flags.
     await page.click('#show-held');
     await page.locator('#threshold').waitFor({ state: 'visible', timeout: 15_000 });
     expect(await page.textContent('#threshold')).toBe('Owner’s threshold: ○ Not set — the rule only flags');
 
-    // ── The owner's numbers: the radius "not set" until he enters it.
+    // ── The owner's numbers: the radius is the shop's default (OB-343, 250 m) until he enters another.
     await page.click('#show-controls');
     const radius = page.locator('#controls li.row[data-key="geofenceRadiusMetres"]');
     await radius.waitFor({ timeout: 15_000 });
-    expect(await radius.getAttribute('data-state')).toBe('not_set');
-    expect(await radius.locator('strong').innerText()).toBe('Proof-location radius (metres): ○ Not set');
+    expect(await radius.getAttribute('data-state')).toBe('default');
+    expect(await radius.locator('strong').innerText()).toBe('Proof-location radius (metres): 250 (the shop’s default, OB-343)');
     await radius.locator('input.value').fill('150');
     await radius.locator('button', { hasText: 'Save' }).click();
     await page.locator('#controls-status', { hasText: '✓ Saved.' }).waitFor({ timeout: 15_000 });
@@ -141,6 +162,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Dispat
 
     await page.click('#lang');
     expect(await page.textContent('#page-h')).toBe('அனுப்புதல்');
+    await page.click('#show-board');
+    await page.locator('#board li.flagged .flag-words', { hasText: 'டிரைவர் உள்ளிட்ட குறியீடு வாடிக்கையாளருடையது அல்ல' }).waitFor({ timeout: 15_000 });
     expect(await page.textContent('#show-board-text')).toBe('வழிகளைக் காட்டு');
     expect(errors).toEqual([]);
     await context.close();

@@ -49,7 +49,8 @@ import {
 } from './privacy-centre';
 import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest, type ShopCommerceRequest } from './shop-transport';
 import { voiceQuery, voiceSearchLink, builtInRecogniser, customerVoiceSwitch, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort, type RecognitionConstructor } from './voice-search';
-import { basketKey, COUPON_CODE, repeatOrderBody, quoteRows, deliveryHandover, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
+import { basketKey, COUPON_CODE, repeatOrderBody, quoteRows, deliveryHandover, readReferralCode, referralWhy, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
+import { createScanAndGo, linesForTheShop, type ScanAndGo, type ScanProduct } from './scan-and-go';
 import { readScan, scanFrames, scanSupported, type BarcodeReader } from './barcode-scan';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -314,6 +315,21 @@ export interface CommerceShop {
   setSubstitution(preference: string): Promise<MineOutcome<unknown>>;
   /** The order the shop holds for this basket, if any. */
   heldOrderId(): string | undefined;
+  /**
+   * OB-294 · D08-FR-05: my delivery order's hand-over, as head office gives it — its 4-digit code (only my app can read it)
+   * and the driver's last stamped stop with an estimate. Asked on a tap, never on a timer; a collection has no code.
+   */
+  handover(orderId: string): Promise<MineOutcome<{ readonly delivery: false } | { readonly delivery: true; readonly code: unknown; readonly eta: unknown }>>;
+  /** OB-351 · M17-FR-02: my referral code, the rewards ("not set" until the owner enters them) and my referrals. */
+  referral(): Promise<MineOutcome<unknown>>;
+  /** OB-351: I was referred — the code a friend gave me (checked on the phone first). */
+  claimReferral(code: string): Promise<MineOutcome<unknown> | { readonly ok: false; readonly refusal: 'form'; readonly why: 'bad_referral_code' }>;
+  /** OB-350: the shop's price for the scan-and-go basket (the till's offers engine) — a what-if, nothing kept. */
+  scanQuote(lines: readonly { readonly productId: string; readonly quantityMinor: number }[]): Promise<MineOutcome<ShopQuote>>;
+  /** OB-350: hand the scan-and-go basket to head office for a till lane — the answer carries the six-digit code. */
+  scanHand(basketId: string, lines: readonly { readonly productId: string; readonly quantityMinor: number }[]): Promise<MineOutcome<unknown>>;
+  /** OB-350: my held scan-and-go baskets, and which till took each. */
+  scanBaskets(): Promise<MineOutcome<unknown>>;
 }
 
 /**
@@ -725,6 +741,33 @@ export function bootShop(
         return a.ok ? { ok: true, value: a.body } : a;
       },
       heldOrderId: () => held?.orderId,
+      handover: async (orderId) => {
+        if (chosenFulfilment() === 'pickup') return { ok: true, value: { delivery: false } };
+        const id = encodeURIComponent(orderId);
+        const code = await commerceCall({ method: 'GET', path: `storefront/orders/${id}/delivery-code` });
+        if (!code.ok) return code;
+        const eta = await commerceCall({ method: 'GET', path: `storefront/orders/${id}/delivery-eta` });
+        // The code stands on its own: an ETA the shop could not give reads "not given yet", never a guess.
+        return { ok: true, value: { delivery: true, code: code.body, eta: eta.ok ? eta.body : null } };
+      },
+      referral: async () => { const a = await commerceCall({ method: 'GET', path: 'me/referral' }); return a.ok ? { ok: true, value: a.body } : a; },
+      claimReferral: async (code) => {
+        const c = readReferralCode(code);
+        if (c === undefined) return { ok: false, refusal: 'form', why: 'bad_referral_code' };
+        const a = await commerceCall({ method: 'POST', path: 'me/referral/claim', body: { code: c }, idempotencyKey: `referral-claim-${c}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      scanQuote: async (lines) => {
+        if (lines.length === 0) return { ok: false, refusal: 'the_shop_refused', shopSaid: 'Your scan-and-go basket is empty.' };
+        // No fulfilment: nothing is delivered — the till's offers and the coupon engine, the shelf prices, no fee.
+        const a = await commerceCall({ method: 'POST', path: 'storefront/cart/quote', body: { lines }, idempotencyKey: `sg-quote-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body as ShopQuote } : a;
+      },
+      scanHand: async (basketId, lines) => {
+        const a = await commerceCall({ method: 'POST', path: `storefront/scan-and-go/baskets/${encodeURIComponent(basketId)}`, body: { lines }, idempotencyKey: `sg-hand-${basketId}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      scanBaskets: async () => { const a = await commerceCall({ method: 'GET', path: 'storefront/scan-and-go/baskets' }); return a.ok ? { ok: true, value: a.body } : a; },
     },
     // ── OB-288 wave 3 (end) ──
   };
@@ -978,7 +1021,9 @@ interface ShopWindow {
   /** OB-322: the customer's own voice switch, kept on this phone. */
   shopVoiceSwitch?: { readonly off: () => boolean; readonly set: (on: boolean) => boolean; readonly phoneCanListen: () => boolean };
   /** OB-288 wave 3: the tested rules the commerce screens show (customer-commerce.ts). */
-  shopCommerceRules?: { readonly quoteRows: typeof quoteRows; readonly deliveryHandover: typeof deliveryHandover; readonly helpTopics: typeof HELP_TOPICS; readonly substitutionChoices: typeof SUBSTITUTION_CHOICES };
+  shopCommerceRules?: { readonly quoteRows: typeof quoteRows; readonly deliveryHandover: typeof deliveryHandover; readonly helpTopics: typeof HELP_TOPICS; readonly substitutionChoices: typeof SUBSTITUTION_CHOICES; readonly readReferralCode: typeof readReferralCode; readonly referralWhy: typeof referralWhy };
+  /** OB-350: the scan-and-go basket on this phone (scan-and-go.ts) and the lines it sends — ids and counts only. */
+  shopScanAndGo?: { readonly basket: ScanAndGo; readonly linesForTheShop: typeof linesForTheShop };
   /** D08-FR-02: the camera barcode rule (the page owns the camera; these decide what was read). */
   shopBarcode?: { readonly readScan: typeof readScan; readonly scanFrames: typeof scanFrames; readonly supported: () => Promise<boolean> };
   /** A browser test's stand-in barcode reader (never set by the product). */
@@ -1016,7 +1061,13 @@ if (browserWindow !== undefined) {
   const engine = standIn ?? builtInRecogniser(recogniser);
   browserWindow.shopVoiceSwitch = { ...voiceSwitch, phoneCanListen: () => VOICE_SEARCH_SWITCHED_ON && engine.available() };
   browserWindow.shopVoice = voiceSearchLink({ switchedOn: VOICE_SEARCH_SWITCHED_ON, engine, offByCustomer: voiceSwitch.off });
-  browserWindow.shopCommerceRules = { quoteRows, deliveryHandover, helpTopics: HELP_TOPICS, substitutionChoices: SUBSTITUTION_CHOICES };
+  browserWindow.shopCommerceRules = { quoteRows, deliveryHandover, helpTopics: HELP_TOPICS, substitutionChoices: SUBSTITUTION_CHOICES, readReferralCode, referralWhy };
+  // OB-350: scan-and-go — the basket is built from the shop's own list on this phone and kept here (a convenience).
+  const data = browserWindow.shopData as { products?: readonly ScanProduct[] } | undefined;
+  browserWindow.shopScanAndGo = {
+    basket: createScanAndGo({ products: () => data?.products ?? [], newBasketId: () => `sg-${randomRequestId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60), storage, key: `sre.shop.scan-and-go.${who}` }),
+    linesForTheShop,
+  };
   // D08-FR-02: the camera barcode — the phone's own reader; without one, the typed number always works.
   const win = browserWindow;
   browserWindow.shopBarcode = { readScan, scanFrames, supported: async () => (win.shopBarcodeStandIn !== undefined ? true : scanSupported(win)) };

@@ -129,6 +129,8 @@ describe.skipIf(!HAVE_BROWSER)('the cashier splits a bill across points, store c
     // What the member may spend here, and how old the store computer's copy is.
     const wallet = await shown(page);
     expect(wallet.text).toMatch(/••••2345: 100 points \(₹100\.00\), store credit ₹200\.00\. Balances as of /);
+    // OB-295: no tiers set by the owner — the till says so, never a made-up ladder.
+    expect(wallet.text).toContain('Tiers: not set — every member earns the base points.');
     // Points: up to ₹100 (one tap), then store credit up to ₹200, then cash — ₹200 note for the ₹180 left.
     expect(await options(page)).toEqual(expect.arrayContaining(['Points — up to ₹100.00', 'Store credit — up to ₹200.00']));
     await choose(page, 'Points');
@@ -168,5 +170,35 @@ describe.skipIf(!HAVE_BROWSER)('the cashier splits a bill across points, store c
     });
     expect(refused).toMatch(/0 point\(s\).*Nothing was saved/);
     expect(await readLog(edge.log.path)).toHaveLength(1);
+  }, 90_000);
+
+  it('OB-295: with tiers set, the till shows the member\'s tier and its points multiplier from the box\'s copy', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-till-tier-'));
+    dirs.push(dir);
+    const packFile = join(dir, 'store-pack.json');
+    await writeFile(packFile, PACK, 'utf8');
+    const tiered = { ...WALLETS, feed: { ...WALLETS.feed, members: [{ ...WALLETS.feed.members[0]!, tier: { name: 'Gold', multiplierBps: 15_000 } }] } };
+    await writeFile(join(dir, 'loyalty-wallets.json'), `${JSON.stringify(tiered)}\n`, 'utf8');
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_PACK_FILE: packFile,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY, pack: JSON.parse(PACK) as Record<string, unknown> }),
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => {
+      const w = globalThis as unknown as { posSession?: { hasCatalogue(): boolean } };
+      return w.posSession !== undefined && w.posSession.hasCatalogue();
+    }, undefined, { timeout: 15_000 });
+    await signInThroughScreen(page);
+    await nameMember(page);
+    await scanDal(page);
+    await page.click('#tender');
+    await choose(page, 'Split / points / store credit');
+    expect((await shown(page)).text).toContain('Tier Gold: earns 1.5× points.');
+    await page.click('#pay-cancel');
   }, 90_000);
 });

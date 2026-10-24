@@ -21,7 +21,7 @@ export interface SplitPart {
   readonly machineRef?: string;
 }
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
-import type { PosSession, SyncBadge } from './session';
+import { DeliveryNotAvailableError, type PosSession, type SyncBadge } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
 /** A basket line as the view renders it — display primitives only. */
@@ -95,6 +95,16 @@ export interface PosView {
   scanBarcode(code: string, batch?: ScanBatchContext): ScanOutcome;
   /** True when no catalogue is loaded on this lane (the view hides scanning). */
   hasCatalogue(): boolean;
+  /**
+   * OB-299 (M12-FR-02): the customer pays in full here and the bill is delivered — adds the owner's delivery-fee line once,
+   * at its signed price from this till's pack (₹0 allowed). `ok: false` with the cashier's words when the fee is not set or
+   * its product is not in the pack. Local only.
+   */
+  deliverThisBill(): { readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage?: string; readonly feeMinor?: number; readonly lineId?: string };
+  /** OB-299: take the delivery off the bill (the fee line is voided with the reason). */
+  undeliverThisBill(reason: string): void;
+  /** OB-299: whether this bill is marked for delivery. */
+  isForDelivery(): boolean;
   /**
    * The name of a product this lane can price, by its id — for a screen that has only the id (the
    * refund screen reads the sale record, which carries productIds). `undefined` when this lane's
@@ -248,6 +258,32 @@ export function createPosView(
 
     hasCatalogue(): boolean {
       return catalogue !== undefined;
+    },
+
+    deliverThisBill() {
+      // OB-299: the fee product as this till's signed pack holds it — its price, tax rate and HSN — never typed in.
+      const feeId = session.deliveryFeeProductId();
+      const p = feeId === undefined ? undefined : catalogue?.findByProductId(feeId);
+      try {
+        const line = session.markForDelivery(p === undefined ? undefined : {
+          productId: p.productId, description: p.name, unitPrice: money(p.unitPriceMinor, currency), quantityMinor: 1,
+          uom: (normaliseUom(p.baseUom) ?? 'ea') as Uom, taxRate: rate(p.taxBps),
+          ...(p.hsnCode === undefined ? {} : { hsnCode: p.hsnCode }),
+          ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }),
+        });
+        return { ok: true, feeMinor: line.unitPrice.minor, lineId: line.lineId };
+      } catch (e) {
+        if (e instanceof DeliveryNotAvailableError) return { ok: false, refusedBecause: e.refusedBecause, laneMessage: e.laneMessage };
+        throw e;
+      }
+    },
+
+    undeliverThisBill(reason: string): void {
+      session.unmarkDelivery(reason);
+    },
+
+    isForDelivery(): boolean {
+      return session.deliveryLine() !== undefined;
     },
 
     productName(productId: string): string | undefined {

@@ -33,7 +33,7 @@ interface Item { key: string; value: unknown; version: number; isDefault: boolea
 
 /** OB-288 P1 · OB-336: the settings that need the owner's approval (M01-FR-02's two, and the three the owner added on 23 Oct
  *  2026 — the time zone, the till's spend cap and the bulk-publish threshold) — one person's save is refused. */
-const HIGH_IMPACT: readonly string[] = ['trading_day.cutoff', 'locale.currency', 'locale.time_zone', 'loyalty.till_spend_cap_paise', 'catalogue.bulk_publish_threshold'];
+const HIGH_IMPACT: readonly string[] = ['trading_day.cutoff', 'locale.currency', 'locale.time_zone', 'loyalty.till_spend_cap_paise', 'catalogue.bulk_publish_threshold', 'store.state'];
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setup on the production API, in a real browser (M01-FR-02/03)', () => {
   let browser: Browser;
@@ -204,6 +204,9 @@ const TABLE: Readonly<Record<string, Row>> = {
   'invoice.b2c_dynamic_qr.upi_id': { enter: 'srehyper@okaxis', stored: 'srehyper@okaxis', control: 'text', bad: { enter: 'srehyper', value: 'srehyper' } },
   'invoice.b2c_dynamic_qr.bank_account': { enter: '123456789012', stored: '123456789012', control: 'text', bad: { enter: '1234', value: '1234' } },
   'invoice.b2c_dynamic_qr.ifsc': { enter: 'HDFC0001234', stored: 'HDFC0001234', control: 'text', bad: { enter: 'HDFC1234', value: 'HDFC1234' } },
+  // OB-348: the shop's state — a two-letter code (high-impact: the owner approves); OB-299: the delivery-fee product.
+  'store.state': { enter: 'TN', stored: 'TN', control: 'text', bad: { enter: 'Tamil Nadu', value: 'Tamil Nadu' } },
+  'delivery.till_fee_product': { enter: 'p-delivery', stored: 'p-delivery', control: 'text', bad: { enter: 'home delivery', value: 'home delivery' } },
 };
 
 /** The control a setting must be edited with: derived from its default's type for numbers, on/off and lists. */

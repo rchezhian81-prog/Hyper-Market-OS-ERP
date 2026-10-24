@@ -22,7 +22,7 @@
 import { checkSingleUsePlastic } from './single-use-plastic';
 import { checkRestrictedSale } from './restricted-sales';
 import { weighingScaleVerification, InvalidScaleVerification } from '../../facilities/src/weighing-verification';
-import { isLiquorHsn, LIQUOR_NOT_SOLD } from './liquor';
+import { isLiquorHsn, LIQUOR_NOT_SOLD, liquorRuleForState } from './liquor';
 
 /** The age a tobacco product needs at the very least (COTPA 2003 s.6 · B14). */
 export const TOBACCO_MINIMUM_AGE = 18;
@@ -216,6 +216,16 @@ export interface TillGateContext {
    * Absent = not known here; a gold line is then judged only on carrying a HUID, and head office backstops the rest.
    */
   readonly soldHuids?: ReadonlySet<string>;
+  /**
+   * OB-348 (B17): the shop's state (`store.state`, an ISO 3166-2:IN code) as the store pack carries it. Liquor is judged by
+   * that state's rule (`liquorRuleForState`); absent → "not set", and liquor is refused all the same.
+   */
+  readonly shopState?: string;
+}
+
+/** OB-348: what the product's own rules need beyond the line — today only the shop's state. */
+export interface ProductRuleContext {
+  readonly shopState?: string;
 }
 
 const qtyWords = (minor: number, uom: string): string => (uom === 'ea' ? `${minor}` : `${minor} ${uom === 'kg' ? 'g' : uom === 'L' ? 'ml' : uom}`);
@@ -227,7 +237,7 @@ export function tillLineRefusals(line: TillGateLine, ctx: TillGateContext): read
   const name = typeof line.description === 'string' && line.description.trim() !== '' ? line.description : line.productId;
   // ── B6 · weight only from a scale whose verification is current ────────────────────────────────────────────────
   return [
-    ...productRuleRefusals(line),
+    ...productRuleRefusals(line, ctx.shopState === undefined ? {} : { shopState: ctx.shopState }),
     ...(lineIsWeighed(line) ? scaleRefusals(line.productId, name, ctx) : []),
     ...datedAndOnceOnlyRefusals(line, name, ctx),
   ];
@@ -294,16 +304,18 @@ export function bisMarkRefusals(line: TillGateLine, name: string, ctx: TillGateC
 }
 
 /** The product's own rules (B14 · B19) — what the line is, not where it is weighed. Head office's intake re-asks these. */
-export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] {
+export function productRuleRefusals(line: TillGateLine, rules: ProductRuleContext = {}): readonly TillRefusal[] {
   const flags = tillRuleFlagsOf(line.regulatedFlags);
   const out: TillRefusal[] = [];
   const name = typeof line.description === 'string' && line.description.trim() !== '' ? line.description : line.productId;
 
-  // ── B17 · liquor is not sold at all (TASMAC) — refused before anything else, with no override ──────────────────
-  if (flags.liquor === true || isLiquorHsn(line.hsnCode)) {
+  // ── B17 · liquor, by the shop's state (OB-348) — refused before anything else, with no override ─────────────────
+  // Flagged on the pack, or sold under an alcoholic-drink HSN (a pack built before the flag, or a flag never set).
+  if (flags.liquor === true || line.regulatedFlags?.['liquor'] === true || isLiquorHsn(line.hsnCode)) {
+    const rule = liquorRuleForState(rules.shopState);
     out.push({ reason: 'liquor_not_sold', productId: line.productId,
-      detail: `${line.productId}: ${flags.liquor === true ? 'flagged liquor' : `HSN ${String(line.hsnCode)} is an alcoholic-drink heading`} — ${LIQUOR_NOT_SOLD}`,
-      laneMessage: `${name} is liquor. SRE does not sell liquor — in Tamil Nadu only TASMAC may. Keep it off the bill and tell the manager.` });
+      detail: `${line.productId}: ${flags.liquor === true || line.regulatedFlags?.['liquor'] === true ? 'flagged liquor' : `HSN ${String(line.hsnCode)} is an alcoholic-drink heading`} — ${rule.why}. ${LIQUOR_NOT_SOLD}`,
+      laneMessage: `${name} is liquor. ${rule.laneWords.en}` });
     return out;
   }
 

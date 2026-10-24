@@ -12,7 +12,9 @@ import { quantity, type Uom } from '../../../packages/contracts/src/quantity';
 import { rate, type Rate } from '../../../packages/contracts/src/rate';
 import type { ConnectionState } from '../../../packages/contracts/src/enums';
 import { priceLine, sumLines, splitInclusive, type LinePricing, type BillTotals } from '../../../packages/pricing/src/pricing';
-import { bestPrice, type Promotion, type BasketLine, type PromotionResult } from '../../../packages/promotions/src/promotions';
+import { bestPrice, promotionProductIds, type Promotion, type BasketLine, type PromotionResult } from '../../../packages/promotions/src/promotions';
+import { tobaccoAdvertisingRefusal } from '../../../packages/restricted-sales/src/advertising';
+import { lineBundleOf, type BundleDefinition, type LineBundle } from '../../../packages/product/src/bundles';
 import { settle, type Tender, type Settlement } from '../../../packages/tender/src/tender';
 import { commitSale, UnpaidSaleError, type CommittedSale } from '../../../packages/sale/src/sale';
 import type { Ledger } from '../../../packages/ledger/src/ledger';
@@ -83,6 +85,27 @@ export interface PosSessionConfig {
    */
   readonly cessOf?: (productId: string) => CessRate | undefined;
   /**
+   * B17 · OB-348: a product's HSN as the lane's signed catalogue pack carries it, by id — an alcoholic-drink heading is
+   * refused at the scan and at the commit even when the product carries no liquor flag. Absent → the scan's own HSN.
+   */
+  readonly hsnCodeOf?: (productId: string) => string | undefined;
+  /**
+   * OB-306 (M03-FR-02): the own-barcode bundle a product is sold as, from the lane's signed catalogue pack. A bundle line is
+   * exploded at the commit (`explodeBundleLine`) and the components it takes off the shelf are frozen on the line, so head
+   * office writes one stock movement per component. Absent → no product is a bundle here.
+   */
+  readonly bundleOf?: (productId: string) => BundleDefinition | undefined;
+  /**
+   * OB-299 (M12-FR-02): the catalogue product whose signed price is the DELIVERY-FEE line, from the store pack (store setup).
+   * Absent → "not set": the till refuses to mark a bill for delivery and says the owner has not set the fee.
+   */
+  readonly deliveryFeeProductId?: string;
+  /**
+   * OB-348 (B17): the shop's state (ISO 3166-2:IN code) from the store pack, which liquor is judged by. Absent → "not set"
+   * (liquor is refused either way; the cashier is told why).
+   */
+  readonly shopState?: string;
+  /**
    * OB-252 (owner, 20 Oct 2026, "Guest sales only"): during the mirror pilot this till takes no customer mobile number and
    * no loyalty — no member on the bill, no points or store credit spent. Turned on by the store pack
    * (`policies.guestSalesOnly`) or the store computer's own setting (`EDGE_GUEST_SALES_ONLY=1`), told to the till by its
@@ -124,10 +147,32 @@ export class TaxInvoiceRefusedError extends Error {
 /** What the till says when a customer number or loyalty is asked for while guest sales only is on (OB-252). */
 export const GUEST_SALES_ONLY_WORDS = 'Guest sales only on this till during the pilot: no customer mobile number and no loyalty points or store credit. Ring the sale as a guest. The old billing system keeps loyalty as today.';
 
-/** NEW-1 (B19): an offer the till refused to apply because it targets a carry bag — said, never dropped quietly (P-08). */
+/** OB-299: the words the till says when the owner has not set the delivery fee. */
+export const DELIVERY_FEE_NOT_SET_WORDS = 'Delivery from the till is not set up: the owner has not set the delivery fee. Take the sale as a normal sale, or ask the manager.';
+
+/**
+ * OB-299 (M12-FR-02): a bill cannot be marked for delivery — the fee is not set, its product is not in this till's
+ * catalogue, or the basket is in a state that cannot take it. Thrown before anything changes; `refusedBecause` lets the
+ * screen say it in the cashier's language.
+ */
+export class DeliveryNotAvailableError extends Error {
+  readonly laneMessage: string;
+  constructor(public readonly refusedBecause: 'delivery_fee_not_set' | 'delivery_fee_not_in_catalogue', words: string) {
+    super(`delivery not available: ${refusedBecause}`);
+    this.name = 'DeliveryNotAvailableError';
+    this.laneMessage = words;
+  }
+}
+
+/**
+ * NEW-1 (B19): an offer the till refused to apply because it targets a carry bag — said, never dropped quietly (P-08).
+ * B15 (COTPA s.5 · OB-288 till side): or because it names a tobacco product — tobacco may not be promoted.
+ */
 export interface RefusedOffer {
   readonly offerId: string;
   readonly carryBags: readonly string[];
+  /** B15: the tobacco products the offer names (by the lane's own signed pack). Absent when it names none. */
+  readonly tobaccoProductIds?: readonly string[];
   readonly laneMessage: string;
 }
 
@@ -468,6 +513,8 @@ export class PosSession {
   private loyaltyMobile: string | undefined;
   /** This basket's own reference (audit PF-06): the bill a card/UPI attempt is recorded against, until the next sale. */
   private billRefValue: string | undefined;
+  /** OB-299: the bill is marked for delivery — the fee line added for it (by its line id). */
+  private deliveryMark: { readonly feeProductId: string; readonly feeLineId: string } | undefined;
   /** Evaluation instant for effective-dated promotions, when the caller fixed one (`setNow`); else the lane's clock. */
   private nowRef: string | undefined;
   /**
@@ -559,7 +606,19 @@ export class PosSession {
   loadPromotions(promotions: readonly Promotion[]): void {
     const refused: RefusedOffer[] = [];
     this.promotions = promotions.filter((p) => {
-      const bags = (p.productIds ?? []).filter((id) => tillRuleFlagsOf(this.config.regulatedFlagsOf?.(id)).carryBag === true);
+      // Every product the offer names — its own list, a bundle-price set and both sides of a mix-match (B15 · B19).
+      const named = promotionProductIds(p);
+      // B15 (COTPA s.5): an offer that names a tobacco product is refused whole — the same rule head office applies when an
+      // offer is defined, asked again here of the lane's own signed pack (a product may have become tobacco since).
+      const tobacco = tobaccoAdvertisingRefusal('promotion', named, (id) => tillRuleFlagsOf(this.config.regulatedFlagsOf?.(id)).tobacco === true);
+      if (tobacco !== undefined) {
+        refused.push({
+          offerId: p.id, carryBags: [], tobaccoProductIds: tobacco.tobaccoProductIds,
+          laneMessage: `Offer ${p.id} names tobacco (${tobacco.tobaccoProductIds.join(', ')}), so this till does not apply it — tobacco may not be promoted. Tell the manager.`,
+        });
+        return false;
+      }
+      const bags = named.filter((id) => tillRuleFlagsOf(this.config.regulatedFlagsOf?.(id)).carryBag === true);
       if (bags.length === 0) return true;
       refused.push({
         offerId: p.id, carryBags: bags,
@@ -585,10 +644,13 @@ export class PosSession {
     // a thin or free carry bag, a loose cigarette, or weight from a scale whose stamp has lapsed. No override exists.
     const regulatedFlags = input.regulatedFlags ?? this.config.regulatedFlagsOf?.(input.productId);
     const catalogueUom = this.config.baseUomOf?.(input.productId);
+    // B17 · OB-348: the HSN the line is sold under — the lane's pack first, else what the scan carried.
+    const hsnCode = this.config.hsnCodeOf?.(input.productId) ?? input.hsnCode;
     const refusals = tillLineRefusals({
       productId: input.productId, description: input.description, quantityMinor: input.quantityMinor, uom: input.uom,
       unitPriceMinor: input.unitPrice.minor, ...(regulatedFlags === undefined ? {} : { regulatedFlags }),
       ...(catalogueUom === undefined ? {} : { catalogueUom }),
+      ...(hsnCode === undefined ? {} : { hsnCode }),
     }, this.gateContext(this.nowIso()));
     if (refusals.length > 0) throw new TillRuleRefusedError(refusals);
     // An age-restricted item joins the basket only behind a confirmed answer for at least its age (PF-03). Tobacco needs
@@ -854,7 +916,37 @@ export class PosSession {
       const huid = huidOf(this.flagsOf(l));
       if (huid !== undefined) sold.add(huid);
     }
-    return { ...(this.config.laneScales === undefined ? {} : { scales: this.config.laneScales }), ...(today === undefined ? {} : { today }), soldHuids: sold };
+    return {
+      ...(this.config.laneScales === undefined ? {} : { scales: this.config.laneScales }), ...(today === undefined ? {} : { today }), soldHuids: sold,
+      ...(this.config.shopState === undefined ? {} : { shopState: this.config.shopState }),
+    };
+  }
+
+  /** OB-306: the explosion a line carries when its product is a bundle in the lane's signed pack (whole bundles only). */
+  private bundleOfLine(l: Pick<BasketEntry, 'productId' | 'quantityMinor'>): LineBundle | undefined {
+    const def = this.config.bundleOf?.(l.productId);
+    return def === undefined ? undefined : lineBundleOf(def, l.quantityMinor, (id) => this.config.baseUomOf?.(id));
+  }
+
+  /**
+   * The lines the till's own stock ledger moves: each line as rung, except a bundle line, which moves its components (the
+   * bundle holds no stock — OB-306). One line per product and unit, so a component also rung on its own is counted once.
+   */
+  private stockLines(active: readonly BasketEntry[]): readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string }[] {
+    const merged = new Map<string, { productId: string; quantityMinor: number; uom: string }>();
+    const add = (productId: string, quantityMinor: number, uom: string): void => {
+      const key = `${productId}\u001f${uom}`;
+      const cur = merged.get(key);
+      if (cur === undefined) merged.set(key, { productId, quantityMinor, uom }); else cur.quantityMinor += quantityMinor;
+    };
+    for (const l of active) {
+      const b = this.bundleOfLine(l);
+      if (b === undefined) { add(l.productId, l.quantityMinor, l.uom); continue; }
+      for (const c of b.components) add(c.productId, c.quantityMinor, c.uom ?? 'ea');
+    }
+    // Without a bundle on the bill the lines are exactly as rung (one per line), as they always were.
+    return active.some((l) => this.bundleOfLine(l) !== undefined) ? [...merged.values()]
+      : active.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom }));
   }
 
   /** The flags a line is judged by: the lane's signed pack first, else what the scan carried (B14 · B19). */
@@ -872,12 +964,15 @@ export class PosSession {
     const catalogueUom = this.config.baseUomOf?.(l.productId);
     // OB-173: the line's list price is its price before any change at the till — a bag lowered at the till is refused.
     const list = listUnitMinor ?? l.priceOverride?.fromUnitMinor;
+    // B17 · OB-348: the line's HSN from the lane's pack first, else the one it was scanned under.
+    const hsnCode = this.config.hsnCodeOf?.(l.productId) ?? l.hsnCode;
     return tillLineRefusals({
       productId: l.productId, description: l.description, quantityMinor: l.quantityMinor, uom: l.uom,
       unitPriceMinor: l.unitPrice.minor, ...(regulatedFlags === undefined ? {} : { regulatedFlags }),
       ...(list === undefined ? {} : { listUnitPriceMinor: list }),
       ...(chargedMinor === undefined ? {} : { chargedMinor }),
       ...(catalogueUom === undefined ? {} : { catalogueUom }),
+      ...(hsnCode === undefined ? {} : { hsnCode }),
     }, this.gateContext(atIsoUtc, l.lineId));
   }
 
@@ -950,8 +1045,13 @@ export class PosSession {
       // OB-173 (owner, 17 Oct 2026, "Never discount bags"): no offer reaches a carry bag — not a basket-wide one, not a
       // category one — so it is charged its full price and the discount is spread over the other lines only.
       ...(tillRuleFlagsOf(this.flagsOf(l)).carryBag === true ? { carryBag: true } : {}),
+      // B15 (COTPA s.5 · OB-288 till side): no offer reaches a tobacco line — not a basket-wide one either. It is charged its
+      // price and any basket discount is spread over the other lines only.
+      ...(tillRuleFlagsOf(this.flagsOf(l)).tobacco === true ? { tobacco: true } : {}),
     }));
     const at = this.nowRef ?? this.config.clock?.() ?? '1970-01-01T00:00:00Z';
+    // OB-305 · OB-349: bank-card offers stay OFF until R4 (certified integrated card terminals) — the till never passes
+    // `bankOffersOn` or a card issuer, so a bank offer computes nothing here (`BANK_OFFERS_RELEASE`).
     return bestPrice(basket, this.promotions, { at, currency: this.config.currency });
   }
 
@@ -1091,11 +1191,8 @@ export class PosSession {
         cashierId,
         tradingDay: this.tradingDayFor(committedAt),
         committedAt,
-        lines: active.map((l) => ({
-          productId: l.productId,
-          quantityMinor: l.quantityMinor,
-          uom: l.uom,
-        })),
+        // OB-306: a bundle line leaves the till's own stock as its components (the bundle itself holds no stock).
+        lines: this.stockLines(active),
         // C10 · hard rule #3 (NEW-3): a tender leaves this till with a token reference, the last four digits and the network
         // at most — anything else, and anything shaped like a card number, is removed here. The store computer and head
         // office remove (and raise) it again; this is the till's own copy of the rule, so nothing card-like is handed over.
@@ -1128,6 +1225,8 @@ export class PosSession {
         lineTotalMinor: lineTotalMinor - (perLineDiscount.get(l.lineId) ?? 0),
         taxRateBps: l.taxRate.bps,
         ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
+        // OB-306: a bundle line's components, exploded from the pack's definition and frozen here — the stock evidence.
+        ...((b) => (b === undefined ? {} : { bundle: b }))(this.bundleOfLine(l)),
         // A7: the compensation cess the line was charged under (frozen for the GST return) and what it came to.
         ...((): { cess?: CessRate; cessMinor?: number } => {
           const cess = this.cessOfLine(l);
@@ -1280,6 +1379,11 @@ export class PosSession {
       ...(this.packDateLog.length === 0 ? {} : { packDateAnswers: this.packDateLog.slice() }),
       // The member's number, for the STORE COMPUTER to turn into a member code before the disk (PF-09 step 2 · P-04).
       ...(this.loyaltyMobile === undefined || this.config.guestSalesOnly === true ? {} : { customerMobile: this.loyaltyMobile }),
+      // OB-299: paid in full here and to be DELIVERED — the fee line (by product) and what it charged. Head office books it as
+      // one delivery job, once, when the sale reaches it through the store computer.
+      ...((d) => (d === undefined ? {} : {
+        delivery: { requested: true, feeProductId: d.productId, feeMinor: recordLines.find((r, i) => active[i]?.lineId === d.lineId)?.lineTotalMinor ?? 0 },
+      }))(this.deliveryLine()),
     });
     // Everything that is true only once the box has the sale — kept as one step so a sale confirmed LATE (its first answer
     // was lost, A8) is finished exactly as one confirmed at once.
@@ -1391,6 +1495,9 @@ export class PosSession {
       }));
     }
     for (const a of ageAnswers) this.ageAnswerLog.push(Object.freeze({ ...a }));
+    // OB-299: a held bill that carried the delivery-fee line comes back marked for delivery.
+    const fee = this.config.deliveryFeeProductId === undefined ? undefined : this.lines.find((l) => l.productId === this.config.deliveryFeeProductId);
+    if (fee !== undefined) this.deliveryMark = { feeProductId: fee.productId, feeLineId: fee.lineId };
     this.state = this.lines.length > 0 ? 'selling' : 'idle';
   }
 
@@ -1453,7 +1560,51 @@ export class PosSession {
     // Nor a pack-date answer (B8).
     this.packDateLog.length = 0;
     this.packDatePending.clear();
+    // Nor a delivery mark (OB-299).
+    this.deliveryMark = undefined;
     this.state = 'idle';
+  }
+
+  /**
+   * OB-299 (owner, 23 Oct 2026, in writing — M12-FR-02): the customer pays IN FULL here and the bill is DELIVERED. Adds the
+   * owner's delivery-fee line once — the fee product at its signed price from this till's own pack (₹0 allowed) — and marks
+   * the bill, so the committed bill becomes one delivery job at head office (booked once, relayed through the store
+   * computer). Entirely local (hard rule #1). Refused, in words, when the owner has not set the fee or the till's pack does
+   * not hold its product. Marking again answers the fee line already added.
+   */
+  markForDelivery(feeLine: ScanInput | undefined): BasketEntry {
+    this.notWhileAwaiting();
+    const feeProductId = this.config.deliveryFeeProductId;
+    if (feeProductId === undefined || feeProductId === '') throw new DeliveryNotAvailableError('delivery_fee_not_set', DELIVERY_FEE_NOT_SET_WORDS);
+    const marked = this.deliveryLine();
+    if (marked !== undefined) return marked;
+    if (feeLine === undefined || feeLine.productId !== feeProductId) {
+      throw new DeliveryNotAvailableError('delivery_fee_not_in_catalogue', `Delivery from the till cannot be taken: the delivery-fee product (${feeProductId}) is not in this till's catalogue. Ask the manager to check the catalogue.`);
+    }
+    const entry = this.scan({ ...feeLine, quantityMinor: 1 });
+    this.deliveryMark = { feeProductId, feeLineId: entry.lineId };
+    return entry;
+  }
+
+  /** OB-299: take the delivery off this bill — the fee line is voided with the reason (kept as evidence, never deleted). */
+  unmarkDelivery(reason: string): void {
+    const line = this.deliveryLine();
+    if (line === undefined) { this.deliveryMark = undefined; return; }
+    this.voidLine(line.lineId, reason);
+    this.deliveryMark = undefined;
+  }
+
+  /** OB-299: the delivery-fee product the store pack names — undefined while the owner has not set it. */
+  deliveryFeeProductId(): string | undefined {
+    const id = this.config.deliveryFeeProductId;
+    return id === undefined || id === '' ? undefined : id;
+  }
+
+  /** OB-299: the delivery-fee line while the bill is marked for delivery (its fee line still on the bill), else undefined. */
+  deliveryLine(): BasketEntry | undefined {
+    const mark = this.deliveryMark;
+    if (mark === undefined) return undefined;
+    return this.activeLines().find((l) => l.lineId === mark.feeLineId);
   }
 }
 

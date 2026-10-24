@@ -246,6 +246,26 @@ export const SETTINGS = {
     label: 'That bank account\'s IFSC (empty = not set)',
     defaultValue: '',
   } as TenantSetting<string>,
+  /**
+   * OB-348 (owner, 24 Oct 2026, in writing): the STATE the shop trades in, as its ISO 3166-2:IN code (TN for Tamil Nadu).
+   * Liquor is judged by that state's rule at the till, on the store computer and at head office (Tamil Nadu refuses —
+   * TASMAC). High-impact: the owner approves every change (OB-336 pattern). Empty = not set — never guessed from anything.
+   */
+  STORE_STATE: {
+    key: 'store.state',
+    label: 'The state the shop trades in (ISO code, e.g. TN; empty = not set)',
+    defaultValue: '',
+  } as TenantSetting<string>,
+  /**
+   * OB-299 (owner, 23 Oct 2026, in writing — M12-FR-02): the catalogue product whose signed price is the till's
+   * DELIVERY-FEE line when a bill is marked for delivery (its price may be ₹0; its HSN/SAC and GST are the catalogue's).
+   * Empty = not set: the till then refuses to mark a bill for delivery and says the owner has not set the fee.
+   */
+  TILL_DELIVERY_FEE_PRODUCT: {
+    key: 'delivery.till_fee_product',
+    label: 'The product whose price is the till\'s delivery-fee line (empty = not set)',
+    defaultValue: '',
+  } as TenantSetting<string>,
 };
 
 /**

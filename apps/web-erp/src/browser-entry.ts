@@ -21,6 +21,7 @@ import { createReceiptPrefixSession, type ReceiptPrefixSession, type ReceiptPref
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
+import { wireLpWorkforcePages } from './lpw-browser-wiring';
 import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import {
@@ -327,7 +328,7 @@ import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, area
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
-import { createDispatchSession, dispatchWords, dispatchOutcomeWords, rupees as dispatchRupees, type DispatchSession } from './dispatch-session';
+import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, type DispatchSession } from './dispatch-session';
 // OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
 import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approvedTemplates, SEGMENTS as CAMPAIGN_SEGMENTS, CHANNELS as CAMPAIGN_CHANNELS, type CampaignsSession } from './campaigns-session';
 import { createLoyaltyDeskSession, loyaltyDeskWords, loyaltyDeskOutcomeWords, rupees as loyaltyRupees, multiplierWords as loyaltyMultiplierWords, type LoyaltyDeskSession } from './loyalty-desk-session';
@@ -5117,7 +5118,7 @@ interface ManagerWindow {
   tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page.
   dispatchData?: ViewerIdentity;
-  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees };
+  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords };
   approvalRules?: {
     readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
     readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
@@ -5188,6 +5189,8 @@ interface ManagerWindow {
     present(worklist: ProductionData): ProductionSession;
   };
   facilitiesData?: FacilitiesScreenData;
+  /** OB-288 LP/workforce package (M25-FR-04): the help page's data — the box's (or head office's) word; read by lpw-browser-wiring.ts. */
+  helpData?: Record<string, unknown>;
   facilitiesSession?: FacilitiesSession;
   /** OB-288 lane 2: today's food-safety checks through the store computer, and their leg of the device → box path. */
   foodSafetyQueue?: FoodSafetyQueue;
@@ -6959,7 +6962,7 @@ if (browserWindow !== undefined) {
   browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
   browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
-  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees };
+  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
   browserWindow.approvalRules = {
     session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,
@@ -6983,4 +6986,8 @@ if (browserWindow !== undefined) {
   browserWindow.requisitionsData = viewerIdentity(browserWindow.requisitionsData);
   browserWindow.requisitions = { session: createRequisitionsSession({ viewer: browserWindow.requisitionsData }), words: requisitionsWords, outcomeWords: requisitionsOutcomeWords, offerRows: requisitionOfferRows, rupees: requisitionRupees };
   // ── P3 procure-to-pay — end
+  // OB-288 LP/workforce package: related parties, adoption, help, appointment letters, facilities office, line-down
+  // write-offs and relabel tasks — each page's tested session, attached in its own file (lpw-browser-wiring.ts).
+  // The help page's window.helpData (the box writes it: screen-data GLOBAL_FOR.help) is read there, with the rest.
+  wireLpWorkforcePages(browserWindow as unknown as Record<string, unknown> & { laneWriteBase?: string }, viewerIdentity);
 }

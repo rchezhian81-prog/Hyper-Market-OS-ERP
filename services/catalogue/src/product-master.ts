@@ -24,6 +24,8 @@ import {
   type ProductRecord, type ProductLifecycle, type HandlingClass,
 } from '../../../packages/product/src/index';
 import { liquorReason, LIQUOR_NOT_SOLD } from '../../../packages/restricted-sales/src/liquor';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export interface ProductMasterDeps {
   /**
@@ -42,6 +44,13 @@ export interface ProductMasterDeps {
   readonly categoryRegister: CategoryRegisterDeps;
   /** Today, for the B16 tobacco-warning check at activation. Absent → the machine's clock. */
   readonly now?: () => string;
+  /**
+   * OB-347 (owner, 24 Oct 2026, in writing): the approval engine a change of a PUBLISHED product's tax (HSN) class is
+   * approved through — kind `hsn_class_change`, checker `catalogue.tax.approve` (the accountant or the owner), never the
+   * maker. Absent (a bare composition) → such a change is refused: it can never be made with nobody approving it.
+   */
+  readonly approvals?: ApprovalPort;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
 /** The lifecycles a till sells (the pack maps `new` to active). */
@@ -134,6 +143,29 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             nextSafeAction: 'Do not list it. If it is a non-alcoholic drink, correct its HSN (non-alcoholic beer is 2202) and take the liquor mark off. Nothing was saved.',
           });
         }
+        // OB-347 (owner, 24 Oct 2026, in writing): a PUBLISHED product's tax (HSN) class changes only with a Finance approver's
+        // approval of exactly this record — the accountant or the owner, never the person asking (kind `hsn_class_change`).
+        // A draft never published, or a first class on a product that had none, is not a change and needs none.
+        const fromClass = typeof current?.taxClass === 'string' && current.taxClass.trim() !== '' ? current.taxClass.trim() : undefined;
+        const toClass = typeof record.taxClass === 'string' ? record.taxClass.trim() : '';
+        const classChange = current !== undefined && current.lifecycle !== 'draft' && fromClass !== undefined && fromClass !== toClass
+          ? { from: fromClass, to: toClass } : undefined;
+        let hsnApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
+        if (classChange !== undefined) {
+          hsnApproval = deps.approvals === undefined ? undefined : await approvalNamedIn(deps.approvals, {
+            tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+            kind: 'hsn_class_change', subjectRef: `product:${productId}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
+            maker: ctx.userId, usedBy: `hsn-class:${productId}:${classChange.from}->${classChange.to}`, now: (deps.now?.() ?? new Date().toISOString()),
+          });
+          if (hsnApproval === undefined) {
+            throw apiError(422, {
+              code: 'tax_class_change_needs_finance_approval',
+              whatHappened: `"${record.name}" is published under tax class ${classChange.from}; moving it to ${classChange.to === '' ? 'no tax class' : classChange.to} changes the GST every till charges on it, so a Finance approver (the accountant or the owner) approves it first — never the person asking (OB-347).`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind hsn_class_change, subjectRef product:${productId}, with exactly this product record); once a Finance approver approves it, send it again with the approvalId. Nothing was changed.`,
+            });
+          }
+        }
         // M03-FR-01 (OB-288 P2): a variant names a one-level parent head office holds and differs from its siblings.
         if ((record.parentProductId ?? '').trim() !== '') {
           const variant = checkVariant(record, await deps.products(ctx.tenantId));
@@ -210,6 +242,8 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             });
           }
           try {
+            // OB-347: the Finance approval is spent once, after every rule passed and before the record is written.
+            if (attempt === 0) await hsnApproval?.spend();
             await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId, held?.version);
           } catch (err) {
             if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
@@ -218,10 +252,19 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             }
             throw err;
           }
+          if (classChange !== undefined && hsnApproval !== undefined) {
+            await deps.recordAudit?.(ctx.tenantId, {
+              actorId: ctx.userId, action: 'catalogue.product.tax_class.change', objectType: 'product', objectId: productId,
+              at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+              before: { taxClass: classChange.from }, after: { taxClass: classChange.to, approvedBy: hsnApproval.decision.decidedBy },
+              approvalId: hsnApproval.decision.requestId, correlationId: `hsn-class:${productId}:${classChange.from}->${classChange.to}`,
+            });
+          }
           return {
             status: 201,
             body: {
               product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}),
+              ...(classChange === undefined || hsnApproval === undefined ? {} : { taxClassChange: { from: classChange.from, to: classChange.to, approvedBy: hsnApproval.decision.decidedBy } }),
               // B16: said, never silent — the product is saved as a draft and is NOT on sale until its warning is confirmed.
               ...(activationRefused === undefined || activationRefused.sellable ? {} : {
                 activation: {

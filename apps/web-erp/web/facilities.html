@@ -108,6 +108,34 @@
         <p class="fs-result" id="qh-result" hidden role="status" aria-live="polite"><span class="icon" id="qh-result-icon" aria-hidden="true"></span><span id="qh-result-text"></span></p>
       </section>
 
+      <!-- M26-FR-02 offline: a manual reading per cold room / cabinet, saved here and carried by the store computer. -->
+      <section class="fs" id="eq" hidden aria-label="Take a reading">
+        <h3 id="eq-heading"></h3>
+        <p class="lead" id="eq-lead"></p>
+        <p class="lead" id="eq-asof"></p>
+        <ul class="rows" id="eq-rows"></ul>
+        <p class="fs-result" id="eq-result" hidden role="status" aria-live="polite"><span class="icon" id="eq-result-icon" aria-hidden="true"></span><span id="eq-result-text"></span></p>
+      </section>
+
+      <!-- M26-FR-01/02/04: the asset register, cold rooms, downtime, energy and incidents — head office's read, nothing changed. -->
+      <section class="fs" id="office" hidden aria-label="Assets, cold rooms and energy">
+        <h3 id="office-heading"></h3>
+        <form id="office-form">
+          <label for="office-branch"><span id="office-branch-l"></span><input id="office-branch" autocomplete="off" /></label>
+          <label for="office-asof"><span id="office-asof-l"></span><input id="office-asof" type="date" /></label>
+          <button id="office-read" type="submit"><span id="office-read-text"></span></button>
+        </form>
+        <p class="lead" id="office-status" role="status" aria-live="polite"></p>
+        <div id="office-parts" hidden>
+          <h3 id="o-alerts-h"></h3><ul class="rows" id="o-alerts"></ul>
+          <h3 id="o-assets-h"></h3><ul class="rows" id="o-assets"></ul>
+          <h3 id="o-equipment-h"></h3><ul class="rows" id="o-equipment"></ul>
+          <h3 id="o-downtime-h"></h3><ul class="rows" id="o-downtime"></ul>
+          <h3 id="o-energy-h"></h3><p class="lead" id="o-energy"></p>
+          <h3 id="o-incidents-h"></h3><ul class="rows" id="o-incidents"></ul>
+        </div>
+      </section>
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
     </main>
@@ -115,6 +143,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./facilities.js" type="module"></script>
+    <script src="./facilities-office.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

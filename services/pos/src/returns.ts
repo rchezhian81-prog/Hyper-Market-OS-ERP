@@ -28,6 +28,7 @@ import {
   issueRefundCredit, type Instrument, type ValueMovement,
 } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { bundlesOfReturn } from './sale-stock'; // OB-306: a returned bundle goes back as its components
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 import { lotsOfReturn, lotProblemWords } from '../../../packages/returns/src/return-lots';
 import { refundChannel } from '../../../packages/returns/src/refund-channel';
@@ -455,7 +456,8 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         // PF-14: each returned unit keeps the lot the bill SOLD it from — a batch the bill never sold of that product, or
         // none named where it sold several, is refused here (no money has moved); otherwise the bill's batch and use-by
         // date ride on the return, so a recall can follow the unit back.
-        const lots = lotsOfReturn(sale, parsed.lines);
+        // OB-306: a returned bundle carries the components the original bill's explosion took (in proportion).
+        const lots = ((l) => ({ ...l, lines: bundlesOfReturn(sale as Parameters<typeof bundlesOfReturn>[0], l.lines) }))(lotsOfReturn(sale, parsed.lines));
         if (lots.problems.length > 0) {
           const first = lots.problems[0]!;
           throw apiError(422, {
@@ -884,7 +886,9 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         ];
         // PF-14: the lot each returned unit was sold from — taken from the bill where it is unambiguous; a batch the bill
         // never sold, or none named where it sold several, is recorded and flagged (the money already left the lane).
-        const lots = sale === undefined ? { lines: s.lines, problems: [] } : lotsOfReturn(sale, s.lines);
+        const lotted = sale === undefined ? { lines: s.lines, problems: [] } : lotsOfReturn(sale, s.lines);
+        // OB-306: a returned bundle carries its components — from the original bill's explosion, else the till's.
+        const lots = { ...lotted, lines: bundlesOfReturn(sale as Parameters<typeof bundlesOfReturn>[0], lotted.lines) };
         const lotFlags = [...new Set(lots.problems.map((p) => (p.kind === 'batch_not_on_the_sale' ? 'return_batch_not_on_the_sale' as const : 'return_batch_not_named' as const)))];
         const flags = [...governanceFlags, ...crossLaneFlags, ...sealFlags, ...lotFlags];
 

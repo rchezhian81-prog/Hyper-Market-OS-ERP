@@ -216,7 +216,7 @@ describe.each(backings)('the store box keeps offline work through a cut and a co
     c.net.skewMs = 6 * 60_000;
     const box = await c.start();
     const outcomes = await box.refreshWorkFeeds!();
-    expect(outcomes.map((o) => [o.name, o.status])).toEqual([['production', 'updated'], ['food-safety', 'updated'], ['transfers', 'updated'], ['quality-holds', 'updated']]);
+    expect(outcomes.map((o) => [o.name, o.status])).toEqual([['production', 'updated'], ['food-safety', 'updated'], ['transfers', 'updated'], ['quality-holds', 'updated'], ['equipment', 'updated'], ['help', 'updated']]); // OB-288 LP/workforce: + the monitored rooms and the help library
     const mgr = await served(box, 'manager');
     expect(mgr['clock']).toMatchObject({ verdict: 'flag_bills', offsetSeconds: 360, thresholds: { warnSeconds: 120, flagSeconds: 300, by: 'owner_decision_ob327' }, needsAttention: true });
 

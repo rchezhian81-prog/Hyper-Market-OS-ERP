@@ -23,9 +23,19 @@ export interface ControlsChange {
   readonly setAt: string;
 }
 
-/** Fold the owner's changes: the latest value of each number, with who set it and when. */
+/**
+ * The shop's DEFAULTS — a number the owner decided in writing, in force until he enters another (append-only: his change is
+ * a new record, and the default stays as the floor beneath it). OB-343 (owner, 24 Oct 2026): the proof-location radius is
+ * 250 metres; a hand-over farther away is FLAGGED on the dispatch board, never refused. Every other number has no default
+ * and reads "not set" until he enters it.
+ */
+export const DELIVERY_CONTROL_DEFAULTS: Readonly<Partial<DeliveryControls>> = Object.freeze({ geofenceRadiusMetres: 250 });
+/** Where each default came from — said beside the number, so nobody mistakes it for one the owner typed. */
+export const DEFAULT_DECIDED_BY: Readonly<Record<string, string>> = Object.freeze({ geofenceRadiusMetres: 'OB-343' });
+
+/** Fold the owner's changes: the latest value of each number, with who set it and when — over the shop's defaults. */
 export function foldControls(history: readonly ControlsChange[]): { readonly values: DeliveryControls; readonly setBy: Readonly<Record<string, { readonly by: string; readonly at: string }>> } {
-  const values: Record<string, unknown> = {};
+  const values: Record<string, unknown> = { ...DELIVERY_CONTROL_DEFAULTS };
   const setBy: Record<string, { by: string; at: string }> = {};
   for (const c of history) {
     for (const [k, v] of Object.entries(c.changes)) {
@@ -130,7 +140,9 @@ export function presentControls(history: readonly ControlsChange[]): Record<stri
   const { values, setBy } = foldControls(history);
   const numbers = CONTROL_KEYS.map((key) => ({
     key, value: (values as Record<string, unknown>)[key] ?? null, words: CONTROL_WORDS[key],
-    ...(setBy[key] === undefined ? { state: 'not_set' as const } : { state: 'set' as const, setBy: setBy[key]!.by, setAt: setBy[key]!.at }),
+    ...(setBy[key] !== undefined ? { state: 'set' as const, setBy: setBy[key]!.by, setAt: setBy[key]!.at }
+      : DEFAULT_DECIDED_BY[key] !== undefined ? { state: 'default' as const, decidedBy: DEFAULT_DECIDED_BY[key]! }
+        : { state: 'not_set' as const }),
   }));
   return { numbers, notSet: numbers.filter((n) => n.state === 'not_set').map((n) => n.key) };
 }

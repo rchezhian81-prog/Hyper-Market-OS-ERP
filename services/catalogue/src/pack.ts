@@ -149,6 +149,11 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     .filter((p) => p.cess !== undefined)
     .sort((a, b) => (a.productId < b.productId ? -1 : 1))
     .map((p) => [p.productId, stableJson(p.cess)].join(FIELD));
+  // OB-306: the bundles in force ride under the signature — a pack edited after signing to change what one bundle takes off
+  // the shelf fails to verify. Only when the pack carries any, so a pack without bundles signs to exactly the bytes it did.
+  const bundles = [...(snapshot.bundles ?? [])]
+    .sort((a, b) => (a.bundleProductId < b.bundleProductId ? -1 : a.bundleProductId > b.bundleProductId ? 1 : a.version - b.version))
+    .map((d) => stableJson(d));
   return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
     ...(promotions.length === 0 ? [] : ['--promotions', ...promotions]),
     ...(regulated.length === 0 ? [] : ['--regulated', ...regulated]),
@@ -156,7 +161,8 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     ...(batches.length === 0 ? [] : ['--batches', ...batches]),
     ...(expired.length === 0 ? [] : ['--expired', ...expired]),
     ...(categories.length === 0 ? [] : ['--categories', ...categories]),
-    ...(cess.length === 0 ? [] : ['--cess', ...cess])]
+    ...(cess.length === 0 ? [] : ['--cess', ...cess]),
+    ...(bundles.length === 0 ? [] : ['--bundles', ...bundles])]
     .join(RECORD);
 }
 

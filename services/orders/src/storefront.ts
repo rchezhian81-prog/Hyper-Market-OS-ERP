@@ -29,6 +29,7 @@ import { trackDelivery, DELIVERY_STATUS_VALUES, type DeliveryStatus } from '../.
 import { priceOnlineBasket, type OnlineBasketPrice } from '../../../packages/storefront/src/online-pricing';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
+import type { FulfilmentMethod, RouteResult } from '../../../packages/orders/src/fulfilment-plan';
 const DELIVERY_STATUSES: ReadonlySet<DeliveryStatus> = new Set(DELIVERY_STATUS_VALUES);
 
 /** What the shop priced one online order at, when it was placed (WF-13) — kept, so a later payment prices it the same way. */
@@ -69,6 +70,22 @@ export interface OnlinePricingDeps {
 
 export const COUPON_CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 
+/**
+ * D09-FR-01 · OB-300 (owner, 23 Oct 2026: never split): head office's branch routing, consulted at placement. `decide`
+ * answers undefined while no branch is recorded — then the store the app named stands, as built.
+ */
+export interface StorefrontRouting {
+  readonly decide: (tenantId: string, req: {
+    readonly orderId: string; readonly method: FulfilmentMethod; readonly deliverTo?: { readonly lat: number; readonly lon: number };
+    readonly slotStartsAt: string | null; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+  }) => Promise<{
+    readonly result: RouteResult; readonly inRangeNearestFirst: readonly string[];
+    readonly locations: readonly { readonly locationId: string; readonly acceptsPickup: boolean }[];
+  } | undefined>;
+  /** Keep the decision the order was placed on (and its audit line) — it counts against the branch's slot. */
+  readonly keep: (tenantId: string, branchId: string | null, d: { readonly orderId: string; readonly customerRef: string; readonly method: FulfilmentMethod; readonly slotStartsAt: string | null; readonly result: RouteResult; readonly at: string }) => Promise<void>;
+}
+
 export interface StorefrontDeps {
   /** Every order this customer placed through the storefront — a fold of the per-customer index. */
   readonly ordersForCustomer: (tenantId: string, customerRef: string) => Promise<readonly PlacedOrder[]> | readonly PlacedOrder[];
@@ -107,6 +124,8 @@ export interface StorefrontDeps {
   readonly onlineListed?: (tenantId: string, productId: string) => Promise<{ readonly soldOnline: true } | { readonly soldOnline: false; readonly refusal: string }>;
   /** WF-13 (OB-288 wave 3): promotions, a coupon and the points balance in the online basket. */
   readonly pricing?: OnlinePricingDeps;
+  /** D09-FR-01 · OB-300: which branch fulfils a delivery — head office's answer, never the app's. Absent → as built. */
+  readonly routing?: StorefrontRouting;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -283,6 +302,52 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
     };
   };
 
+  /**
+   * D09-FR-01 · OB-300 at placement. Undefined: routing is not in use (no branch recorded, or not a delivery) — the store
+   * the app named stands. Otherwise the branch head office chose and the decision to keep, or a refusal (nothing reserved).
+   */
+  const routeAtPlacement = async (
+    tenantId: string, customerRef: string, orderId: string, fulfilment: 'delivery' | 'pickup' | undefined, requested: string, b: Record<string, unknown>,
+  ): Promise<{ readonly locationId: string; readonly decision?: Parameters<StorefrontRouting['keep']>[2]; readonly say: string } | undefined> => {
+    if (deps.routing === undefined || fulfilment === undefined) return undefined;
+    const lines = (b['lines'] as { productId: string; quantityMinor: number }[]).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor }));
+    if (fulfilment === 'pickup') {
+      const answer = await deps.routing.decide(tenantId, { orderId, method: 'pickup', slotStartsAt: null, lines });
+      const here = answer?.locations.find((l) => l.locationId === requested);
+      if (here !== undefined && !here.acceptsPickup) {
+        throw apiError(409, {
+          code: 'pickup_not_available_here',
+          whatHappened: `${requested} has no shop floor to collect from (a dark store), so a collection cannot be placed there.`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Choose delivery, or collect from one of the shop\'s stores. Nothing was reserved or charged.',
+        });
+      }
+      return undefined;
+    }
+    const req = readDeliveryRequest(b);
+    if (req === undefined) return undefined; // the delivery binding below says what is missing, in its own words
+    const answer = await deps.routing.decide(tenantId, { orderId, method: 'scheduled_delivery', deliverTo: req.deliveryLocation, slotStartsAt: req.slotStartsAt, lines });
+    if (answer === undefined) return undefined;
+    const at = deps.now();
+    const keep = (result: RouteResult) => ({ orderId, customerRef, method: 'scheduled_delivery' as const, slotStartsAt: req.slotStartsAt, result, at });
+    if (answer.result.routed && answer.result.locationId !== undefined) {
+      return { locationId: answer.result.locationId, decision: keep(answer.result), say: answer.result.detail };
+    }
+    const nearest = answer.inRangeNearestFirst[0];
+    if (answer.result.outcome === 'no_location_with_stock' && nearest !== undefined) {
+      // As built (OB-300 "never split"): no single branch holds every line, so the nearest branch in range takes the order
+      // and the shortage is shown to the customer to decide — never a second parcel from a second branch.
+      const result: RouteResult = { ...answer.result, routed: true, locationId: nearest, detail: `no branch holds the whole order, so ${nearest} (the nearest in range) takes it and the customer decides on the shortage — never split` };
+      return { locationId: nearest, decision: keep(result), say: result.detail };
+    }
+    throw apiError(409, {
+      code: answer.result.outcome === 'slot_full' ? 'slot_full_at_every_branch' : answer.result.outcome,
+      whatHappened: `No branch can take this delivery: ${answer.result.detail}.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Choose another slot, or collect from the store. Nothing was reserved or charged.',
+      alternatives: answer.result.alternatives,
+    } as Parameters<typeof apiError>[1]);
+  };
+
   return [
     {
       // WF-13 · M20-FR-02 · P-02: the shop's price for MY basket before I pay — the published prices through the same
@@ -424,8 +489,15 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
             }
           }
         }
-        const locationId = b['locationId'] as string;
+        const requestedLocationId = b['locationId'] as string;
         const fulfilment = b['fulfilment'] === 'delivery' || b['fulfilment'] === 'pickup' ? b['fulfilment'] : undefined;
+        // D09-FR-01 · OB-300: head office routes a DELIVERY to the nearest branch that holds the WHOLE order with room in
+        // the slot — the app's store is a request, not the answer. When no single branch holds all of it, the order goes to
+        // the nearest branch in range and the as-built shortage path applies there (the customer decides) — one branch,
+        // never two parcels. Out of range everywhere, or every branch's slot full: refused, nothing reserved. A pickup stays
+        // at the store the customer chose; a dark store takes no collection.
+        const routed = await routeAtPlacement(ctx.tenantId, ctx.userId, orderId, fulfilment, requestedLocationId, b);
+        const locationId = routed?.locationId ?? requestedLocationId;
         // FUL-03: a DELIVERY is bound to head office's own record before anything is reserved — the address inside the
         // radius from the store it has on record, the slot one its policy offers, not too soon and not full (its last
         // place taken once, under the slot's guard). Refused otherwise, with the slots still open.
@@ -438,6 +510,8 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         const placedAt = deps.now();
         // Who placed it is the authenticated subject — the one fact every later scope decision rests on.
         await deps.recordPlaced(ctx.tenantId, { orderId, locationId, lines, state: 'placed', placedAt, customerRef: ctx.userId, ...(fulfilment === undefined ? {} : { fulfilment }) });
+        // The routing decision the order was placed on — kept once it stands, so it counts against that branch's slot.
+        if (routed?.decision !== undefined) await deps.routing!.keep(ctx.tenantId, ctx.branchId ?? null, routed.decision);
         // FUL-03: the shop's own quote, on what it actually promised. FUL-07: when it could not promise everything, no
         // payment is taken — the customer sees the shortage and decides (pay for what is available, or cancel).
         const promised = result.lines.filter((l) => l.promisedMinor > 0).map((l) => ({ productId: l.productId, quantityMinor: l.promisedMinor }));
@@ -467,6 +541,7 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
             quote: quote.ok ? { itemsMinor: quote.itemsMinor, goodsMinor: quote.goodsMinor, deliveryFeeMinor: quote.deliveryFeeMinor, lines: quote.lines, ...('offers' in quote ? { offers: quote.offers } : {}) } : { unpriced: quote.unpriced },
             ...(shortages.length === 0 ? {} : { needsCustomerDecision: true, shortages }),
             ...(delivery === undefined ? {} : { delivery: { slot: { startsAt: delivery.slot.startsAt, endsAt: delivery.slot.endsAt, remaining: delivery.slot.remaining }, distanceMetres: delivery.distanceMetres, radiusMetres: delivery.radiusMetres } }),
+            ...(routed?.decision === undefined ? {} : { routing: { locationId, requestedLocationId, outcome: routed.decision.result.outcome, detail: routed.say, splitAcrossBranches: false } }),
             ...(taken?.mismatch === true ? { amountMismatch: true } : {}),
           },
         };

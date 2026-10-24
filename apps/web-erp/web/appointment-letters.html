@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Appointment letters</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Appointment letters (C17 · OB-323). A THIN CLIENT over head office: the owner sets the letter's words (English and
+      Tamil; not set until he does), HR makes a letter from the person's staff record, and the signed copy is photographed
+      and kept with its SHA-256 as the HR evidence. Its session is apps/web-erp/src/appointment-letters-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .verdict { font-weight: 700; font-size: 17px; margin: 0; }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 15px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      .role-block { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; margin-bottom: 8px; }
+      .role-block label { display: flex; gap: 8px; align-items: center; font-weight: 400; min-height: var(--tap); }
+      .role-block input[type=checkbox] { min-height: 24px; width: 24px; }
+      .sop { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      .sop[data-category=emergency] { border-color: var(--danger-text); }
+      .sop .words { white-space: pre-wrap; margin: 0; }
+      textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: 96px; box-sizing: border-box; width: 100%; }
+      .letter-text { white-space: pre-wrap; border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Appointment letters</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Appointment letters</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="wording" hidden aria-labelledby="wording-h">
+        <h3 id="wording-h"></h3>
+        <p class="meta" id="wording-now" role="status" aria-live="polite"></p>
+        <div id="wording-form" hidden>
+          <p class="meta" id="fields"></p>
+          <label for="wd-en"><span id="wd-en-l"></span><textarea id="wd-en"></textarea></label>
+          <label for="wd-ta"><span id="wd-ta-l"></span><textarea id="wd-ta" lang="ta"></textarea></label>
+          <button id="wd-save" type="button"><span id="wd-save-text"></span></button>
+        </div>
+        <p class="status" id="wd-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="make" hidden aria-labelledby="make-h">
+        <h3 id="make-h"></h3>
+        <div class="row-form">
+          <label for="mk-emp"><span id="mk-emp-l"></span><input id="mk-emp" autocomplete="off" /></label>
+          <label for="mk-from"><span id="mk-from-l"></span><input id="mk-from" type="date" /></label>
+        </div>
+        <button id="mk-save" type="button"><span id="mk-save-text"></span></button>
+        <p class="status" id="mk-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="list" hidden aria-labelledby="list-h">
+        <h3 id="list-h"></h3>
+        <p class="meta" id="awaiting"></p>
+        <ul class="rows" id="letter-rows"></ul>
+        <p class="status" id="l-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./appointment-letters.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

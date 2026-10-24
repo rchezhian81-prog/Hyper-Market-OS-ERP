@@ -71,6 +71,7 @@ import { OPERATOR_HEADER, type CheckOutcome, type SignInOutcome } from './till-o
 import type { GrantOutcome, ReturnCheck } from './till-approvals';
 import type { IssueOutcome, ReceiptNumberStatus, UseCheck } from './receipt-numbers';
 import type { HoldOutcome, RecallOutcome, HeldSummary } from './held-bills';
+import type { PhoneBasketsPort } from './phone-baskets';
 import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
 import type { ReportAnswer } from './peripheral-health';
 import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
@@ -185,6 +186,11 @@ const LANE_RECEIPT_NUMBERS_ROUTE = '/lane/receipt-numbers';
 const LANE_HELD_BILLS_ROUTE = '/lane/held-bills';
 const LANE_HELD_BILLS_RECALL_ROUTE = '/lane/held-bills/recall';
 const LANE_HELD_BILLS_ABANDON_ROUTE = '/lane/held-bills/abandon';
+/**
+ * SCAN-AND-GO (OB-350): `POST /lane/phone-baskets/recall` brings a customer's phone basket up from head office for the
+ * cashier signed in at this till — once. No price comes back; the till rings each line through its own pack.
+ */
+const LANE_PHONE_BASKETS_RECALL_ROUTE = '/lane/phone-baskets/recall';
 
 /**
  * CARD AND UPI ATTEMPTS on this box (audit PF-06 · M12-FR-03): `POST /lane/payment-attempts` records the attempt BEFORE
@@ -531,6 +537,8 @@ export function startLaneServer(input: {
   readonly receiptNumbers?: LaneReceiptNumberPort;
   /** The held-basket register (audit PF-05). Wired beside `operators` on every store box. */
   readonly heldBills?: LaneHeldBillsPort;
+  /** OB-350: head office's scan-and-go baskets, asked under this box's credential. Absent (no cloud) → said, never guessed. */
+  readonly phoneBaskets?: PhoneBasketsPort;
   /** The card/UPI attempt register (audit PF-06). Wired beside `operators` on every store box. */
   readonly payments?: LanePaymentAttemptsPort;
   /** Till actions kept as evidence (audit PF-07) — the box's `recordTillActivity`. */
@@ -972,6 +980,29 @@ export function startLaneServer(input: {
         } catch (e) {
           send(res, 200, refused('could_not_write_durably', e instanceof Error ? e.message : String(e)), cors);
         }
+      })();
+      return;
+    }
+
+    // SCAN-AND-GO (OB-350): a customer's phone basket, brought up for the person signed in at this till — once.
+    if (req.method === 'POST' && pathname === LANE_PHONE_BASKETS_RECALL_ROUTE) {
+      const ops = input.operators;
+      const refused = (refusedBecause: string, laneMessage: string) => ({ recalled: false, refusedBecause, laneMessage });
+      if (ops === undefined) { send(res, 404, refused('not_served', 'this box does not serve tills'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (m: string) => refused('request_not_readable', m));
+        if (body === undefined) return;
+        if (ops.laneId.trim() === '') { send(res, 200, refused('no_lane', 'This store computer has not been told which till it is. Nothing was done — tell the manager.'), cors); return; }
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); return; }
+        if (input.phoneBaskets === undefined) {
+          send(res, 200, refused('head_office_unreachable', 'This store computer is not connected to head office, so a phone basket cannot be brought up. Scan the items as usual.'), cors);
+          return;
+        }
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        send(res, 200, await input.phoneBaskets.recall({ code: b['code'], laneId: ops.laneId, cashierId: check.userId }), { ...cors, 'cache-control': 'no-store' });
       })();
       return;
     }
@@ -1456,14 +1487,15 @@ export function startLaneServer(input: {
       || pathname === LANE_APPROVALS_ROUTE || pathname === LANE_RECEIPT_NUMBERS_ROUTE
       || pathname === LANE_HELD_BILLS_ROUTE || pathname === LANE_HELD_BILLS_RECALL_ROUTE || pathname === LANE_HELD_BILLS_ABANDON_ROUTE
       || pathname === LANE_PAYMENTS_ROUTE || pathname === LANE_PAYMENTS_ANSWER_ROUTE || pathname === LANE_PAYMENTS_RECOVER_ROUTE
-      || pathname === LANE_TILL_ACTIVITY_ROUTE || pathname === LANE_LOYALTY_WALLET_ROUTE || pathname === LANE_PERIPHERALS_ROUTE)) {
+      || pathname === LANE_TILL_ACTIVITY_ROUTE || pathname === LANE_LOYALTY_WALLET_ROUTE || pathname === LANE_PERIPHERALS_ROUTE
+      || pathname === LANE_PHONE_BASKETS_RECALL_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`, `POST ${LANE_PAYMENTS_ROUTE}`, `GET ${LANE_PAYMENTS_ROUTE}`, `POST ${LANE_PAYMENTS_ANSWER_ROUTE}`, `POST ${LANE_PAYMENTS_RECOVER_ROUTE}`, `POST ${LANE_TILL_ACTIVITY_ROUTE}`, `POST ${LANE_LOYALTY_WALLET_ROUTE}`, `POST ${LANE_PERIPHERALS_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`, `POST ${LANE_PAYMENTS_ROUTE}`, `GET ${LANE_PAYMENTS_ROUTE}`, `POST ${LANE_PAYMENTS_ANSWER_ROUTE}`, `POST ${LANE_PAYMENTS_RECOVER_ROUTE}`, `POST ${LANE_TILL_ACTIVITY_ROUTE}`, `POST ${LANE_LOYALTY_WALLET_ROUTE}`, `POST ${LANE_PERIPHERALS_ROUTE}`, `POST ${LANE_PHONE_BASKETS_RECALL_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }

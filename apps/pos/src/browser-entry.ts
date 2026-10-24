@@ -158,6 +158,10 @@ export interface PosLane {
   readonly fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
   /** A22 (OB-326, switched off): the B2C dynamic QR switch and the shop's UPI ID, bank account and IFSC, from the store pack. */
   readonly b2cDynamicQr?: B2cDynamicQrSetting | null;
+  /** OB-348 (B17): the shop's state (ISO 3166-2:IN code) from the store pack — liquor is judged by it. Null → "not set". */
+  readonly shopState?: string | null;
+  /** OB-299 (M12-FR-02): the catalogue product whose signed price is the delivery-fee line. Null → the owner has not set it. */
+  readonly tillDeliveryFeeProductId?: string | null;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -343,6 +347,38 @@ export interface HeldBillsPort {
   recall(billId: string): Promise<Record<string, unknown>>;
   abandon(billId: string, reason: string): Promise<Record<string, unknown>>;
 }
+// ── OB-350 scan-and-go (customer & delivery follow-ups) — begin: additive; the held-bill pattern, for a phone basket ──
+/** What the till did with a customer's phone basket: the lines it rang through its OWN pack, and any it could not. */
+export interface PhoneBasketAtTill {
+  readonly ok: boolean;
+  readonly refusedBecause?: string;
+  readonly laneMessage: string;
+  readonly code?: string;
+  /** Rung through this till's pack — at the till's price, never the phone's. */
+  readonly added?: readonly { readonly lineId: string; readonly description: string; readonly qty: number }[];
+  /** Not rung: the cashier deals with each (an age to ask, an item this pack does not sell) — never dropped silently. */
+  readonly notAdded?: readonly { readonly productId: string; readonly name: string; readonly qty: number; readonly laneMessage: string }[];
+}
+/** The phone-basket call to this till's own store computer (which asks head office under its own credential). */
+export interface PhoneBasketsLanePort {
+  recall(code: string): Promise<Record<string, unknown>>;
+}
+/** Phone baskets through this till's own store computer, asked with the cashier's session (OB-350). */
+export function lanePhoneBaskets(port: number = DEFAULT_LANE_PORT): PhoneBasketsLanePort {
+  return {
+    recall: async (code) => {
+      try {
+        const response = await fetch(`${laneBase(port)}/lane/phone-baskets/recall`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ code }) });
+        const front = FRONT_REFUSED[response.status];
+        if (front !== undefined) return { ...front };
+        return await response.json() as Record<string, unknown>;
+      } catch {
+        return { refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the phone basket cannot be brought up. Scan the items as usual.' };
+      }
+    },
+  };
+}
+// ── OB-350 scan-and-go — end ──
 type SuspendedLineShape = Parameters<PosSession['restoreHeld']>[0][number];
 type SuspendedAgeShape = NonNullable<Parameters<PosSession['restoreHeld']>[1]>[number];
 const UNREACHABLE_HOLD = 'This till cannot reach its store computer, so the basket was not held. It is still on the till — do not clear it.';
@@ -389,6 +425,11 @@ export interface LoyaltyWalletAnswer {
   /** Head office's clock on the box's copy — how old the balances are (P-08). */
   readonly asOf?: string;
   readonly last4?: string;
+  /**
+   * OB-295: the member's tier as the box's copy says — `tiersSet: false` while the owner has set no tiers ("not set"); else
+   * the tier's name (null below the lowest tier) and its points multiplier in basis points (10 000 = 1×).
+   */
+  readonly tier?: { readonly tiersSet: false } | { readonly tiersSet: true; readonly name: string | null; readonly multiplierBps: number };
 }
 
 export interface CardAttemptAnswer {
@@ -893,6 +934,8 @@ export function bootPos(config?: {
   approvalPort?: TillApprovalPort;
   /** The till's held-basket calls to its box (audit PF-05). Overridable for tests; production asks this till's own edge. */
   heldBillsPort?: HeldBillsPort;
+  /** OB-350: the till's phone-basket call to its box. Overridable for tests; production asks this till's own edge. */
+  phoneBasketsPort?: PhoneBasketsLanePort;
   /** The till's card/UPI attempt calls to its box (audit PF-06). Overridable for tests; production asks this till's own edge. */
   paymentsPort?: PaymentAttemptsPort;
   /** The till's void-evidence call to its box (audit PF-07). Overridable for tests; production posts to this till's own edge. */
@@ -918,6 +961,10 @@ export function bootPos(config?: {
   fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
   /** A22 (OB-326): the B2C dynamic QR — printed on the tax invoice only when switched on and every detail is set. */
   b2cDynamicQr?: B2cDynamicQrSetting | null;
+  /** OB-348 (B17): the shop's state from the store pack (absent → "not set"; liquor is refused either way). */
+  shopState?: string;
+  /** OB-299: the delivery-fee product from the store pack (absent → not set; the till refuses to mark a bill for delivery). */
+  tillDeliveryFeeProductId?: string;
 }): PosView & {
   /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
   readonly guestSalesOnly: () => boolean;
@@ -1052,6 +1099,13 @@ export function bootPos(config?: {
   /** Give a held basket up, with a reason — kept on the box's record, never deleted. */
   readonly abandonAtTill: (billId: string, reason: string) => Promise<HeldAnswer>;
   /**
+   * OB-350 scan-and-go: bring a customer's phone basket up by the six-digit code on their phone (onto an EMPTY till), and
+   * ring every line through this till's own pack — the till's price, never the phone's. Payment and the bag check follow
+   * as for any bill. A line the till cannot ring is listed for the cashier, never dropped. Offline: refused in words; the
+   * cashier scans the items (the sale never needs it).
+   */
+  readonly recallPhoneBasketAtTill: (code: string) => Promise<PhoneBasketAtTill>;
+  /**
    * Record a card or UPI payment on the store computer BEFORE the machine is asked (audit PF-06). The answer's
    * `attemptId` is the reference the machine is given. Refused while this bill has a payment that got no answer
    * (`unresolved_payment_on_this_bill` — check it with `checkCardPayment`), and when the bill already has a confirmed
@@ -1130,6 +1184,13 @@ export function bootPos(config?: {
       cessOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.cess,
       // B6 · NEW-2: whether a line is weighed comes from the lane's own signed catalogue, not only the line's unit.
       baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
+      // B17 · OB-348: each product's HSN from the lane's signed pack (an alcoholic-drink heading is refused), and the shop's state.
+      hsnCodeOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.hsnCode,
+      ...(config?.shopState === undefined ? {} : { shopState: config.shopState }),
+      // OB-306: a bundle line is exploded into its components from the lane's signed pack.
+      bundleOf: (productId: string) => catalogueRef.cache?.bundleOf(productId),
+      // OB-299: the delivery-fee product the store pack names (absent → not set; delivery bills are refused in words).
+      ...(config?.tillDeliveryFeeProductId === undefined ? {} : { deliveryFeeProductId: config.tillDeliveryFeeProductId }),
       // OB-252: guest sales only — no customer number, no points or store credit.
       ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
       // OB-256: the mirror pilot — "Paid on old system" is the only tender.
@@ -1163,6 +1224,9 @@ export function bootPos(config?: {
       ...(config?.mirrorPilot === true ? { mirrorPilot: true } : {}),
       // M13-FR-02: a recalled unit coming back is held, never put back for sale — from this lane's own signed pack.
       recallOf: (productId: string) => catalogueRef.cache?.findByProductId(productId),
+      // OB-306: a returned bundle comes back as its components, from this lane's own signed pack.
+      bundleOf: (productId: string) => catalogueRef.cache?.bundleOf(productId),
+      baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1630,6 +1694,43 @@ export function bootPos(config?: {
     };
   };
 
+  // ── OB-350 scan-and-go — begin: the phone basket rung through this till's own pack ──
+  const phoneBaskets = config?.phoneBasketsPort ?? lanePhoneBaskets(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const recallPhoneBasketAtTill = async (code: string): Promise<PhoneBasketAtTill> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('bring up a phone basket').laneMessage };
+    if (!/^\d{6}$/.test(code.trim())) return { ok: false, refusedBecause: 'not_a_basket_code', laneMessage: 'Key the six digits the customer\'s phone shows.' };
+    // A bill just paid is finished (its lines stay on screen until the next scan); anything else on the till is a customer's.
+    if (session.currentState() !== 'committed' && session.basketToHold().lines.length > 0) return { ok: false, refusedBecause: 'basket_not_empty', laneMessage: 'Finish or hold the basket on the till first — a phone basket never joins another customer\'s.' };
+    if (!view.hasCatalogue()) return { ok: false, refusedBecause: 'no_catalogue', laneMessage: 'This till has no price pack, so it cannot price the phone basket. Scan the items once the pack is here.' };
+    const r = await phoneBaskets.recall(code.trim());
+    const lines = Array.isArray(r['lines']) ? r['lines'] as { productId?: unknown; name?: unknown; quantityMinor?: unknown; barcode?: unknown }[] : undefined;
+    if (r['recalled'] !== true || lines === undefined) {
+      return { ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'The phone basket was not brought up. Scan the items as usual.' };
+    }
+    if (session.currentState() === 'committed') view.newSale();
+    const added: { lineId: string; description: string; qty: number }[] = [];
+    const notAdded: { productId: string; name: string; qty: number; laneMessage: string }[] = [];
+    for (const l of lines) {
+      const qty = typeof l.quantityMinor === 'number' && Number.isInteger(l.quantityMinor) && l.quantityMinor > 0 ? l.quantityMinor : 1;
+      const name = typeof l.name === 'string' ? l.name : String(l.productId ?? '');
+      try {
+        if (typeof l.barcode !== 'string' || l.barcode === '') throw new Error('no barcode came with this line — scan it');
+        // The till's OWN pack prices it (and refuses what it does not sell, a recalled item, an age not yet asked).
+        const out = view.scanBarcode(l.barcode);
+        if (qty > 1 && out.qty === 1) view.setQuantity(out.lineId, qty);
+        added.push({ lineId: out.lineId, description: out.description, qty: qty > 1 && out.qty === 1 ? qty : out.qty });
+      } catch (e) {
+        const said = (e as { laneMessage?: unknown }).laneMessage;
+        notAdded.push({ productId: String(l.productId ?? ''), name, qty, laneMessage: typeof said === 'string' ? said : e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return {
+      ok: true, code: code.trim(), added, notAdded,
+      laneMessage: notAdded.length === 0 ? `Phone basket ${code.trim()}: ${added.length} line(s) rung at the till's prices. Check the bag, then take the payment.`
+        : `Phone basket ${code.trim()}: ${added.length} line(s) rung; ${notAdded.length} need the cashier — scan or ask about each one.`,
+    };
+  };
+  // ── OB-350 scan-and-go — end ──
   const abandonAtTill = async (billId: string, reason: string): Promise<HeldAnswer> => {
     const r = await held.abandon(billId, reason);
     return answer(r, r['abandoned'] === true, 'The basket was not given up.');
@@ -1695,6 +1796,10 @@ export function bootPos(config?: {
       ok: true, laneMessage: '', points: num('points'), pointValuePaise: num('pointValuePaise'), pointsValueMinor: num('pointsValueMinor'),
       storeCreditMinor: num('storeCreditMinor'), capRemainingMinor: num('capRemainingMinor'),
       ...(typeof r['asOf'] === 'string' ? { asOf: r['asOf'] } : {}), ...(typeof r['last4'] === 'string' ? { last4: r['last4'] } : {}),
+      // OB-295: the tier multiplier, off ("not set") until the owner sets tiers.
+      tier: typeof r['tierMultiplierBps'] === 'number'
+        ? { tiersSet: true as const, name: typeof r['tierName'] === 'string' ? r['tierName'] : null, multiplierBps: r['tierMultiplierBps'] }
+        : { tiersSet: false as const },
     };
   };
 
@@ -1826,7 +1931,7 @@ export function bootPos(config?: {
   const realTrading = (): boolean => config?.realTrading === true;
   const readMachineRef = (typed: string): MachineRefReading => readMachineReference(typed);
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -1858,6 +1963,9 @@ if (browserWindow !== undefined) {
     ...(lane?.fssaiLicence === undefined || lane.fssaiLicence === null ? {} : { fssaiLicence: lane.fssaiLicence }),
     // A22: the B2C dynamic QR switch and details, from the box's store pack (absent → off).
     ...(lane?.b2cDynamicQr === undefined || lane.b2cDynamicQr === null ? {} : { b2cDynamicQr: lane.b2cDynamicQr }),
+    // OB-348: the shop's state, and OB-299: the delivery-fee product — each from the box's store pack, absent when not set.
+    ...(typeof lane?.shopState === 'string' && lane.shopState !== '' ? { shopState: lane.shopState } : {}),
+    ...(typeof lane?.tillDeliveryFeeProductId === 'string' && lane.tillDeliveryFeeProductId !== '' ? { tillDeliveryFeeProductId: lane.tillDeliveryFeeProductId } : {}),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

@@ -19,6 +19,7 @@
 
 import { resolvePrice, type PriceEntry } from '../../price-list/src/price-list';
 import { checkDemeritHoldover, readCessRate, type CessRate } from '../../finance/src/cess';
+import { isLiquorHsn } from '../../restricted-sales/src/liquor';
 import type {
   CatalogueBarcode,
   CatalogueProduct,
@@ -79,7 +80,9 @@ export type ExclusionReason = 'no_price' | 'no_tax_class' | 'price_above_mrp'
   /** A7 · GST 2.0: a cess-liable good on the 40% demerit slab would be taxed twice — never shipped to a lane. */
   | 'cess_on_demerit_slab'
   /** B16 (COTPA s.7 · OB-140 "A"): a tobacco product with no named person's confirmation for the warning picture in force. */
-  | 'tobacco_warning_not_confirmed';
+  | 'tobacco_warning_not_confirmed'
+  /** B17 · OB-348: liquor — refused by the shop's state (Tamil Nadu: TASMAC), never handed to a lane to sell. */
+  | 'liquor_not_sold';
 
 export interface ExcludedProduct {
   readonly productId: string;
@@ -108,6 +111,11 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
   const excluded: ExcludedProduct[] = [];
 
   for (const master of input.products) {
+    // B17 · OB-348: liquor never reaches a lane — flagged on the master, or under an alcoholic-drink HSN. Left out and said.
+    if (master.regulatedFlags?.['liquor'] === true || isLiquorHsn(master.taxClassId)) {
+      excluded.push({ productId: master.productId, sku: master.sku, reason: 'liquor_not_sold' });
+      continue;
+    }
     const taxBps = input.taxClasses[master.taxClassId];
     if (taxBps === undefined) {
       excluded.push({ productId: master.productId, sku: master.sku, reason: 'no_tax_class' });

@@ -85,8 +85,28 @@ describe.each(backings)('the contribution rule holds an order for a manager, and
     expect((await shop.ok('POST', `/v1/delivery/fleet-settlements/${enc}/approve`, MANAGER2, {}))['stage']).toBe('approved');
     const paid = await shop.ok('POST', `/v1/delivery/fleet-settlements/${enc}/paid`, MANAGER2, { amountMinor: 75_00, voucherRef: 'PV-1' });
     expect(paid).toMatchObject({ stage: 'paid', paidMinor: 75_00, differenceMinor: -5_00 }); // a short payment is said, never balanced away
-    expect(paid['books']).toMatch(/not posted here/);
     expect((await shop.call('POST', `/v1/delivery/fleet-settlements/${enc}/approve`, CASHIER, {})).status).toBe(403);
+
+    // ── D09-FR-06: the settlement reaches the BOOKS through the accountant's posting map — never before it is mapped.
+    expect(paid['books']).toMatchObject({ state: 'not_yet_posted', posted: [], unposted: [`fleet:approved:${route.routeId}`, `fleet:paid:${route.routeId}:PV-1`] });
+    expect((await shop.call('GET', '/v1/finance/fleet-settlements', CASHIER)).status).toBe(403);
+    expect((await shop.call('POST', '/v1/finance/fleet-settlements/post', DISPATCHER, {})).status).toBe(403);
+    expect(await shop.ok('GET', '/v1/finance/fleet-settlements', OWNER)).toMatchObject({ connected: true, unmappedKinds: ['delivery_fleet:approved', 'delivery_fleet:paid'] });
+    expect(codeOf(await shop.call('POST', '/v1/finance/fleet-settlements/post', OWNER, {}))).toBe('posting_map_not_defined');
+    const accrue = { kind: 'delivery_fleet:approved', legs: [{ account: 'delivery_cost', side: 'debit', component: 'amount' }, { account: 'fleet_payable', side: 'credit', component: 'amount' }] };
+    const settle = { kind: 'delivery_fleet:paid', legs: [{ account: 'fleet_payable', side: 'debit', component: 'amount' }, { account: 'cash', side: 'credit', component: 'amount' }] };
+    await shop.ok('PUT', '/v1/finance/posting-map', OWNER, { rules: [accrue] });
+    const first = await shop.ok('POST', '/v1/finance/fleet-settlements/post', OWNER, {});
+    expect((first['posted'] as { lines: unknown[] }[]).map((j) => j.lines)).toEqual([[{ accountCode: 'delivery_cost', debitMinor: 80_00, creditMinor: 0 }, { accountCode: 'fleet_payable', debitMinor: 0, creditMinor: 80_00 }]]);
+    // The payment's kind is not mapped yet: an exception by name, never silently unposted.
+    expect(first['exceptions']).toEqual([expect.objectContaining({ movementId: `fleet:paid:${route.routeId}:PV-1`, kind: 'delivery_fleet:paid', reason: 'unmapped_kind' })]);
+    await shop.ok('PUT', '/v1/finance/posting-map', OWNER, { rules: [accrue, settle] });
+    const second = await shop.ok('POST', '/v1/finance/fleet-settlements/post', OWNER, {});
+    // What was PAID posts (75.00) — the 5.00 short stays on the payable, said on the settlement, never balanced away.
+    expect((second['posted'] as { lines: unknown[] }[]).map((j) => j.lines)).toEqual([[{ accountCode: 'fleet_payable', debitMinor: 75_00, creditMinor: 0 }, { accountCode: 'cash', debitMinor: 0, creditMinor: 75_00 }]]);
+    const third = await shop.call('POST', '/v1/finance/fleet-settlements/post', OWNER, {});
+    expect([third.status, (third.body as { posted: unknown[] }).posted]).toEqual([200, []]); // each movement posts once
+    expect((await shop.ok('GET', `/v1/delivery/fleet-settlements/${enc}`, DISPATCHER))['books']).toMatchObject({ state: 'posted', unposted: [] });
 
     // ── The courier link: off — own drivers only — and nothing is sent.
     expect(await shop.ok('GET', '/v1/delivery/courier-link', DISPATCHER)).toMatchObject({ on: false, partner: 'none' });
@@ -97,6 +117,8 @@ describe.each(backings)('the contribution rule holds an order for a manager, and
     const read = async (path: string, query?: Record<string, string>) => (await again.request({ method: 'GET', path, userId: DISPATCHER, tenantId: shop.t, ...(query === undefined ? {} : { query }) })).body as Record<string, unknown>;
     expect((await read('/v1/delivery/contribution', { storeId: STORE_ID }))['orders']).toEqual((await rule()).orders);
     const s2 = await read(`/v1/delivery/fleet-settlements/${enc}`);
-    expect(s2).toMatchObject({ stage: 'paid', paidMinor: 75_00, differenceMinor: -5_00, rate: { basis: 'per_drop', rateMinor: 40_00 } });
+    expect(s2).toMatchObject({ stage: 'paid', paidMinor: 75_00, differenceMinor: -5_00, rate: { basis: 'per_drop', rateMinor: 40_00 }, books: { state: 'posted' } });
+    const books2 = (await again.request({ method: 'GET', path: '/v1/finance/fleet-settlements', userId: OWNER, tenantId: shop.t })).body as { unposted: unknown[]; movements: { posted: boolean }[] };
+    expect([books2.unposted, books2.movements.map((m) => m.posted)]).toEqual([[], [true, true]]);
   }, 90_000);
 });

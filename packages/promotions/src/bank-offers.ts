@@ -8,7 +8,10 @@
 // none can reach a signed pack. Turning it on is a release decision, not a setting: it needs the integrated card machine
 // (and its certified provider, EX-03) first.
 
-/** The release that brings integrated card terminals — the one that turns bank offers on (OB-305). */
+/**
+ * The release that brings integrated card terminals — the one that turns bank offers on (OB-305). OB-349 (owner, 24 Oct
+ * 2026, in writing): bank offers are turned on in R4, with the certified payment / terminal integrations — not before.
+ */
 export const BANK_OFFERS_RELEASE = 'R4';
 
 export interface BankOffersSwitch {

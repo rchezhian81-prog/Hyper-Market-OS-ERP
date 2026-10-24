@@ -100,6 +100,11 @@ const WORDS = {
     packDateNotSold: 'The date on the pack of {item} has passed, so it was not added to the bill. Put it aside for the manager.',
     // M12-FR-01 (QG-05): how fast this till puts a scanned item on the bill, today, as the store computer keeps it.
     scanSpeed: 'Scan speed', scanSpeedTitle: 'Scan speed today — this till',
+    deliverBill: 'Deliver this bill', undeliverBill: 'Take delivery off this bill', deliveryTitle: 'Delivery',
+    deliveryAdded: 'This bill will be delivered. The delivery fee {fee} is on the bill. The customer pays the whole bill now.',
+    deliveryFeeNotSet: 'Delivery from the till is not set up: the owner has not set the delivery fee. Take it as a normal sale, or ask the manager.',
+    deliveryRemoved: 'Delivery taken off this bill; the fee line is voided.', deliveryRemovedReason: 'delivery taken off at the till',
+    deliveryOnBill: 'For delivery',
     scanSpeedSaid: '{samples} scans timed today. 95 in every 100 reached the bill within {p95} ms (the target is {target} ms). Middle {median} ms, slowest {max} ms; {over} over the target.',
     scanSpeedSlow: 'This till is slower than the target — tell the manager.',
     scanSpeedGood: 'Within the target.',
@@ -148,6 +153,7 @@ const WORDS = {
     priceChange: 'Change price of the selected line', newPrice: 'New price for one unit (₹) — lower than now', priceChanged: 'Price changed',
     overrideHint: 'A manager who is not you approves this', overrideReason: 'Manager: why is this allowed?',
     giveUp: 'Give up a held basket', giveUpWhich: 'Which held basket is being given up?', whyGiveUp: 'Why is it being given up?',
+    phoneBasket: 'Phone basket (scan and go)', phoneBasketCode: 'The six digits on the customer\'s phone', phoneBasketHint: 'The till prices every line itself. Check the bag, then take the payment.', phoneBasketNotAdded: 'Not rung — deal with each:',
     givenUp: 'Basket given up. It stays on the record with your name and the reason.',
     tapTerminal: 'What did the card machine say?',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
@@ -197,6 +203,9 @@ const WORDS = {
     upTo: 'up to',
     splitNoMember: 'No loyalty member on this bill, so points and store credit are not offered. Name the member first (More → Loyalty member).',
     splitWallet: 'Member ••••{last4}: {points} points ({pointsValue}), store credit {credit}. Balances as of {asOf}.',
+    tierNotSet: 'Tiers: not set — every member earns the base points.',
+    tierIs: 'Tier {name}: earns {times}× points.',
+    tierBelow: 'Below the lowest tier: earns 1× points.',
     pointsWhole: 'Points are spent whole: one point is worth {value}.',
     refundCondition: 'What condition is the item in?',
     dispResell: 'Good — back on the shelf',
@@ -326,6 +335,11 @@ const WORDS = {
     packDateNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
     packDateNotSold: '{item} பொதியில் உள்ள தேதி கடந்துவிட்டது, எனவே அது பில்லில் சேர்க்கப்படவில்லை. மேலாளருக்காக தனியாக வையுங்கள்.',
     scanSpeed: 'ஸ்கேன் வேகம்', scanSpeedTitle: 'இன்றைய ஸ்கேன் வேகம் — இந்த கவுண்டர்',
+    deliverBill: 'இந்த பில்லை டெலிவரி செய்', undeliverBill: 'இந்த பில்லின் டெலிவரியை நீக்கு', deliveryTitle: 'டெலிவரி',
+    deliveryAdded: 'இந்த பில் டெலிவரி செய்யப்படும். டெலிவரி கட்டணம் {fee} பில்லில் உள்ளது. வாடிக்கையாளர் முழுத் தொகையையும் இப்போதே செலுத்துவார்.',
+    deliveryFeeNotSet: 'கவுண்டரில் டெலிவரி அமைக்கப்படவில்லை: உரிமையாளர் டெலிவரி கட்டணத்தை அமைக்கவில்லை. சாதாரண விற்பனையாக எடுக்கவும், அல்லது மேலாளரிடம் கேளுங்கள்.',
+    deliveryRemoved: 'இந்த பில்லின் டெலிவரி நீக்கப்பட்டது; கட்டண வரி ரத்து செய்யப்பட்டது.', deliveryRemovedReason: 'கவுண்டரில் டெலிவரி நீக்கப்பட்டது',
+    deliveryOnBill: 'டெலிவரிக்கு',
     scanSpeedSaid: 'இன்று {samples} ஸ்கேன்கள் நேரம் அளக்கப்பட்டன. 100-ல் 95 ஸ்கேன்கள் {p95} மி.வி.க்குள் பில்லில் வந்தன (இலக்கு {target} மி.வி.). நடு {median} மி.வி., மிக மெதுவானது {max} மி.வி.; {over} இலக்கை மீறின.',
     scanSpeedSlow: 'இந்த கவுண்டர் இலக்கை விட மெதுவாக உள்ளது — மேலாளரிடம் சொல்லுங்கள்.',
     scanSpeedGood: 'இலக்குக்குள் உள்ளது.',
@@ -368,6 +382,7 @@ const WORDS = {
     priceChange: 'தேர்ந்த வரியின் விலையை மாற்று', newPrice: 'ஒரு அலகுக்கான புதிய விலை (₹) — இப்போதையதை விடக் குறைவு', priceChanged: 'விலை மாற்றப்பட்டது',
     overrideHint: 'உங்களைத் தவிர வேறு ஒரு மேலாளர் அனுமதிக்க வேண்டும்', overrideReason: 'மேலாளர்: இது ஏன் அனுமதிக்கப்படுகிறது?',
     giveUp: 'நிறுத்திய கூடையைக் கைவிடு', giveUpWhich: 'எந்த நிறுத்திய கூடை கைவிடப்படுகிறது?', whyGiveUp: 'ஏன் கைவிடப்படுகிறது?',
+    phoneBasket: 'ஃபோன் கூடை (ஸ்கேன் செய்து செல்)', phoneBasketCode: 'வாடிக்கையாளரின் ஃபோனில் உள்ள ஆறு இலக்கங்கள்', phoneBasketHint: 'ஒவ்வொரு வரியையும் கட்டண இயந்திரமே விலையிடும். பையைச் சரிபார்த்து, பிறகு கட்டணத்தைப் பெறுங்கள்.', phoneBasketNotAdded: 'சேர்க்கப்படவில்லை — ஒவ்வொன்றையும் பாருங்கள்:',
     givenUp: 'கூடை கைவிடப்பட்டது. உங்கள் பெயரும் காரணமும் பதிவில் இருக்கும்.',
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
@@ -415,6 +430,9 @@ const WORDS = {
     upTo: 'அதிகபட்சம்',
     splitNoMember: 'இந்த பில்லில் லாயல்டி உறுப்பினர் இல்லை, எனவே புள்ளிகள் மற்றும் கடை வரவு வழங்கப்படவில்லை. முதலில் உறுப்பினரைச் சேர்க்கவும் (மேலும் → லாயல்டி உறுப்பினர்).',
     splitWallet: 'உறுப்பினர் ••••{last4}: {points} புள்ளிகள் ({pointsValue}), கடை வரவு {credit}. {asOf} நிலவரப்படி இருப்பு.',
+    tierNotSet: 'நிலைகள்: அமைக்கப்படவில்லை — எல்லா உறுப்பினர்களும் அடிப்படைப் புள்ளிகள் பெறுவார்கள்.',
+    tierIs: 'நிலை {name}: {times}× புள்ளிகள் பெறும்.',
+    tierBelow: 'குறைந்த நிலைக்குக் கீழ்: 1× புள்ளிகள் பெறும்.',
     pointsWhole: 'புள்ளிகள் முழுமையாகவே செலவிடப்படும்: ஒரு புள்ளி {value} மதிப்புடையது.',
     refundCondition: 'பொருளின் நிலை என்ன?',
     dispResell: 'நல்லது — அலமாரிக்குத் திரும்ப',
@@ -1210,6 +1228,16 @@ function render() {
   el('empty').toggleAttribute('data-held', Boolean(suspended));
   setLeadIcon(el('empty'), suspended ? 'pause-circle' : 'scan-barcode', 28);
   el('total').textContent = inr(session.payableMinor());
+  // OB-299: a bill marked for delivery SAYS so beside its total — words and the truck icon.
+  const forDelivery = typeof session.isForDelivery === 'function' && session.isForDelivery();
+  const totalLabel = el('total-label');
+  const totalWords = forDelivery ? `${t('totalToPay')} · ${t('deliveryOnBill')}` : t('totalToPay');
+  if (totalLabel.textContent !== totalWords || (totalLabel.querySelector('svg') !== null) !== forDelivery) {
+    totalLabel.textContent = totalWords;
+    const truck = forDelivery ? mark('truck', 20) : null;
+    if (truck) totalLabel.prepend(truck);
+  }
+  totalLabel.toggleAttribute('data-delivery', forDelivery);
 
   paintOperator();
   paintBadge();
@@ -1394,6 +1422,22 @@ async function giveUpHeldBasket() {
   const r = await session.abandonAtTill(pick, why);
   tell(t('read'), r.ok ? t('givenUp') : r.laneMessage, r.ok ? SUCCESS : STOP);
   await refreshHeld();
+}
+
+/**
+ * OB-350 scan-and-go: the customer's phone shows a six-digit code; the cashier keys it and the till asks its store computer,
+ * which asks head office — once. Every line is rung through THIS till's pack (the till's price, never the phone's); a line
+ * it cannot ring is listed for the cashier. Payment and the bag check are as for any bill. Offline it says so — scan the items.
+ */
+async function recallPhoneBasket() {
+  const code = await ask({ title: t('phoneBasketCode'), mode: 'number', hint: t('phoneBasketHint'), initial: '' });
+  if (code === null || code === undefined) return;
+  const r = await session.recallPhoneBasketAtTill(String(code));
+  selectedLineId = null;
+  render();
+  if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
+  const missing = (r.notAdded ?? []).map((l) => `${l.name} × ${l.qty} — ${l.laneMessage}`).join('\n');
+  tell(t('phoneBasket'), r.laneMessage, missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
 }
 
 async function refreshHeld() {
@@ -1771,6 +1815,13 @@ async function takeCardOrUpi(kind, payable) {
  * over the amount (change). The store computer decides the points and credit again before the disk and says no, in
  * words, if its copy no longer covers them — nothing is then saved and the customer pays another way.
  */
+/** OB-295: the member's tier in words — "not set" while the owner has set no tiers; never a made-up ladder. */
+function tierWords(tier) {
+  if (!tier || tier.tiersSet !== true) return t('tierNotSet');
+  if (tier.name === null) return t('tierBelow');
+  return t('tierIs').replace('{name}', tier.name).replace('{times}', String(tier.multiplierBps / 10000));
+}
+
 async function splitPayment(payable) {
   let wallet = null;
   if (session.loyaltyWallet && session.loyaltyMemberLast4 && session.loyaltyMemberLast4() !== null) {
@@ -1778,7 +1829,9 @@ async function splitPayment(payable) {
     if (!wallet.ok) { tell(t('read'), wallet.laneMessage, STOP); wallet = null; }
     else {
       tell(t('member'), t('splitWallet').replace('{last4}', wallet.last4 || session.loyaltyMemberLast4()).replace('{points}', String(wallet.points))
-        .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? new Date(wallet.asOf).toLocaleString() : '—'), STOP);
+        .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? new Date(wallet.asOf).toLocaleString() : '—')
+        // OB-295: the member's tier multiplier from the box's copy — "not set" until the owner sets tiers.
+        + ' ' + tierWords(wallet.tier), STOP);
     }
   } else if (session.loyaltyWallet && !guestOnly()) {
     tell(t('read'), t('splitNoMember'), STOP);
@@ -1856,6 +1909,9 @@ el('more').addEventListener('click', async () => {
     ...(session.noReceiptReturn && session.noReceiptReturn() !== null ? [{ value: 'no_receipt', label: t('noReceipt') }] : []),
     // PF-05: a held basket can be given up, with a reason — offered only when the store computer holds one for this till.
     ...(session.abandonAtTill && heldCount > 0 ? [{ value: 'give_up', label: t('giveUp') }] : []),
+    // OB-350 scan-and-go: a customer's phone basket, by the code on their phone — onto an empty till; the till prices it.
+    // Offered only where this box has a head-office link (a standalone box could never fetch one); offline it says so.
+    ...(session.recallPhoneBasketAtTill && session.basket().length === 0 && box.status && box.status.cloud !== 'not_configured' ? [{ value: 'phone_basket', label: t('phoneBasket'), icon: 'monitor-smartphone' }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
     // OB-271 · audit A9: today's card/UPI payments with the machine's numbers — real trading only.
     ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption') }] : []),
@@ -1866,6 +1922,9 @@ el('more').addEventListener('click', async () => {
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
     // M12-FR-01: this till's scan-to-line speed today, as the store computer keeps it.
     ...(typeof session.scanSpeed === 'function' ? [{ value: 'scan_speed', label: t('scanSpeed'), icon: 'activity' }] : []),
+    // OB-299 (M12-FR-02): paid in full here, delivered — the owner's delivery-fee line, once; or taken off again.
+    ...(typeof session.deliverThisBill === 'function'
+      ? [session.isForDelivery() ? { value: 'undeliver', label: t('undeliverBill'), icon: 'truck' } : { value: 'deliver', label: t('deliverBill'), icon: 'truck' }] : []),
     ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange') }] : []),
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
     ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption') }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
@@ -1882,13 +1941,27 @@ el('more').addEventListener('click', async () => {
   if (what === 'card_list') { tell(t('cardListTitle'), '', SUCCESS, await cardListText()); return undefined; }
   if (what === 'reprint') { tell(t('reprintTitle').replace('{number}', lastInvoiceNumber() ?? ''), '', SUCCESS, saleBill(), true); return undefined; }
   if (what === 'give_up') return giveUpHeldBasket();
+  if (what === 'phone_basket') return recallPhoneBasket();
   if (what === 'member') return nameLoyaltyMember();
   if (what === 'guest_only') { tell(t('guestOnlyTitle'), t('guestOnlyMsg'), STOP); return undefined; }
   if (what === 'no_sale') return openDrawerNoSale();
   if (what === 'scan_speed') return showScanSpeed();
+  if (what === 'deliver') return deliverThisBill();
+  if (what === 'undeliver') { session.undeliverThisBill(t('deliveryRemovedReason')); render(); tell(t('deliveryTitle'), t('deliveryRemoved'), SUCCESS); return undefined; }
   if (what === 'price_change') return changeLinePrice();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
 });
+
+/**
+ * OB-299 (M12-FR-02): mark the bill for delivery — the delivery-fee line at its signed price, once. The customer then pays the
+ * whole bill here; the store computer relays the committed bill to head office, which books it as one delivery job.
+ */
+function deliverThisBill() {
+  const r = session.deliverThisBill();
+  if (!r.ok) { tell(t('deliveryTitle'), r.refusedBecause === 'delivery_fee_not_set' ? t('deliveryFeeNotSet') : r.laneMessage, STOP); return; }
+  render();
+  tell(t('deliveryTitle'), t('deliveryAdded').replace('{fee}', inr(r.feeMinor)), SUCCESS);
+}
 
 /**
  * M12-FR-01 (QG-05 · §32): this till's scan-to-line figures for today, read from the store computer (which keeps every

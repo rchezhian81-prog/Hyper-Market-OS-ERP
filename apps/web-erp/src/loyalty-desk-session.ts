@@ -47,6 +47,9 @@ export const LOYALTY_DESK_COPY = {
     programmeH: 'The loyalty programme', tiersH: 'Tiers by 12-month spend', expiryH: 'Points expiry', caH: 'For the Chartered Accountant',
     tierName: 'Tier name', tierNameTa: 'Tier name in Tamil', tierSpend: '12-month spend from (₹)', tierMultiplier: 'Points multiplier (e.g. 1.5)', addTier: 'Add a tier', removeTier: 'Remove', months: 'Months after earning (empty switches expiry off)',
     reason: 'Why (kept with the change)', saveTiers: 'Save the tiers', saveExpiry: 'Save expiry', runExpiry: 'Run expiry now', saved: 'Saved.', unchanged: 'Nothing changed — that is already the setting.',
+    referralH: 'Referral rewards', referralLead: 'Both sides earn, once, when the referred customer’s first online order is delivered. A side that is not set gives nothing until you enter it.',
+    referrerL: 'The customer who referred earns (₹)', referredL: 'The new customer earns (₹)', saveReferral: 'Save the rewards', rewardNotSet: 'not set — nothing is given',
+    badReward: 'Enter a reward in rupees (for example 50 or 25.50) in at least one box. 0 means no reward on that side. Nothing was sent.',
     lastSet: 'Last set by', badTier: 'Each tier needs a name, a spend in rupees and a multiplier from 1 to 10. Nothing was sent.', needReasonFirst: 'Say why first. Nothing was sent.', badMonths: 'Months is a whole number from 1 to 120, or empty to switch expiry off. Nothing was sent.',
     expiredSay: 'Expiry run:', ownerOnly: 'Only the owner can change these numbers.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', cannotEnrol: 'Your role cannot enrol customers.', cannotRead: 'Your role cannot read loyalty members.', cannotConfigure: 'Only the owner can change the programme.', cannotRun: 'Your role cannot run the expiry.',
@@ -65,6 +68,9 @@ export const LOYALTY_DESK_COPY = {
     programmeH: 'லாயல்டி திட்டம்', tiersH: '12 மாதச் செலவின்படி நிலைகள்', expiryH: 'புள்ளிகள் காலாவதி', caH: 'பட்டயக் கணக்காளருக்கு',
     tierName: 'நிலையின் பெயர்', tierNameTa: 'தமிழில் நிலையின் பெயர்', tierSpend: '12 மாதச் செலவு இதிலிருந்து (₹)', tierMultiplier: 'புள்ளிப் பெருக்கி (எ.கா. 1.5)', addTier: 'ஒரு நிலையைச் சேர்', removeTier: 'நீக்கு', months: 'பெற்ற பிறகு மாதங்கள் (காலியாக விட்டால் காலாவதி நிறுத்தப்படும்)',
     reason: 'ஏன் (மாற்றத்துடன் வைக்கப்படும்)', saveTiers: 'நிலைகளைச் சேமி', saveExpiry: 'காலாவதியைச் சேமி', runExpiry: 'இப்போதே காலாவதியை இயக்கு', saved: 'சேமிக்கப்பட்டது.', unchanged: 'எதுவும் மாறவில்லை — அதுவே ஏற்கனவே அமைப்பு.',
+    referralH: 'பரிந்துரைப் பரிசுகள்', referralLead: 'பரிந்துரைக்கப்பட்ட வாடிக்கையாளரின் முதல் ஆன்லைன் ஆர்டர் டெலிவரி ஆனதும், இரு தரப்பும் ஒருமுறை பெறுவர். அமைக்கப்படாத தரப்புக்கு நீங்கள் உள்ளிடும் வரை எதுவும் வழங்கப்படாது.',
+    referrerL: 'பரிந்துரைத்த வாடிக்கையாளர் பெறுவது (₹)', referredL: 'புதிய வாடிக்கையாளர் பெறுவது (₹)', saveReferral: 'பரிசுகளைச் சேமி', rewardNotSet: 'அமைக்கப்படவில்லை — எதுவும் வழங்கப்படாது',
+    badReward: 'குறைந்தது ஒரு பெட்டியில் ரூபாயில் பரிசை உள்ளிடுங்கள் (எ.கா. 50 அல்லது 25.50). 0 என்றால் அந்தத் தரப்புக்குப் பரிசு இல்லை. எதுவும் அனுப்பப்படவில்லை.',
     lastSet: 'கடைசியாக அமைத்தவர்', badTier: 'ஒவ்வொரு நிலைக்கும் பெயர், ரூபாயில் செலவு, 1 முதல் 10 வரை பெருக்கி தேவை. எதுவும் அனுப்பப்படவில்லை.', needReasonFirst: 'முதலில் காரணத்தைச் சொல்லுங்கள். எதுவும் அனுப்பப்படவில்லை.', badMonths: 'மாதங்கள் 1 முதல் 120 வரையிலான முழு எண், அல்லது காலாவதியை நிறுத்தக் காலியாக விடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
     expiredSay: 'காலாவதி இயக்கம்:', ownerOnly: 'உரிமையாளர் மட்டுமே இந்த எண்களை மாற்ற முடியும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', cannotEnrol: 'உங்கள் பங்கு வாடிக்கையாளர்களைச் சேர்க்க முடியாது.', cannotRead: 'உங்கள் பங்கு லாயல்டி உறுப்பினர்களைப் படிக்க முடியாது.', cannotConfigure: 'உரிமையாளர் மட்டுமே திட்டத்தை மாற்ற முடியும்.', cannotRun: 'உங்கள் பங்கு காலாவதியை இயக்க முடியாது.',
@@ -107,6 +113,19 @@ export interface LoyaltyDeskSession {
   saveTiers(rows: readonly { readonly name: string; readonly nameTa?: string; readonly spendRupees: string; readonly multiplier: string }[], reason: string): Promise<Outcome<Programme & { readonly unchanged?: boolean }>>;
   saveExpiry(months: string, reason: string): Promise<Outcome<Programme & { readonly unchanged?: boolean }>>;
   runExpiry(): Promise<Outcome<{ readonly on: boolean; readonly pointsExpired: number; readonly detail: string }>>;
+  /** OB-351: the two referral rewards — each "not set" until the owner enters it. */
+  referralRewards(): Promise<Outcome<ReferralRewards>>;
+  /** OB-351: the owner enters them, in rupees; an empty box keeps that side as it is; 0 means no reward on that side. */
+  saveReferralRewards(referrerRupees: string, referredRupees: string, reason: string): Promise<Outcome<ReferralRewards>>;
+}
+
+export type RewardSide = { readonly state: 'not_set' } | { readonly state: 'set'; readonly amountMinor: number };
+export interface ReferralRewards { readonly referrer: RewardSide; readonly referred: RewardSide; readonly lastSetBy?: string; readonly lastSetAt?: string; readonly lastReason?: string }
+
+/** Rupees as the owner types them (whole or with paise) — whole paise, or undefined when it cannot be read. */
+export function readRupees(text: string): number | undefined {
+  const m = /^(\d{1,5})(?:\.(\d{1,2}))?$/.exec(text.trim());
+  return m === null ? undefined : Number(m[1]) * 100 + Number((m[2] ?? '0').padEnd(2, '0'));
 }
 
 export function createLoyaltyDeskSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): LoyaltyDeskSession {
@@ -171,5 +190,19 @@ export function createLoyaltyDeskSession(input: { readonly viewer: ViewerIdentit
       return call('PUT', '/v1/loyalty/programme/expiry', { months: n, reason: reason.trim() });
     },
     runExpiry: async () => guard(may.runExpiry, 'cannotRun') ?? call('POST', '/v1/loyalty/points-expiry/run', {}),
+    referralRewards: async () => guard(may.read, 'cannotRead') ?? call<ReferralRewards>('GET', '/v1/loyalty/referral-rewards'),
+    saveReferralRewards: async (referrerRupees, referredRupees, reason) => {
+      const g = guard(may.configure, 'cannotConfigure'); if (g) return g;
+      const body: Record<string, unknown> = {};
+      for (const [key, text] of [['referrerRewardMinor', referrerRupees], ['referredRewardMinor', referredRupees]] as const) {
+        if (text.trim() === '') continue;
+        const minor = readRupees(text);
+        if (minor === undefined) return { result: 'invalid', why: 'badReward' };
+        body[key] = minor;
+      }
+      if (Object.keys(body).length === 0) return { result: 'invalid', why: 'badReward' };
+      if (reason.trim() === '') return { result: 'invalid', why: 'needReasonFirst' };
+      return call<ReferralRewards>('POST', '/v1/loyalty/referral-rewards', { ...body, reason: reason.trim() });
+    },
   };
 }

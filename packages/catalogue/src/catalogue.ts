@@ -17,6 +17,7 @@
 
 import { isUom, normaliseUom } from '../../contracts/src/quantity';
 import type { Promotion } from '../../promotions/src/promotions';
+import type { BundleDefinition } from '../../product/src/bundles';
 import { TOBACCO_MINIMUM_AGE } from '../../restricted-sales/src/till-gate';
 import type { CessRate } from '../../finance/src/cess';
 import { parseGs1, parseGs1Date, looksLikeGs1, gtinCandidates, type Gs1Read } from '../../gs1/src/gs1';
@@ -148,6 +149,12 @@ export interface CatalogueSnapshot {
    */
   readonly promotions?: readonly Promotion[];
   /**
+   * OB-306 (M03-FR-02): the own-barcode BUNDLES in force — each bundle product's latest definition (its components and how
+   * much of each one bundle holds), signed with the rest of the pack (`canonicalise`). The till explodes a bundle line into
+   * its components with `explodeBundleLine`, offline, so the sale takes stock off each component. Absent = none.
+   */
+  readonly bundles?: readonly BundleDefinition[];
+  /**
    * NEW-2 (B6): the pack's signature covers every product's base unit and the embedded-barcode rules
    * (`services/catalogue/src/pack.ts` `canonicalise`). Set by `publishPack` on every pack it signs; absent on a pack signed
    * before, which verifies exactly as it always did.
@@ -270,8 +277,14 @@ export class CatalogueCache {
   private readonly byProductId = new Map<string, CatalogueProduct>();
   private readonly bySku = new Map<string, CatalogueProduct>();
   private readonly rules: readonly EmbeddedBarcodeRule[];
+  private readonly bundlesById = new Map<string, BundleDefinition>();
 
   constructor(private readonly snapshot: CatalogueSnapshot) {
+    // OB-306: the bundle definitions the signed pack carries — the latest version per bundle product.
+    for (const d of snapshot.bundles ?? []) {
+      const cur = this.bundlesById.get(d.bundleProductId);
+      if (cur === undefined || d.version > cur.version) this.bundlesById.set(d.bundleProductId, d);
+    }
     for (const raw of snapshot.products) {
       // OB-31 "A": the product's unit is normalised on the way in ('each'/'EA' → 'ea', 'KG' → 'kg'), so a Quantity can
       // always be made from it; a spelling no rule knows is kept as it came and refused by name at the scan.
@@ -284,6 +297,11 @@ export class CatalogueCache {
       this.byBarcode.set(barcode.code, barcode);
     }
     this.rules = snapshot.embeddedRules ?? [];
+  }
+
+  /** OB-306: the bundle definition a product is sold under, from the signed pack — undefined when it is not a bundle. */
+  bundleOf(productId: string): BundleDefinition | undefined {
+    return this.bundlesById.get(productId);
   }
 
   /** Snapshot version the lane is running (shown on the lane's about/health view). */

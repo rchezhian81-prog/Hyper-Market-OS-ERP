@@ -135,7 +135,13 @@ async function showBoard() {
       if (s.flags.length > 0) item.className = 'flagged';
       const proof = s.proofCheck === null ? t('noProofYet')
         : `${t('codeK')}: ${CODE_MARK[s.proofCheck.code] ?? '○'} ${t(`code_${s.proofCheck.code}`)} · ${t('fenceK')}: ${FENCE_MARK[s.proofCheck.fence.result] ?? '○'} ${t(`fence_${s.proofCheck.fence.result}`)}${s.proofCheck.fence.distanceMetres === undefined ? '' : ` (${s.proofCheck.fence.distanceMetres} m)`}`;
-      item.textContent = `${s.sequence}. ${s.orderRef} · ${s.state.replace(/_/g, ' ')} · ${proof} · ${t('photoK')}: ${s.imagesKept}${s.flags.length > 0 ? ` · ⚠ ${s.flags.join(', ')}` : ''}`;
+      item.textContent = `${s.sequence}. ${s.orderRef} · ${s.state.replace(/_/g, ' ')} · ${proof} · ${t('photoK')}: ${s.imagesKept}`;
+      // OB-343 · OB-344: a wrong code or a hand-over away from the address is a visible flag, in words — never refused.
+      if (s.flags.length > 0) {
+        const look = document.createElement('span'); look.className = 'flag-words'; look.dataset.flags = s.flags.join(' ');
+        look.textContent = ` · ⚠ ${t('needsLook')} ${api.flagWords(lang, s.flags).join('; ')}`;
+        item.append(look);
+      }
       stops.append(item);
     }
     li.append(stops);
@@ -180,7 +186,9 @@ async function decide(orderId, decision, reason) {
 function controlValue(n) {
   if (n.state === 'not_set') return `○ ${t('notSet').split(' — ')[0]}`;
   if (n.key === 'fleetRate') return `${n.value.basis} ${api.rupees(n.value.rateMinor)}`;
-  return n.key.endsWith('Minor') ? api.rupees(n.value) : `${n.value}`;
+  const v = n.key.endsWith('Minor') ? api.rupees(n.value) : `${n.value}`;
+  // OB-343: a number the owner decided in writing reads as the shop's default, with the decision named.
+  return n.state === 'default' ? `${v} (${t('defaultK')}, ${n.decidedBy})` : v;
 }
 function drawControls(c) {
   $('controls').hidden = false;

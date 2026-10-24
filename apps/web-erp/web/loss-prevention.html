@@ -133,6 +133,30 @@
       </section>
       <!-- R4 Lane 4 · D-21 — end -->
 
+      <!-- OB-288 LP/workforce package (M15-FR-02 · M15-FR-03 · OB-301) — begin: the fraud signals over the shop's own
+           records, the staff purchases that arrived and the bank accounts shared — read on a click, never on load.
+           Tested model: apps/web-erp/src/lp-signals-session.ts. -->
+      <section class="closer" id="rec" hidden aria-labelledby="rec-heading">
+        <h3 id="rec-heading"></h3>
+        <p class="lead" id="rec-lead"></p>
+        <div><label for="rec-from" id="rec-from-label"></label><input id="rec-from" type="date" /></div>
+        <div><label for="rec-to" id="rec-to-label"></label><input id="rec-to" type="date" /></div>
+        <button id="rec-read" class="act" type="button"></button>
+        <p class="lead" id="rec-status" role="status" aria-live="polite"></p>
+        <div id="rec-result" hidden>
+          <h3 id="rec-signals-h"></h3>
+          <p class="lead" id="rec-sources"></p>
+          <ul class="rows" id="rec-signals"></ul>
+          <h3 id="rec-staff-h"></h3>
+          <p class="lead" id="rec-policy"></p>
+          <ul class="rows" id="rec-staff"></ul>
+          <h3 id="rec-bank-h"></h3>
+          <p class="lead" id="rec-bank-note"></p>
+          <ul class="rows" id="rec-bank"></ul>
+        </div>
+      </section>
+      <!-- OB-288 LP/workforce package — end -->
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
     </main>
@@ -140,6 +164,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./loss-prevention.js" type="module"></script>
+    <script src="./lp-records.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

@@ -17,7 +17,7 @@ let found = null;
 let tierDrafts = [];
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
-for (const [id, name] of [['enrol', 'user-round'], ['find', 'search'], ['link', 'monitor-smartphone'], ['add-tier', 'list-plus'], ['save-tiers', 'check'], ['save-expiry', 'calendar-clock'], ['run-expiry', 'refresh-cw']]) {
+for (const [id, name] of [['enrol', 'user-round'], ['find', 'search'], ['link', 'monitor-smartphone'], ['add-tier', 'list-plus'], ['save-tiers', 'check'], ['save-expiry', 'calendar-clock'], ['run-expiry', 'refresh-cw'], ['save-referral', 'users']]) {
   const i = icon(name); if (i !== null) $(id).prepend(i);
 }
 
@@ -156,19 +156,44 @@ async function runExpiry() {
   $('expiry-status').textContent = `${out.value.on ? '✓' : '○'} ${t('expiredSay')} ${out.value.detail}`;
 }
 
+// ── Referral rewards (OB-351) ───────────────────────────────────────────────────────────────────────────────────────
+let referral = null;
+function paintReferral() {
+  for (const id of ['referrer-rupees', 'referred-rupees', 'referral-reason', 'save-referral']) $(id).disabled = !may.configure;
+  if (referral === null) { $('referral-say').textContent = ''; return; }
+  const side = (r) => (r.state === 'set' ? api.rupees(r.amountMinor) : t('rewardNotSet'));
+  const both = referral.referrer.state === 'set' && referral.referred.state === 'set';
+  $('referral-say').className = `status ${both ? 'good' : ''}`;
+  $('referral-say').dataset.referrer = referral.referrer.state; $('referral-say').dataset.referred = referral.referred.state;
+  $('referral-say').textContent = `${both ? '✓' : '○'} ${t('referrerL').replace(' (₹)', '')}: ${side(referral.referrer)} · ${t('referredL').replace(' (₹)', '')}: ${side(referral.referred)}${referral.lastSetBy ? ` · ${t('lastSet')} ${referral.lastSetBy} ${referral.lastSetAt.slice(0, 10)}: ${referral.lastReason}` : ''}`;
+}
+async function loadReferral() {
+  const out = await session.referralRewards();
+  if (out.result !== 'ok') { bad('referral-status', out); return; }
+  referral = out.value; paintReferral();
+}
+async function saveReferral() {
+  const out = await session.saveReferralRewards($('referrer-rupees').value, $('referred-rupees').value, $('referral-reason').value);
+  if (out.result !== 'ok') { bad('referral-status', out); return; }
+  referral = out.value; good('referral-status', t('saved'));
+  for (const id of ['referrer-rupees', 'referred-rupees', 'referral-reason']) $(id).value = '';
+  paintReferral();
+}
+
 // ── Paint ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 function paint() {
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['enrol-h', 'enrolH'], ['l-enrol-mobile', 'mobile'], ['l-enrol-name', 'name'], ['l-enrol-yes', 'saidYes'], ['l-enrol-seen', 'seen'], ['enrol-text', 'enrol'],
     ['find-h', 'findH'], ['l-find-mobile', 'mobile'], ['find-text', 'find'], ['link-h', 'linkH'], ['l-link-mobile', 'mobile'], ['l-link-ref', 'appRef'], ['l-link-seen', 'seen'], ['link-text', 'link'],
     ['programme-h', 'programmeH'], ['tiers-h', 'tiersH'], ['add-tier-text', 'addTier'], ['l-tiers-reason', 'reason'], ['save-tiers-text', 'saveTiers'], ['expiry-h', 'expiryH'], ['ca-h', 'caH'],
-    ['l-expiry-months', 'months'], ['l-expiry-reason', 'reason'], ['save-expiry-text', 'saveExpiry'], ['run-expiry-text', 'runExpiry']]) $(id).textContent = t(k);
+    ['l-expiry-months', 'months'], ['l-expiry-reason', 'reason'], ['save-expiry-text', 'saveExpiry'], ['run-expiry-text', 'runExpiry'],
+    ['referral-h', 'referralH'], ['referral-lead', 'referralLead'], ['l-referrer-rupees', 'referrerL'], ['l-referred-rupees', 'referredL'], ['l-referral-reason', 'reason'], ['save-referral-text', 'saveReferral']]) $(id).textContent = t(k);
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.loyaltyDeskData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   for (const id of ['enrol', 'link', 'enrol-mobile', 'enrol-name', 'enrol-yes', 'enrol-seen', 'link-mobile', 'link-ref', 'link-seen']) $(id).disabled = !may.enrol;
   for (const id of ['find', 'find-mobile']) $(id).disabled = !may.read;
-  paintNotice(); paintFound(); paintProgramme(); paintTierRows();
+  paintNotice(); paintFound(); paintProgramme(); paintTierRows(); paintReferral();
 }
 
 $('enrol').addEventListener('click', () => { void enrol(); });
@@ -178,11 +203,12 @@ $('add-tier').addEventListener('click', () => { tierDrafts.push({ name: '', name
 $('save-tiers').addEventListener('click', () => { void saveTiers(); });
 $('save-expiry').addEventListener('click', () => { void saveExpiry(); });
 $('run-expiry').addEventListener('click', () => { void runExpiry(); });
+$('save-referral').addEventListener('click', () => { void saveReferral(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (may.named && !may.read && !may.enrol) { $('page-status').className = 'status err'; $('page-status').textContent = `⚠ ${t('cannotRead')}`; }
 if (may.enrol) void session.notice().then((out) => { if (out.result === 'ok') { notice = out.value; paintNotice(); } else bad('enrol-status', out); });
-if (may.read) void loadProgramme();
+if (may.read) { void loadProgramme(); void loadReferral(); }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

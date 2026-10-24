@@ -84,7 +84,10 @@ export interface ShopTransport {
 export type ShopCommercePath =
   | 'storefront/cart/quote' | `storefront/recommendations?${string}` | 'storefront/substitution-preferences'
   | 'me/cart' | `me/subscriptions${string}` | `me/addresses${string}` | `me/payment-methods${string}`
-  | `me/occasions${string}` | 'me/help/answers' | `me/ai-suggestions?${string}`;
+  | `me/occasions${string}` | 'me/help/answers' | `me/ai-suggestions?${string}`
+  // OB-294 · D08-FR-05: my delivery order's code and ETA. OB-351: my referral. OB-350: my scan-and-go basket.
+  | `storefront/orders/${string}/delivery-code` | `storefront/orders/${string}/delivery-eta`
+  | `me/referral${string}` | `storefront/scan-and-go${string}`;
 
 export interface ShopCommerceRequest {
   readonly token: string;

@@ -4,8 +4,8 @@
 //   • THE SHOP'S PRICE (WF-13): the basket priced by the shop with the till's own promotions and coupon engine. The app
 //     pays exactly the shop's quoted payable for exactly the basket it quoted — a basket changed since is quoted again.
 //   • REPEAT ORDERS (OB-303): what the customer chose, checked before anything is sent; paid for in the app each time.
-//   • DELIVERY CODE / ARRIVAL TIME: the slot for the handover code and the driver's arrival time — "not given yet" until
-//     the shop's delivery record carries them (the delivery-code work is not on this branch yet).
+//   • DELIVERY CODE / ARRIVAL TIME (OB-294 · D08-FR-05): head office's own 4-digit code for MY order (only my app can read
+//     it) and the driver's last stamped stop with an estimate — "not given yet" until head office gives them, never made up.
 
 /** The coupon codes the shop reads (the same rule as head office's). */
 export const COUPON_CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
@@ -75,15 +75,55 @@ export function repeatOrderBody(f: RepeatOrderForm): { readonly ok: true; readon
   return { ok: true, body };
 }
 
+/** What the slot shows about one order's hand-over — every field `null` until head office has said it. */
+export interface Handover {
+  /** Head office's 4-digit code for my order (OB-294) — null: not given yet. */
+  readonly code: string | null;
+  /** The order is finished (delivered, collected, returned): the code has done its job. */
+  readonly used: boolean;
+  /** The ESTIMATED arrival (straight-line, never earlier than the plan) — null: not given (not on a route, or reached). */
+  readonly eta: string | null;
+  /** Where the driver's run stands, in head office's words. Null: head office has not said. */
+  readonly etaState: 'not_on_a_route' | 'not_started' | 'on_the_way' | 'reached' | null;
+  /** When the driver stamped his last stop — null until he has. */
+  readonly lastStopAt: string | null;
+  /** Stops still before mine (counts only — never another customer's address or time). Null: not on a route. */
+  readonly stopsBeforeYou: number | null;
+}
+
+const ETA_STATES = ['not_on_a_route', 'not_started', 'on_the_way', 'reached'] as const;
+const isoOrNull = (v: unknown): string | null => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : null);
+
 /**
- * The handover code and the arrival time, as the shop's delivery record gives them — `null` is "not given yet", never a
- * made-up code or a guessed time. Reads `handoverCode` / `eta` when the delivery work adds them.
+ * The hand-over as head office gives it: the body of `GET /v1/storefront/orders/:id/delivery-code` and of `.../delivery-eta`
+ * (either may be absent — not asked, refused or offline). `null` is "not given yet", never a made-up code or a guessed time.
  */
-export function deliveryHandover(delivery: unknown): { readonly code: string | null; readonly eta: string | null } {
-  const d = (delivery ?? {}) as Record<string, unknown>;
-  const code = typeof d['handoverCode'] === 'string' && /^\d{4,6}$/.test(d['handoverCode']) ? d['handoverCode'] : null;
-  const eta = typeof d['eta'] === 'string' && !Number.isNaN(Date.parse(d['eta'])) ? d['eta'] : null;
-  return { code, eta };
+export function deliveryHandover(codeBody: unknown, etaBody?: unknown): Handover {
+  const c = (codeBody ?? {}) as Record<string, unknown>;
+  const e = (etaBody ?? {}) as Record<string, unknown>;
+  const code = typeof c['code'] === 'string' && /^\d{4}$/.test(c['code']) ? c['code'] : null;
+  const etaState = (ETA_STATES as readonly string[]).includes(e['state'] as string) ? e['state'] as Handover['etaState'] : null;
+  const ahead = e['stopsBeforeYou'];
+  const moving = etaState === 'not_started' || etaState === 'on_the_way';
+  return {
+    code, used: code !== null && c['used'] === true,
+    eta: moving ? isoOrNull(e['estimatedArrivalAt']) : null,
+    etaState,
+    lastStopAt: etaState === null ? null : isoOrNull(e['lastStopStampedAt']),
+    stopsBeforeYou: moving && Number.isInteger(ahead) && (ahead as number) >= 0 ? ahead as number : null,
+  };
+}
+
+/** OB-351: a referral code as the customer types it — 8 letters and digits with no look-alikes (no 0, O, 1, I or L). */
+export function readReferralCode(typed: string): string | undefined {
+  const c = typed.trim().toUpperCase().replace(/\s+/g, '');
+  return /^[2-9A-HJKMNP-Z]{8}$/.test(c) ? c : undefined;
+}
+
+/** OB-351: the reward one side earns, as the screen words it — an amount, or "not set" (nothing is given until then). */
+export function referralWhy(reward: unknown): { readonly set: true; readonly amountMinor: number } | { readonly set: false } {
+  const r = (reward ?? {}) as Record<string, unknown>;
+  return r['state'] === 'set' && Number.isInteger(r['amountMinor']) && (r['amountMinor'] as number) >= 0 ? { set: true, amountMinor: r['amountMinor'] as number } : { set: false };
 }
 
 /** The A05 help topics a customer can choose (typed questions go to a person). */

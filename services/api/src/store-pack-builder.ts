@@ -62,6 +62,11 @@ export interface StorePackBuildInput {
   readonly snapshots?: SnapshotStore;
   /** A22 (OB-326, switched off): the shop's B2C dynamic QR switch and details from store setup. Absent → never sent. */
   readonly b2cDynamicQr?: (tenantId: string) => Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string }>;
+  /**
+   * OB-348 · OB-299 (OB-288 till side): the shop's state (liquor is judged by it) and the till's delivery-fee product, from
+   * store setup. Each rides the policies only when set — absent is "not set", and the till says so. Absent → never sent.
+   */
+  readonly tillPolicies?: (tenantId: string) => Promise<{ readonly shopState?: string; readonly tillDeliveryFeeProductId?: string }>;
 }
 
 /**
@@ -120,7 +125,11 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const fssaiLicence = currentFoodLicence(await complianceAdapter({ store, now }).obligations(tenantId), { branchId: storeId, day: now().slice(0, 10) });
     // A22 (OB-326): the B2C dynamic QR rides only when the shop switched it on — with the details it has given.
     const b2cQr = input.b2cDynamicQr === undefined ? undefined : await input.b2cDynamicQr(tenantId);
+    // OB-348 · OB-299: the shop's state and the delivery-fee product, only when set.
+    const till = input.tillPolicies === undefined ? {} : await input.tillPolicies(tenantId);
     sections['policies'] = {
+      ...(till.shopState === undefined ? {} : { shopState: till.shopState }),
+      ...(till.tillDeliveryFeeProductId === undefined ? {} : { tillDeliveryFeeProductId: till.tillDeliveryFeeProductId }),
       ...(b2cQr === undefined || !b2cQr.on ? {} : { b2cDynamicQr: b2cQr }),
       ...(taxInvoice === undefined ? {} : { taxInvoice }),
       ...(fssaiLicence === undefined ? {} : { fssaiLicence: { number: fssaiLicence.number, ...(fssaiLicence.validUntil === undefined ? {} : { validUntil: fssaiLicence.validUntil }) } }),

@@ -23,6 +23,7 @@
 // no-invented-approval rule.
 
 import type { Disposition, RefundStatus } from './returns';
+import type { LineBundle } from '../../product/src/bundles';
 import {
   returnRegister, returnableLines, overReturned, alreadyRefundedMinor,
   type OriginalSale, type RecordedReturn, type ReturnableLine, type ReturnedLine,
@@ -47,6 +48,8 @@ export interface ReturnRequestLine {
   readonly batchId?: string | null;
   /** PF-14 — the batch's use-by/expiry, carried from the original sale line so a returned unit keeps its date. */
   readonly batchExpiry?: string;
+  /** OB-306: a returned BUNDLE's components (from the original bill's explosion) — its stock goes back component by component. */
+  readonly bundle?: LineBundle;
 }
 
 export interface ReturnRequest {
