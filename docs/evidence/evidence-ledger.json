@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1689,
+  "testFiles": 1690,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -33,8 +33,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 22,
-        "integration": 22,
-        "realDb": 11,
+        "integration": 23,
+        "realDb": 12,
         "browser": 6,
         "connected": 4,
         "device": 0,
@@ -67,6 +67,7 @@
         ],
         "integration": [
           "tests/integration/a-branch-closes-only-on-measured-facts.test.ts",
+          "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/an-org-rename-is-kept.test.ts",
           "tests/integration/branch-lifecycle.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
@@ -91,6 +92,7 @@
         ],
         "realDb": [
           "tests/integration/a-branch-closes-only-on-measured-facts.test.ts",
+          "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/an-org-rename-is-kept.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
@@ -1136,8 +1138,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 20,
-        "integration": 19,
-        "realDb": 7,
+        "integration": 20,
+        "realDb": 8,
         "browser": 6,
         "connected": 1,
         "device": 0,
@@ -1169,6 +1171,7 @@
         "integration": [
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
+          "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
@@ -1190,6 +1193,7 @@
         "realDb": [
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
+          "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/m14-fr-04-a-closed-day-has-a-sealed-evidence-pack.test.ts",
@@ -1787,8 +1791,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 27,
-        "integration": 35,
-        "realDb": 21,
+        "integration": 36,
+        "realDb": 22,
         "browser": 6,
         "connected": 2,
         "device": 0,
@@ -1828,6 +1832,7 @@
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
@@ -1865,6 +1870,7 @@
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
