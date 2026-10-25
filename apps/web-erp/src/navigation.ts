@@ -106,6 +106,12 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
   // permission those routes check (`purchase.invoice.capture`).
   { id: 'supplier-bills', label: 'Supplier bills', labelTa: 'சப்ளையர் பில்கள்', path: '/supplier-bills', requires: 'purchase.invoice.capture', group: 'Purchase', served: 'unserved' },
+  // ── OB-288 commercial desks (M22 · M24 · M27) — begin
+  // M24-FR-01/02: the buyer's ONE queue of supplier submissions (invoices, delivery notes, price proposals, RFQ replies,
+  // claims) decided with a reason, and each order's delivery status — a head-office page. Gated on the permission its routes
+  // check (`supplier.portal.review`).
+  { id: 'supplier-submissions', label: 'Supplier submissions', labelTa: 'சப்ளையர் சமர்ப்பிப்புகள்', path: '/supplier-submissions', requires: 'supplier.portal.review', group: 'Purchase', served: 'unserved' },
+  // ── OB-288 commercial desks — end
   { id: 'goods-receipt', label: 'Goods receipt review', labelTa: 'சரக்கு வரவு ஆய்வு', path: '/goods-receipt', requires: 'inventory.availability.read', group: 'Receiving' },
 
   { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Floor' },
@@ -163,6 +169,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // balance — a head-office page (the store computer does not serve it). Gated on the read the routes check (`finance.period.read`);
   // making and requeueing check `finance.posting.configure` on the server.
   { id: 'tally-files', label: 'Tally files', labelTa: 'டேலி கோப்புகள்', path: '/tally-files', requires: 'finance.period.read', group: 'Finance', served: 'unserved' },
+  // ── OB-288 commercial desks (M22 · M24 · M27) — begin
+  // M27-FR-01..04 · OB-304 (switched off until the owner turns it on): concession counters — contract, deposit, charge,
+  // settlement and the dates that stop a counter trading. Gated on the read its routes check (`concession.charge.read`).
+  { id: 'concessions', label: 'Concessions', labelTa: 'சலுகைக் கவுண்டர்கள்', path: '/concessions', requires: 'concession.charge.read', group: 'Finance', served: 'unserved' },
+  // ── OB-288 commercial desks — end
   { id: 'reconciliation', label: 'Reconciliation', labelTa: 'சரிக்கட்டல்', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance', served: 'unbuilt' },
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
@@ -197,6 +208,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Round 26 (OB-99 · OB-97 · OB-98): which store computer each till's bill numbers belong to, what needs a person, and the
   // owner-approved "store computer replaced" act — a head-office page over its own routes (the store computer does not serve it).
   { id: 'store-computers', label: 'Store computers', labelTa: 'கடை கணினிகள்', path: '/store-computers', requires: 'platform.health.read', group: 'Administration', served: 'unserved' },
+  // ── OB-288 P4 — begin
+  // R8-9 · OB-316 · M36-FR-01 · OB-321 · C8 · C9 · OB-324: trial switches per branch and per till lane, the usage meter
+  // (information only), the CA's customer-data watch and the consent record — a head-office page over its own routes.
+  { id: 'rollout', label: 'Trial switches and shop account', labelTa: 'சோதனை சுவிட்சுகள் மற்றும் கடை கணக்கு', path: '/rollout', requires: 'platform.flag.read', group: 'Administration', served: 'unserved' },
+  // ── OB-288 P4 — end
   // OB-154 "A" (B6 · B7 · L2): the weighing-scale register — every scale's Legal Metrology stamp, certificate and tills, and
   // adding or updating one (a later stamp date with a second person's approval) — a head-office page over its own routes.
   { id: 'scales', label: 'Weighing scales', labelTa: 'எடைத் தராசுகள்', path: '/scales', requires: 'facilities.asset.read', group: 'Administration', served: 'unserved' },
@@ -234,6 +250,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'basket-affinity', label: 'Bought together', labelTa: 'சேர்ந்து வாங்கப்பட்டவை', path: '/basket-affinity', requires: 'reporting.report.read', group: 'Reports', served: 'unserved' },
   { id: 'demand-events', label: 'Store events', labelTa: 'கடை நிகழ்வுகள்', path: '/demand-events', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
   { id: 'morning-brief', label: 'Morning brief', labelTa: 'காலைச் சுருக்கம்', path: '/morning-brief', requires: 'owner.kpi.read', group: 'Reports', served: 'unserved' },
+  // ── OB-288 lane 4 · P2 — begin
+  // M29-FR-03/04: the owner's five exception-alert thresholds (each "not set" until entered), today's exceptions, and his
+  // scheduled reports and exports. Gated on the SAME permission the thresholds read checks (`owner.alert.read`).
+  { id: 'owner-alerts', label: 'Owner alerts and schedules', labelTa: 'உரிமையாளர் எச்சரிக்கைகளும் திட்டங்களும்', path: '/owner-alerts', requires: 'owner.alert.read', group: 'Reports', served: 'unserved' },
+  // ── OB-288 lane 4 · P2 — end
   // ── end R4 Lane 3 ──
   // AI control — the kill switch, agents, the proposal queue, cost (A01–A10 governance). Gated on the budget read
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
@@ -268,6 +289,12 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'reporting', label: 'Reports', labelTa: 'அறிக்கைகள்', path: '/reporting/', requires: 'reporting.report.read', group: 'Reports' },
   // Service desk — returns taken and cases worked (M13 / M21). Gated on the case read (`service.case.read`).
   { id: 'service', label: 'Service desk', labelTa: 'சேவை மேசை', path: '/service/', requires: 'service.case.read', group: 'Sales' },
+  // ── OB-288 commercial desks (M22 · M24 · M27) — begin
+  // M22-FR-01/02/04: the B2B selling desk — contracts, quotation → order → proforma → challan → tax invoice, credit and money
+  // owed — a head-office page behind the shop's `b2b` switch (OB-280: business bills stay on the old system for real
+  // trading). Gated on the read its routes check (`b2b.document.read`).
+  { id: 'b2b', label: 'Business customers', labelTa: 'வணிக வாடிக்கையாளர்கள்', path: '/b2b', requires: 'b2b.document.read', group: 'Sales', served: 'unserved' },
+  // ── OB-288 commercial desks — end
   // Store credit and vouchers — liability, velocity, double spends (M17). Gated on the SAME permission its three
   // read routes check (`lp.case.read`): it is loss-prevention oversight of stored value.
   { id: 'stored-value', label: 'Store credit & vouchers', labelTa: 'கடை கடன் மற்றும் வவுச்சர்கள்', path: '/stored-value/', requires: 'lp.case.read', group: 'Customers' },

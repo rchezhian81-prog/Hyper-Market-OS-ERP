@@ -188,6 +188,11 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       promotion_funding: { en: APPROVALS_COPY.en.kindPromotionFunding, ta: APPROVALS_COPY.ta.kindPromotionFunding },
       // OB-288 till side (OB-347): a published product's tax class changed — Finance approves.
       hsn_class_change: { en: APPROVALS_COPY.en.kindHsnClassChange, ta: APPROVALS_COPY.ta.kindHsnClassChange },
+      // OB-288 commercial desks (M22-FR-01): a B2B contract, and an order over the credit limit (the owner decides, OB-290).
+      b2b_contract: { en: APPROVALS_COPY.en.kindB2BContract, ta: APPROVALS_COPY.ta.kindB2BContract },
+      b2b_credit_override: { en: APPROVALS_COPY.en.kindB2BCreditOverride, ta: APPROVALS_COPY.ta.kindB2BCreditOverride },
+      // OB-288 P4 (M36-FR-03): closing the shop's account.
+      tenant_closure: { en: APPROVALS_COPY.en.kindTenantClosure, ta: APPROVALS_COPY.ta.kindTenantClosure },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

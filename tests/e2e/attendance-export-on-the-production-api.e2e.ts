@@ -72,8 +72,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('attendance
     return { page, close: () => context.close() };
   };
   const exportDays = async (page: Page, from: string, to: string): Promise<string> => {
-    await page.fill('.period-from', from);
-    await page.fill('.period-to', to);
+    await page.fill('#period-from-attendance', from);
+    await page.fill('#period-to-attendance', to);
     await page.click('.export-btn[data-domain="attendance"]');
     await page.locator('#export-result:not([hidden])').waitFor({ timeout: 15_000 });
     return (await page.textContent('#export-result-text')) ?? '';
@@ -84,11 +84,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('attendance
     const { page, close } = await open(OWNER);
     try {
       const expected = defaultExportPeriod(new Date().toISOString());
-      expect(await page.inputValue('.period-from')).toBe(expected.from);
-      expect(await page.inputValue('.period-to')).toBe(expected.to);
+      expect(await page.inputValue('#period-from-attendance')).toBe(expected.from);
+      expect(await page.inputValue('#period-to-attendance')).toBe(expected.to);
       expect(await page.textContent('#export-domains')).toContain('at most 92 days');
-      // Only the dated domain asks for days.
-      expect(await page.locator('.period-from').count()).toBe(1);
+      // Only the dated domains ask for days: attendance and (OB-288 P2 · M30-FR-02) stock movements.
+      expect(await page.locator('.period-from').count()).toBe(2);
+      expect(await page.locator('#period-from-stock-movements').count()).toBe(1);
 
       const said = await exportDays(page, '2026-09-01', '2026-09-03');
       expect(said).toBe('Exported 5 rows.');

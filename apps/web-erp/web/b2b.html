@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Business customers</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Business customers — the B2B selling desk (M22-FR-01/02/04 · OB-288 package 3). A THIN CLIENT over head office's
+      contract register, the quotation → order → proforma → challan → tax invoice chain, the credit account and the money
+      owed. Its session is apps/web-erp/src/b2b-desk-session.ts. Prices are never typed here: a quotation is priced from
+      the customer's approved contract, or the shop's price list. Nothing is read before the person asks; every write is
+      an explicit click in the person's own name, re-checked by head office.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1120px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      textarea { min-height: 96px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .figs { display: flex; gap: 16px; flex-wrap: wrap; }
+      .figs > div { display: grid; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Business customers</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Business customers</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="customers" hidden aria-labelledby="customers-h">
+        <h3 id="customers-h"></h3>
+        <div class="row-form">
+          <label for="c-id"><span id="c-id-l"></span><input id="c-id" autocomplete="off" /></label>
+        </div>
+        <button id="c-open" type="button"><span id="c-open-text"></span></button>
+        <ul class="rows" id="c-rows"></ul>
+        <h3 id="r-h"></h3>
+        <ul class="rows" id="r-rows"></ul>
+      </section>
+
+      <section id="customer" hidden aria-labelledby="cust-h">
+        <h3 id="cust-h"></h3>
+        <p class="status" id="cust-status" role="status" aria-live="polite"></p>
+        <h3 id="acct-h"></h3>
+        <div class="figs" id="acct"></div>
+        <h3 id="k-h"></h3>
+        <ul class="rows" id="k-rows"></ul>
+        <ul class="rows" id="k-asked"></ul>
+      </section>
+
+      <section id="propose" hidden aria-labelledby="propose-h">
+        <h3 id="propose-h"></h3>
+        <div class="row-form">
+          <label for="k-id"><span id="k-id-l"></span><input id="k-id" autocomplete="off" /></label>
+          <label for="k-from"><span id="k-from-l"></span><input id="k-from" type="date" /></label>
+          <label for="k-to"><span id="k-to-l"></span><input id="k-to" type="date" /></label>
+          <label for="k-expiry"><span id="k-expiry-l"></span><select id="k-expiry"><option value="block" id="k-expiry-block"></option><option value="fallback" id="k-expiry-fallback"></option></select></label>
+          <label for="k-limit"><span id="k-limit-l"></span><input id="k-limit" inputmode="decimal" autocomplete="off" /></label>
+          <label for="k-terms"><span id="k-terms-l"></span><input id="k-terms" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <label for="k-prices"><span id="k-prices-l"></span><textarea id="k-prices"></textarea></label>
+        <label for="k-note"><span id="k-note-l"></span><input id="k-note" autocomplete="off" /></label>
+        <div class="actions">
+          <button id="k-save" type="button" class="quiet"><span id="k-save-text"></span></button>
+          <button id="k-ask" type="button"><span id="k-ask-text"></span></button>
+        </div>
+        <p class="status" id="k-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="quote" hidden aria-labelledby="quote-h">
+        <h3 id="quote-h"></h3>
+        <p class="meta" id="q-note"></p>
+        <div class="row-form">
+          <label for="q-store"><span id="q-store-l"></span><input id="q-store" autocomplete="off" /></label>
+          <label for="q-days"><span id="q-days-l"></span><input id="q-days" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <ul class="rows" id="q-lines"></ul>
+        <div class="actions">
+          <button id="q-add" type="button" class="quiet"><span id="q-add-text"></span></button>
+          <button id="q-issue" type="button"><span id="q-issue-text"></span></button>
+        </div>
+        <p class="status" id="q-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="docs" hidden aria-labelledby="docs-h">
+        <h3 id="docs-h"></h3>
+        <p class="status" id="d-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="d-rows"></ul>
+        <h3 id="o-h"></h3>
+        <ul class="rows" id="o-rows"></ul>
+      </section>
+
+      <section id="collect" hidden aria-labelledby="collect-h">
+        <h3 id="collect-h"></h3>
+        <div class="figs" id="ageing"></div>
+        <div class="row-form" id="pay-form">
+          <label for="pay-amount"><span id="pay-amount-l"></span><input id="pay-amount" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <button id="pay-save" type="button"><span id="pay-save-text"></span></button>
+        <p class="status" id="pay-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./b2b.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

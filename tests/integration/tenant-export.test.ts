@@ -84,9 +84,12 @@ describe('a tenant can export its whole dataset, certified complete, and only it
 
     const first = ((await exportTenant(h, A, 'u-owner')).body as ExportResponse).export;
     const second = ((await exportTenant(h, A, 'u-owner')).body as ExportResponse).export;
-    expect(second.totalRows).toBe(first.totalRows); // exporting changed nothing
-    // The checksums are stable across two exports of unchanged data — a real, verifiable digest.
-    const digest = (m: Manifest): string => m.domains.map((d) => `${d.domain}:${d.checksum}`).join('|');
+    // Exporting removed nothing and changed nothing: the only new row is the record of who took the first export
+    // (OB-288 P4 · M36-FR-03 — the closure reads it; like every export, it is kept, hard rule #6).
+    expect(second.totalRows).toBe(first.totalRows + 1);
+    // The checksums are stable across two exports of unchanged data — a real, verifiable digest — in every domain but the
+    // platform's, which now holds that export record.
+    const digest = (m: Manifest): string => m.domains.filter((d) => d.domain !== 'platform').map((d) => `${d.domain}:${d.checksum}`).join('|');
     expect(digest(second)).toBe(digest(first));
 
     // The data is still there and still answers after being exported.

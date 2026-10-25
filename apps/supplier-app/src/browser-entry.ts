@@ -49,7 +49,7 @@ interface SupplierWindow {
 }
 
 const SELF_PERMISSION = 'supplier.portal.self';
-const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim'];
+const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim', 'delivery_status'];
 
 export function supplierPortalPortsFromData(
   data: SupplierScreenData | undefined,

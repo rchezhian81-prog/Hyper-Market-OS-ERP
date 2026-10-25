@@ -31,6 +31,11 @@ export interface Employee {
   readonly roles: readonly string[];
   readonly active: boolean;
   readonly hourlyRateMinor?: number;
+  /**
+   * OB-357 (owner, 24 Oct 2026, in writing): the person's HOME DEPARTMENT on the staff record — the department their rostered
+   * hours count to in sales per labour hour (OB-317). Absent = none recorded: their hours are shown "not attributed".
+   */
+  readonly homeDepartmentId?: string;
 }
 
 export interface Certification {

@@ -29,8 +29,12 @@ export interface MemberRecord {
   /** When the customer said yes to loyalty, and who enrolled them. */
   readonly consentGivenAt: string;
   readonly enrolledBy: string;
-  /** How the number was checked (OB-29 "A"): seen on the customer's own phone. An SMS code is R4. */
-  readonly verifiedHow: 'seen_on_phone';
+  /**
+   * How the number was checked (OB-29 "A"): seen on the customer's own phone. An SMS code is R4. OB-315: a member carried
+   * from the old ERP by an approved import, with the consent the old record held — the number was NOT seen on a phone,
+   * and the record says so.
+   */
+  readonly verifiedHow: 'seen_on_phone' | 'carried_from_old_erp';
   /** OB-329: the name the customer chose to give at enrolment — absent when they skipped it. Sealed per member. */
   readonly fullName?: string;
   /** OB-329: which version of the enrolment notice was read out when they joined. */

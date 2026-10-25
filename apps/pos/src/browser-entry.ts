@@ -11,6 +11,7 @@
 // and the sync agent drains the outbox afterwards, never in the sale path.
 
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
+import { posRolloutOf, type PosRollout } from './lane-rollout'; // OB-288 P4 (R8-9 · OB-316)
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import type { SaleLookupResult } from '../../../edge/store-edge/src/receipt-lookup';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
@@ -162,6 +163,8 @@ export interface PosLane {
   readonly shopState?: string | null;
   /** OB-299 (M12-FR-02): the catalogue product whose signed price is the delivery-fee line. Null → the owner has not set it. */
   readonly tillDeliveryFeeProductId?: string | null;
+  /** OB-288 P4 (R8-9 · OB-316): this lane's rollout switches, resolved by the box from the signed pack (read by lane-rollout.ts). */
+  readonly rollout?: unknown;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -169,6 +172,8 @@ interface PosWindow {
   posSession?: PosView;
   /** Which lane this box is and when its day ends, injected by the edge before boot (SP-4b · F09). */
   posLane?: PosLane;
+  /** OB-288 P4 (R8-9 · OB-316): is a trial feature on for this lane? From the signed pack, offline (lane-rollout.ts). */
+  posRollout?: PosRollout;
   /** The lane's cached catalogue snapshot, injected by the edge before boot (§31). */
   posCatalogue?: CatalogueSnapshot;
   /** This lane's reserved receipt-number range, injected by the edge before boot (per lane). */
@@ -1970,4 +1975,6 @@ if (browserWindow !== undefined) {
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),
   });
+  // OB-288 P4 (R8-9 · OB-316): the lane's rollout switches, beside the session — nothing in the sale path waits on them.
+  browserWindow.posRollout = posRolloutOf(lane?.rollout);
 }

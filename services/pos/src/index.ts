@@ -70,8 +70,8 @@ export interface PosDeps {
    * on the sale. Never refuses — its outcome rides on the reply. Absent → no loyalty here (a composition without it).
    */
   readonly loyaltyOnSale?: (tenantId: string, sale: IncomingSale) => Promise<unknown>;
-  /** OB-348 (B17): the shop's state from store setup, which the intake judges liquor by. Absent → "not set". */
-  readonly shopStateOf?: (tenantId: string) => Promise<string | undefined>;
+  /** OB-348 (B17) · OB-354: the state of the store this sale was rung at (from its GSTIN), which the intake judges liquor by. Absent → "not set". */
+  readonly shopStateOf?: (tenantId: string, sale: IncomingSale) => Promise<string | undefined>;
   /**
    * OB-299 (M12-FR-02): a bill the till marked for delivery becomes ONE delivery job — booked once, on a resend too. Runs
    * after the sale is banked; never refuses the sale (its outcome rides on the reply). Absent → no delivery job here.
@@ -215,7 +215,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           now: deps.now(),
           ...(cashierGrants === undefined ? {} : { cashierGrants }),
           ...(cashierSeal === undefined ? {} : { cashierSeal }),
-          ...(await (async () => { const st = await deps.shopStateOf?.(ctx.tenantId); return st === undefined || st === '' ? {} : { shopState: st }; })()),
+          ...(await (async () => { const st = await deps.shopStateOf?.(ctx.tenantId, sale); return st === undefined || st === '' ? {} : { shopState: st }; })()),
         } satisfies IntakeContext);
 
         // NEW-3 (C10 · hard rule #3): what is KEPT never holds card data. The intake above judged the sale as it arrived

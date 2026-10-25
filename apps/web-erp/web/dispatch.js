@@ -255,5 +255,59 @@ $('show-controls').addEventListener('click', () => { void showControls(); });
 $('propose').addEventListener('click', async () => settled(await session.propose($('settle-route').value.trim())));
 $('approve-settle').addEventListener('click', async () => settled(await session.approveSettlement($('settle-route').value.trim())));
 $('paid').addEventListener('click', async () => settled(await session.recordPaid($('settle-route').value.trim(), $('paid-amount').value, $('voucher').value)));
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+// ── OB-352: deliveries from the till ────────────────────────────────────────
+const desk = window.tillDeliveryDesk ?? null;
+const dk = (k) => (desk === null ? k : desk.words(lang, k));
+let tillJobs = null;
+const when = (iso) => (typeof iso === 'string' ? iso.replace('T', ' ').slice(0, 16) : '');
+function deskSay(out) { $('till-jobs-status').className = `status ${out.result === 'ok' ? 'good' : 'err'}`; $('till-jobs-status').textContent = desk.outcomeWords(lang, out); }
+function paintTillJobs() {
+  const ul = $('till-jobs');
+  if (tillJobs === null) { ul.hidden = true; return; }
+  ul.hidden = false;
+  if (tillJobs.jobs.length === 0) { ul.replaceChildren(text('li', dk('none'), 'muted')); return; }
+  ul.replaceChildren(...tillJobs.jobs.map((j) => {
+    const li = document.createElement('li'); li.className = `row tone-${j.status === 'booked' ? 'ok' : j.status === 'waiting_for_delivery_desk' ? 'degraded' : 'idle'}`;
+    li.dataset.order = j.orderId; li.dataset.status = j.status;
+    const mark = j.status === 'booked' ? '✓' : j.status === 'waiting_for_delivery_desk' ? '⚠' : '•';
+    li.append(text('strong', `${dk('job')} ${j.orderId} · ${dk('bill')} ${j.receiptNumber}`), text('span', `${mark} ${dk(j.status)}`, 'state'));
+    if (j.given !== null) li.append(text('span', `${dk('slotL')}: ${when(j.given.slotStartsAt)}–${when(j.given.slotEndsAt).slice(11)} · ${j.given.by === 'customer_app' ? dk('byApp') : `${dk('byDesk')} ${j.given.personId}`}`, 'facts'));
+    if (j.status === 'waiting_for_delivery_desk' && desk.session.may.enter) {
+      const form = document.createElement('div'); form.className = 'row-form';
+      const field = (label, control) => { const l = document.createElement('label'); l.append(text('span', label), control); return l; };
+      const slot = document.createElement('select'); slot.className = 'tj-slot';
+      if (tillJobs.openSlots.length === 0) { const o = document.createElement('option'); o.value = ''; o.textContent = dk('noSlots'); slot.append(o); }
+      for (const s of tillJobs.openSlots) { const o = document.createElement('option'); o.value = s.startsAt; o.textContent = `${when(s.startsAt)}–${when(s.endsAt).slice(11)} (${s.remaining})`; slot.append(o); }
+      const lat = document.createElement('input'); lat.className = 'tj-lat'; lat.inputMode = 'decimal'; lat.autocomplete = 'off';
+      const lon = document.createElement('input'); lon.className = 'tj-lon'; lon.inputMode = 'decimal'; lon.autocomplete = 'off';
+      const landmark = document.createElement('input'); landmark.className = 'tj-landmark'; landmark.autocomplete = 'off'; landmark.maxLength = 80;
+      form.append(field(dk('slotL'), slot), field(dk('latL'), lat), field(dk('lonL'), lon), field(dk('landmarkL'), landmark),
+        button(dk('enter'), 'truck', async () => {
+          const out = await desk.session.enter(j.orderId, { slotStartsAt: slot.value, lat: lat.value, lon: lon.value, landmark: landmark.value });
+          deskSay(out);
+          if (out.result === 'ok') await showTillJobs(false);
+        }));
+      li.append(form);
+    }
+    return li;
+  }));
+}
+async function showTillJobs(say = true) {
+  if (desk === null || !desk.session.may.read) { $('till-jobs-status').className = 'status err'; $('till-jobs-status').textContent = dk('cannotRead'); return; }
+  const out = await desk.session.jobs(store(), $('till-day').value);
+  if (out.result !== 'ok') { deskSay(out); return; }
+  tillJobs = out.value;
+  if (say) { $('till-jobs-status').className = 'status'; $('till-jobs-status').textContent = `${tillJobs.waitingForDesk} ${dk('waitingDesk')} · ${tillJobs.waitingForCustomer} ${dk('waitingApp')}`; }
+  paintTillJobs();
+}
+function paintDesk() {
+  for (const [id, k] of [['till-jobs-h', 'tillJobsH'], ['till-jobs-lead', 'tillJobsLead'], ['till-day-l', 'dayL'], ['show-till-jobs-text', 'showTillJobs']]) $(id).textContent = dk(k);
+  $('show-till-jobs').disabled = desk === null || !desk.session.may.read;
+  paintTillJobs();
+}
+{ const i = icon('truck'); if (i !== null) $('show-till-jobs').prepend(i, ' '); }
+$('show-till-jobs').addEventListener('click', () => { void showTillJobs(); });
+
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintDesk(); });
 if (api !== null) paint();
+paintDesk();

@@ -3,10 +3,12 @@
 // proforma → challan → invoice document chain where each document is derived from the one
 // before it and the tax invoice follows what was DELIVERED (M22-FR-02), exact salesperson
 // commission (M22-FR-03), and the customer portal with due-date ageing, allocated payments
-// and human-committed collections (M22-FR-04). Pure and deterministic.
+// and human-committed collections (M22-FR-04), and the contract register a quotation is priced from (M22-FR-01).
+// Pure and deterministic.
 
 export * from './credit';
 export * from './commission';
 export * from './documents';
 export * from './collections';
 export * from './portal-access';
+export * from './contracts';

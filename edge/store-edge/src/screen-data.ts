@@ -40,6 +40,7 @@
 //                      backwards trace both work with the cable out
 
 import { laneScalesFor } from './lane-scales';
+import { laneRollout } from '../../../packages/platform/src/rollout'; // OB-288 P4 (R8-9 · OB-316)
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { fixedPrivacySlaDays } from '../../../packages/customer/src/data-rights';
@@ -62,6 +63,7 @@ import { permissionsOf } from './screen-navigation';
 import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, equipmentWork, helpWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
 import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
+import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -2152,6 +2154,9 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     shopState: textOf((policies as { readonly shopState?: unknown } | undefined)?.shopState) ?? null,
     // OB-299 (M12-FR-02): the product whose signed price is the delivery-fee line — `null` when the owner has not set it.
     tillDeliveryFeeProductId: textOf((policies as { readonly tillDeliveryFeeProductId?: unknown } | undefined)?.tillDeliveryFeeProductId) ?? null,
+    // OB-288 P4 (R8-9 · OB-316): this lane's rollout switches, resolved from the signed pack with no network — "not told"
+    // (every trial feature off) when the pack carries none or the box does not know its lane.
+    rollout: laneRollout(input.pack.rollout?.known === true ? input.pack.rollout.value : undefined, laneId),
   };
 }
 
@@ -2641,6 +2646,30 @@ export const MIRROR_PILOT_NOT_COMPARED: readonly { readonly area: 'payments' | '
   { area: 'loyalty', decision: 'OB-256' },
 ]);
 
+/** MG-11: the rollback limits as carried, read strictly — any limit not a whole number or null makes the whole record unreadable. */
+function rollbackLimitsOf(v: unknown): RollbackLimits | undefined {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const r = v as Record<string, unknown>;
+  if (!ROLLBACK_LIMIT_NAMES.every((n) => isLimitValue(r[n])) || !Number.isInteger(r['version']) || typeof r['setBy'] !== 'string' || typeof r['setAt'] !== 'string') return undefined;
+  return {
+    controlTotalDifferenceMinor: r['controlTotalDifferenceMinor'] as number | null, edgeOutageMinutes: r['edgeOutageMinutes'] as number | null,
+    windowMinutes: r['windowMinutes'] as number | null, backupMaxAgeHours: r['backupMaxAgeHours'] as number | null,
+    version: r['version'] as number, setBy: r['setBy'] as string, setAt: r['setAt'] as string,
+  };
+}
+
+/** MG-11: the backup reports as carried; a report not readable is left out (it can never make a backup count as good). */
+function backupReportsOf(v: unknown): BackupReport[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.flatMap((b) => {
+    if (b === null || typeof b !== 'object') return [];
+    const r = b as Record<string, unknown>;
+    return typeof r['backupId'] === 'string' && typeof r['at'] === 'string' && !Number.isNaN(Date.parse(r['at'] as string))
+      && typeof r['ok'] === 'boolean' && typeof r['encrypted'] === 'boolean' && typeof r['offsite'] === 'boolean'
+      ? [{ backupId: r['backupId'] as string, at: r['at'] as string, ok: r['ok'] as boolean, encrypted: r['encrypted'] as boolean, offsite: r['offsite'] as boolean }] : [];
+  });
+}
+
 export function migrationPayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.migrationPolicy.known) return null;
   const policy = input.pack.migrationPolicy.value;
@@ -2712,6 +2741,12 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
     if (feed.refusedDecisions !== undefined) payload['refusedDecisions'] = feed.refusedDecisions;
     if (feed.verification !== undefined) payload['verification'] = feed.verification;
     if (feed.parallelDaySignatures !== undefined) payload['parallelDaySignatures'] = feed.parallelDaySignatures;
+    // MG-11: the owner's rollback limits, and the backup judged against his age limit by THIS box's clock (offline too).
+    // Not sent, or not readable → absent: the screen says "not known", which the cutover gate counts as failed.
+    const limits = rollbackLimitsOf(feed.rollbackLimits);
+    if (limits !== undefined) payload['rollbackLimits'] = limits;
+    const backups = backupReportsOf(feed.backups);
+    if (backups !== undefined) payload['backup'] = backupStanding(backups, limits?.backupMaxAgeHours ?? null, input.now);
 
   }
 

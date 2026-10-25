@@ -5,6 +5,56 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 wave 5 (25 October 2026): wave-4 follow-ups, commercial desks, owner reporting and data in/out, SaaS and controlled rollout
+
+**What changed**
+- PR #807 (wave 4) and PR #808 (a test timing fix) are merged and deployed to the demo.
+- **Wave-4 follow-ups:**
+  - staff shopping is judged at the till before it is saved, offline (OB-301);
+  - each store's state comes from its GSTIN, and liquor is refused until a state's rule is written (OB-353/354);
+  - the till delivery address and slot come from the app, or else the delivery desk (OB-352);
+  - home department for labour hours (OB-357);
+  - relabel tasks go to the champion, else the manager (OB-358);
+  - the box migration screen shows backup and rollback limits (MG-11).
+- **Commercial desks:**
+  - B2B contract register with maker-checker approval, pricing from the contract or price list, and over-limit orders to the owner (M22-FR-01, OB-290);
+  - B2B desk, Supplier submissions and Concessions pages (Concessions off, OB-304; the B2B desk off, OB-359);
+  - supplier delivery status (M24-FR-02);
+  - concession expiry alerts (M27-FR-04);
+  - EDI deferred in writing to R8 (OB-312).
+- **Owner reporting:**
+  - seven-block dashboard from real reads (M29-FR-01);
+  - four of five exception alerts firing by themselves, each "not set" until entered (M29-FR-03);
+  - scheduled reports and exports (M29-FR-04);
+  - waste with energy and scrap (M28-FR-04);
+  - security report (D13-FR-06);
+  - imports for all five domains, with dry run and undo (OB-315);
+  - more export areas.
+- **SaaS and rollout:**
+  - per-branch and per-lane switches, read offline by the till (OB-316);
+  - metering for information, pricing "not set" (OB-321);
+  - white-label limited to name, logo and colours;
+  - closure governed, with nothing deleted (OB-367/368);
+  - upgrade-compatibility guardrail;
+  - partner SDK 1.0.0;
+  - C8 consent export/import and the C9 volume watch (OB-324).
+- **Decisions:** OB-355 to OB-371 recorded.
+
+**Tested.**
+- On the combined branch: tsc clean, and guardrails plus key unit tests 1,760 of 1,761 (the one failure was a 5-second timeout under load in the merge-marker guard, now given 60 s).
+- Each lane ran its own unit, PostgreSQL and cold-restart, browser and fail-before checks.
+- The full gate runs in CI on the pull request.
+- Not run on real Windows, a printer, a card machine or real Tally. No staff UAT.
+
+**Next:**
+- Follow-ups for OB-360 (credit limit via approval), OB-361 (no typed B2B price), OB-362 (supplier-app delivery form), OB-364 (old members' phone check), OB-365 (till sign-in log to head office), OB-366 ("SRE only" plan label), OB-369 (the desk enters the address after a phone call) and OB-370 (who closes a relabel task).
+- Store devices, self-checkout and mobile POS (R8-3 to R8-7, D04-FR-05, D14).
+- A final full re-audit of every roadmap row.
+
+**Owner inputs:** the five alert thresholds, the C9 threshold (CA), the closure retention schedule (CA or lawyer), and all other "not set" values listed above.
+
+**Blocked:** nothing in software.
+
 ## OB-288 wave 4 (24 October 2026): till side, customer and delivery follow-ups, finance follow-ups, loss prevention, workforce and facilities
 
 **What changed**

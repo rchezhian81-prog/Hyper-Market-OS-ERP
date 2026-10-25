@@ -59,7 +59,9 @@ export type Producer =
   | 'the_boxs_own_outbox'
   | 'journals_posted_to_the_ledger'
   | 'bank_and_gateway_statements'
-  | 'ai_decisions_recorded';
+  | 'ai_decisions_recorded'
+  /** D13-FR-06 (OB-288 P2): grants and removals of access, emergency access, support sessions and security incidents. */
+  | 'access_changes_and_incidents_recorded';
 
 /** Plain-English names for the producers, for the screen and for the owner's backlog. */
 export const PRODUCER_WORDS: Readonly<Record<Producer, string>> = Object.freeze({
@@ -81,6 +83,7 @@ export const PRODUCER_WORDS: Readonly<Record<Producer, string>> = Object.freeze(
   journals_posted_to_the_ledger: 'journals posted to the ledger',
   bank_and_gateway_statements: 'bank and card-machine statements',
   ai_decisions_recorded: 'decisions the AI assistant proposed',
+  access_changes_and_incidents_recorded: 'who was given or lost access, support sessions and security incidents',
 });
 
 /** A column a report may write out. Declared, never inferred — see `columns` below. */
@@ -312,6 +315,20 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     answers: 'what the AI proposed, and what a person decided',
     needs: ['ai_decisions_recorded'],
     columns: [{ name: 'agent', type: 'enum' }, { name: 'proposed', type: 'integer' }, { name: 'decided', type: 'integer' }],
+  },
+  {
+    // D13-FR-06 (OB-288 P2): the security report — access given and taken away, emergency access, support sessions and
+    // security incidents, from the identity ledger and the platform's own registers. Failed sign-ins and lockouts are
+    // listed as NOT KNOWN with the reason (head office keeps no record of them yet) — never as nought.
+    id: 'security', family: 'operations', name: 'Security',
+    answers: 'who was given or lost access, who reached the system for support, and what security incidents were opened',
+    needs: ['access_changes_and_incidents_recorded'],
+    columns: [
+      { name: 'what', type: 'enum' }, { name: 'ref', type: 'text' },
+      // The person a grant or a support session is about — a staff id, not customer data, but kept off a file for
+      // anyone who may not see sensitive columns.
+      { name: 'who', type: 'text', sensitive: true }, { name: 'by', type: 'text' }, { name: 'at', type: 'date' }, { name: 'detail', type: 'text' },
+    ],
   },
 ]);
 

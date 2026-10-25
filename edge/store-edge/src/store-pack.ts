@@ -903,6 +903,10 @@ export interface PackMigrationFeed {
   readonly verification?: Readonly<Record<string, unknown>>;
   /** MG-10: every parallel-run day signature on the cloud, and whether each still applies to the day's figures. */
   readonly parallelDaySignatures?: readonly unknown[];
+  /** MG-11: the owner's rollback limits as head office holds them. Absent → not known (the check fails). */
+  readonly rollbackLimits?: Readonly<Record<string, unknown>>;
+  /** MG-11: the backup job's latest reports. Absent → not known (the check fails). */
+  readonly backups?: readonly unknown[];
 }
 
 /**
@@ -1424,6 +1428,12 @@ export interface StorePack {
    */
   readonly weighingScales?: Register<readonly unknown[]>;
   /**
+   * OB-288 P4 (R8-9 · OB-316) — the rollout switches head office set for this store, per branch and per till lane
+   * (`sre-rollout/1`, packages/platform/src/rollout.ts). Each lane reads its own offline (`laneRollout`); absent → the box
+   * was not told, and every trial feature is off. Optional in the type only so an older pack still type-checks.
+   */
+  readonly rollout?: Register<unknown>;
+  /**
    * OB-172 · D-6 — the receiving checklists head office has in force for this store, and which products are cold-chain by
    * its product master (`{ checks, coldChainProductIds }`, read by `readReceivingChecklistSetup`). The manager's screen and
    * the warehouse handheld offer the checklist from it with no network, and it travels inside the receipt. Absent → the
@@ -1600,6 +1610,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     supportSessions: notKnown(why),
     devices: notKnown(why),
     weighingScales: notKnown(why),
+    rollout: notKnown(why),
     receivingChecklist: notKnown(why),
     versionPolicy: notKnown(why),
     auditRecords: notKnown(why),
@@ -1745,6 +1756,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
     weighingScales: section<readonly unknown[]>('weighingScales'),
+    rollout: section<unknown>('rollout'),
     receivingChecklist: section<unknown>('receivingChecklist'),
     versionPolicy: section<unknown>('versionPolicy'),
     auditRecords: section<readonly unknown[]>('auditRecords'),
@@ -1827,6 +1839,9 @@ export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, received
       ...(feed.refusedDecisions === undefined ? {} : { refusedDecisions: feed.refusedDecisions }),
       ...(feed.verification === undefined ? {} : { verification: feed.verification }),
       ...(feed.parallelDaySignatures === undefined ? {} : { parallelDaySignatures: feed.parallelDaySignatures }),
+      // MG-11: carried whole; the screen data judges the backup against the limit with this box's clock.
+      ...(feed.rollbackLimits === undefined ? {} : { rollbackLimits: feed.rollbackLimits }),
+      ...(feed.backups === undefined ? {} : { backups: feed.backups }),
     }),
   };
 }

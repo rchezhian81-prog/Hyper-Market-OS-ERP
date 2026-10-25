@@ -47,6 +47,8 @@ export const PRODUCED_FROM_DOMAIN_REGISTERS: readonly string[] = Object.freeze([
   'supplier_service', 'invoice_differences',
   'orders_and_substitutions', 'delivery_sla', 'delivery_contribution',
   'marketing', 'ai_outcomes',
+  // OB-288 P2 · D13-FR-06: the security report.
+  'security',
 ]);
 
 /** What a producer hands back (the same shape as report-producers.ts, plus the period a month report covers). */
@@ -649,6 +651,74 @@ export function produceMore(kit: ProducerKit) {
           ],
           rows: sends.map((s) => ({ campaignId: s.p.campaignId, channel: s.p.channel, sent: String(s.p.messageIds.length), at: s.p.at })),
           drill: {},
+        };
+      }
+
+      // ── security (OB-288 P2 · D13-FR-06) ──────────────────────────────────────────────────────────────────────────
+      case 'security': {
+        // The month to the asked day, from the registers each act already writes: access GIVEN and TAKEN AWAY (the
+        // identity ledger's grants and removals, with who asked and who approved), emergency access, support sessions
+        // approved for the support desk and remote sessions opened on the shop's devices, and security incidents and
+        // findings opened. Company-wide: a branch-limited reader is told, never shown a part.
+        if (scope !== 'all') return companyOnly('Access given', 'count', 'access, support and incidents are company-wide records;');
+        type Grant = { userId: string; roleId: string; request?: { requestedBy?: string; approvedBy?: string }; provenance?: { revokedBy?: string; endedBy?: string; reason?: string } };
+        type Emergency = { grantId: string; userId: string; roleId: string; requestedBy: string; approvedBy: string; grantedAt: string; reason: string };
+        type Support = { kind: string; requestId?: string; sessionId?: string; decision?: string; decidedBy?: string; at?: string; request?: { requestId: string; requesterId: string; reason: string; at: string }; session?: { sessionId: string; requesterId: string; approvedBy: string } };
+        type Remote = { sessionId: string; change: string; by: string; at: string; deviceId?: string; userId?: string; kind?: string };
+        type Incident = { change: string; incidentId: string; title?: string; severity?: string; by: string; at: string };
+        type Finding = { findingId: string; title: string; severity: string; firstSeenAt: string; openedBy: string };
+        const granted = (await recordsOf<Grant>(kit.store, tenantId, STREAM.identity, 'RoleGranted')).filter((r) => inPeriod(r.at));
+        const revoked = (await recordsOf<Grant>(kit.store, tenantId, STREAM.identity, 'RoleRevoked')).filter((r) => inPeriod(r.at));
+        const emergency = (await recordsOf<Emergency>(kit.store, tenantId, streamName(STREAM.identity, 'emergency-access'), 'EmergencyAccessRecorded')).filter((r) => inPeriod(r.at));
+        const firstEmergency = new Map<string, { p: Emergency; at: string }>();
+        for (const e of emergency) if (!firstEmergency.has(e.p.grantId)) firstEmergency.set(e.p.grantId, e);
+        const support = (await recordsOf<Support>(kit.store, tenantId, streamName(STREAM.platform, 'support-access'), 'SupportAccessLifecycleEvent')).filter((r) => inPeriod(r.at));
+        const supportApproved = support.filter((r) => r.p.kind === 'decided' && r.p.decision === 'approved');
+        const remoteOpened = (await recordsOf<Remote>(kit.store, tenantId, streamName(STREAM.platform, 'remote-sessions'), 'RemoteSessionEvent')).filter((r) => r.p.change === 'opened' && inPeriod(r.at));
+        const incidents = (await recordsOf<Incident>(kit.store, tenantId, streamName(STREAM.platform, 'incidents'), 'OpsIncidentFact')).filter((r) => r.p.change === 'opened' && inPeriod(r.at));
+        const findingsSeen = new Map<string, { p: Finding; at: string }>();
+        for (const f of await recordsOf<Finding>(kit.store, tenantId, streamName(STREAM.compliance, 'findings'), 'SecurityFindingRecorded')) {
+          if (!findingsSeen.has(f.p.findingId)) findingsSeen.set(f.p.findingId, f);
+        }
+        const findings = [...findingsSeen.values()].filter((f) => inPeriod(f.p.firstSeenAt));
+        const allTimes = [
+          ...granted, ...revoked, ...emergency, ...support, ...remoteOpened, ...incidents, ...findings,
+        ].map((r) => r.at);
+        const asAt = newestOf(allTimes);
+        const mk = kit.at(asAt, 'no grant of access, support session or incident has ever been recorded at head office');
+        const NOT_HELD = 'head office keeps no record of failed sign-ins or lockouts yet: the sign-in lockout is held in memory by the API, and each store computer keeps its till sign-in log on its own disk — neither reaches head office';
+        type SecurityRow = { what: string; ref: string; who: string; by: string; at: string; detail: string };
+        const rows: SecurityRow[] = [
+          ...granted.map((r) => ({ what: 'access_given', ref: `${r.p.userId}/${r.p.roleId}`, who: r.p.userId, by: r.p.request?.approvedBy ?? '', at: r.at, detail: `role ${r.p.roleId}${r.p.request?.requestedBy === undefined ? '' : `, asked by ${r.p.request.requestedBy}`}` })),
+          ...revoked.map((r) => ({ what: 'access_taken_away', ref: `${r.p.userId}/${r.p.roleId}`, who: r.p.userId, by: r.p.provenance?.revokedBy ?? r.p.provenance?.endedBy ?? '', at: r.at, detail: `role ${r.p.roleId}${r.p.provenance?.reason === undefined ? '' : `: ${r.p.provenance.reason}`}` })),
+          ...[...firstEmergency.values()].map((r) => ({ what: 'emergency_access', ref: r.p.grantId, who: r.p.userId, by: r.p.approvedBy, at: r.at, detail: `role ${r.p.roleId}: ${r.p.reason}` })),
+          ...supportApproved.map((r) => ({ what: 'support_session', ref: r.p.session?.sessionId ?? r.p.requestId ?? '', who: r.p.session?.requesterId ?? '', by: r.p.decidedBy ?? '', at: r.at, detail: 'support access approved' })),
+          ...remoteOpened.map((r) => ({ what: 'remote_session', ref: r.p.sessionId, who: r.p.userId ?? '', by: r.p.by, at: r.at, detail: `${r.p.kind ?? 'remote'} session on device ${r.p.deviceId ?? 'not named'}` })),
+          ...incidents.map((r) => ({ what: 'incident_opened', ref: r.p.incidentId, who: '', by: r.p.by, at: r.at, detail: `${r.p.severity ?? ''} ${r.p.title ?? ''}`.trim() })),
+          ...findings.map((r) => ({ what: 'security_finding', ref: r.p.findingId, who: '', by: r.p.openedBy, at: r.p.firstSeenAt, detail: `${r.p.severity}: ${r.p.title}` })),
+        ].sort((a, b) => a.at.localeCompare(b.at) || a.ref.localeCompare(b.ref));
+        const countTx = (what: string): SourceTransaction[] => rows.filter((r) => r.what === what).map((r) => ({ transactionId: r.ref, at: r.at, branchId: 'company', staffId: r.by, amountMinor: 1, description: `${r.what}: ${r.detail}` }));
+        return {
+          period, sources: [fresh('identity ledger, support, remote sessions, incidents and findings', 'security', asAt)],
+          figures: [
+            mk('Access given', granted.length, 'count'),
+            mk('Access taken away', revoked.length, 'count'),
+            mk('Emergency access granted', firstEmergency.size, 'count'),
+            mk('Support sessions approved', supportApproved.length, 'count'),
+            mk('Remote sessions opened', remoteOpened.length, 'count'),
+            mk('Incidents opened', incidents.length, 'count'),
+            mk('Security findings first seen', findings.length, 'count'),
+            // P-08: not known is said, never nought.
+            figure({ name: 'Failed sign-ins', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: NOT_HELD }),
+            figure({ name: 'Sign-in lockouts', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: NOT_HELD }),
+          ],
+          rows,
+          drill: {
+            'Access given': countTx('access_given'), 'Access taken away': countTx('access_taken_away'),
+            'Emergency access granted': countTx('emergency_access'), 'Support sessions approved': countTx('support_session'),
+            'Remote sessions opened': countTx('remote_session'), 'Incidents opened': countTx('incident_opened'),
+            'Security findings first seen': countTx('security_finding'),
+          },
         };
       }
 

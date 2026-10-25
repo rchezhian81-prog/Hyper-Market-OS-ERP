@@ -4,7 +4,7 @@ import { createBoxQueue, STATE_KEYS } from '../../apps/web-erp/src/lpw-box-queue
 import { createHelpSession, ackKeyFor, HELP_COPY, type HeldLibrary } from '../../apps/web-erp/src/help-session';
 import { createEquipmentReadingQueue, createFacilitiesOfficeSession, tenthsOf, degrees } from '../../apps/web-erp/src/facilities-office-session';
 import { createWriteOffQueue, createWriteOffDecideSession } from '../../apps/web-erp/src/write-off-queue-session';
-import { createRelabelSession, paiseOf } from '../../apps/web-erp/src/relabel-session';
+import { createRelabelSession, paiseOf, relabelAssigneeWords } from '../../apps/web-erp/src/relabel-session';
 import { createAppointmentLettersSession } from '../../apps/web-erp/src/appointment-letters-session';
 import { createRelatedPartiesSession } from '../../apps/web-erp/src/related-parties-session';
 import { RELAYABLE_DEVICE_EVENTS } from '../../packages/sync/src/device-relay';
@@ -167,7 +167,22 @@ describe('relabel tasks, appointment letters, related parties', () => {
     expect((await s.close('RL-1', '18', '')).result).toBe('invalid');
     await s.close('RL-1', '18', 'photo-1');
     expect(f.sent).toEqual([{ method: 'POST', path: '/v1/pricing/relabel-tasks/RL-1/done', body: { shelfPriceMinor: 1_800, evidenceRef: 'photo-1' }, key: 'k' }]);
-    expect(createRelabelSession({ viewer: { userId: 'u-cash', permissions: ['workforce.task.complete.own'] } }).may).toEqual({ read: false, close: false });
+    // OB-358: a floor champion who is not a manager reads only their OWN relabel tasks (the My tasks page), and closes them.
+    expect(createRelabelSession({ viewer: { userId: 'u-cash', permissions: ['workforce.task.complete.own'] } }).may).toEqual({ read: false, close: true, readMine: true });
+    expect(createRelabelSession({ viewer: { userId: 'u-x', permissions: [] } }).may).toEqual({ read: false, close: false, readMine: false });
+    await s.mine();
+    expect(f.sent.at(-1)).toMatchObject({ method: 'GET', path: '/v1/pricing/relabel-tasks/mine' });
+  });
+
+  it('OB-358: who a relabel task is for, in words — the champion, or the store manager and why; mine marked; nobody in the role said', () => {
+    expect(relabelAssigneeWords('en', { assignee: { to: 'floor_champion', departmentId: 'D-dairy', employeeId: 'u-asha' }, assignedToMe: true }))
+      .toBe('For: u-asha (floor champion of D-dairy) · ✓ yours');
+    expect(relabelAssigneeWords('en', { assignee: { to: 'store_manager', departmentId: 'D-grocery', because: 'no_champion_named' }, storeManagers: ['u-mgr'] }))
+      .toBe('For: the store manager (u-mgr) — no floor champion named for D-grocery');
+    expect(relabelAssigneeWords('en', { assignee: { to: 'store_manager', departmentId: null, because: 'no_department_owns_it' }, storeManagers: [] }))
+      .toBe('For: the store manager — ⚠ nobody holds the store manager role here (not set) — no department owns this product here');
+    expect(relabelAssigneeWords('en', { assignee: null })).toBe('For: not assigned (raised before tasks were assigned)');
+    expect(relabelAssigneeWords('ta', { assignee: { to: 'store_manager', departmentId: 'D-dairy', because: 'champion_left' }, storeManagers: ['u-mgr'] })).toMatch(/^யாருக்கு: கடை மேலாளர் \(u-mgr\) — தளச் சாம்பியன் விலகிவிட்டார் — D-dairy$/);
   });
 
   it('appointment letters: a letter needs the person and the day; the signed copy must be chosen first', async () => {

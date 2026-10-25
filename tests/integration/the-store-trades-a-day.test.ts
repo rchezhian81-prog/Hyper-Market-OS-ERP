@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,7 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
+import { startTheJourneyMidMorning } from '../support/trading-day-clock';
 
 /**
  * **The store trades a day, connected — on the REAL cloud, over REAL PostgreSQL, through the REAL box (SP-9-i · W10 · F13).**
@@ -72,6 +73,9 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
   const edges: EdgeProcess[] = [];
 
   beforeAll(async () => {
+    // The day runs from 10:00 in the shop's day (UTC here), never from the real clock: begun between midnight and 00:30 UTC,
+    // the bill was rung before the opening stock's 00:30 booking, so the shelf was valued at ten, not nine.
+    startTheJourneyMidMorning();
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store // OB-36 "A": the store computer's own role
     await cloud.grant(CASHIER, 'cashier');
@@ -82,7 +86,7 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
     await publishCatalogueAndStock();
   }, 60_000);
-  afterAll(async () => { await cloud?.stop(); });
+  afterAll(async () => { vi.useRealTimers(); await cloud?.stop(); });
   afterEach(async () => {
     for (const edge of edges.splice(0)) await edge.stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
@@ -167,6 +171,8 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     const T0 = Date.now();
     const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
     const tradingDay = tradingDateOf(at(0), makeTradingDayRule('00:00'));
+    // The whole scripted hour — the float, the bill, the pickup and the shift close — is inside this one trading day.
+    expect(tradingDateOf(at(60), makeTradingDayRule('00:00')), 'the scripted hour stays inside one trading day').toBe(tradingDay);
 
     expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: at(0), movementId: 'cm-float' })).toMatchObject({ committed: true });
     const scanned = till.scanBarcode(BARCODE);

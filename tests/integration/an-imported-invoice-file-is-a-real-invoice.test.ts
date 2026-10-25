@@ -83,7 +83,8 @@ const invoiceOnRecord = async (h: ApiHarness, invoiceId: string) => {
 describe('SF-06-a — an invoice file is loaded into the real invoice register, and can be undone', () => {
   it('THE AUDIT\'S CASE: a template head office does not support is refused — nothing is "applied" that has no target', async () => {
     const h = await seeded();
-    const product = { id: 'opening-stock-v1', domain: 'stock', columns: [{ name: 'sku', type: 'text', required: true }], keyColumns: ['sku'] };
+    const product = { id: 'gift-cards-v1', domain: 'stored_value', // OB-315 made opening stock a supported template; gift cards are not one
+      columns: [{ name: 'sku', type: 'text', required: true }], keyColumns: ['sku'] };
     const v = await post(h, '/v1/import/validate', 'u-mgr', { template: product, text: 'sku\nGHOST-1' });
     expect(v.status).toBe(422);
     expect(codeOf(v)).toBe('import_template_not_supported');
@@ -93,7 +94,7 @@ describe('SF-06-a — an invoice file is loaded into the real invoice register, 
     // The caller's own "what exists" lists are refused by name — head office checks against its own registers.
     expect(codeOf(await validate(h, file(invoiceRows('INV-1', 'S-1', 'PO-7', SMALL)), 9000, { references: { product: ['ANY'] } }))).toBe('import_carries_caller_claims');
     // What head office supports is listed.
-    expect(((await get(h, '/v1/import/templates', 'u-book')).body as { templates: { id: string }[] }).templates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1', 'product-update-v1']);
+    expect(((await get(h, '/v1/import/templates', 'u-book')).body as { templates: { id: string }[] }).templates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1', 'product-update-v1', 'supplier-v1', 'price-list-v1', 'opening-stock-v1', 'customer-v1', 'loyalty-opening-v1']); // OB-315
   });
 
   it('an 85-line invoice and a 2-line invoice in one file → approved by a second person → two REAL captured invoices, matched against the stored order, in one save with the job', async () => {

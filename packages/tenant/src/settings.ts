@@ -246,16 +246,8 @@ export const SETTINGS = {
     label: 'That bank account\'s IFSC (empty = not set)',
     defaultValue: '',
   } as TenantSetting<string>,
-  /**
-   * OB-348 (owner, 24 Oct 2026, in writing): the STATE the shop trades in, as its ISO 3166-2:IN code (TN for Tamil Nadu).
-   * Liquor is judged by that state's rule at the till, on the store computer and at head office (Tamil Nadu refuses —
-   * TASMAC). High-impact: the owner approves every change (OB-336 pattern). Empty = not set — never guessed from anything.
-   */
-  STORE_STATE: {
-    key: 'store.state',
-    label: 'The state the shop trades in (ISO code, e.g. TN; empty = not set)',
-    defaultValue: '',
-  } as TenantSetting<string>,
+  // OB-354 (owner, 24 Oct 2026, in writing): there is NO business-wide "state" setting — each store's state is read from its
+  // own GSTIN (the first two digits), so the liquor rule (OB-348 · OB-353) follows the store. See restricted-sales/liquor.ts.
   /**
    * OB-299 (owner, 23 Oct 2026, in writing — M12-FR-02): the catalogue product whose signed price is the till's
    * DELIVERY-FEE line when a bill is marked for delivery (its price may be ₹0; its HSN/SAC and GST are the catalogue's).

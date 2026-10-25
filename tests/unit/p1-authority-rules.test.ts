@@ -216,7 +216,7 @@ describe('structural and high-impact changes (M01-FR-01/02/03)', () => {
   it('payments, pricing and offline-limit switches, and the trading-day cut-off, currency, time zone, till spend cap and bulk-publish threshold, are high-impact (OB-336)', () => {
     expect(['payments.upi', 'pricing.auto_markdown', 'offline.refund_cap'].every(isHighImpactFlag)).toBe(true);
     expect(isHighImpactFlag('screens.dark_mode')).toBe(false);
-    expect(Object.keys(HIGH_IMPACT_SETTINGS).sort()).toEqual(['catalogue.bulk_publish_threshold', 'locale.currency', 'locale.time_zone', 'loyalty.till_spend_cap_paise', 'store.state', 'trading_day.cutoff']); // OB-348: the shop's state
+    expect(Object.keys(HIGH_IMPACT_SETTINGS).sort()).toEqual(['catalogue.bulk_publish_threshold', 'locale.currency', 'locale.time_zone', 'loyalty.till_spend_cap_paise', 'trading_day.cutoff']); // OB-354: no shop-state setting — read from each store's GSTIN
     expect(flagHistory([{ key: 'a', enabled: true, changedBy: 'u', changedAt: 'x' }, { key: 'b', enabled: true, changedBy: 'u', changedAt: 'x' }, { key: 'a', enabled: false, changedBy: 'u', changedAt: 'y' }], 'a').map((c) => [c.version, c.enabled])).toEqual([[1, true], [2, false]]);
   });
 });

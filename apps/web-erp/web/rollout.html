@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Trial switches and shop account</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Trial switches and shop account (OB-288 P4 · R8-9 · OB-316 · M36-FR-01 · OB-321 · C8 · C9 · OB-324). A THIN CLIENT over
+      head office: trial switches per branch and per till lane (previewed, saved with a reason, rolled back in one step;
+      high-impact ones carry the owner's approval), the usage meter for information (price "not set"), the CA's
+      customer-data watch, and the consent record in and out. Its session is apps/web-erp/src/rollout-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+      .meta { font-size: 14px; color: var(--muted); }
+      .figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 8px; }
+      .figure { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+      .figure strong { font-size: 20px; }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 15px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td[data-state="true"] { font-weight: 700; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Trial switches and shop account</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Trial switches and shop account</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="board" hidden aria-labelledby="board-h">
+        <h3 id="board-h"></h3>
+        <p class="meta" id="rule"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th id="c-switch"></th><th id="c-place"></th><th id="c-state"></th><th id="c-version"></th><th id="c-why"></th><th id="c-who"></th><th></th></tr></thead>
+            <tbody id="board-rows"></tbody>
+          </table>
+        </div>
+        <ul class="rows" id="history-rows"></ul>
+        <p class="status" id="b-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="change" hidden aria-labelledby="change-h">
+        <h3 id="change-h"></h3>
+        <div class="row-form">
+          <label for="ch-key"><span id="ch-key-l"></span><input id="ch-key" autocomplete="off" /></label>
+          <label for="ch-branch"><span id="ch-branch-l"></span><input id="ch-branch" autocomplete="off" /></label>
+          <label for="ch-lane"><span id="ch-lane-l"></span><input id="ch-lane" autocomplete="off" /></label>
+          <label for="ch-state"><span id="ch-state-l"></span><select id="ch-state"><option value="on" id="ch-on"></option><option value="off" id="ch-off"></option></select></label>
+        </div>
+        <label for="ch-reason"><span id="ch-reason-l"></span><input id="ch-reason" autocomplete="off" /></label>
+        <label for="ch-approval"><span id="ch-approval-l"></span><input id="ch-approval" autocomplete="off" /></label>
+        <div class="row-form">
+          <button id="ch-preview" type="button" class="quiet"><span id="ch-preview-text"></span></button>
+          <button id="ch-save" type="button"><span id="ch-save-text"></span></button>
+        </div>
+        <p class="meta" id="ch-said" role="status" aria-live="polite"></p>
+        <p class="status" id="ch-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="meter" hidden aria-labelledby="meter-h">
+        <h3 id="meter-h"></h3>
+        <div class="figures" id="meter-figures"></div>
+        <p class="meta" id="meter-month"></p>
+        <p class="meta" id="meter-info"></p>
+        <p class="status" id="m-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="watch" hidden aria-labelledby="watch-h">
+        <h3 id="watch-h"></h3>
+        <div class="figures" id="watch-figures"></div>
+        <p class="meta" id="watch-said" role="status" aria-live="polite"></p>
+        <p class="status" id="w-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="consent" hidden aria-labelledby="consent-h">
+        <h3 id="consent-h"></h3>
+        <button id="cs-download" type="button" class="quiet"><span id="cs-download-text"></span></button>
+        <label for="cs-file"><span id="cs-file-l"></span><input id="cs-file" type="file" accept="application/json,.json" /></label>
+        <button id="cs-import" type="button"><span id="cs-import-text"></span></button>
+        <p class="status" id="cs-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./rollout.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

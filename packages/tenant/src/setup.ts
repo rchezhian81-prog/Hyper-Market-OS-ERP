@@ -13,7 +13,6 @@
 import { PAPER_FORMATS } from '../../receipt/src/presets';
 import { isUpiId, isBankAccountNo, isIfsc } from '../../receipt/src/b2c-dynamic-qr';
 import { SETTINGS, TenantSettings, type TenantSetting } from './settings';
-import { isIndianStateCode, INDIAN_STATES } from '../../restricted-sales/src/liquor';
 
 /** How much attention a setting usually needs — advisory, for grouping in the UI. */
 export type SetupGroup = 'give_now' | 'check_default' | 'already_set';
@@ -99,10 +98,6 @@ const emptyOr = (check: (v: string) => boolean, message: string): SetupValidator
 const validateUpiId = emptyOr(isUpiId, 'Give the UPI ID as the bank gave it, like shopname@bank — or leave it empty (not set).');
 const validateBankAccount = emptyOr(isBankAccountNo, 'Give the bank account number as digits only (9 to 18) — or leave it empty (not set).');
 const validateIfsc = emptyOr((v) => isIfsc(v.toUpperCase()), 'Give the 11-character IFSC, like SBIN0001234 — or leave it empty (not set).');
-/** OB-348: the shop's state — empty (not set) or one ISO 3166-2:IN code, upper case. */
-const validateShopState: SetupValidator = (v) =>
-  (isString(v) && (v === '' || isIndianStateCode(v)) ? null
-    : `Give the state as its two-letter code in capitals — TN for Tamil Nadu (one of ${Object.keys(INDIAN_STATES).join(', ')}) — or leave it empty (not set).`);
 /** OB-299: the delivery-fee product — empty (not set) or a product id (letters, digits, - _ . : only). */
 const validateProductRef: SetupValidator = (v) =>
   (isString(v) && (v === '' || /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/.test(v)) ? null
@@ -296,14 +291,6 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'For the dynamic QR: that bank account\'s IFSC. (Empty = not set.)',
     validate: validateIfsc,
-  },
-  {
-    // OB-348: the state decides the liquor rule (Tamil Nadu: TASMAC only). The owner approves every change (OB-336).
-    setting: SETTINGS.STORE_STATE,
-    group: 'give_now',
-    required: false,
-    question: 'Which state does the shop trade in? Give its two-letter code, TN for Tamil Nadu. (It decides the liquor rule; empty = not set, and liquor is refused.)',
-    validate: validateShopState,
   },
   {
     // OB-299: the till's delivery sale — the fee line is this catalogue product at its signed price (₹0 allowed).

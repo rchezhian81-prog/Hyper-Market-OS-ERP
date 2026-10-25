@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { accessMatch } from '../../packages/workforce/src/access-match';
 import { trainingRows, checkCompletion, checkCompetency, currentCurricula, readCurriculumItems } from '../../packages/workforce/src/training';
-import { rosteredMinutes, salesPerLabourHour, productivityReport } from '../../packages/workforce/src/productivity';
+import { rosteredMinutes, salesPerLabourHour, productivityReport, departmentLabour } from '../../packages/workforce/src/productivity';
 import { adoptionGate, proposedCurricula, currentChampions } from '../../packages/workforce/src/adoption-gate';
 import { renderLetter, unknownPlaceholders, hourlyRateWords } from '../../packages/workforce/src/appointment-letter';
 import { BUILT_IN_SOPS, OWNER_GUIDE_PARTS } from '../../packages/workforce/src/sop-library.generated';
@@ -114,6 +114,24 @@ describe('productivity (OB-317)', () => {
     const r = productivityReport({ from: 'f', to: 't', labour: { totalMinutes: 60, people: 1 }, totalSalesMinor: 500, departments: [{ departmentId: 'D', name: 'D', salesMinor: 400 }], unownedSalesMinor: 100, departmentMinutes: new Map([['D', 30]]) });
     expect(r.departments[0]!.rate).toEqual({ kind: 'per_hour', minorPerHour: 800 });
     expect(r.hoursAttributed).toBe(true);
+  });
+
+  it('OB-357: each person\'s minutes count to their home department; none, or one no longer live, is "not attributed" by name', () => {
+    const people = [
+      { ...emp('a', []), homeDepartmentId: 'D-dairy' }, { ...emp('b', []), homeDepartmentId: 'D-closed' }, emp('c', []),
+    ];
+    const split = departmentLabour({ byEmployee: new Map([['a', 120], ['b', 60], ['c', 30]]), employees: people, liveDepartments: new Set(['D-dairy']) });
+    expect([...split.departmentMinutes]).toEqual([['D-dairy', 120]]);
+    expect(split.notAttributed).toEqual({ labourMinutes: 90, people: [
+      { employeeId: 'b', name: 'B', labourMinutes: 60, why: 'home_department_not_live' },
+      { employeeId: 'c', name: 'C', labourMinutes: 30, why: 'no_home_department' },
+    ] });
+    const m = rosteredMinutes({
+      shifts: [{ shiftId: 's', branchId: 'b', startsAt: '2030-01-01T08:00:00Z', endsAt: '2030-01-01T10:00:00Z', requiredRoles: [] }],
+      assignments: [{ shiftId: 's', employeeId: 'a', role: 'x' }, { shiftId: 's', employeeId: 'c', role: 'x' }],
+      employees: people, from: '2030-01-01T00:00:00Z', to: '2030-01-02T00:00:00Z',
+    });
+    expect([...m.byEmployee]).toEqual([['a', 120], ['c', 120]]);
   });
 });
 

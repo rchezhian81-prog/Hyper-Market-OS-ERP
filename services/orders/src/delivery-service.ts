@@ -114,6 +114,16 @@ async function openSlots(deps: DeliveryServiceDeps, tenantId: string, config: De
   return out;
 }
 
+/**
+ * The slots of a day still open to a new booking — head office's own policy, far enough ahead, with room (OB-352: the till
+ * delivery jobs are offered these, at the delivery desk and in the customer app). No delivery service on record → none.
+ */
+export async function openDeliverySlots(deps: DeliveryServiceDeps, tenantId: string, day: string): Promise<readonly SlotOffer[]> {
+  const config = await deps.config(tenantId);
+  if (config === undefined) return [];
+  return openSlots(deps, tenantId, config, day, await deps.timeZone(tenantId));
+}
+
 async function countTaken(deps: DeliveryServiceDeps, tenantId: string, slotStartsAt: string, exceptOrderId?: string): Promise<number> {
   const byOrder = new Map<string, SlotBooking>();
   for (const b of await deps.bookings(tenantId, slotStartsAt)) if (!byOrder.has(b.orderId)) byOrder.set(b.orderId, b);

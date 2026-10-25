@@ -9,6 +9,10 @@ import { fulfilmentShop, codeOf, OWNER, DISPATCHER, CASHIER, DOORS, type Shop } 
 // Once set, the reward is given once per side, on the loyalty referral register the liability check and the payout read;
 // a second delivered order earns nothing more. A customer who already had an order delivered cannot be "referred". 403s
 // for the till and the manager. In memory and on real PostgreSQL, with a cold restart. Synthetic data.
+//
+// OB-356 (owner, 24 Oct 2026, in writing: "a referral that qualified before the reward was set is paid once the owner sets
+// the reward", as built) is PINNED here: c-2's first delivery earns while neither side is set (nothing given, both
+// waiting); each side is given — once — when the owner sets it later, and a later change never gives it again.
 
 const backings = useRestartableBackings();
 const delivered = async (shop: Shop, customer: string, orderId: string, slot: number): Promise<void> => {
@@ -16,7 +20,7 @@ const delivered = async (shop: Shop, customer: string, orderId: string, slot: nu
   for (const event of ['pick', 'pack', 'dispatch', 'deliver']) await shop.ok('POST', `/v1/orders/${orderId}/transition`, OWNER, { event });
 };
 
-describe.each(backings)('a referral rewards both sides once, on the first delivery (M17-FR-02 · OB-351) — on $name', ({ harness }) => {
+describe.each(backings)('a referral rewards both sides once, on the first delivery (M17-FR-02 · OB-351 · OB-356) — on $name', ({ harness }) => {
   it('one code each; no self-referral; "not set" gives nothing and waits; set → given once per side; a second delivery earns nothing; a restart', async () => {
     const h = harness();
     const shop = await fulfilmentShop(h);
@@ -55,6 +59,7 @@ describe.each(backings)('a referral rewards both sides once, on the first delive
     expect((reg1['referrals'] as { standing: string; waitingForReward: string[]; firstDeliveredOrderId: string }[])[0]).toMatchObject({ standing: 'earned_reward_not_set', waitingForReward: ['referrer', 'referred'], firstDeliveredOrderId: 'ORD-R1' });
     expect(((await shop.ok('GET', '/v1/finance/referral-liability', OWNER))['register'] as { outstandingMinor: number }).outstandingMinor).toBe(0);
 
+    // ── OB-356: qualified BEFORE the reward was set — paid once the owner sets it.
     // ── The owner sets the referrer's reward only: that side is given; the referred side still waits, said so.
     await shop.ok('POST', '/v1/loyalty/referral-rewards', OWNER, { referrerRewardMinor: 50_00, reason: 'launch the programme' });
     expect((await shop.ok('GET', '/v1/me/referral', 'c-1'))['myReferrals']).toEqual([expect.objectContaining({ standing: 'earned_reward_not_set', rewardMinor: 50_00, waitingForReward: false })]);

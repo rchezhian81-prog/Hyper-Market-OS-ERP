@@ -195,3 +195,28 @@ describe('withMigrationFeed — the cloud\'s register laid over the pack, never 
     expect(migrationPayload({ ...input, pack: { ...emptyPack(), migrationPolicy: { known: true, value: { cutoverId: 'c', requiredCleanDays: 1 } } } })).not.toHaveProperty('cloudRegister');
   });
 });
+
+describe('MG-11 — the backup and the owner\'s rollback limits on the box\'s migration screen', () => {
+  const LIMITS = { controlTotalDifferenceMinor: 0, edgeOutageMinutes: 30, windowMinutes: 240, backupMaxAgeHours: 6, version: 2, setBy: 'u-owner', setAt: NOW };
+  const payloadAt = (f: MigrationFeed, now: string) => migrationPayload({ pack: withMigrationFeed(emptyPack(), f, NOW), sales: [], unreadableRecords: 0, outbox: new SyncOutbox(), now, tradingDay: now.slice(0, 10) })!;
+
+  it('reads them as carried; a garbled limits record or a backups that is not a list is not a register', () => {
+    expect(readMigrationFeed({ ...feed(), rollbackLimits: LIMITS, backups: [] })).toBeDefined();
+    expect(readMigrationFeed({ ...feed(), rollbackLimits: 'six hours' })).toBeUndefined();
+    expect(readMigrationFeed({ ...feed(), backups: { b: 1 } })).toBeUndefined();
+  });
+
+  it('the backup is judged by the BOX\'s clock: inside the limit → passed; the line down long enough → failed; never sent → absent', () => {
+    const f = feed({ rollbackLimits: LIMITS, backups: [{ backupId: 'B-1', at: '2026-10-10T18:00:00.000Z', ok: true, encrypted: true, offsite: true }] });
+    expect(payloadAt(f, NOW)['backup']).toMatchObject({ state: 'passed', backupId: 'B-1' });           // 3 hours old, limit 6
+    expect(payloadAt(f, '2026-10-11T02:00:00.000Z')['backup']).toMatchObject({ state: 'failed', backupId: 'B-1' }); // 8 hours old
+    expect(payloadAt(f, NOW)['rollbackLimits']).toEqual(LIMITS);
+    expect(payloadAt(feed(), NOW)).not.toHaveProperty('backup');
+    expect(payloadAt(feed(), NOW)).not.toHaveProperty('rollbackLimits');
+    // A register with no good backup in it is a fact ("never reported" / "not good") — failed, never passed.
+    expect(payloadAt(feed({ rollbackLimits: LIMITS, backups: [] }), NOW)['backup']).toMatchObject({ state: 'failed' });
+    expect(payloadAt(feed({ rollbackLimits: LIMITS, backups: [{ backupId: 'B-x', at: 'yesterday', ok: true, encrypted: true, offsite: true }] }), NOW)['backup']).toMatchObject({ state: 'failed' });
+    // A limits record not readable is left out (not known), never half-read.
+    expect(payloadAt(feed({ rollbackLimits: { ...LIMITS, windowMinutes: -1 } }), NOW)).not.toHaveProperty('rollbackLimits');
+  });
+});

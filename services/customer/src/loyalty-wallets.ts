@@ -65,6 +65,8 @@ export interface LoyaltyWalletDeps {
    * tiers (OFF). Absent → the feed carries no tier, as before.
    */
   readonly tierAt?: (tenantId: string, memberRef: string, at: string) => Promise<{ readonly tierName: string | null; readonly multiplierBps: number } | undefined>;
+  /** OB-352: whether the membership is tied to an app account now (the till then leaves the delivery address to the app). */
+  readonly appLinked?: (tenantId: string, memberRef: string) => Promise<boolean>;
 }
 
 /** The current state of every member code — the latest fact per code. */
@@ -85,6 +87,7 @@ export async function buildWalletFeed(deps: LoyaltyWalletDeps, tenantId: string)
       deps.pointsBalance(tenantId, m.memberRef), deps.storeCredit(tenantId, m.memberRef), deps.spendsApplied(tenantId, m.memberRef),
       deps.tierAt === undefined ? Promise.resolve(undefined) : deps.tierAt(tenantId, m.memberRef, generatedAt),
     ]);
+    const app = deps.appLinked === undefined ? false : await deps.appLinked(tenantId, m.memberRef);
     wallets.push({
       memberRef: m.memberRef,
       points: Math.max(0, points ?? 0),
@@ -92,6 +95,7 @@ export async function buildWalletFeed(deps: LoyaltyWalletDeps, tenantId: string)
       appliedSpendRefs: spends.map((s) => s.ref),
       // OB-295: the member's tier and multiplier — only while the owner has tiers set (off until then).
       ...(tier === undefined ? {} : { tier: { name: tier.tierName, multiplierBps: tier.multiplierBps } }),
+      ...(app ? { appLinked: true as const } : {}),
     });
   }
   wallets.sort((a, b) => a.memberRef.localeCompare(b.memberRef));

@@ -107,7 +107,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindTenantClosure' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -163,6 +163,9 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDepartmentScopeChange: 'Limit a person\'s role to some departments',
     kindTaxRateChange: 'Change the GST rate of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
     kindHsnClassChange: 'Change the tax (HSN) class of a published product',
+    kindB2BContract: 'Approve a business customer\'s contract (prices, dates, credit and terms)',
+    kindB2BCreditOverride: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
+    kindTenantClosure: 'Close this shop\'s account (access ends; the law\'s records and the audit are kept)', // OB-288 P4
     detailPrefix: 'Till bill-number prefix', detailFromComputer: 'Old store computer (sign-in)', detailToComputer: 'New store computer (sign-in)',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
@@ -234,6 +237,9 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDepartmentScopeChange: 'ஒருவரின் பங்கைச் சில துறைகளுக்கு மட்டும் வரம்பிடுதல்',
     kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
     kindHsnClassChange: 'வெளியிடப்பட்ட பொருளின் வரி (HSN) வகையை மாற்றுதல்',
+    kindB2BContract: 'வணிக வாடிக்கையாளரின் ஒப்பந்தத்தை அனுமதித்தல் (விலை, தேதிகள், கடன், நிபந்தனைகள்)',
+    kindB2BCreditOverride: 'வாடிக்கையாளரின் கடன் வரம்பை (அல்லது முடிந்த ஒப்பந்தத்தை) மீறி வணிக ஆர்டரை அனுமதித்தல்',
+    kindTenantClosure: 'இந்தக் கடையின் கணக்கை மூடுதல் (அணுகல் முடியும்; சட்டம் கேட்கும் பதிவுகளும் தணிக்கையும் வைக்கப்படும்)', // OB-288 P4
     detailPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', detailFromComputer: 'பழைய கடை கணினி (உள்நுழைவு)', detailToComputer: 'புதிய கடை கணினி (உள்நுழைவு)',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
@@ -317,6 +323,10 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   tax_rate_change: 'kindTaxRateChange', promotion_funding: 'kindPromotionFunding',
   // OB-288 till side (OB-347): a published product's tax class changed — Finance approves.
   hsn_class_change: 'kindHsnClassChange',
+  // OB-288 commercial desks (M22-FR-01): a B2B contract (a second contract manager approves); an order over the credit limit (the owner).
+  b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride',
+  // OB-288 P4 (M36-FR-03): closing the shop's account — IT asks, the owner approves.
+  tenant_closure: 'kindTenantClosure',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {

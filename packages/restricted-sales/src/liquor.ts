@@ -40,13 +40,17 @@ export function liquorReason(facts: LiquorFacts): string | undefined {
 /** The words every refusal uses — the same at head office and at the till. */
 export const LIQUOR_NOT_SOLD = 'Liquor is not sold: retail liquor in Tamil Nadu is a TASMAC state monopoly, and SRE does not sell any alcoholic drink (B17).';
 
-// ── OB-348 (owner, 24 Oct 2026, in writing): the liquor rule is the SHOP'S STATE's ────────────────────────────────────
+// ── OB-348 · OB-353 · OB-354 (owner, 24 Oct 2026, in writing): the liquor rule is the SHOP'S STATE's ─────────────────
 //
-// "Refused by the shop's state; Tamil Nadu refused; each shop records its state." The state is a high-impact store setting
-// (`store.state`, owner-approved — the OB-336 pattern). The rule here is the table of states whose rule this system has
-// been TOLD: Tamil Nadu refuses (TASMAC monopoly, OWNER_DECISIONS D3). For any other state no rule has been recorded, so
-// liquor is refused there too until the owner records one — never sold on a guess. A shop whose state is not set is refused
-// as well, and the words say "not set" (P-08). There is no override.
+// OB-348: "Refused by the shop's state; Tamil Nadu refused; each shop records its state."
+// OB-354: each store's state is READ FROM ITS GSTIN — the first two digits are the GST state code (33 = Tamil Nadu) —
+//   never typed separately and never one business-wide setting (`shopStateFromGstin`). A store with no GSTIN on record
+//   has no state: "not set", and liquor is refused all the same (P-08).
+// OB-353: "refused in every state until that state's rule is recorded in writing and approved; Tamil Nadu recorded as
+//   refused." The table below is that record: one row per state whose rule the owner has given in writing, each naming
+//   where it was given. Tamil Nadu is the only row, and it refuses (TASMAC). Every other state has no row, so liquor is
+//   refused there until a row is added — and adding a row is a change to this file, through a reviewed pull request, with
+//   the owner's written decision named on it. There is no override.
 
 /** The states and union territories of India by their ISO 3166-2:IN codes — what the shop's state setting accepts. */
 export const INDIAN_STATES: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({
@@ -71,10 +75,52 @@ export function isIndianStateCode(v: unknown): v is string {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(INDIAN_STATES, v);
 }
 
-/** Why a state refuses liquor, as recorded. Only Tamil Nadu has a recorded rule (OB-348). */
-const RECORDED_STATE_RULES: Readonly<Record<string, string>> = Object.freeze({
-  TN: 'in Tamil Nadu retail liquor is a TASMAC state monopoly',
+/** One state's liquor rule as the owner gave it in writing (OB-353). Every recorded rule today REFUSES. */
+export interface RecordedStateLiquorRule {
+  readonly state: string;
+  readonly rule: 'refused';
+  /** Why, for the record and the cashier. */
+  readonly because: string;
+  /** Where the owner gave it in writing. */
+  readonly recordedIn: string;
+}
+
+/** The states whose liquor rule has been recorded in writing (OB-353). Only Tamil Nadu (OB-348). */
+export const RECORDED_STATE_LIQUOR_RULES: readonly RecordedStateLiquorRule[] = Object.freeze([
+  Object.freeze({ state: 'TN', rule: 'refused', because: 'in Tamil Nadu retail liquor is a TASMAC state monopoly', recordedIn: 'OB-348 · OB-353 (owner, 24 Oct 2026, in writing); OWNER_DECISIONS D3 (11 Aug 2026)' }),
+] as RecordedStateLiquorRule[]);
+
+const RECORDED_STATE_RULES: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(RECORDED_STATE_LIQUOR_RULES.map((r) => [r.state, r.because])),
+);
+
+/**
+ * OB-354: the GST system's two-digit state code → the state's ISO 3166-2:IN code (as `INDIAN_STATES` holds it). Code 25
+ * (Daman and Diu, merged into 26 in 2020) reads as the merged territory; 97 ("Other Territory") is no state and has no row.
+ */
+export const GST_STATE_CODE_TO_STATE: Readonly<Record<string, string>> = Object.freeze({
+  '01': 'JK', '02': 'HP', '03': 'PB', '04': 'CH', '05': 'UT', '06': 'HR', '07': 'DL', '08': 'RJ', '09': 'UP', '10': 'BR',
+  '11': 'SK', '12': 'AR', '13': 'NL', '14': 'MN', '15': 'MZ', '16': 'TR', '17': 'ML', '18': 'AS', '19': 'WB', '20': 'JH',
+  '21': 'OR', '22': 'CT', '23': 'MP', '24': 'GJ', '25': 'DH', '26': 'DH', '27': 'MH', '29': 'KA', '30': 'GA', '31': 'LD',
+  '32': 'KL', '33': 'TN', '34': 'PY', '35': 'AN', '36': 'TG', '37': 'AP', '38': 'LA',
 });
+
+/** What a store's GSTIN says about its state (OB-354). */
+export type ShopStateFromGstin =
+  | { readonly known: true; readonly state: string; readonly gstStateCode: string; readonly gstin: string }
+  | { readonly known: false; readonly why: 'no_gstin' | 'not_a_state_code'; readonly gstStateCode?: string; readonly gstin?: string };
+
+/**
+ * OB-354: the store's state from its GSTIN — the first two digits are the GST state code. No GSTIN → not known ("not set");
+ * first two characters that are no state's code → not known. Never guessed from an address or a setting.
+ */
+export function shopStateFromGstin(gstin: string | null | undefined): ShopStateFromGstin {
+  const g = typeof gstin === 'string' ? gstin.trim().toUpperCase() : '';
+  if (g === '') return { known: false, why: 'no_gstin' };
+  const code = g.slice(0, 2);
+  const state = Object.prototype.hasOwnProperty.call(GST_STATE_CODE_TO_STATE, code) ? GST_STATE_CODE_TO_STATE[code] : undefined;
+  return state === undefined ? { known: false, why: 'not_a_state_code', gstStateCode: code, gstin: g } : { known: true, state, gstStateCode: code, gstin: g };
+}
 
 /** How the shop's state rules on liquor. Every outcome today is a refusal; `basis` says which kind. */
 export interface StateLiquorRule {
@@ -88,16 +134,16 @@ export interface StateLiquorRule {
   readonly laneWords: { readonly en: string; readonly ta: string };
 }
 
-/** The liquor rule for the shop's state (`store.state`). Absent / not a state code → "not set", and refused. */
+/** The liquor rule for the shop's state (read from the store's GSTIN, OB-354). Absent / not a state code → "not set", and refused. */
 export function liquorRuleForState(state: string | null | undefined): StateLiquorRule {
   const code = typeof state === 'string' ? state.trim().toUpperCase() : '';
   if (!isIndianStateCode(code)) {
     return {
       refused: true, basis: 'state_not_set',
-      why: 'the shop\'s state is not set, so no state rule permits it — liquor is refused until the owner sets the state (OB-348)',
+      why: 'the shop\'s state is not set (it is read from the store\'s GSTIN, and none is on record), so no state rule permits it — liquor is refused (OB-348 · OB-354)',
       laneWords: {
-        en: 'Liquor cannot be sold: the shop\'s state is not set. Keep it off the bill and tell the manager.',
-        ta: 'மதுபானம் விற்க முடியாது: கடையின் மாநிலம் அமைக்கப்படவில்லை. பில்லில் சேர்க்க வேண்டாம்; மேலாளரிடம் சொல்லுங்கள்.',
+        en: 'Liquor cannot be sold: the shop\'s state is not set (the store\'s GSTIN is not on record). Keep it off the bill and tell the manager.',
+        ta: 'மதுபானம் விற்க முடியாது: கடையின் மாநிலம் அமைக்கப்படவில்லை (கடையின் GSTIN பதிவில் இல்லை). பில்லில் சேர்க்க வேண்டாம்; மேலாளரிடம் சொல்லுங்கள்.',
       },
     };
   }
@@ -105,7 +151,7 @@ export function liquorRuleForState(state: string | null | undefined): StateLiquo
   const recorded = RECORDED_STATE_RULES[code];
   if (recorded !== undefined) {
     return {
-      refused: true, basis: 'state_monopoly', state: code, why: `${recorded} (OB-348)`,
+      refused: true, basis: 'state_monopoly', state: code, why: `${recorded} (OB-348 · OB-353)`,
       laneWords: {
         en: `Liquor is not sold here: ${recorded}. Keep it off the bill and tell the manager.`,
         ta: 'மதுபானம் இங்கு விற்கப்படுவதில்லை: தமிழ்நாட்டில் மதுபான சில்லறை விற்பனை டாஸ்மாக் நிறுவனத்திற்கு மட்டுமே. பில்லில் சேர்க்க வேண்டாம்; மேலாளரிடம் சொல்லுங்கள்.',
@@ -114,9 +160,9 @@ export function liquorRuleForState(state: string | null | undefined): StateLiquo
   }
   return {
     refused: true, basis: 'no_rule_recorded_for_state', state: code,
-    why: `no liquor rule has been recorded for ${name.en}, so it is refused until the owner records one (OB-348)`,
+    why: `no liquor rule has been recorded in writing for ${name.en}, so it is refused until the owner records one (OB-348 · OB-353)`,
     laneWords: {
-      en: `Liquor cannot be sold: no liquor rule is recorded for ${name.en}. Keep it off the bill and tell the manager.`,
+      en: `Liquor cannot be sold: no liquor rule is recorded in writing for ${name.en}. Keep it off the bill and tell the manager.`,
       ta: `மதுபானம் விற்க முடியாது: ${name.ta} மாநிலத்திற்கு மதுபான விதி பதிவு செய்யப்படவில்லை. பில்லில் சேர்க்க வேண்டாம்; மேலாளரிடம் சொல்லுங்கள்.`,
     },
   };

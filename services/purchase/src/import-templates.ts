@@ -25,6 +25,12 @@ import type { TemplateSpec, RowError } from '../../../packages/import/src/import
 import type { StoredPurchaseOrder } from './purchase-orders';
 import { orderForInvoice, type SupplierInvoiceRecord, type SupplierInvoiceLine, type InvoiceFlag } from './index';
 import { validateProduct, publishProduct, type ProductRecord, type Category, type SafetyContent } from '../../../packages/product/src/index';
+import type { SupplierRecord } from './supplier-master';
+import type { PriceChangeRecord } from '../../pricing/src/index';
+import type { PriceEntry } from '../../../packages/price-list/src/price-list';
+import type { Movement } from '../../inventory/src/index';
+import type { MemberRecord } from '../../customer/src/loyalty-members';
+import type { ConsentRecord, RecordedPointsMovement } from '../../customer/src/index';
 
 /** What an approved load writes — the real records, not a note about them. */
 export type ImportEffect =
@@ -33,8 +39,26 @@ export type ImportEffect =
   /** M30 round 8: an EXISTING product changed by file — the new version, and the version it replaced (for the undo). */
   | { readonly kind: 'product_update'; readonly product: ProductRecord; readonly before: ProductRecord };
 
+/**
+ * OB-315 (owner, 23 Oct 2026, in writing — "import all domains"): what the further templates' approved loads write
+ * (`import-templates-domains.ts`). Kept apart from `ImportEffect` because each is written by its own domain's committer
+ * (`recordDomainCommit`), never by the invoice/product one.
+ */
+export type DomainImportEffect =
+  | { readonly kind: 'supplier'; readonly supplier: SupplierRecord }
+  | { readonly kind: 'price'; readonly productId: string; readonly storeId: string; readonly change: PriceChangeRecord; readonly entry: PriceEntry }
+  | { readonly kind: 'opening_stock'; readonly movement: Movement }
+  | { readonly kind: 'customer'; readonly member: MemberRecord; readonly marketingConsent: ConsentRecord }
+  | { readonly kind: 'loyalty_opening'; readonly movement: RecordedPointsMovement };
+
+/** Every effect any template may produce. */
+export type AnyImportEffect = ImportEffect | DomainImportEffect;
+
+/** Whether an effect is one the invoice/product committer writes (the rest are the domain committer's). */
+export const isBaseEffect = (e: AnyImportEffect): e is ImportEffect => e.kind === 'supplier_invoice' || e.kind === 'product' || e.kind === 'product_update';
+
 /** A short, storable account of one effect (kept on the job record — what was written, and how to undo it). */
-export interface ImportEffectRef { readonly kind: ImportEffect['kind']; readonly ref: string; readonly valueMinor?: number }
+export interface ImportEffectRef { readonly kind: AnyImportEffect['kind']; readonly ref: string; readonly valueMinor?: number }
 
 export interface ApplyContext {
   readonly jobId: string;
@@ -57,7 +81,7 @@ export interface RegisteredTemplate {
   /** The target module's rules over the rows the engine found readable — errors by line. */
   check(tenantId: string, rows: readonly Readonly<Record<string, string>>[], lineNumbers: readonly number[], declaredTotalMinor: number | undefined): Promise<readonly RowError[]>;
   /** The real records an approved, clean load writes. */
-  effects(tenantId: string, rows: readonly Readonly<Record<string, string>>[], ctx: ApplyContext): Promise<readonly ImportEffect[]>;
+  effects(tenantId: string, rows: readonly Readonly<Record<string, string>>[], ctx: ApplyContext): Promise<readonly AnyImportEffect[]>;
   /** Why the load can NOT be undone now (an effect already used downstream), by name — empty when it can. */
   blocksRollback(tenantId: string, effects: readonly ImportEffectRef[], jobId?: string): Promise<readonly string[]>;
   /**
@@ -65,6 +89,14 @@ export interface RegisteredTemplate {
    * preview so the person approving sees the changes, not just the row count. Absent for a template that only adds.
    */
   describe?(tenantId: string, rows: readonly Readonly<Record<string, string>>[], lineNumbers: readonly number[]): Promise<readonly RowChange[]>;
+  /**
+   * OB-315: a row as the job's record KEEPS it — a template that reads personal data (a customer's mobile number) keeps
+   * only what the domain itself keeps (the member code and the last four digits), never the number (P-04). Absent: the
+   * row is kept as loaded.
+   */
+  storedRow?(tenantId: string, row: Readonly<Record<string, string>>): Readonly<Record<string, string>>;
+  /** OB-315: columns holding personal data — a dry run keeps a fingerprint of them, never the value (MG-09's rule). */
+  readonly personalColumns?: readonly string[];
 }
 
 /** One row's changes on an update preview. */
@@ -74,10 +106,16 @@ export interface RowChange {
   readonly changes: readonly { readonly field: string; readonly from: string; readonly to: string }[];
 }
 
-export function effectRef(e: ImportEffect): ImportEffectRef {
-  return e.kind === 'supplier_invoice'
-    ? { kind: 'supplier_invoice', ref: e.invoice.invoiceId, valueMinor: e.invoice.totalMinor }
-    : { kind: e.kind, ref: e.product.productId };
+export function effectRef(e: AnyImportEffect): ImportEffectRef {
+  switch (e.kind) {
+    case 'supplier_invoice': return { kind: 'supplier_invoice', ref: e.invoice.invoiceId, valueMinor: e.invoice.totalMinor };
+    case 'product': case 'product_update': return { kind: e.kind, ref: e.product.productId };
+    case 'supplier': return { kind: 'supplier', ref: e.supplier.supplierId };
+    case 'price': return { kind: 'price', ref: `${e.productId}@${e.storeId}`, valueMinor: e.change.priceMinor };
+    case 'opening_stock': return { kind: 'opening_stock', ref: e.movement.movementId, valueMinor: e.movement.quantityMinor };
+    case 'customer': return { kind: 'customer', ref: e.member.memberRef };
+    case 'loyalty_opening': return { kind: 'loyalty_opening', ref: e.movement.movementId, valueMinor: e.movement.delta };
+  }
 }
 
 /** What a template looks like to the screen (the store pack ships this; the server ignores anything but the id). */

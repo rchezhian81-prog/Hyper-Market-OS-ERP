@@ -33,7 +33,7 @@ import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
 import type { RecordedPointsMovement } from '../../customer/src/index';
 import type { RouteStopUpdate, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
 import type { IncomingSale } from '../../pos/src/index';
-import { lpControlsRoutes, latestSalaryAccounts, type LpControlsDeps, type StaffAccount, type SalaryAccount, type BankedBill } from '../../pos/src/lp-controls';
+import { lpControlsRoutes, latestSalaryAccounts, staffAccountMap, type LpControlsDeps, type StaffAccount, type SalaryAccount, type BankedBill } from '../../pos/src/lp-controls';
 import { withRelatedPartyOrderGuard, relatedPartyApprovalRoutes, type RelatedPartyOrderGuardDeps, type RelatedPartyOrderApproval } from '../../purchase/src/related-party-order-guard';
 import {
   STREAM, streamName, effectiveGrants, fraudSignalsAdapter, supplierMasterAdapter, purchaseOrdersAdapter, liveSupplierInvoices, rosterStoreAdapter,
@@ -42,7 +42,7 @@ import {
 import type { StoredRoster } from '../../finance/src/roster-store';
 import type { SopAcknowledgement } from '../../../packages/workforce/src/workforce';
 import type { TrainingAssignment, TrainingCompletion, CompetencySignOff, ApprovedCurriculum } from '../../../packages/workforce/src/training';
-import type { FloorChampion } from '../../../packages/workforce/src/adoption-gate';
+import { currentChampions, type FloorChampion } from '../../../packages/workforce/src/adoption-gate';
 import type { LetterWording, AppointmentLetter, SignedScan } from '../../../packages/workforce/src/appointment-letter';
 import { workforceEnablementRoutes, readAdoptionGate, type WorkforceEnablementDeps } from '../../finance/src/workforce-enablement';
 import type { OtherGateBlocker } from '../../compliance/src/risk';
@@ -57,7 +57,7 @@ import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { latestPlanograms } from '../../inventory/src/planograms';
 import { relabelTaskRoutes, relabelTasksFor, raiseRelabelTasks, type RelabelTaskDeps, type RelabelTask, type RelabelDone } from '../../pricing/src/relabel-tasks';
 import { facilitiesAssetsAdapter, facilitiesMonitoringAdapter, facilitiesAdapter, writeOffAdapter, planogramStoreAdapter } from './adapters';
-import { OWNER_ROLE_ID } from './roles';
+import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from './roles';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 export interface LpWorkforceInput {
@@ -303,7 +303,13 @@ export function workforceEnablementAdapter(input: Base): WorkforceEnablementDeps
     recordSignOff: (t, s) => put(store, t, WF_STREAMS.training, 'CompetencySigned', `${s.assignmentId}-${s.signedAt}`, s.signedAt, s),
     curricula: (t) => all<ApprovedCurriculum>(store, t, WF_STREAMS.curricula, 'CurriculumApproved'),
     recordCurriculum: (t, c) => put(store, t, WF_STREAMS.curricula, 'CurriculumApproved', `${c.roleId}-v${c.version}`, c.approvedAt, c),
-    departments: async (t) => (await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'department' && n.status !== 'closed').map((n) => ({ departmentId: n.nodeId, name: n.name })),
+    departments: async (t) => {
+      const nodes = await orgStructureAdapter({ store, now }).nodes(t);
+      const branchOf = branchOfLocationIn(nodes);
+      return nodes.filter((n) => n.kind === 'department' && n.status !== 'closed').map((n) => ({ departmentId: n.nodeId, name: n.name, branchId: branchOf(n.nodeId) }));
+    },
+    // OB-357: the home department is written to the roster's own staff register.
+    putEmployee: async (t, e, key) => { await rosterStoreAdapter({ store, now }).putEmployee(t, e, key); },
     champions: (t) => all<FloorChampion>(store, t, WF_STREAMS.champions, 'FloorChampionNamed'),
     recordChampion: (t, c) => put(store, t, WF_STREAMS.champions, 'FloorChampionNamed', `${c.departmentId}-${c.at}`, c.at, c),
     sops: async (t) => helpLibrary(await sops.sops(t), await all<SopContent>(store, t, WF_STREAMS.sopContent, 'SopContentSet')).map((s) => ({ sopId: s.sopId, title: s.title, version: s.version, forRoles: s.forRoles })),
@@ -417,6 +423,30 @@ export function relabelTaskAdapter(input: Base, surface: readonly Route[]): Rela
     recordTask: (t, task) => put(store, t, RELABEL_STREAM, 'RelabelTaskRaised', task.taskId, task.raisedAt, task),
     recordDone: (t, d) => put(store, t, RELABEL_STREAM, 'RelabelTaskDone', d.taskId, d.doneAt, d),
     shelfPlaces: async (t, storeId, productId) => latestPlanograms(await plans.planograms(t, storeId)).flatMap((p) => p.assignments.filter((a) => a.productId === productId).map((a) => a.locationId)),
+    // OB-358: the department that owns the product AT THIS STORE → its floor champion (on the staff list); else the store manager.
+    assigneeFor: async (t, storeId, productId) => {
+      const [nodes, links, categories, products, champions, roster] = await Promise.all([
+        orgStructureAdapter({ store, now }).nodes(t),
+        all<DepartmentLinkRecord>(store, t, DEPARTMENT_CATEGORIES_STREAM, 'DepartmentCategoriesSet'),
+        categoryRegisterAdapter({ store, now }).categories(t),
+        productMasterAdapter({ store, now }).products(t),
+        all<FloorChampion>(store, t, WF_STREAMS.champions, 'FloorChampionNamed'),
+        rosterOf(input, t),
+      ]);
+      const branchOf = branchOfLocationIn(nodes);
+      const here = new Set(nodes.filter((n) => n.kind === 'department' && n.status !== 'closed' && branchOf(n.nodeId) === storeId).map((n) => n.nodeId));
+      const parent = new Map(categories.map((c) => [c.categoryId, c.parentId] as const));
+      const category = products.find((p) => p.productId === productId)?.primaryCategoryId ?? null;
+      const departmentId = departmentOfCategory(currentLinks(links).filter((l) => here.has(l.departmentId)), (c) => parent.get(c) ?? null, category) ?? null;
+      if (departmentId === null) return { to: 'store_manager', departmentId: null, because: 'no_department_owns_it' };
+      const champion = currentChampions(champions).get(departmentId)?.employeeId ?? null;
+      if (champion === null) return { to: 'store_manager', departmentId, because: 'no_champion_named' };
+      if (!roster.employees.some((e) => e.employeeId === champion && e.active)) return { to: 'store_manager', departmentId, because: 'champion_left' };
+      return { to: 'floor_champion', departmentId, employeeId: champion };
+    },
+    storeManagersAt: async (t, storeId) => [...new Set((await effectiveGrants(store, t))
+      .filter((g) => g.roleId === STORE_MANAGER_ROLE_ID && (g.branchScope === 'all' || (Array.isArray(g.branchScope) && g.branchScope.includes(storeId))))
+      .map((g) => g.userId))],
     recordObservationAs: handlerOf(surface, 'POST', '/v1/pricing/integrity/observations/:observationId'),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
@@ -456,6 +486,24 @@ export async function adoptionGateBlockers(store: EventStore, now: () => string,
   if (reading.verdict === 'GO') return [];
   const first = reading.why[0] ?? '';
   return [{ gate: 'QG-09', kind: 'check', ref: 'adoption-gate', reason: `QG-09 adoption is ${reading.verdict === 'HOLD' ? 'on HOLD' : 'not proven'} — ${first}${reading.why.length > 1 ? ` (and ${reading.why.length - 1} more)` : ''}` }];
+}
+
+// ── OB-301: the staff-purchase policy for the store pack ───────────────────────────────────────────────────────────
+
+/**
+ * OB-301 (M15-FR-03): what the store computer needs to judge a staff member's shopping offline — the owner's two numbers
+ * (each `null` = "not set") and the live staff accounts (member code → employee) — the same answer as
+ * `GET /v1/loss-prevention/staff-purchases/till-policy`, for the store pack.
+ */
+export function staffPurchaseTillPolicyOf(input: Base) {
+  const deps = lpControlsAdapter(input);
+  return async (tenantId: string): Promise<{ staffDiscountCapBps: number | null; serviceDeskLaneIds: readonly string[] | null; staffAccounts: readonly { customerRef: string; employeeId: string }[] }> => {
+    const [p, accounts] = await Promise.all([deps.staffPolicy(tenantId), deps.staffAccounts(tenantId)]);
+    return {
+      staffDiscountCapBps: p.policy.staffDiscountCapBps, serviceDeskLaneIds: p.policy.serviceDeskLaneIds,
+      staffAccounts: [...staffAccountMap(accounts).entries()].map(([customerRef, employeeId]) => ({ customerRef, employeeId })).sort((a, b) => a.employeeId.localeCompare(b.employeeId)),
+    };
+  };
 }
 
 // ── the surface ────────────────────────────────────────────────────────────────────────────────────────────────────

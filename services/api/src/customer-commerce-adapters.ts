@@ -234,6 +234,8 @@ export function orderNoticeAdapter(input: Base & { readonly queue: Route | undef
 // ── M20-FR-04 · M20-FR-02 · A05 · the customer's account controls, suggestions and help ──────────────────────────────
 
 const ADDRESSES = streamName(STREAM.customer, 'saved-addresses');
+/** OB-352: the customer's saved addresses register — read by the till delivery jobs (`till-delivery-adapters.ts`). */
+export const SAVED_ADDRESSES_STREAM = ADDRESSES;
 const rupeesOf = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
 
 export function storefrontAccountAdapter(input: Base & { readonly a05: Route | undefined; readonly returnPolicy: Route | undefined }): StorefrontAccountDeps {
@@ -379,6 +381,8 @@ export function loyaltyProgrammeAdapter(input: Base): LoyaltyProgrammeDeps {
 
 /** The desk's app ↔ membership links (D-28, r4-online-adapters keeps them on this stream). */
 const MEMBER_LINKS = streamName(STREAM.customer, 'digital-receipts', 'member-links');
+/** OB-352: the member ↔ app links register — "has the app" for a till delivery job. */
+export const MEMBER_LINKS_STREAM = MEMBER_LINKS;
 const ORDER_PRICING = streamName(STREAM.orders, 'online-pricing');
 
 /** The membership an app account is tied to now, if any (and still a member). */

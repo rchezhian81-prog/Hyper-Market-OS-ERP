@@ -19,7 +19,10 @@
 //   • who ran the load is a ledger fact (the extraction run), never a body field (§28);
 //   • a rollback DEMONSTRATED is the latest rollback PERFORMED — a designed one leaves it absent;
 //   • the cutover decision itself, the delta applied, the named team and the owner's GO are NOT recorded
-//     on the cloud today; the box keeps whatever it was told about them and this feed never overwrites it.
+//     on the cloud today; the box keeps whatever it was told about them and this feed never overwrites it;
+//   • MG-11 (OB-288 P5): the owner's four ROLLBACK LIMITS, when he has recorded them, and the backup job's latest
+//     reports — the box judges the backup against the limit with its OWN clock, so a backup that grows too old while
+//     the line is down says so. Absent → "not known" at the box, which the cutover gate counts as failed, never passed.
 
 import type { Route } from '../../kernel/src/index';
 import type { MigrationException } from '../../../packages/migration/src/cleaning';
@@ -33,6 +36,10 @@ import type { RefusedDecision } from './decisions';
 import type { MigrationDeps } from './index';
 import { appliedSliceDepartment, storedLoadOperators } from './load-records';
 import { signatureStillApplies, type ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
+import type { BackupReport, RollbackLimits } from '../../../packages/migration/src/rollback-limits';
+
+/** MG-11: how many of the backup job's latest reports the screen is sent (newest first) — enough to find the last good one. */
+export const SCREEN_BACKUP_REPORTS = 10;
 
 /** The owner's written parallel-run terms as the screen needs them (MG-10, §34.1). */
 export type MigrationScreenPolicy = Pick<ParallelRunPolicy, 'cutoverId' | 'requiredCleanDays' | 'maxParallelDays' | 'startedOn' | 'dailyReconcilerUserId'>;
@@ -92,6 +99,13 @@ export interface MigrationScreenFeed {
   /** Present once at least one history exclusion has been proposed (MG-07). */
   readonly exclusions?: readonly HistoryExclusion[];
   readonly verification: MigrationScreenVerification;
+  /** MG-11: the owner's rollback limits as recorded (each `null` = "not set"). Absent until he records them. */
+  readonly rollbackLimits?: RollbackLimits;
+  /**
+   * MG-11: the backup job's latest reports, newest first — a register, so an empty list is a fact ("never reported").
+   * Absent when this head office has no backup register at all (the box then says "not known").
+   */
+  readonly backups?: readonly BackupReport[];
 }
 
 /** Assemble the feed from the ledger. Exported so the composition root and the tests share one assembly. */
@@ -107,6 +121,10 @@ export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string)
   const rollbacks = deps.rollbacks === undefined ? [] : await deps.rollbacks(tenantId);
   const exclusions = await deps.exclusions(tenantId);
   const pilotDepartment = await appliedSliceDepartment(deps, tenantId);
+  // MG-11: the owner's rollback limits and the backup job's latest reports (the box judges the backup's age itself).
+  const rollbackLimits = deps.controls === undefined ? undefined : await deps.controls.rollbackLimits(tenantId);
+  const backups = deps.controls === undefined ? undefined
+    : [...await deps.controls.backups(tenantId)].sort((a, b) => b.at.localeCompare(a.at)).slice(0, SCREEN_BACKUP_REPORTS);
 
   // The verification page's position, computed exactly as `GET /v1/migration/verification/progress` does,
   // so the screen and the desk cannot disagree about which domains still have no finding.
@@ -163,6 +181,8 @@ export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string)
     rollbacks,
     ...(exclusions.length === 0 ? {} : { exclusions }),
     verification,
+    ...(rollbackLimits === undefined ? {} : { rollbackLimits }),
+    ...(backups === undefined ? {} : { backups }),
   };
 }
 

@@ -5,10 +5,10 @@
 // active person to a shift, the shift's length — a leaver still on the grid is not labour), and the SALES are the banked
 // bills' net line values, split to departments by the categories each department owns (the department report's rule).
 //
-// What it will not do is invent the link between the two. A rostered hour carries no department in the roster today;
-// until it is decided how an hour belongs to a department, each department's sales are shown with their labour hours
-// "not attributed" — the rate per department is never a made-up figure — and the whole-store rate (all sales over all
-// rostered hours) is shown, because it needs no such link. `departmentHours`, when given, is that link.
+// The link between the two is the owner's decision OB-357 (24 Oct 2026, in writing): a person's rostered hours count to
+// their HOME DEPARTMENT on the staff record (`Employee.homeDepartmentId`, `departmentLabour`). A person with no home
+// department — or one whose home department is no longer a live department — is never guessed into one: their hours are
+// shown "not attributed", by name, and still count to the whole-store rate (all sales over all rostered hours).
 //
 // Exact money: the rate is paise per hour, rounded once. Reported, never enforced (the labour-cost rule of this module).
 
@@ -29,10 +29,11 @@ export function rosteredMinutes(input: {
   readonly employees: readonly Employee[];
   readonly from: string;
   readonly to: string;
-}): { readonly totalMinutes: number; readonly byShift: ReadonlyMap<string, number>; readonly people: number } {
+}): { readonly totalMinutes: number; readonly byShift: ReadonlyMap<string, number>; readonly byEmployee: ReadonlyMap<string, number>; readonly people: number } {
   const active = new Set(input.employees.filter((e) => e.active).map((e) => e.employeeId));
   const start = Date.parse(input.from); const end = Date.parse(input.to);
   const byShift = new Map<string, number>();
+  const byEmployee = new Map<string, number>();
   const people = new Set<string>();
   let total = 0;
   for (const a of input.assignments) {
@@ -44,8 +45,40 @@ export function rosteredMinutes(input: {
     const minutes = Math.round((to - from) / 60_000);
     total += minutes; people.add(a.employeeId);
     byShift.set(s.shiftId, (byShift.get(s.shiftId) ?? 0) + minutes);
+    byEmployee.set(a.employeeId, (byEmployee.get(a.employeeId) ?? 0) + minutes);
   }
-  return { totalMinutes: total, byShift, people: people.size };
+  return { totalMinutes: total, byShift, byEmployee, people: people.size };
+}
+
+/** A person whose rostered hours belong to no department — said by name, never guessed into one (OB-357). */
+export interface UnattributedPerson {
+  readonly employeeId: string;
+  readonly name: string;
+  readonly labourMinutes: number;
+  readonly why: 'no_home_department' | 'home_department_not_live';
+}
+
+/**
+ * OB-357: each person's rostered minutes counted to their home department on the staff record. `liveDepartments` are the
+ * departments the report shows; a home department not among them, or none at all, leaves the person "not attributed".
+ */
+export function departmentLabour(input: {
+  readonly byEmployee: ReadonlyMap<string, number>;
+  readonly employees: readonly Employee[];
+  readonly liveDepartments: ReadonlySet<string>;
+}): { readonly departmentMinutes: ReadonlyMap<string, number>; readonly notAttributed: { readonly labourMinutes: number; readonly people: readonly UnattributedPerson[] } } {
+  const byId = new Map(input.employees.map((e) => [e.employeeId, e] as const));
+  const departmentMinutes = new Map<string, number>();
+  const people: UnattributedPerson[] = [];
+  let unattributed = 0;
+  for (const [employeeId, minutes] of [...input.byEmployee.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const e = byId.get(employeeId);
+    const home = typeof e?.homeDepartmentId === 'string' && e.homeDepartmentId.trim() !== '' ? e.homeDepartmentId.trim() : undefined;
+    if (home !== undefined && input.liveDepartments.has(home)) { departmentMinutes.set(home, (departmentMinutes.get(home) ?? 0) + minutes); continue; }
+    unattributed += minutes;
+    people.push({ employeeId, name: e?.name ?? employeeId, labourMinutes: minutes, why: home === undefined ? 'no_home_department' : 'home_department_not_live' });
+  }
+  return { departmentMinutes, notAttributed: { labourMinutes: unattributed, people } };
 }
 
 export interface DepartmentProductivity {
@@ -65,6 +98,8 @@ export interface ProductivityReport {
   /** Sales of products no department owns — counted to the store, never to a department. */
   readonly unownedSalesMinor: number;
   readonly hoursAttributed: boolean;
+  /** OB-357: the rostered hours of people with no (live) home department — "not attributed", by name. */
+  readonly notAttributed: { readonly labourMinutes: number; readonly people: readonly UnattributedPerson[] };
   readonly reportedOnly: true;
 }
 
@@ -75,8 +110,10 @@ export function productivityReport(input: {
   readonly totalSalesMinor: number;
   readonly departments: readonly { readonly departmentId: string; readonly name: string; readonly salesMinor: number }[];
   readonly unownedSalesMinor: number;
-  /** How many rostered minutes belong to each department — absent until that link is decided. */
+  /** How many rostered minutes belong to each department (OB-357: by each person's home department). */
   readonly departmentMinutes?: ReadonlyMap<string, number>;
+  /** OB-357: the hours that belong to no department, and whose. */
+  readonly notAttributed?: { readonly labourMinutes: number; readonly people: readonly UnattributedPerson[] };
 }): ProductivityReport {
   const attributed = input.departmentMinutes !== undefined;
   return {
@@ -91,6 +128,7 @@ export function productivityReport(input: {
     }),
     unownedSalesMinor: input.unownedSalesMinor,
     hoursAttributed: attributed,
+    notAttributed: input.notAttributed ?? { labourMinutes: attributed ? 0 : input.labour.totalMinutes, people: [] },
     reportedOnly: true,
   };
 }

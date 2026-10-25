@@ -44,6 +44,8 @@ interface BrowserGlobals {
 const SUBMISSIONS = [
   { submissionId: 'sub-ack', kind: 'po_acknowledgement', requiresReview: false, receivedAt: '2026-09-18T09:00:00Z' },
   { submissionId: 'sub-inv', kind: 'invoice', requiresReview: true, receivedAt: '2026-09-21T09:00:00Z' },
+  // OB-288 commercial desks (M24-FR-02): a delivery update the supplier sent — processed (nobody reviews it), named as such.
+  { submissionId: 'sub-ds', kind: 'delivery_status', requiresReview: false, receivedAt: '2026-09-20T09:00:00Z' },
 ];
 
 /** The supplier's statement — ₹3,000 outstanding, ₹500 disputed shown separately, reconciling. */
@@ -139,7 +141,8 @@ describe.skipIf(!HAVE_BROWSER)('a supplier reads its own account end to end in a
       // The submission still AWAITING our decision leads — never a false "accepted" (§28).
       expect(await page.locator('#awaiting li.row').count()).toBe(1);
       expect(await page.locator('#awaiting li.row').first().innerText()).toContain('sub-inv');
-      expect(await page.locator('#processed li.row').count()).toBe(1); // the acknowledgement we processed
+      expect(await page.locator('#processed li.row').count()).toBe(2); // the acknowledgement we processed, and the delivery update
+      expect(await page.locator('#processed').innerText()).toContain('Delivery update'); // named as what it is, never read as an invoice
 
       // The statement panel shows the closing balance and keeps the disputed amount separate.
       expect(await page.locator('#statement').getAttribute('hidden')).toBeNull();

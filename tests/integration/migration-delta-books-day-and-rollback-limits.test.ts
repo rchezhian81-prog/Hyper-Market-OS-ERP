@@ -161,5 +161,10 @@ describe.each(backings)('migration controls MG-09 · MG-10 · MG-11 (OB-288 P5) 
     const h2 = harness(h);
     expect(await limitsNow(h2)).toMatchObject({ notSet: ['windowMinutes'], raisedTriggers: expect.arrayContaining([expect.objectContaining({ limit: 'controlTotalDifferenceMinor' }), expect.objectContaining({ limit: 'edgeOutageMinutes' })]) });
     expect(((await h2.request({ method: 'GET', path: `/v1/migration/parallel-run/days/${DAY}/books`, userId: P3.OWNER, tenantId: T })).body as { history: unknown[] }).history).toHaveLength(2);
+    // The register the store computer pulls for its migration screen carries the same limits ("not set" kept as null) and
+    // the backup job's register (empty: never reported) — the box judges the backup by its own clock.
+    const screen = (await h2.request({ method: 'GET', path: '/v1/migration/screen', userId: P3.OWNER, tenantId: T })).body as { rollbackLimits?: Record<string, unknown>; backups?: unknown[] };
+    expect(screen.rollbackLimits).toMatchObject({ ...body, setBy: P3.OWNER });
+    expect(screen.backups).toEqual([]);
   }, 120_000);
 });

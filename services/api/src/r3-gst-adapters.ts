@@ -32,6 +32,7 @@ import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
 import type { PeriodSoldLine } from '../../finance/src/gst-returns';
 import {
   STREAM, streamName, gstReturnsAdapter, gstr1SubmissionAdapter, supplierMasterAdapter, alertLifecycleAdapter, effectiveGrants, eInvoiceAdapter,
+  type ShopCalendarOf,
 } from './adapters';
 import { OWNER_ROLE_ID } from './roles';
 
@@ -70,16 +71,18 @@ export interface R3GstInput {
   readonly now: () => string;
   /** The shop's IANA time zone (store setup). Default Asia/Kolkata. */
   readonly timeZone?: (tenantId: string) => Promise<string>;
+  /** The shop's trading calendar (time zone + cut-off): the trading day a till return is dated to (M01-FR-02). */
+  readonly calendar?: ShopCalendarOf;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown>;
   /** A17's implementation of the ITC port (main.ts: `itcPortForStore`, r3-itc-bridge.ts). Absent: "ITC not yet reconciled". */
   readonly itc?: ItcPort;
 }
 
 /** The R3 GST lane composed over one store. */
-export function r3GstLedger(input: { readonly store: EventStore; readonly now: () => string; readonly timeZone?: (tenantId: string) => Promise<string>; readonly itc?: ItcPort }) {
+export function r3GstLedger(input: { readonly store: EventStore; readonly now: () => string; readonly timeZone?: (tenantId: string) => Promise<string>; readonly calendar?: ShopCalendarOf; readonly itc?: ItcPort }) {
   const { store, now } = input;
   const itc = input.itc ?? ITC_NOT_YET_RECONCILED;
-  const gst = gstReturnsAdapter({ store, now });
+  const gst = gstReturnsAdapter({ store, now, ...(input.calendar !== undefined ? { calendar: input.calendar } : {}) });
   const submissions = gstr1SubmissionAdapter({ store, now });
   const today = async (tenantId: string): Promise<string> => localDateOf(now(), input.timeZone === undefined ? 'Asia/Kolkata' : await input.timeZone(tenantId));
 
@@ -219,7 +222,7 @@ export function eInvoiceReportingGuardFor(input: { readonly store: EventStore; r
 export function r3GstRoutes(input: R3GstInput): readonly Route[] {
   const store = input.store ?? new InMemoryEventStore();
   const { now } = input;
-  const ledger = r3GstLedger({ store, now, ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}), ...(input.itc !== undefined ? { itc: input.itc } : {}) });
+  const ledger = r3GstLedger({ store, now, ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}), ...(input.calendar !== undefined ? { calendar: input.calendar } : {}), ...(input.itc !== undefined ? { itc: input.itc } : {}) });
   const recordAudit = input.recordAudit;
 
   const controlsDeps: GstControlsDeps = {

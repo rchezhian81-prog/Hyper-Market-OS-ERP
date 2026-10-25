@@ -7,8 +7,8 @@
 //   • TRAINING — assign a curriculum item; the trainer records it done; a SECOND person signs competency.
 //   • FLOOR CHAMPIONS — one per department, named by the owner ("not set" until he does).
 //   • ACCESS AGAINST ASSIGNMENT — every difference between the staff list and the sign-in grants, worst first.
-//   • SALES PER LABOUR HOUR (OB-317) — from the roster and the banked bills; per department, the hours are "not
-//     attributed" until the owner decides how an hour belongs to a department.
+//   • SALES PER LABOUR HOUR (OB-317) — from the roster and the banked bills; per department by each person's HOME
+//     DEPARTMENT on the staff record (OB-357), set here by a manager; a person with none is "not attributed", by name.
 // Every act is a person's click in their own name; head office re-checks it.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
@@ -26,7 +26,8 @@ export const ADOPTION_COPY = {
     s_assigned: 'Assigned', s_overdue: 'Overdue', s_completed: 'Done — waiting for a second person', s_competent: 'Competent', s_not_yet_competent: 'Not yet competent',
     trainingNone: 'No training is assigned.', championsH: 'Floor champions', champion: 'Champion (staff id)', name: 'Name it', notSet: 'not set', championLeft: 'has left the staff list',
     accessH: 'Access against the staff list', checkAccess: 'Check access', accessClear: 'Everyone\'s access matches their assignment.', critical: 'Critical', warning: 'Warning', info: 'Note',
-    productivityH: 'Sales per labour hour', from: 'From', to: 'To', readProductivity: 'Work it out', store: 'Whole store', perHour: 'per labour hour', hours: 'rostered hours', notAttributed: 'hours not attributed to departments yet (an owner decision)',
+    productivityH: 'Sales per labour hour', from: 'From', to: 'To', readProductivity: 'Work it out', store: 'Whole store', perHour: 'per labour hour', hours: 'rostered hours', notAttributed: 'hours not attributed to a department',
+    notAttributedH: 'Not attributed — no home department on the staff record:', notLive: 'home department closed', homeH: 'Home department (on the staff record)', homeEmployee: 'Staff id', homeDept: 'Department', homeNone: 'None — hours not attributed', homeSet: 'Set home department',
     noRate: 'no rate —', unowned: 'Sales no department owns:',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot open this page.', saved: 'Saved.', needFields: 'Fill in every field first.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
@@ -41,7 +42,8 @@ export const ADOPTION_COPY = {
     s_assigned: 'ஒதுக்கப்பட்டது', s_overdue: 'தாமதம்', s_completed: 'முடிந்தது — இரண்டாவது நபருக்காகக் காத்திருக்கிறது', s_competent: 'திறமையானவர்', s_not_yet_competent: 'இன்னும் திறமை இல்லை',
     trainingNone: 'எந்தப் பயிற்சியும் ஒதுக்கப்படவில்லை.', championsH: 'தளச் சாம்பியன்கள்', champion: 'சாம்பியன் (பணியாளர் எண்)', name: 'பெயரிடு', notSet: 'அமைக்கப்படவில்லை', championLeft: 'பணியாளர் பட்டியலில் இல்லை',
     accessH: 'பணியாளர் பட்டியலுக்கு எதிரான அணுகல்', checkAccess: 'அணுகலைச் சரிபார்', accessClear: 'அனைவரின் அணுகலும் அவர்களின் பணியுடன் பொருந்துகிறது.', critical: 'அவசரம்', warning: 'எச்சரிக்கை', info: 'குறிப்பு',
-    productivityH: 'உழைப்பு மணிக்கு விற்பனை', from: 'முதல்', to: 'வரை', readProductivity: 'கணக்கிடு', store: 'முழுக் கடை', perHour: 'ஒரு உழைப்பு மணிக்கு', hours: 'பணி முறை மணிகள்', notAttributed: 'மணிகள் இன்னும் பிரிவுகளுக்கு ஒதுக்கப்படவில்லை (உரிமையாளர் முடிவு)',
+    productivityH: 'உழைப்பு மணிக்கு விற்பனை', from: 'முதல்', to: 'வரை', readProductivity: 'கணக்கிடு', store: 'முழுக் கடை', perHour: 'ஒரு உழைப்பு மணிக்கு', hours: 'பணி முறை மணிகள்', notAttributed: 'மணிகள் எந்தப் பிரிவுக்கும் ஒதுக்கப்படவில்லை',
+    notAttributedH: 'ஒதுக்கப்படவில்லை — பணியாளர் பதிவில் சொந்தப் பிரிவு இல்லை:', notLive: 'சொந்தப் பிரிவு மூடப்பட்டது', homeH: 'சொந்தப் பிரிவு (பணியாளர் பதிவில்)', homeEmployee: 'பணியாளர் எண்', homeDept: 'பிரிவு', homeNone: 'இல்லை — மணிகள் ஒதுக்கப்படாது', homeSet: 'சொந்தப் பிரிவை அமை',
     noRate: 'விகிதம் இல்லை —', unowned: 'எந்தப் பிரிவுக்கும் சொந்தமில்லாத விற்பனை:',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு இந்தப் பக்கத்தைத் திறக்க முடியாது.', saved: 'சேமிக்கப்பட்டது.', needFields: 'முதலில் எல்லா இடங்களையும் நிரப்பவும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
@@ -70,7 +72,7 @@ export interface GateRead {
 }
 
 export interface AdoptionSession {
-  readonly may: { readonly named: boolean; readonly open: boolean; readonly gate: boolean; readonly approve: boolean; readonly train: boolean; readonly champion: boolean; readonly productivity: boolean };
+  readonly may: { readonly named: boolean; readonly open: boolean; readonly gate: boolean; readonly approve: boolean; readonly train: boolean; readonly champion: boolean; readonly productivity: boolean; readonly homeDepartment: boolean };
   gate(): Promise<Outcome<GateRead>>;
   curriculum(): Promise<Outcome<{ readonly roles: readonly { readonly roleId: string; readonly proposed: readonly CurriculumItem[]; readonly approved: { readonly version: number; readonly items: readonly CurriculumItem[]; readonly approvedBy: string } | null }[] }>>;
   approve(roleId: string, items: readonly CurriculumItem[]): Promise<Outcome<unknown, 'needFields'>>;
@@ -81,7 +83,9 @@ export interface AdoptionSession {
   champions(): Promise<Outcome<{ readonly departments: readonly { readonly departmentId: string; readonly name: string; readonly employeeId: string | null; readonly employeeName: string | null; readonly state: string }[] }>>;
   nameChampion(departmentId: string, employeeId: string): Promise<Outcome<unknown, 'needFields'>>;
   access(): Promise<Outcome<{ readonly mismatches: readonly { readonly kind: string; readonly severity: 'critical' | 'warning' | 'info'; readonly userId: string; readonly roleId: string; readonly detail: { readonly en: string; readonly ta: string } }[] }>>;
-  productivity(from: string, to: string): Promise<Outcome<{ readonly store: { readonly salesMinor: number; readonly labourMinutes: number; readonly rate: { readonly kind: string; readonly minorPerHour?: number; readonly because?: string } }; readonly departments: readonly { readonly departmentId: string; readonly name: string; readonly salesMinor: number; readonly labourMinutes: number | null; readonly rate: { readonly kind: string; readonly minorPerHour?: number } }[]; readonly unownedSalesMinor: number; readonly hoursAttributed: boolean }>>;
+  productivity(from: string, to: string): Promise<Outcome<{ readonly store: { readonly salesMinor: number; readonly labourMinutes: number; readonly rate: { readonly kind: string; readonly minorPerHour?: number; readonly because?: string } }; readonly departments: readonly { readonly departmentId: string; readonly name: string; readonly salesMinor: number; readonly labourMinutes: number | null; readonly rate: { readonly kind: string; readonly minorPerHour?: number } }[]; readonly unownedSalesMinor: number; readonly hoursAttributed: boolean; readonly notAttributed?: { readonly labourMinutes: number; readonly people: readonly { readonly employeeId: string; readonly name: string; readonly labourMinutes: number; readonly why: string }[] } }>>;
+  /** OB-357: a person's home department on the staff record ('' = none — their hours are then "not attributed"). */
+  setHomeDepartment(employeeId: string, departmentId: string): Promise<Outcome<unknown, 'needFields'>>;
 }
 
 export function createAdoptionSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): AdoptionSession {
@@ -90,6 +94,7 @@ export function createAdoptionSession(input: { readonly viewer: { readonly userI
   const may = {
     named, open: named && held.has('workforce.roster.read'), gate: named && held.has('workforce.adoption.read'), approve: named && held.has('workforce.curriculum.approve'),
     train: named && held.has('workforce.training.manage'), champion: named && held.has('workforce.champion.name'), productivity: named && held.has('workforce.incentive.read'),
+    homeDepartment: named && held.has('workforce.roster.manage'),
   };
   const call = makeCaller({ keyPrefix: 'adoption', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   return {
@@ -108,5 +113,8 @@ export function createAdoptionSession(input: { readonly viewer: { readonly userI
     nameChampion: async (departmentId, employeeId) => (employeeId.trim() === '' ? { result: 'invalid', why: 'needFields' } : call('POST', `/v1/hr/workforce/floor-champions/${encodeURIComponent(departmentId)}`, { employeeId: employeeId.trim() })),
     access: () => call('GET', '/v1/hr/workforce/access-match'),
     productivity: (from, to) => call('GET', `/v1/hr/workforce/productivity?${new URLSearchParams({ ...(from === '' ? {} : { from }), ...(to === '' ? {} : { to }) }).toString()}`),
+    setHomeDepartment: async (employeeId, departmentId) => (employeeId.trim() === ''
+      ? { result: 'invalid', why: 'needFields' }
+      : call('POST', `/v1/hr/workforce/employees/${encodeURIComponent(employeeId.trim())}/home-department`, { departmentId: departmentId.trim() === '' ? null : departmentId.trim() })),
   };
 }

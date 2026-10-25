@@ -9,12 +9,21 @@
 // shows; that is ALSO recorded as a shelf price-integrity observation (D-7), so the ageing report clears on its own. A
 // label showing another price is refused — the task stays open.
 //
-// The tasks sit on the store's list, open for whoever at the store picks one up (who each should be assigned to is an
-// owner decision not yet made). Append-only: raising is idempotent per product, store, shelf place, price and day.
+// OB-358 (owner, 24 Oct 2026, in writing): each task GOES TO the floor champion of the department that owns the product at
+// that store (the category the product sits in, as the department's categories say); if the department has no champion
+// named — or none owns the product there, or the champion has left — it goes to the STORE MANAGER of that store. The
+// assignment is decided when the task is raised and kept on it (a fact, never re-guessed); the list says who it is for,
+// and whether it is the reader's. A store manager role nobody holds is said ("nobody holds it — not set"), never hidden.
+// Append-only: raising is idempotent per product, store, shelf place, price and day.
 
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError, notFound, scopeOf } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+
+/** OB-358: who a relabel task goes to, decided when it is raised. */
+export type RelabelAssignee =
+  | { readonly to: 'floor_champion'; readonly departmentId: string; readonly employeeId: string }
+  | { readonly to: 'store_manager'; readonly departmentId: string | null; readonly because: 'no_department_owns_it' | 'no_champion_named' | 'champion_left' };
 
 export interface RelabelTask {
   readonly taskId: string;
@@ -28,6 +37,8 @@ export interface RelabelTask {
   readonly because: 'price_change' | 'price_list_entry';
   readonly sourceRef: string;
   readonly raisedAt: string;
+  /** OB-358: who it goes to. Absent on a task raised before the decision (shown "not assigned"). */
+  readonly assignee?: RelabelAssignee;
 }
 
 export interface RelabelDone {
@@ -45,6 +56,10 @@ export interface RelabelTaskDeps {
   readonly recordDone: (tenantId: string, d: RelabelDone) => Promise<void>;
   /** The shelf places a product has on the store's plan now. */
   readonly shelfPlaces: (tenantId: string, storeId: string, productId: string) => Promise<readonly string[]>;
+  /** OB-358: who a product's relabel task at a store goes to — its department's floor champion, else the store manager. */
+  readonly assigneeFor?: (tenantId: string, storeId: string, productId: string) => Promise<RelabelAssignee>;
+  /** OB-358: who holds the store manager role at a store now (a task for "the store manager" is theirs). */
+  readonly storeManagersAt?: (tenantId: string, storeId: string) => Promise<readonly string[]>;
   /** The price-integrity observation route's own handler (D-7), run as the person who changed the label. */
   readonly recordObservationAs: (ctx: RequestContext) => Promise<HandlerResult>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -52,7 +67,7 @@ export interface RelabelTaskDeps {
 }
 
 /** The tasks a new price raises at these stores (one per shelf place, or one "not on the plan"). */
-export async function relabelTasksFor(deps: Pick<RelabelTaskDeps, 'shelfPlaces' | 'now'>, tenantId: string, input: {
+export async function relabelTasksFor(deps: Pick<RelabelTaskDeps, 'shelfPlaces' | 'now' | 'assigneeFor'>, tenantId: string, input: {
   readonly productId: string; readonly priceMinor: number; readonly storeIds: readonly string[]; readonly dueAt: string;
   readonly because: RelabelTask['because']; readonly sourceRef: string;
 }): Promise<readonly RelabelTask[]> {
@@ -60,11 +75,14 @@ export async function relabelTasksFor(deps: Pick<RelabelTaskDeps, 'shelfPlaces' 
   const day = input.dueAt.slice(0, 10);
   for (const branchId of [...new Set(input.storeIds)].sort()) {
     const places = [...new Set(await deps.shelfPlaces(tenantId, branchId, input.productId))].sort();
+    // OB-358: one answer per store for the product — its department's floor champion, else the store manager.
+    const assignee = deps.assigneeFor === undefined ? undefined : await deps.assigneeFor(tenantId, branchId, input.productId);
     for (const locationId of places.length === 0 ? [null] : places) {
       out.push({
         taskId: `relabel-${branchId}-${input.productId}-${locationId ?? 'not-on-plan'}-${input.priceMinor}-${day}`,
         branchId, productId: input.productId, locationId, priceMinor: input.priceMinor, dueAt: input.dueAt,
         because: input.because, sourceRef: input.sourceRef, raisedAt: deps.now(),
+        ...(assignee === undefined ? {} : { assignee }),
       });
     }
   }
@@ -82,22 +100,49 @@ export async function raiseRelabelTasks(deps: RelabelTaskDeps, tenantId: string,
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
+  /** The tasks a reader sees, each saying who it is for (OB-358); `mineOnly` keeps the reader's own. */
+  const list = async (ctx: RequestContext, mineOnly: boolean): Promise<HandlerResult> => {
+    const scope = scopeOf(ctx);
+    const branchId = isStr(ctx.query['branchId']) ? ctx.query['branchId'].trim() : undefined;
+    const [tasks, done] = await Promise.all([deps.tasks(ctx.tenantId), deps.done(ctx.tenantId)]);
+    const doneOf = new Map(done.map((d) => [d.taskId, d] as const));
+    const now = deps.now();
+    const managers = new Map<string, readonly string[]>();
+    const managersAt = async (b: string): Promise<readonly string[] | null> => {
+      if (deps.storeManagersAt === undefined) return null;
+      if (!managers.has(b)) managers.set(b, [...await deps.storeManagersAt(ctx.tenantId, b)].sort());
+      return managers.get(b)!;
+    };
+    const seen = tasks.filter((t) => (scope === 'all' || scope.includes(t.branchId)) && (branchId === undefined || t.branchId === branchId));
+    const rows = [];
+    for (const t of seen) {
+      const storeManagers = t.assignee?.to === 'store_manager' ? await managersAt(t.branchId) : null;
+      const assignedToMe = t.assignee === undefined ? false
+        : t.assignee.to === 'floor_champion' ? t.assignee.employeeId === ctx.userId : (storeManagers ?? []).includes(ctx.userId);
+      if (mineOnly && !assignedToMe) continue;
+      rows.push({
+        ...t, assignee: t.assignee ?? null, assignedToMe,
+        ...(storeManagers === null ? {} : { storeManagers }),
+        done: doneOf.get(t.taskId) ?? null, dueNow: Date.parse(t.dueAt) <= Date.parse(now),
+      });
+    }
+    rows.sort((a, b) => Number(a.done !== null) - Number(b.done !== null) || a.dueAt.localeCompare(b.dueAt) || a.taskId.localeCompare(b.taskId));
+    return { status: 200, body: { tasks: rows, open: rows.filter((r) => r.done === null).length, asAt: now } };
+  };
   return [
     {
-      // The store's relabel tasks: open first (oldest due first), then the ones done. ?branchId= narrows.
+      // The store's relabel tasks: open first (oldest due first), then the ones done. ?branchId= narrows; ?mine=1 keeps
+      // only the tasks that go to the reader (OB-358: their department's champion, or the store manager they are).
       api: 'API-02', method: 'GET', path: '/v1/pricing/relabel-tasks',
       permission: 'workforce.task.read',
-      handler: async (ctx) => {
-        const scope = scopeOf(ctx);
-        const branchId = isStr(ctx.query['branchId']) ? ctx.query['branchId'].trim() : undefined;
-        const [tasks, done] = await Promise.all([deps.tasks(ctx.tenantId), deps.done(ctx.tenantId)]);
-        const doneOf = new Map(done.map((d) => [d.taskId, d] as const));
-        const now = deps.now();
-        const rows = tasks.filter((t) => (scope === 'all' || scope.includes(t.branchId)) && (branchId === undefined || t.branchId === branchId))
-          .map((t) => ({ ...t, done: doneOf.get(t.taskId) ?? null, dueNow: Date.parse(t.dueAt) <= Date.parse(now) }))
-          .sort((a, b) => Number(a.done !== null) - Number(b.done !== null) || a.dueAt.localeCompare(b.dueAt) || a.taskId.localeCompare(b.taskId));
-        return { status: 200, body: { tasks: rows, open: rows.filter((r) => r.done === null).length, asAt: now } };
-      },
+      handler: (ctx) => list(ctx, ctx.query['mine'] === '1' || ctx.query['mine'] === 'true'),
+    },
+    {
+      // OB-358: MY relabel tasks — the ones that go to me as my department's floor champion, or as the store manager. Read
+      // with the permission a person completes their own tasks with (as the My tasks page reads its tasks).
+      api: 'API-02', method: 'GET', path: '/v1/pricing/relabel-tasks/mine',
+      permission: 'workforce.task.complete.own',
+      handler: (ctx) => list(ctx, true),
     },
     {
       // Done: the label changed. Body: { evidenceRef (the photo), shelfPriceMinor (what the label now shows) }.

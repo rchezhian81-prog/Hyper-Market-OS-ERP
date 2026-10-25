@@ -4,6 +4,8 @@
 //   • R4 · C15 — payslips not issued by (or issued after) their pay date, raised into every owner's alert inbox
 //     (`payslipLateSweep`, r4-pay-epr-adapters.ts).
 //   • OB-288 lane 2 · M10-FR-01 — a batch past its date moves to the "expired" state, once (`lane2ExpirySweep`).
+//   • OB-288 lane 4 · P2 · M29-FR-03/04 — the owner's five exception alerts raised into his inbox, and every scheduled
+//     report and export that is due prepared (`ownerReportingSweep`, owner-reporting-adapters.ts).
 //
 // All run on every pass. One failing never stops the others: the rest still run, and the failure is then thrown so
 // the worker records the pass as failed for that shop and tries again next time (P-08 — never quietly).
@@ -25,6 +27,12 @@ export interface EachPassSweeps {
   readonly seasonEnd?: (tenantId: string, at: string) => Promise<number>;
   /** OB-288 wave 3: the customer package's timed work — points expiry, repeat orders, order notices, journeys (absent → not run). */
   readonly customerCommerce?: (tenantId: string, at: string) => Promise<number>;
+  /** OB-288 commercial desks: concession expiry alerts and B2B contracts ending, raised to the owners (absent → not run). */
+  readonly commercialDesks?: (tenantId: string, at: string) => Promise<number>;
+  /** OB-288 lane 4 · P2 (M29-FR-03/04): the owner's exception alerts raised, and the scheduled reports prepared (absent → not run). */
+  readonly ownerReporting?: (tenantId: string, at: string) => Promise<number>;
+  /** OB-288 P4: the hourly usage record (OB-321) and the customer-data volume watch (C9) — records made and alerts raised/cleared (absent → not run). */
+  readonly saasRollout?: (tenantId: string, at: string) => Promise<number>;
   readonly say: (line: string) => void;
 }
 
@@ -54,6 +62,9 @@ export function alsoEachPassOf(sweeps: EachPassSweeps): (tenantId: string, at: s
     if (sweeps.financeBridge !== undefined) { try { const n = await sweeps.financeBridge(tenantId, at); if (n > 0) sweeps.say(`tally: ${n} daily file(s) made ready or dead-lettered for shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (sweeps.seasonEnd !== undefined) { try { const n = await sweeps.seasonEnd(tenantId, at); if (n > 0) sweeps.say(`range: ${n} season plan(s) ended into clearance for shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (sweeps.customerCommerce !== undefined) { try { const n = await sweeps.customerCommerce(tenantId, at); if (n > 0) sweeps.say(`customers: ${n} timed step(s) done for shop ${tenantId}`); } catch (e) { errors.push(e); } }
+    if (sweeps.commercialDesks !== undefined) { try { const n = await sweeps.commercialDesks(tenantId, at); if (n > 0) sweeps.say(`alerts: ${n} concession / B2B contract expiry alert(s) raised to the owners of shop ${tenantId}`); } catch (e) { errors.push(e); } }
+    if (sweeps.ownerReporting !== undefined) { try { const n = await sweeps.ownerReporting(tenantId, at); if (n > 0) sweeps.say(`owner: ${n} exception alert(s) raised or scheduled report(s) prepared for shop ${tenantId}`); } catch (e) { errors.push(e); } }
+    if (sweeps.saasRollout !== undefined) { try { const n = await sweeps.saasRollout(tenantId, at); if (n > 0) sweeps.say(`saas: ${n} usage record(s) or data-volume alert change(s) for shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (errors.length > 0) {
       const words = errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; ');
       throw new Error(`a per-shop sweep failed: ${words}`);

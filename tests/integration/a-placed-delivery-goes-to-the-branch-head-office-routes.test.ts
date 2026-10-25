@@ -9,12 +9,17 @@ import { fulfilmentShop, codeOf, OWNER, DISPATCHER, STORE, STORE_ID, DOORS } fro
 // and the as-built shortage path applies there (the customer decides) — one branch, never two parcels. An address no
 // branch reaches is refused before anything is reserved; a dark store takes no collection. The decision the order was
 // placed on is kept and counts against that branch's slot. In memory and on real PostgreSQL, with a cold restart.
+//
+// OB-355 (owner, 24 Oct 2026, in writing: "an online order no single branch can fill — the nearest branch in range takes
+// it; the existing shortage path lets the customer decide", as built) is PINNED here: ORD-C below — dal and sixty oil,
+// which no one branch holds — goes to the nearest branch in range with `needsCustomerDecision` and its shortage listed,
+// and nothing is held at the other branch.
 
 const backings = useRestartableBackings();
 const DARK = { lat: 11.0400, lon: 76.9800 }; // a dark store ~3.5 km from the shop
 const TOO_FAR = { lat: 11.5000, lon: 77.5000 }; // ~80 km — no branch reaches it
 
-describe.each(backings)('a placed delivery goes to the branch head office routes it to (D09-FR-01 · OB-300) — on $name', ({ harness }) => {
+describe.each(backings)('a placed delivery goes to the branch head office routes it to (D09-FR-01 · OB-300 · OB-355) — on $name', ({ harness }) => {
   it('the app\'s store is a request; the nearest whole-order branch with room takes it; a full slot falls through; never split; refused out of range', async () => {
     const h = harness();
     const shop = await fulfilmentShop(h);
@@ -35,7 +40,7 @@ describe.each(backings)('a placed delivery goes to the branch head office routes
     // The shop's one place in that slot is now taken by ORD-A's kept decision: the next falls through to the dark store.
     const b = await place('c-2', 'ORD-B', [['RICE', 1]], STORE_ID);
     expect(b.body).toMatchObject({ locationId: 'D1', routing: { locationId: 'D1', requestedLocationId: STORE_ID, outcome: 'routed' } });
-    // Dal and sixty oil: no one branch holds both — the nearest in range takes it and the customer decides on the
+    // OB-355 — Dal and sixty oil: no one branch holds both — the nearest in range takes it and the customer decides on the
     // shortage (the as-built path). Never two parcels: nothing is held at the dark store.
     const c = await shop.call('POST', '/v1/storefront/orders/ORD-C', 'c-3', { lines: [{ productId: 'DAL', quantityMinor: 1 }, { productId: 'OIL', quantityMinor: 60 }], locationId: 'D1', fulfilment: 'delivery', deliverySlot: { startsAt: shop.slots[3]!.startsAt }, deliveryLocation: DOORS.near });
     expect(c.status).toBe(201);

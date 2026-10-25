@@ -169,3 +169,21 @@ describe('GET /v1/migration/screen — the feed the store box pulls (C3b)', () =
     expect(src).not.toMatch(/\?\? \[\]|\?\? 0|\?\? true|\?\? \{\}/);
   });
 });
+
+describe('MG-11 — the feed carries the owner\'s rollback limits and the backup job\'s latest reports', () => {
+  it('present with the controls — newest first, at most ten; absent without them (the box then says "not known")', async () => {
+    const s = stub();
+    expect(await read(s)).not.toHaveProperty('rollbackLimits');
+    expect(await read(s)).not.toHaveProperty('backups');
+    const limits = { controlTotalDifferenceMinor: 0, edgeOutageMinutes: 30, windowMinutes: 240, backupMaxAgeHours: 6, version: 1, setBy: 'u-owner', setAt: NOW };
+    const backups = Array.from({ length: 12 }, (_, i) => ({ backupId: `B-${i}`, at: `2026-10-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`, ok: true, encrypted: true, offsite: true }));
+    const controls = { rollbackLimits: async () => limits, backups: async () => backups } as unknown as NonNullable<MigrationDeps['controls']>;
+    const withControls = await migrationScreenFeed({ ...s.deps, controls }, T);
+    expect(withControls.rollbackLimits).toEqual(limits);
+    expect(withControls.backups!.map((b) => b.backupId)).toEqual(['B-11', 'B-10', 'B-9', 'B-8', 'B-7', 'B-6', 'B-5', 'B-4', 'B-3', 'B-2']);
+    // Controls but nothing recorded: no limits (not known), and an EMPTY backup register (a fact: never reported).
+    const bare = await migrationScreenFeed({ ...s.deps, controls: { rollbackLimits: async () => undefined, backups: async () => [] } as unknown as NonNullable<MigrationDeps['controls']> }, T);
+    expect(bare).not.toHaveProperty('rollbackLimits');
+    expect(bare.backups).toEqual([]);
+  });
+});

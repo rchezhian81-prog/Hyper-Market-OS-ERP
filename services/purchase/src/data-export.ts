@@ -146,6 +146,20 @@ export const EXPORT_COVERAGE: readonly { readonly domain: string; readonly modul
   { domain: 'Orders (desk and online)', module: 'M18', status: 'exported', exportDomain: 'orders' },
   { domain: 'Payroll (issued payslips)', module: 'M26', status: 'exported', exportDomain: 'payslips' },
   { domain: 'Attendance hours (a bounded period)', module: 'M25/M26', status: 'exported', exportDomain: 'attendance' },
+  // OB-288 lane 4 · P2 (audit-4 M30-FR-02): the further business domains.
+  { domain: 'Price lists (every price entry, every version)', module: 'M05', status: 'exported', exportDomain: 'price-lists' },
+  { domain: 'Promotions launched', module: 'M05', status: 'exported', exportDomain: 'promotions' },
+  { domain: 'Goods receipts', module: 'M07', status: 'exported', exportDomain: 'goods-receipts' },
+  { domain: 'Supplier invoices', module: 'M07', status: 'exported', exportDomain: 'supplier-invoices' },
+  { domain: 'Returns and refunds', module: 'M13', status: 'exported', exportDomain: 'returns' },
+  { domain: 'Stock movements (a bounded period)', module: 'M08', status: 'exported', exportDomain: 'stock-movements' },
+  { domain: 'Stock transfers', module: 'M08/M09', status: 'exported', exportDomain: 'transfers' },
+  { domain: 'Stock counts', module: 'M08', status: 'exported', exportDomain: 'stock-counts' },
+  { domain: 'Till shifts and cash at close', module: 'M14', status: 'exported', exportDomain: 'till-shifts' },
+  { domain: 'Write-offs', module: 'M28', status: 'exported', exportDomain: 'write-offs' },
+  { domain: 'Waste records', module: 'M28', status: 'exported', exportDomain: 'waste-records' },
+  { domain: 'Service cases and complaints', module: 'M22', status: 'exported', exportDomain: 'service-cases' },
+  { domain: 'Till cash movements (floats, pickups and drops, one by one)', module: 'M14', status: 'exported', exportDomain: 'cash-movements' },
 ];
 
 export function buildExportDomains(sources: {
@@ -557,4 +571,123 @@ export function dataExportRoutes(deps: DataExportDeps): readonly Route[] {
       },
     },
   ];
+}
+
+// ── OB-288 lane 4 · P2 (audit-4 M30-FR-02): the further business domains ────────────────────────────────────────────
+//
+// Each from the register its own domain writes (the adapter reads it — `services/api/src/data-in-adapters.ts`), with its
+// open schema, its branch column (a store-limited user exports their store's rows only) and its sensitive columns marked.
+// Dated registers that grow with every trading day (stock movements) are exported for a bounded period only.
+
+/** The further domains' schemas, keyed by domain. The rows come from `moreExportDomains`' sources. */
+export const MORE_EXPORT_SPECS: Readonly<Record<string, { readonly spec: ExportSpec; readonly period?: { readonly maxDays: number } }>> = Object.freeze({
+  'price-lists': { spec: {
+    domain: 'price-lists', requires: 'catalogue.pack.read', branchColumn: 'store',
+    columns: [
+      { name: 'entryId', type: 'text' }, { name: 'productId', type: 'text' },
+      { name: 'scope', type: 'enum', description: 'customer | channel | zone | store.' }, { name: 'store', type: 'text', description: 'The store a store-scope price is for; blank for another scope.' },
+      { name: 'scopeRef', type: 'text' }, { name: 'priceMinor', type: 'integer', description: 'Selling price in paise.' }, { name: 'currency', type: 'text' },
+      { name: 'effectiveFrom', type: 'date' }, { name: 'effectiveTo', type: 'date' }, { name: 'status', type: 'enum', description: 'draft | active | rolled_back.' },
+      { name: 'version', type: 'integer' }, { name: 'batchId', type: 'text', description: 'The one batch a markdown is for; blank for the product\'s own price.' },
+    ] } },
+  promotions: { spec: {
+    domain: 'promotions', requires: 'promotion.read',
+    columns: [
+      { name: 'promotionId', type: 'text' }, { name: 'verdict', type: 'enum' }, { name: 'incrementalMarginMinor', type: 'integer', description: 'The simulation\'s incremental margin in paise.' },
+      { name: 'currency', type: 'text' }, { name: 'proposedBy', type: 'text' }, { name: 'approvedBy', type: 'text' }, { name: 'launchedAt', type: 'date' }, { name: 'detail', type: 'text' },
+    ] } },
+  'goods-receipts': { spec: {
+    domain: 'goods-receipts', requires: 'purchase.commitment.read', branchColumn: 'store',
+    columns: [
+      { name: 'grnId', type: 'text' }, { name: 'number', type: 'text' }, { name: 'poId', type: 'text' }, { name: 'store', type: 'text', description: 'The store / warehouse it was received at.' },
+      { name: 'receivedBy', type: 'text' }, { name: 'receivedAt', type: 'date' }, { name: 'lines', type: 'integer' },
+      { name: 'availableMinor', type: 'integer', description: 'Units that became sellable.' }, { name: 'heldMinor', type: 'integer', description: 'Over-tolerance units held, not sellable until decided.' },
+    ] } },
+  'supplier-invoices': { spec: {
+    domain: 'supplier-invoices', requires: 'purchase.commitment.read',
+    columns: [
+      { name: 'invoiceId', type: 'text' }, { name: 'supplierId', type: 'text' }, { name: 'poId', type: 'text' }, { name: 'lines', type: 'integer' },
+      { name: 'totalMinor', type: 'integer', description: 'The lines\' total in paise.' }, { name: 'declaredTotalMinor', type: 'integer', description: 'What the paper invoice said.' },
+      { name: 'capturedBy', type: 'text' }, { name: 'capturedAt', type: 'date' }, { name: 'approvedBy', type: 'text' }, { name: 'source', type: 'text', description: 'The screen, or the import job it came from.' },
+      { name: 'withdrawn', type: 'enum', description: 'yes when taken back out by a compensating record (an import rollback).' },
+    ] } },
+  returns: { spec: {
+    domain: 'returns', requires: 'pos.sale.read', branchColumn: 'store',
+    columns: [
+      { name: 'returnId', type: 'text' }, { name: 'number', type: 'text' }, { name: 'originalSaleId', type: 'text', description: 'Blank for a controlled no-receipt return.' },
+      { name: 'store', type: 'text', description: 'Where the goods went back (a no-receipt return names it); blank when not stated.' },
+      { name: 'processedBy', type: 'text' }, { name: 'processedAt', type: 'date' }, { name: 'reasonCode', type: 'text' },
+      { name: 'refundMinor', type: 'integer', description: 'Value refunded or credited, in paise.' }, { name: 'refundTender', type: 'text' }, { name: 'refundStatus', type: 'text' }, { name: 'lines', type: 'integer' },
+    ] } },
+  'stock-movements': { period: { maxDays: 92 }, spec: {
+    domain: 'stock-movements', requires: 'inventory.availability.read', branchColumn: 'store',
+    columns: [
+      { name: 'movementId', type: 'text' }, { name: 'occurredAt', type: 'date' }, { name: 'productId', type: 'text' }, { name: 'store', type: 'text', description: 'The stock location.' },
+      { name: 'kind', type: 'enum', description: 'received | sold | returned | transferred_in | transferred_out | adjusted | wasted | counted | …' },
+      { name: 'quantityMinor', type: 'integer', description: 'Always positive; the kind is the direction. In the base unit.' }, { name: 'uom', type: 'text' },
+      { name: 'unitCostMinor', type: 'integer', description: 'On a receipt: the cost it was received at, in paise.' }, { name: 'batchId', type: 'text' }, { name: 'expiry', type: 'date' },
+      { name: 'reason', type: 'text' }, { name: 'enteredBy', type: 'text' }, { name: 'approvedBy', type: 'text' },
+    ] } },
+  transfers: { spec: {
+    domain: 'transfers', requires: 'inventory.availability.read',
+    columns: [
+      { name: 'transferId', type: 'text' }, { name: 'from', type: 'text' }, { name: 'to', type: 'text' }, { name: 'state', type: 'enum' }, { name: 'lines', type: 'integer' },
+      { name: 'quantities', type: 'text', description: 'productId:quantity pairs.' }, { name: 'requestedBy', type: 'text' }, { name: 'approvedBy', type: 'text' },
+      { name: 'dispatchedAt', type: 'date' }, { name: 'receivedAt', type: 'date' }, { name: 'receivedBy', type: 'text' },
+    ] } },
+  'stock-counts': { spec: {
+    domain: 'stock-counts', requires: 'inventory.availability.read', branchColumn: 'store',
+    columns: [
+      { name: 'countId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'store', type: 'text' }, { name: 'expectedMinor', type: 'integer' }, { name: 'countedMinor', type: 'integer' },
+      { name: 'varianceMinor', type: 'integer' }, { name: 'valueMinor', type: 'integer', description: 'The variance valued, in paise.' }, { name: 'reasonCode', type: 'text' },
+      { name: 'adjusted', type: 'enum', description: 'yes when the correction was applied.' }, { name: 'counterId', type: 'text' }, { name: 'approvedBy', type: 'text' }, { name: 'at', type: 'date' },
+    ] } },
+  'till-shifts': { spec: {
+    domain: 'till-shifts', requires: 'till.shift.read', branchColumn: 'store',
+    columns: [
+      { name: 'shiftId', type: 'text' }, { name: 'store', type: 'text' }, { name: 'till', type: 'text' }, { name: 'cashier', type: 'text' }, { name: 'tradingDay', type: 'date' },
+      { name: 'openingFloatMinor', type: 'integer' }, { name: 'cashSalesMinor', type: 'integer' }, { name: 'pickupsMinor', type: 'integer' }, { name: 'cashRefundsMinor', type: 'integer' },
+      { name: 'expectedMinor', type: 'integer' }, { name: 'countedMinor', type: 'integer' }, { name: 'varianceMinor', type: 'integer', description: 'Counted less expected: over (+) or short (−), in paise.' },
+      { name: 'reasonCode', type: 'text' }, { name: 'closedAt', type: 'date' },
+    ] } },
+  'cash-movements': { spec: {
+    domain: 'cash-movements', requires: 'cash.till.read', branchColumn: 'store',
+    columns: [
+      { name: 'movementId', type: 'text' }, { name: 'store', type: 'text', description: 'The store whose till it is; blank on a movement kept before stores were named.' },
+      { name: 'till', type: 'text' }, { name: 'kind', type: 'enum', description: 'float | pickup | drop | refund | … as the till recorded it.' },
+      { name: 'deltaMinor', type: 'integer', description: 'Into the drawer (+) or out of it (−), in paise.' }, { name: 'currency', type: 'text' },
+      { name: 'custodian', type: 'text' }, { name: 'performedBy', type: 'text' }, { name: 'tradingDay', type: 'date' }, { name: 'at', type: 'date' },
+    ] } },
+  'write-offs': { spec: {
+    domain: 'write-offs', requires: 'inventory.availability.read', branchColumn: 'store',
+    columns: [
+      { name: 'writeOffId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'store', type: 'text' }, { name: 'lossType', type: 'enum' }, { name: 'quantity', type: 'integer' }, { name: 'uom', type: 'text' },
+      { name: 'valueMinor', type: 'integer' }, { name: 'valueSource', type: 'enum', description: 'stock_cost | cost_unknown.' }, { name: 'reasonCode', type: 'text' },
+      { name: 'raisedBy', type: 'text' }, { name: 'approvedBy', type: 'text' }, { name: 'at', type: 'date' },
+    ] } },
+  'waste-records': { spec: {
+    domain: 'waste-records', requires: 'inventory.availability.read', branchColumn: 'store',
+    columns: [
+      { name: 'wasteId', type: 'text' }, { name: 'store', type: 'text' }, { name: 'departmentId', type: 'text' }, { name: 'productId', type: 'text' },
+      { name: 'source', type: 'enum', description: 'expiry | damage | shrinkage | preparation | customer_return | recall.' }, { name: 'at', type: 'date' },
+      { name: 'valueMinor', type: 'integer' }, { name: 'disposal', type: 'enum' }, { name: 'grams', type: 'integer' },
+    ] } },
+  'service-cases': { spec: {
+    domain: 'service-cases', requires: 'service.case.read',
+    columns: [
+      { name: 'caseId', type: 'text' }, { name: 'kind', type: 'enum' }, { name: 'state', type: 'enum' }, { name: 'priority', type: 'enum' },
+      { name: 'customerRef', type: 'text', sensitive: true, description: 'The customer the case is about — redacted without export.sensitive.' },
+      { name: 'openedAt', type: 'date' }, { name: 'assignedTo', type: 'text' }, { name: 'firstRespondedAt', type: 'date' }, { name: 'resolvedAt', type: 'date' },
+      { name: 'orderRef', type: 'text' },
+      { name: 'summary', type: 'text', sensitive: true, description: 'The customer\'s own words — personal data.' },
+      { name: 'resolution', type: 'text', sensitive: true },
+    ] } },
+});
+
+/** The further domains, each offered only when its rows are wired (never an empty file for an unwired register). */
+export function moreExportDomains(rows: Readonly<Record<string, ((tenantId: string, period?: ExportPeriod) => Promise<readonly Row[]>) | undefined>>): readonly ExportDomainSource[] {
+  return Object.entries(MORE_EXPORT_SPECS).flatMap(([domain, d]) => {
+    const source = rows[domain];
+    return source === undefined ? [] : [{ spec: d.spec, ...(d.period === undefined ? {} : { period: d.period }), rows: source }];
+  });
 }

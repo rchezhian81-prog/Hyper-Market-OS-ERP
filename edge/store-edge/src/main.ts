@@ -106,6 +106,7 @@ import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, tillCatalogue, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
+import { checkStaffPurchase, packStaffPurchaseOf } from './staff-purchase-gate'; // OB-301
 import { SoldHuids } from './sold-huids';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
@@ -1790,6 +1791,8 @@ export async function startEdge(
         });
       },
     },
+    // OB-301 (M15-FR-03): a staff member's own shopping, judged from this box's store pack, before the disk.
+    staffPurchases: { check: (record, lane) => checkStaffPurchase(record, lane, packStaffPurchaseOf(pack.policies.known ? pack.policies.value : undefined)) },
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });

@@ -21,7 +21,7 @@ export interface SplitPart {
   readonly machineRef?: string;
 }
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
-import { DeliveryNotAvailableError, type PosSession, type SyncBadge } from './session';
+import { DeliveryNotAvailableError, type PosSession, type SyncBadge, type DeliverySlip } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
 /** A basket line as the view renders it — display primitives only. */
@@ -103,6 +103,8 @@ export interface PosView {
   deliverThisBill(): { readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage?: string; readonly feeMinor?: number; readonly lineId?: string };
   /** OB-299: take the delivery off the bill (the fee line is voided with the reason). */
   undeliverThisBill(reason: string): void;
+  /** OB-352: the last saved delivery bill's slip (or the customer-app line), in the language asked; null when not for delivery. */
+  deliverySlip(language?: 'en' | 'ta'): DeliverySlip | null;
   /** OB-299: whether this bill is marked for delivery. */
   isForDelivery(): boolean;
   /**
@@ -284,6 +286,10 @@ export function createPosView(
 
     isForDelivery(): boolean {
       return session.deliveryLine() !== undefined;
+    },
+
+    deliverySlip(language: 'en' | 'ta' = 'en'): DeliverySlip | null {
+      return session.deliverySlip(language) ?? null;
     },
 
     productName(productId: string): string | undefined {

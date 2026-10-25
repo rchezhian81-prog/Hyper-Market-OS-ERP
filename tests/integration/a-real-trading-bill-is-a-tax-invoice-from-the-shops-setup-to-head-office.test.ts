@@ -94,7 +94,8 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     h = restart(h); // ── head office COLD ────────────────────────────────────────────────────────────────────────────
     const served = await h.request({ method: 'GET', path: `/v1/store-packs/${STORE}`, userId: 'u-box', tenantId: T, branchId: STORE });
     expect(served.status, JSON.stringify(served.body)).toBe(200);
-    const policies = JSON.parse(JSON.stringify(served.body).match(/"policies":(\{[^{}]*"taxInvoice":\{[^{}]*\}[^{}]*\})/)?.[1] ?? '{}') as { taxInvoice?: unknown };
+    // Read as the structure it is (the policies section now also carries nested sections, e.g. OB-301's staff purchases).
+    const policies = ((served.body as { sections?: { policies?: { taxInvoice?: unknown } } }).sections?.policies ?? {});
     expect(policies.taxInvoice).toEqual({ legalName: LEGAL, gstin: GSTIN, placeOfBusiness: ADDRESS });
 
     // ── The store computer, in real trading, with that identity in its pack; head office reached through a stand-in fetch.

@@ -244,6 +244,29 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
   },
   // ── OB-288 till side — end
+  // ── OB-288 commercial desks (M22 · M24 · M27) — begin
+  // M22-FR-01 "contract/credit changes approved": a B2B contract (its price list, dates, terms, credit limit, expiry policy)
+  // is proposed by one contract manager and approved by ANOTHER (the owner and the accountant check each other) — the
+  // concession-contract pattern; a dedicated approval authority would be new role policy, the owner's to set.
+  b2b_contract: {
+    kind: 'b2b_contract', label: 'Approve a business customer\'s contract (prices, dates, credit and terms)',
+    makerPermission: 'b2b.contract.manage', checkerPermission: 'b2b.contract.manage', validForMinutes: 24 * 60,
+  },
+  // M22-FR-01 "an order exceeding the credit limit is blocked pending approval" · OB-290 (owner, 23 Oct 2026): above a
+  // person's limit goes to the owner — the person taking the order asks; the OWNER (`b2b.credit.override`) decides.
+  b2b_credit_override: {
+    kind: 'b2b_credit_override', label: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
+    makerPermission: 'b2b.document.issue', checkerPermission: 'b2b.credit.override', validForMinutes: 24 * 60,
+  },
+  // ── OB-288 commercial desks — end
+  // ── OB-288 P4 (multi-tenant SaaS and rollout) — begin
+  // M36-FR-03 "closure is governed/approved": closing the shop's account is asked by the IT administrator and approved by
+  // the owner (the OB-335 pattern: IT asks, the owner approves a structural change) — never the asker.
+  tenant_closure: {
+    kind: 'tenant_closure', label: 'Close this shop\'s account (access ends; the law\'s records and the audit are kept)',
+    makerPermission: 'platform.tenant.close', checkerPermission: 'platform.tenant.close.approve', validForMinutes: 24 * 60,
+  },
+  // ── OB-288 P4 — end
 });
 
 /** A maker's request, as recorded. */

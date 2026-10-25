@@ -13,7 +13,7 @@ import { createHelpSession, helpWords, helpOutcomeWords, type HelpData } from '.
 import { createAppointmentLettersSession, lettersWords, lettersOutcomeWords } from './appointment-letters-session';
 import { createFacilitiesOfficeSession, createEquipmentReadingQueue, facilitiesOfficeWords, facilitiesOfficeOutcomeWords, degrees, type HeldEquipment } from './facilities-office-session';
 import { createWriteOffQueue, createWriteOffDecideSession, writeOffQueueWords, writeOffQueueOutcomeWords } from './write-off-queue-session';
-import { createRelabelSession, relabelWords, relabelOutcomeWords } from './relabel-session';
+import { createRelabelSession, relabelWords, relabelOutcomeWords, relabelAssigneeWords } from './relabel-session';
 import { openBoxQueueRelay } from './lpw-box-queue';
 
 type DeviceStorage = { getItem(k: string): string | null; setItem(k: string, v: string): void };
@@ -91,6 +91,6 @@ export function wireLpWorkforcePages(win: Win, viewerIdentity: (raw: unknown) =>
   }
   // Store tasks — the relabel tasks a price change raises (D11-FR-03).
   if (win['storeOpsData'] !== undefined) {
-    win['relabel'] = { session: createRelabelSession({ viewer: viewerIdentity(win['storeOpsData']) }), words: relabelWords, outcomeWords: relabelOutcomeWords };
+    win['relabel'] = { session: createRelabelSession({ viewer: viewerIdentity(win['storeOpsData']) }), words: relabelWords, outcomeWords: relabelOutcomeWords, assigneeWords: relabelAssigneeWords };
   }
 }
