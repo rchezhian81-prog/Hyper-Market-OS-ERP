@@ -187,7 +187,8 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     await till.waitForSelector('#sheet:not([hidden])');
     for (const digit of code) await till.click(`#keypad button:text-is("${digit}")`);
     await till.click('#sheet-ok');
-    await till.waitForSelector('#refusal:not([hidden])');
+    // The same line first shows the keypad's prompt; wait for the till's answer to replace it, do not read it in the same tick.
+    await till.locator('#refusal-text', { hasText: `Handheld basket ${code}:` }).waitFor({ timeout: 15_000 });
     expect(await till.textContent('#refusal-text')).toBe(`Handheld basket ${code}: 1 line(s) rung; 1 need the cashier — scan or ask about each one.`);
     expect(await till.locator('#refusal').innerText()).toMatch(/Cigarettes 10s \(demo\)/);
     await till.click('#refusal-ok');
