@@ -7,8 +7,10 @@ import { readFileSync } from 'node:fs';
  *
  *   • the same spine as the other handhelds: no prompt/confirm/alert, a banner that never fades, 56 px targets, Tamil for
  *     every word, no text box for scanning;
- *   • NO CASH on a handheld: whether it may take cash is an owner decision not made — so the screen offers no cash button
- *     and never calls the cash tender, and the store computer's door refuses any tender but card and UPI;
+ *   • NO CASH on a handheld — the owner's decision (OB-372, 25 Oct 2026): the screen offers no cash button and never calls
+ *     the cash tender, and the store computer's door refuses any tender but card and UPI, saying it is the owner's decision;
+ *   • NO PRINTER on a handheld (OB-373): a paid sale's screen says "Ask at a till or the service desk to print this bill",
+ *     with the bill number — the handheld never prints;
  *   • the price is the till's: the screen holds no price list and no rule of its own — it boots the till's own session;
  *   • the door is behind the device credential: the device socket hands `/queue-pos/` over only AFTER it authenticated the
  *     enrolled device, and the door's lane routes never include refunds, cash, approvals, holds or the day close.
@@ -63,7 +65,13 @@ describe('the queue till keeps the handhelds\' spine', () => {
   });
 });
 
-describe('no cash on a handheld — the owner has not decided it', () => {
+describe('no cash on a handheld — the owner decided so (OB-372, 25 Oct 2026)', () => {
+  it('the refusal says it is the owner\'s decision, in English and Tamil — never "not decided"', () => {
+    expect(DOOR).toMatch(/A handheld takes card or UPI only — never cash \(the owner\\'s decision\)/);
+    expect(DOOR).toMatch(/ரொக்கம் ஒருபோதும் இல்லை \(உரிமையாளரின் முடிவு\)/);
+    expect(DOOR).not.toMatch(/not decided yet/);
+  });
+
   it('the screen offers no cash button and never calls the cash tender', () => {
     expect(HTML).not.toMatch(/id="cash"/);
     expect(APP).not.toMatch(/tenderCash|tenderSplit|tenderPaidOnOldErp/);
@@ -97,5 +105,17 @@ describe('the door is behind the device credential, and reaches only what a queu
     expect(DOOR).toMatch(/holder\.authority === TILL_AUTHORITY/);
     const routes = /QUEUE_POS_LANE_ROUTES[^=]*= Object\.freeze\(\{([\s\S]*?)\}\);/.exec(DOOR)?.[1] ?? '';
     expect(routes).not.toMatch(/returns|cash-movements|shift-close|approvals|held-bills|day-close|day-reopen|outbox|operator\/sign-in|loyalty|phone-baskets|queue-baskets/);
+  });
+});
+
+describe('no printer on a handheld — the bill is printed at a till by its number (OB-373, 25 Oct 2026)', () => {
+  it('the paid screen tells the colleague to ask at a till or the service desk, with the bill number, in English and Tamil', () => {
+    expect(APP).toMatch(/printAtTill: 'Ask at a till or the service desk to print this bill: bill number \{number\}\. This handheld does not print\.'/);
+    expect(APP).toMatch(/printAtTill: 'இந்த பில்லை அச்சிட ஏதேனும் பில்லிங் கவுண்டர் அல்லது சேவை மேசையில் கேளுங்கள்: பில் எண் \{number\}/);
+    expect(APP).toMatch(/fill\(t\('printAtTill'\), \{ number: receiptNumber \}\)/);
+  });
+  it('the handheld never prints: no print call and no lane door to the bill copies', () => {
+    expect(APP).not.toMatch(/window\.print|\.print\(\)/);
+    expect(DOOR).not.toMatch(/bill-copies/);
   });
 });

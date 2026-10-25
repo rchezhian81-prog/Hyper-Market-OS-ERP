@@ -93,10 +93,27 @@ describe.skipIf(!HAVE_BROWSER)('the price kiosk (D14-FR-02)', () => {
     expect(requests.filter((r) => !r.startsWith('GET /price-kiosk/'))).toEqual([]);
   });
 
-  it('once the owner sets the limit, a list older than it says "check the price at the counter"', async () => {
+  it('once the owner sets the limit, a list older than it says "ask a colleague"', async () => {
     const { page } = await kiosk(new Date(Date.now() - 5 * 3_600_000).toISOString(), { kioskStaleAfterMinutes: 240 });
     expect(await page.textContent('#limit')).toMatch(/older than 240 minutes/);
     await scan(page, '8900000000707');
-    expect(await answer(page)).toMatch(/too old to quote from\. Please check the price at the counter/);
+    expect(await answer(page)).toMatch(/too old to quote from\. Please ask a colleague for the price/);
+  });
+
+  // OB-375 (owner, 25 Oct 2026): 24 hours — the number head office now carries in every store pack (1 440 minutes).
+  it('OB-375: with the owner\'s 24 hours, a list 23 h 59 m old still quotes; 24 h 01 m old says "ask a colleague"; the age always shows', async () => {
+    const minutesAgo = (m: number): string => new Date(Date.now() - m * 60_000).toISOString();
+    const fresh = await kiosk(minutesAgo(23 * 60 + 59), { kioskStaleAfterMinutes: 1_440 });
+    expect(await fresh.page.textContent('#limit')).toMatch(/older than 1440 minutes/);
+    await scan(fresh.page, '8900000000707');
+    expect(await answer(fresh.page)).toMatch(/Ponni rice 1kg: ₹70\.00/);
+    expect(await fresh.page.textContent('#age-words')).toMatch(/updated 23 hour\(s\) ago/);
+    const old = await kiosk(minutesAgo(24 * 60 + 1), { kioskStaleAfterMinutes: 1_440 });
+    await scan(old.page, '8900000000707');
+    expect(await answer(old.page)).toBe('This kiosk\'s price list is too old to quote from. Please ask a colleague for the price.');
+    expect(await answer(old.page)).not.toMatch(/₹/);
+    expect(await old.page.textContent('#age-words')).toMatch(/updated 24 hour\(s\) ago/);
+    await old.page.click('#lang');
+    expect(await answer(old.page)).toMatch(/ஊழியரிடம் கேளுங்கள்/);
   });
 });

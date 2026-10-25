@@ -10,7 +10,8 @@
 //      the age and pack-date questions block exactly as at the till.
 //   3. Two ways to finish: hand the basket to a till by a four-digit code (always), or — only where the shop switched
 //      `payments.mobile_pos` on, and never in the mirror pilot — take a card or UPI payment through the store computer.
-//      There is no cash button: whether a handheld may take cash is not decided.
+//      There is no cash button: the owner decided a handheld takes no cash (OB-372). It prints nothing either: the paper
+//      bill is printed at a till or the service desk by its number (OB-373).
 //   4. No `prompt`, `confirm` or `alert`, and the banner does not fade.
 
 const el = (id) => document.getElementById(id);
@@ -57,6 +58,7 @@ const WORDS = {
     declinedMsg: 'The payment was declined. Nothing was saved — try again, or hand the basket to a till.',
     noAnswerMsg: 'The machine did not answer. It is recorded on the store computer and is NOT counted as paid. Check it before asking again.',
     checkPayment: 'Check the payment', paidTitle: 'Paid', billTitle: 'The customer\'s bill',
+    printAtTill: 'Ask at a till or the service desk to print this bill: bill number {number}. This handheld does not print.',
     machineRefTitle: 'The approval number on the machine\'s slip', machineRefHint: 'Letters and digits from the slip — never the card number.',
     noReceipt: 'The store computer gave no bill number, so no money was taken.', nothingToPay: 'There is nothing to pay.',
     readThis: 'I have read this',
@@ -82,6 +84,7 @@ const WORDS = {
     declinedMsg: 'கட்டணம் மறுக்கப்பட்டது. எதுவும் சேமிக்கப்படவில்லை — மீண்டும் முயலவும் அல்லது கூடையை பில்லிங்குக்கு ஒப்படைக்கவும்.',
     noAnswerMsg: 'இயந்திரம் பதிலளிக்கவில்லை. அது கடை கணினியில் பதிவாகியுள்ளது; செலுத்தியதாகக் கணக்கிடப்படவில்லை. மீண்டும் கேட்கும் முன் சரிபார்க்கவும்.',
     checkPayment: 'கட்டணத்தைச் சரிபார்', paidTitle: 'செலுத்தப்பட்டது', billTitle: 'வாடிக்கையாளரின் பில்',
+    printAtTill: 'இந்த பில்லை அச்சிட ஏதேனும் பில்லிங் கவுண்டர் அல்லது சேவை மேசையில் கேளுங்கள்: பில் எண் {number}. இந்தக் கையடக்கக் கருவி அச்சிடாது.',
     machineRefTitle: 'இயந்திரச் சீட்டில் உள்ள ஒப்புதல் எண்', machineRefHint: 'சீட்டில் உள்ள எழுத்துகளும் இலக்கங்களும் — அட்டை எண் ஒருபோதும் வேண்டாம்.',
     noReceipt: 'கடை கணினி பில் எண் தரவில்லை; பணம் பெறப்படவில்லை.', nothingToPay: 'செலுத்த எதுவும் இல்லை.',
     readThis: 'இதைப் படித்தேன்',
@@ -349,7 +352,9 @@ async function pay(kind) {
   try {
     await till.tenderCardOrUpi({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), kind, outcome: 'approved', ref, ...(machineRef ? { machineRef } : {}) });
     const bill = till.realTrading() ? till.taxInvoice({ language: lang }) : till.receiptLines();
-    tell(`${t('paidTitle')} — ${kind === 'card' ? t('card') : t('upi')} — ${receiptNumber}`, t('billTitle'), true, bill && bill.ok ? bill.lines.join('\n') : '');
+    // OB-373 (owner, 25 Oct 2026): no printer on the handheld — the paper bill is printed at a till or the service desk by
+    // its number, marked as a copy.
+    tell(`${t('paidTitle')} — ${kind === 'card' ? t('card') : t('upi')} — ${receiptNumber}`, fill(t('printAtTill'), { number: receiptNumber }), true, bill && bill.ok ? bill.lines.join('\n') : '');
     session.newCustomer();
   } catch (e) {
     tell(t('read'), errorWords(e));

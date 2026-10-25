@@ -80,6 +80,11 @@ export interface StorePackBuildInput {
   }>;
   /** OB-288 P4 (R8-9 · OB-316): this store's rollout switches per branch and lane — the till reads its lane's offline. Absent → never sent. */
   readonly rollout?: (tenantId: string, storeId: string) => Promise<unknown>;
+  /**
+   * OB-375 · OB-378: the owner's price-kiosk minutes (`kioskStaleAfterMinutes`) and self-checkout watch numbers
+   * (`selfCheckoutWatch`) — his latest entry, else his written decision. Carried in the policies. Absent → never sent.
+   */
+  readonly floorDevices?: (tenantId: string) => Promise<Record<string, unknown>>;
 }
 
 /**
@@ -142,7 +147,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const till = input.tillPolicies === undefined ? {} : await input.tillPolicies(tenantId, storeId);
     // OB-301: the staff-purchase policy, "not set" parts included, so the box refuses as the rule says.
     const staffPurchase = input.staffPurchase === undefined ? undefined : await input.staffPurchase(tenantId);
+    // OB-375 · OB-378: the price kiosk's "stop quoting after" minutes and the self-checkout watch numbers.
+    const floorDevices = input.floorDevices === undefined ? {} : await input.floorDevices(tenantId);
     sections['policies'] = {
+      ...floorDevices,
       ...(staffPurchase === undefined ? {} : { staffPurchase }),
       ...(till.shopState === undefined ? {} : { shopState: till.shopState }),
       ...(till.tillDeliveryFeeProductId === undefined ? {} : { tillDeliveryFeeProductId: till.tillDeliveryFeeProductId }),

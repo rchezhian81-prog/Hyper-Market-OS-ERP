@@ -202,6 +202,8 @@ export const STORE_STAMP_FIELD: Readonly<Record<string, string>> = Object.freeze
   '/v1/loss-prevention/activity/:activityId/synced': 'storeId',
   // OB-288 P6 (R8-3 · R8-7): a self-checkout basket is placed by the store of the box that relays it, like a till action.
   '/v1/self-checkout/baskets/:activityId/synced': 'storeId',
+  // OB-373: a copy of a bill printed at a till by its number is placed by the store of the box that relays it.
+  '/v1/bill-copies/:copyId/synced': 'storeId',
 });
 
 /**

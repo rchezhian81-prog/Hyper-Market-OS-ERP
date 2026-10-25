@@ -54,6 +54,29 @@
         <p class="status" id="t-status" role="status" aria-live="polite"></p>
       </section>
 
+      <!-- OB-375 · OB-378: the owner's numbers for the price kiosk and the self-checkout watch (his alone to enter). -->
+      <section id="floor" hidden aria-labelledby="floor-h">
+        <h3 id="floor-h"></h3>
+        <p class="meta" id="floor-lead"></p>
+        <h3 id="kiosk-h"></h3>
+        <p id="kiosk-now"></p>
+        <p class="meta" id="kiosk-from"></p>
+        <div class="row-form" id="kiosk-form" hidden>
+          <label for="kiosk-hours"><span id="kiosk-l"></span><input id="kiosk-hours" autocomplete="off" inputmode="numeric" placeholder="24" /></label>
+          <button id="kiosk-save" type="button"><span id="kiosk-save-text"></span></button>
+        </div>
+        <h3 id="watch-h"></h3>
+        <p id="watch-now"></p>
+        <p class="meta" id="watch-from"></p>
+        <div class="row-form" id="watch-form" hidden>
+          <label for="watch-pct"><span id="watch-pct-l"></span><input id="watch-pct" autocomplete="off" inputmode="decimal" placeholder="3" /></label>
+          <label for="watch-above"><span id="watch-above-l"></span><input id="watch-above" autocomplete="off" inputmode="decimal" placeholder="2000" /></label>
+          <label for="watch-loose"><span id="watch-loose-l"></span><input id="watch-loose" autocomplete="off" inputmode="numeric" placeholder="4" /></label>
+          <label for="watch-voids"><span id="watch-voids-l"></span><input id="watch-voids" autocomplete="off" inputmode="numeric" placeholder="3" /></label>
+          <button id="watch-save" type="button"><span id="watch-save-text"></span></button>
+        </div>
+        <p class="status" id="f-status" role="status" aria-live="polite"></p>
+      </section>
       <section id="today" hidden aria-labelledby="today-h">
         <h3 id="today-h"></h3>
         <ul class="rows" id="d-rows"></ul>

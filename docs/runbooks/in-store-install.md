@@ -306,6 +306,23 @@ screen is served to a device that has not enrolled.
    refuses it at its next request and sends it to the enrolment page. A new code for the same device supersedes the
    old one.
 
+### Step 6b — A handheld used as a queue till (D04-FR-05 · ADR-0028 · owner decisions OB-372 to OB-377)
+
+A queue till is a handheld enrolled exactly as in Step 6, then opened at `http://<address>:8092/queue-pos/`.
+
+1. **Enrol it to the PC of the till it serves (OB-377).** Each till PC is its own store computer (ADR-0004). A handheld
+   hands its baskets to, and keeps its bills on, the ONE PC it is enrolled to. Use the enrolment page of the till PC whose
+   till(s) will ring its hand-overs and print its bills. A till on another PC cannot bring the basket up (it says "no
+   such basket") and cannot print the bill (it says the bill is on another store computer).
+2. **Give its lane a bill-number prefix (OB-376).** At head office, on the store setup page under *Till bill-number
+   prefixes*, the handheld is listed as `device:<deviceId>`. Issue it its own prefix (for example `S1Q1-`) exactly as for a
+   till. Until then each bill it takes is numbered under its store computer's own `ZZ…` prefix and flagged.
+3. **No cash, no printer (OB-372 · OB-373).** It takes card or UPI only (when `payments.mobile_pos` is on). Its paid
+   screen says *"Ask at a till or the service desk to print this bill: bill number …"*. At a till on the SAME PC:
+   **More → Print a copy of a bill by its number**, type the number, choose why. The copy prints marked as a copy
+   (DUPLICATE), is recorded on the store computer first, and reaches head office (`GET /v1/bill-copies`). A service desk
+   prints it the same way from a till on that PC.
+
 > **The shop-network leg is plain HTTP for now.** Until TLS is added at the device socket (a Stage E follow-up),
 > the handhelds must be on a **staff-only WPA2/WPA3 wifi, separate from any guest wifi** (owner action register
 > OA-16). The till's and manager's screens are not on this door at all — it serves the handheld screens only.

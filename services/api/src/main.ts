@@ -355,6 +355,7 @@ import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './t
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
 import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters'; // OB-288 wave-5 follow-ups (OB-362 · OB-365)
+import { queueTillHandhelds, floorDeviceSettingRoutesFor, floorDevicePackPoliciesOf, billCopyRoutesFor } from './floor-followups-adapters'; // OB-288 floor-device follow-ups (OB-373 · OB-375 · OB-376 · OB-378)
 import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
 import { ownerReportingSurface, ownerReportingSweep } from './owner-reporting-adapters'; // OB-288 lane 4 · P2 owner reporting
 import { dataInTemplates, dataInCommitDeps, dataOutDomains } from './data-in-adapters'; // OB-288 lane 4 · P2 data in (OB-315) and out (M30-FR-02)
@@ -1204,6 +1205,7 @@ export function buildSurface(deps: {
         tillPolicies: tillSidePoliciesOf(settings, { store, now }), // OB-288 till side: OB-348/OB-354 shop state from the GSTIN · OB-299 delivery-fee product
         staffPurchase: staffPurchaseTillPolicyOf({ store, now }), // OB-301: the staff-purchase policy, judged by the box before its disk
         rollout: rolloutPackSection({ store }), // OB-288 P4 (R8-9 · OB-316): this store's rollout switches, read by the till offline
+        floorDevices: floorDevicePackPoliciesOf({ store, now }), // OB-375 · OB-378: the kiosk's minutes and the self-checkout watch
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1214,6 +1216,7 @@ export function buildSurface(deps: {
       now,
       stores: async (t) => new Map((await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const)),
       ...receiptPrefixAdapter({ store, now }),
+      registeredHandhelds: queueTillHandhelds({ store, now }), // OB-376: a handheld queue till's lane gets its own prefix
       ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }),
     }),
     // EA-01 (round 4): each store computer reports how far each of its queues has synced (its own store only); the
@@ -1794,6 +1797,8 @@ export function buildSurface(deps: {
     ...customerFollowupsRoutes({ store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 customer & delivery follow-ups (OB-350 · OB-351)
     // OB-365: the till sign-in log the store computers relay — the owner's after-hours and failed-sign-in alerts read it.
     ...tillSignInLogRoutesFor({ store, now, calendar: async (t: string) => ({ timeZone: await settings.value(t, SETTINGS.STORE_TIME_ZONE), tradingDayCutoff: await settings.value(t, SETTINGS.TRADING_DAY_CUTOFF) }) }),
+    ...floorDeviceSettingRoutesFor({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-375 · OB-378: the owner's kiosk minutes and self-checkout watch
+    ...billCopyRoutesFor({ store, now }), // OB-373: copies of a bill printed by its number, relayed by the store computer
     ...tillDeliveryJobsRoutes({ store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-352
     ...opsMessagingRoutes({ store, now }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal

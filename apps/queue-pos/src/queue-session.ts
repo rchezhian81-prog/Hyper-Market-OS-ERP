@@ -10,8 +10,8 @@
 //   • the hand-over itself — the store computer keeps the basket on its disk and answers a four-digit code — and the
 //     baskets this handheld handed over that no till has brought up yet, each one given up with a reason, never deleted;
 //   • whether this handheld may take the money itself: only where the shop switched `payments.mobile_pos` on, never in
-//     the mirror pilot (the old system takes the money there), and only by card or UPI. Cash is not offered: whether a
-//     handheld may take cash is a decision the roadmap leaves open.
+//     the mirror pilot (the old system takes the money there), and only by card or UPI. Cash is not offered: the
+//     owner decided a handheld takes no cash (OB-372, 25 Oct 2026).
 //
 // Nothing here waits on head office: the hand-over and the payment go to the store computer over the shop's wifi.
 

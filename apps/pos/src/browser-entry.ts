@@ -38,6 +38,7 @@ import { assessExchange, type ExchangeBalanceKind } from '../../../packages/retu
 import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
 import { settle, type Tender } from '../../../packages/tender/src/tender';
 import { billReceipt, billTaxInvoice, type BillReceipt, type BillTaxInvoice } from './bill-receipt';
+import { billCopyPrint, type BillCopyPrint, type BillCopyAnswer } from './bill-copy'; // OB-373
 import type { TaxInvoiceIdentity, InvoiceLanguage } from '../../../packages/receipt/src/tax-invoice';
 import { fssaiLicenceNumberOn } from '../../../packages/receipt/src/receipt';
 import type { B2cDynamicQrSetting } from '../../../packages/receipt/src/b2c-dynamic-qr';
@@ -1014,6 +1015,11 @@ export function bootPos(config?: {
    * a reprint marked DUPLICATE — or why there is none. Every Rule 46 field is checked on the render before it is handed out.
    */
   readonly taxInvoice: (options?: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean }) => BillTaxInvoice;
+  /**
+   * OB-373: a COPY of any bill this store computer holds, by its number (a handheld queue till's above all) — recorded on the
+   * box (who, which copy, why) before it is answered, printed marked as a duplicate. `ok: false` says why, in words.
+   */
+  readonly printBillCopy: (input: { readonly billNumber: string; readonly reason: string; readonly language?: InvoiceLanguage }) => Promise<BillCopyPrint & { readonly laneMessage: string; readonly laneMessageTa?: string; readonly refusedBecause?: string }>;
   /** OB-271: what the cashier typed as the card machine's / UPI's approval or reference number — the kept form, or why not. */
   readonly readMachineRef: (typed: string) => MachineRefReading;
   /**
@@ -1684,6 +1690,42 @@ export function bootPos(config?: {
     return { ok: true, laneMessage: 'Recorded — the refund was done on the machine.', activityId };
   };
 
+  // OB-373: A COPY OF ANY BILL BY ITS NUMBER — this till's, another lane's on this store computer, or one a handheld queue
+  // till took (which has no printer). The store computer records the copy (who, which bill, which copy, why) BEFORE it
+  // answers; the till then prints the bill as it was saved, marked as a duplicate. Offline: only the box is asked.
+  const printBillCopy = async (input: { readonly billNumber: string; readonly reason: string; readonly language?: InvoiceLanguage }): Promise<BillCopyPrint & { readonly laneMessage: string; readonly laneMessageTa?: string; readonly refusedBecause?: string }> => {
+    const by = session.operator();
+    if (by === undefined) { const m = new NoOperatorError('print a copy of a bill').laneMessage; return { ok: false, why: m, refusedBecause: 'operator_not_signed_in', laneMessage: m }; }
+    const billNumber = input.billNumber.trim();
+    if (billNumber === '' || input.reason.trim() === '') return { ok: false, why: 'A copy needs the bill number and why.', refusedBecause: 'not_readable', laneMessage: 'Type the bill number and choose why a copy is needed. Nothing was printed.' };
+    const body = { copyId: `C-${newRequestKey().slice(3)}`, billNumber, reason: input.reason.trim() };
+    const post = async (): Promise<Record<string, unknown>> => {
+      const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
+      const response = await fetch(`${base}/lane/bill-copies`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) return { printed: false, ...front };
+      return await response.json() as Record<string, unknown>;
+    };
+    let r: Record<string, unknown>;
+    // A lost reply is asked again under the SAME copy id — the box answers the same copy, never a second one.
+    try { r = await post(); } catch {
+      try { r = await post(); } catch {
+        const m = 'This till cannot reach its store computer, so no copy was printed. Try again in a moment.';
+        return { ok: false, why: m, refusedBecause: 'lane_unreachable', laneMessage: m };
+      }
+    }
+    const said = typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'No copy was printed.';
+    const saidTa = typeof r['laneMessageTa'] === 'string' ? r['laneMessageTa'] : undefined;
+    if (r['printed'] !== true) return { ok: false, why: said, laneMessage: said, ...(saidTa === undefined ? {} : { laneMessageTa: saidTa }), ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}) };
+    const printed = billCopyPrint(r as unknown as BillCopyAnswer, {
+      realTrading: config?.realTrading === true, identity: config?.taxInvoice ?? null, ...(input.language === undefined ? {} : { language: input.language }),
+      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()),
+      ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }),
+      reason: body.reason, by, at: new Date().toISOString(),
+    });
+    return { ...printed, laneMessage: said, ...(saidTa === undefined ? {} : { laneMessageTa: saidTa }) };
+  };
+
   // CARD AND UPI (audit PF-06): the attempt is on the store computer before the machine is asked.
   const payments = config?.paymentsPort ?? lanePaymentAttempts(config?.lanePort ?? DEFAULT_LANE_PORT);
   const cardAnswer = (r: Record<string, unknown>): CardAttemptAnswer => {
@@ -1987,7 +2029,7 @@ export function bootPos(config?: {
   const realTrading = (): boolean => config?.realTrading === true;
   const readMachineRef = (typed: string): MachineRefReading => readMachineReference(typed);
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

@@ -279,6 +279,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R8-3 · R8-7: held ONLY so the owner can approve granting the store computer its self-checkout basket relay (OB-36).
       'selfcheckout.basket.sync',
       // ── OB-288 P6 — end
+      // ── OB-288 floor-device follow-ups (OB-373 · OB-375 · OB-378) — begin
+      // OB-375 · OB-378: the price kiosk's "stop quoting after" minutes and the self-checkout watch numbers are the OWNER's
+      // alone to enter (each starts at his written decision). OB-373: held ONLY so the owner can approve granting the store
+      // computer its bill-copy relay (no-escalation rule).
+      'floor.settings.read', 'floor.settings.manage', 'pos.billcopy.sync',
+      // ── OB-288 floor-device follow-ups — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       // ── OB-288 lane 4 · P2 (owner reporting and data in/out) — begin
@@ -429,6 +435,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // M22-FR-01: the manager who takes B2B orders READS the contract they are priced from; never proposes or approves one.
       'b2b.contract.read',
       // ── OB-288 commercial desks — end
+      // ── OB-288 floor-device follow-ups (OB-375 · OB-378) — begin
+      // The manager READS the kiosk minutes and the self-checkout watch numbers in force; only the owner enters them.
+      'floor.settings.read',
+      // ── OB-288 floor-device follow-ups — end
       // FUL-10: reads a customer's record and PROPOSES merges / household links; approving a merge is the owner's.
       'customer.profile.read', 'customer.identity.manage',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.commitment.read',
@@ -941,6 +951,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R8-3 · R8-7: the box relays a paid self-checkout basket's evidence (head office re-checks the colleague it names).
       'selfcheckout.basket.sync',
       // ── OB-288 P6 — end
+      // ── OB-288 floor-device follow-ups (OB-373) — begin
+      // OB-373: the box relays each copy of a bill printed at its tills by number (head office re-checks the person it names).
+      'pos.billcopy.sync',
+      // ── OB-288 floor-device follow-ups — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

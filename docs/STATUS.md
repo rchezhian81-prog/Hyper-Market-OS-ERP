@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 wave 7 (25 October 2026): the owner's floor-device decisions OB-372 to OB-379 built
+
+**What changed**
+- Wave 6 (PR #810) is merged and deployed to the demo.
+- A bill paid on a handheld is printed at a till on the same store computer by its number (OB-373). The copy is marked REPRINT, or DUPLICATE in real trading, with a copy number, and is recorded and relayed to head office.
+- The kiosk stops quoting after 24 hours (OB-375), and the self-checkout watch numbers are set (OB-378). Both are held at head office, owner-only and audited, and reach every store computer in its setup file. Both start at the owner's written decisions.
+- A handheld lane can be given its own bill-number prefix (OB-376).
+- These are pinned by tests: no cash on the handheld (OB-372), each handheld enrolled to its till's PC (OB-377), the colleague's own PIN at self-checkout (OB-374), and the failed-sign-in alert staying "not set" (OB-379).
+
+**Tests run (exactly)**
+- The builder ran the guardrails, 1,717 passed, and the whole unit suite, 8,778 passed.
+- The in-memory integration suite also passed: 2,979 tests, with 553 PostgreSQL tests skipped.
+- The new browser tests passed in Chromium.
+- PostgreSQL was not running for the builder, so the PostgreSQL halves and the owner-page browser test run in CI on the pull request.
+
+**Known limits**
+- A copy prints only at a till on the PC the handheld is enrolled to.
+- The kiosk and watch numbers apply shop-wide, not per store.
+- Nothing has been tried on a real printer or handheld.
+
+**What is next**
+- A final re-audit of every roadmap row against the built software.
+
+**Needs an owner decision**
+- None new. The alert thresholds remain "not set" until he enters them.
+
+---
+
 ## OB-288 wave 6 (25 October 2026): store floor devices, self-checkout, price kiosk, the handheld queue till, wave-5 follow-ups
 
 **What changed**

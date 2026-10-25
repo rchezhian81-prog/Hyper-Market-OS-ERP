@@ -291,6 +291,11 @@ const WORDS = {
     printDuplicate: 'Print again (DUPLICATE)',
     reprintOption: 'Reprint the last bill',
     reprintTitle: 'Last bill {number}',
+    billCopyOption: 'Print a copy of a bill by its number', billCopyNumber: 'The bill number',
+    billCopyHint: 'As the customer\'s handheld screen or slip shows it, for example S2L1-000123.', billCopyWhy: 'Why is a copy needed?',
+    billCopyHandheld: 'Paid on a handheld queue till', billCopyLost: 'The customer lost the bill', billCopyJam: 'The printer did not print it',
+    billCopyTitle: 'Copy {copy} of bill {number}', billCopyFromHandheld: 'This bill was taken on handheld {lane}. It prints marked as a copy.',
+    billCopyMarked: 'It prints marked as a copy.',
     printFailedTitle: 'The bill did not print',
     printFailed: 'The sale is saved. The bill did not print — check the printer is on and has paper, then press "Print bill" again.',
     invoiceRefusedTitle: 'Not a legal bill — NOT saved',
@@ -515,6 +520,11 @@ const WORDS = {
     printDuplicate: 'மீண்டும் அச்சிடு (நகல்)',
     reprintOption: 'கடைசி பில்லை மீண்டும் அச்சிடு',
     reprintTitle: 'கடைசி பில் {number}',
+    billCopyOption: 'பில் எண் மூலம் பில்லின் நகலை அச்சிடு', billCopyNumber: 'பில் எண்',
+    billCopyHint: 'வாடிக்கையாளரின் கையடக்கத் திரை அல்லது சீட்டில் உள்ளபடி, எ.கா. S2L1-000123.', billCopyWhy: 'நகல் ஏன் தேவை?',
+    billCopyHandheld: 'கையடக்க வரிசை பில்லிங்கில் செலுத்தப்பட்டது', billCopyLost: 'வாடிக்கையாளர் பில்லைத் தொலைத்தார்', billCopyJam: 'அச்சுப்பொறி அச்சிடவில்லை',
+    billCopyTitle: 'பில் {number} — நகல் {copy}', billCopyFromHandheld: 'இந்த பில் கையடக்கக் கருவி {lane}-இல் போடப்பட்டது. இது நகல் என்று குறிக்கப்பட்டு அச்சிடப்படும்.',
+    billCopyMarked: 'இது நகல் என்று குறிக்கப்பட்டு அச்சிடப்படும்.',
     printFailedTitle: 'பில் அச்சாகவில்லை',
     printFailed: 'விற்பனை சேமிக்கப்பட்டது. பில் அச்சாகவில்லை — பிரிண்டர் இயங்குகிறதா, காகிதம் உள்ளதா என்று பார்த்து, மீண்டும் "பில் அச்சிடு" அழுத்தவும்.',
     invoiceRefusedTitle: 'சட்டப்படியான பில் அல்ல — சேமிக்கப்படவில்லை',
@@ -833,6 +843,7 @@ const STOP = 'stop';
 const TONE_MARK = Object.freeze({ [SUCCESS]: 'circle-check', [STOP]: 'circle-alert' });
 const toneMarks = {};
 function tell(title, message, tone = STOP, bill = null, printable = false) {
+  pendingCopy = null;
   const kind = tone === SUCCESS ? SUCCESS : STOP;
   if (!toneMarks[kind]) toneMarks[kind] = mark(TONE_MARK[kind], 28);
   const words = document.createElement('span');
@@ -1653,6 +1664,33 @@ function saleBill() {
 
 /** OB-271: the bill numbers this page has printed at least once — a further print is marked DUPLICATE (Rule 46 practice). */
 const printedBills = new Set();
+/** OB-373: the copy of a bill on screen now (printed by its number), or null — what "Print bill" prints while it shows. */
+let pendingCopy = null;
+
+/**
+ * OB-373 (owner, 25 Oct 2026): a COPY of any bill on this store computer, by its number — above all a bill a handheld queue
+ * till took, which has no printer. The store computer records who printed which copy and why BEFORE it answers; the copy
+ * is marked DUPLICATE (English or Tamil, as the till shows) and printed through the browser like any bill (ADR-0027).
+ */
+async function printBillCopyByNumber() {
+  const typed = await ask({ title: t('billCopyNumber'), mode: 'text', hint: t('billCopyHint'), initial: '' });
+  if (typed === null || typed === undefined || String(typed).trim() === '') return;
+  const why = await choose(t('billCopyWhy'), [
+    { value: 'handheld', label: t('billCopyHandheld'), icon: 'monitor-smartphone' },
+    { value: 'lost', label: t('billCopyLost'), icon: 'receipt' },
+    { value: 'jam', label: t('billCopyJam'), icon: 'triangle-alert' },
+  ]);
+  if (why === null || why === undefined) return;
+  // The reason goes on the record in English (head office reads it); the screen shows it in the till's language.
+  const reason = WORDS.en[{ handheld: 'billCopyHandheld', lost: 'billCopyLost', jam: 'billCopyJam' }[why]];
+  const r = await session.printBillCopy({ billNumber: String(typed).trim(), reason, language: lang });
+  if (!r.ok) { tell(t('read'), lang === 'ta' && r.laneMessageTa ? r.laneMessageTa : (r.laneMessage || r.why), STOP); return; }
+  const title = t('billCopyTitle').replace('{copy}', String(r.copyNumber)).replace('{number}', r.number);
+  const note = String(r.billLaneId).startsWith('device:') ? t('billCopyFromHandheld').replace('{lane}', String(r.billLaneId).slice('device:'.length)) : t('billCopyMarked');
+  tell(title, note, SUCCESS, r.lines.join('\n'), Array.isArray(r.rows));
+  pendingCopy = r;
+  if (el('print-duplicate')) el('print-duplicate').hidden = true;
+}
 function lastInvoiceNumber() {
   if (typeof session.taxInvoice !== 'function') return null;
   const made = session.taxInvoice();
@@ -1693,6 +1731,18 @@ function printRow(row) {
  * bill stays printable. The first print of a bill is the original; every later one is marked DUPLICATE.
  */
 function printBill(askedDuplicate) {
+  // OB-373: the copy on screen is what prints — it is already marked DUPLICATE and already recorded on the store computer.
+  if (pendingCopy !== null && Array.isArray(pendingCopy.rows)) {
+    const copy = pendingCopy;
+    const area = el('print-area');
+    area.className = `print-area paper-${copy.paperWidthMm}`;
+    area.dataset.copy = 'duplicate';
+    area.dataset.number = copy.number;
+    area.lang = lang;
+    area.replaceChildren(...copy.rows.map(printRow));
+    try { window.print(); } catch { tell(t('printFailedTitle'), t('printFailed'), STOP, copy.lines.join('\n')); }
+    return;
+  }
   if (typeof session.taxInvoice !== 'function') return;
   const number = lastInvoiceNumber();
   const duplicate = askedDuplicate === true || (number !== null && printedBills.has(number));
@@ -1983,6 +2033,8 @@ el('more').addEventListener('click', async () => {
     ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption') }] : []),
     // OB-271: the last bill stays printable — a reprint is marked DUPLICATE once it has printed.
     ...(realTradingOn() && lastInvoiceNumber() !== null ? [{ value: 'reprint', label: t('reprintOption') }] : []),
+    // OB-373: a copy of ANY bill on this store computer by its number — a handheld queue till's above all (it has no printer).
+    ...(typeof session.printBillCopy === 'function' ? [{ value: 'bill_copy', label: t('billCopyOption'), icon: 'receipt-text' }] : []),
     // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer
     // first. Changing a price needs a selected line.
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
@@ -2005,6 +2057,7 @@ el('more').addEventListener('click', async () => {
   if (what === 'no_receipt') return startNoReceiptReturn();
   if (what === 'close') return closeTheTill();
   if (what === 'card_list') { tell(t('cardListTitle'), '', SUCCESS, await cardListText()); return undefined; }
+  if (what === 'bill_copy') return printBillCopyByNumber();
   if (what === 'reprint') { tell(t('reprintTitle').replace('{number}', lastInvoiceNumber() ?? ''), '', SUCCESS, saleBill(), true); return undefined; }
   if (what === 'give_up') return giveUpHeldBasket();
   if (what === 'phone_basket') return recallPhoneBasket();

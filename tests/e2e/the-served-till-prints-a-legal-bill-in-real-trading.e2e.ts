@@ -224,6 +224,25 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     await page.click('#refusal-ok');
     await page.click('#lang');
 
+    // OB-373: any bill by its number — a COPY, recorded on the store computer first, printed as the tax invoice marked DUPLICATE.
+    await page.click('#more');
+    await page.locator('#pay-kinds button', { hasText: 'Print a copy of a bill by its number' }).click();
+    await page.waitForSelector('#entry-text:not([hidden])');
+    await page.fill('#entry-text', sale!.number);
+    await page.click('#sheet-ok');
+    await page.locator('#pay-kinds button', { hasText: 'The customer lost the bill' }).click();
+    await shows(page, 'refusal', 'refusal-title', `Copy 1 of bill ${sale!.number}`);
+    expect(await page.textContent('#refusal-receipt')).toMatch(/DUPLICATE — reprint[\s\S]*Copy 1/);
+    expect(await page.isVisible('#print-bill')).toBe(true);
+    await page.click('#print-bill');
+    const copy = (await prints(page)).at(-1)!;
+    expect(copy).toMatchObject({ copy: 'duplicate', number: sale!.number, lang: 'en' });
+    expect(copy.fields['duplicate']).toEqual(['DUPLICATE — reprint']);
+    expect(copy.fields['line_description']).toEqual(f['line_description']);
+    expect(copy.fields['total']).toEqual(['Total (incl. GST)269.00']);
+    expect(copy.text).toContain('Copy 1');
+    await page.click('#refusal-ok');
+
     // A print that fails: said; the sale stands (still one on the disk) and the bill is printable again.
     await scan(page, DAL, 1);
     await page.evaluate(() => { (globalThis as unknown as PosWindow).failPrint = true; });

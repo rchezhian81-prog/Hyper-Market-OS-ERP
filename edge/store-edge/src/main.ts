@@ -97,6 +97,7 @@ import { PeripheralReports } from './peripheral-health';
 // D04-FR-05 mobile POS and queue-busting (OB-288 Pkg 6b) — begin: additive
 import { QueueBaskets } from './queue-baskets';
 import { queuePosDoor, type QueuePosSwitches } from './queue-pos-door';
+import { billCopyRecorder, priorCopiesIn, saleIn } from './bill-copies'; // OB-373: a copy of a bill by its number
 import { laneRollout, laneSwitchOn } from '../../../packages/platform/src/rollout';
 import { QUEUE_BUSTING_SWITCH, MOBILE_POS_PAYMENT_SWITCH } from '../../../packages/suspended-sales/src/queue-basket';
 // D04-FR-05 — end
@@ -1753,9 +1754,24 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
   });
   if (queueBaskets !== null && queueBaskets.unreadableRecords > 0) say(`${queueBaskets.unreadableRecords} queue-basket record(s) could not be read whole — kept, not repaired. Raise this.`);
+  // OB-373: a copy of a bill by its number — any bill on this box's disk (a handheld queue till's above all), for the person
+  // signed in at the till; the copy's record is kept on the device-events log before the bill is answered, then relayed.
+  const recordBillCopy = billCopyRecorder({
+    tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(),
+    tradingDayOf: (at) => tradingDate(wallClockIn(at), packCutoff(pack)),
+    findSale: async (numberOrId) => saleIn((await readLog(log.path)).flatMap((r) => (r.ok ? [r.record] : [])), numberOrId),
+    priorCopies: async () => priorCopiesIn((await readLog(deviceEventsLog.path)).flatMap((r) => (r.ok ? [r.record] : []))),
+    productName: (productId) => {
+      const own = pack.products.known ? pack.products.value.find((p) => p.productId === productId) : undefined;
+      if (own !== undefined) return { name: own.name, ...(own.nameTa === undefined ? {} : { nameTa: own.nameTa }) };
+      const signed = node.pack()?.snapshot.products.find((p) => p.productId === productId);
+      return signed === undefined ? undefined : { name: signed.name };
+    },
+  });
   const laneInputs: Omit<Parameters<typeof startLaneServer>[0], 'port'> = {
     node,
     syncStatus,
+    billCopies: recordBillCopy,
     // OB-259 completeness: the office doors need the office sign-in and its permission, and are done AS that person.
     ...(officeGate === null ? {} : {
       officeScreens: {
