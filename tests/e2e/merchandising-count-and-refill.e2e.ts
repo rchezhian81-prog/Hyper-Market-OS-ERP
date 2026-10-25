@@ -277,7 +277,8 @@ describe.skipIf(!HAVE_BROWSER)('the merchandising screen: a count and a refill a
     await countRice(page, '0');
     await page.click('#banner-ok');
     await page.waitForFunction(() => (globalThis as unknown as MerchWindow).merchandisingSession!.savedCounts()[0]?.state === 'handed_to_box', undefined, { timeout: 10_000 });
-    expect((await page.textContent('#saved-counts li.saved .pill')) ?? '').toContain('With the store computer');
+    // The session's state turns first and the list redraws after it; wait for the words, do not read them in the same tick.
+    await page.locator('#saved-counts li.saved .pill', { hasText: 'With the store computer' }).first().waitFor({ timeout: 10_000 });
     await page.click('#tab-refill');
     await page.waitForSelector('#raise-refill:not([hidden])');
     await page.click('#raise-refill');
