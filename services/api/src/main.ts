@@ -354,11 +354,13 @@ import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlin
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
+import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters'; // OB-288 wave-5 follow-ups (OB-362 · OB-365)
 import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
 import { ownerReportingSurface, ownerReportingSweep } from './owner-reporting-adapters'; // OB-288 lane 4 · P2 owner reporting
 import { dataInTemplates, dataInCommitDeps, dataOutDomains } from './data-in-adapters'; // OB-288 lane 4 · P2 data in (OB-315) and out (M30-FR-02)
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
+import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 — store floor devices (ESL, RFID, IoT, CCTV events)
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
 import { gatesRoutes, gateBlockersBeyondRisks, twoSignatureAdapter } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
@@ -1033,7 +1035,7 @@ export function buildSurface(deps: {
       partner: empty(undefined), partnerForUser: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
       recordAudit: () => {}, auditEntries: empty([]), now,
-    } : withSupplierPartnerIndex(supplierPortalAdapter({ store, now }), { store, now })), // OB-288 commercial desks — the buyer's one queue
+    } : withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now }), { store, now }), { store, now })), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
@@ -1585,7 +1587,7 @@ export function buildSurface(deps: {
     ...pendingTenderRoutes({ now }),
     ...b2bCreditRoutes(store === undefined ? {
       account: empty(undefined), outstandingMinor: empty(0), recordAccount: () => {}, recordReceivable: () => {}, now,
-    } : { ...b2bCreditAdapter({ store, now }), contractState: commercialDeskContractState({ store, now }) }), // OB-288 commercial desks — expiry from the register
+    } : { ...b2bCreditAdapter({ store, now }), contractState: commercialDeskContractState({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }), // OB-288 commercial desks — expiry from the register · OB-360 a limit change is approved
     ...b2bCollectionsRoutes(store === undefined ? {
       invoices: empty([]), outstandingMinor: empty(0), recordInvoice: () => {}, recordPayment: () => {}, now,
     } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney }),
@@ -1790,6 +1792,8 @@ export function buildSurface(deps: {
     ...commercialDesksRoutes({ store, now }), // OB-288 commercial desks (M22 · M24 · M27)
     ...fulfilmentDeliveryRoutes({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 fulfilment & delivery
     ...customerFollowupsRoutes({ store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 customer & delivery follow-ups (OB-350 · OB-351)
+    // OB-365: the till sign-in log the store computers relay — the owner's after-hours and failed-sign-in alerts read it.
+    ...tillSignInLogRoutesFor({ store, now, calendar: async (t: string) => ({ timeZone: await settings.value(t, SETTINGS.STORE_TIME_ZONE), tradingDayCutoff: await settings.value(t, SETTINGS.TRADING_DAY_CUTOFF) }) }),
     ...tillDeliveryJobsRoutes({ store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-352
     ...opsMessagingRoutes({ store, now }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
@@ -2193,6 +2197,7 @@ export function buildSurface(deps: {
   lpWorkforceSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 LP, workforce, facilities and adoption (M15-FR-02/03 · M25 · M26 · M28-FR-01 · QG-09 · D11 · OB-301/317/320/323)
   ownerReportingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 4 · P2 (M29-FR-01/03/04 · M28-FR-04 · D13)
   saasRolloutSurface(surface, { store, now, plans: PROPOSED_PLANS, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P4 (M36-FR-01/03 · D12-FR-05/06 · R8-2 · R8-9 · C8 · C9 · OB-316/321/324)
+  floorDevicesSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));

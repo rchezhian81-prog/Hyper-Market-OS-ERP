@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1520 | 886 | 886 | 167 | 411 |
+| 13 | 1535 | 893 | 893 | 167 | 414 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -78,6 +78,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/identity/people` | `platform.person.provision` | core | yes |
 | GET | `/v1/identity/permission-matrix` | `identity.access.review` | core | — |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |
+| GET | `/v1/identity/till-sign-ins` | `lp.case.read` | core | — |
+| POST | `/v1/identity/till-sign-ins/:entryId/synced` | `identity.tillsignin.sync` | core | yes |
 | GET | `/v1/identity/token-revocations` | `identity.session.revoke` | core | — |
 | POST | `/v1/identity/token-revocations` | `identity.session.revoke` | core | yes |
 | GET | `/v1/org/branches` | `org.branch.read` | core | — |
@@ -274,6 +276,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/suppliers/:supplierId/receipts/:poId` | `purchase.performance.record` | core | yes |
 | GET | `/v1/purchase/suppliers/:supplierId/scorecard` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/suppliers/accounts` | `purchase.commitment.read` | core | — |
+| GET | `/v1/supplier-portal/me/orders` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/statement` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/submissions` | `supplier.portal.self` | core | — |
 | POST | `/v1/supplier-portal/me/submissions` | `supplier.portal.self.submit` | core | yes |
@@ -513,6 +516,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loss-prevention/rule-feedback` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/rules` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/rules/:kind` | `lp.rule.manage` | core | yes |
+| GET | `/v1/loss-prevention/self-checkout` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/staff-purchases/accounts` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/staff-purchases/accounts/:employeeId` | `lp.staffaccount.record` | core | yes |
 | GET | `/v1/loss-prevention/staff-purchases/exceptions` | `lp.case.read` | core | — |
@@ -556,6 +560,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/sales/:saleId/returns` | `pos.return.record` | core | yes |
 | POST | `/v1/sales/:saleId/returns/synced` | `pos.return.sync` | core | yes |
 | GET | `/v1/sales/exceptions` | `pos.exception.read` | core | — |
+| POST | `/v1/self-checkout/baskets/:activityId/synced` | `selfcheckout.basket.sync` | core | yes |
 | POST | `/v1/shifts/:shiftId/close/synced` | `till.shift.sync` | core | yes |
 | POST | `/v1/shifts/:shiftId/over-short/review` | `till.overshort.review` | core | yes |
 | GET | `/v1/shifts/over-short` | `till.shift.read` | core | — |
@@ -600,6 +605,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/loyalty/members/:memberRef/leave` | `loyalty.member.enrol` | core | yes |
 | GET | `/v1/loyalty/members/:memberRef/standing` | `loyalty.points.read` | core | — |
 | POST | `/v1/loyalty/members/app-link` | `loyalty.member.enrol` | core | yes |
+| POST | `/v1/loyalty/members/confirm-phone` | `loyalty.member.enrol` | core | yes |
 | POST | `/v1/loyalty/members/lookup` | `loyalty.points.read` | core | yes |
 | GET | `/v1/loyalty/offer-batches` | `loyalty.coupon.read` | `loyalty` | — |
 | GET | `/v1/loyalty/offer-batches/:batchId` | `loyalty.coupon.read` | `loyalty` | — |
@@ -1229,6 +1235,15 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/security-reviewer` | `compliance.risk.read` | core | — |
 | PUT | `/v1/compliance/security-reviewer` | `compliance.reviewer.name` | core | yes |
 | GET | `/v1/compliance/status` | `compliance.obligation.read` | core | — |
+| GET | `/v1/devices/cctv/links` | `lp.case.read` | core | — |
+| GET | `/v1/devices/esl/pushes` | `price.integrity.audit` | core | — |
+| POST | `/v1/devices/esl/pushes/:pushId/retry` | `price.integrity.audit` | core | yes |
+| GET | `/v1/devices/floor` | `platform.health.read` | core | — |
+| POST | `/v1/devices/floor/:deviceId` | `platform.device.manage` | core | yes |
+| POST | `/v1/devices/floor/:deviceId/events` | `device.event.ingest` | core | yes |
+| POST | `/v1/devices/floor/:deviceId/status` | `platform.device.manage` | core | yes |
+| GET | `/v1/devices/floor/exceptions` | `platform.health.read` | core | — |
+| GET | `/v1/devices/rfid/variances` | `inventory.availability.read` | core | — |
 | POST | `/v1/documents/:documentId/disposal` | `document.retention.dispose` | core | yes |
 | GET | `/v1/documents/issued/:documentId` | `document.template.read` | core | — |
 | POST | `/v1/documents/issued/:documentId/reprint` | `document.issue` | core | yes |

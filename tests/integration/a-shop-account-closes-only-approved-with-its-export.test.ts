@@ -38,6 +38,13 @@ describe.each(backings)('a shop\'s account closes only approved, with its export
     expect(ready.wouldRetain.map((r) => r.what)).toEqual(['records under legal hold HOLD-1 (consumer forum case 12/2026)', 'books of account, tax invoices and GST records', 'audit evidence']);
     expect(ready.wouldRetain[1]!.untilDate.slice(0, 7)).toBe(until.toISOString().slice(0, 7)); // 8 years: the Companies Act, the longest statute
     expect(ready.wouldRetain[2]!.untilDate).toBe('indefinitely');
+    // OB-367: everything is sealed until the CA or the lawyer writes a closure retention schedule — "not set" until then;
+    // nothing is deleted, not even after the dates the law asks for.
+    const sealed = (ready as unknown as { sealed: { everythingSealed: boolean; nothingDeleted: boolean; retentionSchedule: { state: string; words: string; writtenBy: string }; en: string; ta: string } }).sealed;
+    expect(sealed).toMatchObject({ everythingSealed: true, nothingDeleted: true, retentionSchedule: { state: 'not_set', words: 'not set', writtenBy: 'the CA or the lawyer' } });
+    expect(sealed.en).toContain('It stays sealed until the CA or the lawyer writes a closure retention schedule');
+    expect(sealed.en).toContain('Closure retention schedule: not set.');
+    expect(sealed.ta).toMatch(/[\u0B80-\u0BFF]/);
     expect((await call('GET', '/v1/platform/tenant/closure', 'u-cash')).status).toBe(403);
 
     const reason = { reason: 'the shop has stopped trading and moved to another system' };
@@ -68,6 +75,7 @@ describe.each(backings)('a shop\'s account closes only approved, with its export
     const closed = await ok(call('POST', '/v1/platform/tenant/closure', 'u-it', { ...reason, approvalId: requestId }), 'close') as { closed: boolean; accessRevoked: boolean; closure: { approvedBy: string; askedBy: string; grantsRevoked: number; retained: { what: string }[] } };
     expect([closed.closed, closed.accessRevoked, closed.closure.approvedBy, closed.closure.askedBy, closed.closure.grantsRevoked]).toEqual([true, true, 'u-owner', 'u-it', 4]);
     expect(closed.closure.retained.map((r) => r.what)).toContain('audit evidence');
+    expect((closed as unknown as { sealed: { everythingSealed: boolean; retentionSchedule: { state: string } } }).sealed).toMatchObject({ everythingSealed: true, retentionSchedule: { state: 'not_set' } }); // OB-367
 
     h = harness(h); // ── COLD RESTART ──
     // Access has ended for every person and the store computer — on every route.

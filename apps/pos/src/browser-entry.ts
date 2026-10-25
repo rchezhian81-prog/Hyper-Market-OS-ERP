@@ -56,8 +56,18 @@ declare const PILOT_DEMO_BANNER: string;
 // empty, which compiles to the store's own loopback — `http://127.0.0.1:<port>` — exactly as before.
 declare const PILOT_DEMO_LANE_BASE: string;
 const DEMO_LANE_BASE = typeof PILOT_DEMO_LANE_BASE === 'string' ? PILOT_DEMO_LANE_BASE : '';
+/**
+ * D04-FR-05 (OB-288 Pkg 6b): a page the store computer serves on its DEVICE socket — the queue handheld — reaches the same
+ * lane routes on that socket, same origin, through its own door (`/queue-pos/lane/…`), never the phone's own loopback.
+ * Set once by that page's entry before it boots; unset everywhere else, so the till is exactly as before.
+ */
+let servedLaneBase: string | undefined;
+export function serveLaneFrom(base: string | undefined): void {
+  servedLaneBase = base === undefined || base === '' ? undefined : base;
+}
 /** The base URL of this till's edge: the store's loopback, unless the DEMO build says otherwise. */
 export function laneBase(port: number, demoBase: string = DEMO_LANE_BASE): string {
+  if (servedLaneBase !== undefined) return servedLaneBase;
   return demoBase === '' ? `http://127.0.0.1:${port}` : demoBase;
 }
 const demoBannerDoc = (globalThis as { document?: unknown }).document;
@@ -384,6 +394,26 @@ export function lanePhoneBaskets(port: number = DEFAULT_LANE_PORT): PhoneBaskets
   };
 }
 // ── OB-350 scan-and-go — end ──
+// ── D04-FR-05 queue-busting (OB-288 Pkg 6b) — begin: additive; the phone-basket pattern, for a handheld's basket ──
+/** The queue-basket call to this till's own store computer, which holds what its queue handhelds handed over (offline). */
+export interface QueueBasketsLanePort {
+  recall(code: string): Promise<Record<string, unknown>>;
+}
+export function laneQueueBaskets(port: number = DEFAULT_LANE_PORT): QueueBasketsLanePort {
+  return {
+    recall: async (code) => {
+      try {
+        const response = await fetch(`${laneBase(port)}/lane/queue-baskets/recall`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ code }) });
+        const front = FRONT_REFUSED[response.status];
+        if (front !== undefined) return { ...front };
+        return await response.json() as Record<string, unknown>;
+      } catch {
+        return { refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the handheld basket cannot be brought up. Scan the items as usual.' };
+      }
+    },
+  };
+}
+// ── D04-FR-05 — end ──
 type SuspendedLineShape = Parameters<PosSession['restoreHeld']>[0][number];
 type SuspendedAgeShape = NonNullable<Parameters<PosSession['restoreHeld']>[1]>[number];
 const UNREACHABLE_HOLD = 'This till cannot reach its store computer, so the basket was not held. It is still on the till — do not clear it.';
@@ -941,6 +971,8 @@ export function bootPos(config?: {
   heldBillsPort?: HeldBillsPort;
   /** OB-350: the till's phone-basket call to its box. Overridable for tests; production asks this till's own edge. */
   phoneBasketsPort?: PhoneBasketsLanePort;
+  /** D04-FR-05: the till's queue-basket call to its box. Overridable for tests; production asks this till's own edge. */
+  queueBasketsPort?: QueueBasketsLanePort;
   /** The till's card/UPI attempt calls to its box (audit PF-06). Overridable for tests; production asks this till's own edge. */
   paymentsPort?: PaymentAttemptsPort;
   /** The till's void-evidence call to its box (audit PF-07). Overridable for tests; production posts to this till's own edge. */
@@ -1110,6 +1142,12 @@ export function bootPos(config?: {
    * cashier scans the items (the sale never needs it).
    */
   readonly recallPhoneBasketAtTill: (code: string) => Promise<PhoneBasketAtTill>;
+  /**
+   * D04-FR-05 queue-busting: bring up a basket a staff handheld scanned in the queue, by the four-digit code it showed (onto
+   * an EMPTY till), from THIS till's store computer — offline — and ring every line through this till's own pack, exactly
+   * as a phone basket. A line the till cannot ring is listed for the cashier, never dropped.
+   */
+  readonly recallQueueBasketAtTill: (code: string) => Promise<PhoneBasketAtTill>;
   /**
    * Record a card or UPI payment on the store computer BEFORE the machine is asked (audit PF-06). The answer's
    * `attemptId` is the reference the machine is given. Refused while this bill has a payment that got no answer
@@ -1707,10 +1745,13 @@ export function bootPos(config?: {
     // A bill just paid is finished (its lines stay on screen until the next scan); anything else on the till is a customer's.
     if (session.currentState() !== 'committed' && session.basketToHold().lines.length > 0) return { ok: false, refusedBecause: 'basket_not_empty', laneMessage: 'Finish or hold the basket on the till first — a phone basket never joins another customer\'s.' };
     if (!view.hasCatalogue()) return { ok: false, refusedBecause: 'no_catalogue', laneMessage: 'This till has no price pack, so it cannot price the phone basket. Scan the items once the pack is here.' };
-    const r = await phoneBaskets.recall(code.trim());
+    return ringBroughtUp(await phoneBaskets.recall(code.trim()), code.trim(), 'Phone basket', 'The phone basket was not brought up. Scan the items as usual.');
+  };
+  /** Ring the lines a phone or a queue handheld handed over through THIS till's own pack — the till's price, never theirs. */
+  const ringBroughtUp = (r: Record<string, unknown>, code: string, label: string, notBrought: string): PhoneBasketAtTill => {
     const lines = Array.isArray(r['lines']) ? r['lines'] as { productId?: unknown; name?: unknown; quantityMinor?: unknown; barcode?: unknown }[] : undefined;
     if (r['recalled'] !== true || lines === undefined) {
-      return { ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'The phone basket was not brought up. Scan the items as usual.' };
+      return { ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : notBrought };
     }
     if (session.currentState() === 'committed') view.newSale();
     const added: { lineId: string; description: string; qty: number }[] = [];
@@ -1730,12 +1771,22 @@ export function bootPos(config?: {
       }
     }
     return {
-      ok: true, code: code.trim(), added, notAdded,
-      laneMessage: notAdded.length === 0 ? `Phone basket ${code.trim()}: ${added.length} line(s) rung at the till's prices. Check the bag, then take the payment.`
-        : `Phone basket ${code.trim()}: ${added.length} line(s) rung; ${notAdded.length} need the cashier — scan or ask about each one.`,
+      ok: true, code, added, notAdded,
+      laneMessage: notAdded.length === 0 ? `${label} ${code}: ${added.length} line(s) rung at the till's prices. Check the bag, then take the payment.`
+        : `${label} ${code}: ${added.length} line(s) rung; ${notAdded.length} need the cashier — scan or ask about each one.`,
     };
   };
   // ── OB-350 scan-and-go — end ──
+  // ── D04-FR-05 queue-busting — begin: a handheld's basket, from this till's own store computer, rung the same way ──
+  const queueBaskets = config?.queueBasketsPort ?? laneQueueBaskets(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const recallQueueBasketAtTill = async (code: string): Promise<PhoneBasketAtTill> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('bring up a handheld basket').laneMessage };
+    if (!/^\d{4}$/.test(code.trim())) return { ok: false, refusedBecause: 'not_a_queue_code', laneMessage: 'Key the four digits the handheld shows.' };
+    if (session.currentState() !== 'committed' && session.basketToHold().lines.length > 0) return { ok: false, refusedBecause: 'basket_not_empty', laneMessage: 'Finish or hold the basket on the till first — a handheld basket never joins another customer\'s.' };
+    if (!view.hasCatalogue()) return { ok: false, refusedBecause: 'no_catalogue', laneMessage: 'This till has no price pack, so it cannot price the handheld basket. Scan the items once the pack is here.' };
+    return ringBroughtUp(await queueBaskets.recall(code.trim()), code.trim(), 'Handheld basket', 'The handheld basket was not brought up. Scan the items as usual.');
+  };
+  // ── D04-FR-05 — end ──
   const abandonAtTill = async (billId: string, reason: string): Promise<HeldAnswer> => {
     const r = await held.abandon(billId, reason);
     return answer(r, r['abandoned'] === true, 'The basket was not given up.');
@@ -1936,14 +1987,15 @@ export function bootPos(config?: {
   const realTrading = (): boolean => config?.realTrading === true;
   const readMachineRef = (typed: string): MachineRefReading => readMachineReference(typed);
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
 // stand-in when the bundle has not been built. In the browser `globalThis.window` IS the window,
 // so this needs no DOM types.
 const browserWindow = (globalThis as { window?: PosWindow }).window;
-if (browserWindow !== undefined) {
+// D04-FR-05: the queue handheld's page boots its own session from this module (apps/queue-pos) — it is not a till to auto-boot.
+if (browserWindow !== undefined && (globalThis as { sreQueueTill?: unknown }).sreQueueTill !== true) {
   // Who this till IS comes from the box (SP-4b · F09): the lane it was told it is and the shop's cut-off. Who the CASHIER
   // is never comes from here — the person signs in on the screen. Nothing below invents a lane, a cashier or a day.
   const lane = browserWindow.posLane;

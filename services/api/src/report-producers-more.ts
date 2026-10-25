@@ -39,6 +39,8 @@ import { figure, sourceFreshness, type Figure, type SourceFreshness } from '../.
 import {
   STREAM, streamName, foldPurchaseOrders, ordersForExport, averageBuyingCosts, dayBookAdapter, nearExpiryAdapter, orgStructureAdapter,
 } from './adapters';
+import { tillSignInRecords } from './wave5-followups-adapters';
+import { FAILED_SIGN_IN_REASONS, lockoutEpisodes } from '../../identity/src/till-sign-in-log';
 
 /** The ids this file produces — each a `case` in `produceMore` below. */
 export const PRODUCED_FROM_DOMAIN_REGISTERS: readonly string[] = Object.freeze([
@@ -686,7 +688,15 @@ export function produceMore(kit: ProducerKit) {
         ].map((r) => r.at);
         const asAt = newestOf(allTimes);
         const mk = kit.at(asAt, 'no grant of access, support session or incident has ever been recorded at head office');
-        const NOT_HELD = 'head office keeps no record of failed sign-ins or lockouts yet: the sign-in lockout is held in memory by the API, and each store computer keeps its till sign-in log on its own disk — neither reaches head office';
+        // OB-365: the store computers send their till sign-in logs — failed till sign-ins and lockouts are counted from them.
+        // The office sign-in lockout is still held in memory by the API, so that one stays "not known" (P-08).
+        const OFFICE_NOT_HELD = 'head office keeps no record of failed OFFICE sign-ins or lockouts: that lockout is held in memory by the API';
+        const TILL_NOT_YET = 'no till sign-in record has reached head office yet — each store computer sends its sign-in log (OB-365)';
+        const tillLog = await tillSignInRecords(kit.store, tenantId);
+        const tillInPeriod = tillLog.map((x) => x.p).filter((r) => inPeriod(r.at));
+        const tillFailed = tillInPeriod.filter((r) => r.kind === 'refused' && r.reason !== undefined && FAILED_SIGN_IN_REASONS.includes(r.reason));
+        const tillLockouts = lockoutEpisodes(tillInPeriod);
+        const tillAsAt = newestOf(tillLog.map((x) => x.at));
         type SecurityRow = { what: string; ref: string; who: string; by: string; at: string; detail: string };
         const rows: SecurityRow[] = [
           ...granted.map((r) => ({ what: 'access_given', ref: `${r.p.userId}/${r.p.roleId}`, who: r.p.userId, by: r.p.request?.approvedBy ?? '', at: r.at, detail: `role ${r.p.roleId}${r.p.request?.requestedBy === undefined ? '' : `, asked by ${r.p.request.requestedBy}`}` })),
@@ -708,9 +718,14 @@ export function produceMore(kit: ProducerKit) {
             mk('Remote sessions opened', remoteOpened.length, 'count'),
             mk('Incidents opened', incidents.length, 'count'),
             mk('Security findings first seen', findings.length, 'count'),
-            // P-08: not known is said, never nought.
-            figure({ name: 'Failed sign-ins', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: NOT_HELD }),
-            figure({ name: 'Sign-in lockouts', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: NOT_HELD }),
+            // OB-365: from the till sign-in logs; P-08: before the first record arrives, not known — never nought.
+            tillAsAt === null
+              ? figure({ name: 'Failed sign-ins', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: TILL_NOT_YET })
+              : figure({ name: 'Failed sign-ins', unit: 'count', valueMinor: tillFailed.length, asAt: tillAsAt, now: kit.now() }),
+            tillAsAt === null
+              ? figure({ name: 'Sign-in lockouts', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: TILL_NOT_YET })
+              : figure({ name: 'Sign-in lockouts', unit: 'count', valueMinor: tillLockouts.length, asAt: tillAsAt, now: kit.now() }),
+            figure({ name: 'Office sign-in lockouts', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: OFFICE_NOT_HELD }),
           ],
           rows,
           drill: {
@@ -718,6 +733,9 @@ export function produceMore(kit: ProducerKit) {
             'Emergency access granted': countTx('emergency_access'), 'Support sessions approved': countTx('support_session'),
             'Remote sessions opened': countTx('remote_session'), 'Incidents opened': countTx('incident_opened'),
             'Security findings first seen': countTx('security_finding'),
+            // OB-365: each failed till sign-in, and each lockout (its first refusal), from the till sign-in logs.
+            'Failed sign-ins': tillFailed.map((r) => ({ transactionId: r.entryId, at: r.at, branchId: r.storeId ?? r.laneId ?? 'store', staffId: r.person, amountMinor: 1, description: `failed till sign-in: ${r.reason ?? ''}${r.laneId === null ? '' : ` on ${r.laneId}`}` })),
+            'Sign-in lockouts': tillLockouts.map((l) => ({ transactionId: l.entryIds[0]!, at: l.firstAt, branchId: 'store', staffId: l.who, amountMinor: 1, description: `till sign-in locked out: ${l.who} (${l.entryIds.length} refused tr${l.entryIds.length === 1 ? 'y' : 'ies'})` })),
           },
         };
       }

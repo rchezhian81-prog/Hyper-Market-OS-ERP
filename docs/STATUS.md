@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 wave 6 (25 October 2026): store floor devices, self-checkout, price kiosk, the handheld queue till, wave-5 follow-ups
+
+**What changed**
+- **Wave 5 (PR #809)** also carries two fixes found while its checks ran:
+  - a refund is now booked on the shop's own trading day in the day book and the GST return; GSTR-1 from sales covers 00:00–05:30 IST on the 1st (it was a real bug);
+  - the journey tests and the food-safety browser test no longer depend on the time of day they run.
+- **Handheld queue till (D04-FR-05, deferred under OB-73, now built):**
+  - a staff member scans in the queue on a handheld enrolled to the store computer, with their own till PIN;
+  - the basket goes to a till by a 4-digit code, or card/UPI is taken on the handheld's own lane;
+  - works with no internet; head office books it as any till sale;
+  - no cash on the handheld (OB-372);
+  - switches `pos.queue_busting` and `payments.mobile_pos` are off; the second needs the owner's approval;
+  - ADR 0028 is Proposed.
+- **Self-checkout lane (R8-3) and price kiosk (D14-FR-02):**
+  - the lane runs the till's own engine; age, pack-date, weighed items and every card/UPI payment wait for a colleague's PIN (OB-374); no cash;
+  - the kiosk quotes from the signed list and always shows its age;
+  - both off until the lane switch is on.
+- **Floor devices (R8-4 to R8-7), stand-in adapters only:** shelf labels, RFID counts, IoT sensors, camera metadata (never footage); signed by each device; branch switches off.
+- **Verified as already built, not rebuilt:** R8-8 store clustering, D11-FR-03/04/06, M28-FR-01.
+- **Wave-5 follow-ups (OB-360, 361, 362, 364, 365, 366, 367, 369, 370):**
+  - a B2B credit-limit change needs a second person; no typed B2B price;
+  - the supplier Delivery update form;
+  - the desk confirms the phone of members from the old ERP;
+  - the till sign-in log reaches head office on its own queue, with the after-hours alert and a sixth alert for failed sign-ins (OB-379);
+  - "SRE only" beside plan prices; closure stays sealed;
+  - the desk may enter an app customer's delivery after a call or the wait;
+  - relabel tasks are closed by the assignee or a store manager (the owner can no longer close one himself).
+- Owner decisions OB-372 to OB-379 are recorded.
+
+**Tests run for this merge (exactly)**
+- Guardrails: 1,714 of 1,714 passed after the merge.
+- Each builder: its own unit, integration (in memory and on empty PostgreSQL) and e2e files; see the traceability rows.
+- The full integration suite was not run end to end here; CI runs it on the pull request.
+
+**What is next**
+- A builder is completing OB-373 (reprint a handheld bill at a till or desk), OB-375 (kiosk stops quoting after 24 hours), OB-376 (bill-number prefix per handheld lane) and OB-378 (self-checkout watch numbers set by head office).
+- Then a final re-audit of every roadmap row.
+
+**Blocked / external**
+- Nothing here has run on real hardware: no real handheld, self-checkout lane, kiosk, shelf label, RFID reader, sensor or camera.
+- No staff UAT. Card machines are not integrated (OB-349).
+- The camera rules still need the named privacy and security reviewer (OB-330).
+
+**Needs an owner decision**
+- None open from this wave.
+
+---
+
 ## OB-288 wave 5 (25 October 2026): wave-4 follow-ups, commercial desks, owner reporting and data in/out, SaaS and controlled rollout
 
 **What changed**

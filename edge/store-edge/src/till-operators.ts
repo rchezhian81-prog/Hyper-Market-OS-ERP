@@ -18,6 +18,11 @@
 //
 // Every sign-in, refusal, lock and sign-out is appended to an fsync'd log (`till-operators.log`) and folded at start,
 // so a restart signs nobody out and every attempt can be read later. Neither a PIN nor a token is ever written to it.
+//
+// OB-365 (owner, 24–25 Oct 2026, in writing): the store computer SENDS this log to head office, so the owner's after-hours
+// and failed-sign-in alerts can fire there. `relayable()` and `onLogged()` hand each record over as a `SignInLogEntry` —
+// who, where, when, what happened — and never the session token's hash (nor, of course, a PIN or its hash, which the log
+// never held). The box queues each one durably on its own disk and sends it once (main.ts); the sign-in never waits on it.
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -157,6 +162,28 @@ type LogRecord =
   | { readonly kind: 'signed_out'; readonly at: string; readonly tokenHash: string; readonly userId: string; readonly why?: 'replaced' }
   | { readonly kind: 'refused'; readonly at: string; readonly staffId: string; readonly laneId: string; readonly reason: SignInRefusal };
 
+/**
+ * OB-365: one record of the till sign-in log as it travels to head office — who, where, when and what happened. NEVER the
+ * session token or its hash, and never a PIN or a PIN's hash (the log holds neither). `entryId` is a one-way digest of the
+ * record's place in the log and its line, so the same record always has the same id and is sent (and kept) once.
+ */
+export interface SignInLogEntry {
+  readonly entryId: string;
+  readonly kind: 'signed_in' | 'signed_out' | 'refused';
+  readonly at: string;
+  /** The till lane (or `device:<id>` for a phone); null for a sign-out whose sign-in the box no longer has. */
+  readonly laneId: string | null;
+  /** The person: the staff ID verified (sign-in, sign-out) or the staff ID typed (a refusal — perhaps nobody's). */
+  readonly person: string;
+  readonly via?: SignInVia;
+  /** For a refusal: why (a wrong staff ID or PIN, a locked staff ID, a locked lane, …). */
+  readonly reason?: SignInRefusal;
+  /** For a sign-out: 'replaced' when the next person signed in on the same phone. */
+  readonly why?: 'replaced';
+  /** What the sign-in was for, when not the till (a phone's job). */
+  readonly authority?: string;
+}
+
 const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex');
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -196,6 +223,10 @@ export class TillOperators {
    */
   private readonly stampOrder = new Map<string, { latest: number; readonly keys: Set<string> }>();
   private readonly stampSecret: Buffer;
+  /** OB-365: every record of the log with its place in it (restored and new), for the relay to head office. */
+  private readonly logged: { readonly index: number; readonly record: LogRecord }[] = [];
+  private nextIndex: number;
+  private listener: ((entry: SignInLogEntry) => Promise<void> | void) | undefined;
   /** Records on the disk that could not be read whole — surfaced, never repaired (hard rule #6). */
   readonly unreadableRecords: number;
 
@@ -207,13 +238,15 @@ export class TillOperators {
       readonly pack: TillOperatorPack;
       readonly now: () => string;
     },
-    restored: readonly LogRecord[],
+    restored: readonly { readonly index: number; readonly record: LogRecord }[],
     unreadable: number,
+    lines: number,
   ) {
     this.unreadableRecords = unreadable;
     // OB-180: its own secret, under its own label — never the PIN key itself, never written anywhere.
     this.stampSecret = createHmac('sha256', deps.key).update('sre-handheld-sign-in-stamp-v1').digest();
-    for (const r of restored) this.fold(r);
+    for (const r of restored) { this.fold(r.record); this.logged.push(r); }
+    this.nextIndex = lines;
   }
 
   static async open(input: {
@@ -226,17 +259,19 @@ export class TillOperators {
     readonly fileName?: string;
   }): Promise<TillOperators> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: input.fileName ?? 'till-operators.log' });
-    const restored: LogRecord[] = [];
+    const restored: { index: number; record: LogRecord }[] = [];
     let unreadable = 0;
+    let index = 0;
     for (const v of await readLog(log.path)) {
+      const at = index; index += 1;
       if (!v.ok) { unreadable += 1; continue; }
       try {
         const r = JSON.parse(v.record) as unknown;
-        if (isObj(r) && (r['kind'] === 'signed_in' || r['kind'] === 'signed_out' || r['kind'] === 'refused') && isStr(r['at'])) restored.push(r as unknown as LogRecord);
+        if (isObj(r) && (r['kind'] === 'signed_in' || r['kind'] === 'signed_out' || r['kind'] === 'refused') && isStr(r['at'])) restored.push({ index: at, record: r as unknown as LogRecord });
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
-    return new TillOperators(log, { key: input.key, credentials: input.credentials, pack: input.pack, now: input.now ?? (() => new Date().toISOString()) }, restored, unreadable);
+    return new TillOperators(log, { key: input.key, credentials: input.credentials, pack: input.pack, now: input.now ?? (() => new Date().toISOString()) }, restored, unreadable, index);
   }
 
   private fold(r: LogRecord): void {
@@ -255,6 +290,35 @@ export class TillOperators {
   private async record(r: LogRecord): Promise<void> {
     await this.log.append(JSON.stringify(r));
     this.fold(r);
+    const entry = { index: this.nextIndex, record: r };
+    this.nextIndex += 1;
+    this.logged.push(entry);
+    // OB-365: hand it to the relay. A relay that fails never undoes what the log holds — the next start sends it.
+    if (this.listener !== undefined) {
+      try { await this.listener(this.entryOf(entry.index, entry.record)); } catch { /* queued again from the log at the next start */ }
+    }
+  }
+
+  /** OB-365: one log record as it travels to head office — never the token's hash, never a PIN. */
+  private entryOf(index: number, r: LogRecord): SignInLogEntry {
+    const entryId = `tsl-${sha256(`${index}|${JSON.stringify(r)}`).slice(0, 32)}`;
+    if (r.kind === 'signed_in') {
+      return { entryId, kind: 'signed_in', at: r.at, laneId: r.laneId, person: r.userId, via: r.via, ...(r.authority === undefined ? {} : { authority: r.authority }) };
+    }
+    if (r.kind === 'signed_out') {
+      return { entryId, kind: 'signed_out', at: r.at, laneId: this.spans.get(r.tokenHash)?.laneId ?? null, person: r.userId, ...(r.why === undefined ? {} : { why: r.why }) };
+    }
+    return { entryId, kind: 'refused', at: r.at, laneId: r.laneId, person: r.staffId, reason: r.reason };
+  }
+
+  /** OB-365: every record of the log, oldest first, as head office receives it (the relay sends each once). */
+  relayable(): readonly SignInLogEntry[] {
+    return this.logged.map((e) => this.entryOf(e.index, e.record));
+  }
+
+  /** OB-365: be told of each record as it is written (after it is on the disk). */
+  onLogged(listener: (entry: SignInLogEntry) => Promise<void> | void): void {
+    this.listener = listener;
   }
 
   private recent(map: Map<string, number[]>, key: string, nowMs: number): number[] {
@@ -305,6 +369,8 @@ export class TillOperators {
     // A box that was never told which till it is signs nobody in: a session must belong to a lane (ADR-0020 §4).
     if (laneId.trim() === '') return { ok: false, refusedBecause: 'no_lane', laneMessage: WORDS.no_lane };
     if (this.recent(this.refusedByLane, laneId, nowMs).length >= MAX_REFUSED_PER_LANE) {
+      // OB-365: a try on a locked lane is written to the log too (so head office sees the lockout) — it extends nothing.
+      await this.record({ kind: 'refused', at: new Date(nowMs).toISOString(), staffId: (staffId || '(none)').slice(0, 64), laneId, reason: 'lane_locked' });
       return { ok: false, refusedBecause: 'lane_locked', laneMessage: WORDS.lane_locked };
     }
     if (staffId === '' || !isTillPin(input.pin)) return no(await this.refuse(staffId || '(none)', laneId, 'not_readable', nowMs));

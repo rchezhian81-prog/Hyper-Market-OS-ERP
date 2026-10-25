@@ -15,6 +15,10 @@
 // assignment is decided when the task is raised and kept on it (a fact, never re-guessed); the list says who it is for,
 // and whether it is the reader's. A store manager role nobody holds is said ("nobody holds it — not set"), never hidden.
 // Append-only: raising is idempotent per product, store, shelf place, price and day.
+//
+// OB-370 (owner, 24–25 Oct 2026, in writing): a task may be CLOSED only by the person it is assigned to (the floor
+// champion it was given) or by a STORE MANAGER of that store — and it still needs the photo and the price the label shows.
+// Anyone else is refused by name and the task stays open; the list says, per task, whether the reader may close it.
 
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError, notFound, scopeOf } from '../../kernel/src/index';
@@ -120,8 +124,11 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
       const assignedToMe = t.assignee === undefined ? false
         : t.assignee.to === 'floor_champion' ? t.assignee.employeeId === ctx.userId : (storeManagers ?? []).includes(ctx.userId);
       if (mineOnly && !assignedToMe) continue;
+      // OB-370: the assignee, or a store manager of this store, may close it.
+      const managersHere = await managersAt(t.branchId);
+      const mayClose = (t.assignee?.to === 'floor_champion' && t.assignee.employeeId === ctx.userId) || (managersHere ?? []).includes(ctx.userId);
       rows.push({
-        ...t, assignee: t.assignee ?? null, assignedToMe,
+        ...t, assignee: t.assignee ?? null, assignedToMe, mayClose,
         ...(storeManagers === null ? {} : { storeManagers }),
         done: doneOf.get(t.taskId) ?? null, dueNow: Date.parse(t.dueAt) <= Date.parse(now),
       });
@@ -145,7 +152,8 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
       handler: (ctx) => list(ctx, true),
     },
     {
-      // Done: the label changed. Body: { evidenceRef (the photo), shelfPriceMinor (what the label now shows) }.
+      // Done: the label changed. Body: { evidenceRef (the photo), shelfPriceMinor (what the label now shows) }. OB-370: by the
+      // assignee or a store manager of the task's store only.
       api: 'API-02', method: 'POST', path: '/v1/pricing/relabel-tasks/:taskId/done',
       permission: 'workforce.task.complete.own', idempotent: true,
       handler: async (ctx) => {
@@ -156,6 +164,19 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
         const scope = scopeOf(ctx);
         if (scope !== 'all' && !scope.includes(task.branchId)) {
           throw apiError(403, { code: 'outside_your_branches', whatHappened: `This task is at ${task.branchId}, which your sign-in does not reach.`, wasItSaved: 'not_saved', nextSafeAction: 'A person at that store closes it. Nothing was changed.' });
+        }
+        // OB-370: only the person it was given to, or a store manager of this store, closes it.
+        const managers = deps.storeManagersAt === undefined ? [] : await deps.storeManagersAt(ctx.tenantId, task.branchId);
+        const isAssignee = task.assignee?.to === 'floor_champion' && task.assignee.employeeId === ctx.userId;
+        if (!isAssignee && !managers.includes(ctx.userId)) {
+          throw apiError(403, {
+            code: 'not_your_relabel_task',
+            whatHappened: task.assignee?.to === 'floor_champion'
+              ? `This label task is for ${task.assignee.employeeId} (the floor champion of ${task.assignee.departmentId}) or a store manager of ${task.branchId}; you are neither (OB-370).`
+              : `This label task is for a store manager of ${task.branchId}; you are not one (OB-370).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Tell the person it is for, or the store manager. The task stays open.',
+          });
         }
         if (!isStr(b['evidenceRef']) || !Number.isInteger(b['shelfPriceMinor']) || (b['shelfPriceMinor'] as number) < 0) {
           throw apiError(400, { code: 'not_readable_as_relabel_done', whatHappened: 'Closing a relabel task needs { evidenceRef } — the photo of the new label — and { shelfPriceMinor }, the price the label now shows.', wasItSaved: 'not_saved', nextSafeAction: 'Send both. Nothing was changed.' });

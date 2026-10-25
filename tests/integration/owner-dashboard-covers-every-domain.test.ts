@@ -124,9 +124,12 @@ async function securityChecks(h: ApiHarness, T: string): Promise<void> {
   const f = (n: string): Fig => r.figures.find((x) => x.name === n)!;
   expect(f('Access given').valueMinor).toBeGreaterThanOrEqual(3);
   expect(r.rows.filter((x) => x.what === 'access_given').map((x) => x.who)).toEqual(expect.arrayContaining([CASHIER, MGR]));
+  // OB-365: the till sign-in log comes from the store computers — none has arrived in this shop, so not known (never 0);
+  // the office lockout is held in memory by the API, so it stays not known.
   expect(f('Failed sign-ins').valueMinor).toBeUndefined();
-  expect(f('Failed sign-ins').notAvailableBecause).toContain('no record of failed sign-ins');
+  expect(f('Failed sign-ins').notAvailableBecause).toContain('no till sign-in record has reached head office yet');
   expect(f('Sign-in lockouts').valueMinor).toBeUndefined();
+  expect(f('Office sign-in lockouts').notAvailableBecause).toContain('held in memory by the API');
   // Company-wide records: a branch-limited reader is told, not shown a part.
   const mgr = (await get(h, T, MGR, '/v1/reports/security', { day: '2026-08-07' }, 'S2')).body as { figures: Fig[] };
   expect(mgr.figures[0]!.notAvailableBecause).toContain('company-wide');

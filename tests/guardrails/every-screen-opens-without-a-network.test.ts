@@ -71,6 +71,9 @@ const SCREENS = [
   { name: 'the customer', dir: 'customer-app', view: 'app.js', page: 'index.html', bundle: 'customer-app.bundle.js' },
   { name: 'the warehouse', dir: 'warehouse-app', view: 'app.js', page: 'index.html', bundle: 'warehouse-app.bundle.js' },
   { name: 'the warehouse supervisor', dir: 'web-erp', view: 'warehouse.js', page: 'warehouse.html', bundle: 'web-erp.bundle.js' },
+  // OB-288 P6 (R8-3 · D14-FR-02): the self-checkout lane and the price kiosk.
+  { name: 'the self-checkout lane', dir: 'self-checkout', view: 'app.js', page: 'index.html', bundle: 'self-checkout.bundle.js' },
+  { name: 'the price kiosk', dir: 'price-kiosk', view: 'app.js', page: 'index.html', bundle: 'price-kiosk.bundle.js' },
 ] as const;
 
 const read = (path: string): string => readFileSync(path, 'utf8');

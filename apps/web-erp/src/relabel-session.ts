@@ -19,6 +19,7 @@ export const RELABEL_COPY = {
     for: 'For', championOf: 'floor champion of', storeManager: 'the store manager', yours: 'yours', notAssigned: 'not assigned (raised before tasks were assigned)',
     no_department_owns_it: 'no department owns this product here', no_champion_named: 'no floor champion named for', champion_left: 'the floor champion has left —',
     nobodyHolds: 'nobody holds the store manager role here (not set)',
+    notYoursToClose: 'Closed by the person it is for, or the store manager.',
   },
   ta: {
     relabelMineH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள் — என்னுடையவை', relabelH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள்', relabelLead: 'விலை மாறியது. புதிய லேபிளை வைத்து, படம் எடுத்து, லேபிளில் உள்ள விலையைத் தட்டச்சு செய்து, பணியை முடிக்கவும்.',
@@ -28,6 +29,7 @@ export const RELABEL_COPY = {
     for: 'யாருக்கு', championOf: 'தளச் சாம்பியன் —', storeManager: 'கடை மேலாளர்', yours: 'உங்களுடையது', notAssigned: 'ஒதுக்கப்படவில்லை (பணி ஒதுக்கீட்டுக்கு முன் எழுப்பப்பட்டது)',
     no_department_owns_it: 'இங்கு இந்தப் பொருள் எந்தப் பிரிவுக்கும் சொந்தமில்லை', no_champion_named: 'தளச் சாம்பியன் பெயரிடப்படவில்லை:', champion_left: 'தளச் சாம்பியன் விலகிவிட்டார் —',
     nobodyHolds: 'இங்கு கடை மேலாளர் பணியில் யாரும் இல்லை (அமைக்கப்படவில்லை)',
+    notYoursToClose: 'இதை ஒதுக்கப்பட்டவர் அல்லது கடை மேலாளர் மட்டுமே முடிக்கலாம்.',
   },
 } as const;
 
@@ -62,6 +64,8 @@ export interface RelabelRow {
   readonly assignee?: { readonly to: 'floor_champion'; readonly departmentId: string; readonly employeeId: string } | { readonly to: 'store_manager'; readonly departmentId: string | null; readonly because: 'no_department_owns_it' | 'no_champion_named' | 'champion_left' } | null;
   readonly assignedToMe?: boolean;
   readonly storeManagers?: readonly string[];
+  /** OB-370: whether the reader may close it — its assignee, or a store manager of its store. */
+  readonly mayClose?: boolean;
 }
 export interface RelabelSession {
   readonly may: { readonly read: boolean; readonly close: boolean; readonly readMine: boolean };

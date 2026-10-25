@@ -265,6 +265,12 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   EquipmentReadingRecorded: '/v1/facilities/equipment/:assetId/readings/:readingId/synced',
   WriteOffCaptured: '/v1/inventory/write-off/:writeOffId/synced',
   SopAcknowledged: '/v1/hr/workforce/sops/:sopId/acknowledgements/:employeeId/synced',
+  // OB-365: the till sign-in log — sign-ins, refusals (a wrong PIN, a lockout) and sign-outs — never a token's hash or a
+  // PIN. Head office keeps each once (idempotent on `entryId`, a plain top-level payload field) for the owner's alerts.
+  TillSignInLogged: '/v1/identity/till-sign-ins/:entryId/synced',
+  // OB-288 P6 (R8-3 · R8-7): a paid self-checkout basket's evidence — `activityId` is a plain top-level payload field; a
+  // record head office cannot read is 400 → dead-lettered here by name (the sale itself is untouched).
+  SelfCheckoutBasketRecorded: '/v1/self-checkout/baskets/:activityId/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

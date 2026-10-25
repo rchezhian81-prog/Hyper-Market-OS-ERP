@@ -2,9 +2,11 @@
 // model (apps/supplier-app/src/supplier-portal-session.ts), attached as window.supplierPortalSession by the
 // bundle, built on packages/ui + packages/a11y. This file only DRAWS what the session hands it: what the
 // supplier sent (waiting-on-us first, then processed) and its statement (the money we owe it, disputed shown
-// separately) — each row a tone AND an icon AND a word, never colour alone. It is READ-ONLY: it changes nothing
-// and issues no write verb. Refresh re-reads both feeds (GETs). Offline the screen keeps its view and the stale
-// strip says the page is what it was last shown. No prompt/confirm/alert.
+// separately) — each row a tone AND an icon AND a word, never colour alone. It changes nothing but ONE thing: the
+// "Delivery update" form (OB-362) for one of the supplier's OWN open orders, which the bundle sends
+// (window.supplierPortal.sendDeliveryUpdate — this file issues no write verb itself). Refresh re-reads the feeds (GETs).
+// Offline the screen keeps its view and the stale strip says the page is what it was last shown; an update not sent is
+// said so. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -134,6 +136,7 @@ function paint() {
     el('state-text').textContent = view.screenState.label;
     state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
     for (const id of sections) el(id).hidden = true;
+    el('delivery').hidden = true;
     return;
   }
   state.hidden = true;
@@ -149,7 +152,52 @@ function paint() {
   el('sent-none').textContent = t('sentNone');
 
   paintStatement(view);
+  paintDelivery();
 }
+
+// OB-362: the Delivery update form — the supplier's own open orders only; the bundle checks and sends it.
+const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
+let ordersTried = false;
+function paintDelivery() {
+  const api = window.supplierPortal;
+  const box = el('delivery');
+  const feed = api && typeof api.orders === 'function' ? api.orders() : null;
+  const v = session.view(lang);
+  const notPermitted = v.screenState.tone === 'error' && v.awaiting.length === 0 && v.processed.length === 0 && v.statement === null && !v.statementInaccessible;
+  box.hidden = window.supplierPortalSession === undefined || notPermitted;
+  el('delivery-h').textContent = t('deliveryH');
+  el('delivery-lead').textContent = t('deliveryLead');
+  el('du-order-l').textContent = t('orderL'); el('du-status-l').textContent = t('statusL');
+  el('du-expected-l').textContent = t('expectedL'); el('du-note-l').textContent = t('noteL');
+  el('du-send-text').textContent = t('sendUpdate');
+  const order = el('du-order');
+  const keep = order.value;
+  const opts = [new Option(t('chooseOrder'), '')];
+  for (const o of feed?.orders ?? []) opts.push(new Option(`${o.number}${o.issuedAt ? ` · ${o.issuedAt.slice(0, 10)}` : ''}`, o.poId));
+  order.replaceChildren(...opts);
+  if ([...order.options].some((x) => x.value === keep)) order.value = keep;
+  const status = el('du-status');
+  const keepStatus = status.value;
+  status.replaceChildren(new Option('—', ''), ...['dispatched', 'in_transit', 'delayed'].map((k) => new Option(t(`status_${k}`), k)));
+  status.value = keepStatus;
+  const said = el('du-said');
+  const usable = feed !== null && feed.ordersKnown && feed.mayUpdate && feed.orders.length > 0;
+  said.textContent = feed === null ? (ordersTried ? t('ordersUnknown') : '') : !feed.ordersKnown ? t('ordersUnknown') : !feed.mayUpdate ? t('cannotUpdate') : feed.orders.length === 0 ? t('noOpenOrders') : '';
+  said.hidden = said.textContent === '';
+  el('du-form').hidden = !usable;
+}
+async function sendDelivery() {
+  const api = window.supplierPortal;
+  if (!api || typeof api.sendDeliveryUpdate !== 'function') return;
+  const out = await api.sendDeliveryUpdate({ poId: el('du-order').value, status: el('du-status').value, expectedOn: el('du-expected').value, note: el('du-note').value });
+  const st = el('du-result');
+  st.className = `status-line ${out.result === 'sent' ? 'tone-ok' : 'tone-error'}`;
+  st.textContent = out.result === 'sent' ? `✓ ${t('updateSent')}` : out.result === 'invalid' ? `⚠ ${t(out.why)}` : out.result === 'refused' ? `⚠ ${t('refusedSay')} ${out.whatHappened}` : `⚠ ${t('notSent')}`;
+  st.dataset.result = out.result;
+  if (out.result === 'sent') { el('du-note').value = ''; await refresh(); }
+}
+el('du-send').addEventListener('click', () => { void sendDelivery(); });
+{ const i = icon('truck'); if (i !== null) el('du-send').prepend(i); }
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
 
@@ -163,7 +211,8 @@ async function refresh() {
   const api = window.supplierPortal;
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
-  if (data) { session = api.present(data); paint(); }
+  ordersTried = true;
+  if (data) { session = api.present(data); paint(); } else paintDelivery();
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 

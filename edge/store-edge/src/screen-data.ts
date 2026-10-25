@@ -75,6 +75,8 @@ export const SCREENS = Object.freeze([
   'recall-trace',
   // OB-288 LP/workforce package: the role help centre (M25-FR-04 "help works offline"), served from the store box too.
   'help',
+  // OB-288 P6 (R8-3 · D14-FR-02): the self-checkout lane (a till the customer operates) and the read-only price kiosk.
+  'self-checkout', 'price-kiosk',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -2822,6 +2824,9 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   approvals: 'approvalsData',
   'service-desk': 'serviceDeskData',
   'ai-drafts': 'aiDraftsData',
+  // OB-288 P6: both read the till's own signed catalogue, under the till's own global.
+  'self-checkout': 'posCatalogue',
+  'price-kiosk': 'posCatalogue',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -2882,6 +2887,9 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   approvals: approvalsPayload,
   'service-desk': serviceDeskPayload,
   'ai-drafts': aiDraftsPayload,
+  // OB-288 P6: the till's catalogue — the same products, prices and gates the staffed till sells by.
+  'self-checkout': posPayload,
+  'price-kiosk': posPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

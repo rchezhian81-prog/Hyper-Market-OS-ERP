@@ -18,7 +18,9 @@ import { chromium, type Browser } from 'playwright-core';
  *   • an authorised supplier login (supplier.portal.self) → both feeds read LIVE on load, the submission still
  *     AWAITING our decision leads (never a false "accepted" — §28), the statement panel shows the closing
  *     balance with the disputed amount kept separate, and across the whole session NOT ONE write verb
- *     (POST/PUT/PATCH/DELETE) leaves the screen (a supplier SUBMITS through separate routes; this reads);
+ *     (POST/PUT/PATCH/DELETE) leaves the screen unless the supplier sends the one form;
+ *   • OB-362: the "Delivery update" form lists only the supplier's own open orders, refuses on the page before anything is
+ *     sent, and sends exactly ONE `delivery_status` submission; a login without the grant is told so;
  *   • a login WITHOUT supplier.portal.self → sees the not-a-supplier-login state and NONE of the account data,
  *     even though the feeds exist (the server also answers 403 — defence in depth, P-04/§35).
  *
@@ -58,8 +60,16 @@ const STATEMENT = {
 interface Recorder {
   supplierData: Record<string, unknown>;
   mayRead: boolean;
-  readonly requests: { method: string; path: string }[];
+  readonly requests: { method: string; path: string; body?: unknown }[];
+  /** OB-362: whether this login may send a delivery update (the order-communication grant). */
+  mayUpdate?: boolean;
 }
+
+/** OB-362: the supplier's own open orders, as `/me/orders` answers (scoped on the server — never another supplier's). */
+const ORDERS = [
+  { poId: 'po-a1', number: 'PO-000001', issuedAt: '2026-10-20T09:00:00Z', deliverToLocationId: 'br-1', lines: 1 },
+  { poId: 'po-a3', number: 'PO-000003', issuedAt: '2026-10-22T09:00:00Z', deliverToLocationId: 'br-1', lines: 2 },
+];
 
 /** A server that serves the supplier-app page AND answers the two read-only feeds on the SAME origin, so a
  *  relative `/v1/...` with `credentials: 'same-origin'` reaches it exactly as in production. A login without the
@@ -80,6 +90,21 @@ async function startPageAndCloud(rec: Recorder): Promise<{ base: string; stop: (
       }
       if (req.method === 'GET' && path === '/v1/supplier-portal/me/statement') {
         feed(STATEMENT);
+        return;
+      }
+      if (req.method === 'GET' && path === '/v1/supplier-portal/me/orders') {
+        feed({ partnerId: STATEMENT.partnerId, ordersKnown: true, orders: ORDERS, mayUpdate: rec.mayUpdate === true, deliveryStatuses: ['dispatched', 'in_transit', 'delayed'] });
+        return;
+      }
+      // OB-362: the ONE write — the delivery update, recorded with its body (the server re-checks the order is this supplier's).
+      if (req.method === 'POST' && path === '/v1/supplier-portal/me/submissions') {
+        let raw = '';
+        for await (const chunk of req) raw += String(chunk);
+        const body = JSON.parse(raw) as { submissionId: string; kind: string; document: { poId: string } };
+        rec.requests.push({ method: 'POST', path, body });
+        const own = ORDERS.some((o) => o.poId === body.document?.poId);
+        res.writeHead(own ? 201 : 422, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(own ? { submissionId: body.submissionId, kind: body.kind, accepted: true } : { error: { code: 'not_your_order', whatHappened: 'that order belongs to another supplier' } }));
         return;
       }
       if (req.method !== 'GET') rec.requests.push({ method: req.method ?? '?', path }); // any write would be caught here
@@ -161,6 +186,70 @@ describe.skipIf(!HAVE_BROWSER)('a supplier reads its own account end to end in a
     }
   });
 
+  it('OB-362: the Delivery update form names only its own open orders, refuses before sending, and sends ONE delivery_status — in English and Tamil', async () => {
+    const rec: Recorder = { supplierData: login('u-acme', ['supplier.portal.self', 'supplier.portal.self.submit']), mayRead: true, mayUpdate: true, requests: [] };
+    const srv = await startPageAndCloud(rec);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    try {
+      await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.getElementById('du-form')?.hidden === false, undefined, { timeout: 10_000 });
+      expect(await page.textContent('#delivery-h')).toBe('Delivery update');
+      // Its own open orders only (plus the "choose" prompt) — the server scoped them; the page adds none.
+      expect(await page.locator('#du-order option').allTextContents()).toEqual(['Choose one of your open orders', 'PO-000001 · 2026-10-20', 'PO-000003 · 2026-10-22']);
+      expect(await page.locator('#du-status option').allTextContents()).toEqual(['—', 'Dispatched', 'On the way', 'Delayed']);
+      expect(await page.locator('#du-send svg.sre-icon').count()).toBe(1);
+      for (const id of ['du-order', 'du-status', 'du-expected', 'du-note']) expect(await page.locator(`label[for="${id}"]`).count(), id).toBe(1);
+      // Refused on the page before anything is sent.
+      await page.click('#du-send');
+      expect(await page.textContent('#du-result')).toBe('⚠ Choose your order first. Nothing was sent.');
+      await page.selectOption('#du-order', 'po-a3');
+      await page.click('#du-send');
+      expect(await page.textContent('#du-result')).toBe('⚠ Say where it has got to. Nothing was sent.');
+      await page.selectOption('#du-status', 'delayed');
+      await page.click('#du-send');
+      expect(await page.textContent('#du-result')).toBe('⚠ Give the day it should now arrive. Nothing was sent.');
+      expect(rec.requests.filter((r) => r.method !== 'GET')).toEqual([]);
+      await page.fill('#du-expected', '2026-10-28');
+      await page.fill('#du-note', 'rain on the highway');
+      await page.click('#du-send');
+      await page.locator('#du-result[data-result="sent"]').waitFor({ timeout: 10_000 });
+      expect(await page.textContent('#du-result')).toBe('✓ Sent — the buyer can see it.');
+      // Exactly ONE write left the screen: the delivery_status submission, to the supplier's own route.
+      const writes = rec.requests.filter((r) => r.method !== 'GET');
+      expect(writes).toHaveLength(1);
+      expect(writes[0]).toMatchObject({ method: 'POST', path: '/v1/supplier-portal/me/submissions', body: { kind: 'delivery_status', document: { poId: 'po-a3', status: 'delayed', expectedOn: '2026-10-28', note: 'rain on the highway' } } });
+      expect((writes[0]!.body as { submissionId: string }).submissionId).toMatch(/^ds-po-a3-/);
+      // Tamil.
+      await page.click('#lang');
+      expect(await page.textContent('#delivery-h')).toBe('டெலிவரி நிலவரம்');
+      expect(await page.textContent('#du-send-text')).toBe('டெலிவரி நிலவரத்தை அனுப்பு');
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+      await srv.stop();
+    }
+  });
+
+  it('OB-362: a login without the order-communication grant is told so and offered no form', async () => {
+    const rec: Recorder = { supplierData: login('u-acme-view', ['supplier.portal.self']), mayRead: true, mayUpdate: false, requests: [] };
+    const srv = await startPageAndCloud(rec);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.getElementById('du-said')?.hidden === false, undefined, { timeout: 10_000 });
+      expect(await page.textContent('#du-said')).toBe('Your login cannot send delivery updates. Ask us to turn it on.');
+      expect(await page.locator('#du-form').getAttribute('hidden')).not.toBeNull();
+      expect(rec.requests.every((r) => r.method === 'GET')).toBe(true);
+    } finally {
+      await context.close();
+      await srv.stop();
+    }
+  });
+
   it('a login without supplier.portal.self sees the account refused — no data, and the server answers 403', async () => {
     const rec: Recorder = { supplierData: login('u-stranger', []), mayRead: false, requests: [] };
     const srv = await startPageAndCloud(rec);
@@ -178,6 +267,7 @@ describe.skipIf(!HAVE_BROWSER)('a supplier reads its own account end to end in a
       expect(await page.locator('#awaiting li.row').count()).toBe(0);
       expect(await page.locator('#processed li.row').count()).toBe(0);
       expect(await page.locator('#statement').getAttribute('hidden')).not.toBeNull();
+      expect(await page.locator('#delivery').getAttribute('hidden')).not.toBeNull(); // OB-362: no form either
       // Nothing the screen sent was a write.
       expect(rec.requests.every((r) => r.method === 'GET')).toBe(true);
     } finally {

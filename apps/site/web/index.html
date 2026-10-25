@@ -89,6 +89,7 @@
   .plan h3{font-size:1.3rem}
   .price{font-family:var(--display); font-weight:800; font-size:2.5rem; letter-spacing:-.02em; margin-top:14px; font-variant-numeric:tabular-nums}
   .price span{font-family:var(--body); font-weight:500; font-size:1rem; color:var(--muted)}
+  .sre-only,.outside-pricing{font-size:.85rem; font-weight:700; color:var(--muted); margin:6px 0 0}
   .plan .who{color:var(--muted); font-size:.96rem; margin-top:6px; min-height:2.8em}
   .plan ul{list-style:none; margin:20px 0 26px; padding:0; display:flex; flex-direction:column; gap:11px}
   .plan li{display:flex; gap:10px; align-items:flex-start; font-size:.97rem}
@@ -203,11 +204,15 @@
         <p class="eyebrow">Plans</p>
         <h2>One price a month. Nothing switches your shop off.</h2>
         <p>Go over a limit and it's billed and flagged for a conversation — never enforced at the lane. Your tills keep working no matter what.</p>
+        <!-- OB-366 (owner, 24–25 Oct 2026, in writing): these prices are SRE's own subscription, labelled "SRE only, not
+             offered to outside shops"; pricing for outside shops stays "not set" (OB-321) until the owner decides it. -->
+        <p class="outside-pricing" data-outside-pricing="not set"><span lang="en">Prices for outside shops: not set.</span> · <span lang="ta">வெளிக் கடைகளுக்கான விலை: அமைக்கப்படவில்லை.</span></p>
       </div>
       <div class="plans">
         <div class="plan">
           <h3>Starter</h3>
           <div class="price">₹10,000<span>/month</span></div>
+          <p class="sre-only" data-sre-only="true"><span lang="en">SRE only, not offered to outside shops</span> · <span lang="ta">SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை</span></p>
           <p class="who">A single-branch shop getting its counters and stock onto one system.</p>
           <ul>
             <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Up to 2 tills, 1 branch</li>
@@ -221,6 +226,7 @@
           <span class="tag">Most popular</span>
           <h3>Standard</h3>
           <div class="price">₹13,000<span>/month</span></div>
+          <p class="sre-only" data-sre-only="true"><span lang="en">SRE only, not offered to outside shops</span> · <span lang="ta">SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை</span></p>
           <p class="who">A busy hypermarket running several lanes with loyalty and home delivery.</p>
           <ul>
             <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Up to 6 tills, 1 branch</li>
@@ -233,6 +239,7 @@
         <div class="plan">
           <h3>Growth</h3>
           <div class="price">₹15,000<span>/month</span></div>
+          <p class="sre-only" data-sre-only="true"><span lang="en">SRE only, not offered to outside shops</span> · <span lang="ta">SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை</span></p>
           <p class="who">A multi-branch group that also sells to businesses and online.</p>
           <ul>
             <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Up to 15 tills, 3 branches</li>

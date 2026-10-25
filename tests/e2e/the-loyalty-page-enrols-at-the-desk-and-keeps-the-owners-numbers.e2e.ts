@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
-import { startInboxShop, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 
 /**
  * OB-329 (the desk enrols with an OPTIONAL name) · OB-295 (tiers and points expiry, "not set" until the owner enters them,
@@ -29,7 +29,18 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Loyalt
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
       page: { path: '/loyalty', html: 'loyalty.html', dataGlobal: 'loyaltyDeskData' },
-      seed: async () => {},
+      // OB-364: one customer carried from the old ERP by the approved import (the manager loads, the owner approves).
+      seed: async (cloud) => {
+        const text = ['mobile,loyaltyConsent,consentGivenOn,consentEvidence,name', '9840055501,yes,2025-04-01,old ERP card,'].join('\n');
+        const v = await cloud.request({ method: 'POST', path: '/v1/import/validate', userId: MGR, branchId: 'br-1', idempotencyKey: 'old-validate', body: { templateId: 'customer-v1', text } });
+        if (v.status !== 200) throw new Error(`validate: ${v.status} ${JSON.stringify(v.body)}`);
+        const contentFingerprint = (v.body as { contentFingerprint: string }).contentFingerprint;
+        const asked = await cloud.request({ method: 'POST', path: '/v1/approvals/requests', userId: MGR, branchId: 'br-1', idempotencyKey: 'old-ask', body: { kind: 'data_import_commit', subjectRef: 'J-OLD', details: { jobId: 'J-OLD', contentFingerprint }, valueMinor: null, summary: 'old members', reason: 'carried from the old ERP' } });
+        if (asked.status !== 201) throw new Error(`ask: ${asked.status} ${JSON.stringify(asked.body)}`);
+        const requestId = (asked.body as { requestId: string }).requestId;
+        await ok(cloud.request({ method: 'POST', path: `/v1/approvals/requests/${requestId}/decide`, userId: OWNER, idempotencyKey: 'old-decide', body: { decision: 'approved', reason: 'checked' } }), 'approve the load');
+        await ok(cloud.request({ method: 'POST', path: '/v1/import/commit', userId: MGR, branchId: 'br-1', idempotencyKey: 'old-commit', body: { jobId: 'J-OLD', templateId: 'customer-v1', text, approvalId: requestId } }), 'load the old members');
+      },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 300_000);
@@ -144,5 +155,52 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Loyalt
       await page.locator('#referral-say[data-referrer="set"]').waitFor({ timeout: 15_000 }); // the manager reads the rewards
       expect(await page.isDisabled('#enrol')).toBe(false);
     } finally { await mgr.close(); }
+  });
+
+  it('OB-364: a member carried from the old ERP shows "confirm the phone number"; confirmed only once seen on the phone; Tamil', async () => {
+    const ctx = await browser.newContext();
+    try {
+      await shop.signIn(ctx, MGR, 'br-1');
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', (e) => { errors.push(String(e)); });
+      const writes: string[] = [];
+      page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/v1/') && r.method() !== 'GET') writes.push(`${r.method()} ${u.pathname}${u.search}`); });
+      await page.goto(`${shop.base}/loyalty`, { waitUntil: 'load' });
+      await page.fill('#find-mobile', '9840055501');
+      await page.click('#find');
+      await page.locator('#found li.row').waitFor({ timeout: 15_000 });
+      expect(await page.textContent('#found li.row strong')).toBe('✓ Member ending 5501 — 0 points');
+      expect(await page.textContent('#found .to-confirm')).toBe('⚠ Phone number to confirm');
+      expect(await page.isVisible('#confirm-phone')).toBe(true);
+      expect(await page.textContent('#confirm-lead')).toContain('carried over from the old system');
+      expect(await page.locator('#confirm svg.sre-icon').count()).toBe(1);
+      // Refused on the page until the number is seen on the customer's own phone — nothing sent.
+      const before = writes.length;
+      await page.click('#confirm');
+      expect(await page.textContent('#confirm-status')).toBe('⚠ Look at the number on the customer\'s own phone and tick the box. Nothing was sent.');
+      expect(writes.length).toBe(before);
+      await page.check('#confirm-seen');
+      await page.click('#confirm');
+      await page.locator('#confirm-status', { hasText: '✓' }).waitFor({ timeout: 15_000 });
+      expect(await page.textContent('#confirm-status')).toBe('✓ Phone number confirmed — member ending 5501');
+      expect(await page.isVisible('#confirm-phone')).toBe(false);
+      expect(writes.filter((w) => w.includes('confirm-phone'))).toEqual(['POST /v1/loyalty/members/confirm-phone']);
+      expect(writes.every((w) => !w.includes('98400'))).toBe(true); // the number in a body, never a URL
+      // Found again: no prompt — head office recorded the confirmation.
+      await page.click('#find');
+      await page.locator('#found li.row').waitFor({ timeout: 15_000 });
+      await page.waitForFunction(() => (globalThis as unknown as { document: { querySelector(s: string): unknown } }).document.querySelector('#found .to-confirm') === null);
+      expect(await page.isVisible('#confirm-phone')).toBe(false);
+      // A member enrolled at the desk is never asked.
+      await page.fill('#find-mobile', '9840077701');
+      await page.click('#find');
+      await page.locator('#found li.row strong', { hasText: '7701' }).waitFor({ timeout: 15_000 });
+      expect(await page.isVisible('#confirm-phone')).toBe(false);
+      await page.click('#lang');
+      expect(await page.textContent('#confirm-h')).toBe('இந்த உறுப்பினரின் கைபேசி எண்ணை உறுதிசெய்');
+      expect(await page.textContent('#confirm-text')).toBe('கைபேசி எண்ணை உறுதிசெய்');
+      expect(errors).toEqual([]);
+    } finally { await ctx.close(); }
   });
 });

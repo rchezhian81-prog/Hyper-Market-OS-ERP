@@ -1,8 +1,9 @@
 // The "Owner alerts and scheduled reports" page (OB-288 lane 4 · P2 · M29-FR-03 · M29-FR-04). A tested, DOM-free session.
 //
-//   • THE FIVE ALERTS — large discount, voided bill, price override, after-hours sign-in, cash short. Each threshold is the
-//     owner's and shows "Not set — this alert does not fire until you enter it" until he enters it; one head office cannot
-//     judge (the after-hours sign-in) says so even once set. Only the owner saves or clears one (head office re-checks).
+//   • THE SIX ALERTS — large discount, voided bill, price override, after-hours sign-in, cash short and (OB-365) failed till
+//     sign-ins. Each threshold is the owner's and shows "Not set — this alert does not fire until you enter it" until he
+//     enters it; one head office cannot yet judge (no till sign-in log has arrived) says so even once set. Only the owner
+//     saves or clears one (head office re-checks).
 //   • TODAY — what the synced records hold for each, the alerts the owner's thresholds raise, and whether each is already in
 //     the owners' alert inbox; "Check now" runs the same pass the worker runs on its timer.
 //   • SCHEDULED REPORTS AND EXPORTS — the owner's schedules, each prepared by itself at the shop's time, with its latest run
@@ -12,18 +13,19 @@
 import { makeCaller, type Outcome } from './r4-insight-call';
 
 export type Lang = 'en' | 'ta';
-export type AlertKind = 'large_discount' | 'voided_bill' | 'price_override' | 'after_hours_login' | 'cash_short';
-export const ALERT_KINDS: readonly AlertKind[] = ['large_discount', 'voided_bill', 'price_override', 'after_hours_login', 'cash_short'];
+export type AlertKind = 'large_discount' | 'voided_bill' | 'price_override' | 'after_hours_login' | 'cash_short' | 'failed_sign_in';
+// OB-365: the sixth, failed sign-ins at a till, from the store computer's sign-in log.
+export const ALERT_KINDS: readonly AlertKind[] = ['large_discount', 'voided_bill', 'price_override', 'after_hours_login', 'cash_short', 'failed_sign_in'];
 /** How each threshold is typed on screen: rupees, a count, or opening–closing hours. */
 export const ALERT_INPUT: Readonly<Record<AlertKind, 'rupees' | 'count' | 'hours'>> = {
-  large_discount: 'rupees', voided_bill: 'count', price_override: 'count', after_hours_login: 'hours', cash_short: 'rupees',
+  large_discount: 'rupees', voided_bill: 'count', price_override: 'count', after_hours_login: 'hours', cash_short: 'rupees', failed_sign_in: 'count',
 };
 
 export const OWNER_ALERTS_COPY = {
   en: {
-    title: 'Owner alerts and scheduled reports', lead: 'Your five exception alerts reach your alert inbox by themselves, even when you are away. Each fires only once you set its number. Your scheduled reports and exports are prepared at the shop\'s time with nobody pressing anything.',
-    thresholdsH: 'Your five alerts', todayH: 'Today', schedulesH: 'Scheduled reports and exports',
-    large_discount: 'Large discount on one bill (₹)', voided_bill: 'Voided bills by one person in a day', price_override: 'Price overrides by one person in a day', after_hours_login: 'After-hours sign-in (trading hours, e.g. 8-23)', cash_short: 'Till short at its close (₹)',
+    title: 'Owner alerts and scheduled reports', lead: 'Your six exception alerts reach your alert inbox by themselves, even when you are away. Each fires only once you set its number. Your scheduled reports and exports are prepared at the shop\'s time with nobody pressing anything.',
+    thresholdsH: 'Your six alerts', todayH: 'Today', schedulesH: 'Scheduled reports and exports',
+    large_discount: 'Large discount on one bill (₹)', voided_bill: 'Voided bills by one person in a day', price_override: 'Price overrides by one person in a day', after_hours_login: 'After-hours sign-in (trading hours, e.g. 8-23)', cash_short: 'Till short at its close (₹)', failed_sign_in: 'Failed till sign-ins by one staff ID in a day',
     notSet: 'Not set — this alert does not fire until you enter it.', setTo: 'Set to', setBy: 'by', cannotFire: 'Set, but it cannot fire:',
     save: 'Save', clear: 'Switch off', clearWhy: 'Why switch it off (required)', checkNow: 'Check now',
     recorded: 'recorded', alerts: 'alert(s)', inInbox: 'in your alert inbox', notInInbox: 'not yet in your alert inbox', notKnown: 'not known',
@@ -37,9 +39,9 @@ export const OWNER_ALERTS_COPY = {
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
   ta: {
-    title: 'உரிமையாளர் எச்சரிக்கைகள் மற்றும் திட்டமிட்ட அறிக்கைகள்', lead: 'உங்கள் ஐந்து விதிவிலக்கு எச்சரிக்கைகள் நீங்கள் கடையில் இல்லாதபோதும் தானாகவே உங்கள் எச்சரிக்கைப் பெட்டிக்கு வரும். ஒவ்வொன்றும் அதன் எண்ணை நீங்கள் அமைத்த பிறகே செயல்படும். உங்கள் திட்டமிட்ட அறிக்கைகளும் ஏற்றுமதிகளும் கடையின் நேரத்தில் யாரும் அழுத்தாமலேயே தயாராகும்.',
-    thresholdsH: 'உங்கள் ஐந்து எச்சரிக்கைகள்', todayH: 'இன்று', schedulesH: 'திட்டமிட்ட அறிக்கைகள் மற்றும் ஏற்றுமதிகள்',
-    large_discount: 'ஒரு பில்லில் பெரிய தள்ளுபடி (₹)', voided_bill: 'ஒருவர் ஒரு நாளில் ரத்து செய்த பில்கள்', price_override: 'ஒருவர் ஒரு நாளில் செய்த விலை மாற்றங்கள்', after_hours_login: 'நேரம் கடந்த உள்நுழைவு (வணிக நேரம், எ.கா. 8-23)', cash_short: 'மூடும்போது கல்லாவில் குறைவு (₹)',
+    title: 'உரிமையாளர் எச்சரிக்கைகள் மற்றும் திட்டமிட்ட அறிக்கைகள்', lead: 'உங்கள் ஆறு விதிவிலக்கு எச்சரிக்கைகள் நீங்கள் கடையில் இல்லாதபோதும் தானாகவே உங்கள் எச்சரிக்கைப் பெட்டிக்கு வரும். ஒவ்வொன்றும் அதன் எண்ணை நீங்கள் அமைத்த பிறகே செயல்படும். உங்கள் திட்டமிட்ட அறிக்கைகளும் ஏற்றுமதிகளும் கடையின் நேரத்தில் யாரும் அழுத்தாமலேயே தயாராகும்.',
+    thresholdsH: 'உங்கள் ஆறு எச்சரிக்கைகள்', todayH: 'இன்று', schedulesH: 'திட்டமிட்ட அறிக்கைகள் மற்றும் ஏற்றுமதிகள்',
+    large_discount: 'ஒரு பில்லில் பெரிய தள்ளுபடி (₹)', voided_bill: 'ஒருவர் ஒரு நாளில் ரத்து செய்த பில்கள்', price_override: 'ஒருவர் ஒரு நாளில் செய்த விலை மாற்றங்கள்', after_hours_login: 'நேரம் கடந்த உள்நுழைவு (வணிக நேரம், எ.கா. 8-23)', cash_short: 'மூடும்போது கல்லாவில் குறைவு (₹)', failed_sign_in: 'ஒரு பணியாளர் எண் ஒரு நாளில் தவறிய கல்லா உள்நுழைவுகள்',
     notSet: 'அமைக்கப்படவில்லை — இதை நீங்கள் உள்ளிடும் வரை இந்த எச்சரிக்கை செயல்படாது.', setTo: 'அமைக்கப்பட்டது', setBy: 'அமைத்தவர்', cannotFire: 'அமைக்கப்பட்டது, ஆனால் செயல்பட முடியாது:',
     save: 'சேமி', clear: 'நிறுத்து', clearWhy: 'ஏன் நிறுத்துகிறீர்கள் (தேவை)', checkNow: 'இப்போது சரிபார்',
     recorded: 'பதிவானவை', alerts: 'எச்சரிக்கை(கள்)', inInbox: 'உங்கள் எச்சரிக்கைப் பெட்டியில் உள்ளது', notInInbox: 'இன்னும் உங்கள் எச்சரிக்கைப் பெட்டியில் இல்லை', notKnown: 'தெரியாது',

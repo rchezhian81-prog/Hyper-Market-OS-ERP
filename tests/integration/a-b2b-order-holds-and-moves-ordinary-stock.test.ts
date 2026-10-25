@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -62,14 +64,14 @@ describe.each(backings)('FUL-09 — B2B ordering on ordinary stock, self-service
 
     // The store has 20 bags; the caterer has 30-day credit; the logins are bound by staff.
     await ok(call('POST', '/v1/inventory/movements', OWNER, { movementId: 'rice-in', productId: 'rice', locationId: 'S1', kind: 'received', quantityMinor: 20, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER }), 'stock');
-    await ok(call('POST', '/v1/b2b/accounts/CATERER', OWNER, { creditLimitMinor: 10_000_000, paymentTermsDays: 30 }), 'terms');
+    await ok(setApprovedCreditLimit(h, T, OWNER, 'CATERER', { creditLimitMinor: 10_000_000, paymentTermsDays: 30 }), 'terms'); // OB-360: a second person approves
     await ok(call('POST', `/v1/b2b-portal/customers/CATERER/logins/${CUST_LOGIN}`, OWNER, { grants: ['place_order', 'view_invoices', 'view_statement'] }), 'bind');
     await ok(call('POST', `/v1/b2b-portal/customers/CANTEEN/logins/${OTHER_LOGIN}`, OWNER, { grants: ['place_order', 'view_invoices'] }), 'bind 2');
 
     // ── 1 · The caterer ASKS for a quote on its own login; staff see it, and price it from the store.
     await ok(call('POST', '/v1/b2b-portal/me/quote-requests/qr-1', CUST_LOGIN, { lines: [{ productId: 'rice', qty: 10 }], note: 'weekly canteen rice' }), 'quote request');
     expect(((await call('GET', '/v1/b2b/quote-requests', MGR)).body as { requests: { requestId: string; customerId: string }[] }).requests).toEqual([expect.objectContaining({ requestId: 'qr-1', customerId: 'CATERER' })]);
-    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q1', MGR, { lines: [{ ...RICE, qty: 10 }], locationId: 'S1' }), 'quotation');
+    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q1', MGR, { lines: await onThePriceList(harnessPriceList(h, T, OWNER), 'CATERER', [{ ...RICE, qty: 10 }]), locationId: 'S1' }), 'quotation');
 
     // ── 2 · Another business cannot accept it; the caterer cannot reach another account (refused and recorded).
     expect((await call('POST', '/v1/b2b-portal/me/orders/so-x', OTHER_LOGIN, { fromQuotationId: 'q1' })).status).toBe(404);
@@ -80,7 +82,7 @@ describe.each(backings)('FUL-09 — B2B ordering on ordinary stock, self-service
     // ── 3 · The caterer PLACES the order — and the store's rice is held for it (10 of 20).
     const placed = await ok(call('POST', '/v1/b2b-portal/me/orders/so1', CUST_LOGIN, { fromQuotationId: 'q1' }), 'portal order');
     expect(placed.body).toMatchObject({ orderId: 'so1', locationId: 'S1', placedBy: CUST_LOGIN });
-    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q2', MGR, { lines: [{ ...RICE, qty: 15 }], locationId: 'S1' }), 'q2');
+    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q2', MGR, { lines: await onThePriceList(harnessPriceList(h, T, OWNER), 'CATERER', [{ ...RICE, qty: 15 }]), locationId: 'S1' }), 'q2');
     const tooMuch = await call('POST', '/v1/b2b/documents/CATERER/orders/so2', MGR, { fromQuotationId: 'q2' });
     expect(tooMuch.status).toBe(409);
     expect(codeOf(tooMuch)).toBe('order_cannot_be_supplied');
@@ -92,7 +94,7 @@ describe.each(backings)('FUL-09 — B2B ordering on ordinary stock, self-service
     await call('POST', '/v1/b2b/documents/CATERER/challans/dc1', MGR, { fromOrderId: 'so1', dispatched: { l1: 6 } }, 'dc1-b'); // re-sent
     expect(await onHand()).toBe(14);
     // 14 on hand, 4 still held for so1 → 10 free: a 10-bag order goes, an 11-bag one would not.
-    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q3', MGR, { lines: [{ ...RICE, qty: 11 }], locationId: 'S1' }), 'q3');
+    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q3', MGR, { lines: await onThePriceList(harnessPriceList(h, T, OWNER), 'CATERER', [{ ...RICE, qty: 11 }]), locationId: 'S1' }), 'q3');
     expect(codeOf(await call('POST', '/v1/b2b/documents/CATERER/orders/so3', MGR, { fromQuotationId: 'q3' }))).toBe('order_cannot_be_supplied');
 
     // ── 5 · Commission: proposed by one, approved by another (never the proposer), then DERIVED from the invoice.
@@ -101,7 +103,7 @@ describe.each(backings)('FUL-09 — B2B ordering on ordinary stock, self-service
     expect(codeOf(await call('POST', '/v1/b2b/commissions/sp-1/rules/r-self/approve', OWNER, {}))).toBe('self_approval');
     expect((await call('POST', '/v1/b2b/commissions/sp-1/rules/r1/approve', ACCT, {})).status).toBe(403); // no approval authority
     await ok(call('POST', '/v1/b2b/commissions/sp-1/rules/r1/approve', OWNER, {}), 'approve rule');
-    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q4', MGR, { lines: [{ ...RICE, lineId: 'l1', qty: 5 }], locationId: 'S1' }), 'q4');
+    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q4', MGR, { lines: await onThePriceList(harnessPriceList(h, T, OWNER), 'CATERER', [{ ...RICE, lineId: 'l1', qty: 5 }]), locationId: 'S1' }), 'q4');
     await ok(call('POST', '/v1/b2b/documents/CATERER/orders/so4', MGR, { fromQuotationId: 'q4', salespersonId: 'sp-1' }), 'so4');
     await ok(call('POST', '/v1/b2b/documents/CATERER/challans/dc4', MGR, { fromOrderId: 'so4', dispatched: { l1: 5 } }), 'dc4');
     const inv4 = await ok(call('POST', '/v1/b2b/documents/CATERER/invoices/inv4', MGR, { fromOrderId: 'so4' }), 'inv4');
@@ -123,7 +125,7 @@ describe.each(backings)('FUL-09 — B2B ordering on ordinary stock, self-service
 
     // ── 7 · A recurring order: made from a quotation, runs only once a SECOND person approves it, once a day it is due.
     const D = '2026-11-02'; // a Monday
-    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q-tpl', MGR, { lines: [{ ...RICE, qty: 2 }], locationId: 'S1', validForDays: 365 }), 'template');
+    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q-tpl', MGR, { lines: await onThePriceList(harnessPriceList(h, T, OWNER), 'CATERER', [{ ...RICE, qty: 2 }]), locationId: 'S1', validForDays: 365 }), 'template');
     await ok(call('POST', '/v1/b2b/recurring/rec-1', MGR, { customerId: 'CATERER', fromQuotationId: 'q-tpl', cadence: 'weekly', dayOf: 1, startsOn: D, salespersonId: 'sp-1' }), 'propose recurring');
     expect(((await ok(call('POST', '/v1/b2b/recurring-runs', MGR, { on: D }), 'run before approval')).body as { generated: number }).generated).toBe(0);
     expect((await call('POST', '/v1/b2b/recurring/rec-1/approve', MGR, {})).status).toBe(403);
@@ -141,7 +143,7 @@ describe.each(backings)('FUL-09 — B2B ordering on ordinary stock, self-service
     expect(((await ok(call('POST', '/v1/b2b/recurring-runs', MGR, { on: '2026-11-03' }), 'not due')).body as { runs: unknown[] }).runs).toHaveLength(0);
     // The generated order holds its 2 bags: 9 on hand, 4 (so1) + 2 held → 3 free.
     // A recurring order the shelf cannot supply is an EXCEPTION on record, not a quiet skip.
-    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q-big', MGR, { lines: [{ ...RICE, qty: 50 }], locationId: 'S1', validForDays: 365 }), 'big template');
+    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q-big', MGR, { lines: await onThePriceList(harnessPriceList(h, T, OWNER), 'CATERER', [{ ...RICE, qty: 50 }]), locationId: 'S1', validForDays: 365 }), 'big template');
     await ok(call('POST', '/v1/b2b/recurring/rec-2', MGR, { customerId: 'CATERER', fromQuotationId: 'q-big', cadence: 'monthly', dayOf: 2, startsOn: D }), 'propose big');
     await ok(call('POST', '/v1/b2b/recurring/rec-2/approve', OWNER, {}), 'approve big');
     const run2 = (await ok(call('POST', '/v1/b2b/recurring-runs', MGR, { on: D }), 'run big')).body as { exceptions: number };

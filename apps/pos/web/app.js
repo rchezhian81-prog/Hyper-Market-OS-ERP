@@ -154,6 +154,7 @@ const WORDS = {
     overrideHint: 'A manager who is not you approves this', overrideReason: 'Manager: why is this allowed?',
     giveUp: 'Give up a held basket', giveUpWhich: 'Which held basket is being given up?', whyGiveUp: 'Why is it being given up?',
     phoneBasket: 'Phone basket (scan and go)', phoneBasketCode: 'The six digits on the customer\'s phone', phoneBasketHint: 'The till prices every line itself. Check the bag, then take the payment.', phoneBasketNotAdded: 'Not rung — deal with each:',
+    queueBasket: 'Handheld basket (queue)', queueBasketCode: 'The four digits on the queue handheld', queueBasketHint: 'The till prices every line itself. Check the bag, then take the payment.',
     givenUp: 'Basket given up. It stays on the record with your name and the reason.',
     tapTerminal: 'What did the card machine say?',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
@@ -385,6 +386,7 @@ const WORDS = {
     overrideHint: 'உங்களைத் தவிர வேறு ஒரு மேலாளர் அனுமதிக்க வேண்டும்', overrideReason: 'மேலாளர்: இது ஏன் அனுமதிக்கப்படுகிறது?',
     giveUp: 'நிறுத்திய கூடையைக் கைவிடு', giveUpWhich: 'எந்த நிறுத்திய கூடை கைவிடப்படுகிறது?', whyGiveUp: 'ஏன் கைவிடப்படுகிறது?',
     phoneBasket: 'ஃபோன் கூடை (ஸ்கேன் செய்து செல்)', phoneBasketCode: 'வாடிக்கையாளரின் ஃபோனில் உள்ள ஆறு இலக்கங்கள்', phoneBasketHint: 'ஒவ்வொரு வரியையும் கட்டண இயந்திரமே விலையிடும். பையைச் சரிபார்த்து, பிறகு கட்டணத்தைப் பெறுங்கள்.', phoneBasketNotAdded: 'சேர்க்கப்படவில்லை — ஒவ்வொன்றையும் பாருங்கள்:',
+    queueBasket: 'கருவிக் கூடை (வரிசை)', queueBasketCode: 'வரிசைக் கருவியில் உள்ள நான்கு இலக்கங்கள்', queueBasketHint: 'ஒவ்வொரு வரியையும் இந்த பில்லிங்கே விலையிடும். பையைச் சரிபார்த்து, பிறகு கட்டணத்தைப் பெறுங்கள்.',
     givenUp: 'கூடை கைவிடப்பட்டது. உங்கள் பெயரும் காரணமும் பதிவில் இருக்கும்.',
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
@@ -1450,6 +1452,21 @@ async function recallPhoneBasket() {
   tell(t('phoneBasket'), r.laneMessage, missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
 }
 
+/**
+ * D04-FR-05 queue-busting: a staff handheld scanned this customer's basket in the queue and showed a four-digit code. The till
+ * asks ITS store computer (no head office, so it works offline) — once — and rings every line through THIS till's pack.
+ */
+async function recallQueueBasket() {
+  const code = await ask({ title: t('queueBasketCode'), mode: 'number', hint: t('queueBasketHint'), initial: '' });
+  if (code === null || code === undefined) return;
+  const r = await session.recallQueueBasketAtTill(String(code));
+  selectedLineId = null;
+  render();
+  if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
+  const missing = (r.notAdded ?? []).map((l) => `${l.name} × ${l.qty} — ${l.laneMessage}`).join('\n');
+  tell(t('queueBasket'), r.laneMessage, missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
+}
+
 async function refreshHeld() {
   if (!session.heldAtTill) return;
   try { heldCount = (await session.heldAtTill()).length; } catch { heldCount = 0; }
@@ -1958,6 +1975,9 @@ el('more').addEventListener('click', async () => {
     // OB-350 scan-and-go: a customer's phone basket, by the code on their phone — onto an empty till; the till prices it.
     // Offered only where this box has a head-office link (a standalone box could never fetch one); offline it says so.
     ...(session.recallPhoneBasketAtTill && session.basket().length === 0 && box.status && box.status.cloud !== 'not_configured' ? [{ value: 'phone_basket', label: t('phoneBasket'), icon: 'monitor-smartphone' }] : []),
+    // D04-FR-05 queue-busting: a basket a queue handheld handed to this till's store computer — only while this lane's switch
+    // (pos.queue_busting, from the signed pack) is on, and onto an empty till.
+    ...(session.recallQueueBasketAtTill && session.basket().length === 0 && window.posRollout && window.posRollout.isOn('pos.queue_busting') ? [{ value: 'queue_basket', label: t('queueBasket'), icon: 'scan-barcode' }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
     // OB-271 · audit A9: today's card/UPI payments with the machine's numbers — real trading only.
     ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption') }] : []),
@@ -1988,6 +2008,7 @@ el('more').addEventListener('click', async () => {
   if (what === 'reprint') { tell(t('reprintTitle').replace('{number}', lastInvoiceNumber() ?? ''), '', SUCCESS, saleBill(), true); return undefined; }
   if (what === 'give_up') return giveUpHeldBasket();
   if (what === 'phone_basket') return recallPhoneBasket();
+  if (what === 'queue_basket') return recallQueueBasket();
   if (what === 'member') return nameLoyaltyMember();
   if (what === 'guest_only') { tell(t('guestOnlyTitle'), t('guestOnlyMsg'), STOP); return undefined; }
   if (what === 'no_sale') return openDrawerNoSale();

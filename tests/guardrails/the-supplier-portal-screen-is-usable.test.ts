@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  SUPPLIER_PORTAL_COPY, COPY_KEYS, createSupplierPortalSession,
+  SUPPLIER_PORTAL_COPY, COPY_KEYS, createSupplierPortalSession, readDeliveryUpdate,
   type SupplierPortalData,
 } from '../../apps/supplier-app/src/supplier-portal-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
 // The supplier portal (M24-FR-01 · API-03 · §35 · P-03 · P-04) is the one PUBLIC-ish surface a party outside the
-// business uses, and it is READ-ONLY: a supplier reads its OWN submissions and statement and changes nothing.
+// business uses, and it is READ-ONLY: a supplier reads its OWN submissions and statement and changes nothing —
+// with ONE exception the owner decided in writing (OB-362, 24–25 Oct 2026): the "Delivery update" form, for the
+// supplier's own open orders only, which sends the existing `delivery_status` submission. The guardrail allows exactly
+// that one write, from the bundle, and nothing else.
 // These are static checks on the shipped view + shell — that it reads from the tested session (never
 // re-deciding), issues NO write verb, shows every state as a word+icon (never colour alone), and is offered in
 // both languages. They cannot prove the screen is good — a real supplier does that — only that the deliberate
@@ -16,6 +19,8 @@ import { bilingualGaps } from '../../packages/ui/src/index';
 const RAW = readFileSync('apps/supplier-app/web/app.js', 'utf8');
 const VIEW = RAW.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n'); // comments discuss on purpose
 const HTML = readFileSync('apps/supplier-app/web/index.html', 'utf8');
+const ENTRY_RAW = readFileSync('apps/supplier-app/src/browser-entry.ts', 'utf8');
+const ENTRY = ENTRY_RAW.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n');
 
 const withAwaiting: SupplierPortalData = {
   submissions: [{ submissionId: 'sub-1', kind: 'invoice', requiresReview: true, receivedAt: '2026-09-21T09:00:00Z' }],
@@ -62,9 +67,42 @@ describe('the view renders from the tested session and re-decides nothing', () =
     expect(VIEW).toMatch(/session\.view\(/);
   });
 
-  it('issues NO write verb — this screen is read-only (a supplier submits through separate routes)', () => {
+  it('the view itself issues NO write verb — the one write (OB-362) goes through the bundle', () => {
     const writes = VIEW.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? [];
     expect(writes).toEqual([]);
+    expect(VIEW).toMatch(/supplierPortal\.sendDeliveryUpdate|api\.sendDeliveryUpdate/);
+  });
+
+  it('OB-362: the bundle makes exactly ONE write — the delivery_status submission to the supplier\'s own route', () => {
+    const writes = ENTRY.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? [];
+    expect(writes).toEqual(["method: 'POST'"]);
+    // …to the supplier's OWN submissions route (no partner id in it), with the kind fixed, after the tested check.
+    const at = ENTRY.indexOf("method: 'POST'");
+    const around = ENTRY.slice(Math.max(0, at - 1500), at + 600);
+    expect(around).toContain("'/v1/supplier-portal/me/submissions'");
+    expect(around).toContain("kind: 'delivery_status'");
+    expect(around).toMatch(/readDeliveryUpdate\(input, feed\)/);
+    expect(ENTRY).not.toMatch(/partners\/:?\w*\/submissions|\/partners\//);
+  });
+
+  it('OB-362: the form names only the supplier\'s own open orders, and refuses before sending', () => {
+    const feed = { ordersKnown: true, mayUpdate: true, orders: [{ poId: 'PO-1', number: 'PO-000001', issuedAt: '2026-10-20T09:00:00Z', deliverToLocationId: 'br-1' }] };
+    expect(readDeliveryUpdate({ poId: 'PO-1', status: 'in_transit', expectedOn: '2026-10-27', note: ' lorry left at 6 ' }, feed))
+      .toEqual({ ok: true, document: { poId: 'PO-1', status: 'in_transit', expectedOn: '2026-10-27', note: 'lorry left at 6' } });
+    expect(readDeliveryUpdate({ poId: 'PO-OTHER', status: 'in_transit', expectedOn: '2026-10-27', note: '' }, feed)).toEqual({ ok: false, why: 'notYourOrder' });
+    expect(readDeliveryUpdate({ poId: '', status: 'in_transit', expectedOn: '2026-10-27', note: '' }, feed)).toEqual({ ok: false, why: 'needOrder' });
+    expect(readDeliveryUpdate({ poId: 'PO-1', status: 'delivered', expectedOn: '2026-10-27', note: '' }, feed)).toEqual({ ok: false, why: 'needStatus' });
+    expect(readDeliveryUpdate({ poId: 'PO-1', status: 'delayed', expectedOn: '27/10', note: '' }, feed)).toEqual({ ok: false, why: 'needDate' });
+    expect(readDeliveryUpdate({ poId: 'PO-1', status: 'delayed', expectedOn: '2026-10-27', note: 'x'.repeat(301) }, feed)).toEqual({ ok: false, why: 'noteTooLong' });
+    expect(readDeliveryUpdate({ poId: 'PO-1', status: 'delayed', expectedOn: '2026-10-27', note: '' }, { ...feed, mayUpdate: false })).toEqual({ ok: false, why: 'cannotUpdate' });
+    expect(readDeliveryUpdate({ poId: 'PO-1', status: 'delayed', expectedOn: '2026-10-27', note: '' }, null)).toEqual({ ok: false, why: 'cannotUpdate' });
+  });
+
+  it('OB-362: the shell carries the one form, with a label for every field and an icon beside the button\'s word', () => {
+    for (const id of ['du-order', 'du-status', 'du-expected', 'du-note']) expect(HTML, id).toMatch(new RegExp(`<label for="${id}">`));
+    expect(HTML).toMatch(/id="du-send"[^>]*>\s*<span id="du-send-text">/);
+    expect(VIEW).toMatch(/icon\('truck'\)/);
+    expect((HTML.match(/<form\b/g) ?? []).length).toBe(0); // no other form posts anything
   });
 
   it('never asks its questions with a browser dialog', () => {

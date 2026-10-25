@@ -1,0 +1,12 @@
+{
+  "name": "SRE Queue till",
+  "short_name": "Queue till",
+  "description": "Scan in the queue, take a card or UPI payment where the shop allows it, or hand the basket to a till — SRE Retail OS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f7f2",
+  "theme_color": "#17654f",
+  "icons": []
+}

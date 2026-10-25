@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
+import { creditLimitWithApproval } from '../support/approved-credit-limit';
+import { customerListPrice, unpriced } from '../support/b2b-price-on-record';
 
 /**
  * **A business customer reads its own account, in a real browser, on the PRODUCTION API over real PostgreSQL (M22-FR-04 ·
@@ -51,19 +53,23 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the B2B po
         const as = (path: string, body: unknown, key: string, method: 'POST' | 'PUT' = 'POST') => ok(cloud.request({ method, path, userId: OWNER, idempotencyKey: key, body }), path);
         await as('/v1/platform/entitlements/b2b', { enabled: true }, 'b2b-on', 'PUT');
         // The caterer: ₹5,000 credit; two invoices — one 45 days overdue (₹1,000), one not yet due (₹500); ₹300 paid.
-        await as('/v1/b2b/accounts/CATERER', { creditLimitMinor: 500_000 }, 'acc-cat');
+        // OB-360: a credit limit is asked by the owner and approved by another person who manages B2B accounts.
+        await cloud.grant(ACCOUNTANT, 'accountant');
+        await ok(creditLimitWithApproval((r) => cloud.request(r), OWNER, ACCOUNTANT, 'CATERER', { creditLimitMinor: 500_000 }, 'acc-cat'), 'caterer account');
         await as('/v1/b2b/accounts/CATERER/receivables', { movementId: 'ar-cat-1', kind: 'invoice', amountMinor: 100_000, ref: 'INV-C1' }, 'ar-cat-1');
         await as('/v1/b2b/collections/CATERER/invoices/inv-c1', { number: 'INV-C1', issuedOn: day(-75), dueOn: day(-45), grossMinor: 100_000 }, 'inv-c1');
         await as('/v1/b2b/collections/CATERER/invoices/inv-c2', { number: 'INV-C2', issuedOn: day(-5), dueOn: day(10), grossMinor: 50_000 }, 'inv-c2');
         await as('/v1/b2b/collections/CATERER/payments/rcpt-c1', { receivedMinor: 30_000 }, 'rcpt-c1');
-        await as('/v1/b2b/documents/CATERER/quotations/q-c1', { lines: [LINE] }, 'q-c1');
+        // OB-361: no typed price on a business quotation — rice goes on the caterer's price list first.
+        const listed = customerListPrice('p1', 'CATERER', LINE.unitPriceMinor);
+        await as(listed.path, listed.body, 'pl-p1');
+        await as('/v1/b2b/documents/CATERER/quotations/q-c1', { lines: unpriced([LINE]) }, 'q-c1');
         await as('/v1/b2b/collections/CANTEEN/invoices/inv-k1', { number: 'INV-K1', issuedOn: day(-20), dueOn: day(5), grossMinor: 999_900 }, 'inv-k1');
         // The portal logins: each a named person with the business-customer role, bound to its own account through the
         // governed path (OB-76) — invited by the owner, approved by a DIFFERENT person who also manages B2B accounts.
         // The generic grant route still refuses it: no approver holds b2b.portal.self, and that rule is unchanged.
         await expect(cloud.grant(CATERER, 'b2b_customer')).rejects.toThrow(/outside_party_login_holds_only_its_role/);
-        await cloud.grant(ACCOUNTANT, 'accountant');
-        await as('/v1/b2b/accounts/CANTEEN', { creditLimitMinor: 100_000 }, 'acc-can');
+        await ok(creditLimitWithApproval((r) => cloud.request(r), OWNER, ACCOUNTANT, 'CANTEEN', { creditLimitMinor: 100_000 }, 'acc-can'), 'canteen account');
         for (const [account, userId, displayName, grants] of [
           ['CATERER', CATERER, 'Meena Raman', ['view_statement', 'view_invoices']],
           ['CANTEEN', CANTEEN, 'Joseph Paul', ['view_invoices']],

@@ -59,7 +59,8 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
 
 async function nothingSetNothingFires(h: ApiHarness, T: string): Promise<void> {
   const board = (await call(h, T, 'GET', '/v1/reporting/owner-alert-thresholds', OWNER)).body as Board;
-  expect(board.notSet.sort()).toEqual(['after_hours_login', 'cash_short', 'large_discount', 'price_override', 'voided_bill']);
+  // OB-365: six — the sixth, failed till sign-ins, from the store computers' sign-in logs.
+  expect(board.notSet.sort()).toEqual(['after_hours_login', 'cash_short', 'failed_sign_in', 'large_discount', 'price_override', 'voided_bill']);
   expect(board.thresholds.every((t) => t.state === 'not_set' && !t.canFire && t.whyNot === 'Not set. This alert does not fire until you enter it.')).toBe(true);
   const ex = (await call(h, T, 'GET', '/v1/reporting/owner-exceptions', OWNER)).body as Exceptions;
   expect(ex.tradingDay).toBe(today());
@@ -68,8 +69,9 @@ async function nothingSetNothingFires(h: ApiHarness, T: string): Promise<void> {
   expect(kind('voided_bill')).toMatchObject({ threshold: 'not_set', events: 2, alerts: 0 });
   expect(kind('price_override')).toMatchObject({ events: 1, alerts: 0 });
   expect(kind('cash_short')).toMatchObject({ events: 1, alerts: 0 });
-  // P-08: a kind head office does not receive has no count — never nought.
+  // P-08: before any store computer's sign-in log arrives (OB-365), these have no count — never nought.
   expect(kind('after_hours_login').events).toBeNull();
+  expect(kind('failed_sign_in').events).toBeNull();
   expect(ex.alerts).toEqual([]);
   expect(((await call(h, T, 'POST', '/v1/reporting/owner-exceptions/raise', OWNER)).body as { raised: number }).raised).toBe(0);
 }
@@ -82,7 +84,7 @@ async function ownerSetsThresholdsAndTheyFire(h: ApiHarness, T: string): Promise
   expect((bad.body as { error: { code: string } }).error.code).toBe('not_readable_as_a_threshold');
   expect((await call(h, T, 'POST', '/v1/reporting/owner-alert-thresholds/no_such_alert', OWNER, { value: 1 })).status).toBe(404);
   expect((await call(h, T, 'POST', '/v1/reporting/owner-alert-thresholds/after_hours_login', OWNER, { value: { opensAtHour: 22, closesAtHour: 9 } })).status).toBe(400);
-  for (const [kind, value] of [['voided_bill', 2], ['large_discount', 10_000], ['price_override', 1], ['cash_short', 1_000], ['after_hours_login', { opensAtHour: 8, closesAtHour: 23 }]] as const) {
+  for (const [kind, value] of [['voided_bill', 2], ['large_discount', 10_000], ['price_override', 1], ['cash_short', 1_000], ['after_hours_login', { opensAtHour: 8, closesAtHour: 23 }], ['failed_sign_in', 3]] as const) {
     const r = await call(h, T, 'POST', `/v1/reporting/owner-alert-thresholds/${kind}`, OWNER, { value });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
   }
@@ -90,7 +92,7 @@ async function ownerSetsThresholdsAndTheyFire(h: ApiHarness, T: string): Promise
   expect(board.notSet).toEqual([]);
   const ah = board.thresholds.find((t) => t.kind === 'after_hours_login')!;
   expect(ah).toMatchObject({ state: 'set', canFire: false });
-  expect(ah.whyNot).toContain('does not reach head office');
+  expect(ah.whyNot).toContain('no till sign-in record has reached head office yet'); // OB-365: until the first arrives
 
   const ex = (await call(h, T, 'GET', '/v1/reporting/owner-exceptions', OWNER)).body as Exceptions;
   expect(ex.alerts.map((a) => a.kind).sort()).toEqual(['cash_short', 'large_discount', 'price_override', 'voided_bill']);

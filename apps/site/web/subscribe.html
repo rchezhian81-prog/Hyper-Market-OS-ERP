@@ -33,6 +33,7 @@
   .panel h2{font-size:1.2rem}
   .plan-price{font-family:var(--display); font-weight:800; font-size:2.4rem; letter-spacing:-.02em; margin-top:12px; font-variant-numeric:tabular-nums}
   .plan-price span{font-family:var(--body); font-weight:500; font-size:1rem; color:var(--muted)}
+  .sre-only{font-size:.85rem; font-weight:700; color:var(--muted); margin:6px 0 0}
   .plan-who{color:var(--muted); margin-top:6px}
   ul.feat{list-style:none; margin:18px 0 0; padding:0; display:flex; flex-direction:column; gap:10px}
   ul.feat li{display:flex; gap:10px; align-items:flex-start; font-size:.97rem}
@@ -80,6 +81,7 @@
     <section class="panel" aria-labelledby="plan-h">
       <h2 id="plan-h">Your plan</h2>
       <div class="plan-price"><span id="price">₹13,000</span><span>/month</span></div>
+      <p class="sre-only" data-sre-only="true"><span lang="en">SRE only, not offered to outside shops</span> · <span lang="ta">SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை</span></p>
       <p class="plan-who" id="who">A busy hypermarket running several lanes with loyalty and home delivery.</p>
       <ul class="feat" id="feat"></ul>
     </section>
@@ -88,6 +90,7 @@
       <h2 id="debit-h">Your monthly auto-debit</h2>
       <div class="debit">
         <div class="amt" id="debit-amt">₹13,000 / month</div>
+        <p class="sre-only" data-sre-only="true"><span lang="en">SRE only, not offered to outside shops</span> · <span lang="ta">SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை</span></p>
         <div class="when">First debit when you go live, then on the same date each month — with a reminder before every debit.</div>
       </div>
       <fieldset>

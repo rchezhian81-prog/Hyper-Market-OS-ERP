@@ -24,6 +24,19 @@ import { statutoryRetentionDecision } from '../../../packages/audit/src/statutor
 
 export const TENANT_CLOSURE_APPROVAL = 'tenant_closure';
 
+/**
+ * OB-367 (owner, 24–25 Oct 2026, in writing): on closure EVERYTHING is sealed, with access removed, until the CA or the
+ * lawyer writes a closure retention schedule — nothing is deleted, not even after the statutory minimums pass. Until that
+ * schedule is written it reads "not set". Said on the readiness read (the closure screen) and on the closure itself.
+ */
+export const CLOSURE_SEAL = Object.freeze({
+  everythingSealed: true as const,
+  nothingDeleted: true as const,
+  retentionSchedule: Object.freeze({ state: 'not_set' as const, words: 'not set', writtenBy: 'the CA or the lawyer' }),
+  en: 'On closure everything is sealed and nobody can open it. It stays sealed until the CA or the lawyer writes a closure retention schedule — nothing is deleted, not even after the dates the law asks for. Closure retention schedule: not set.',
+  ta: 'கணக்கு மூடப்படும்போது எல்லாமே முத்திரையிடப்படும்; யாராலும் திறக்க முடியாது. பட்டயக் கணக்காளர் அல்லது வழக்கறிஞர் மூடல் தக்கவைப்பு அட்டவணையை எழுதும் வரை அது முத்திரையிலேயே இருக்கும் — சட்டம் கேட்கும் தேதிகள் கடந்த பின்பும் எதுவும் நீக்கப்படாது. மூடல் தக்கவைப்பு அட்டவணை: அமைக்கப்படவில்லை.',
+});
+
 /** The manifest of an export a person took (no data — the data went to them). */
 export interface ExportTaken {
   readonly exportId: string;
@@ -114,7 +127,9 @@ export function tenantLifecycleRoutes(deps: TenantLifecycleDeps): readonly Route
             wouldRetain: verdict.retained,
             blockers: closed !== undefined ? [] : exp === undefined ? ['no export has been taken — the shop takes its complete export first (GET /v1/platform/export)'] : exp.complete ? [] : [`the latest export (${exp.exportId}) is not complete: ${exp.outcome}`],
             askWith: { kind: TENANT_CLOSURE_APPROVAL, subjectRef: `tenant:${ctx.tenantId}`, askedBy: 'the IT administrator', approvedBy: 'the owner' },
-            nothingIsDeleted: 'Closure revokes every person\'s access. The records the law still wants, and the audit trail, are kept (hard rule #6).',
+            nothingIsDeleted: 'Closure revokes every person\'s access. Everything is kept, sealed — the records the law still wants, the audit trail, and all the rest (hard rule #6 · OB-367).',
+            // OB-367: sealed until the CA or the lawyer writes the closure retention schedule ("not set" until then).
+            sealed: CLOSURE_SEAL,
           },
         };
       },
@@ -170,7 +185,7 @@ export function tenantLifecycleRoutes(deps: TenantLifecycleDeps): readonly Route
           after: { state: 'closed', grantsRevoked: String(grantsRevoked), approvedBy: record.approvedBy, exportId: record.exportId },
           reason: record.reason, approvalId: record.approvalId, correlationId: record.closureId,
         });
-        return { status: 200, body: { closed: true, closure: { ...record, grantsRevoked }, accessRevoked: true, detail: verdict.detail } };
+        return { status: 200, body: { closed: true, closure: { ...record, grantsRevoked }, accessRevoked: true, detail: verdict.detail, sealed: CLOSURE_SEAL } };
       },
     },
   ];

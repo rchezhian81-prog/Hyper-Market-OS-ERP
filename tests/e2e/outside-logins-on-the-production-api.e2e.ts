@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
+import { creditLimitWithApproval } from '../support/approved-credit-limit';
 
 /**
  * **OB-76 "A" (owner, 12 Oct 2026, "Staff invite + 2nd approves") — the "Logins for customers and suppliers" part of the
@@ -46,7 +47,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('logins for
         await cloud.grant(ACCT, 'accountant');
         await cloud.grant(CASHIER, 'cashier');
         await ok(cloud.request({ method: 'PUT', path: '/v1/platform/entitlements/b2b', userId: OWNER, idempotencyKey: 'b2b-on', body: { enabled: true } }), 'b2b on');
-        await ok(cloud.request({ method: 'POST', path: '/v1/b2b/accounts/CATERER', userId: OWNER, idempotencyKey: 'acc-cat', body: { creditLimitMinor: 500_000 } }), 'caterer account');
+        await ok(creditLimitWithApproval((r) => cloud.request(r), OWNER, ACCT, 'CATERER', { creditLimitMinor: 500_000 }, 'acc-cat'), 'caterer account'); // OB-360
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });

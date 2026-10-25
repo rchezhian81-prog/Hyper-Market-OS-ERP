@@ -271,8 +271,18 @@ function paintTillJobs() {
     li.dataset.order = j.orderId; li.dataset.status = j.status;
     const mark = j.status === 'booked' ? '✓' : j.status === 'waiting_for_delivery_desk' ? '⚠' : '•';
     li.append(text('strong', `${dk('job')} ${j.orderId} · ${dk('bill')} ${j.receiptNumber}`), text('span', `${mark} ${dk(j.status)}`, 'state'));
-    if (j.given !== null) li.append(text('span', `${dk('slotL')}: ${when(j.given.slotStartsAt)}–${when(j.given.slotEndsAt).slice(11)} · ${j.given.by === 'customer_app' ? dk('byApp') : `${dk('byDesk')} ${j.given.personId}`}`, 'facts'));
-    if (j.status === 'waiting_for_delivery_desk' && desk.session.may.enter) {
+    if (j.given !== null) {
+      const why = j.given.forAppCustomer === undefined ? '' : ` · ${dk('forApp')} ${dk(j.given.forAppCustomer.because)}${j.given.forAppCustomer.note ? `: ${j.given.forAppCustomer.note}` : ''}`;
+      li.append(text('span', `${dk('slotL')}: ${when(j.given.slotStartsAt)}–${when(j.given.slotEndsAt).slice(11)} · ${j.given.by === 'customer_app' ? dk('byApp') : `${dk('byDesk')} ${j.given.personId}`}${why}`, 'facts'));
+    }
+    // OB-369: an app customer who has not chosen — the owner's wait said, and the desk may enter it after a call or the wait.
+    const appJob = j.status === 'waiting_for_customer_app' && j.deskMayEnter !== undefined;
+    if (appJob) {
+      const m = j.deskMayEnter;
+      const w = text('span', m.waitEndsAt === null ? `○ ${dk('waitNotSet')}` : m.afterWait ? `⏱ ${dk('waitPassed')}` : `⏱ ${dk('waitEnds')} ${when(m.waitEndsAt)}`, 'facts wait');
+      w.dataset.afterWait = String(m.afterWait); li.append(w);
+    }
+    if ((j.status === 'waiting_for_delivery_desk' || appJob) && desk.session.may.enter) {
       const form = document.createElement('div'); form.className = 'row-form';
       const field = (label, control) => { const l = document.createElement('label'); l.append(text('span', label), control); return l; };
       const slot = document.createElement('select'); slot.className = 'tj-slot';
@@ -281,9 +291,21 @@ function paintTillJobs() {
       const lat = document.createElement('input'); lat.className = 'tj-lat'; lat.inputMode = 'decimal'; lat.autocomplete = 'off';
       const lon = document.createElement('input'); lon.className = 'tj-lon'; lon.inputMode = 'decimal'; lon.autocomplete = 'off';
       const landmark = document.createElement('input'); landmark.className = 'tj-landmark'; landmark.autocomplete = 'off'; landmark.maxLength = 80;
+      let why = null; let note = null;
+      if (appJob) {
+        form.append(text('strong', dk('appEnterH'), 'tj-app-h'));
+        why = document.createElement('select'); why.className = 'tj-why';
+        for (const r of ['customer_phoned', 'wait_passed']) {
+          const o = document.createElement('option'); o.value = r; o.textContent = dk(r);
+          if (r === 'wait_passed' && !j.deskMayEnter.afterWait) o.disabled = true;
+          why.append(o);
+        }
+        note = document.createElement('input'); note.className = 'tj-note'; note.autocomplete = 'off'; note.maxLength = 200;
+        form.append(field(dk('whyL'), why), field(dk('noteL'), note));
+      }
       form.append(field(dk('slotL'), slot), field(dk('latL'), lat), field(dk('lonL'), lon), field(dk('landmarkL'), landmark),
         button(dk('enter'), 'truck', async () => {
-          const out = await desk.session.enter(j.orderId, { slotStartsAt: slot.value, lat: lat.value, lon: lon.value, landmark: landmark.value });
+          const out = await desk.session.enter(j.orderId, { slotStartsAt: slot.value, lat: lat.value, lon: lon.value, landmark: landmark.value, ...(why === null ? {} : { appCustomer: { because: why.value, note: note.value } }) });
           deskSay(out);
           if (out.result === 'ok') await showTillJobs(false);
         }));

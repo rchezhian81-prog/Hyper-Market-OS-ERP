@@ -103,10 +103,13 @@ describe.each(backings)('M22-FR-01 — the B2B contract register prices the desk
     const stored = (await call('GET', '/v1/b2b/documents/SCHOOL/q1', MGR)).body as { lines: { lineId: string; unitPriceMinor: number }[]; pricedFrom: { lineId: string; priceSource: string; contractId?: string }[] };
     expect(stored.lines.map((l) => l.unitPriceMinor)).toEqual([120_000, 9_000]);
     expect(stored.pricedFrom).toEqual([{ lineId: 'l1', priceSource: 'contract', contractId: 'K-1' }, { lineId: 'l2', priceSource: 'price_list' }]);
-    // A typed price that differs from the record is refused by name; salt has no price anywhere and is refused unpriced.
-    expect(codeOf(await call('POST', '/v1/b2b/documents/SCHOOL/quotations/q2', MGR, { lines: [{ ...RICE, unitPriceMinor: 100_000 }], locationId: 'S1' }))).toBe('quotation_not_the_contract_price');
-    expect(codeOf(await call('POST', '/v1/b2b/documents/SCHOOL/quotations/q2', MGR, { lines: [{ ...DAL, unitPriceMinor: 8_000 }], locationId: 'S1' }))).toBe('quotation_not_the_price_on_record');
+    // OB-361: no typed price at all — one that differs, one that matches the record, one on an item with no price; and
+    // salt, with no price anywhere, is refused unpriced. No number is drawn on any refusal.
+    expect(codeOf(await call('POST', '/v1/b2b/documents/SCHOOL/quotations/q2', MGR, { lines: [{ ...RICE, unitPriceMinor: 100_000 }], locationId: 'S1' }))).toBe('quotation_typed_price_refused');
+    expect(codeOf(await call('POST', '/v1/b2b/documents/SCHOOL/quotations/q2', MGR, { lines: [{ ...DAL, unitPriceMinor: 9_000 }], locationId: 'S1' }))).toBe('quotation_typed_price_refused');
+    expect(codeOf(await call('POST', '/v1/b2b/documents/SCHOOL/quotations/q2', MGR, { lines: [{ ...SALT, unitPriceMinor: 2_000 }], locationId: 'S1' }))).toBe('quotation_typed_price_refused');
     expect(codeOf(await call('POST', '/v1/b2b/documents/SCHOOL/quotations/q2', MGR, { lines: [SALT], locationId: 'S1' }))).toBe('quotation_no_price_on_record');
+    expect((await call('GET', '/v1/b2b/documents/SCHOOL/q2', MGR)).status, 'nothing was issued').toBe(404);
 
     // ── 4 · Over the limit (₹6,000): ₹5,985 converts; the next quotation would take it over — the OWNER decides, not the accountant.
     await ok(call('POST', '/v1/b2b/documents/SCHOOL/orders/so1', MGR, { fromQuotationId: 'q1', locationId: 'S1' }), 'within limit');

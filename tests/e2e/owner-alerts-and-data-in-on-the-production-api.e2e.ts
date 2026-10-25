@@ -12,7 +12,7 @@ import { tradingDayIn } from '../../packages/calendar/src/index';
 /**
  * **OB-288 lane 4 · P2 — the owner's alerts and schedules page, and the further import templates on the import console, in a
  * real browser on the PRODUCTION API over PostgreSQL.**
- *   • Owner alerts and schedules (M29-FR-03/04): the five alerts each say "Not set — this alert does not fire until you
+ *   • Owner alerts and schedules (M29-FR-03/04): the six alerts (OB-365 adds failed till sign-ins) each say "Not set — this alert does not fire until you
  *     enter it"; the owner types a number and saves it; "Check now" sends the voided-bills alert to his inbox and the
  *     page says it is there; he schedules "Sales by day" and it is prepared at once ("Prepared, not sent" while sending is
  *     switched off). A manager reads the page but has no save buttons; a cashier opens nothing. English and Tamil; every
@@ -71,10 +71,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('owner aler
     return (node?.textContent ?? '').includes(want!);
   }, [selector, text], { timeout: 15_000 });
 
-  it('the owner: five alerts "not set"; he sets one; "Check now" puts it in his inbox; he schedules a report and it is prepared; Tamil', async () => {
+  it('the owner: six alerts "not set"; he sets one; "Check now" puts it in his inbox; he schedules a report and it is prepared; Tamil', async () => {
     const { page, errors, close } = await open(alertsShell, OWNER, '/owner-alerts');
     await page.locator('#t-rows li[data-kind="voided_bill"]').waitFor({ timeout: 15_000 });
-    expect(await page.locator('#t-rows li[data-state="not_set"]').count()).toBe(5);
+    expect(await page.locator('#t-rows li[data-state="not_set"]').count()).toBe(6); // OB-365: the sixth, failed till sign-ins
+    expect((await page.textContent('#t-rows li[data-kind="failed_sign_in"]')) ?? '').toContain('Failed till sign-ins by one staff ID in a day');
     expect((await page.textContent('#t-rows li[data-kind="cash_short"]')) ?? '').toContain('Not set — this alert does not fire until you enter it.');
     await waitText(page, '#d-rows li[data-kind="voided_bill"]', 'Not set');
     // A bad number is refused on the page, and nothing is saved.
@@ -87,12 +88,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('owner aler
     await row.locator('button[data-act="save"]').click();
     await waitText(page, '#t-status', 'Saved.');
     await waitText(page, '#t-rows li[data-kind="voided_bill"]', 'Set to 2');
-    expect(await page.locator('#t-rows li[data-state="not_set"]').count()).toBe(4);
-    // After-hours: set, but it cannot fire — said.
+    expect(await page.locator('#t-rows li[data-state="not_set"]').count()).toBe(5);
+    // After-hours: set, but it cannot fire yet — no store computer's sign-in log has arrived (OB-365) — said.
     const ah = page.locator('#t-rows li[data-kind="after_hours_login"]');
     await ah.locator('input.threshold-value').fill('8-23');
     await ah.locator('button[data-act="save"]').click();
     await waitText(page, '#t-rows li[data-kind="after_hours_login"]', 'cannot fire');
+    expect((await page.textContent('#t-rows li[data-kind="after_hours_login"]')) ?? '').toContain('no till sign-in record has reached head office yet');
     // Check now → the voided-bills alert is in his inbox, and the page says so.
     expect(await page.locator('#d-check svg').count()).toBe(1);
     await page.click('#d-check');

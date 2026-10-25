@@ -10,9 +10,9 @@
 //   • `GET /v1/waste/report` (M28-FR-04) — gains the energy the facilities register holds for the branch and window (from
 //     `reportEnergy`, the same engine `GET /v1/facilities/energy` runs), the scrap proceeds from the scrap register, and
 //     the drill-through: the waste records, scrap sales and readings behind the totals. One that is absent is said.
-//   • Owner exception alerts (M29-FR-03, `services/reporting/src/owner-exceptions.ts`) — the five thresholds (each "not
-//     set" until the owner enters it), the day's exceptions from the synced till actions and till closes, and the sweep
-//     that raises them into every owner's alert inbox on the worker's timer.
+//   • Owner exception alerts (M29-FR-03, `services/reporting/src/owner-exceptions.ts`) — the six thresholds (each "not
+//     set" until the owner enters it), the day's exceptions from the synced till actions, till closes and (OB-365) the till
+//     sign-in log, and the sweep that raises them into every owner's alert inbox on the worker's timer.
 //   • Scheduled reports and exports (M29-FR-04, `services/reporting/src/report-schedules.ts`) — a report made by its own
 //     producer; an export made through the governed export route under the owner's own authority, and logged.
 //
@@ -22,7 +22,9 @@
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { tradingDayIn, shiftDate, type TradingCalendar } from '../../../packages/calendar/src/index';
+import { tradingDayIn, shiftDate, wallClockIn, type TradingCalendar } from '../../../packages/calendar/src/index';
+import { FAILED_SIGN_IN_REASONS, LOCKOUT_REASONS } from '../../identity/src/till-sign-in-log';
+import { tillSignInRecords } from './wave5-followups-adapters';
 import { SETTINGS } from '../../../packages/tenant/src/index';
 import type { TenantSetting } from '../../../packages/tenant/src/settings';
 import { REPORTS } from '../../../packages/reporting/src/index';
@@ -96,7 +98,11 @@ function replaceRoute(surface: Route[], method: Route['method'], path: string, w
 
 // ── M29-FR-03: owner exception alerts ───────────────────────────────────────────────────────────────────────────────
 
-const AFTER_HOURS_NOT_HELD = 'a sign-in at a till is checked by the store computer and kept in its own log; it does not reach head office, so head office cannot see when anyone signed in';
+// OB-365: the store computers send their till sign-in logs (services/api/src/wave5-followups-adapters.ts); a sign-in is
+// judged by the SHOP's wall clock (its time zone), never the server's.
+const isFailedSignIn = (reason: string | undefined): boolean => reason !== undefined && FAILED_SIGN_IN_REASONS.includes(reason);
+/** P-08: before the first record arrives, "none" would read like a clean day — so it is said as not yet known. */
+const NO_SIGN_IN_LOG_YET = 'no till sign-in record has reached head office yet — each store computer sends its sign-in log (OB-365); until the first arrives this cannot be judged';
 
 /** The day's exception events, read from the synced till actions and till closes (the store computers relay both). */
 async function exceptionEventsOn(input: Base, tenantId: string, day: string): Promise<{ events: ExceptionEvent[]; sources: ExceptionSource[] }> {
@@ -133,16 +139,30 @@ async function exceptionEventsOn(input: Base, tenantId: string, day: string): Pr
   for (const { p: c } of closes.filter(({ p }) => p.tradingDay === day && p.varianceMinor < 0)) {
     events.push({ eventId: `short:${c.shiftId}`, kind: 'cash_short', at: c.closedAt, branchId: c.storeId ?? c.tillId, actorId: c.cashierId, laneId: c.tillId, valueMinor: -c.varianceMinor, transactionRef: c.shiftId });
   }
+  // OB-365: after-hours sign-ins and failed sign-ins, from the till sign-in log the store computers send.
+  const signIns = await tillSignInRecords(input.store, tenantId);
+  for (const { p: r } of signIns) {
+    if (tradingDayIn(r.at, calendar) !== day) continue;
+    const branchId = r.storeId ?? r.laneId ?? 'store';
+    if (r.kind === 'signed_in') {
+      // The engine reads the hour from `at` — so it is the shop's own wall-clock time of the sign-in.
+      events.push({ eventId: `sign-in:${r.entryId}`, kind: 'after_hours_login', at: wallClockIn(r.at, calendar.timeZone), branchId, actorId: r.person, ...(r.laneId === null ? {} : { laneId: r.laneId }), valueMinor: 0, transactionRef: r.entryId });
+    } else if (r.kind === 'refused' && isFailedSignIn(r.reason)) {
+      events.push({ eventId: `failed-sign-in:${r.entryId}`, kind: 'failed_sign_in', at: r.at, branchId, actorId: r.person, ...(r.laneId === null ? {} : { laneId: r.laneId }), valueMinor: 0, transactionRef: r.entryId, ...(LOCKOUT_REASONS.includes(r.reason!) ? { lockedOut: true } : {}) });
+    }
+  }
   const actsAt = newest(acts);
   const closesAt = newest(closes);
+  const signInsAt = newest(signIns);
   return {
     events,
     sources: [
       { kind: 'large_discount', known: true, asAt: actsAt },
       { kind: 'voided_bill', known: true, asAt: actsAt },
       { kind: 'price_override', known: true, asAt: actsAt },
-      { kind: 'after_hours_login', known: false, asAt: null, why: AFTER_HOURS_NOT_HELD },
+      signInsAt === null ? { kind: 'after_hours_login', known: false, asAt: null, why: NO_SIGN_IN_LOG_YET } : { kind: 'after_hours_login', known: true, asAt: signInsAt },
       { kind: 'cash_short', known: true, asAt: closesAt },
+      signInsAt === null ? { kind: 'failed_sign_in', known: false, asAt: null, why: NO_SIGN_IN_LOG_YET } : { kind: 'failed_sign_in', known: true, asAt: signInsAt },
     ],
   };
 }

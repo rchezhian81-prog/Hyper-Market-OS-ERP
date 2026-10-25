@@ -390,7 +390,7 @@ export async function issueQuotationDocument(deps: B2BDocumentsDeps, input: {
     throw apiError(400, {
       code: 'not_readable_as_a_quotation',
       whatHappened: priced
-        ? 'A quotation needs lines, each with a line id, product id, description, whole qty and tax rate; the unit price may be left out (it is then taken from the customer\'s contract or the shop\'s price list).'
+        ? 'A quotation needs lines, each with a line id, product id, description, whole qty and tax rate — and no price: it is taken from the customer\'s contract or the shop\'s price list (OB-361).'
         : 'A quotation needs lines, each with a line id, product id, description and whole qty / unit price / tax rate.',
       wasItSaved: 'not_saved',
       nextSafeAction: 'Send well-formed lines. Nothing was recorded and no number was drawn.',
@@ -400,8 +400,9 @@ export async function issueQuotationDocument(deps: B2BDocumentsDeps, input: {
   const at = deps.now();
   const locationId = isStr(input.locationId) ? input.locationId : undefined;
 
-  // M22-FR-01: the price is the record's — the contract in force, else the shop's price list; a typed price that differs
-  // is refused by name, and a lapsed "block" contract refuses the quotation. No number is drawn on a refusal.
+  // M22-FR-01: the price is the record's — the contract in force, else the shop's price list; OB-361: a typed price is
+  // refused by name, so is a product with no price on record, and a lapsed "block" contract refuses the quotation. No
+  // number is drawn on a refusal.
   let lines: B2BLine[] = read.map((l) => ({ lineId: l.lineId, productId: l.productId, description: l.description, qty: l.qty, unitPriceMinor: l.unitPriceMinor, taxRateBps: l.taxRateBps }));
   let pricedFrom: StoredB2BDocument['pricedFrom'];
   if (priced) {
@@ -416,7 +417,9 @@ export async function issueQuotationDocument(deps: B2BDocumentsDeps, input: {
         wasItSaved: 'not_saved',
         nextSafeAction: result.code === 'contract_expired'
           ? 'Renew the contract (a new one, approved by a second person), then quote again. No number was drawn.'
-          : 'Leave the price out to use the price on record, or change the record first. No number was drawn.',
+          : result.code === 'typed_price_refused'
+            ? 'Send the lines without a price: the contract or the price list prices them. No number was drawn.'
+            : 'Put the product on the customer\'s contract (approved by a second person) or on the shop\'s price list, then quote again. No number was drawn.',
       });
     }
     const byLine = new Map(result.lines.map((p) => [p.lineId, p]));

@@ -184,7 +184,7 @@ describe('the Trial switches and shop account page session (OB-288 P4)', () => {
       return { ok: true, status: 200, json: async () => ({}) };
     }) as unknown as typeof globalThis.fetch;
     const it_ = createRolloutSession({ viewer: { userId: 'u-it', permissions: ['platform.flag.read', 'platform.flag.write', 'platform.metering.read'] }, fetch, newKey: () => 'k1' });
-    expect(it_.may).toEqual({ named: true, open: true, change: true, meter: true, watch: false, consent: false });
+    expect(it_.may).toEqual({ named: true, open: true, change: true, meter: true, watch: false, consent: false, closure: false });
     expect(createRolloutSession({ viewer: undefined }).may.named).toBe(false);
     expect(await it_.save({ key: 'self_checkout', branchId: 'br-1', laneId: 'lane-7', enabled: true, reason: ' ', approvalId: '' })).toEqual({ result: 'invalid', why: 'needFields' });
     expect(await it_.preview({ key: 'Bad Key', branchId: 'br-1', laneId: '', enabled: true, reason: '', approvalId: '' })).toEqual({ result: 'invalid', why: 'needFields' });
@@ -197,5 +197,19 @@ describe('the Trial switches and shop account page session (OB-288 P4)', () => {
       ['POST', '/v1/platform/rollout/self_checkout/rollback', JSON.stringify({ branchId: 'br-1', toVersion: 1, reason: 'back' }), 'k1'],
     ]);
     expect([rolloutWords('ta', 'notSet'), rolloutWords('en', 'notSet'), rupees(2_000)]).toEqual(['அமைக்கப்படவில்லை', 'not set', '₹20.00']);
+  });
+
+  it('OB-367: the closure section is a read for whoever may take the export — and every word has its Tamil twin', async () => {
+    const urls: string[] = [];
+    const fetch = (async (url: string, init: { method: string }) => { urls.push(`${init.method} ${url}`); return { ok: true, status: 200, json: async () => ({}) }; }) as unknown as typeof globalThis.fetch;
+    const owner = createRolloutSession({ viewer: { userId: 'u-owner', permissions: ['platform.flag.read', 'platform.tenant.export'] }, fetch });
+    expect(owner.may.closure).toBe(true);
+    expect(createRolloutSession({ viewer: { userId: 'u-cash', permissions: ['platform.flag.read'] } }).may.closure).toBe(false);
+    await owner.closure();
+    expect(urls).toEqual(['GET /v1/platform/tenant/closure']);
+    for (const k of ['closureH', 'closureState', 'active', 'closed', 'exportTaken', 'noExport', 'complete', 'notComplete', 'lawKeeps', 'sealedH', 'schedule', 'closureBlockers', 'whoCloses', 'indefinitely', 'until']) {
+      expect(rolloutWords('en', k).length, k).toBeGreaterThan(0);
+      expect(rolloutWords('ta', k), k).toMatch(/[\u0B80-\u0BFF]/);
+    }
   });
 });

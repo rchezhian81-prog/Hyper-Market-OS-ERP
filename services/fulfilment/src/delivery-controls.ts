@@ -54,6 +54,8 @@ export const CONTROL_WORDS: Readonly<Record<(typeof CONTROL_KEYS)[number], { rea
   costPerDropMinor: { en: 'Cost of one drop (paise)', ta: 'ஒரு டெலிவரியின் செலவு (பைசா)' },
   costPerKmMinor: { en: 'Cost per kilometre (paise)', ta: 'ஒரு கிலோமீட்டர் செலவு (பைசா)' },
   fleetRate: { en: 'Own-fleet settlement rate', ta: 'சொந்த வாகனக் கணக்குத் தீர்வு விகிதம்' },
+  // OB-369: the wait before the delivery desk may enter an app customer's till delivery for them.
+  appChoiceWaitHours: { en: 'Hours an app customer has to choose before the delivery desk may enter it', ta: 'டெலிவரி மேசை உள்ளிடும் முன் செயலி வாடிக்கையாளர் தேர்வு செய்ய வேண்டிய மணிநேரம்' },
 });
 
 /** What the contribution rule found for one order, as kept — the first judgement stands. */
@@ -127,6 +129,12 @@ function readChanges(b: unknown): Partial<DeliveryControls> | undefined {
     if (k === 'geofenceRadiusMetres' && b[k] === 0) return undefined;
     out[k] = b[k];
   }
+  if (b['appChoiceWaitHours'] !== undefined) {
+    // OB-369: whole hours, at least one and at most a week.
+    const h = b['appChoiceWaitHours'];
+    if (!wholeNonNeg(h) || h < 1 || h > 168) return undefined;
+    out['appChoiceWaitHours'] = h;
+  }
   if (b['fleetRate'] !== undefined) {
     const r = b['fleetRate'];
     if (!isObj(r) || (r['basis'] !== 'per_drop' && r['basis'] !== 'per_run') || !wholeNonNeg(r['rateMinor'])) return undefined;
@@ -187,7 +195,7 @@ export function deliveryControlsRoutes(deps: DeliveryControlsDeps): readonly Rou
         if (changes === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_delivery_controls',
-            whatHappened: `Send one or more of ${CONTROL_KEYS.join(', ')} — whole numbers (paise, metres; a radius above zero), and a fleetRate as { basis: per_drop | per_run, rateMinor }.`,
+            whatHappened: `Send one or more of ${CONTROL_KEYS.join(', ')} — whole numbers (paise, metres; a radius above zero; the app-choice wait in hours, 1 to 168), and a fleetRate as { basis: per_drop | per_run, rateMinor }.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Enter the number again. Nothing was changed.',
           });

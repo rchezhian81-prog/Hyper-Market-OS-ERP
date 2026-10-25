@@ -1,0 +1,12 @@
+{
+  "name": "SRE Self-checkout",
+  "short_name": "Self-checkout",
+  "description": "A customer-operated till lane with its attendant, for SRE Retail OS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}

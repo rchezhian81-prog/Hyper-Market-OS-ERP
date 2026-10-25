@@ -31,7 +31,9 @@ export type ExceptionKind =
   | 'voided_bill'
   | 'price_override'
   | 'after_hours_login'
-  | 'cash_short';
+  | 'cash_short'
+  // OB-365 (owner, 24–25 Oct 2026, in writing): failed sign-ins at a till, from the store computer's sign-in log.
+  | 'failed_sign_in';
 
 export interface ExceptionEvent {
   readonly eventId: string;
@@ -43,6 +45,8 @@ export interface ExceptionEvent {
   readonly laneId?: string;
   readonly valueMinor: number;
   readonly transactionRef: string;
+  /** OB-365: a failed sign-in made while the staff ID (or the lane) was locked out. */
+  readonly lockedOut?: boolean;
 }
 
 /** Every threshold the owner sets. All optional; an unset kind raises no alerts. */
@@ -56,6 +60,8 @@ export interface OwnerThresholds {
   readonly tradingHours?: readonly [number, number];
   /** Till shortfall value at or above which it is an alert. */
   readonly cashShortMinor?: number;
+  /** OB-365: failed till sign-ins by one staff ID in a day before it is an alert. */
+  readonly failedSignInCount?: number;
 }
 
 export type AlertSeverity = 'notice' | 'attention' | 'urgent';
@@ -163,6 +169,17 @@ export function raiseOwnerAlerts(input: {
           // Somebody in the system when the shop is shut is always worth a look.
           severity: 'urgent',
           headline: `${first.actorId} signed in at ${first.branchId} outside trading hours (${outside.length} time(s))`,
+        });
+        break;
+      }
+      case 'failed_sign_in': {
+        if (t.failedSignInCount === undefined || rows.length < t.failedSignInCount) break;
+        const locked = rows.some((e) => e.lockedOut === true);
+        alerts.push({
+          ...shared,
+          // A lockout means somebody kept guessing — always worth a look today.
+          severity: locked ? 'urgent' : 'attention',
+          headline: `${first.actorId} failed to sign in ${rows.length} time(s) at ${first.branchId}${locked ? ' and was locked out' : ''}`,
         });
         break;
       }

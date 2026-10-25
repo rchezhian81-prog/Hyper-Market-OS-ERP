@@ -36,6 +36,12 @@ export interface DeliveryControls {
   readonly costPerKmMinor?: number;
   /** D09-FR-06: what the shop settles its own fleet at. */
   readonly fleetRate?: FleetRate;
+  /**
+   * OB-369: how many hours after the till booked a delivery for an APP customer the delivery desk may enter the address and
+   * slot for them, when they have not chosen in the app. Absent → "not set": the desk may enter it only after the customer
+   * phones.
+   */
+  readonly appChoiceWaitHours?: number;
 }
 
 export interface FleetRate {
@@ -43,7 +49,7 @@ export interface FleetRate {
   readonly rateMinor: number;
 }
 
-export const CONTROL_KEYS = Object.freeze(['geofenceRadiusMetres', 'contributionThresholdMinor', 'costPerDropMinor', 'costPerKmMinor', 'fleetRate'] as const);
+export const CONTROL_KEYS = Object.freeze(['geofenceRadiusMetres', 'contributionThresholdMinor', 'costPerDropMinor', 'costPerKmMinor', 'fleetRate', 'appChoiceWaitHours'] as const);
 
 /** The delivery cost of one drop at a straight-line distance — or why it cannot be said. */
 export function deliveryCostOf(controls: DeliveryControls, distanceMetres: number | undefined): number | 'rates_not_set' | 'no_distance' {

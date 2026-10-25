@@ -16,6 +16,12 @@
 //     customer may skip it. A name given is kept SEALED to the member (it is erased with them), read back by the recall
 //     call list and the member's own receipts. A skipped name stays "not on record" — never a made-up value. The
 //     enrolment notice the desk reads out says the name is kept (`LOYALTY_ENROLMENT_NOTICE`, English and Tamil).
+//
+//   • MEMBERS CARRIED FROM THE OLD ERP (owner decision OB-364, 24–25 Oct 2026, in writing): they are enrolled as members
+//     by the approved import, with the consent the old record held — but nobody has SEEN their number on their phone. So
+//     the desk confirms it on the customer's next visit: the look-up says `phoneToConfirm` for such a member, and
+//     `POST /v1/loyalty/members/confirm-phone` records — as a NEW fact, append-only — who saw the number on the
+//     customer's own phone, and when. From then on the member reads as checked like any other.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
@@ -42,7 +48,14 @@ export interface MemberRecord {
   readonly leftAt?: string;
   readonly leftBy?: string;
   readonly leftReason?: string;
+  /** OB-364: a member carried from the old ERP whose number the desk has since seen on their own phone — when, and who. */
+  readonly phoneConfirmedAt?: string;
+  readonly phoneConfirmedBy?: string;
 }
+
+/** OB-364: a member carried from the old ERP whose number nobody has yet seen on their phone. */
+export const phoneToConfirm = (record: MemberRecord | undefined): boolean =>
+  record !== undefined && record.status === 'member' && record.verifiedHow === 'carried_from_old_erp';
 
 export interface LoyaltyRule {
   readonly pointsPer100Inr: number;
@@ -189,7 +202,8 @@ export function loyaltyMemberRoutes(deps: LoyaltyMemberDeps): readonly Route[] {
         const history = await deps.memberHistory(ctx.tenantId, memberRef);
         const now = current(history);
         if (now?.status === 'member') {
-          return { status: 200, body: { memberRef, mobileLast4: now.mobileLast4, alreadyMember: true } };
+          // OB-364: a member carried from the old ERP is already a member — the desk confirms the number instead.
+          return { status: 200, body: { memberRef, mobileLast4: now.mobileLast4, alreadyMember: true, phoneToConfirm: phoneToConfirm(now) } };
         }
         const record: MemberRecord = {
           memberRef, mobileLast4: mobile.slice(-4), status: 'member', consentGivenAt: deps.now(),
@@ -220,7 +234,48 @@ export function loyaltyMemberRoutes(deps: LoyaltyMemberDeps): readonly Route[] {
           return { status: 200, body: { member: false, detail: 'This number is not a loyalty member. They can join at the service desk.' } };
         }
         const balance = await deps.pointsBalance(ctx.tenantId, memberRef);
-        return { status: 200, body: { member: true, memberRef, mobileLast4: now.mobileLast4, pointsBalance: balance ?? 0 } };
+        // OB-364: a member carried from the old ERP — the desk is asked to confirm the number on the customer's phone.
+        return { status: 200, body: { member: true, memberRef, mobileLast4: now.mobileLast4, pointsBalance: balance ?? 0, phoneToConfirm: phoneToConfirm(now), ...(now.phoneConfirmedAt === undefined ? {} : { phoneConfirmedAt: now.phoneConfirmedAt, phoneConfirmedBy: now.phoneConfirmedBy ?? null }) } };
+      },
+    },
+    {
+      // OB-364: the desk confirms a carried member's number — seen on the customer's own phone, now. The number travels in
+      // the BODY (never a URL). Body: { mobile, verifiedHow: 'seen_on_phone' }. A new fact; the old record stays.
+      api: 'API-06', method: 'POST', path: '/v1/loyalty/members/confirm-phone',
+      permission: 'loyalty.member.enrol', idempotent: true,
+      handler: async (ctx) => {
+        const key = keyOrRefuse(deps);
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const mobile = mobileOrRefuse(b['mobile']);
+        if (b['verifiedHow'] !== 'seen_on_phone') {
+          throw apiError(422, {
+            code: 'number_not_checked',
+            whatHappened: 'The number has not been checked. The desk confirms a member carried from the old system by looking at the number on the customer\'s own phone.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Look at the number on the customer\'s phone, then confirm with verifiedHow "seen_on_phone". Nothing was changed.',
+          });
+        }
+        const memberRef = memberRefFor(key, mobile)!;
+        const history = await deps.memberHistory(ctx.tenantId, memberRef);
+        const now = current(history);
+        if (now?.status !== 'member') {
+          throw apiError(404, {
+            code: 'not_a_member',
+            whatHappened: 'This number is not a loyalty member, so there is no number to confirm.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Enrol the customer instead, on their yes. Nothing was changed.',
+          });
+        }
+        if (!phoneToConfirm(now)) {
+          return { status: 200, body: { memberRef, mobileLast4: now.mobileLast4, confirmed: true, alreadyConfirmed: true, phoneConfirmedAt: now.phoneConfirmedAt ?? null } };
+        }
+        const at = deps.now();
+        // The member's own fact, re-stated with the check — never their name again (it is kept, sealed, on the first fact).
+        const rest: Omit<MemberRecord, 'fullName'> & { fullName?: string } = { ...now };
+        delete rest.fullName;
+        const record: MemberRecord = { ...rest, verifiedHow: 'seen_on_phone', phoneConfirmedAt: at, phoneConfirmedBy: ctx.userId };
+        await deps.recordMember(ctx.tenantId, record, `${memberRef}:phone-confirmed:${history.length}`);
+        return { status: 201, body: { memberRef, mobileLast4: record.mobileLast4, confirmed: true, phoneConfirmedAt: at, phoneConfirmedBy: ctx.userId } };
       },
     },
     {

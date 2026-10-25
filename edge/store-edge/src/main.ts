@@ -79,13 +79,14 @@ import { readMachineReference } from '../../../packages/tender/src/machine-refer
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
 import { commitLocally } from './durability';
+import { selfCheckoutBasketRecorder } from './self-checkout-baskets'; // OB-288 P6 (R8-3 · R8-7)
 import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '../../../packages/sync/src/device-relay';
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { watchStoreComputerStatus } from './store-computer-status-file';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
-import { TillOperators, loadTillCredentials, deviceLaneOf } from './till-operators';
+import { TillOperators, loadTillCredentials, deviceLaneOf, TILL_AUTHORITY, type SignInLogEntry } from './till-operators';
 import { phoneOperatorsOf, personNamedBy } from './handheld-sign-in';
 import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
@@ -93,6 +94,12 @@ import { HeldBills } from './held-bills';
 import { httpPhoneBaskets } from './phone-baskets';
 import { PaymentAttempts, type PaymentProviderPort } from './payment-attempts';
 import { PeripheralReports } from './peripheral-health';
+// D04-FR-05 mobile POS and queue-busting (OB-288 Pkg 6b) — begin: additive
+import { QueueBaskets } from './queue-baskets';
+import { queuePosDoor, type QueuePosSwitches } from './queue-pos-door';
+import { laneRollout, laneSwitchOn } from '../../../packages/platform/src/rollout';
+import { QUEUE_BUSTING_SWITCH, MOBILE_POS_PAYMENT_SWITCH } from '../../../packages/suspended-sales/src/queue-basket';
+// D04-FR-05 — end
 import { LoyaltyWallets } from './loyalty-wallets';
 import { ConcessionTrading } from './concession-trading';
 import { pullConcessionTradingFeed, type ConcessionTradingPullOutcome } from '../../sync-agent/src/concession-trading-feed';
@@ -104,7 +111,7 @@ import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/ident
 import { withDeciderSeal } from './decision-seal';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
-import { managerPayload, tillCatalogue, type ScreenInput } from './screen-data';
+import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { checkStaffPurchase, packStaffPurchaseOf } from './staff-purchase-gate'; // OB-301
 import { SoldHuids } from './sold-huids';
@@ -507,7 +514,7 @@ export interface EdgeProcess {
    * core on its timer; this is exposed so a test can drive one pass deterministically, and so an
    * operator tool can force a sync now rather than waiting for the next interval.
    */
-  readonly syncOnce: (() => Promise<{ sent: number; dead: number; remaining: number }>) | null;
+  readonly syncOnce: (() => Promise<{ sent: number; dead: number; remaining: number; readonly signInLog?: { sent: number; dead: number; remaining: number } }>) | null;
   /**
    * The box's own account of its link to head office (Stage G slice 2 · design system §1 rule 4): cloud
    * reachability, everything unsent across every queue, dead letters, when something last got through. Served
@@ -1075,7 +1082,10 @@ export async function startEdge(
    * and only then queued for head office as `TillActivityRecorded`, on the same dedupe set, cursor and dead-letter queue
    * as every relayed record. The till removes the line only once this says `recorded`. A re-sent void is the same one.
    */
+  // OB-288 P6 (R8-3 · R8-7): a self-checkout basket's evidence rides the same door, kept as its own record (self-checkout-baskets.ts).
+  const recordSelfCheckoutBasket = selfCheckoutBasketRecorder({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => tradingDate(wallClockIn(at), packCutoff(pack)) });
   const recordTillActivity: LaneTillActivityHandler = async ({ laneId, cashierId, via, body }) => {
+    if (body['kind'] === 'self_checkout_basket') return recordSelfCheckoutBasket({ laneId, cashierId, via, body });
     const str = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
     const whole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
     const kind = body['kind'];
@@ -1487,6 +1497,61 @@ export async function startEdge(
     },
   });
   const tillOperators = lanePort === undefined ? null : staffSignIn;
+  // OB-365 (owner, 24–25 Oct 2026, in writing): the till sign-in log goes to head office — so the owner's after-hours and
+  // failed-sign-in alerts can fire there. Each record is written to its OWN fsync'd relay log and queued on its OWN outbox,
+  // cursor and dead-letter file (like each other queue, so it never mixes with the trading queues, never counts as trading
+  // the day still owes and never holds back a day's close), keyed on the record's own id, so it is sent ONCE, offline or
+  // not. Never a token's hash, never a PIN (`SignInLogEntry`). Nothing here holds up a sign-in: a record that could not be
+  // queued now is queued from the operator register's own log at the next start.
+  const signInRelayFiles = staffSignIn === null ? null : {
+    log: await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: 'till-sign-in-relay.log' }),
+    dead: await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: 'dead-letters-till-sign-in' }),
+  };
+  const signInRelay = signInRelayFiles === null ? null : new SyncPipeline({
+    dataDir: settings['EDGE_DATA_DIR']!, log: signInRelayFiles.log, deadLetterLog: signInRelayFiles.dead,
+    cursorFile: 'sync-cursor-till-sign-in', noun: 'till sign-in record', say,
+    eventFor: (record) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
+      const key = (parsed as { idempotencyKey?: unknown } | null)?.idempotencyKey;
+      const read = readRelayItem({ key, event: parsed });
+      return read.ok && read.item.event.type === 'TillSignInLogged' ? read.item.event : undefined;
+    },
+  });
+  if (staffSignIn !== null && signInRelay !== null && signInRelayFiles !== null) {
+    const restoredRelay = await signInRelay.restore();
+    if (restoredRelay.restoredDeadLetters > 0) say(`  ${restoredRelay.restoredDeadLetters} till sign-in record(s) head office refused earlier are still waiting for a person — kept.`);
+    // Every key this relay has EVER taken, from its whole durable log — so a record acknowledged weeks ago is never re-queued.
+    const relayed = new Set<string>();
+    for (const entry of await readLog(signInRelayFiles.log.path)) {
+      if (!entry.ok) continue;
+      try { const k = (JSON.parse(entry.record) as { idempotencyKey?: unknown }).idempotencyKey; if (typeof k === 'string') relayed.add(k); } catch { /* not a relay record */ }
+    }
+    const relaySignIn = async (entry: SignInLogEntry): Promise<void> => {
+      const key = `till-sign-in-${tenantId}-${entry.entryId}`;
+      if (relayed.has(key)) return;
+      const event: DomainEvent = makeEvent({
+        id: `till-sign-in-${entry.entryId}`, type: 'TillSignInLogged', occurredAt: entry.at, idempotencyKey: key,
+        source: `store-box/${entry.laneId ?? 'box'}`, payload: { ...entry },
+      });
+      relayed.add(key);
+      const outcome = await commitLocally({ saleId: key, record: JSON.stringify(event), log: signInRelayFiles.log });
+      if (!outcome.committed) {
+        relayed.delete(key);
+        say(`a till sign-in record could not be queued for head office (${outcome.refusedBecause ?? 'not written'}) — it stays in this box's own log and is queued again at the next start.`);
+        return;
+      }
+      signInRelay.outbox.enqueue(event);
+    };
+    let backlog = 0;
+    for (const entry of staffSignIn.relayable()) {
+      const before = relayed.size;
+      await relaySignIn(entry);
+      if (relayed.size > before) backlog += 1;
+    }
+    if (backlog > 0) say(`${backlog} till sign-in record(s) queued for head office from this box's own log.`);
+    staffSignIn.onLogged(relaySignIn);
+  }
   // A MANAGER'S APPROVAL at the till (ADR-0021): issued here against the manager's own PIN, spent once by the refund it
   // was given for. The threshold is the CURRENT pack's; a box with no service policy treats every refund as needing one.
   const tillApprovals = tillOperators === null ? null : await TillApprovals.open({
@@ -1662,9 +1727,34 @@ export async function startEdge(
   const officeGate = settings['EDGE_SCREEN_PORT'] === undefined || settings['EDGE_OFFICE_SIGN_IN'] !== 'pin' || settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? null : await openOfficeGate({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), pins: staffSignIn, pack: () => pack,
   });
-  const lane = lanePort === undefined ? null : await startLaneServer({
+  // B6 · B14 · B19: the till's legal gates, judged for one lane's scales (this box's till, or a queue handheld's lane).
+  const tillRulesFor = (laneId: string | undefined): { check(record: Record<string, unknown>): ReturnType<typeof checkTillRules> } => ({
+    check: (record) => {
+      const now = new Date().toISOString();
+      return checkTillRules(record, {
+        products: gateProductsOf(pack, node.pack(), now),
+        scales: laneScalesFor(pack, laneId),
+        today: tradingDate(wallClockIn(now), makeTradingDayRule('00:00')),
+        soldHuids: soldHuids.asSet(),
+        // OB-348 (B17): liquor is judged by the shop's state, as this box's store pack names it.
+        ...((st) => (st === undefined ? {} : { shopState: st }))(shopStateOf(pack)),
+      });
+    },
+  });
+  // D04-FR-05 (OB-316): is queue-busting on for this box's lane — and may its handhelds take money? From the signed pack.
+  const queuePosSwitches = (): QueuePosSwitches => {
+    const laneId = laneIdOfThisBox();
+    const r = laneRollout(pack.rollout?.known === true ? pack.rollout.value : undefined, laneId);
+    const on = laneSwitchOn(r, QUEUE_BUSTING_SWITCH);
+    return { laneId: laneId ?? null, known: r.known, why: r.known ? null : r.why, queueBusting: on, payments: on && laneSwitchOn(r, MOBILE_POS_PAYMENT_SWITCH) };
+  };
+  // D04-FR-05: the baskets queue handhelds hand to this box, recalled once at its till — only where this box is a till.
+  const queueBaskets = tillOperators === null ? null : await QueueBaskets.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+  });
+  if (queueBaskets !== null && queueBaskets.unreadableRecords > 0) say(`${queueBaskets.unreadableRecords} queue-basket record(s) could not be read whole — kept, not repaired. Raise this.`);
+  const laneInputs: Omit<Parameters<typeof startLaneServer>[0], 'port'> = {
     node,
-    port: Number(lanePort),
     syncStatus,
     // OB-259 completeness: the office doors need the office sign-in and its permission, and are done AS that person.
     ...(officeGate === null ? {} : {
@@ -1720,6 +1810,14 @@ export async function startEdge(
     // OB-350: scan-and-go baskets from head office, under this box's own credential — only when a cloud is configured.
     ...(settings['CLOUD_API_URL'] === undefined || settings['CLOUD_API_TOKEN'] === undefined ? {} : {
       phoneBaskets: httpPhoneBaskets({ baseUrl: settings['CLOUD_API_URL'], token: settings['CLOUD_API_TOKEN'], fetch: globalThis.fetch.bind(globalThis) }),
+    }),
+    // D04-FR-05: a basket a queue handheld handed to this box, brought up here by its code — while the switch is on.
+    ...(queueBaskets === null ? {} : {
+      queueBaskets: {
+        recall: (i) => (queuePosSwitches().queueBusting
+          ? queueBaskets.recall(i)
+          : Promise.resolve({ recalled: false as const, refusedBecause: 'queue_busting_off', laneMessage: 'Queue-busting is switched off for this till (pos.queue_busting). Scan the items as usual.' })),
+      },
     }),
     ...(heldBills === null ? {} : {
       heldBills: {
@@ -1778,19 +1876,7 @@ export async function startEdge(
       ),
     },
     // B6 · B14 · B19: the till's legal gates again, before the disk — from this box's own catalogue and this lane's scales.
-    tillRules: {
-      check: (record) => {
-        const now = new Date().toISOString();
-        return checkTillRules(record, {
-          products: gateProductsOf(pack, node.pack(), now),
-          scales: laneScalesFor(pack, laneIdOfThisBox()),
-          today: tradingDate(wallClockIn(now), makeTradingDayRule('00:00')),
-          soldHuids: soldHuids.asSet(),
-          // OB-348 (B17): liquor is judged by the shop's state, as this box's store pack names it.
-          ...((st) => (st === undefined ? {} : { shopState: st }))(shopStateOf(pack)),
-        });
-      },
-    },
+    tillRules: tillRulesFor(laneIdOfThisBox()),
     // OB-301 (M15-FR-03): a staff member's own shopping, judged from this box's store pack, before the disk.
     staffPurchases: { check: (record, lane) => checkStaffPurchase(record, lane, packStaffPurchaseOf(pack.policies.known ? pack.policies.value : undefined)) },
     closeDay: (req) => {
@@ -1801,7 +1887,58 @@ export async function startEdge(
       const fn = dayReopenRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ reopened: false as const, reason: 'the box is still starting up — try the reopen again in a moment' });
     },
-  });
+  };
+  const lane = lanePort === undefined ? null : await startLaneServer({ ...laneInputs, port: Number(lanePort) });
+  // D04-FR-05 (OB-288 Pkg 6b): each queue handheld's OWN lane pipeline (`device:<id>`) — the till's tested route for a card or
+  // UPI sale, on loopback, started on first use. Only what a queue till needs: no cash, refunds, approvals, holds or day close.
+  const queuePosLanes = new Map<string, Promise<LaneServer>>();
+  const queuePosLaneFor = async (deviceId: string): Promise<{ readonly host: string; readonly port: number } | null> => {
+    if (tillOperators === null || lanePort === undefined) return null;
+    let started = queuePosLanes.get(deviceId);
+    if (started === undefined) {
+      const handheldLane = deviceLaneOf(deviceId);
+      const ops = tillOperators;
+      started = startLaneServer({
+        node, port: 0, syncStatus,
+        operators: {
+          laneId: handheldLane,
+          trustForwardedUser: false,
+          signIn: () => Promise.resolve({ signedIn: false as const, refusedBecause: 'not_readable' as const, laneMessage: 'Sign in on the handheld\'s own queue-till page.' }),
+          signInVerified: () => Promise.resolve({ signedIn: false as const, refusedBecause: 'not_readable' as const, laneMessage: 'Sign in on the handheld\'s own queue-till page.' }),
+          // Only a sign-in opened for SELLING on this phone rings a sale here — a warehouse or picker sign-in never does.
+          check: (token, laneId) => {
+            const c = ops.check(token, laneId);
+            return c.ok && c.authority !== TILL_AUTHORITY
+              ? { ok: false as const, refusedBecause: 'operator_lost_till_authority' as const, laneMessage: 'This handheld sign-in is not for the queue till. Sign in on the queue-till page. Nothing was saved.' }
+              : c;
+          },
+          signOut: (token) => ops.signOut(token),
+          seal: (subject) => sealTillFact(sealKey, { ...subject, tenantId }),
+        },
+        ...(laneInputs.payments === undefined ? {} : { payments: laneInputs.payments }),
+        ...(laneInputs.receiptNumbers === undefined ? {} : { receiptNumbers: laneInputs.receiptNumbers }),
+        ...(laneInputs.recordTillActivity === undefined ? {} : { recordTillActivity: laneInputs.recordTillActivity }),
+        ...(laneInputs.memberCode === undefined ? {} : { memberCode: laneInputs.memberCode }),
+        ...(laneInputs.loyalty === undefined ? {} : { loyalty: laneInputs.loyalty }),
+        ...(laneInputs.guestSalesOnly === undefined ? {} : { guestSalesOnly: laneInputs.guestSalesOnly }),
+        ...(laneInputs.mirrorPilot === undefined ? {} : { mirrorPilot: laneInputs.mirrorPilot }),
+        ...(laneInputs.realTrading === undefined ? {} : { realTrading: laneInputs.realTrading }),
+        ...(laneInputs.taxInvoice === undefined ? {} : { taxInvoice: laneInputs.taxInvoice }),
+        ...(laneInputs.oldErpBills === undefined ? {} : { oldErpBills: laneInputs.oldErpBills }),
+        ...(laneInputs.staffPurchases === undefined ? {} : { staffPurchases: laneInputs.staffPurchases }),
+        // The legal gates again, before the disk — for the handheld's lane, which has no scale of its own.
+        tillRules: tillRulesFor(handheldLane),
+      });
+      queuePosLanes.set(deviceId, started);
+      started.catch(() => { queuePosLanes.delete(deviceId); });
+    }
+    const server = await started;
+    return { host: LANE_HOST, port: server.port };
+  };
+  const stopQueuePosLanes = async (): Promise<void> => {
+    for (const started of queuePosLanes.values()) { try { await (await started).stop(); } catch { /* it never started */ } }
+    queuePosLanes.clear();
+  };
   if (lane !== null) say(`lane socket on ${LANE_HOST}:${lane.port} — loopback only, nothing on the shop network can reach it`);
 
 
@@ -2017,6 +2154,30 @@ export async function startEdge(
     // DF-3-c (OB-30 "A"): who is holding each phone — the till's register, addressed by the device.
     operators: staffSignIn === null ? null : phoneOperatorsOf(staffSignIn),
     now: () => new Date().toISOString(),
+    // D04-FR-05 (OB-288 Pkg 6b): the queue till's door — its switch, its sign-in for selling, its lane pipeline, its baskets.
+    queuePos: queuePosDoor({
+      appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
+      switches: queuePosSwitches,
+      operators: staffSignIn === null ? null : phoneOperatorsOf(staffSignIn),
+      queueBaskets,
+      laneFor: queuePosLaneFor,
+      page: (handheldLane) => {
+        const snap = snapshot();
+        const rt = realTrading();
+        const template = posReceiptTemplate(snap);
+        return {
+          posCatalogue: payloadFor('pos', snap),
+          posLane: {
+            ...posLanePayload(snap, handheldLane), soldHuids: soldHuids.list(), guestSalesOnly: guestSalesOnly(),
+            realTrading: { on: rt.on, by: rt.by }, taxInvoice: rt.on ? taxInvoiceIdentity() : null,
+            ...(settings['EDGE_BILL_PAPER'] === undefined ? {} : { billPaper: settings['EDGE_BILL_PAPER'] }),
+          },
+          catalogueFreshness: catalogueFreshness(snap),
+          ...(template === undefined ? {} : { posReceiptTemplate: template }),
+        };
+      },
+      now: () => new Date().toISOString(),
+    }),
   });
   if (devices !== null && enrolments !== null) {
     say(devices.host === DEVICE_HOST || devices.host === 'localhost'
@@ -2295,10 +2456,12 @@ export async function startEdge(
       tillCash,
       stop: async () => {
         if (lane !== null) await lane.stop();
+        await stopQueuePosLanes();
         if (screens !== null) await screens.stop();
         if (devices !== null) await devices.stop();
         if (enrolments !== null) await enrolments.close();
         if (receiptNumbers !== null) await receiptNumbers.close();
+        if (queueBaskets !== null) await queueBaskets.close();
         if (heldBills !== null) await heldBills.close();
         if (payments !== null) await payments.close();
         if (peripheralReports !== null) await peripheralReports.close();
@@ -2317,6 +2480,8 @@ export async function startEdge(
         await deviceEventsDeadLetterLog.close();
         await tillCashLog.close();
         await tillCashDeadLetterLog.close();
+        await signInRelayFiles?.log.close();
+        await signInRelayFiles?.dead.close();
       },
     };
   }
@@ -2362,6 +2527,10 @@ export async function startEdge(
   // others has its own: a float or a close head office refuses never holds a sale, and none of the seven can ever be
   // re-queued as another. Routed to the cash and shift SYNCED routes, which re-verify the cashier and record-and-flag.
   const tillCashAgent = new SyncAgent(tillCashOutbox, httpTransport({
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
+  }));
+  // OB-365: the till sign-in log's own agent — same transport, its own outbox; never counted with the trading queues.
+  const signInRelayAgent = signInRelay === null ? null : new SyncAgent(signInRelay.outbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
 
@@ -2766,7 +2935,7 @@ export async function startEdge(
    * Exposed as `syncOnce` so a test can drive exactly one pass deterministically, the same way
    * `refreshPack` drives one inbound pull — the timer-based `pass` below is the only other caller.
    */
-  const drainAndSettle = async (opts?: { readonly limit?: number }): Promise<{ sent: number; dead: number; remaining: number }> => {
+  const drainAndSettle = async (opts?: { readonly limit?: number }): Promise<{ sent: number; dead: number; remaining: number; signInLog?: { sent: number; dead: number; remaining: number } }> => {
     const at = new Date().toISOString();
     const result = await agent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleSales(at);
@@ -2793,7 +2962,15 @@ export async function startEdge(
     // own cursor, so a float or a close head office is slow to take never holds a sale.
     const tillCashResult = await tillCashAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleTillCash(at);
+    // OB-365: the till sign-in log drains after the trading queues, on the same loop and just as far from the sale path;
+    // said on its own (never mixed into what the trading queues sent), its refusals kept on its own dead-letter file.
+    const signInResult = signInRelayAgent === null || signInRelay === null ? null : await signInRelayAgent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
+    if (signInRelay !== null) { await signInRelay.persistNewDeadLetters(at); await signInRelay.advanceCursor(); }
+    if (signInResult !== null && (signInResult.acknowledged > 0 || signInResult.deadLettered > 0)) {
+      say(`sync: ${signInResult.acknowledged} till sign-in record(s) sent, ${signInResult.deadLettered} needing a person, ${signInResult.remaining} waiting`);
+    }
     return {
+      ...(signInResult === null ? {} : { signInLog: { sent: signInResult.acknowledged, dead: signInResult.deadLettered, remaining: signInResult.remaining } }),
       sent: result.acknowledged + returnsResult.acknowledged + completionsResult.acknowledged + dayCloseResult.acknowledged + concessionTagsResult.acknowledged + deviceEventsResult.acknowledged + tillCashResult.acknowledged,
       dead: result.deadLettered + returnsResult.deadLettered + completionsResult.deadLettered + dayCloseResult.deadLettered + concessionTagsResult.deadLettered + deviceEventsResult.deadLettered + tillCashResult.deadLettered,
       remaining: result.remaining + returnsResult.remaining + completionsResult.remaining + dayCloseResult.remaining + concessionTagsResult.remaining + deviceEventsResult.remaining + tillCashResult.remaining,
@@ -3002,10 +3179,12 @@ export async function startEdge(
         say(`stopping with ${concessionTagsBadge.unsentCount} partner-counter line(s) still to send. They are on the disk and will go when this starts again.`);
       }
       if (lane !== null) await lane.stop();
+      await stopQueuePosLanes();
       if (screens !== null) await screens.stop();
       if (devices !== null) await devices.stop();
       if (enrolments !== null) await enrolments.close();
       if (receiptNumbers !== null) await receiptNumbers.close();
+      if (queueBaskets !== null) await queueBaskets.close();
       if (heldBills !== null) await heldBills.close();
       if (payments !== null) await payments.close();
       if (peripheralReports !== null) await peripheralReports.close();
@@ -3024,6 +3203,8 @@ export async function startEdge(
       await deviceEventsDeadLetterLog.close();
       await tillCashLog.close();
       await tillCashDeadLetterLog.close();
+      await signInRelayFiles?.log.close();
+      await signInRelayFiles?.dead.close();
     },
   };
 }

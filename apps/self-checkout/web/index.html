@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Self-checkout</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      The self-checkout lane (R8-3 · D04-FR-06). A till the CUSTOMER operates, served by this lane's own store computer
+      from its signed price list — no internet in the path of a customer paying (hard rule #1).
+
+      Two people use this screen and they must never be confused:
+        • the CUSTOMER sees their items, the total, one plain sentence saying what to do now, and only neutral words
+          when a colleague is needed ("a colleague will be with you") — never a reason, never a risk figure;
+        • the ATTENDANT opens the Colleague panel and settles each thing with their OWN staff code and PIN, every time.
+          Nothing is remembered between two of their actions, so a customer can never press an attendant's button.
+
+      Off until the owner switches self-checkout on for THIS lane (OB-316). Card or UPI on the shop's machine only.
+      Framework-free and static; targets 56px and up.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <script src="./sre-update.js" defer></script>
+    <style>
+      :root { --tap: 64px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.45 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      header {
+        display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
+        padding: var(--space-3) var(--space-4); background: var(--panel); border-bottom: 1px solid var(--line);
+      }
+      h1 { margin: 0; font-size: 22px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+      h1 small { display: block; color: var(--ink-2); font-weight: 600; font-size: 15px; }
+      button {
+        min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--line); font-size: 19px; font-weight: 600;
+        background: var(--panel-2); color: var(--ink); padding: 0 var(--space-4); line-height: 1.25;
+        display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); text-align: center;
+      }
+      button .sre-icon { width: 24px; height: 24px; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+      button:disabled { background: var(--panel-2); color: var(--muted); border-style: dashed; border-color: var(--line-strong); cursor: not-allowed; }
+      button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      #lang, #colleague { min-height: 56px; font-size: 16px; }
+      .stale { background: var(--warn-surface); color: var(--on-warn-surface); padding: var(--space-2) var(--space-4); margin: 0; font-size: 15px; font-weight: 600; }
+      .stale[hidden] { display: none; }
+
+      main { flex: 1; display: grid; grid-template-rows: auto 1fr auto; gap: var(--space-3); padding: var(--space-4); min-height: 0; }
+      /* The one sentence the customer reads: what to do now. Neutral words only. */
+      .now {
+        margin: 0; padding: var(--space-4); border-radius: var(--radius-xl); background: var(--mint); color: var(--on-ok-surface);
+        font-size: 24px; font-weight: 700; display: flex; align-items: center; gap: var(--space-3); border: 2px dashed var(--accent);
+      }
+      .now .sre-icon { width: 32px; height: 32px; flex: none; }
+      .now.waiting { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+      .now.closed { background: var(--panel-2); color: var(--ink); border-color: var(--line-strong); }
+      .basket { overflow-y: auto; display: grid; gap: var(--space-2); align-content: start; }
+      .line { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+      .line .what { font-weight: 600; overflow-wrap: anywhere; }
+      .line .what small { display: block; color: var(--muted); font-weight: 400; font-size: 15px; }
+      .line .amount { font-variant-numeric: var(--numbers); font-weight: 700; }
+      .line button { min-height: 56px; font-size: 16px; background: var(--panel); }
+      .empty { color: var(--muted); padding: var(--space-6) var(--space-4); text-align: center; background: var(--panel); border: 1px dashed var(--line-strong); border-radius: var(--radius-xl); }
+      .empty[hidden] { display: none; }
+      footer.pay { display: grid; gap: var(--space-3); background: var(--panel); border-top: 1px solid var(--line); padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); }
+      .total { display: flex; justify-content: space-between; align-items: baseline; font-size: 26px; font-weight: 700; font-variant-numeric: var(--numbers); }
+      .pay-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+      .pay-buttons button { font-size: 21px; }
+      .receipt { margin: 0; font-size: 20px; font-weight: 700; }
+      .receipt[hidden] { display: none; }
+
+      /* ── The attendant's panel ─────────────────────────────────────────────────── */
+      .panel { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: end center; z-index: 20; }
+      .panel[hidden] { display: none; }
+      .panel-inner { width: min(720px, 100%); background: var(--panel); padding: var(--space-4); border-radius: 16px 16px 0 0; display: grid; gap: var(--space-3); max-height: 94dvh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+      .panel h2 { margin: 0; font-size: 21px; display: flex; align-items: center; gap: var(--space-2); }
+      .who { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+      .who label { display: grid; gap: 4px; font-size: 15px; font-weight: 600; }
+      .who input, .machine input { min-height: 56px; font-size: 22px; padding: 0 var(--space-3); border: 1px solid var(--field-line); border-radius: var(--radius-lg); background: var(--panel); color: var(--ink); }
+      #items { display: grid; gap: var(--space-2); }
+      .item { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--space-3); display: grid; gap: var(--space-2); background: var(--panel-2); }
+      .item p { margin: 0; overflow-wrap: anywhere; }
+      .item .kind { font-weight: 700; }
+      .decisions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+      .decisions button { min-height: 56px; font-size: 17px; background: var(--panel); }
+      .machine { display: grid; gap: var(--space-2); }
+      .machine[hidden] { display: none; }
+      .machine label { display: grid; gap: 4px; font-size: 15px; font-weight: 600; }
+      .notes { margin: 0; padding-left: var(--space-4); color: var(--ink-2); font-size: 15px; }
+      .said { margin: 0; font-weight: 600; min-height: 24px; }
+      .lane-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-2); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 id="title">Self-checkout<small id="subtitle">—</small></h1>
+      <button id="colleague" type="button"><span data-sre-icon="user-round"></span><span id="colleague-words">Colleague</span></button>
+      <button id="lang" type="button" aria-label="Language"><span data-sre-icon="globe"></span>EN / த</button>
+    </header>
+    <p class="stale" id="stale" hidden role="status"></p>
+
+    <main>
+      <p class="now" id="now" role="status" aria-live="polite">—</p>
+      <section class="basket" id="basket" aria-label="Your items">
+        <p class="empty" id="empty">—</p>
+      </section>
+      <footer class="pay">
+        <div class="total"><span id="total-words">Total</span><span id="total">₹0.00</span></div>
+        <p class="receipt" id="receipt" hidden role="status"></p>
+        <div class="pay-buttons">
+          <button class="primary" id="pay-card" type="button"><span data-sre-icon="wallet"></span><span id="pay-card-words">Pay by card</span></button>
+          <button class="primary" id="pay-upi" type="button"><span data-sre-icon="indian-rupee"></span><span id="pay-upi-words">Pay by UPI</span></button>
+        </div>
+        <button id="next" type="button" hidden><span data-sre-icon="shopping-cart"></span><span id="next-words">Next customer</span></button>
+      </footer>
+    </main>
+
+    <!-- The attendant's panel: every action here takes the colleague's own staff code and PIN, typed afresh. -->
+    <section class="panel" id="panel" hidden aria-label="Colleague">
+      <div class="panel-inner">
+        <h2><span data-sre-icon="shield-check"></span><span id="panel-title">Colleague</span></h2>
+        <div class="who">
+          <label><span id="staff-label">Staff code</span><input id="staff" autocomplete="off" inputmode="text" /></label>
+          <label><span id="pin-label">PIN</span><input id="pin" type="password" autocomplete="off" inputmode="numeric" /></label>
+        </div>
+        <p class="said" id="said" role="status"></p>
+        <div id="items"></div>
+        <div class="machine" id="machine" hidden>
+          <p class="kind" id="machine-title">What did the machine say?</p>
+          <label><span id="ref-label">Approval / reference number from the slip</span><input id="ref" autocomplete="off" /></label>
+          <div class="decisions">
+            <button id="paid-approved" type="button"><span data-sre-icon="circle-check"></span><span id="approved-words">Approved</span></button>
+            <button id="paid-declined" type="button"><span data-sre-icon="x"></span><span id="declined-words">Declined</span></button>
+            <button id="paid-noanswer" type="button"><span data-sre-icon="clock"></span><span id="noanswer-words">It has not answered</span></button>
+          </div>
+        </div>
+        <ul class="notes" id="notes"></ul>
+        <div class="lane-buttons">
+          <button id="open-lane" type="button"><span data-sre-icon="lock"></span><span id="open-words">Open lane</span></button>
+          <button id="close-lane" type="button"><span data-sre-icon="lock"></span><span id="close-words">Close lane</span></button>
+          <button id="panel-done" type="button"><span data-sre-icon="check"></span><span id="done-words">Done</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!--SCREEN-DATA-->
+    <script type="module" src="./self-checkout.bundle.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

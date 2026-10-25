@@ -19,6 +19,11 @@
 // packages/ui + packages/a11y primitives (colour is NEVER the only signal — an icon and a word ride with every
 // tone). This is a READ surface: a supplier SUBMITS through separate write routes; here it only reads status
 // and its account. Bilingual EN/TA — a supplier to a Tamil Nadu hypermarket reads whichever it prefers.
+//
+// OB-362 (owner, 24–25 Oct 2026, in writing): the ONE exception is a "Delivery update" form — for the supplier's OWN open
+// orders only (`GET /v1/supplier-portal/me/orders`, scoped on the server) — which sends the existing `delivery_status`
+// submission (dispatched, in transit or delayed, and when it should now arrive). `readDeliveryUpdate` checks it before
+// anything is sent; nothing else on this screen writes.
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -53,11 +58,54 @@ export interface StatementView {
   readonly detail: string;
 }
 
-/** The two feeds the portal last read (live from the cloud, or the injected stand-in). */
+/** OB-362: one of the supplier's own open orders (`…/me/orders`) — what the Delivery update form may name. */
+export interface SupplierOrderView {
+  readonly poId: string;
+  readonly number: string;
+  readonly issuedAt: string | null;
+  readonly deliverToLocationId: string | null;
+}
+
+/** OB-362: the supplier's own open orders as last read; `ordersKnown` false = head office could not list them (never "none"). */
+export interface SupplierOrdersFeed {
+  readonly ordersKnown: boolean;
+  readonly orders: readonly SupplierOrderView[];
+  /** This login holds the order-communication grant a delivery update needs. */
+  readonly mayUpdate: boolean;
+}
+
+/** The feeds the portal last read (live from the cloud, or the injected stand-in). */
 export interface SupplierPortalData {
   readonly submissions: readonly SubmissionView[];
   readonly statement: StatementView | null;
+  /** OB-362: the supplier's own open orders — absent until read. */
+  readonly orders?: SupplierOrdersFeed | null;
   readonly asAt: string;
+}
+
+/** OB-362: the delivery statuses a supplier may send (`DELIVERY_STATUSES`, services/purchase/src/supplier-portal.ts). */
+export const DELIVERY_UPDATE_STATUSES = Object.freeze(['dispatched', 'in_transit', 'delayed'] as const);
+export type DeliveryUpdateStatus = (typeof DELIVERY_UPDATE_STATUSES)[number];
+
+/** OB-362: what the form holds, as typed. */
+export interface DeliveryUpdateInput { readonly poId: string; readonly status: string; readonly expectedOn: string; readonly note: string }
+/** OB-362: the `delivery_status` document the form sends — or why it is not sent. */
+export type DeliveryUpdateRead =
+  | { readonly ok: true; readonly document: { readonly poId: string; readonly status: DeliveryUpdateStatus; readonly expectedOn: string; readonly note?: string } }
+  | { readonly ok: false; readonly why: 'needOrder' | 'notYourOrder' | 'needStatus' | 'needDate' | 'noteTooLong' | 'cannotUpdate' };
+
+/** OB-362: read the form against the supplier's own open orders — refused here, before anything is sent. */
+export function readDeliveryUpdate(input: DeliveryUpdateInput, feed: SupplierOrdersFeed | null | undefined): DeliveryUpdateRead {
+  if (feed === null || feed === undefined || !feed.mayUpdate) return { ok: false, why: 'cannotUpdate' };
+  const poId = input.poId.trim();
+  if (poId === '') return { ok: false, why: 'needOrder' };
+  if (!feed.orders.some((o) => o.poId === poId)) return { ok: false, why: 'notYourOrder' };
+  if (!(DELIVERY_UPDATE_STATUSES as readonly string[]).includes(input.status)) return { ok: false, why: 'needStatus' };
+  const day = input.expectedOn.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(`${day}T00:00:00Z`))) return { ok: false, why: 'needDate' };
+  const note = input.note.trim();
+  if (note.length > 300) return { ok: false, why: 'noteTooLong' };
+  return { ok: true, document: { poId, status: input.status as DeliveryUpdateStatus, expectedOn: day, ...(note === '' ? {} : { note }) } };
 }
 
 export interface SupplierPortalPorts {
@@ -84,7 +132,10 @@ export type CopyKey =
   | 'kindRfq' | 'kindCatalogue' | 'kindAsn' | 'kindInvoice' | 'kindPoAck' | 'kindClaim' | 'kindDelivery'
   | 'awaitingState' | 'processedState'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
-  | 'notIdentified' | 'staleShell' | 'sampleData';
+  | 'notIdentified' | 'staleShell' | 'sampleData'
+  | 'deliveryH' | 'deliveryLead' | 'orderL' | 'chooseOrder' | 'statusL' | 'status_dispatched' | 'status_in_transit' | 'status_delayed'
+  | 'expectedL' | 'noteL' | 'sendUpdate' | 'updateSent' | 'needOrder' | 'notYourOrder' | 'needStatus' | 'needDate' | 'noteTooLong'
+  | 'cannotUpdate' | 'noOpenOrders' | 'ordersUnknown' | 'notSent' | 'refusedSay';
 
 export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -103,6 +154,13 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'This login is not a supplier login for this portal.',
     notIdentified: 'This login was not identified.',
     staleShell: 'No connection. This page is what you were last shown, at', sampleData: 'Sample data — this is not your account.',
+    deliveryH: 'Delivery update', deliveryLead: 'Tell us where one of your orders has got to. A buyer sees it at once; it changes nothing else.',
+    orderL: 'Your order', chooseOrder: 'Choose one of your open orders', statusL: 'Where it has got to', status_dispatched: 'Dispatched', status_in_transit: 'On the way', status_delayed: 'Delayed',
+    expectedL: 'When it should now arrive', noteL: 'Note (optional, up to 300 letters)', sendUpdate: 'Send the delivery update', updateSent: 'Sent — the buyer can see it.',
+    needOrder: 'Choose your order first. Nothing was sent.', notYourOrder: 'That is not one of your open orders. Nothing was sent.', needStatus: 'Say where it has got to. Nothing was sent.',
+    needDate: 'Give the day it should now arrive. Nothing was sent.', noteTooLong: 'The note is longer than 300 letters. Nothing was sent.',
+    cannotUpdate: 'Your login cannot send delivery updates. Ask us to turn it on.', noOpenOrders: 'You have no open orders with us right now.',
+    ordersUnknown: 'Your orders could not be read just now, so no update can be sent.', notSent: 'No connection — the update was not sent. Try again when you are online.', refusedSay: 'We could not take it:',
   },
   ta: {
     title: 'SRE உடன் உங்கள் கணக்கு', langName: 'English',
@@ -120,6 +178,13 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'இந்த உள்நுழைவு இந்த போர்ட்டலுக்கான சப்ளையர் உள்நுழைவு அல்ல.',
     notIdentified: 'இந்த உள்நுழைவு அடையாளம் காணப்படவில்லை.',
     staleShell: 'இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகக் காட்டப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கணக்கு அல்ல.',
+    deliveryH: 'டெலிவரி நிலவரம்', deliveryLead: 'உங்கள் ஆர்டர்களில் ஒன்று எங்கே வந்துள்ளது என்று சொல்லுங்கள். வாங்குபவர் உடனே பார்ப்பார்; இது வேறு எதையும் மாற்றாது.',
+    orderL: 'உங்கள் ஆர்டர்', chooseOrder: 'உங்கள் திறந்த ஆர்டர்களில் ஒன்றைத் தேர்ந்தெடுங்கள்', statusL: 'எங்கே வந்துள்ளது', status_dispatched: 'அனுப்பப்பட்டது', status_in_transit: 'வழியில் உள்ளது', status_delayed: 'தாமதம்',
+    expectedL: 'இப்போது எப்போது வந்து சேரும்', noteL: 'குறிப்பு (விருப்பம், 300 எழுத்துகள் வரை)', sendUpdate: 'டெலிவரி நிலவரத்தை அனுப்பு', updateSent: 'அனுப்பப்பட்டது — வாங்குபவர் பார்க்கலாம்.',
+    needOrder: 'முதலில் உங்கள் ஆர்டரைத் தேர்ந்தெடுங்கள். எதுவும் அனுப்பப்படவில்லை.', notYourOrder: 'அது உங்கள் திறந்த ஆர்டர்களில் ஒன்று அல்ல. எதுவும் அனுப்பப்படவில்லை.', needStatus: 'எங்கே வந்துள்ளது என்று சொல்லுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    needDate: 'இப்போது வந்து சேர வேண்டிய நாளைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.', noteTooLong: 'குறிப்பு 300 எழுத்துகளை விட நீளமானது. எதுவும் அனுப்பப்படவில்லை.',
+    cannotUpdate: 'உங்கள் உள்நுழைவு டெலிவரி நிலவரம் அனுப்ப முடியாது. இயக்க எங்களிடம் கேளுங்கள்.', noOpenOrders: 'இப்போது எங்களிடம் உங்கள் திறந்த ஆர்டர் எதுவும் இல்லை.',
+    ordersUnknown: 'உங்கள் ஆர்டர்களை இப்போது படிக்க முடியவில்லை, எனவே நிலவரம் அனுப்ப முடியாது.', notSent: 'இணைப்பு இல்லை — நிலவரம் அனுப்பப்படவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.', refusedSay: 'எங்களால் ஏற்க முடியவில்லை:',
   },
 };
 
