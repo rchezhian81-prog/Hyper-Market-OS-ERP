@@ -159,6 +159,9 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     const paid = await banner(page);
     expect(paid.title).toMatch(/^Paid — Card — /);
     expect(paid.bill).toMatch(/Toor dal 1kg/);
+    // OB-373: no printer on the handheld — it says where the paper bill is printed, with the bill's number.
+    const billNumber = paid.title.replace(/^Paid — Card — /, '').trim();
+    expect(paid.text).toBe(`Ask at a till or the service desk to print this bill: bill number ${billNumber}. This handheld does not print.`);
     const sold = (await readLog(edge.log.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { laneId: string; cashierId: string; total: number }] : []));
     expect(sold).toEqual([expect.objectContaining({ laneId: 'device:hh-q1', cashierId: 'u-ravi', total: 120_00 })]);
     expect(errors).toEqual([]);
@@ -184,11 +187,46 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     await till.waitForSelector('#sheet:not([hidden])');
     for (const digit of code) await till.click(`#keypad button:text-is("${digit}")`);
     await till.click('#sheet-ok');
-    await till.waitForSelector('#refusal:not([hidden])');
+    // The same line first shows the keypad's prompt; wait for the till's answer to replace it, do not read it in the same tick.
+    await till.locator('#refusal-text', { hasText: `Handheld basket ${code}:` }).waitFor({ timeout: 15_000 });
     expect(await till.textContent('#refusal-text')).toBe(`Handheld basket ${code}: 1 line(s) rung; 1 need the cashier — scan or ask about each one.`);
     expect(await till.locator('#refusal').innerText()).toMatch(/Cigarettes 10s \(demo\)/);
     await till.click('#refusal-ok');
     expect(await till.evaluate(() => (globalThis as unknown as PosWindow).posSession!.basket().map((l) => l.productId))).toEqual(['P-DAL']);
+
+    // ── OB-373: the till prints the handheld's bill by its number — a copy, recorded on the store computer first ──
+    const copyOf = async (typed: string): Promise<{ title: string; text: string; slip: string }> => {
+      await till.click('#more');
+      await till.waitForSelector('#pay:not([hidden])');
+      await till.click('#pay-kinds button:text-is("Print a copy of a bill by its number")');
+      await till.waitForSelector('#entry-text:not([hidden])');
+      await till.fill('#entry-text', typed);
+      await till.click('#sheet-ok');
+      await till.waitForSelector('#pay:not([hidden])');
+      expect(await audit(till), 'why a copy').toEqual([]);
+      await till.click('#pay-kinds button:text-is("Paid on a handheld queue till")');
+      await till.waitForSelector('#refusal:not([hidden])');
+      const out = { title: (await till.textContent('#refusal-title')) ?? '', text: (await till.textContent('#refusal-text')) ?? '', slip: (await till.textContent('#refusal-receipt')) ?? '' };
+      return out;
+    };
+    const copy = await copyOf(billNumber);
+    expect(copy.title).toBe(`Copy 1 of bill ${billNumber}`);
+    expect(copy.text).toBe('This bill was taken on handheld hh-q1. It prints marked as a copy.');
+    expect(copy.slip).toMatch(/\*\*\* REPRINT \*\*\*[\s\S]*Paid on a handheld queue till — Copy 1[\s\S]*Toor dal 1kg/);
+    expect(await audit(till), 'the copy').toEqual([]);
+    await till.click('#refusal-ok');
+    const copies = (await readLog(join(dir, 'device-events.log'))).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { type: string; payload: Record<string, unknown> }] : [])).filter((e) => e.type === 'BillCopyPrinted');
+    expect(copies.map((e) => [e.payload['billNumber'], e.payload['copyNumber'], e.payload['billLaneId']])).toEqual([[billNumber, 1, 'device:hh-q1']]);
+    // A number this store computer does not hold: said, nothing printed — in Tamil too.
+    await till.click('#lang');
+    await till.click('#more');
+    await till.waitForSelector('#pay:not([hidden])');
+    expect(await till.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''))).toContain('பில் எண் மூலம் பில்லின் நகலை அச்சிடு');
+    await till.click('#pay-cancel');
+    await till.click('#lang');
+    const missing = await copyOf('NO-SUCH-9');
+    expect(missing.text).toMatch(/^Bill NO-SUCH-9 is not on this store computer\./);
+    await till.click('#refusal-ok');
     expect(errors).toEqual([]);
   }, 120_000);
 

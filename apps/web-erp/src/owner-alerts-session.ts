@@ -37,6 +37,13 @@ export const OWNER_ALERTS_COPY = {
     needReason: 'Write why first.', needSchedule: 'Give the schedule a name, choose what it prepares, and a time as HH:MM.',
     saved: 'Saved.', nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot open this page.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
+    floorH: 'Price kiosk and self-checkout watch', floorLead: 'Your numbers for the shop-floor devices. Each starts at what you decided in writing; every store computer gets it in its setup file.',
+    kioskH: 'Price kiosk', kioskL: 'Stop quoting prices once the kiosk\'s price list is older than (hours)', kioskNow: 'Now: stops quoting after {hours} hour(s) ({minutes} minutes) — then it says "ask a colleague"; it always shows the list\'s age.',
+    watchH: 'Self-checkout watch', watchNow: 'Now: random check of {pct}% of baskets over ₹{above}; a colleague after {loose} loose-produce lines or {voids} removals.',
+    watchPct: 'Random check: per cent of baskets', watchAbove: 'Only baskets over (₹)', watchLoose: 'Call a colleague after this many loose-produce lines', watchVoids: 'Call a colleague after this many removals',
+    fromDecision: 'Your written decision {decision} ({date}) — until you enter another.', fromEntry: 'Entered by {by} on {at}.',
+    saveKiosk: 'Save the kiosk hours', saveWatch: 'Save the watch numbers', needKioskHours: 'Type whole hours, from 1 to 168 (24 is one day).',
+    needWatch: 'Type the per cent (0 to 100, e.g. 3), the basket value in rupees (e.g. 2000), and two whole numbers from 1 to 100.',
   },
   ta: {
     title: 'உரிமையாளர் எச்சரிக்கைகள் மற்றும் திட்டமிட்ட அறிக்கைகள்', lead: 'உங்கள் ஆறு விதிவிலக்கு எச்சரிக்கைகள் நீங்கள் கடையில் இல்லாதபோதும் தானாகவே உங்கள் எச்சரிக்கைப் பெட்டிக்கு வரும். ஒவ்வொன்றும் அதன் எண்ணை நீங்கள் அமைத்த பிறகே செயல்படும். உங்கள் திட்டமிட்ட அறிக்கைகளும் ஏற்றுமதிகளும் கடையின் நேரத்தில் யாரும் அழுத்தாமலேயே தயாராகும்.',
@@ -53,6 +60,13 @@ export const OWNER_ALERTS_COPY = {
     needReason: 'முதலில் ஏன் என்று எழுதவும்.', needSchedule: 'திட்டத்துக்கு ஒரு பெயர், அது தயாரிப்பது என்ன, HH:MM என்ற நேரம் கொடுக்கவும்.',
     saved: 'சேமிக்கப்பட்டது.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு இந்தப் பக்கத்தைத் திறக்க முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
+    floorH: 'விலை கியோஸ்க் மற்றும் சுய-பில்லிங் கண்காணிப்பு', floorLead: 'கடைத் தளக் கருவிகளுக்கான உங்கள் எண்கள். ஒவ்வொன்றும் நீங்கள் எழுத்தில் முடிவு செய்ததிலிருந்து தொடங்கும்; ஒவ்வொரு கடை கணினிக்கும் அதன் அமைப்புக் கோப்பில் செல்லும்.',
+    kioskH: 'விலை கியோஸ்க்', kioskL: 'கியோஸ்கின் விலைப் பட்டியல் இவ்வளவு பழையதானால் விலை சொல்வதை நிறுத்து (மணி நேரம்)', kioskNow: 'இப்போது: {hours} மணி நேரத்துக்குப் ({minutes} நிமிடம்) பிறகு நிறுத்தும் — பிறகு "ஊழியரிடம் கேளுங்கள்" என்று சொல்லும்; பட்டியலின் வயதை எப்போதும் காட்டும்.',
+    watchH: 'சுய-பில்லிங் கண்காணிப்பு', watchNow: 'இப்போது: ₹{above}-க்கு மேலான கூடைகளில் {pct}% சீரற்ற சோதனை; {loose} எடைப் பொருள் வரிகள் அல்லது {voids} நீக்கங்களுக்குப் பின் ஊழியர்.',
+    watchPct: 'சீரற்ற சோதனை: கூடைகளின் சதவீதம்', watchAbove: 'இந்தத் தொகைக்கு மேலான கூடைகள் மட்டும் (₹)', watchLoose: 'இத்தனை எடைப் பொருள் வரிகளுக்குப் பின் ஊழியரை அழை', watchVoids: 'இத்தனை நீக்கங்களுக்குப் பின் ஊழியரை அழை',
+    fromDecision: 'உங்கள் எழுத்து முடிவு {decision} ({date}) — நீங்கள் வேறு உள்ளிடும் வரை.', fromEntry: '{by} {at} அன்று உள்ளிட்டார்.',
+    saveKiosk: 'கியோஸ்க் மணி நேரத்தைச் சேமி', saveWatch: 'கண்காணிப்பு எண்களைச் சேமி', needKioskHours: '1 முதல் 168 வரையிலான முழு மணி நேரத்தைத் தட்டச்சு செய்யவும் (24 = ஒரு நாள்).',
+    needWatch: 'சதவீதம் (0 முதல் 100, எ.கா. 3), கூடையின் மதிப்பு ரூபாயில் (எ.கா. 2000), மற்றும் 1 முதல் 100 வரை இரண்டு முழு எண்களைத் தட்டச்சு செய்யவும்.',
   },
 } as const;
 
@@ -101,8 +115,29 @@ export interface ScheduleRow {
   readonly lastRun: { readonly tradingDay: string; readonly outcome: string; readonly sending: string; readonly lines: readonly string[] } | null;
 }
 
+/** OB-375 · OB-378: one floor-device setting as head office says it applies now. */
+export interface FloorSettingRow {
+  readonly setting: 'kiosk_stale_after' | 'self_checkout_watch';
+  readonly value: number | { readonly auditRateBps: number; readonly auditAboveMinor: number; readonly looseProducePatternCount: number; readonly voidPatternCount: number };
+  readonly source: 'owner_entry' | 'owner_decision';
+  readonly decision: string; readonly decidedOn: string; readonly version: number; readonly setBy: string | null; readonly setAt: string | null;
+}
+
+/** "3" / "2.5" per cent → basis points (0 … 10 000, two decimals at most); anything else → undefined. */
+export function bpsOfPercent(raw: string): number | undefined {
+  const v = raw.trim();
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(v)) return undefined;
+  const bps = Math.round(Number(v) * 100);
+  return bps <= 10_000 ? bps : undefined;
+}
+const wholeIn = (raw: string, lo: number, hi: number): number | undefined => (/^\d{1,4}$/.test(raw.trim()) && Number(raw.trim()) >= lo && Number(raw.trim()) <= hi ? Number(raw.trim()) : undefined);
+
 export interface OwnerAlertsSession {
-  readonly may: { readonly named: boolean; readonly open: boolean; readonly manage: boolean; readonly schedulesRead: boolean; readonly schedule: boolean };
+  readonly may: { readonly named: boolean; readonly open: boolean; readonly manage: boolean; readonly schedulesRead: boolean; readonly schedule: boolean; readonly floorRead: boolean; readonly floorManage: boolean };
+  /** OB-375 · OB-378: the kiosk hours and the self-checkout watch numbers in force, and the owner's own entry of each. */
+  readFloorSettings(): Promise<Outcome<{ readonly settings: readonly FloorSettingRow[] }>>;
+  setKioskHours(typed: string): Promise<Outcome<unknown, 'needKioskHours'>>;
+  setWatch(typed: { readonly pct: string; readonly aboveRupees: string; readonly loose: string; readonly voids: string }): Promise<Outcome<unknown, 'needWatch'>>;
   readThresholds(): Promise<Outcome<{ readonly thresholds: readonly ThresholdRow[]; readonly notSet: readonly AlertKind[] }>>;
   setThreshold(kind: AlertKind, typed: string): Promise<Outcome<unknown, 'needValue' | 'needRupees' | 'needCount' | 'needHours'>>;
   clearThreshold(kind: AlertKind, reason: string): Promise<Outcome<unknown, 'needReason'>>;
@@ -120,11 +155,26 @@ export function createOwnerAlertsSession(input: { readonly viewer: { readonly us
   const may = {
     named, open: named && held.has('owner.alert.read'), manage: named && held.has('owner.alert.manage'),
     schedulesRead: named && held.has('owner.kpi.read'), schedule: named && held.has('owner.report.schedule'),
+    floorRead: named && held.has('floor.settings.read'), floorManage: named && held.has('floor.settings.manage'),
   };
   const call = makeCaller({ keyPrefix: 'owner-alerts', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   return {
     may,
     readThresholds: () => call('GET', '/v1/reporting/owner-alert-thresholds'),
+    readFloorSettings: () => call('GET', '/v1/devices/floor-settings'),
+    setKioskHours: async (typed) => {
+      const hours = wholeIn(typed, 1, 168);
+      if (hours === undefined) return { result: 'invalid', why: 'needKioskHours' };
+      return call('POST', '/v1/devices/floor-settings/kiosk_stale_after', { value: hours * 60 });
+    },
+    setWatch: async ({ pct, aboveRupees, loose, voids }) => {
+      const auditRateBps = bpsOfPercent(pct);
+      const above = aboveRupees.trim() === '0' ? 0 : paiseOfRupees(aboveRupees);
+      const l = wholeIn(loose, 1, 100);
+      const v = wholeIn(voids, 1, 100);
+      if (auditRateBps === undefined || above === undefined || l === undefined || v === undefined) return { result: 'invalid', why: 'needWatch' };
+      return call('POST', '/v1/devices/floor-settings/self_checkout_watch', { value: { auditRateBps, auditAboveMinor: above, looseProducePatternCount: l, voidPatternCount: v } });
+    },
     setThreshold: async (kind, typed) => {
       if (typed.trim() === '') return { result: 'invalid', why: 'needValue' };
       const how = ALERT_INPUT[kind];

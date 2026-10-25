@@ -27,6 +27,12 @@
 // issued twice — not to another till, and not to the same till for another year — so numbers never repeat across years.
 // Head office issues next year's prefix before 1 April; `GET /v1/receipt-prefixes` names every year-scoped till that has
 // no prefix yet for the current or the coming year.
+//
+// OB-376 (owner, 25 Oct 2026): a HANDHELD QUEUE TILL is a till lane too — its bills are numbered by the store computer for
+// lane `device:<deviceId>` (ADR-0028). Head office issues that lane its own prefix by the SAME route and the same rules
+// (unique, versioned, audited, carried in the store pack), so its bills are no longer flagged "numbered without an issued
+// prefix". Only a handheld head office registered at that store is accepted (when the register is wired), and every
+// registered handheld with no prefix is listed — not flagged: a warehouse or picker handheld never rings a bill.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, assertBranchInScope, notFound } from '../../kernel/src/index';
@@ -96,10 +102,17 @@ export interface ReceiptPrefixDeps {
   readonly recordIssue: (tenantId: string, issue: ReceiptPrefixIssue, expectedVersion: number) => Promise<void | { readonly kept: ReceiptPrefixIssue }>;
   /** The tills head office registered (device registry `pos_lane`, not retired): which store each is at. */
   readonly registeredTills?: (tenantId: string) => Promise<readonly { readonly storeId: string; readonly tillId: string; readonly label?: string }[]>;
+  /** OB-376: the handhelds head office registered (device registry `handheld`, not retired): which store each is at. */
+  readonly registeredHandhelds?: (tenantId: string) => Promise<readonly { readonly storeId: string; readonly deviceId: string; readonly label?: string }[]>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
 const TILL_ID = /^[A-Za-z0-9._-]{1,40}$/;
+/** OB-376: a handheld queue till's lane, as its store computer numbers it (`device:<deviceId>`, ADR-0028). */
+export const QUEUE_TILL_LANE_PREFIX = 'device:';
+const QUEUE_TILL_LANE = /^device:([A-Za-z0-9._-]{1,40})$/;
+/** OB-376: the handheld a lane names, when it is a queue till's lane; otherwise undefined. */
+export const handheldOfLane = (tillId: string): string | undefined => QUEUE_TILL_LANE.exec(tillId)?.[1];
 const RETRIES = 16;
 
 /** The current prefix per (store, till), with its history. Pure. */
@@ -148,8 +161,14 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
         if (!stores.has(storeId)) throw notFound(`store ${storeId}`);
         assertBranchInScope(ctx, storeId);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (!TILL_ID.test(tillId)) {
-          throw apiError(400, { code: 'not_readable_as_a_till', whatHappened: `"${tillId}" is not a till name head office can keep (letters, digits, ".", "_" or "-", up to 40).`, wasItSaved: 'not_saved', nextSafeAction: 'Use the till\'s name as its store computer knows it (for example lane-1). Nothing was saved.' });
+        const handheld = handheldOfLane(tillId);
+        if (!TILL_ID.test(tillId) && handheld === undefined) {
+          throw apiError(400, { code: 'not_readable_as_a_till', whatHappened: `"${tillId}" is not a till name head office can keep (letters, digits, ".", "_" or "-", up to 40; a handheld queue till is device:<its device id>).`, wasItSaved: 'not_saved', nextSafeAction: 'Use the till\'s name as its store computer knows it (for example lane-1, or device:hh-1 for a handheld queue till). Nothing was saved.' });
+        }
+        // OB-376: a queue till's lane must be a handheld head office registered at THIS store — never a guessed device.
+        if (handheld !== undefined && deps.registeredHandhelds !== undefined
+          && !(await deps.registeredHandhelds(ctx.tenantId)).some((h) => h.deviceId === handheld && h.storeId === storeId)) {
+          throw apiError(422, { code: 'not_a_handheld_of_this_store', whatHappened: `Head office has no handheld ${handheld} registered at store ${storeId}, so lane ${tillId} cannot be given a bill-number prefix.`, wasItSaved: 'not_saved', nextSafeAction: 'Register the handheld at this store on the Tills & devices page first, then issue the prefix. Nothing was saved.' });
         }
         const read = readReceiptPrefix(b['prefix']);
         if (!read.ok) {
@@ -244,6 +263,16 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
               ? `Till ${r.tillId} at ${stores.get(r.storeId) ?? r.storeId} has no bill-number prefix and the business has more than one store: its store computer numbers its bills under its own store prefix (ZZ…) until one is issued.`
               : 'No prefix issued yet. With one store a till that already numbers R-<till>- carries on; a new or replaced till numbers under its store computer\'s own store prefix (ZZ…), and each such bill is flagged (OB-85). Issue one before a second store opens.',
           }));
+        // OB-376: every registered handheld with no prefix for its queue-till lane — listed (a queue till's bills are flagged
+        // until it has one), never flagged as owed: a warehouse or picker handheld never rings a bill.
+        const handhelds = deps.registeredHandhelds === undefined ? [] : await deps.registeredHandhelds(ctx.tenantId);
+        const handheldsWithoutPrefix = handhelds
+          .filter((h) => inScope(h.storeId) && !has.has(`${h.storeId}\u0000${QUEUE_TILL_LANE_PREFIX}${h.deviceId}`))
+          .map((h) => ({
+            storeId: h.storeId, storeName: stores.get(h.storeId) ?? h.storeId, tillId: `${QUEUE_TILL_LANE_PREFIX}${h.deviceId}`,
+            ...(h.label === undefined ? {} : { label: h.label }), flagged: false,
+            why: `Handheld ${h.deviceId}${h.label === undefined ? '' : ` (${h.label})`}: if it is used as a queue till, issue lane ${QUEUE_TILL_LANE_PREFIX}${h.deviceId} its own prefix — until then each bill it takes is numbered under its store computer's own prefix (ZZ…) and flagged.`,
+          }));
         // A2: every year-scoped till with no prefix for the current year, or (from 1 March) for the coming one — the store
         // computer would otherwise number under a fallback on 1 April. Said, by name, ahead of the day.
         const now = deps.now();
@@ -266,7 +295,7 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
         return {
           status: 200,
           body: {
-            storesInBusiness: stores.size, multiStore, tills, needsPrefix,
+            storesInBusiness: stores.size, multiStore, tills, needsPrefix: [...needsPrefix, ...handheldsWithoutPrefix],
             currentFinancialYear: thisYear, needsYearPrefix,
             rule: { maxNumberLength: GST_INVOICE_NUMBER_MAX, counterDigits: RECEIPT_COUNTER_DIGITS, maxPrefixLength: RECEIPT_PREFIX_MAX, reservedStarts: ['R-', 'ZZ'] },
             asAt: deps.now(),

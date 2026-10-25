@@ -14,9 +14,9 @@
 //   • THE SALE: a card or UPI payment goes through the till's own lane pipeline on this box (`lane-server.ts`, one loopback
 //     instance per handheld, its lane `device:<id>`): the attempt recorded BEFORE the machine is asked, the box's receipt
 //     number, the legal gates again before the disk, the seal on who rang it, card data removed, the fsync, then the SAME
-//     sale record queued for head office as any till's — so stock, GST and the books reconcile. Only card and UPI: whether
-//     a handheld may take CASH is not decided (the roadmap is silent), so cash — and points, store credit or "paid on old
-//     system" — is refused here before anything is written.
+//     sale record queued for head office as any till's — so stock, GST and the books reconcile. Only card and UPI: the owner
+//     decided (OB-372, 25 Oct 2026) that a handheld takes NO CASH, so cash — and points, store credit or "paid on old
+//     system" — is refused here before anything is written. Its paper bill is printed at a till by its number (OB-373).
 //   • THE HAND-OVER: otherwise the basket is handed to a till by a four-digit code (`queue-baskets.ts`); the till rings it
 //     through its own pack.
 //   • THE SWITCHES (OB-316): `pos.queue_busting` for this box's lane (or its branch) serves any of this; `payments.mobile_pos`
@@ -48,7 +48,7 @@ export const QUEUE_POS_LANE_ROUTES: Readonly<Record<string, readonly ('GET' | 'P
 });
 /** The routes that move money, or number a bill — served only while `payments.mobile_pos` is on too. */
 const PAYMENT_ROUTES = new Set(['/lane/sales', '/lane/receipt-numbers', '/lane/payment-attempts', '/lane/payment-attempts/answer', '/lane/payment-attempts/recover']);
-/** The tenders a handheld may take. Cash is an owner decision not yet made; nothing else is offered on a handheld. */
+/** The tenders a handheld may take — card and UPI only. OB-372 (owner, 25 Oct 2026): a handheld takes no cash. */
 export const HANDHELD_TENDERS: readonly string[] = Object.freeze(['card', 'upi']);
 const OPERATOR_COOKIE = 'sre_operator';
 const OPERATOR_HEADER = 'x-sre-operator';
@@ -141,8 +141,8 @@ export const QUEUE_POS_WORDS = Object.freeze({
     ta: 'இந்தக் கருவி இங்கு கட்டணம் பெறாது (payments.mobile_pos அணைக்கப்பட்டுள்ளது). கூடையை பில்லிங்குக்கு ஒப்படைக்கவும். எதுவும் சேமிக்கப்படவில்லை.',
   },
   tenderNotOnHandheld: {
-    en: 'A handheld takes card or UPI only — whether it may take cash is not decided yet. Hand the basket to a till for any other payment. Nothing was saved.',
-    ta: 'கருவி அட்டை அல்லது UPI மட்டுமே பெறும் — ரொக்கம் பெறலாமா என்பது இன்னும் முடிவாகவில்லை. வேறு கட்டணத்துக்கு கூடையை பில்லிங்குக்கு ஒப்படைக்கவும். எதுவும் சேமிக்கப்படவில்லை.',
+    en: 'A handheld takes card or UPI only — never cash (the owner\'s decision). Hand the basket to a till for any other payment. Nothing was saved.',
+    ta: 'கருவி அட்டை அல்லது UPI மட்டுமே பெறும் — ரொக்கம் ஒருபோதும் இல்லை (உரிமையாளரின் முடிவு). வேறு கட்டணத்துக்கு கூடையை பில்லிங்குக்கு ஒப்படைக்கவும். எதுவும் சேமிக்கப்படவில்லை.',
   },
   notSignedIn: {
     en: 'Nobody is signed in on this handheld for the queue till. Sign in with your staff ID and till PIN.',
@@ -359,7 +359,7 @@ export function queuePosDoor(deps: QueuePosDoorDeps): QueuePosDoor {
         if (!read.ok) { sendJson(res, 413, { committed: false, refusedBecause: 'too_large', laneMessage: 'The request is too large.' }); return; }
         body = read.text;
         const b = parse(body);
-        // Cash, points, store credit or "paid on old system" on a handheld: not decided, so never written (hard rule #10:
+        // Cash, points, store credit or "paid on old system" on a handheld: never (OB-372), so never written (hard rule #10:
         // a refusal in words, before the disk — never a silent acceptance).
         if (route === '/lane/sales' && (b === null || handheldTenderRefusal(b))) {
           sendJson(res, 200, { committed: false, refusedBecause: 'tender_not_on_handheld', laneMessage: QUEUE_POS_WORDS.tenderNotOnHandheld.en, laneMessageTa: QUEUE_POS_WORDS.tenderNotOnHandheld.ta });

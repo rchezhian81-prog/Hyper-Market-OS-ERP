@@ -6,7 +6,7 @@
 const $ = (id) => document.getElementById(id);
 const api = window.ownerAlerts ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, open: false, manage: false, schedulesRead: false, schedule: false };
+const may = session?.may ?? { named: false, open: false, manage: false, schedulesRead: false, schedule: false, floorRead: false, floorManage: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
@@ -14,7 +14,27 @@ function text(tag, words, cls) { const n = document.createElement(tag); n.textCo
 function button(words, iconName, cls) { const b = document.createElement('button'); b.type = 'button'; if (cls) b.className = cls; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 function field(labelWords, cls) { const l = document.createElement('label'); l.append(text('span', labelWords)); const i = document.createElement('input'); i.autocomplete = 'off'; i.className = cls; l.append(i); return l; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
-let thresholds = null; let today = null; let schedules = null;
+let thresholds = null; let today = null; let schedules = null; let floor = null;
+const fillIn = (words, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), words);
+
+// OB-375 · OB-378: the kiosk hours and the watch numbers in force — the owner's written decision until he enters another.
+function paintFloor() {
+  if (floor === null) return;
+  const from = (row) => (row.source === 'owner_decision' ? fillIn(t('fromDecision'), { decision: row.decision, date: row.decidedOn }) : fillIn(t('fromEntry'), { by: row.setBy ?? '', at: (row.setAt ?? '').slice(0, 10) }));
+  const kiosk = floor.settings.find((r) => r.setting === 'kiosk_stale_after');
+  const watch = floor.settings.find((r) => r.setting === 'self_checkout_watch');
+  if (kiosk) {
+    $('kiosk-now').textContent = fillIn(t('kioskNow'), { hours: Math.round((kiosk.value / 60) * 100) / 100, minutes: kiosk.value });
+    $('kiosk-from').textContent = from(kiosk);
+    $('kiosk-from').dataset.source = kiosk.source;
+  }
+  if (watch) {
+    $('watch-now').textContent = fillIn(t('watchNow'), { pct: watch.value.auditRateBps / 100, above: (watch.value.auditAboveMinor / 100).toLocaleString('en-IN'), loose: watch.value.looseProducePatternCount, voids: watch.value.voidPatternCount });
+    $('watch-from').textContent = from(watch);
+    $('watch-from').dataset.source = watch.source;
+  }
+}
+async function loadFloor() { const o = await session.readFloorSettings(); if (o.result === 'ok') floor = o.value; else say('f-status', o); paintFloor(); }
 
 function paintThresholds() {
   const ul = $('t-rows'); ul.replaceChildren();
@@ -87,7 +107,8 @@ function paint() {
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['thresholds-h', 'thresholdsH'], ['today-h', 'todayH'], ['schedules-h', 'schedulesH'], ['d-check-text', 'checkNow'], ['s-id-l', 'scheduleId'], ['s-kind-l', 'kind'], ['s-kind-report', 'kindReport'], ['s-kind-export', 'kindExport'], ['s-target-l', 'target'], ['s-time-l', 'time'], ['s-lang-l', 'language'], ['s-save-text', 'saveSchedule'], ['s-run-text', 'runNow']]) $(id).textContent = t(key);
-  paintThresholds(); paintToday(); paintSchedules();
+  for (const [id, key] of [['floor-h', 'floorH'], ['floor-lead', 'floorLead'], ['kiosk-h', 'kioskH'], ['kiosk-l', 'kioskL'], ['kiosk-save-text', 'saveKiosk'], ['watch-h', 'watchH'], ['watch-pct-l', 'watchPct'], ['watch-above-l', 'watchAbove'], ['watch-loose-l', 'watchLoose'], ['watch-voids-l', 'watchVoids'], ['watch-save-text', 'saveWatch']]) $(id).textContent = t(key);
+  paintThresholds(); paintToday(); paintSchedules(); paintFloor();
 }
 
 async function loadThresholds() { const o = await session.readThresholds(); if (o.result === 'ok') thresholds = o.value; else say('t-status', o); paintThresholds(); }
@@ -95,7 +116,7 @@ async function loadToday() { const o = await session.readToday(); if (o.result =
 async function loadSchedules() { const o = await session.readSchedules(); if (o.result === 'ok') schedules = o.value; else say('s-status', o); paintSchedules(); }
 async function reload() { await loadThresholds(); await loadToday(); }
 
-for (const [id, name] of [['d-check', 'refresh-cw'], ['s-save', 'calendar-clock'], ['s-run', 'send']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+for (const [id, name] of [['d-check', 'refresh-cw'], ['s-save', 'calendar-clock'], ['s-run', 'send'], ['kiosk-save', 'check'], ['watch-save', 'check']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (!may.named) { $('page-status').textContent = t('nobody'); }
@@ -106,6 +127,17 @@ else {
   if (may.manage) {
     $('d-check').hidden = false;
     $('d-check').addEventListener('click', async () => { const out = await session.checkNow(); if (out.result === 'ok') $('d-status').textContent = `${t('raised')} ${out.value.raised}`; else say('d-status', out); await loadToday(); });
+  }
+  if (may.floorRead) {
+    $('floor').hidden = false; void loadFloor();
+    if (may.floorManage) {
+      $('kiosk-form').hidden = false; $('watch-form').hidden = false;
+      $('kiosk-save').addEventListener('click', async () => { const out = await session.setKioskHours($('kiosk-hours').value); say('f-status', out); if (out.result === 'ok') await loadFloor(); });
+      $('watch-save').addEventListener('click', async () => {
+        const out = await session.setWatch({ pct: $('watch-pct').value, aboveRupees: $('watch-above').value, loose: $('watch-loose').value, voids: $('watch-voids').value });
+        say('f-status', out); if (out.result === 'ok') await loadFloor();
+      });
+    }
   }
   if (may.schedulesRead) {
     $('schedules').hidden = false; void loadSchedules();

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, TEST_PACK_KEY } from '../support/api-harness';
@@ -254,7 +254,7 @@ async function queueBustOfflineAndSync(cloud: Cloud): Promise<void> {
     expect(mine).toMatchObject({ laneId: `device:${DEVICE}`, cashierId: RUNNER, total: 12_000, operatorVerified: { userId: RUNNER, laneId: `device:${DEVICE}`, via: 'pin' } });
     expect(typeof (mine['operatorVerified'] as { seal?: unknown }).seal).toBe('string');
     expect((mine['tenders'] as { kind: string; ref?: string }[]).map((t) => [t.kind, t.ref])).toEqual([['card', attempt.attemptId]]);
-    // Cash on a handheld is not decided: refused before the disk; so are a refund and a cash movement.
+    // Cash on a handheld: never (OB-372) — refused before the disk; so are a refund and a cash movement.
     q.newCustomer();
     q.scan(CODE.oil);
     await expect(q.till.tenderCash(`S-cash-${number}`, `R-cash-${number}`, new Date().toISOString())).rejects.toMatchObject({ refusedBecause: 'tender_not_on_handheld' });
@@ -264,6 +264,70 @@ async function queueBustOfflineAndSync(cloud: Cloud): Promise<void> {
     }
     expect((await onDisk(edge)).length).toBe(sales.length);
     expect(edge.outbox.unsentCount()).toBe(2);
+
+    // ── 3b. OB-373: the handheld prints nothing — a till on THIS store computer prints the bill by its number, offline ──
+    const copyAt = async (e: EdgeProcess, who?: string) => {
+      const till = bootPos({ laneId: LANE, catalogue: globalsOf(await (await saved(`http://127.0.0.1:${e.screens!.port}/pos/`)).text(), 'posCatalogue') as CatalogueSnapshot, lanePort: e.lane!.port });
+      if (who !== undefined) await signInTill(till, who);
+      return till;
+    };
+    const deviceEvents = async () => (await readLog(join(dir, 'device-events.log'))).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { type: string; payload: Record<string, unknown> }] : [])).filter((x) => x.type === 'BillCopyPrinted');
+    // Nobody signed in at the till: nothing printed, nothing recorded.
+    expect(await (await copyAt(edge)).printBillCopy({ billNumber: number, reason: 'Paid on a handheld queue till' })).toMatchObject({ ok: false, refusedBecause: 'operator_not_signed_in' });
+    const counter = await copyAt(edge, CASHIER);
+    const copy1 = await counter.printBillCopy({ billNumber: number, reason: 'Paid on a handheld queue till' });
+    if (!copy1.ok) throw new Error(copy1.why);
+    expect(copy1).toMatchObject({ ok: true, copyNumber: 1, number, billLaneId: `device:${DEVICE}` });
+    expect(copy1.lines.join('\n')).toMatch(/\*\*\* REPRINT \*\*\*[\s\S]*Paid on a handheld queue till — Copy 1[\s\S]*Toor dal 1kg/);
+    expect(copy1.laneMessageTa).toMatch(/நகல் 1/);
+    // A number this store computer does not hold is refused in words — never a made-up bill.
+    expect(await counter.printBillCopy({ billNumber: 'NO-SUCH-1', reason: 'The customer lost the bill' })).toMatchObject({ ok: false, refusedBecause: 'bill_not_on_this_store_computer' });
+    // The door is the till's own: another site's page (403) or a body the lane does not speak (415) is refused unread.
+    const copyDoor = `http://127.0.0.1:${edge.lane!.port}/lane/bill-copies`;
+    const copyBody = JSON.stringify({ copyId: 'C-x', billNumber: number, reason: 'x' });
+    expect((await saved(copyDoor, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://evil.example' }, body: copyBody })).status).toBe(403);
+    expect((await saved(copyDoor, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: copyBody })).status).toBe(415);
+    // …and the handheld cannot reach it at all through its own door.
+    expect((await saved(`${dev(edge)}/queue-pos/lane/bill-copies`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: runnerCookie }, body: copyBody })).status).toBe(404);
+    expect((await deviceEvents()).map((x) => [x.payload['billNumber'], x.payload['copyNumber'], x.payload['printedBy'], x.payload['billLaneId'], x.payload['laneId']])).toEqual([[number, 1, CASHIER, `device:${DEVICE}`, LANE]]);
+    // A COLD RESTART: the next copy is copy 2 — counted from the box's own disk.
+    await stopAll();
+    edge = await boot('queue_and_payments');
+    const second = await (await copyAt(edge, CASHIER)).printBillCopy({ billNumber: number, reason: 'The customer lost the bill', language: 'ta' });
+    expect(second).toMatchObject({ ok: true, copyNumber: 2 });
+    expect((await deviceEvents()).map((x) => x.payload['copyNumber'])).toEqual([1, 2]);
+
+    // ── 3c. OB-377: a till on ANOTHER till PC (its own store computer) has neither the hand-over nor the handheld's bill ──
+    q = await handheld(edge, runnerCookie);
+    q.newCustomer();
+    q.scan(CODE.dal);
+    const waitingHere = await q.handOver();
+    if (!waitingHere.ok) throw new Error(waitingHere.laneMessage);
+    const otherDir = await mkdtemp(join(tmpdir(), 'sre-queue-till-other-'));
+    try {
+      const otherPack = join(otherDir, 'store-pack.json');
+      await writeFile(otherPack, storePack('queue_and_payments').replace(/"lane-1"/g, '"lane-2"'), 'utf8');
+      await issueTillPins(otherDir, TEST_PACK_KEY, [CASHIER]);
+      // The same signed price list as the first PC (as head office would have sent it), so the refusal is never "no list".
+      await copyFile(join(dir, 'signed-pack.json'), join(otherDir, 'signed-pack.json'));
+      const other = (await startEdge({
+        EDGE_DATA_DIR: otherDir, EDGE_TENANT_ID: cloud.tenant, PACK_SIGNING_KEY: TEST_PACK_KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-2',
+        EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: otherPack,
+      }, () => {}))!;
+      edges.push(other);
+      const otherTill = bootPos({ laneId: 'lane-2', catalogue: globalsOf(await (await saved(`http://127.0.0.1:${other.screens!.port}/pos/`)).text(), 'posCatalogue') as CatalogueSnapshot, lanePort: other.lane!.port });
+      await signInTill(otherTill, CASHIER);
+      expect(await otherTill.printBillCopy({ billNumber: number, reason: 'Paid on a handheld queue till' })).toMatchObject({ ok: false, refusedBecause: 'bill_not_on_this_store_computer' });
+      expect(await otherTill.recallQueueBasketAtTill(waitingHere.code)).toMatchObject({ ok: false, refusedBecause: 'no_such_queue_basket' });
+    } finally {
+      const i = edges.length - 1;
+      await edges[i]!.stop();
+      edges.splice(i, 1);
+      await rm(otherDir, { recursive: true, force: true });
+    }
+    // The basket is still waiting on the PC the handheld is enrolled to; nobody came, so it is given up — kept on the record.
+    expect((await q.waiting()).baskets.map((b) => b.code)).toEqual([waitingHere.code]);
+    expect(await q.giveUp(waitingHere.code, 'Customer left the queue')).toMatchObject({ ok: true });
 
     // ── 4. THE LINE COMES BACK: head office books the handheld's sale as any till's ────────────────────────────────
     cut = false;
@@ -276,6 +340,13 @@ async function queueBustOfflineAndSync(cloud: Cloud): Promise<void> {
     const filed = await cloud.request({ method: 'GET', path: `/v1/sales/S-${number}`, userId: OWNER });
     expect(filed.status, JSON.stringify(filed.body)).toBe(200);
     expect(filed.body).toMatchObject({ saleId: `S-${number}`, banked: true });
+    // OB-373: both copies reached head office through the store computer's relay — who, which till, which copy, of which bill.
+    const copyDay = String(mine['tradingDay']);
+    const copies = (await cloud.request({ method: 'GET', path: `/v1/bill-copies?branchId=${STORE}&day=${copyDay}`, userId: OWNER })).body as { count: number; ofHandheldBills: number; flagged: number; copies: Record<string, unknown>[] };
+    expect(copies).toMatchObject({ count: 2, ofHandheldBills: 2, flagged: 0 });
+    expect(copies.copies.map((c) => [c['billNumber'], c['copyNumber'], c['printedBy'], c['laneId'], c['billLaneId'], c['storeId']])).toEqual([
+      [number, 1, CASHIER, LANE, `device:${DEVICE}`, STORE], [number, 2, CASHIER, LANE, `device:${DEVICE}`, STORE],
+    ]);
     // The SAME record as a till's: head office finds exactly what it finds on the fixed till's bill — and never that the
     // store computer could not vouch for who rang it (the seal is there and matches).
     const exceptions = (await cloud.request({ method: 'GET', path: '/v1/sales/exceptions', userId: OWNER })).body as { critical: { kind: string; saleId: string }[]; material: { kind: string; saleId: string }[] };

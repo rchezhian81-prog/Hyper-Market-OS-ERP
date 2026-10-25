@@ -19,9 +19,10 @@ const recorder = () => {
 describe('owner alerts session', () => {
   it('the owner may manage and schedule; a manager may only read; nobody signed in may do nothing', () => {
     const owner = createOwnerAlertsSession({ viewer: { userId: 'u-owner', permissions: ['owner.alert.read', 'owner.alert.manage', 'owner.kpi.read', 'owner.report.schedule'] } });
-    expect(owner.may).toEqual({ named: true, open: true, manage: true, schedulesRead: true, schedule: true });
+    // OB-375 · OB-378: the floor-device numbers need their own permissions (the owner's page shows them to holders only).
+    expect(owner.may).toEqual({ named: true, open: true, manage: true, schedulesRead: true, schedule: true, floorRead: false, floorManage: false });
     const mgr = createOwnerAlertsSession({ viewer: { userId: 'u-mgr', permissions: ['owner.alert.read', 'owner.kpi.read'] } });
-    expect(mgr.may).toEqual({ named: true, open: true, manage: false, schedulesRead: true, schedule: false });
+    expect(mgr.may).toEqual({ named: true, open: true, manage: false, schedulesRead: true, schedule: false, floorRead: false, floorManage: false });
     expect(createOwnerAlertsSession({ viewer: undefined }).may.open).toBe(false);
   });
 

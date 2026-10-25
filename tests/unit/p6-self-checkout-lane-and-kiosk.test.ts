@@ -166,6 +166,21 @@ describe('the self-checkout lane', () => {
     expect(lane.view()).toMatchObject({ receipt: null, payment: null, open: true, lines: [] });
   });
 
+  it('OB-374 (owner, 25 Oct 2026): a card or UPI payment is confirmed only by a colleague with THEIR OWN PIN — never the customer, never a wrong PIN', async () => {
+    const { till, state } = fakeTill();
+    const lane = createSelfCheckoutLane(till, config().config);
+    await lane.openLane('u-attend', '111111');
+    lane.scan('RICE');
+    await lane.pay('upi');
+    // The attendant's staff ID with the other colleague's PIN, or no PIN at all: refused, nothing saved, the lane waits.
+    expect(await lane.confirmPayment('u-attend', '222222', 'approved')).toMatchObject({ ok: false, refusedBecause: 'wrong_pin' });
+    expect(await lane.confirmPayment('u-attend', '', 'approved')).toMatchObject({ ok: false });
+    expect(state.committed).toEqual([]);
+    // The colleague's own PIN confirms it — and the sale names that colleague, as the box verified them.
+    expect(await lane.confirmPayment('u-two', '222222', 'approved')).toMatchObject({ ok: true });
+    expect(state.committed).toEqual([expect.objectContaining({ kind: 'upi', outcome: 'approved', cashierId: 'u-two' })]);
+  });
+
   it('in real trading an approval needs the machine\'s number; no answer is never treated as paid', async () => {
     const { till, state } = fakeTill();
     const lane = createSelfCheckoutLane(till, config({ realTrading: true }).config);

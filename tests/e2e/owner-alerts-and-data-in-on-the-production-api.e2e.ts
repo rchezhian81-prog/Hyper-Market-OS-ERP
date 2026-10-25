@@ -118,6 +118,45 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('owner aler
     await close();
   }, 120_000);
 
+  // OB-375 · OB-378 (owner, 25 Oct 2026): the kiosk hours and the self-checkout watch numbers — his written decision until
+  // he enters another; his alone to change; every store computer gets them in its setup file.
+  it('the owner\'s floor-device numbers: his decision shown first; he changes the kiosk hours and the watch; Tamil; a manager only reads', async () => {
+    const { page, errors, close } = await open(alertsShell, OWNER, '/owner-alerts');
+    await page.locator('#floor:not([hidden])').waitFor({ timeout: 15_000 });
+    await waitText(page, '#kiosk-now', 'Now: stops quoting after 24 hour(s) (1440 minutes) — then it says "ask a colleague"');
+    await waitText(page, '#kiosk-from', 'Your written decision OB-375 (2026-10-25) — until you enter another.');
+    await waitText(page, '#watch-now', 'Now: random check of 3% of baskets over ₹2,000; a colleague after 4 loose-produce lines or 3 removals.');
+    // A number that is not one is refused on the page; nothing is saved.
+    await page.fill('#kiosk-hours', '0');
+    await page.click('#kiosk-save');
+    await waitText(page, '#f-status', 'Type whole hours, from 1 to 168');
+    expect(await page.locator('#kiosk-save svg').count()).toBe(1);
+    await page.fill('#kiosk-hours', '12');
+    await page.click('#kiosk-save');
+    await waitText(page, '#kiosk-now', 'after 12 hour(s) (720 minutes)');
+    await waitText(page, '#kiosk-from', `Entered by ${OWNER}`);
+    await page.fill('#watch-pct', '5'); await page.fill('#watch-above', '1500'); await page.fill('#watch-loose', '6'); await page.fill('#watch-voids', '2');
+    await page.click('#watch-save');
+    await waitText(page, '#watch-now', 'random check of 5% of baskets over ₹1,500; a colleague after 6 loose-produce lines or 2 removals.');
+    const held = (await cloud.request({ method: 'GET', path: '/v1/devices/floor-settings', userId: OWNER })).body as { settings: { setting: string; value: unknown; source: string }[] };
+    expect(held.settings.map((x) => [x.setting, x.value, x.source])).toEqual([
+      ['kiosk_stale_after', 720, 'owner_entry'],
+      ['self_checkout_watch', { auditRateBps: 500, auditAboveMinor: 150_000, looseProducePatternCount: 6, voidPatternCount: 2 }, 'owner_entry'],
+    ]);
+    expect(await auditPage(page, { expectLang: 'en', minTarget: 56 }), 'the floor-device numbers').toEqual([]);
+    await page.click('#lang');
+    await waitText(page, '#floor-h', 'விலை கியோஸ்க் மற்றும் சுய-பில்லிங் கண்காணிப்பு');
+    await waitText(page, '#kiosk-now', '12 மணி நேரத்துக்குப்');
+    expect(errors).toEqual([]);
+    await close();
+    const m = await open(alertsShell, MGR, '/owner-alerts');
+    await m.page.locator('#floor:not([hidden])').waitFor({ timeout: 15_000 });
+    await waitText(m.page, '#kiosk-now', 'after 12 hour(s)');
+    expect(await m.page.isHidden('#kiosk-form')).toBe(true);
+    expect(await m.page.isHidden('#watch-form')).toBe(true);
+    await m.close();
+  }, 120_000);
+
   it('a manager reads the alerts but cannot set them; a cashier opens nothing', async () => {
     const m = await open(alertsShell, MGR, '/owner-alerts');
     await m.page.locator('#t-rows li[data-kind="voided_bill"]').waitFor({ timeout: 15_000 });

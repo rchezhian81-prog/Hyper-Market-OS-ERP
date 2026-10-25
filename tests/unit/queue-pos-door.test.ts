@@ -14,7 +14,7 @@ import type { CheckOutcome } from '../../edge/store-edge/src/till-operators';
  * **D04-FR-05 — the queue till's door on the device socket refuses what it must, before anything is written.** Driven
  * over a real HTTP socket with stand-in registers: the switch (OB-316), the person (signed in FOR SELLING on this phone),
  * the routes (a queue till never reaches refunds, cash, approvals, holds or the day close), the tenders (card and UPI
- * only — cash on a handheld is not decided), and every refusal in English and Tamil.
+ * only — a handheld takes no cash, OB-372), and every refusal in English and Tamil.
  */
 
 const ON: QueuePosSwitches = { laneId: 'lane-1', known: true, why: null, queueBusting: true, payments: true };

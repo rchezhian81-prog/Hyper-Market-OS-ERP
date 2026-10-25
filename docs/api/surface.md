@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1535 | 893 | 893 | 167 | 414 |
+| 13 | 1539 | 895 | 895 | 167 | 417 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -494,6 +494,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
+| GET | `/v1/bill-copies` | `pos.sale.read` | core | — |
+| POST | `/v1/bill-copies/:copyId/synced` | `pos.billcopy.sync` | core | yes |
 | GET | `/v1/fraud-signals/duplicate-bank` | `lp.case.read` | core | — |
 | POST | `/v1/fraud-signals/evaluate` | `lp.case.read` | core | yes |
 | GET | `/v1/fraud-signals/stored` | `lp.case.read` | core | — |
@@ -1239,6 +1241,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/devices/esl/pushes` | `price.integrity.audit` | core | — |
 | POST | `/v1/devices/esl/pushes/:pushId/retry` | `price.integrity.audit` | core | yes |
 | GET | `/v1/devices/floor` | `platform.health.read` | core | — |
+| GET | `/v1/devices/floor-settings` | `floor.settings.read` | core | — |
+| POST | `/v1/devices/floor-settings/:setting` | `floor.settings.manage` | core | yes |
 | POST | `/v1/devices/floor/:deviceId` | `platform.device.manage` | core | yes |
 | POST | `/v1/devices/floor/:deviceId/events` | `device.event.ingest` | core | yes |
 | POST | `/v1/devices/floor/:deviceId/status` | `platform.device.manage` | core | yes |

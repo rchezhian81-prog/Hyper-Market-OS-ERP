@@ -30,7 +30,11 @@
 4. **Only what a queue till needs.** The door relays the operator status, sync status, sale, receipt numbers, card/UPI
    attempts and void evidence. It never reaches refunds, cash movements, a shift or day close, approvals, holds, the device
    outbox or the till sign-in. A sale with any tender other than card or UPI is refused before anything is written:
-   whether a handheld may take CASH is not decided (the roadmap is silent), so it is not built.
+   the owner decided a handheld takes **no cash** (OB-372, 25 Oct 2026). It has **no printer** either (OB-373): its paid
+   screen says "Ask at a till or the service desk to print this bill" with the bill number, and a till served by the same
+   store computer prints a copy by that number (`POST /lane/bill-copies`, `edge/store-edge/src/bill-copies.ts`) — marked
+   DUPLICATE, recorded on the box (who, which copy, why) before it is answered, then relayed to head office
+   (`BillCopyPrinted` → `/v1/bill-copies/:copyId/synced`). The queue-till door never reaches it.
 5. **Otherwise, a hand-over by code.** The basket is kept on the store computer's disk under a four-digit code
    (`queue-baskets.ts`, rules in `packages/suspended-sales/src/queue-basket.ts`); a till served by that store computer keys
    the code (`POST /lane/queue-baskets/recall`, loopback, offline) and re-rings every line through its own pack, once.
@@ -47,14 +51,18 @@
   do"): the handhelds must stay on a staff-only WPA2/WPA3 network separate from guest wifi. No card data travels — only the
   box's attempt reference and the machine's approval number — but a session cookie is readable by a device already on that
   network. TLS on the device socket remains the follow-up ADR-0019 names.
-- A handheld's bills are numbered by the store computer for lane `device:<id>`; until head office issues that lane a
-  bill-number prefix they carry the store computer's own store-coded prefix and head office flags each one (as for any till
-  with no prefix).
-- The hand-over lives on ONE store computer. Where each till PC is its own store computer (ADR-0004), a handheld hands
-  over to the till(s) of the PC it is enrolled on.
+- A handheld's bills are numbered by the store computer for lane `device:<id>`. Head office issues that lane its own
+  bill-number prefix through the till-prefix route (OB-376, `POST /v1/stores/:storeId/tills/device:<id>/receipt-prefix`,
+  only for a handheld registered at that store); until it does, they carry the store computer's own store-coded prefix and
+  head office flags each one (as for any till with no prefix).
+- The hand-over AND the handheld's bills live on ONE store computer. Where each till PC is its own store computer
+  (ADR-0004), the owner decided (OB-377, 25 Oct 2026): **enrol each handheld to the PC of the till it serves**. A till on
+  another PC refuses the code and the bill number in words (tested: `tests/integration/the-queue-till-scans-pays-and-hands-
+  over-through-the-store-computer.test.ts`, step 3c). The install steps are in `docs/runbooks/in-store-install.md` Step 6b.
 - A handheld names no scale, so loose weighed goods are refused on it by the till's own B6 rule; the till scans those.
 
 ## Reconsider-when
 
-The owner decides cash on the handheld; TLS is added to the device socket; tills share one store computer, or a cross-box
-hand-over is wanted; a Bluetooth printer is bought for the handheld's bill.
+The owner reverses OB-372 (cash on the handheld); TLS is added to the device socket; tills share one store computer, or a
+cross-box hand-over or reprint is wanted; a Bluetooth printer is bought for the handheld's bill (OB-373 would then be
+revisited).

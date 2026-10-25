@@ -8,8 +8,10 @@
 //     applied at the till, and the kiosk says so rather than guess which one applies.
 //   • A weighed item's own scale label carries its price; a plain code of a weighed item shows the price per unit of
 //     weight. A recalled or unsellable item is never quoted — "please ask a colleague".
-//   • After how long the kiosk stops quoting is the OWNER's number. Until it is set the kiosk quotes and shows the age on
-//     every answer — "not set", never an invented limit (P-08).
+//   • After how long the kiosk stops quoting is the OWNER's number: he decided 24 hours (OB-375, 25 Oct 2026), and head
+//     office carries it in the store pack (`kioskStaleAfterMinutes`, 1 440). Past it the kiosk quotes nothing and says
+//     "ask a colleague"; it shows the list's age on every answer. A pack that carries no number is "not set" — the kiosk
+//     then quotes with the age, never an invented limit (P-08).
 
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import { quotePrice } from '../../../packages/self-checkout/src/self-checkout';
@@ -80,7 +82,7 @@ export function createPriceKiosk(input: { readonly catalogue?: CatalogueSnapshot
         staleAfterMinutes: input.staleAfterMinutes ?? Number.POSITIVE_INFINITY,
       });
       if (q.outcome === 'stale') {
-        return { outcome: 'stale', name: hit.product.name, minutesSincePack, age, words: W('This kiosk\'s price list is too old to quote from. Please check the price at the counter.', 'இந்தக் கியோஸ்கின் விலைப் பட்டியல் மிகவும் பழையது. விலையைக் கவுண்டரில் சரிபார்க்கவும்.') };
+        return { outcome: 'stale', name: hit.product.name, minutesSincePack, age, words: W('This kiosk\'s price list is too old to quote from. Please ask a colleague for the price.', 'இந்தக் கியோஸ்கின் விலைப் பட்டியல் மிகவும் பழையது. விலையை எங்கள் ஊழியரிடம் கேளுங்கள்.') };
       }
       if (q.outcome !== 'quoted' || q.priceMinor === undefined) {
         return { outcome: 'no_price', name: hit.product.name, minutesSincePack, age, words: W(`${hit.product.name}: no price is set. Please ask at the counter.`, `${hit.product.name}: விலை அமைக்கப்படவில்லை. கவுண்டரில் கேளுங்கள்.`) };

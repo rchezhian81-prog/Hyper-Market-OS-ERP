@@ -271,6 +271,9 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // OB-288 P6 (R8-3 · R8-7): a paid self-checkout basket's evidence — `activityId` is a plain top-level payload field; a
   // record head office cannot read is 400 → dead-lettered here by name (the sale itself is untouched).
   SelfCheckoutBasketRecorded: '/v1/self-checkout/baskets/:activityId/synced',
+  // OB-373: a copy of a bill printed at a till by its number (a handheld's bill above all) — `copyId` is a plain top-level
+  // payload field; a record head office cannot read is 400 → dead-lettered here by name (the sale itself is untouched).
+  BillCopyPrinted: '/v1/bill-copies/:copyId/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */
