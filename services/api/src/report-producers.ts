@@ -174,7 +174,7 @@ export function reportProducers(input: {
    * sold at (or, with no bill, where its goods went back). Shown BESIDE "Taken" — never folded into it.
    */
   const returnsOf = async (tenantId: string, day: string, scope: BranchScope) => {
-    const all = await dayBookAdapter({ store: input.store, now: input.now }).returnsOn(tenantId, day);
+    const all = await dayBookAdapter({ store: input.store, now: input.now, calendar: input.calendar }).returnsOn(tenantId, day);
     const out: { returnId: string; at: string; branchId: string; by: string; valueMinor: number; legs: readonly { kind: string; amountMinor: number }[]; saleId: string | null }[] = [];
     for (const r of all) {
       const rec = r as typeof r & { processedAt: string; processedBy: string; locationId?: string };
@@ -551,7 +551,7 @@ export function reportProducers(input: {
           cogs += cost;
           txns.push(saleTxn(sale, cost, `${sale.saleId}: ${sale.lines.length} line(s) at the average buying cost`));
         }
-        for (const r of await dayBookAdapter({ store: input.store, now: input.now }).returnsOn(tenantId, day)) {
+        for (const r of await dayBookAdapter({ store: input.store, now: input.now, calendar: input.calendar }).returnsOn(tenantId, day)) {
           const held = r.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
           const sale = held?.event.payload as IncomingSale | undefined;
           const rec = r as typeof r & { processedAt?: string; processedBy?: string; locationId?: string };

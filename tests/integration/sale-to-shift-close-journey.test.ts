@@ -13,6 +13,7 @@ import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/t
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
+import { startTheJourneyMidMorning } from '../support/trading-day-clock';
 
 /**
  * **Batch 3 acceptance — a sale to a closed shift and a closed day, reconciled independently (Wave 5 · PF-06, PF-08,
@@ -77,6 +78,9 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
   let cableCut = false;
 
   beforeAll(async () => {
+    // The script's day runs from 10:00 in the shop's day (UTC here), never from the real clock: begun in the last hour
+    // before the cut-off, its later bills fell on the NEXT trading day and "the next morning" came before its last bill.
+    startTheJourneyMidMorning();
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
     // The network cut is the STORE's line to head office: the box's calls to the cloud fail while it is cut.
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -187,6 +191,8 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     const T0 = Date.now();
     const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
     const tradingDay = tradingDateOf(at(0), makeTradingDayRule('00:00'));
+    // The whole scripted hour — every bill, the pickup and the shift close — is inside this one trading day.
+    expect(tradingDateOf(at(60), makeTradingDayRule('00:00')), 'the scripted hour stays inside one trading day').toBe(tradingDay);
     expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: at(0), movementId: 'cm-float' })).toMatchObject({ committed: true });
 
     // ── S-1: the member's bill. 2 rice (₹960) + 1 oil at the launched offer (₹180) = ₹1,140; GST inside, never added.
@@ -293,6 +299,8 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     // ── A trading day closes once its cut-off has passed (M01-FR-02): the clock moves to 00:05 the next morning, and the
     // box is started for the new day (a second restart, with the store's credential as issued that morning).
     const nextMorning = new Date(Date.parse(`${tradingDay}T00:00:00.000Z`) + 86_400_000 + 5 * 60_000);
+    // "The next morning" is after the day's last act by more than the hour a figure takes to read as old.
+    expect(nextMorning.getTime() - Date.parse(at(60)), 'the next morning comes after the shift close').toBeGreaterThan(3_600_000);
     vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
     vi.setSystemTime(nextMorning);
     await edges.splice(edges.indexOf(edge), 1)[0]!.stop();

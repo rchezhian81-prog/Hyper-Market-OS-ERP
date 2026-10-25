@@ -1531,7 +1531,7 @@ export function buildSurface(deps: {
       postingMap: empty(undefined), definePostingMap: () => {}, salesOn: empty([]), returnsOn: empty([]),
       originalSales: empty(new Map()), taxRates: empty(new Map()), dayBookJournals: empty([]),
       recordException: () => {}, exceptionsOn: empty([]),
-    } : { ...dayBookAdapter({ store, now }), ...finBridgeDayBookHooks({ store, now }) /* OB-340 department split */ }),
+    } : { ...dayBookAdapter({ store, now, calendar: shopCalendar }), ...finBridgeDayBookHooks({ store, now }) /* OB-340 department split */ }),
     // Payables (SP-7b · M23-FR-01): the supplier accounts → balanced journals through the accountant's mapping; the
     // purchase register and the finance ledger reconciled as two figures reached two different ways (QG-07).
     // The inventory-loss journal: every confirmed-lost floor-indent / transfer shortfall, posted once through the mapping.
@@ -1689,7 +1689,7 @@ export function buildSurface(deps: {
     ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // R3 lane 1 — GST returns. GSTR-3B Table 4 reads the A17 GSTR-2B / IMS reconciliation through the bridge
     // (r3-itc-bridge.ts); with no store there is nothing reconciled, so the stand-in says "not yet reconciled".
-    ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), calendar: shopCalendar, ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3OpsRoutes({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r4InsightRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 3
@@ -1871,7 +1871,7 @@ export function buildSurface(deps: {
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
       documents: empty([]), record: () => {}, soldTaxLines: empty([]), returnedTaxLines: empty([]), productTaxTable: empty([]), now,
-    } : gstReturnsAdapter({ store, now })),
+    } : gstReturnsAdapter({ store, now, calendar: shopCalendar })),
     // GST return DURABLE submission-safety store (WP4 inc2) — preview→approve→submit→acknowledge per filing
     // period (one stream each), maker ≠ checker + duplicate-prevention + digest-match at the write boundary.
     // The LIVE portal path stays off-by-default + killable; the deterministic sandbox runs otherwise.
