@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 
 // The B2B document chain, part 1 — quotation → sales order, end to end through the real API, the real
 // gap-free number series and the real credit control (M22-FR-02, API-09). Two controls are proven here:
@@ -21,10 +23,12 @@ const LINE = { lineId: 'l1', productId: 'p1', description: 'Rice 25kg', qty: 10,
 // net 1,00,000 + tax 5,000 = gross 1,05,000.
 const GROSS = 105_000;
 
+// OB-360: a credit-limit change is asked by one person and approved by another (the shop's accountant).
 const setLimit = (h: ApiHarness, t: string, u: string, cust: string, creditLimitMinor: number) =>
-  h.request({ method: 'POST', path: `/v1/b2b/accounts/${cust}`, userId: u, tenantId: t, idempotencyKey: `lim-${cust}-${creditLimitMinor}`, body: { creditLimitMinor } });
-const quote = (h: ApiHarness, t: string, u: string, cust: string, id: string, lines: unknown, validForDays?: number) =>
-  h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/quotations/${id}`, userId: u, tenantId: t, idempotencyKey: `q-${id}`, body: { lines, ...(validForDays === undefined ? {} : { validForDays }) } });
+  setApprovedCreditLimit(h, t, u, cust, { creditLimitMinor });
+// OB-361: no typed price on a business quotation — each line's price is put on the customer's price list first.
+const quote = async (h: ApiHarness, t: string, u: string, cust: string, id: string, lines: unknown, validForDays?: number) =>
+  h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/quotations/${id}`, userId: u, tenantId: t, idempotencyKey: `q-${id}`, body: { lines: await onThePriceList(harnessPriceList(h, t), cust, lines), ...(validForDays === undefined ? {} : { validForDays }) } });
 // FUL-09: a sales order holds its stock at a named store, so the store has rice on the shelf first (a receipt, once per tenant).
 const order = async (h: ApiHarness, t: string, u: string, cust: string, id: string, fromQuotationId: string) => {
   await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: t, idempotencyKey: `stock-${t}`, body: { movementId: `stock-${t}`, productId: 'p1', locationId: 'S1', kind: 'received', quantityMinor: 1_000, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' } });

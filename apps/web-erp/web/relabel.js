@@ -32,7 +32,7 @@ function paint() {
     // OB-358: who it is for — the department's floor champion, else the store manager (and why); the reader's own marked.
     const forWho = text('span', api.assigneeWords(lang(), r), 'facts for'); forWho.dataset.assignee = r.assignee ? r.assignee.to : 'none'; li.append(forWho);
     if (r.done !== null) li.append(text('span', `${w('done')} ${w('doneBy')} ${r.done.doneBy} · ${when(r.done.doneAt)} · ${rupees(r.done.shelfPriceMinor)}`, 'facts'));
-    else if (session.may.close) {
+    else if (session.may.close && r.mayClose === true) { // OB-370: the assignee, or a store manager of this store
       const form = document.createElement('form');
       const price = document.createElement('input'); price.inputMode = 'decimal'; price.autocomplete = 'off'; price.className = 'rl-price';
       const photo = document.createElement('input'); photo.autocomplete = 'off'; photo.className = 'rl-photo';
@@ -46,7 +46,7 @@ function paint() {
         if (out.result === 'ok') await load();
       });
       li.append(form);
-    }
+    } else if (session.may.close) li.append(text('span', `🔒 ${w('notYoursToClose')}`, 'facts not-yours'));
     return li;
   })));
 }

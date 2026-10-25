@@ -74,9 +74,27 @@ describe.each(backings)('a relabel task goes to the floor champion, else the sto
     expect(await mine('u-bala')).toEqual([]);
     expect((await call('GET', '/v1/pricing/relabel-tasks', 'u-asha')).status).toBe(403);
     expect(((await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr', undefined, { mine: '1' }), 'mgr mine=1')).body as { tasks: Row[] }).tasks.map((r) => r.productId).sort()).toEqual(['p-salt', 'p-soap']);
-    // Asha closes her own (the photo and the price on the label).
+    // OB-370: who may close each — the store manager every one at his store; Asha only her own.
+    expect(Object.fromEntries(all.tasks.map((r) => [r.productId, (r as Row & { mayClose?: boolean }).mayClose]))).toEqual({ 'p-milk': true, 'p-salt': true, 'p-soap': true });
+    expect(((await ok(call('GET', '/v1/pricing/relabel-tasks/mine', 'u-asha'), 'asha mine')).body as { tasks: (Row & { mayClose: boolean })[] }).tasks.map((r) => r.mayClose)).toEqual([true]);
     const milk = all.tasks.find((r) => r.productId === 'p-milk')!;
+    const salt = all.tasks.find((r) => r.productId === 'p-salt')!;
+    // OB-370: Bala (nobody's champion) cannot close Asha's task, and Asha cannot close the store manager's — each refused
+    // by name, the task left open.
+    const notBala = await call('POST', `/v1/pricing/relabel-tasks/${milk.taskId}/done`, 'u-bala', { shelfPriceMinor: 3_000, evidenceRef: 'photo-milk' });
+    expect(notBala.status).toBe(403);
+    expect((notBala.body as { error: { code: string } }).error.code).toBe('not_your_relabel_task');
+    const notAsha = await call('POST', `/v1/pricing/relabel-tasks/${salt.taskId}/done`, 'u-asha', { shelfPriceMinor: 2_000, evidenceRef: 'photo-salt' });
+    expect((notAsha.body as { error: { code: string } }).error.code).toBe('not_your_relabel_task');
+    // …and the one who may close it still needs the photo and the price the label shows.
+    expect(((await call('POST', `/v1/pricing/relabel-tasks/${milk.taskId}/done`, 'u-asha', { shelfPriceMinor: 3_000 })).body as { error: { code: string } }).error.code).toBe('not_readable_as_relabel_done');
+    expect(((await call('POST', `/v1/pricing/relabel-tasks/${salt.taskId}/done`, 'u-mgr', { evidenceRef: 'photo-salt' })).body as { error: { code: string } }).error.code).toBe('not_readable_as_relabel_done');
+    expect(((await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr'), 'still open')).body as { open: number }).open).toBe(3);
+    // Asha closes her own (the photo and the price on the label).
     await ok(call('POST', `/v1/pricing/relabel-tasks/${milk.taskId}/done`, 'u-asha', { shelfPriceMinor: 3_000, evidenceRef: 'photo-milk' }), 'done');
+    // The store manager may close any task at his store — here the salt, with its photo and price.
+    const saltPrice = (salt as Row & { priceMinor: number }).priceMinor;
+    await ok(call('POST', `/v1/pricing/relabel-tasks/${salt.taskId}/done`, 'u-mgr', { shelfPriceMinor: saltPrice, evidenceRef: 'photo-salt' }), 'manager closes salt');
 
     // Asha leaves the staff list: the next milk price goes to the store manager, said why. The task already raised keeps
     // the champion it was given (a fact, never re-guessed).

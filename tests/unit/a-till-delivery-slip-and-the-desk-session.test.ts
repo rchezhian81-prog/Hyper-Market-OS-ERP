@@ -99,4 +99,17 @@ describe('OB-352 — the delivery desk\'s session on the Dispatch page', () => {
     expect([coordinateOf('11.0168', 90), coordinateOf('eleven', 90), coordinateOf('181', 180)]).toEqual([11.0168, undefined, undefined]);
     expect(tillDeskWords('ta', 'tillJobsH')).toBe('கவுண்டரிலிருந்து டெலிவரிகள்');
   });
+  it('OB-369: for an app customer the reason is sent — a phone call needs its note (checked before anything is sent)', async () => {
+    const f = fake();
+    const s = createTillDeskSession({ viewer: { userId: 'u-mgr', permissions: ['delivery.run.read', 'delivery.dispatch.manage'] }, fetch: f.fetch, newKey: () => 'k' });
+    const where = { slotStartsAt: '2026-10-25T05:30:00.000Z', lat: '11.03', lon: '76.97', landmark: '' };
+    const before = f.sent.length;
+    expect(await s.enter('till-S-2', { ...where, appCustomer: { because: 'customer_phoned', note: ' ok ' } })).toEqual({ result: 'invalid', why: 'needCallNote' });
+    expect(f.sent.length).toBe(before);
+    await s.enter('till-S-2', { ...where, appCustomer: { because: 'customer_phoned', note: ' phoned at 11:05 ' } });
+    expect(f.sent.at(-1)).toMatchObject({ body: { appCustomer: { because: 'customer_phoned', note: 'phoned at 11:05' } } });
+    await s.enter('till-S-3', { ...where, appCustomer: { because: 'wait_passed', note: '' } });
+    expect((f.sent.at(-1) as { body: Record<string, unknown> }).body['appCustomer']).toEqual({ because: 'wait_passed' });
+    for (const k of ['appEnterH', 'whyL', 'customer_phoned', 'wait_passed', 'noteL', 'needCallNote', 'waitNotSet', 'waitEnds', 'waitPassed', 'forApp']) expect(tillDeskWords('ta', k), k).toMatch(/[஀-௿]/);
+  });
 });

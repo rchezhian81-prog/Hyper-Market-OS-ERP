@@ -6,7 +6,8 @@
 //     and enrols only on the customer's yes. The number travels in a POST body, never a URL, and head office keeps a
 //     member code and the last four digits, never the number.
 //   • FIND A MEMBER: points, the tier their own 12-month spend reaches (or "tiers not set"), what more spend reaches the
-//     next tier, and when their next points expire (or "expiry not set").
+//     next tier, and when their next points expire (or "expiry not set"). OB-364: a member carried from the old ERP shows
+//     a "confirm phone" prompt — the desk looks at the number on the customer's own phone and confirms it (recorded).
 //   • TIE THE APP: the app reference the customer shows, to their membership — after seeing the number on their phone.
 //   • THE PROGRAMME (OB-295): tiers by 12-month spend with a multiplier, and points expiry after N months — both "not set"
 //     until the owner enters them, the CA's accounting note beside expiry. Only the owner may save; others read.
@@ -31,7 +32,8 @@ export interface Standing {
   readonly nextTier?: { readonly tierId: string; readonly name: string; readonly moreSpendMinor: number };
   readonly expiry: { readonly state: string; readonly months?: number; readonly next?: { readonly expiresAt: string; readonly points: number } | null; readonly dueNow?: number };
 }
-export type LookupView = { readonly member: false } | { readonly member: true; readonly standing: Standing };
+/** OB-364: `phoneToConfirm` — a member carried from the old ERP whose number the desk has not yet seen on their phone. */
+export type LookupView = { readonly member: false } | { readonly member: true; readonly standing: Standing; readonly phoneToConfirm: boolean };
 
 export const LOYALTY_DESK_COPY = {
   en: {
@@ -54,6 +56,7 @@ export const LOYALTY_DESK_COPY = {
     expiredSay: 'Expiry run:', ownerOnly: 'Only the owner can change these numbers.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', cannotEnrol: 'Your role cannot enrol customers.', cannotRead: 'Your role cannot read loyalty members.', cannotConfigure: 'Only the owner can change the programme.', cannotRun: 'Your role cannot run the expiry.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
+    confirmH: 'Confirm this member\'s phone number', confirmLead: 'This member was carried over from the old system. Nobody has seen their number on their phone yet: look at the number on the customer\'s own phone now.', confirmSeen: 'I saw this number on the customer\'s own phone', confirm: 'Confirm the phone number', confirmed: 'Phone number confirmed — member ending', needSeenConfirm: 'Look at the number on the customer\'s own phone and tick the box. Nothing was sent.', toConfirm: 'Phone number to confirm',
   },
   ta: {
     lang: 'English', title: 'லாயல்டி',
@@ -75,6 +78,7 @@ export const LOYALTY_DESK_COPY = {
     expiredSay: 'காலாவதி இயக்கம்:', ownerOnly: 'உரிமையாளர் மட்டுமே இந்த எண்களை மாற்ற முடியும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', cannotEnrol: 'உங்கள் பங்கு வாடிக்கையாளர்களைச் சேர்க்க முடியாது.', cannotRead: 'உங்கள் பங்கு லாயல்டி உறுப்பினர்களைப் படிக்க முடியாது.', cannotConfigure: 'உரிமையாளர் மட்டுமே திட்டத்தை மாற்ற முடியும்.', cannotRun: 'உங்கள் பங்கு காலாவதியை இயக்க முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
+    confirmH: 'இந்த உறுப்பினரின் கைபேசி எண்ணை உறுதிசெய்', confirmLead: 'இந்த உறுப்பினர் பழைய அமைப்பிலிருந்து கொண்டுவரப்பட்டவர். இவரின் எண்ணை இன்னும் யாரும் அவரின் தொலைபேசியில் பார்க்கவில்லை: இப்போது வாடிக்கையாளரின் சொந்தத் தொலைபேசியில் எண்ணைப் பாருங்கள்.', confirmSeen: 'இந்த எண்ணை வாடிக்கையாளரின் சொந்தத் தொலைபேசியில் பார்த்தேன்', confirm: 'கைபேசி எண்ணை உறுதிசெய்', confirmed: 'கைபேசி எண் உறுதிசெய்யப்பட்டது — உறுப்பினர் எண் கடைசி', needSeenConfirm: 'வாடிக்கையாளரின் சொந்தத் தொலைபேசியில் எண்ணைப் பார்த்து குறியிடுங்கள். எதுவும் அனுப்பப்படவில்லை.', toConfirm: 'உறுதிசெய்ய வேண்டிய கைபேசி எண்',
   },
 } as const;
 export type LoyaltyDeskKey = keyof typeof LOYALTY_DESK_COPY.en;
@@ -108,6 +112,8 @@ export interface LoyaltyDeskSession {
   notice(): Promise<Outcome<EnrolmentNotice>>;
   enrol(input: { readonly mobile: string; readonly name: string; readonly saidYes: boolean; readonly seenOnPhone: boolean }): Promise<Outcome<{ readonly mobileLast4: string; readonly enrolled?: boolean; readonly alreadyMember?: boolean; readonly name?: string | null }>>;
   find(mobile: string): Promise<Outcome<LookupView>>;
+  /** OB-364: the desk confirms a carried member's number, seen on the customer's own phone (the number in the body). */
+  confirmPhone(mobile: string, seenOnPhone: boolean): Promise<Outcome<{ readonly mobileLast4: string; readonly confirmed: boolean; readonly alreadyConfirmed?: boolean }>>;
   link(mobile: string, appRef: string, seenOnPhone: boolean): Promise<Outcome<{ readonly mobileLast4: string; readonly linked: boolean }>>;
   programme(): Promise<Outcome<Programme>>;
   saveTiers(rows: readonly { readonly name: string; readonly nameTa?: string; readonly spendRupees: string; readonly multiplier: string }[], reason: string): Promise<Outcome<Programme & { readonly unchanged?: boolean }>>;
@@ -155,11 +161,18 @@ export function createLoyaltyDeskSession(input: { readonly viewer: ViewerIdentit
       const g = guard(may.read, 'cannotRead'); if (g) return g;
       const m = readMobile(mobile);
       if (m === undefined) return { result: 'invalid', why: 'needMobile' };
-      const found = await call<{ readonly member: boolean; readonly memberRef?: string }>('POST', '/v1/loyalty/members/lookup', { mobile: m });
+      const found = await call<{ readonly member: boolean; readonly memberRef?: string; readonly phoneToConfirm?: boolean }>('POST', '/v1/loyalty/members/lookup', { mobile: m });
       if (found.result !== 'ok') return found;
       if (!found.value.member || found.value.memberRef === undefined) return { result: 'ok', value: { member: false } };
       const standing = await call<Standing>('GET', `/v1/loyalty/members/${encodeURIComponent(found.value.memberRef)}/standing`);
-      return standing.result === 'ok' ? { result: 'ok', value: { member: true, standing: standing.value } } : standing;
+      return standing.result === 'ok' ? { result: 'ok', value: { member: true, standing: standing.value, phoneToConfirm: found.value.phoneToConfirm === true } } : standing;
+    },
+    confirmPhone: async (mobile, seenOnPhone) => {
+      const g = guard(may.enrol, 'cannotEnrol'); if (g) return g;
+      const m = readMobile(mobile);
+      if (m === undefined) return { result: 'invalid', why: 'needMobile' };
+      if (!seenOnPhone) return { result: 'invalid', why: 'needSeenConfirm' };
+      return call('POST', '/v1/loyalty/members/confirm-phone', { mobile: m, verifiedHow: 'seen_on_phone' });
     },
     link: async (mobile, appRef, seenOnPhone) => {
       const g = guard(may.enrol, 'cannotEnrol'); if (g) return g;

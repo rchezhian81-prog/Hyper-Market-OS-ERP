@@ -67,19 +67,27 @@ describe('where a contract stands — worked out from its dates, never a flag', 
 describe('pricing a quotation from the record', () => {
   const list = (p: string): number | undefined => (p === 'dal' ? 9_000 : undefined);
   const inForce = contractPosition([approved()], 'SCHOOL', '2026-10-15');
-  it('contract price first, then the price list, else the typed price (said)', () => {
-    const r = priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'a', productId: 'rice' }, { lineId: 'b', productId: 'dal' }, { lineId: 'c', productId: 'salt', typedPriceMinor: 2_000 }] });
+  it('contract price first, then the price list — and a product with neither is refused, typed price or not (OB-361)', () => {
+    const r = priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'a', productId: 'rice' }, { lineId: 'b', productId: 'dal' }] });
     expect(r).toEqual({ ok: true, lines: [
       { lineId: 'a', productId: 'rice', unitPriceMinor: 120_000, priceSource: 'contract', contractId: 'K-1' },
       { lineId: 'b', productId: 'dal', unitPriceMinor: 9_000, priceSource: 'price_list' },
-      { lineId: 'c', productId: 'salt', unitPriceMinor: 2_000, priceSource: 'typed' },
     ] });
+    expect(priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'c', productId: 'salt' }] })).toMatchObject({ ok: false, code: 'no_price_on_record', lineId: 'c' });
+    // OB-361: before, a product with no price on record kept the typed price ("typed (no price on record)"). Now refused.
+    expect(priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'c', productId: 'salt', typedPriceMinor: 2_000 }] })).toMatchObject({ ok: false, lineId: 'c' });
+    expect(priceFromRecord({ position: contractPosition([], 'SCHOOL', '2026-10-15'), listPriceOf: () => undefined, lines: [{ lineId: 'c', productId: 'salt' }] })).toMatchObject({ ok: false, code: 'no_price_on_record' });
   });
-  it('a typed price that differs from the record is refused by name; the same price is accepted', () => {
-    expect(priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'a', productId: 'rice', typedPriceMinor: 1 }] })).toMatchObject({ ok: false, code: 'not_the_contract_price', lineId: 'a' });
-    expect(priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'b', productId: 'dal', typedPriceMinor: 1 }] })).toMatchObject({ ok: false, code: 'not_the_price_on_record' });
-    expect(priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'a', productId: 'rice', typedPriceMinor: 120_000 }] }).ok).toBe(true);
-    expect(priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'c', productId: 'salt' }] })).toMatchObject({ ok: false, code: 'no_price_on_record' });
+  it('OB-361: no typed price on a business quotation at all — differing, matching, or on an item with no price', () => {
+    for (const line of [
+      { lineId: 'a', productId: 'rice', typedPriceMinor: 1 }, // differs from the contract
+      { lineId: 'a', productId: 'rice', typedPriceMinor: 120_000 }, // the contract's own price, typed
+      { lineId: 'b', productId: 'dal', typedPriceMinor: 9_000 }, // the price list's own price, typed
+      { lineId: 'c', productId: 'salt', typedPriceMinor: 2_000 }, // no price on record
+    ]) {
+      const r = priceFromRecord({ position: inForce, listPriceOf: list, lines: [{ lineId: 'z', productId: 'dal' }, line] });
+      expect(r, JSON.stringify(line)).toMatchObject({ ok: false, code: 'typed_price_refused', lineId: line.lineId });
+    }
   });
   it('a lapsed "block" contract refuses; a lapsed "fallback" one prices from the list', () => {
     expect(priceFromRecord({ position: contractPosition([approved()], 'SCHOOL', '2027-02-01'), listPriceOf: list, lines: [{ lineId: 'b', productId: 'dal' }] })).toMatchObject({ ok: false, code: 'contract_expired' });

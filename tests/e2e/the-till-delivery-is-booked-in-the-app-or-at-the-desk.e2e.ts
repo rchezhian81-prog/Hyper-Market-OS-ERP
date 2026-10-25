@@ -129,6 +129,14 @@ describe.skipIf(!HAVE_BROWSER)('the till delivery is booked in the app or at the
           runDate = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
           const sold = await cloud.request({ method: 'POST', path: '/v1/sales', userId: 'u-cash', branchId: 'br-1', idempotencyKey: 'sale-desk', body: tillBill('S-DESK', 'br-1', 'RICE', 'u-cash') });
           if (sold.status !== 202) throw new Error(`the till's bill: ${sold.status} ${JSON.stringify(sold.body)}`);
+          // OB-369: a member with the app whose bill waits for them to choose — the desk enters it after they phone.
+          await okHo(req('PUT', '/v1/platform/entitlements/loyalty', { enabled: true }), 'feature loyalty');
+          const MOBILE = '98400' + '88888';
+          const enrolled = await req('POST', '/v1/loyalty/members', { mobile: MOBILE, consent: true, verifiedHow: 'seen_on_phone' });
+          await okHo(Promise.resolve(enrolled), 'enrol');
+          await okHo(req('POST', '/v1/loyalty/members/app-link', { mobile: MOBILE, appCustomerRef: 'cust-app-desk', verifiedHow: 'seen_on_phone' }), 'app link');
+          const appSold = await cloud.request({ method: 'POST', path: '/v1/sales', userId: 'u-cash', branchId: 'br-1', idempotencyKey: 'sale-app', body: tillBill('S-APPDESK', 'br-1', 'RICE', 'u-cash', { customerRef: (enrolled.body as { memberRef: string }).memberRef }) });
+          if (appSold.status !== 202) throw new Error(`the app customer's bill: ${appSold.status} ${JSON.stringify(appSold.body)}`);
         },
       });
     }, 300_000);
@@ -150,7 +158,7 @@ describe.skipIf(!HAVE_BROWSER)('the till delivery is booked in the app or at the
       await row.waitFor({ timeout: 15_000 });
       expect(await row.getAttribute('data-status')).toBe('waiting_for_delivery_desk');
       expect((await row.textContent()) ?? '').toContain('Waiting for the desk — enter it from the slip');
-      expect(await page.textContent('#till-jobs-status')).toBe('1 waiting for the desk · 0 waiting for the customer');
+      expect(await page.textContent('#till-jobs-status')).toBe('1 waiting for the desk · 1 waiting for the customer');
       await row.locator('input.tj-lat').fill('eleven');
       await row.locator('input.tj-lon').fill('76.97');
       await row.locator('button', { hasText: 'Book this delivery' }).click();
@@ -163,6 +171,40 @@ describe.skipIf(!HAVE_BROWSER)('the till delivery is booked in the app or at the
       expect((await page.textContent('#till-jobs li.row[data-order="till-S-DESK"]')) ?? '').toContain('entered at the desk by u-owner');
       await page.click('#lang');
       expect(await page.textContent('#till-jobs-h')).toBe('கவுண்டரிலிருந்து டெலிவரிகள்');
+      expect(errors).toEqual([]);
+      await context.close();
+    }, 120_000);
+
+    it('OB-369: an app customer who has not chosen — the owner\'s wait "not set"; the desk enters it after the customer phones, the call noted', async () => {
+      const context = await browser.newContext();
+      await shop.signIn(context, OWNER);
+      const page = await context.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(`${shop.base}/dispatch`, { waitUntil: 'load' });
+      await page.fill('#store', 'br-1');
+      await page.fill('#till-day', runDate);
+      await page.click('#show-till-jobs');
+      const row = page.locator('#till-jobs li.row[data-order="till-S-APPDESK"]');
+      await row.waitFor({ timeout: 15_000 });
+      expect(await row.getAttribute('data-status')).toBe('waiting_for_customer_app');
+      expect(await row.locator('.wait').textContent()).toBe('○ Owner\'s wait: not set — enter it only after the customer phones');
+      expect(await row.locator('.tj-app-h').textContent()).toBe('The customer has not chosen in the app');
+      // "After the wait" cannot be chosen while the wait is not set.
+      expect(await row.locator('select.tj-why option[value="wait_passed"]').evaluate((o) => (o as unknown as { disabled: boolean }).disabled)).toBe(true);
+      await row.locator('input.tj-lat').fill('11.03');
+      await row.locator('input.tj-lon').fill('76.97');
+      await row.locator('button', { hasText: 'Book this delivery' }).click();
+      expect(await page.textContent('#till-jobs-status')).toBe('Write a note of the call (at least 5 letters) — it is kept with the delivery. Nothing was sent.');
+      await row.locator('input.tj-note').fill('Customer phoned at 11:05');
+      await row.locator('button', { hasText: 'Book this delivery' }).click();
+      await page.locator('#till-jobs li.row[data-order="till-S-APPDESK"][data-status="booked"]').waitFor({ timeout: 15_000 });
+      expect((await page.textContent('#till-jobs li.row[data-order="till-S-APPDESK"]')) ?? '').toContain('for the app customer — The customer phoned: Customer phoned at 11:05');
+      const jobs = (await shop.cloud().request({ method: 'GET', path: '/v1/delivery/till-jobs', userId: OWNER })).body as { jobs: { orderId: string; given: { forAppCustomer?: { because: string; note?: string } } | null }[] };
+      expect(jobs.jobs.find((j) => j.orderId === 'till-S-APPDESK')!.given).toMatchObject({ forAppCustomer: { because: 'customer_phoned', note: 'Customer phoned at 11:05' } });
+      await page.click('#lang');
+      await page.click('#show-till-jobs');
+      await page.locator('#till-jobs li.row[data-order="till-S-APPDESK"]', { hasText: 'வாடிக்கையாளர் தொலைபேசியில் அழைத்தார்' }).waitFor({ timeout: 15_000 });
       expect(errors).toEqual([]);
       await context.close();
     }, 120_000);

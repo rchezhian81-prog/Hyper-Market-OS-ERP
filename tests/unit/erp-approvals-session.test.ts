@@ -191,6 +191,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       // OB-288 commercial desks (M22-FR-01): a B2B contract, and an order over the credit limit (the owner decides, OB-290).
       b2b_contract: { en: APPROVALS_COPY.en.kindB2BContract, ta: APPROVALS_COPY.ta.kindB2BContract },
       b2b_credit_override: { en: APPROVALS_COPY.en.kindB2BCreditOverride, ta: APPROVALS_COPY.ta.kindB2BCreditOverride },
+      // OB-360: every change of a B2B credit limit — a second person approves.
+      b2b_credit_limit: { en: APPROVALS_COPY.en.kindB2BCreditLimit, ta: APPROVALS_COPY.ta.kindB2BCreditLimit },
       // OB-288 P4 (M36-FR-03): closing the shop's account.
       tenant_closure: { en: APPROVALS_COPY.en.kindTenantClosure, ta: APPROVALS_COPY.ta.kindTenantClosure },
     };

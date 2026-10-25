@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -46,8 +48,8 @@ describe.each(backings)('FUL-09 — a B2B invoice and its collection move AR and
     const ok = async (p: ReturnType<typeof call>, what: string) => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
     const asOf = async (path: string) => (await h.request({ method: 'GET', path, userId: 'u-owner', tenantId: T, query: { asOf: new Date().toISOString().slice(0, 10) } })).body;
 
-    await ok(call('POST', '/v1/b2b/accounts/CUST1', { creditLimitMinor: 1_000_000, paymentTermsDays: 30 }), 'terms');
-    await ok(call('POST', '/v1/b2b/documents/CUST1/quotations/q1', { lines: LINES }), 'quote');
+    await ok(setApprovedCreditLimit(h, T, 'u-owner', 'CUST1', { creditLimitMinor: 1_000_000, paymentTermsDays: 30 }, { checker: 'u-acct' }), 'terms'); // OB-360: a second person approves
+    await ok(call('POST', '/v1/b2b/documents/CUST1/quotations/q1', { lines: await onThePriceList(harnessPriceList(h, T), 'CUST1', LINES) }), 'quote');
     // FUL-09: the order holds its rice at the store it is supplied from.
     await ok(call('POST', '/v1/inventory/movements', { movementId: 'rice-in', productId: 'p1', locationId: 'S1', kind: 'received', quantityMinor: 50, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' }), 'stock');
     await ok(call('POST', '/v1/b2b/documents/CUST1/orders/so1', { fromQuotationId: 'q1', locationId: 'S1' }), 'order');

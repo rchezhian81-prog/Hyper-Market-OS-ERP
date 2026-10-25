@@ -36,6 +36,13 @@ describe('WP5 subscription billing over the real surface', () => {
     const b = bodyOf(res);
     expect(b.plans.length).toBeGreaterThan(0);
     expect(b.plans.every((p: { monthlyPriceMinor: number }) => p.monthlyPriceMinor <= 1_500_000)).toBe(true);
+    // OB-366: every plan price is SRE's own subscription, labelled so; pricing for outside shops stays "not set".
+    const label = { en: 'SRE only, not offered to outside shops', ta: 'SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை' };
+    expect(b.plans.every((p: { priceLabel?: unknown; sreOnly?: unknown }) => JSON.stringify(p.priceLabel) === JSON.stringify(label) && p.sreOnly === true)).toBe(true);
+    expect(b).toMatchObject({ priceLabel: label, sreOnly: true, outsideShopPricing: { state: 'not_set', words: 'not set' } });
+    // The subscription read that carries the debit amount says the same.
+    const sub = bodyOf(await h.request({ method: 'GET', path: '/v1/platform/subscription', userId: OWNER, tenantId: T }));
+    expect(sub).toMatchObject({ priceLabel: label, outsideShopPricing: { state: 'not_set' } });
   });
 
   it('reports no subscription until one is set up', async () => {

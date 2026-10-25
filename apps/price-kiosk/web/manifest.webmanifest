@@ -1,0 +1,12 @@
+{
+  "name": "SRE Price check",
+  "short_name": "Price check",
+  "description": "A read-only price kiosk served from the store computer's signed price list, for SRE Retail OS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}

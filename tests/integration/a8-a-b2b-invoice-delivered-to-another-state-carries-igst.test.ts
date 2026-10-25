@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { backingsFor, headOffice } from '../support/till-bill-world';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 
 /**
  * **A8 — a B2B tax invoice delivered to another State carries IGST; inside Tamil Nadu it carries CGST + SGST — on the REAL
@@ -33,9 +35,9 @@ describe.each(backings)('A8 — the B2B invoice carries IGST across States, CGST
     for (const p of ['p1', 'p2']) {
       await ho.ok('POST', '/v1/inventory/movements', 'u-owner', { movementId: `stock-${p}`, productId: p, locationId: 'S1', kind: 'received', quantityMinor: 1_000, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' });
     }
-    await ho.ok('POST', '/v1/b2b/accounts/CUST1', 'u-owner', { creditLimitMinor: 10_000_000 });
+    expect((await setApprovedCreditLimit(ho.h, t, 'u-owner', 'CUST1', { creditLimitMinor: 10_000_000 })).status).toBeLessThan(300); // OB-360
     const orderAndDeliver = async (n: number): Promise<void> => {
-      await ho.ok('POST', `/v1/b2b/documents/CUST1/quotations/q${n}`, 'u-owner', { lines: LINES });
+      await ho.ok('POST', `/v1/b2b/documents/CUST1/quotations/q${n}`, 'u-owner', { lines: await onThePriceList(harnessPriceList(ho.h, ho.tenantId), 'CUST1', LINES) });
       await ho.ok('POST', `/v1/b2b/documents/CUST1/orders/so${n}`, 'u-owner', { fromQuotationId: `q${n}`, locationId: 'S1' });
       await ho.ok('POST', `/v1/b2b/documents/CUST1/challans/dc${n}`, 'u-owner', { fromOrderId: `so${n}`, dispatched: { l1: 10, l2: 2 } });
     };
@@ -70,8 +72,8 @@ describe.each(backings)('A8 — the B2B invoice carries IGST across States, CGST
     for (const p of ['p1', 'p2']) {
       await ho.ok('POST', '/v1/inventory/movements', 'u-owner', { movementId: `stock-${p}`, productId: p, locationId: 'S1', kind: 'received', quantityMinor: 1_000, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' });
     }
-    await ho.ok('POST', '/v1/b2b/accounts/CUST1', 'u-owner', { creditLimitMinor: 10_000_000 });
-    await ho.ok('POST', '/v1/b2b/documents/CUST1/quotations/q1', 'u-owner', { lines: LINES });
+    expect((await setApprovedCreditLimit(ho.h, ho.tenantId, 'u-owner', 'CUST1', { creditLimitMinor: 10_000_000 })).status).toBeLessThan(300); // OB-360
+    await ho.ok('POST', '/v1/b2b/documents/CUST1/quotations/q1', 'u-owner', { lines: await onThePriceList(harnessPriceList(ho.h, ho.tenantId), 'CUST1', LINES) });
     await ho.ok('POST', '/v1/b2b/documents/CUST1/orders/so1', 'u-owner', { fromQuotationId: 'q1', locationId: 'S1' });
     await ho.ok('POST', '/v1/b2b/documents/CUST1/challans/dc1', 'u-owner', { fromOrderId: 'so1', dispatched: { l1: 10, l2: 2 } });
     const inv = await ho.ok('POST', '/v1/b2b/documents/CUST1/invoices/inv1', 'u-owner', { fromOrderId: 'so1', deliveryStateCode: '32' }) as { gst?: unknown; gstNotJudged?: string };

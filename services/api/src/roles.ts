@@ -50,6 +50,15 @@ export const BACKUP_JOB_ROLE_ID = 'backup_job';
  * band by the administrator (scripts/issue-store-token.mjs --no-store) and kept only in the GitHub secret store.
  */
 export const FINDINGS_PUSH_ROLE_ID = 'findings_push';
+// ── OB-288 P6 (store floor devices and self-checkout) — begin
+/**
+ * R8-4 to R8-7 (D14-FR-05): the store's FLOOR-DEVICE GATEWAY's own machine identity — it carries signed event batches
+ * from the shelf labels, RFID readers, sensors and camera event sources to head office, and nothing else. A batch is
+ * believed only when the DEVICE's own signature verifies; the gateway vouches for nothing. Machine-only (never a person,
+ * hard rule #4): its credential is issued out of band by the administrator (scripts/issue-store-token.mjs --no-store).
+ */
+export const FLOOR_DEVICE_GATEWAY_ROLE_ID = 'floor_device_gateway';
+// ── OB-288 P6 — end
 /** R2 C20: the POSH Act Internal Committee — the only role that may read the confidential complaints register. */
 export const INTERNAL_COMMITTEE_ROLE_ID = 'internal_committee';
 
@@ -252,12 +261,24 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // M28-FR-01): head office re-checks each person and runs its own reading and write-off routes.
       'facilities.reading.sync', 'inventory.writeoff.sync',
       // ── OB-288 LP, workforce, facilities and adoption — end
+      // ── OB-288 wave-5 follow-ups — begin
+      // OB-365: the box relays its till sign-in log (the owner holds the hop so the box identity's grant can be approved).
+      'identity.tillsignin.sync',
+      // ── OB-288 wave-5 follow-ups — end
       // ── OB-288 commercial desks (M22 · M24 · M27) — begin
       // M22-FR-01 "contract/credit changes approved; separation from order-taking": the owner and the accountant propose and
       // approve B2B contracts (never their own); everyone at the B2B desk reads them. OB-290: an order above a customer's
       // credit limit (or on a lapsed "block" contract) goes to the OWNER — `b2b.credit.override` is the owner's alone.
       'b2b.contract.manage', 'b2b.contract.read', 'b2b.credit.override',
       // ── OB-288 commercial desks — end
+      // ── OB-288 P6 (store floor devices and self-checkout) — begin
+      // R8-4 to R8-7: held ONLY so the owner can approve granting the floor-device gateway its machine role (no-escalation
+      // rule); the ingestion route believes a batch only from that machine identity, and only when the device's own
+      // signature verifies — never a person's session.
+      'device.event.ingest',
+      // R8-3 · R8-7: held ONLY so the owner can approve granting the store computer its self-checkout basket relay (OB-36).
+      'selfcheckout.basket.sync',
+      // ── OB-288 P6 — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       // ── OB-288 lane 4 · P2 (owner reporting and data in/out) — begin
@@ -849,6 +870,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     name: 'Backup job (machine)',
     permissions: ['platform.backup.record'],
   },
+  // ── OB-288 P6 (store floor devices and self-checkout) — begin
+  {
+    // R8-4 to R8-7: the floor-device gateway's OWN machine identity — carries signed device batches, and nothing else.
+    id: FLOOR_DEVICE_GATEWAY_ROLE_ID,
+    name: 'Floor-device gateway (machine)',
+    permissions: ['device.event.ingest'],
+  },
+  // ── OB-288 P6 — end
   // ── OB-288 integration follow-ups — begin
   {
     // OB-331: the CI scanner's OWN machine identity — pushes a scan's findings report to the register, and nothing else.
@@ -904,6 +933,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // waits there for a second person).
       'facilities.asset.read', 'facilities.reading.sync', 'inventory.writeoff.sync',
       // ── OB-288 LP, workforce, facilities and adoption — end
+      // ── OB-288 wave-5 follow-ups — begin
+      // OB-365: what it RELAYS of its own till sign-in log — sign-ins, refusals and sign-outs; never a token or a PIN.
+      'identity.tillsignin.sync',
+      // ── OB-288 wave-5 follow-ups — end
+      // ── OB-288 P6 (store floor devices and self-checkout) — begin
+      // R8-3 · R8-7: the box relays a paid self-checkout basket's evidence (head office re-checks the colleague it names).
+      'selfcheckout.basket.sync',
+      // ── OB-288 P6 — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

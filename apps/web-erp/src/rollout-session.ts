@@ -5,6 +5,9 @@
 //   • THE USAGE METER (information only): stores, lanes, people and AI spend this month; the price "not set" (OB-321).
 //   • THE CUSTOMER-DATA WATCH (C9): the CA's threshold, or "not set" — it never alerts until set.
 //   • THE CONSENT RECORD (C8): download it in the consent-manager layout; bring in a consent manager's file.
+//   • CLOSING THE SHOP'S ACCOUNT (M36-FR-03 · OB-367): a read — the export, what blocks closure, what the law wants kept,
+//     and that EVERYTHING is sealed until the CA or the lawyer writes the closure retention schedule ("not set"). Nothing
+//     here closes anything: the IT administrator asks and the owner approves through the approval engine.
 // Head office re-checks every permission and approval; `may` only shapes what is shown.
 
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
@@ -22,6 +25,8 @@ export const ROLLOUT_COPY = {
     meterH: 'What the shop uses (for information)', stores: 'Stores', lanes: 'Till lanes', people: 'People', aiSpend: 'AI spend this month', price: 'Price', notSet: 'not set', monthNotRecorded: 'This month is not recorded yet.', peaks: 'This month\'s highest:', infoOnly: 'For information only. Nothing is ever switched off because of these figures.',
     watchH: 'Customer-data watch (DPDP)', threshold: 'Threshold set by the CA', volume: 'Customers whose details the shop holds', crossed: 'Reached — ask the CA and lawyer about a data protection impact assessment.', below: 'Below the threshold.', neverAlerts: 'Not set — the watch never alerts until the CA enters a number.',
     consentH: 'Customer consent record', download: 'Download the consent record', importFile: 'Consent manager\'s file', bringIn: 'Bring in the file', applied: 'applied', exceptions: 'need a person to check', alreadyThere: 'already in the record', downloaded: 'Downloaded:', records: 'records',
+    closureH: 'Closing this shop\'s account', closureState: 'This account', active: 'open', closed: 'closed', exportTaken: 'Latest full export', noExport: 'none taken yet', complete: 'complete', notComplete: 'not complete',
+    lawKeeps: 'The law asks for at least these to be kept:', sealedH: 'What happens to the data', schedule: 'Closure retention schedule', closureBlockers: 'Before it can close:', whoCloses: 'The IT administrator asks; the owner approves.', indefinitely: 'kept indefinitely', until: 'until at least',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role does not open the trial switches.', cannotMeter: 'Your role does not see the usage meter.',
     saved: 'Saved.', needFields: 'Fill in the switch name, the branch and the reason first.', pickFile: 'Choose the file first.', notJson: 'That file is not a consent record.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
@@ -35,6 +40,8 @@ export const ROLLOUT_COPY = {
     meterH: 'கடை பயன்படுத்துவது (தகவலுக்கு மட்டும்)', stores: 'கடைகள்', lanes: 'பில்லிங் வரிசைகள்', people: 'நபர்கள்', aiSpend: 'இந்த மாத AI செலவு', price: 'விலை', notSet: 'அமைக்கப்படவில்லை', monthNotRecorded: 'இந்த மாதம் இன்னும் பதிவாகவில்லை.', peaks: 'இந்த மாத உச்சம்:', infoOnly: 'தகவலுக்கு மட்டும். இந்த எண்களால் எதுவும் ஒருபோதும் நிறுத்தப்படாது.',
     watchH: 'வாடிக்கையாளர் தரவு கண்காணிப்பு (DPDP)', threshold: 'CA அமைத்த வரம்பு', volume: 'கடையிடம் விவரங்கள் உள்ள வாடிக்கையாளர்கள்', crossed: 'எட்டப்பட்டது — தரவு பாதுகாப்பு தாக்க மதிப்பீடு பற்றி CA மற்றும் வழக்கறிஞரிடம் கேளுங்கள்.', below: 'வரம்புக்குக் கீழே.', neverAlerts: 'அமைக்கப்படவில்லை — CA ஒரு எண்ணை உள்ளிடும் வரை கண்காணிப்பு எச்சரிக்காது.',
     consentH: 'வாடிக்கையாளர் ஒப்புதல் பதிவு', download: 'ஒப்புதல் பதிவைப் பதிவிறக்கு', importFile: 'ஒப்புதல் மேலாளரின் கோப்பு', bringIn: 'கோப்பைக் கொண்டு வா', applied: 'பதிவானது', exceptions: 'ஒருவர் சரிபார்க்க வேண்டியவை', alreadyThere: 'ஏற்கனவே பதிவில் உள்ளவை', downloaded: 'பதிவிறக்கப்பட்டது:', records: 'பதிவுகள்',
+    closureH: 'இந்தக் கடையின் கணக்கை மூடுதல்', closureState: 'இந்தக் கணக்கு', active: 'திறந்துள்ளது', closed: 'மூடப்பட்டது', exportTaken: 'கடைசி முழு ஏற்றுமதி', noExport: 'இன்னும் எடுக்கப்படவில்லை', complete: 'முழுமையானது', notComplete: 'முழுமையில்லை',
+    lawKeeps: 'சட்டம் குறைந்தது இவற்றை வைத்திருக்கக் கேட்கிறது:', sealedH: 'தரவுக்கு என்ன ஆகும்', schedule: 'மூடல் தக்கவைப்பு அட்டவணை', closureBlockers: 'மூடுவதற்கு முன்:', whoCloses: 'IT நிர்வாகி கேட்கிறார்; உரிமையாளர் ஒப்புதல் தருகிறார்.', indefinitely: 'காலவரையின்றி வைக்கப்படும்', until: 'குறைந்தது வரை',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பணி சோதனை சுவிட்சுகளைத் திறப்பதில்லை.', cannotMeter: 'உங்கள் பணி பயன்பாட்டு அளவீட்டைப் பார்ப்பதில்லை.',
     saved: 'சேமிக்கப்பட்டது.', needFields: 'முதலில் சுவிட்ச் பெயர், கிளை மற்றும் காரணத்தை நிரப்பவும்.', pickFile: 'முதலில் கோப்பைத் தேர்ந்தெடுக்கவும்.', notJson: 'அந்தக் கோப்பு ஒப்புதல் பதிவு அல்ல.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
   },
@@ -48,10 +55,20 @@ export const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}
 
 export interface BoardRow { readonly key: string; readonly branchId: string; readonly laneId: string | null; readonly enabled: boolean; readonly version: number; readonly reason: string; readonly changedBy: string; readonly changedAt: string; readonly approvedBy: string | null }
 export interface Place { readonly branchId: string; readonly laneId?: string }
+/** OB-367: the closure readiness head office answers (GET /v1/platform/tenant/closure). */
+export interface ClosureView {
+  readonly state: 'active' | 'closed';
+  readonly latestExport: { readonly exportId: string; readonly complete: boolean; readonly at: string } | null;
+  readonly blockers: readonly string[];
+  readonly wouldRetain: readonly { readonly what: string; readonly untilDate: string }[];
+  readonly sealed: { readonly everythingSealed: true; readonly nothingDeleted: true; readonly retentionSchedule: { readonly state: 'not_set' | 'set'; readonly words: string }; readonly en: string; readonly ta: string };
+}
 export interface Change { readonly key: string; readonly branchId: string; readonly laneId: string; readonly enabled: boolean; readonly reason: string; readonly approvalId: string }
 
 export interface RolloutSession {
-  readonly may: { readonly named: boolean; readonly open: boolean; readonly change: boolean; readonly meter: boolean; readonly watch: boolean; readonly consent: boolean };
+  readonly may: { readonly named: boolean; readonly open: boolean; readonly change: boolean; readonly meter: boolean; readonly watch: boolean; readonly consent: boolean; readonly closure: boolean };
+  /** OB-367: the closure readiness — export, blockers, what the law wants kept, and that everything is sealed until the schedule. */
+  closure(): Promise<Outcome<ClosureView>>;
   board(): Promise<Outcome<{ readonly switches: readonly BoardRow[] }>>;
   preview(c: Change): Promise<Outcome<{ readonly current: boolean | null; readonly proposed: boolean; readonly lanesThatChange: readonly string[]; readonly highImpact: boolean }, 'needFields'>>;
   save(c: Change): Promise<Outcome<unknown, 'needFields'>>;
@@ -78,7 +95,9 @@ export function createRolloutSession(input: { readonly viewer: { readonly userId
     may: {
       named, open: named && held.has('platform.flag.read'), change: named && held.has('platform.flag.write'),
       meter: named && held.has('platform.metering.read'), watch: named && held.has('privacy.volume.read'), consent: named && held.has('customer.consent.export'),
+      closure: named && held.has('platform.tenant.export'),
     },
+    closure: () => call('GET', '/v1/platform/tenant/closure'),
     board: () => call('GET', '/v1/platform/rollout'),
     preview: async (c) => (filled(c) ? call('POST', `/v1/platform/rollout/${encodeURIComponent(c.key.trim())}/preview`, bodyOf(c)) : { result: 'invalid', why: 'needFields' }),
     save: async (c) => {

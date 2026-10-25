@@ -51,6 +51,35 @@ describe('the landing page exists and describes the real product', () => {
   });
 });
 
+describe('OB-366: every plan price shown is labelled "SRE only, not offered to outside shops"', () => {
+  // Each place a page shows a monthly plan price (the price block itself, or a script's price value) must sit with the
+  // label, in English and Tamil — and the landing page says pricing for outside shops is "not set".
+  const LABEL_EN = 'SRE only, not offered to outside shops';
+  const LABEL_TA = 'SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை';
+  const labelled = (html: string, marker: RegExp): number => {
+    let n = 0;
+    for (const m of html.matchAll(marker)) {
+      const after = html.slice(m.index ?? 0, (m.index ?? 0) + 400);
+      expect(after, `the price at ${m.index} is not labelled`).toContain(LABEL_EN);
+      expect(after).toContain(LABEL_TA);
+      n += 1;
+    }
+    return n;
+  };
+  it('each of the three prices on the landing page carries the label, and outside pricing is "not set"', () => {
+    expect(labelled(landing, /<div class="price">₹1[035],000/g)).toBe(3);
+    expect(landing).toMatch(/Prices for outside shops: not set\./);
+    expect(landing).toContain('data-outside-pricing="not set"');
+  });
+  it('the subscribe page labels both places it shows the price', () => {
+    expect(labelled(subscribe, /id="price">|id="debit-amt">/g)).toBe(2);
+  });
+  it('tripwire — a price block without its label is caught', () => {
+    const bare = '<div class="price">₹10,000<span>/month</span></div><p>nothing else</p>';
+    expect(() => labelled(bare, /<div class="price">₹1[035],000/g)).toThrow();
+  });
+});
+
 describe('the subscribe page makes the auto-debit honest and RBI-shaped', () => {
   it('exists, is titled, and offers the three RBI-covered rails', () => {
     expect(subscribe).toMatch(/<title>Set up your plan · SRE Retail OS<\/title>/);

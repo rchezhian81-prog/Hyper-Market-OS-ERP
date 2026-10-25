@@ -1,0 +1,101 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+/**
+ * **The queue till (D04-FR-05), guarded.** A low-spec Android handheld held in one hand in a queue, a basket in the other
+ * and a customer watching. These are the decisions that are easy to undo in a hurry and invisible in review:
+ *
+ *   • the same spine as the other handhelds: no prompt/confirm/alert, a banner that never fades, 56 px targets, Tamil for
+ *     every word, no text box for scanning;
+ *   • NO CASH on a handheld: whether it may take cash is an owner decision not made — so the screen offers no cash button
+ *     and never calls the cash tender, and the store computer's door refuses any tender but card and UPI;
+ *   • the price is the till's: the screen holds no price list and no rule of its own — it boots the till's own session;
+ *   • the door is behind the device credential: the device socket hands `/queue-pos/` over only AFTER it authenticated the
+ *     enrolled device, and the door's lane routes never include refunds, cash, approvals, holds or the day close.
+ */
+
+const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+const APP = code(readFileSync('apps/queue-pos/web/app.js', 'utf8'));
+const HTML = readFileSync('apps/queue-pos/web/index.html', 'utf8');
+const SW = readFileSync('apps/queue-pos/web/sw.js', 'utf8');
+const ENTRY = readFileSync('apps/queue-pos/src/browser-entry.ts', 'utf8');
+const DOOR = readFileSync('edge/store-edge/src/queue-pos-door.ts', 'utf8');
+const DEVICE = readFileSync('edge/store-edge/src/device-server.ts', 'utf8');
+
+describe('the queue till keeps the handhelds\' spine', () => {
+  it('uses no prompt, confirm or alert', () => {
+    expect([...APP.matchAll(/\b(?:window\.)?(prompt|confirm|alert)\s*\(/g)].map((m) => m[1])).toEqual([]);
+  });
+
+  it('has a banner that does not disappear on a timer', () => {
+    expect(HTML).toContain('id="banner"');
+    expect(HTML).toMatch(/class="banner" id="banner" hidden role="alert"/);
+    const from = APP.indexOf('function tell');
+    const banner = APP.slice(from, APP.indexOf("el('banner-ok').addEventListener", from));
+    expect(banner).not.toMatch(/setTimeout|setInterval/);
+  });
+
+  it('declares a touch target of at least 56px, and the money buttons are bigger', () => {
+    const tap = /:root \{ --tap: (\d+)px; \}/.exec(HTML);
+    expect(Number(tap?.[1])).toBeGreaterThanOrEqual(56);
+    expect(HTML).toMatch(/footer \.primary, \.sheet \.primary \{[^}]*min-height: 64px/);
+  });
+
+  it('carries Tamil for every word, not a subset', () => {
+    const block = (marker: string): string => APP.slice(APP.indexOf(marker), APP.indexOf('\n  },', APP.indexOf(marker)));
+    const keysIn = (text: string): string[] => [...text.matchAll(/(?:^|[{,]\s*)(\w+):\s*'/g)].map((m) => m[1]!);
+    const english = keysIn(block('en: {'));
+    const tamil = new Set(keysIn(block('ta: {')));
+    expect(english.length).toBeGreaterThan(40);
+    for (const key of english) expect([...tamil], `"${key}" has no Tamil`).toContain(key);
+  });
+
+  it('has no text box for scanning — the scanner is a keyboard; the one text field is the card machine\'s approval number', () => {
+    expect((HTML.match(/<input\b/g) ?? []).length).toBe(1);
+    expect(HTML).toMatch(/<input class="entry-text" id="entry-text"/);
+    expect(APP).toMatch(/window\.addEventListener\('keydown'/);
+  });
+
+  it('opens with no signal: the worker precaches the shell and the built bundle', () => {
+    expect(SW).toMatch(/const SHELL = \['\.\/sre-foundation\.css', '\.\/sre-icons\.js', '\.\/sre-update\.js', '\.\/app\.js', '\.\/manifest\.webmanifest'\];/);
+    expect(SW).toMatch(/const BUILT = \['\.\/queue-pos\.bundle\.js'\];/);
+    expect(APP).toMatch(/navigator\.serviceWorker\.register\('\.\/sw\.js'\)/);
+  });
+});
+
+describe('no cash on a handheld — the owner has not decided it', () => {
+  it('the screen offers no cash button and never calls the cash tender', () => {
+    expect(HTML).not.toMatch(/id="cash"/);
+    expect(APP).not.toMatch(/tenderCash|tenderSplit|tenderPaidOnOldErp/);
+    expect(APP).toMatch(/tenderCardOrUpi\(/);
+  });
+
+  it('the store computer refuses any tender but card and UPI, before anything is written', () => {
+    expect(DOOR).toMatch(/export const HANDHELD_TENDERS: readonly string\[\] = Object\.freeze\(\['card', 'upi'\]\);/);
+    expect(DOOR).toMatch(/if \(route === '\/lane\/sales' && \(b === null \|\| handheldTenderRefusal\(b\)\)\)/);
+  });
+});
+
+describe('the price and the rules are the till\'s', () => {
+  it('the screen holds no price and no rule: it boots the till\'s own session from the served pack', () => {
+    expect(ENTRY).toMatch(/import \{ bootPos, serveLaneFrom \} from '\.\.\/\.\.\/pos\/src\/browser-entry';/);
+    expect(ENTRY).toMatch(/catalogue: w\.posCatalogue/);
+    expect(APP).not.toMatch(/unitPriceMinor\s*[*+]/);
+  });
+});
+
+describe('the door is behind the device credential, and reaches only what a queue till needs', () => {
+  it('the device socket hands /queue-pos/ to the door only after the enrolled device is authenticated', () => {
+    const auth = DEVICE.indexOf('const auth = input.enrolments.authenticate(');
+    const door = DEVICE.indexOf('input.queuePos?.owns(pathname)');
+    expect(auth).toBeGreaterThan(-1);
+    expect(door).toBeGreaterThan(auth);
+    expect(DEVICE.slice(auth, door)).toMatch(/if \(!auth\.ok\) \{[\s\S]*return;\s*\}/);
+  });
+
+  it('a sign-in for selling, never a warehouse or picker one; its lane routes never include refunds, cash, approvals, holds or the close', () => {
+    expect(DOOR).toMatch(/holder\.authority === TILL_AUTHORITY/);
+    const routes = /QUEUE_POS_LANE_ROUTES[^=]*= Object\.freeze\(\{([\s\S]*?)\}\);/.exec(DOOR)?.[1] ?? '';
+    expect(routes).not.toMatch(/returns|cash-movements|shift-close|approvals|held-bills|day-close|day-reopen|outbox|operator\/sign-in|loyalty|phone-baskets|queue-baskets/);
+  });
+});

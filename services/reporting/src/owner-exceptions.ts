@@ -14,9 +14,10 @@
 // on the audit trail.
 //
 // ── A source head office does not receive is said, never assumed clean ───────────────────────────────────────────────
-// A sign-in at a till is checked by the store computer and kept in its own log; it does not reach head office. So the
-// after-hours alert cannot fire from head office, and the read says so by name ("not known"), even once the owner has set
-// the trading hours — never "no after-hours sign-ins".
+// OB-365 (owner, 24–25 Oct 2026, in writing): a sign-in at a till is checked by the store computer, which now SENDS its
+// sign-in log to head office — so the after-hours alert, and the sixth alert, failed sign-ins (a wrong PIN, a lockout),
+// fire from head office like the others. Until a store computer's first record arrives the source says it has none yet
+// ("as at" empty), and a kind head office does not receive is still said by name ("not known"), never "none".
 //
 // Nothing here commits a business action (hard rule #5): an alert is a message to a person. Nothing is deleted (#6).
 
@@ -25,11 +26,11 @@ import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { raiseOwnerAlerts, type ExceptionEvent, type ExceptionKind, type OwnerThresholds, type OwnerAlert } from '../../../packages/owner-control/src/index';
 
-export const THRESHOLD_KINDS: readonly ExceptionKind[] = Object.freeze(['large_discount', 'voided_bill', 'price_override', 'after_hours_login', 'cash_short']);
+export const THRESHOLD_KINDS: readonly ExceptionKind[] = Object.freeze(['large_discount', 'voided_bill', 'price_override', 'after_hours_login', 'cash_short', 'failed_sign_in']);
 
 /** What a threshold is measured in — how the screen asks for it and how it is checked. */
 export const THRESHOLD_UNITS: Readonly<Record<ExceptionKind, 'paise' | 'count' | 'hours'>> = Object.freeze({
-  large_discount: 'paise', voided_bill: 'count', price_override: 'count', after_hours_login: 'hours', cash_short: 'paise',
+  large_discount: 'paise', voided_bill: 'count', price_override: 'count', after_hours_login: 'hours', cash_short: 'paise', failed_sign_in: 'count',
 });
 
 /** The words each threshold is shown in, English and Tamil. */
@@ -39,6 +40,8 @@ export const THRESHOLD_WORDS: Readonly<Record<ExceptionKind, { readonly en: stri
   price_override: { en: 'Price overrides: this many or more by one person in a day', ta: 'விலை மாற்றங்கள்: ஒருவர் ஒரு நாளில் இத்தனை அல்லது அதிகம்' },
   after_hours_login: { en: 'After-hours sign-in: a sign-in outside these trading hours', ta: 'நேரம் கடந்த உள்நுழைவு: இந்த வணிக நேரத்துக்கு வெளியே உள்நுழைந்தால்' },
   cash_short: { en: 'Cash short: a till this much or more short at its close', ta: 'பணக் குறைவு: மூடும்போது ஒரு கல்லாவில் இவ்வளவு அல்லது அதிகம் குறைந்தால்' },
+  // OB-365: from the till sign-in log the store computers send.
+  failed_sign_in: { en: 'Failed sign-ins: this many or more failed till sign-ins by one staff ID in a day', ta: 'தோல்வியுற்ற உள்நுழைவுகள்: ஒரு பணியாளர் எண் ஒரு நாளில் இத்தனை அல்லது அதிகம் முறை கல்லாவில் உள்நுழையத் தவறினால்' },
 });
 
 /** The trading hours an after-hours sign-in is judged by (local, whole hours: opens at, closes at). */
@@ -99,6 +102,7 @@ export function engineThresholds(settings: readonly ThresholdSetting[]): OwnerTh
     ...(n('voided_bill') === undefined ? {} : { voidedBillCount: n('voided_bill')! }),
     ...(n('price_override') === undefined ? {} : { priceOverrideCount: n('price_override')! }),
     ...(n('cash_short') === undefined ? {} : { cashShortMinor: n('cash_short')! }),
+    ...(n('failed_sign_in') === undefined ? {} : { failedSignInCount: n('failed_sign_in')! }),
     ...(hours !== null && typeof hours === 'object' ? { tradingHours: [hours.opensAtHour, hours.closesAtHour] as const } : {}),
   };
 }

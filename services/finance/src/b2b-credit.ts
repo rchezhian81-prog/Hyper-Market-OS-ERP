@@ -10,6 +10,14 @@ import { apiError, notFound } from '../../kernel/src/index';
 import { checkCredit, type CreditVerdict } from '../../../packages/b2b/src/credit';
 import type { CurrencyCode } from '../../../packages/contracts/src/money';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+
+/**
+ * OB-360 (owner, 24–25 Oct 2026, in writing): EVERY change of a B2B credit limit goes through the approval engine with a
+ * second person, like a contract's limit — asked by one person who manages B2B accounts, approved by ANOTHER in their own
+ * session (APPROVAL_KINDS.b2b_credit_limit). Re-sending the terms already on the account changes nothing and needs none.
+ */
+export const CREDIT_LIMIT_APPROVAL_KIND = 'b2b_credit_limit';
 
 export type ReceivableKind = 'invoice' | 'payment' | 'credit_note';
 
@@ -45,6 +53,8 @@ export interface B2BCreditDeps {
    * Undefined → no approved contract on record (the flags, if any, are read as before).
    */
   readonly contractState?: (tenantId: string, customerId: string) => Promise<{ readonly expired: boolean; readonly policy: 'block' | 'fallback' } | undefined>;
+  /** OB-360: head office's maker-checker engine (ADR-0024). Absent on a bare stub — then every limit change is refused. */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
 
@@ -54,7 +64,7 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
   return [
     {
       // Set (or change) a customer's credit limit. Append-only: a new limit is a new fact, the latest
-      // one applies; re-setting the same limit collapses.
+      // one applies; re-setting the same limit collapses. OB-360: a change needs a second person's approval.
       api: 'API-09', method: 'POST', path: '/v1/b2b/accounts/:customerId',
       permission: 'b2b.account.manage', idempotent: true,
       entitlement: 'b2b',
@@ -72,8 +82,33 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
         }
         const currency = asCurrency(b.currency);
         const terms = b.paymentTermsDays as number | undefined;
-        await deps.recordAccount(ctx.tenantId, customerId, b.creditLimitMinor as number, currency, deps.now(), terms);
-        return { status: 201, body: { customerId, creditLimitMinor: b.creditLimitMinor, currency, ...(terms === undefined ? {} : { paymentTermsDays: terms }) } };
+        const limit = b.creditLimitMinor as number;
+        const shown = { customerId, creditLimitMinor: limit, currency, ...(terms === undefined ? {} : { paymentTermsDays: terms }) };
+        // OB-360: the same terms already on the account are no change — nothing to approve, nothing written.
+        const before = await deps.account(ctx.tenantId, customerId);
+        if (before !== undefined && before.creditLimitMinor === limit && before.currency === currency && before.paymentTermsDays === terms) {
+          return { status: 200, body: { ...shown, alreadySet: true } };
+        }
+        const body = (ctx.body ?? {}) as Record<string, unknown>;
+        const at = deps.now();
+        // The second person (ADR-0024 · §28 "contract/credit changes approved"): an approval ANOTHER account manager gave in
+        // their own session for exactly this body. A typed `approvedBy` is refused by name.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: body['approvalId'], typedField: 'approvedBy', typedValue: body['approvedBy'],
+          kind: CREDIT_LIMIT_APPROVAL_KIND, subjectRef: customerId, details: actionDetails(ctx.body, { customerId }),
+          valueMinor: null, maker: ctx.userId, usedBy: `b2b-credit-limit:${customerId}:${at}`, now: at,
+        });
+        if (opened === undefined) {
+          throw apiError(422, {
+            code: 'credit_limit_needs_approval',
+            whatHappened: `A change to ${customerId}'s credit limit or payment terms needs a second person's approval (OB-360)${before === undefined ? ' — this would open the account' : ` — the account now has a limit of ${before.creditLimitMinor} paise`}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind ${CREDIT_LIMIT_APPROVAL_KIND}, subjectRef ${customerId}, with exactly this body); another person who manages B2B accounts approves it in their own session; then send this again with the approvalId. Nothing was set.`,
+          });
+        }
+        await opened.spend();
+        await deps.recordAccount(ctx.tenantId, customerId, limit, currency, at, terms);
+        return { status: 201, body: { ...shown, approvedBy: opened.decision.decidedBy, approvalId: (body['approvalId'] as string).trim(), previousLimitMinor: before?.creditLimitMinor ?? null } };
       },
     },
     {

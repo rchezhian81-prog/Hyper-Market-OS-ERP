@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 import { approvedSuppliers } from '../support/approved-supplier';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -154,10 +156,10 @@ describe.each(backings)('FUL-11 replenishment runs on head office\'s facts for o
     const item = { productId: 'rice', maxLevel: 100, reorderPoint: 50 };
     expect(proposals(await s.propose('u-owner', [item], { storeId: 'S-A' }))[0]).toMatchObject({ position: 40, suggestedQty: 60 });
     // A business customer's order holds 15 bags at S-A (and 5 at S-B).
-    expect((await s.call('POST', '/v1/b2b/accounts/CATERER', 'u-owner', { creditLimitMinor: 10_000_000, paymentTermsDays: 30 })).status).toBeLessThan(300);
+    expect((await setApprovedCreditLimit(h, s.t, 'u-owner', 'CATERER', { creditLimitMinor: 10_000_000, paymentTermsDays: 30 })).status).toBeLessThan(300); // OB-360
     const RICE = { lineId: 'l1', productId: 'rice', description: 'Ponni rice 25kg', unitPriceMinor: 10_000, taxRateBps: 500 };
     for (const [q, so, loc, qty] of [['q1', 'so1', 'S-A', 15], ['q2', 'so2', 'S-B', 5]] as const) {
-      const quoted = await s.call('POST', `/v1/b2b/documents/CATERER/quotations/${q}`, 'u-mgr', { lines: [{ ...RICE, qty }], locationId: loc });
+      const quoted = await s.call('POST', `/v1/b2b/documents/CATERER/quotations/${q}`, 'u-mgr', { lines: await onThePriceList(harnessPriceList(h, s.t), 'CATERER', [{ ...RICE, qty }]), locationId: loc });
       expect(quoted.status, JSON.stringify(quoted.body)).toBeLessThan(300);
       const ordered = await s.call('POST', `/v1/b2b/documents/CATERER/orders/${so}`, 'u-mgr', { fromQuotationId: q });
       expect(ordered.status, JSON.stringify(ordered.body)).toBeLessThan(300);

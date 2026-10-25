@@ -17,7 +17,7 @@ let found = null;
 let tierDrafts = [];
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
-for (const [id, name] of [['enrol', 'user-round'], ['find', 'search'], ['link', 'monitor-smartphone'], ['add-tier', 'list-plus'], ['save-tiers', 'check'], ['save-expiry', 'calendar-clock'], ['run-expiry', 'refresh-cw'], ['save-referral', 'users']]) {
+for (const [id, name] of [['enrol', 'user-round'], ['find', 'search'], ['confirm', 'monitor-smartphone'], ['link', 'monitor-smartphone'], ['add-tier', 'list-plus'], ['save-tiers', 'check'], ['save-expiry', 'calendar-clock'], ['run-expiry', 'refresh-cw'], ['save-referral', 'users']]) {
   const i = icon(name); if (i !== null) $(id).prepend(i);
 }
 
@@ -48,6 +48,7 @@ async function enrol() {
 
 // ── Find a member ───────────────────────────────────────────────────────────────────────────────────────────────────
 function paintFound() {
+  if (found === null || !found.member) $('confirm-phone').hidden = true;
   if (found === null) { $('found').replaceChildren(); return; }
   if (!found.member) { $('found').replaceChildren(text('li', `○ ${t('notMember')}`, 'row')); return; }
   const s = found.standing;
@@ -66,6 +67,17 @@ function paintFound() {
   facts.append(text('span', exp, 'expiry'));
   li.append(facts);
   $('found').replaceChildren(li);
+  // OB-364: a member carried from the old system — the desk confirms the number on the customer's own phone.
+  const box = $('confirm-phone');
+  box.hidden = !(found.phoneToConfirm === true && may.enrol);
+  if (found.phoneToConfirm === true) li.append(text('span', `⚠ ${t('toConfirm')}`, 'facts to-confirm'));
+}
+async function confirmPhone() {
+  const out = await session.confirmPhone($('find-mobile').value, $('confirm-seen').checked);
+  if (out.result !== 'ok') { bad('confirm-status', out); return; }
+  good('confirm-status', `${t('confirmed')} ${out.value.mobileLast4}`);
+  $('confirm-seen').checked = false;
+  if (found !== null && found.member) { found = { ...found, phoneToConfirm: false }; paintFound(); $('confirm-phone').hidden = true; }
 }
 async function find() {
   const out = await session.find($('find-mobile').value);
@@ -184,7 +196,7 @@ async function saveReferral() {
 function paint() {
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['enrol-h', 'enrolH'], ['l-enrol-mobile', 'mobile'], ['l-enrol-name', 'name'], ['l-enrol-yes', 'saidYes'], ['l-enrol-seen', 'seen'], ['enrol-text', 'enrol'],
-    ['find-h', 'findH'], ['l-find-mobile', 'mobile'], ['find-text', 'find'], ['link-h', 'linkH'], ['l-link-mobile', 'mobile'], ['l-link-ref', 'appRef'], ['l-link-seen', 'seen'], ['link-text', 'link'],
+    ['find-h', 'findH'], ['l-find-mobile', 'mobile'], ['find-text', 'find'], ['confirm-h', 'confirmH'], ['confirm-lead', 'confirmLead'], ['l-confirm-seen', 'confirmSeen'], ['confirm-text', 'confirm'], ['link-h', 'linkH'], ['l-link-mobile', 'mobile'], ['l-link-ref', 'appRef'], ['l-link-seen', 'seen'], ['link-text', 'link'],
     ['programme-h', 'programmeH'], ['tiers-h', 'tiersH'], ['add-tier-text', 'addTier'], ['l-tiers-reason', 'reason'], ['save-tiers-text', 'saveTiers'], ['expiry-h', 'expiryH'], ['ca-h', 'caH'],
     ['l-expiry-months', 'months'], ['l-expiry-reason', 'reason'], ['save-expiry-text', 'saveExpiry'], ['run-expiry-text', 'runExpiry'],
     ['referral-h', 'referralH'], ['referral-lead', 'referralLead'], ['l-referrer-rupees', 'referrerL'], ['l-referred-rupees', 'referredL'], ['l-referral-reason', 'reason'], ['save-referral-text', 'saveReferral']]) $(id).textContent = t(k);
@@ -198,6 +210,7 @@ function paint() {
 
 $('enrol').addEventListener('click', () => { void enrol(); });
 $('find').addEventListener('click', () => { void find(); });
+$('confirm').addEventListener('click', () => { void confirmPhone(); });
 $('link').addEventListener('click', () => { void link(); });
 $('add-tier').addEventListener('click', () => { tierDrafts.push({ name: '', nameTa: '', spendRupees: '', multiplier: '' }); paintTierRows(); });
 $('save-tiers').addEventListener('click', () => { void saveTiers(); });

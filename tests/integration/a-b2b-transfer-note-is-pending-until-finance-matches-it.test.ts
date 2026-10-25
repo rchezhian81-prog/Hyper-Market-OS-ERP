@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -61,11 +63,11 @@ describe.each(backings)('OB-41 — a B2B bank-transfer note is pending until fin
 
     // The caterer is billed for 5 bags (a real tax invoice: the receivable, the AR ledger and the books' postable).
     await ok(call('POST', '/v1/inventory/movements', OWNER, { movementId: 'rice-in', productId: 'rice', locationId: 'S1', kind: 'received', quantityMinor: 20, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER }), 'stock');
-    await ok(call('POST', '/v1/b2b/accounts/CATERER', OWNER, { creditLimitMinor: 10_000_000, paymentTermsDays: 30 }), 'terms');
+    await ok(setApprovedCreditLimit(h, T, OWNER, 'CATERER', { creditLimitMinor: 10_000_000, paymentTermsDays: 30 }), 'terms'); // OB-360: a second person approves
     await ok(call('POST', `/v1/b2b-portal/customers/CATERER/logins/${CUST_LOGIN}`, OWNER, { grants: ['view_invoices', 'view_statement', 'make_payment'] }), 'bind payer');
     await ok(call('POST', `/v1/b2b-portal/customers/CATERER/logins/${VIEW_ONLY}`, OWNER, { grants: ['view_invoices', 'view_statement'] }), 'bind viewer');
     await ok(call('POST', `/v1/b2b-portal/customers/CANTEEN/logins/${OTHER_LOGIN}`, OWNER, { grants: ['view_invoices', 'make_payment'] }), 'bind other');
-    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q1', MGR, { lines: [{ ...RICE, qty: 5 }], locationId: 'S1' }), 'quotation');
+    await ok(call('POST', '/v1/b2b/documents/CATERER/quotations/q1', MGR, { lines: await onThePriceList(harnessPriceList(h, T, OWNER), 'CATERER', [{ ...RICE, qty: 5 }]), locationId: 'S1' }), 'quotation');
     await ok(call('POST', '/v1/b2b/documents/CATERER/orders/so1', MGR, { fromQuotationId: 'q1' }), 'order');
     await ok(call('POST', '/v1/b2b/documents/CATERER/challans/dc1', MGR, { fromOrderId: 'so1', dispatched: { l1: 5 } }), 'challan');
     await ok(call('POST', '/v1/b2b/documents/CATERER/invoices/inv1', MGR, { fromOrderId: 'so1' }), 'invoice');

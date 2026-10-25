@@ -18,6 +18,7 @@ import { currentMemberLink, type MemberAppLink } from '../../customer/src/digita
 import type { SavedAddress } from '../../orders/src/storefront-account';
 import type { LoyaltyWalletDeps } from '../../customer/src/loyalty-wallets';
 import { STREAM, streamName, ordersAdapter, deliveryServiceAdapter } from './adapters';
+import { foldControls, type ControlsChange } from '../../fulfilment/src/delivery-controls';
 import { appMemberOf, MEMBER_LINKS_STREAM, SAVED_ADDRESSES_STREAM } from './customer-commerce-adapters';
 
 interface Base {
@@ -69,6 +70,8 @@ export function tillDeliveryJobAdapter(input: Base): TillDeliveryJobDeps {
     openSlots: (t, day) => openDeliverySlots(delivery, t, day),
     orderState: async (t, orderId) => (await orders.orderState(t, orderId))?.state,
     dayOf: async (t, iso) => wallClockIn(iso, await input.timeZone(t)).slice(0, 10),
+    // OB-369: the owner's wait, one of his delivery numbers (the same register the Dispatch page sets) — "not set" until then.
+    appChoiceWaitHours: async (t) => foldControls(await payloadsOf<ControlsChange>(store, t, streamName(STREAM.delivery, 'controls'), 'DeliveryControlsSet')).values.appChoiceWaitHours,
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
 }

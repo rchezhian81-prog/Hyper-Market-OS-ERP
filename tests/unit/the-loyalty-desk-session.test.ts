@@ -36,6 +36,20 @@ describe('the Loyalty desk session (OB-329 · OB-295)', () => {
     expect(asked.some((a) => a.path.includes('98400'))).toBe(false);
   });
 
+  it('OB-364: confirming a carried member\'s phone needs the number seen on the phone and the right to enrol; the number in the body', async () => {
+    const { asked, fetch } = recorder();
+    expect(await desk(['loyalty.points.read'], fetch).confirmPhone('9840077701', true)).toEqual({ result: 'invalid', why: 'cannotEnrol' });
+    const s = desk(['loyalty.member.enrol', 'loyalty.points.read'], fetch);
+    expect(await s.confirmPhone('12345', true)).toEqual({ result: 'invalid', why: 'needMobile' });
+    expect(await s.confirmPhone('98400 77701', false)).toEqual({ result: 'invalid', why: 'needSeenConfirm' });
+    expect(asked).toEqual([]);
+    await s.confirmPhone('+91 98400-77701', true);
+    expect(asked).toEqual([{ method: 'POST', path: '/v1/loyalty/members/confirm-phone', body: { mobile: '9840077701', verifiedHow: 'seen_on_phone' } }]);
+    // The find passes on whether the look-up asks for the phone to be confirmed.
+    const found = await s.find('9840077701');
+    expect(found).toMatchObject({ result: 'ok', value: { member: true, phoneToConfirm: false } });
+  });
+
   it('only the owner saves the programme; tiers in rupees and "1.5" become whole paise and basis points; a reason is needed', async () => {
     const { asked, fetch } = recorder();
     expect(await desk(['loyalty.points.read'], fetch).saveExpiry('12', 'x')).toEqual({ result: 'invalid', why: 'cannotConfigure' });

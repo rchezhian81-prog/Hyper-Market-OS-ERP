@@ -13,8 +13,8 @@
       reads two things about its OWN account only, both scoped to its own partner id ON THE SERVER (never a
       parameter the browser can change): what it has SENT us and whether a buyer has acted (nothing a supplier
       submits is in force on its own — §28), and its STATEMENT (the money we owe it, disputed shown separately;
-      "not accessible" is a permission answer, never a balance of zero — P-08). It reads and reports; it CHANGES
-      nothing — no write verb anywhere. Read live on load and Refresh (GETs). Offline it shows a sample stand-in
+      "not accessible" is a permission answer, never a balance of zero — P-08). It reads and reports; it changes ONE
+      thing only (OB-362): a "Delivery update" for one of the supplier's own open orders. Read live on load and Refresh (GETs). Offline it shows a sample stand-in
       and the stale strip. Bilingual EN/TA. No prompt/confirm/alert. A public surface, so WCAG 2.2 AA (NFR-07):
       real headings, real buttons, visible focus, every state in words + an icon, never colour alone.
     -->
@@ -51,6 +51,12 @@
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       .muted { color:var(--muted); font-size:14px; margin:0; }
+      .delivery { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:8px; }
+      .du-form { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); align-items:end; }
+      .du-form label { display:grid; gap:4px; font-size:14px; color:var(--muted); }
+      .du-form select, .du-form input { min-height:44px; font-size:16px; border-radius:10px; border:1px solid var(--line); padding:0 10px; background:var(--bg); color:var(--ink); }
+      #du-send { display:inline-flex; align-items:center; gap:8px; justify-content:center; }
+      .status-line { margin:0; font-weight:600; font-size:15px; } .status-line.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
     </style>
   </head>
@@ -81,6 +87,21 @@
       <ul class="rows" id="awaiting" aria-label="What you have sent us, waiting on us"></ul>
       <ul class="rows" id="processed" aria-label="What you have sent us, processed"></ul>
       <p class="muted" id="sent-none" hidden></p>
+
+      <section class="delivery" id="delivery" hidden aria-labelledby="delivery-h">
+        <!-- OB-362: the ONE form on this screen — a delivery update for one of the supplier's own open orders. -->
+        <h3 id="delivery-h"></h3>
+        <p class="muted" id="delivery-lead"></p>
+        <p class="muted" id="du-said" hidden></p>
+        <div class="du-form" id="du-form" hidden>
+          <label for="du-order"><span id="du-order-l"></span><select id="du-order"></select></label>
+          <label for="du-status"><span id="du-status-l"></span><select id="du-status"></select></label>
+          <label for="du-expected"><span id="du-expected-l"></span><input id="du-expected" type="date" /></label>
+          <label for="du-note"><span id="du-note-l"></span><input id="du-note" maxlength="300" autocomplete="off" /></label>
+          <button id="du-send" type="button"><span id="du-send-text"></span></button>
+        </div>
+        <p class="status-line" id="du-result" role="status" aria-live="polite"></p>
+      </section>
 
       <h3 id="statement-heading"></h3>
       <div class="statement" id="statement" hidden></div>

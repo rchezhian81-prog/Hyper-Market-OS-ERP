@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 
 // The B2B document chain, part 2 — proforma → challan → tax-invoice-from-challans + the chain check
 // (M22-FR-02, API-09), end to end through the real API, the real gap-free number series and the real
@@ -22,10 +24,12 @@ const LINES = [
 ];
 const ORDER_GROSS = 210_000;
 
+// OB-360: a credit-limit change is asked by one person and approved by another (the shop's accountant).
 const setLimit = (h: ApiHarness, t: string, u: string, cust: string, creditLimitMinor: number) =>
-  h.request({ method: 'POST', path: `/v1/b2b/accounts/${cust}`, userId: u, tenantId: t, idempotencyKey: `lim-${cust}`, body: { creditLimitMinor } });
-const quote = (h: ApiHarness, t: string, u: string, cust: string, id: string, lines: unknown) =>
-  h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/quotations/${id}`, userId: u, tenantId: t, idempotencyKey: `q-${id}`, body: { lines } });
+  setApprovedCreditLimit(h, t, u, cust, { creditLimitMinor });
+// OB-361: no typed price on a business quotation — each line's price is put on the customer's price list first.
+const quote = async (h: ApiHarness, t: string, u: string, cust: string, id: string, lines: unknown) =>
+  h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/quotations/${id}`, userId: u, tenantId: t, idempotencyKey: `q-${id}`, body: { lines: await onThePriceList(harnessPriceList(h, t), cust, lines) } });
 // FUL-09: a sales order holds its stock at a named store, so the store has rice on the shelf first (a receipt, once per tenant).
 const order = async (h: ApiHarness, t: string, u: string, cust: string, id: string, fromQuotationId: string) => {
   for (const p of ['p1', 'p2']) await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: t, idempotencyKey: `stock-${t}-${p}`, body: { movementId: `stock-${t}-${p}`, productId: p, locationId: 'S1', kind: 'received', quantityMinor: 1_000, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' } });

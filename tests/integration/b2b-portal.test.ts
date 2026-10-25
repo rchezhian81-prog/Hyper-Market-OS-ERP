@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
+import { onThePriceList, harnessPriceList } from '../support/b2b-price-on-record';
 import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
 import { findB2BProbing, type B2BPortalRefusal } from '../../packages/b2b/src/portal-access';
 
@@ -25,12 +27,12 @@ async function cast(store = new InMemoryEventStore()): Promise<ApiHarness> {
   await h.provisionRole(A, ACCT, 'accountant');
   await h.enableFeature(A, 'b2b');
   // Two business customers with credit terms, invoices, a payment and a document each.
-  await post(h, '/v1/b2b/accounts/CATERER', OWNER, 'acc-cat', { creditLimitMinor: 500_000 });
+  await setApprovedCreditLimit(h, A, OWNER, 'CATERER', { creditLimitMinor: 500_000 }, { checker: ACCT, idempotencyKey: 'acc-cat' }); // OB-360
   await post(h, '/v1/b2b/accounts/CATERER/receivables', OWNER, 'ar-cat-1', { movementId: 'ar-cat-1', kind: 'invoice', amountMinor: 100_000, ref: 'INV-C1' });
   await post(h, '/v1/b2b/collections/CATERER/invoices/inv-c1', OWNER, 'inv-c1', { number: 'INV-C1', issuedOn: '2026-07-21', dueOn: '2026-08-20', grossMinor: 100_000 });
   await post(h, '/v1/b2b/collections/CATERER/invoices/inv-c2', OWNER, 'inv-c2', { number: 'INV-C2', issuedOn: '2026-08-16', dueOn: '2026-09-15', grossMinor: 50_000 });
   await post(h, '/v1/b2b/collections/CATERER/payments/rcpt-c1', OWNER, 'rcpt-c1', { receivedMinor: 30_000 });
-  await post(h, '/v1/b2b/documents/CATERER/quotations/q-c1', OWNER, 'q-c1', { lines: [LINE] });
+  await post(h, '/v1/b2b/documents/CATERER/quotations/q-c1', OWNER, 'q-c1', { lines: await onThePriceList(harnessPriceList(h, A, OWNER), 'CATERER', [LINE]) });
   await post(h, '/v1/b2b/collections/CANTEEN/invoices/inv-k1', OWNER, 'inv-k1', { number: 'INV-K1', issuedOn: '2026-08-01', dueOn: '2026-08-31', grossMinor: 999_900 });
   // The portal logins, bound by staff — and one bound to nobody.
   await h.provisionRole(A, CAT, 'b2b_customer');

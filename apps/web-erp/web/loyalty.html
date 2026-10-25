@@ -83,6 +83,14 @@
         </div>
         <p class="status" id="find-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="found"></ul>
+        <!-- OB-364: a member carried from the old ERP — confirm the number on the customer's own phone (recorded). -->
+        <div class="confirm-phone" id="confirm-phone" hidden>
+          <h4 id="confirm-h">Confirm this member's phone number</h4>
+          <p class="meta" id="confirm-lead"></p>
+          <label class="tick" for="confirm-seen"><input id="confirm-seen" type="checkbox" /><span id="l-confirm-seen">I saw this number on the customer's own phone</span></label>
+          <button id="confirm" type="button"><span id="confirm-text">Confirm the phone number</span></button>
+        </div>
+        <p class="status" id="confirm-status" role="status" aria-live="polite"></p>
       </section>
 
       <section aria-labelledby="link-h">

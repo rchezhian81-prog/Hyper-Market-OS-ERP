@@ -192,7 +192,22 @@ export interface SupplierPortalDeps {
   }) => Promise<{ readonly ok: true } | { readonly ok: false; readonly code: string; readonly detail: string }>;
   /** SF-09: record an accepted ASN on the ASN register the compare route reads. */
   readonly recordAsn?: (tenantId: string, asn: Asn, at: string) => Promise<void> | void;
+  /**
+   * OB-362: the supplier's OWN open orders on head office's register (issued, not yet all received or cancelled) — what its
+   * "Delivery update" form may name. Undefined: this head office cannot list them (said, never an empty list).
+   */
+  readonly openOrdersOf?: (tenantId: string, partnerId: string) => Promise<readonly SupplierOpenOrder[]>;
   readonly now: () => string;
+}
+
+/** OB-362: one of the supplier's own open orders, as its portal shows it — the order, never its costs. */
+export interface SupplierOpenOrder {
+  readonly partnerId: string;
+  readonly poId: string;
+  readonly number: string;
+  readonly issuedAt: string | null;
+  readonly deliverToLocationId: string | null;
+  readonly lines: number;
 }
 
 export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[] {
@@ -555,6 +570,30 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
           status: 200,
           // SF-09: the supplier sees its own document and where the buyer's review has got to (the reviewer's reason with it).
           body: { partnerId: session.partnerId, submissions: rows.map((s) => present(s, reviews.find((r) => r.submissionId === s.submissionId))), asAt: deps.now() },
+        };
+      },
+    },
+    {
+      // OB-362: a supplier reads its OWN open orders — the ones its "Delivery update" form may name. The partner is the
+      // caller's stored login binding (never the request); a `?partnerId=` naming another partner is refused AND recorded.
+      // `mayUpdate` says whether this login may send a delivery update (the order-communication grant).
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/me/orders',
+      permission: 'supplier.portal.self',
+      handler: async (ctx) => {
+        const session = await meSession(ctx.tenantId, ctx.userId);
+        const requested = isStr(ctx.query['partnerId']) ? ctx.query['partnerId'] : undefined;
+        if (deps.openOrdersOf === undefined) {
+          await scopedOrRefused(ctx.tenantId, session, [], 'view_orders', requested, 'read:orders');
+          return { status: 200, body: { partnerId: session.partnerId, ordersKnown: false, orders: [], why: 'this head office does not list orders to the portal', deliveryStatuses: DELIVERY_STATUSES, mayUpdate: false, asAt: deps.now() } };
+        }
+        const rows = await scopedOrRefused(ctx.tenantId, session, await deps.openOrdersOf(ctx.tenantId, session.partnerId), 'view_orders', requested, 'read:orders');
+        return {
+          status: 200,
+          body: {
+            partnerId: session.partnerId, ordersKnown: true,
+            orders: rows.map((o) => ({ poId: o.poId, number: o.number, issuedAt: o.issuedAt, deliverToLocationId: o.deliverToLocationId, lines: o.lines })),
+            deliveryStatuses: DELIVERY_STATUSES, mayUpdate: session.grants.includes('acknowledge_orders'), asAt: deps.now(),
+          },
         };
       },
     },

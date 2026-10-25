@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
 import { STREAM } from '../../services/api/src/adapters';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -84,8 +85,8 @@ describe.each(backings)('OB-76 — an outside party\'s login is invited by one p
     const CUS = '/v1/identity/outside-logins/customers';
 
     // ── The parties' own records ─────────────────────────────────────────────────────────────────────────────────────
-    await ok(call('POST', '/v1/b2b/accounts/CATERER', 'u-owner', { creditLimitMinor: 500_000 }), 'caterer account');
-    await ok(call('POST', '/v1/b2b/accounts/CANTEEN', 'u-owner', { creditLimitMinor: 100_000 }), 'canteen account');
+    await ok(setApprovedCreditLimit(h, T, 'u-owner', 'CATERER', { creditLimitMinor: 500_000 }, { checker: 'u-acct' }), 'caterer account'); // OB-360
+    await ok(setApprovedCreditLimit(h, T, 'u-owner', 'CANTEEN', { creditLimitMinor: 100_000 }, { checker: 'u-acct' }), 'canteen account');
     await ok(call('POST', '/v1/b2b/accounts/CATERER/receivables', 'u-owner', { movementId: 'ar-1', kind: 'invoice', amountMinor: 70_000, ref: 'INV-C1' }), 'caterer invoice');
     await ok(call('POST', '/v1/supplier-portal/partners/SUP1', 'u-owner', { grants: ['view_statement', 'view_orders'], documents: [], requiredDocuments: [], logins: [] }), 'supplier partner');
     await ok(call('POST', '/v1/customers/cust-anita/points', 'u-owner', { movementId: 'pm-1', kind: 'earn', points: 10 }), 'customer record');

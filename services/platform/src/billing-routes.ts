@@ -17,6 +17,21 @@ import type { Plan } from '../../../packages/platform/src/plans';
 
 const RAILS: readonly BillingRail[] = ['upi_autopay', 'card_emandate', 'enach'];
 
+/**
+ * OB-366 (owner, 24–25 Oct 2026, in writing): the OA-12 plan prices are SRE's OWN subscription — kept, and labelled on
+ * every screen and read that shows them "SRE only, not offered to outside shops". Pricing for outside shops stays "not
+ * set" (OB-321) until the owner decides it before any outside shop signs.
+ */
+export const SRE_ONLY_PRICE_LABEL = Object.freeze({
+  en: 'SRE only, not offered to outside shops',
+  ta: 'SRE-க்கு மட்டும் — வெளிக் கடைகளுக்கு வழங்கப்படவில்லை',
+});
+export const OUTSIDE_SHOP_PRICING = Object.freeze({
+  state: 'not_set' as const, words: 'not set',
+  why: 'OB-321 / OB-366 (owner): pricing for outside shops is decided before any outside shop signs; nothing is offered to them yet.',
+});
+const priceLabelled = { priceLabel: SRE_ONLY_PRICE_LABEL, sreOnly: true, outsideShopPricing: OUTSIDE_SHOP_PRICING } as const;
+
 export interface SubscribeOutcome {
   readonly snapshot: BillingSnapshot;
   /** Where the payer completes mandate authorisation. Sandbox returns a non-live placeholder. */
@@ -49,7 +64,8 @@ export function billingRoutes(deps: BillingDeps): readonly Route[] {
       // The plans on offer, so the signup screen and the owner can see what can be subscribed to.
       api: 'API-11', method: 'GET', path: '/v1/platform/plans',
       permission: 'platform.plan.read',
-      handler: async () => ({ status: 200, body: { plans: await deps.plans() } }),
+      // OB-366: each plan's price is SRE's own, said so beside it; outside shops' pricing "not set".
+      handler: async () => ({ status: 200, body: { plans: (await deps.plans()).map((p) => ({ ...p, priceLabel: SRE_ONLY_PRICE_LABEL, sreOnly: true })), ...priceLabelled } }),
     },
     {
       // This tenant's current subscription, dunning state and next debit — or a clear "not a
@@ -59,8 +75,8 @@ export function billingRoutes(deps: BillingDeps): readonly Route[] {
       handler: async (ctx) => {
         const snapshot = await deps.subscription(ctx.tenantId);
         return snapshot === undefined
-          ? { status: 200, body: { subscribed: false, detail: 'no subscription yet' } }
-          : { status: 200, body: { subscribed: true, subscription: snapshot } };
+          ? { status: 200, body: { subscribed: false, detail: 'no subscription yet', ...priceLabelled } }
+          : { status: 200, body: { subscribed: true, subscription: snapshot, ...priceLabelled } };
       },
     },
     {
@@ -95,6 +111,7 @@ export function billingRoutes(deps: BillingDeps): readonly Route[] {
           status: 201,
           body: {
             subscription: outcome.snapshot,
+            ...priceLabelled,
             authorisationUrl: outcome.authorisationUrl,
             providerMode: outcome.providerMode,
             // Say plainly that no real money can move yet when the provider is in sandbox.
@@ -120,7 +137,7 @@ export function billingRoutes(deps: BillingDeps): readonly Route[] {
             nextSafeAction: 'Nothing changed. Subscribe first, then a cancellation has something to act on.',
           });
         }
-        return { status: 200, body: { subscription: snapshot } };
+        return { status: 200, body: { subscription: snapshot, ...priceLabelled } };
       },
     },
     {

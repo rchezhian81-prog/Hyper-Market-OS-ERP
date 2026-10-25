@@ -153,5 +153,16 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
     await waitText(mine.page, '#relabel-h', 'மாற்ற வேண்டிய அலமாரி லேபிள்கள் — என்னுடையவை');
     expect(mine.errors).toEqual([]);
     await mine.close();
+    // OB-370: a task is closed only by its assignee or the store manager. The owner reads the store's tasks but is offered
+    // no form — the row says who closes it; head office would refuse him too (not_your_relabel_task).
+    const owner = await open('u-owner', '/store-tasks');
+    await owner.page.waitForSelector('#relabel:not([hidden])');
+    await waitText(owner.page, '#relabel-open', '1 to change');
+    const stillOpen = owner.page.locator('#relabel-rows li[data-product="p-salt"]').filter({ hasNot: owner.page.locator('text=Changed by') }).first();
+    await waitText(owner.page, '#relabel-rows', 'Closed by the person it is for, or the store manager.');
+    expect(await stillOpen.locator('input.rl-price').count()).toBe(0);
+    expect(await owner.page.locator('#relabel-rows .not-yours').count()).toBe(1);
+    expect(owner.errors).toEqual([]);
+    await owner.close();
   }, 120_000);
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
 
 // B2B credit control, end to end through the real API (M22-FR-01, API-09). A business customer has a
 // credit limit and a running AR balance (invoices raised, payments received, projected — never
@@ -10,8 +11,9 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
+// OB-360: every credit-limit change is asked by one person and approved by another (the shop's accountant here).
 const setAccount = (h: ApiHarness, tenantId: string, userId: string, customerId: string, body: Record<string, unknown>, key?: string) =>
-  h.request({ method: 'POST', path: `/v1/b2b/accounts/${customerId}`, userId, tenantId, idempotencyKey: key ?? `acc-${customerId}`, body });
+  setApprovedCreditLimit(h, tenantId, userId, customerId, body, key === undefined ? {} : { idempotencyKey: key });
 
 const receivable = (h: ApiHarness, tenantId: string, userId: string, customerId: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: `/v1/b2b/accounts/${customerId}/receivables`, userId, tenantId, idempotencyKey: `ar-${body['movementId']}`, body });

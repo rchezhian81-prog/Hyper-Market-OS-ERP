@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Price check</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      The price kiosk (D14-FR-02). Read-only: a customer scans an item and reads its price from the store computer's
+      signed price list, with no network. It ALWAYS says how old that list is (P-08). It sells nothing and posts nothing.
+      English and Tamil; icons beside words; targets 64px.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <script src="./sre-update.js" defer></script>
+    <style>
+      :root { --tap: 64px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 20px/1.45 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--panel); border-bottom: 1px solid var(--line); }
+      h1 { margin: 0; font-size: 24px; display: flex; align-items: center; gap: var(--space-2); }
+      h1 .sre-icon { width: 28px; height: 28px; }
+      button { min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--line); font-size: 18px; font-weight: 600; background: var(--panel-2); color: var(--ink); padding: 0 var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2); }
+      button .sre-icon { width: 22px; height: 22px; }
+      button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .stale { background: var(--warn-surface); color: var(--on-warn-surface); padding: var(--space-2) var(--space-4); margin: 0; font-size: 16px; font-weight: 600; }
+      .stale[hidden] { display: none; }
+      main { flex: 1; display: grid; align-content: center; justify-items: center; gap: var(--space-4); padding: var(--space-5) var(--space-4); text-align: center; }
+      .ask { margin: 0; font-size: 28px; font-weight: 700; display: flex; align-items: center; gap: var(--space-3); }
+      .ask .sre-icon { width: 40px; height: 40px; }
+      .answer { margin: 0; font-size: 30px; font-weight: 700; max-width: 900px; overflow-wrap: anywhere; }
+      .answer.quoted { color: var(--ink); }
+      .answer.refused { color: var(--on-warn-surface); background: var(--warn-surface); padding: var(--space-3) var(--space-4); border-radius: var(--radius-xl); }
+      .age { margin: 0; font-size: 18px; color: var(--ink-2); display: flex; align-items: center; gap: var(--space-2); }
+      .age .sre-icon { width: 20px; height: 20px; }
+      .limit { margin: 0; font-size: 15px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1><span data-sre-icon="tag"></span><span id="title">Price check</span></h1>
+      <button id="lang" type="button" aria-label="Language"><span data-sre-icon="globe"></span>EN / த</button>
+    </header>
+    <p class="stale" id="stale" hidden role="status"></p>
+    <main>
+      <p class="ask" id="ask"><span data-sre-icon="scan-barcode"></span><span id="ask-words">Scan an item to see its price.</span></p>
+      <p class="answer" id="answer" role="status" aria-live="polite"></p>
+      <p class="age" id="age"><span data-sre-icon="clock"></span><span id="age-words">—</span></p>
+      <p class="limit" id="limit">—</p>
+    </main>
+    <!--SCREEN-DATA-->
+    <script type="module" src="./price-kiosk.bundle.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

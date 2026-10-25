@@ -1,4 +1,4 @@
-// Owner alerts and scheduled reports — the page over head office's five owner exception-alert thresholds, the day's
+// Owner alerts and scheduled reports — the page over head office's six owner exception-alert thresholds (OB-365 adds failed till sign-ins), the day's
 // exceptions and the owner's scheduled reports and exports (OB-288 lane 4 · P2 · M29-FR-03/04). The session
 // (apps/web-erp/src/owner-alerts-session.ts, in the bundle as window.ownerAlerts) does every call; this page lays out what
 // it is told. A threshold not set says so in words. Every word has a Tamil twin; every button carries an icon.

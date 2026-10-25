@@ -37,8 +37,9 @@ export function signalRedUnderWords(css: string): string[] {
 }
 
 describe('the shells outside the back office', () => {
-  it('are the eight apps the owner\'s staff and customers hold in their hands or stand at', () => {
-    expect(outside).toEqual(['b2b-app', 'customer-app', 'delivery-app', 'owner-app', 'picker-app', 'pos', 'supplier-app', 'warehouse-app']);
+  it('are the eleven apps the owner\'s staff and customers hold in their hands or stand at', () => {
+    // OB-288 P6: the self-checkout lane and the price kiosk joined (R8-3 · D14-FR-02); Pkg 6b: the queue till (D04-FR-05).
+    expect(outside).toEqual(['b2b-app', 'customer-app', 'delivery-app', 'owner-app', 'picker-app', 'pos', 'price-kiosk', 'queue-pos', 'self-checkout', 'supplier-app', 'warehouse-app']);
     expect(outside.flatMap(pagesOf).length).toBeGreaterThanOrEqual(10);
   });
 
@@ -115,7 +116,7 @@ describe('the signal red is never a surface under words — on any screen (desig
 });
 
 describe('the targets are untouched — palette only', () => {
-  const DECLARED: Record<string, number> = { 'apps/pos/web/index.html': 56, 'apps/picker-app/web/index.html': 64, 'apps/warehouse-app/web/index.html': 64, 'apps/delivery-app/web/index.html': 60, 'apps/owner-app/web/index.html': 48, 'apps/customer-app/web/index.html': 48 };
+  const DECLARED: Record<string, number> = { 'apps/pos/web/index.html': 56, 'apps/queue-pos/web/index.html': 56, 'apps/picker-app/web/index.html': 64, 'apps/warehouse-app/web/index.html': 64, 'apps/delivery-app/web/index.html': 60, 'apps/owner-app/web/index.html': 48, 'apps/customer-app/web/index.html': 48 };
 
   it('each shell keeps the --tap it declared before the palette changed', () => {
     for (const [p, px] of Object.entries(DECLARED)) {

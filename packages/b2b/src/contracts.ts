@@ -13,9 +13,10 @@
 // from its own start date.
 //
 // A quotation line is priced from the record, in this order: the contract in force (for a product on it) → the shop's
-// price list (`resolvePrice`: customer > channel > zone > store, the one price truth, P-02). A typed price that differs
-// from the price on record is REFUSED by name, never silently replaced (P-08). Only a product with no price on record at
-// all keeps the typed price, and the line says so (`priceSource: 'typed'`).
+// price list (`resolvePrice`: customer > channel > zone > store, the one price truth, P-02).
+// OB-361 (owner, 24–25 Oct 2026, in writing): there are NO typed prices on a B2B quotation. A line that carries a typed
+// price is refused by name (never silently replaced, P-08), and a product with no contract price and no price-list price
+// is refused — it needs a price on the record first.
 
 export type ContractExpiryPolicy = 'block' | 'fallback';
 export const EXPIRY_POLICIES: readonly ContractExpiryPolicy[] = Object.freeze(['block', 'fallback']);
@@ -170,12 +171,13 @@ export function addDays(day: string, n: number): string {
 
 // ── pricing a quotation from the record ──────────────────────────────────────────────────────────────────────────
 
-export type PriceSource = 'contract' | 'price_list' | 'typed';
+/** Where a quotation line's price came from. OB-361: never a typed price. */
+export type PriceSource = 'contract' | 'price_list';
 
 export interface LineToPrice {
   readonly lineId: string;
   readonly productId: string;
-  /** What the person typed, if anything. */
+  /** What the person typed, if anything — OB-361: a typed price is refused. */
   readonly typedPriceMinor?: number;
 }
 
@@ -190,12 +192,13 @@ export interface PricedLine {
 
 export type PricingResult =
   | { readonly ok: true; readonly lines: readonly PricedLine[] }
-  | { readonly ok: false; readonly code: 'contract_expired' | 'not_the_contract_price' | 'not_the_price_on_record' | 'no_price_on_record'; readonly detail: string; readonly lineId?: string };
+  | { readonly ok: false; readonly code: 'contract_expired' | 'typed_price_refused' | 'no_price_on_record'; readonly detail: string; readonly lineId?: string };
 
 /**
  * Price each line from the record (M22-FR-01 "orders price against it"): the contract in force for a product on it, else
- * the shop's price list (`listPriceOf`, the price-list engine's answer for this customer at this store), else the typed
- * price — said as such. A lapsed contract with `block` refuses the whole quotation; with `fallback` the price list applies.
+ * the shop's price list (`listPriceOf`, the price-list engine's answer for this customer at this store). OB-361: a typed
+ * price is refused, and a product with neither is refused. A lapsed contract with `block` refuses the whole quotation;
+ * with `fallback` the price list applies.
  */
 export function priceFromRecord(input: {
   readonly position: ContractPosition;
@@ -209,29 +212,27 @@ export function priceFromRecord(input: {
       detail: `Contract ${position.lapsed.contractId} ended on ${position.lapsed.validTo} and says "block": no new quotation until it is renewed (a new contract, approved by a second person).`,
     };
   }
+  const typed = input.lines.find((l) => l.typedPriceMinor !== undefined);
+  if (typed !== undefined) {
+    return {
+      ok: false, code: 'typed_price_refused', lineId: typed.lineId,
+      detail: `${typed.productId} was sent with a typed price of ${typed.typedPriceMinor} paise. A business quotation takes no typed price (OB-361): its price comes from the customer's contract or the shop's price list.`,
+    };
+  }
   const contract = position.inForce;
   const out: PricedLine[] = [];
   for (const l of input.lines) {
     const onContract = contract?.prices.find((p) => p.productId === l.productId);
     if (contract !== undefined && onContract !== undefined) {
-      if (l.typedPriceMinor !== undefined && l.typedPriceMinor !== onContract.priceMinor) {
-        return { ok: false, code: 'not_the_contract_price', lineId: l.lineId, detail: `${l.productId} is on contract ${contract.contractId} at ${onContract.priceMinor} paise; ${l.typedPriceMinor} was typed. A different price is a new contract, approved by a second person.` };
-      }
       out.push({ lineId: l.lineId, productId: l.productId, unitPriceMinor: onContract.priceMinor, priceSource: 'contract', contractId: contract.contractId });
       continue;
     }
     const list = input.listPriceOf(l.productId);
     if (list !== undefined) {
-      if (l.typedPriceMinor !== undefined && l.typedPriceMinor !== list) {
-        return { ok: false, code: 'not_the_price_on_record', lineId: l.lineId, detail: `${l.productId} is ${list} paise on the shop's price list; ${l.typedPriceMinor} was typed. Put a different price on the customer's contract (approved by a second person) rather than typing it.` };
-      }
       out.push({ lineId: l.lineId, productId: l.productId, unitPriceMinor: list, priceSource: 'price_list' });
       continue;
     }
-    if (l.typedPriceMinor === undefined) {
-      return { ok: false, code: 'no_price_on_record', lineId: l.lineId, detail: `${l.productId} has no contract price and no price on the shop's price list, so it cannot be priced. Put it on the contract or the price list first.` };
-    }
-    out.push({ lineId: l.lineId, productId: l.productId, unitPriceMinor: l.typedPriceMinor, priceSource: 'typed' });
+    return { ok: false, code: 'no_price_on_record', lineId: l.lineId, detail: `${l.productId} has no contract price and no price on the shop's price list, so it cannot be quoted (OB-361). Put it on the customer's contract or the price list first.` };
   }
   return { ok: true, lines: out };
 }

@@ -122,7 +122,22 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('trial swit
     await waitText(page, '#cs-status', '1 applied · 0 need a person to check');
     const may = (await shop.cloud().request({ method: 'GET', path: '/v1/customers/C-E2E/may-we-send?purpose=marketing&channel=email', userId: 'u-owner' })).body as { verdict: string };
     expect(may.verdict).toBe('may_send');
+    // OB-367: the closure section says everything is sealed until the CA or the lawyer writes the retention schedule — the
+    // schedule "not set" — and nothing is deleted; no export taken yet, so it says what blocks closure. Then in Tamil.
+    await page.waitForSelector('#closure:not([hidden])');
+    await waitText(page, '#closure-sealed', 'It stays sealed until the CA or the lawyer writes a closure retention schedule');
+    expect((await page.textContent('#closure-sealed')) ?? '').toContain('nothing is deleted');
+    expect(await page.getAttribute('#closure-sealed', 'data-sealed')).toBe('true');
+    expect(await page.getAttribute('#closure-figures .figure:last-child', 'data-schedule')).toBe('not_set');
+    expect((await page.textContent('#closure-figures')) ?? '').toContain('Closure retention schedule');
+    expect((await page.textContent('#closure-figures')) ?? '').toContain('none taken yet');
+    expect((await page.textContent('#closure-blockers')) ?? '').toContain('no export has been taken');
+    expect((await page.textContent('#closure-who')) ?? '').toContain('the owner approves');
     expect(await auditPage(page, { expectLang: 'en' }), 'the rollout page, owner').toEqual([]);
+    await page.click('#lang');
+    await waitText(page, '#closure-sealed', 'மூடல் தக்கவைப்பு அட்டவணை: அமைக்கப்படவில்லை');
+    expect((await page.textContent('#closure-h')) ?? '').toBe('இந்தக் கடையின் கணக்கை மூடுதல்');
+    await page.click('#lang');
     expect(errors).toEqual([]);
     await close();
     const c = await open('u-cash', 'br-1');

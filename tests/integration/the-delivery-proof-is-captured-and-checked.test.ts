@@ -79,7 +79,7 @@ describe.each(backings)('delivery proof is captured and checked (M19-FR-03 · OB
     expect((d1.body as { proofCheck: unknown }).proofCheck).toEqual({ code: 'matched', fence: { result: 'inside', distanceMetres: expect.any(Number), radiusMetres: 250, accuracyMetres: 10 }, imageSha256: null });
     const defaults = await shop.ok('GET', '/v1/delivery/controls', DISPATCHER);
     expect((defaults['numbers'] as { key: string }[]).find((n) => n.key === 'geofenceRadiusMetres')).toMatchObject({ value: 250, state: 'default', decidedBy: 'OB-343' });
-    expect(defaults['notSet']).toEqual(['contributionThresholdMinor', 'costPerDropMinor', 'costPerKmMinor', 'fleetRate']);
+    expect(defaults['notSet']).toEqual(['contributionThresholdMinor', 'costPerDropMinor', 'costPerKmMinor', 'fleetRate', 'appChoiceWaitHours']); // OB-369: the app-choice wait, not set
     expect((d1.body as { flags: string[] }).flags).toEqual([]);
     // A malformed code from a phone cannot be read at all — kept at the store for a person, never guessed.
     expect(codeOf(await relay(s2.stopId, stopUpdate(r1.routeId, s2.stopId, 'ORD-2', 'delivered', { proofKind: 'otp', proofCode: '12' })))).toBe('not_readable_as_a_stop_outcome');
@@ -90,7 +90,7 @@ describe.each(backings)('delivery proof is captured and checked (M19-FR-03 · OB
     await shop.ok('POST', '/v1/delivery/controls', OWNER, { geofenceRadiusMetres: 150 });
     const controls = await shop.ok('GET', '/v1/delivery/controls', DISPATCHER);
     expect((controls['numbers'] as { key: string; value: unknown; state: string }[]).find((n) => n.key === 'geofenceRadiusMetres')).toMatchObject({ value: 150, state: 'set', setBy: OWNER });
-    expect(controls['notSet']).toEqual(['contributionThresholdMinor', 'costPerDropMinor', 'costPerKmMinor', 'fleetRate']);
+    expect(controls['notSet']).toEqual(['contributionThresholdMinor', 'costPerDropMinor', 'costPerKmMinor', 'fleetRate', 'appChoiceWaitHours']); // OB-369: the app-choice wait, not set
     expect((await relay(s2.stopId, stopUpdate(r1.routeId, s2.stopId, 'ORD-2', 'out_for_delivery'))).status).toBe(202);
     const d2 = await relay(s2.stopId, stopUpdate(r1.routeId, s2.stopId, 'ORD-2', 'delivered', { proofKind: 'photo', proofSha256: SHA, deviceFix: DOORS.far }));
     expect((d2.body as { flags: string[] }).flags).toEqual(['outside_geofence']);

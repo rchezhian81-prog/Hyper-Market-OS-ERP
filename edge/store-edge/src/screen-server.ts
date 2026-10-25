@@ -39,6 +39,7 @@ import { asPhoneHolder } from './handheld-sign-in';
 import { isHandheldSource } from '../../../packages/sync/src/device-relay';
 import type { EveningCheckBox } from './evening-check-box';
 import { counterLabelFor, readCounterLabelRequest } from './store-work';
+import { TILL_SHELL_SCREENS, CUSTOMER_FACING_SCREENS, customerFacingGlobals } from './self-checkout-screens'; // OB-288 P6
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -143,6 +144,9 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   help: { dir: 'web-erp', file: 'help.html' }, // OB-288 LP/workforce package (M25-FR-04)
   'service-desk': { dir: 'web-erp', file: 'service-desk.html' },
   'ai-drafts': { dir: 'web-erp', file: 'ai-drafts.html' },
+  // OB-288 P6 (R8-3 · D14-FR-02): the self-checkout lane and the price kiosk, each its own app.
+  'self-checkout': { dir: 'self-checkout', file: 'index.html' },
+  'price-kiosk': { dir: 'price-kiosk', file: 'index.html' },
 });
 
 export interface ScreenServer {
@@ -320,7 +324,7 @@ export function safeFile(file: string): string | null {
 }
 
 /** The screens that stay open with no office sign-in: the till alone — its cashier signs in at the till itself. */
-export const OPEN_SCREENS: readonly ScreenName[] = Object.freeze(['pos']);
+export const OPEN_SCREENS: readonly ScreenName[] = Object.freeze(['pos', ...CUSTOMER_FACING_SCREENS]);
 
 /** The permission a screen's own menu item asks for (apps/web-erp/src/navigation.ts), or null when no item opens it. */
 export function permissionForScreen(screen: ScreenName): string | null {
@@ -609,10 +613,12 @@ export function startScreenServer(input: {
       // The till alone also gets the receipt template head office published, when this box has pulled one
       // (M01-FR-02): its own global beside the catalogue, so a bill printed offline carries the words and the
       // version. Absent when none has reached this box — the till prints with its defaults and stamps nothing.
-      const receiptTemplate = route.screen === 'pos' ? posReceiptTemplate(snap) : undefined;
+      // OB-288 P6: the self-checkout lane IS a till the customer operates, so it is served exactly what the till is.
+      const tillShell = TILL_SHELL_SCREENS.has(route.screen);
+      const receiptTemplate = tillShell ? posReceiptTemplate(snap) : undefined;
       // The till alone is also told which lane it IS and when the shop's day ends (SP-4b · F09) — never who the cashier
       // is; the person signs in at the till.
-      const posLane = route.screen === 'pos'
+      const posLane = tillShell
         ? {
           ...posLanePayload(snap, input.laneId), ...(input.soldHuids === undefined ? {} : { soldHuids: input.soldHuids() }),
           // OB-252: guest sales only — the till shows it whenever it is on, and takes no customer number or loyalty.
@@ -625,7 +631,7 @@ export function startScreenServer(input: {
         : undefined;
       // And the refund policy its store pack carries (SP-9b-i · M13-FR-01): the approval threshold and the no-receipt
       // cap. Absent when the box holds none — the till then offers no return without a receipt, rather than guessing a cap.
-      const posRefundPolicy = route.screen === 'pos' ? posRefundPolicyPayload(snap) : undefined;
+      const posRefundPolicy = tillShell ? posRefundPolicyPayload(snap) : undefined;
       // Every ERP page also gets its menu — the screens THIS viewer may open on THIS box, worked out per request
       // from the pack's role register and the screen's named viewer (Stage G slice 5b · §27 · P-07). Only the ERP:
       // the till, the handhelds and the apps are one job each and have no menu to draw.
@@ -641,6 +647,8 @@ export function startScreenServer(input: {
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
           ...(posLane === undefined ? {} : { posLane }),
           ...(posRefundPolicy === undefined ? {} : { posRefundPolicy }),
+          // OB-288 P6: the owner's self-checkout watch numbers / the kiosk's "stop quoting after" — only when set (P-08).
+          ...customerFacingGlobals(route.screen, snap.pack.policies.known ? snap.pack.policies.value : undefined),
           ...(navigation === undefined ? {} : { sreNavigation: navigation }),
           // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
           // present when this box serves a lane socket to post to; the screen falls back to read-only

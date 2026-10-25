@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { setApprovedCreditLimit } from '../support/approved-credit-limit';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -64,8 +65,8 @@ async function shop(h: ApiHarness) {
   // Round 18 (verifier r17 C-2 c): a role's branch scope names a store head office knows.
   await ok(call('POST', '/v1/org/nodes/C1', 'u-owner', { kind: 'company', name: 'SRE Retail' }), 'company');
   await ok(call('POST', '/v1/org/nodes/store-1', 'u-owner', { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }), 'store-1 in the org tree');
-  await ok(call('POST', '/v1/b2b/accounts/X', 'u-owner', { creditLimitMinor: 500_000 }), 'account X');
-  await ok(call('POST', '/v1/b2b/accounts/Y', 'u-owner', { creditLimitMinor: 100_000 }), 'account Y');
+  await ok(setApprovedCreditLimit(h, T, 'u-owner', 'X', { creditLimitMinor: 500_000 }, { checker: 'u-acct' }), 'account X'); // OB-360
+  await ok(setApprovedCreditLimit(h, T, 'u-owner', 'Y', { creditLimitMinor: 100_000 }, { checker: 'u-acct' }), 'account Y');
   for (const p of ['SX', 'SY']) await ok(call('POST', `/v1/supplier-portal/partners/${p}`, 'u-owner', { grants: ['view_statement', 'view_orders'], documents: [], requiredDocuments: [], logins: [] }), `partner ${p}`);
   return { T, call, ok };
 }

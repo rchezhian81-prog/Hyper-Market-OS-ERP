@@ -43,6 +43,7 @@ import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
   HANDHELD_AUTHORITY, signInEndedMessageFor, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
 } from './handheld-sign-in';
+import type { QueuePosDoor } from './queue-pos-door'; // D04-FR-05 queue-busting (OB-288 Pkg 6b): the queue till's door
 
 /** Loopback unless a deployment names the shop's address explicitly — the device socket never widens by itself. */
 export const DEVICE_HOST = '127.0.0.1';
@@ -89,6 +90,8 @@ export function phoneScreenOf(requested: unknown): HandheldSource {
 const HOME_AFTER_ENROL = '/warehouse/';
 export function homeAfterEnrol(requested: unknown): string {
   if (typeof requested !== 'string') return HOME_AFTER_ENROL;
+  // D04-FR-05: the queue till's page (its own door, served only while its switch is on).
+  if (requested.split('?')[0] === '/queue-pos/') return '/queue-pos/';
   const route = routeOf(requested);
   if (route === null || !HANDHELD_SCREENS.includes(route.screen) || route.file !== 'index.html') return HOME_AFTER_ENROL;
   return `/${route.screen}/`;
@@ -272,6 +275,8 @@ export function startDeviceServer(input: {
   readonly now: () => string;
   /** Largest device batch accepted. A body cap is a denial-of-service control. */
   readonly maxBytes?: number;
+  /** D04-FR-05 (OB-288 Pkg 6b): the queue till's door — `/queue-pos/…`, for an enrolled device only. Absent → 404 as before. */
+  readonly queuePos?: QueuePosDoor;
 }): Promise<DeviceServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -321,6 +326,9 @@ export function startDeviceServer(input: {
         req.resume();
         return;
       }
+
+      // ── D04-FR-05: the queue till has its own door (its own sign-in, for selling) — handed the authenticated device ──
+      if (input.queuePos?.owns(pathname) === true) { await input.queuePos.handle(req, res, { deviceId: auth.deviceId, pathname, search: url.search }); return; }
 
       // ── Who is holding the phone (DF-3-c · OB-30 "A") ──
       const operatorToken = cookieValue(req.headers.cookie, OPERATOR_COOKIE);
