@@ -177,8 +177,10 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         }
 
         // Fold banked sales committed in a window generously covering the period, then filter to the return
-        // period by trading day (the GST time of supply) so a late-synced sale still lands in its own month.
-        const windowFrom = `${from}T00:00:00.000Z`;
+        // period by trading day (the GST time of supply) so a late-synced sale still lands in its own month. The window
+        // opens a day EARLY: the shop's day starts before UTC's (00:30 IST on the 1st is 19:00 UTC on the 31st), and a
+        // window from 00:00 UTC on the 1st left a bill rung between the shop's midnight and 05:30 IST off every month.
+        const windowFrom = new Date(Date.parse(`${from}T00:00:00.000Z`) - 86_400_000).toISOString();
         const windowTo = new Date(Date.parse(`${to}T00:00:00.000Z`) + 3 * 86_400_000).toISOString();
         const period = (await deps.soldTaxLines(ctx.tenantId, windowFrom, windowTo))
           .filter((l) => l.tradingDay >= from && l.tradingDay <= to);

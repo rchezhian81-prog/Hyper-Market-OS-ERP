@@ -37,7 +37,7 @@ import {
   type BillingSchedule, type Plan as BillingPlan, type RecurringBillingProvider,
 } from '../../../packages/platform/src/index';
 import type { BillingDeps, SubscribeOutcome, WebhookOutcome } from '../../platform/src/billing-routes';
-import { OPTIONAL_FEATURES } from '../../../packages/tenant/src/index';
+import { OPTIONAL_FEATURES, SETTINGS } from '../../../packages/tenant/src/index';
 import { InMemorySnapshotStore, projectFromSnapshot, BUILD_LEASES_BUSY_HERE, type BuildLeaseHeld, type Projection, type SnapshotStore } from '../../../packages/persistence/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import type { SignedPack } from '../../catalogue/src/index';
@@ -331,6 +331,17 @@ import {
 } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
+
+/** Where an adapter reads the shop's trading calendar (its time zone and cut-off, M01-FR-02) for a tenant. */
+export type ShopCalendarOf = (tenantId: string) => Promise<TradingCalendar> | TradingCalendar;
+/**
+ * The calendar an adapter falls back to when its caller names none: the settings' own defaults (Asia/Kolkata, cut-off
+ * 00:00) — the shop's calendar out of the box — never the UTC date of a timestamp, which in Tamil Nadu is the previous
+ * day for the five and a half hours after the shop's midnight.
+ */
+const DEFAULT_SHOP_CALENDAR: TradingCalendar = { timeZone: SETTINGS.STORE_TIME_ZONE.defaultValue, tradingDayCutoff: SETTINGS.TRADING_DAY_CUTOFF.defaultValue };
+const shopCalendarOf = (calendar: ShopCalendarOf | undefined) => async (tenantId: string): Promise<TradingCalendar> =>
+  calendar === undefined ? DEFAULT_SHOP_CALENDAR : calendar(tenantId);
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
@@ -1235,7 +1246,10 @@ async function pointsGivenBackOn(store: EventStore, tenantId: string, originalSa
 export function gstReturnsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /** The shop's trading calendar — a return is dated by the shop's trading day it was processed on (M01-FR-02). */
+  readonly calendar?: ShopCalendarOf;
 }): GstReturnsDeps {
+  const calendarOf = shopCalendarOf(input.calendar);
   return {
     now: input.now,
 
@@ -1290,10 +1304,13 @@ export function gstReturnsAdapter(input: {
     // never silently dropped. `occurredAt` on the returns projection IS the return's processedAt.
     returnedTaxLines: async (tenantId, fromIso, toIso) => {
       const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from: fromIso, to: toIso });
+      const calendar = await calendarOf(tenantId);
       const out: PeriodSoldLine[] = [];
       for (const e of returns) {
         const ret = payloadOf<ReturnRecord>(e);
-        const day = ret.processedAt.slice(0, 10);
+        // The shop's trading day the return was processed on — the same day the day book books it on, so the GST return
+        // and the books reverse the tax in the same month (not the UTC date: 00:30 IST on the 1st is the 31st in UTC).
+        const day = tradingDayIn(ret.processedAt, calendar);
         // The value the return reverses is the SAME the day book reverses (`returnedValue`, OB-34 "A"): the money
         // refunded, or on an exchange what was applied plus any refunded balance — PLUS the points the member had paid
         // with that this return gave back. Allocating only `refundMinor` reversed the GST on the money share alone, so
@@ -11700,7 +11717,7 @@ export function reportingAdapter(input: {
       // Round 4 (M29 · P-08): the day's returns, valued exactly as the day book values them (OB-34 points share included),
       // shown BESIDE "Sales today" with the net — "Sales today" keeps its meaning. Only when a return happened, so a day
       // with none reads as before.
-      const returnedToday = (await dayBookAdapter({ store: input.store, now: input.now }).returnsOn(tenantId, today))
+      const returnedToday = (await dayBookAdapter({ store: input.store, now: input.now, calendar: () => calendar }).returnsOn(tenantId, today))
         .reduce((t, r) => t + returnedValueOf(r), 0);
       return [
         of('Sales today', summary.grossSalesMinor, 'minor_currency'),
@@ -12102,13 +12119,19 @@ export function migrationAdapter(input: {
 }
 
 // ── The day book (M23-FR-01) ───────────────────────────────────────────────────────────────────
-// Reads the operational ledger (sales by TRADING day, returns by the day they were processed) and the
+// Reads the operational ledger (sales by TRADING day, returns by the shop's trading day they were processed on) and the
 // catalogue's rates; appends day-book journals through the same `appendJournal` the manual route uses, so
 // the period fold, the posters list and the close gate see them as journals like any other. The mapping
 // and the exceptions are append-only facts on the finance stream — latest mapping wins; an exception is
 // never deleted (hard rule #6), it is `resolved` when a later posting covers its sources.
-export function dayBookAdapter(input: { readonly store: EventStore; readonly now: () => string }): DayBookDeps {
+export function dayBookAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  /** The shop's trading calendar (time zone + cut-off) — what dates a return to its trading day (M01-FR-02). */
+  readonly calendar?: ShopCalendarOf;
+}): DayBookDeps {
   const fin = financeAdapter(input);
+  const calendarOf = shopCalendarOf(input.calendar);
   // A trading day can run past midnight; read a generous clock window and filter on the day itself.
   const window = (day: string): { readonly from: string; readonly to: string } => {
     const start = Date.parse(`${day}T00:00:00.000Z`);
@@ -12138,7 +12161,11 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
     returnsOn: async (tenantId, day) => {
       const { from, to } = window(day);
       const events = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
-      const returns = events.map((e) => payloadOf<ReturnRecord>(e)).filter((r) => r.processedAt.slice(0, 10) === day);
+      // A return carries no trading-day stamp (a sale does — the till's), so it is dated here by the SHOP's calendar, the
+      // same rule the till and the store computer close the day by. Its UTC date put a refund given between the shop's
+      // midnight and 05:30 IST on the day before, so that day's cash in hand was short by it and the next day's long.
+      const calendar = await calendarOf(tenantId);
+      const returns = events.map((e) => payloadOf<ReturnRecord>(e)).filter((r) => tradingDayIn(r.processedAt, calendar) === day);
       // OB-34 "A": the value of the points each return gave back to the member (head office's give-back fact, on the
       // sale's loyalty stream) rides on the return, so the day book reverses the whole returned value.
       return Promise.all(returns.map(async (r) => {
