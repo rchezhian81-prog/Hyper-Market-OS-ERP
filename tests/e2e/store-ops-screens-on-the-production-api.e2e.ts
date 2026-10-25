@@ -25,6 +25,11 @@ const KEY = ['store', 'ops', 'e2e', 'key'].join('-').padEnd(48, '0');
 const HOUR = 3_600_000;
 const CASHIER = 'u-ravi';
 const DATA = 'storeOpsData';
+/** An `Etc/GMT` zone in which the clock reads about midday now (its sign is reversed: `Etc/GMT-5` is UTC+5). */
+const MIDDAY_ZONE = (() => {
+  const ahead = Math.max(-12, Math.min(14, 12 - new Date().getUTCHours()));
+  return ahead === 0 ? 'Etc/GMT' : `Etc/GMT${ahead > 0 ? '-' : '+'}${Math.abs(ahead)}`;
+})();
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-operations screens (OB-154) on the production API, in a real browser', () => {
   let browser: Browser;
@@ -69,8 +74,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
 
   const pageErrors: string[] = [];
   afterAll(() => { expect(pageErrors).toEqual([]); });
-  const open = async (who: string, path: string): Promise<{ page: Page; close: () => Promise<void> }> => {
-    const context = await browser.newContext();
+  const open = async (who: string, path: string, timezoneId?: string): Promise<{ page: Page; close: () => Promise<void> }> => {
+    const context = await browser.newContext(timezoneId === undefined ? {} : { timezoneId });
     await shop.signIn(context, who);
     const page = await context.newPage();
     // A script error on the page fails the journey — a screen that throws shows nothing true.
@@ -80,7 +85,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   };
 
   it('(a) food-safety: today shows missed and due; a failure with no action is refused; with it, recorded in the owner\'s name', async () => {
-    const { page, close } = await open(OWNER, '/food-safety');
+    // "Today" on the food-safety board starts at the browser's own midnight. The slots are seeded from two hours ago, so the
+    // browser runs in a zone where it is about noon now — just after midnight they would fall on yesterday's board.
+    const { page, close } = await open(OWNER, '/food-safety', MIDDAY_ZONE);
     try {
       await page.locator('#rows .row').first().waitFor({ timeout: 15_000 });
       // The last hour's slot is MISSED (escalated); the count is exactly the missed rows the page shows.
