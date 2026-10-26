@@ -264,6 +264,16 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    * out loud that the screens are reachable beyond loopback, and no host port is ever published for them.
    */
   { key: 'EDGE_SCREEN_HOST', optional: true },
+  /**
+   * OB-388 · ADR-0029: where head office's sign-in is — the identity server realm's https address. With CLOUD_API_URL, the
+   * office pages on this box send each person through their OWN head-office sign-in (password and second step) and carry
+   * THEIR session to head office. Absent: the box never answers a page's head-office call (a lost link, said on the page).
+   */
+  { key: 'EDGE_HEAD_OFFICE_SIGN_IN_ISSUER', optional: true },
+  /** OB-388: this product's public client at the identity server (default `sre-web`); PKCE binds each sign-in, no secret. */
+  { key: 'EDGE_HEAD_OFFICE_SIGN_IN_CLIENT_ID', optional: true },
+  /** OB-388: head office's API name in the tokens (default `sre-retail-os-api`). */
+  { key: 'EDGE_HEAD_OFFICE_AUDIENCE', optional: true },
   // The handhelds' DEVICE socket (SP-3a · ADR-0019): the shop-network-facing door the enrolled handhelds hand their work
   // through. Absent → no device socket at all. The host stays loopback unless named — a shop names its LAN address.
   { key: 'EDGE_DEVICE_PORT', numeric: true, optional: true },

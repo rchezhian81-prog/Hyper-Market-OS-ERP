@@ -183,7 +183,8 @@
       "frontchannelLogout": true,
       "fullScopeAllowed": false,
       "redirectUris": [
-        "${SRE_WEB_ORIGIN}/login/callback"
+        "${SRE_WEB_ORIGIN}/login/callback",
+        "http://127.0.0.1:8091/login/callback"
       ],
       "webOrigins": [
         "${SRE_WEB_ORIGIN}"

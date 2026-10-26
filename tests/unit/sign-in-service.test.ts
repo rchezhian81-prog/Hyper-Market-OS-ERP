@@ -106,6 +106,20 @@ describe('sending the person to the identity server', () => {
       client_id: 'sre-web', response_type: 'code', scope: 'openid', redirect_uri: `${ORIGIN}/login/callback`, code_challenge_method: 'S256',
     });
     for (const k of ['state', 'nonce', 'code_challenge']) expect((to.searchParams.get(k) ?? '').length).toBeGreaterThanOrEqual(32);
+    // The hosted front keeps the identity server's own single sign-on: no forced prompt.
+    expect(to.searchParams.get('prompt')).toBeNull();
+  });
+
+  it('OB-388: on a shared store PC the identity server is asked for the password (and second step) EVERY time — prompt=login', async () => {
+    const handle = createSignInHandler({
+      settings: { issuer: ISSUER, internalIssuer: INTERNAL, clientId: 'sre-web', origin: 'http://127.0.0.1:8091', alwaysAskForCredentials: true },
+      policy: { algorithm: 'RS256', secret: '', keyring: { get: () => keys.publicKey }, subjectClaim: 'sre_user_id', issuer: ISSUER, audience: AUD },
+      fetch: (async () => new Response('{}', { status: 400 })) as unknown as typeof globalThis.fetch, now: () => Date.now(), audit: () => {},
+    });
+    const res = await handle({ method: 'GET', url: '/login/?next=/finance-close/', headers: {}, body: '' });
+    const to = new URL(res.headers['location']!);
+    expect(to.searchParams.get('prompt')).toBe('login');
+    expect(to.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:8091/login/callback');
   });
 });
 

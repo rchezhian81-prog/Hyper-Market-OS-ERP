@@ -80,12 +80,10 @@ describe('every screen the store computer serves has a door, and every door open
     // The pages in apps/web-erp/web the box does not serve. Approvals (ADR-0024) is served by the box and is NOT on this list.
     const servedFiles = new Set(BOX_SCREENS.map((s) => APP_SHELL[s].file));
     const unservedPages = readdirSync('apps/web-erp/web').filter((f) => f.endsWith('.html') && !servedFiles.has(f)).sort();
-    // OB-380 (owner, 26 Oct 2026): the store computer serves every office page that was marked `unserved` (47). Two pages
-    // with no menu item stay off the box, named, until the owner decides (docs/STATUS.md, G5c): the company report still
-    // draws practice branch names ("Anna Nagar", "T. Nagar") and a fixed company node, and the DPO's erasure console is a
-    // development workflow on a typed staff id against a stand-in server (OB-49 keeps erasure synthetic-only). Serving
-    // either in the shop would show invented names or offer an unsafe door.
-    expect(unservedPages).toEqual(['company-report.html', 'erasure-console.html']);
+    // OB-380 (owner, 26 Oct 2026): the store computer serves every office page that was marked `unserved` (47). OB-391
+    // (owner, 26 Oct 2026): the company report reads head office's own branches and is served too, and the old erasure
+    // page is retired (erasure stays on the real privacy routes). So every web-erp page is served.
+    expect(unservedPages).toEqual([]);
     expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id)).toEqual([]);
     // `recall-trace` left this list with the integration follow-ups (23 Oct 2026): the box serves the Recalls and trace page.
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.

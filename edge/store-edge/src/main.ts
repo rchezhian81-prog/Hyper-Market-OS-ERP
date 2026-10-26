@@ -107,6 +107,7 @@ import { pullConcessionTradingFeed, type ConcessionTradingPullOutcome } from '..
 import { httpWalletFeedSource, pullWalletFeed, type WalletFeedPullOutcome } from '../../sync-agent/src/loyalty-wallets-feed';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { openOfficeGate } from './office-sign-in';
+import { createHeadOfficeLink, headOfficeLinkSettingsFrom } from './head-office-link'; // OB-388 · ADR-0029
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { withDeciderSeal } from './decision-seal';
@@ -2071,6 +2072,9 @@ export async function startEdge(
     };
   };
 
+  // OB-392: the box's last send to head office, for the manager's lane cards — set once the drains exist (a box with no
+  // head office configured has none, and its cards say the link is not known).
+  const laneLinkRelay: { current: (() => { readonly lastSentAt: string | null }) | undefined } = { current: undefined };
   // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
   // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
   const snapshot = (): ScreenInput => {
@@ -2098,6 +2102,9 @@ export async function startEdge(
       // approval numbers, and the refunds done on the machine, for the manager's day close. Absent in the mirror pilot.
       ...(payments === null || !realTrading().on ? {} : { cardPayments: cardDayOf(payments, now) }),
       ...(peripheralReports === null ? {} : { peripheralReports: peripheralReports.latest() }),
+      // OB-392: the lane cards — this box's own lane, and its last send to head office.
+      ...(laneOfBox === undefined ? {} : { ownLaneId: laneOfBox }),
+      ...(laneLinkRelay.current === undefined ? {} : { laneLink: laneLinkRelay.current() }),
       // OB-256: the till is told it is in the mirror pilot, and who turned it on.
       mirrorPilot: mirrorPilot(),
       // OB-264: the mirror sales and their old ERP bill numbers, for the evening check's bill-wise list.
@@ -2116,8 +2123,20 @@ export async function startEdge(
   const screenPort = settings['EDGE_SCREEN_PORT'];
   const screenHost = settings['EDGE_SCREEN_HOST'];
   if (officeGate !== null) say(`office screens: staff ID and own till PIN, checked on this box; a cashier opens only the till (${officeGate.live().length} office sign-in(s) still open).`);
+  // OB-388 · ADR-0029: the office pages reach head office as the person signed in — their own head-office login and second
+  // step, their own session carried to head office (never this box's machine credential, never a PIN). Off unless both
+  // the identity server and head office's API are named; the boot log says which, and never prints either address.
+  const headOfficeLinkSetting = headOfficeLinkSettingsFrom(settings);
+  if (headOfficeLinkSetting.on) say('office pages: each person signs in to head office with their own login and second step on this PC; their own session is carried to head office (OB-388).');
+  else if (headOfficeLinkSetting.why !== null) say(`office pages: the head-office sign-in is NOT on — ${headOfficeLinkSetting.why}. The pages say head office cannot be reached.`);
   const screens = screenPort === undefined ? null : await startScreenServer({
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
+    ...(headOfficeLinkSetting.on ? {
+      headOffice: (origin: string) => createHeadOfficeLink({
+        settings: { ...headOfficeLinkSetting.settings, origin }, fetch: globalThis.fetch,
+        audit: (l) => { say(`head-office sign-in: ${l.event}${l.userId === undefined ? '' : ` — ${l.userId}`}${l.why === undefined ? '' : ` (${l.why})`}`); },
+      }),
+    } : {}),
     port: Number(screenPort),
     ...(screenHost === undefined ? {} : { host: screenHost }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
@@ -2513,6 +2532,11 @@ export async function startEdge(
   const returnsAgent = new SyncAgent(returnsOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
+  // OB-392: the lane cards say when a bill or a refund from this box last reached head office.
+  laneLinkRelay.current = () => {
+    const times = [agent.health().lastSuccessAt, returnsAgent.health().lastSuccessAt].filter((t): t is string => t !== null).sort();
+    return { lastSentAt: times[times.length - 1] ?? null };
+  };
   // The completion pipeline's own agent (M25-FR-02) — same transport, its own outbox, for the same
   // reason a refund has its own: three small agents beside one another keep each drain and each cursor
   // exactly its own, so a completion that cannot get through never holds a sale or a refund, and none

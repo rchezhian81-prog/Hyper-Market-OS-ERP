@@ -105,7 +105,7 @@ describe('the shop\'s realm file', () => {
     expect(text).not.toMatch(/\$\{SRE_/);
     expect(realm).toMatchObject({ realm: 'sre-anna', displayName: 'SRE Anna Nagar', loginTheme: 'sre' });
     const web = (realm['clients'] as Record<string, unknown>[]).find((c) => c['clientId'] === 'sre-web')!;
-    expect(web['redirectUris']).toEqual(['https://anna.example/login/callback']);
+    expect(web['redirectUris']).toEqual(['https://anna.example/login/callback', 'http://127.0.0.1:8091/login/callback']); // OB-388: the store PC
     const mappers = web['protocolMappers'] as { protocolMapper: string; config: Record<string, string> }[];
     expect(mappers.find((m) => m.protocolMapper === 'oidc-hardcoded-claim-mapper')!.config['claim.value']).toBe(B);
     expect(mappers.find((m) => m.protocolMapper === 'oidc-audience-mapper')!.config['included.custom.audience']).toBe('sre-retail-os-api');

@@ -218,7 +218,8 @@ ordinary role, and the session register is a record, not a fence. Proved by
 
 `tests/integration/keycloak-real.test.ts` runs against a real Keycloak with this realm imported. It skips itself when no
 Keycloak is configured (a developer's machine), so a skipped run is never proof. The automatic build's **identity** job
-runs it, with `keycloak-shop-realms`, `keycloak-provisioning` and `identity-front-door`, through `scripts/identity-proof.sh`
+runs it, with `keycloak-shop-realms`, `keycloak-provisioning`, `identity-front-door` and `keycloak-store-computer`, through
+`scripts/identity-proof.sh`
 (which refuses a run where any of them skipped). To run the same by hand against your own Keycloak:
 `KEYCLOAK_PROOF_BASE=… KEYCLOAK_PROOF_ADMIN_PASSWORD_FILE=… KEYCLOAK_PROOF_TENANT=… PROOF_PG_URL=postgres://<user>@<host>:5432 bash scripts/identity-proof.sh`
 (the user must be allowed to create databases and roles). The steps below describe one suite at a time.
@@ -252,6 +253,14 @@ listening on 127.0.0.1:8099), the sign-in service, the real head-office service 
 with no session → the sign-in → the identity server's page → back; the store computer hears the signed-in person and a
 visitor's own `X-Sre-User` is overwritten; a head-office call through the front door is let in on the session's token
 and refused without it; sign-out ends it.
+
+**The store PC's own head-office sign-in** (`tests/integration/keycloak-store-computer.test.ts`, same settings, a freshly
+migrated database; OB-388 · ADR-0029; at least 3 tests). A REAL store computer on the store PC's own screen address
+(`127.0.0.1:8091`, the loopback callback the realm allows) and the REAL head-office service. It proves: the box sends the
+person to Keycloak with PKCE and `prompt=login`; a privileged person sets up, then gives, a one-time code; the box keeps
+the session (an HttpOnly cookie, no token in the browser) and a head-office call through the box is answered by the real
+API as that person; with no session the box refuses it and sends nothing; a password-only sign-in is refused at the box;
+Sign out ends it. Port 8091 must be free on the test machine.
 
 **People's sign-ins** (`tests/integration/keycloak-provisioning.test.ts`, same settings, a freshly migrated
 database). It proves on the real server:

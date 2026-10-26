@@ -28,6 +28,7 @@ suites=(
   "keycloak-shop-realms:3"
   "keycloak-provisioning:4"
   "identity-front-door:1"
+  "keycloak-store-computer:3"
 )
 
 for entry in "${suites[@]}"; do

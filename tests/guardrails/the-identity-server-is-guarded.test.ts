@@ -24,8 +24,10 @@ describe('the realm file', () => {
       publicClient: true, standardFlowEnabled: true, implicitFlowEnabled: false, directAccessGrantsEnabled: false, serviceAccountsEnabled: false,
     });
     expect((client['attributes'] as Record<string, string>)['pkce.code.challenge.method']).toBe('S256');
-    // Sign-in returns only to the product's own callback — never a wildcard.
-    expect(client['redirectUris']).toEqual(['${SRE_WEB_ORIGIN}/login/callback']);
+    // Sign-in returns only to the product's own callback — never a wildcard. OB-388 · ADR-0029: and to the store PC's own
+    // screen socket on its loopback (the installer's port), where the store computer runs the same sign-in for the office
+    // pages. A loopback address is reachable only from that PC itself, and PKCE binds each code to the sign-in that asked.
+    expect(client['redirectUris']).toEqual(['${SRE_WEB_ORIGIN}/login/callback', 'http://127.0.0.1:8091/login/callback']);
   });
 
   it('passwords are long and a run of wrong ones locks the account; tokens are short-lived; https outside the private network', () => {

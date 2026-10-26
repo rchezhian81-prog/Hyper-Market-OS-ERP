@@ -42,12 +42,17 @@ const REFUND = `${E2E}/the-served-till-takes-a-refund.e2e.ts`;
 const OWNER = `${E2E}/the-owner-app-meets-its-interaction-budget.e2e.ts`;
 const AI = `${E2E}/the-ai-control-screen-reaches-head-office.e2e.ts`;
 const CATALOGUE = `${E2E}/catalogue-price-change-delivery.e2e.ts`;
+<<<<<<< ours
 // OB-390 (owner, 26 Oct 2026: actions above the budget are shortened with defaults; the required checks stay).
 const SERVICE_DESK = `${E2E}/service-desk-and-assistant-drafts.e2e.ts`;
 const TASKS = `${E2E}/store-tasks-meet-the-interaction-budget.e2e.ts`;
 /** Why an action is still above its spec once shortened (OB-390), and where it is measured (`asBuilt`, never a
  *  `taps.reset()` bar): the figure left is made of required checks only — accepting it as a written exception, or not, is
  *  the owner's decision. */
+=======
+const LANE_HEALTH = `${E2E}/the-manager-opens-a-lanes-health-from-today.e2e.ts`; // OB-392
+/** Why an action is above its spec as built, and where it is measured (`asBuilt`, never a `taps.reset()` bar). */
+>>>>>>> theirs
 const ABOVE_SPEC = (n: number, file: string, why: string): string =>
   `measured AS BUILT at ${n} in ${file} — above the spec's budget because ${why}; OB-390 shortened it with defaults and every act left is a required check, so the remaining figure is the owner's to accept as a written exception or not`;
 
@@ -69,10 +74,16 @@ const REGISTER: readonly Budgeted[] = [
   // ── The store manager (store-manager.md) ──
   { action: 'approve with a reason', spec: 'store-manager.md', specWords: 'approve/reject a request', budget: 3, counted: { file: TILL, label: 'approve with a reason' } },
   { action: 'start the day close', spec: 'store-manager.md', specWords: 'start day close', budget: 2, counted: { file: TILL, label: 'start the day close' } },
+<<<<<<< ours
   { action: 'open a lane\'s health', spec: 'store-manager.md', specWords: 'open a lane\'s health', budget: 2, notYetCounted: 'the manager\'s screen has no lane-by-lane health view to open (the sync badge and the device fleet page are not it) — which screen it belongs on is an owner decision (lane 1 R4 report)' },
   // OB-390: assigning defaults the store to the manager's own (from the sign-in) and the deadline to the end of today.
   { action: 'assign a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, counted: { file: TASKS, label: 'assign a task' } },
   { action: 'complete a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, counted: { file: TASKS, label: 'complete a task' } },
+=======
+  // OB-392 (owner, 26 Oct 2026): lane health on the manager's Today screen, one tap per lane.
+  { action: 'open a lane\'s health', spec: 'store-manager.md', specWords: 'open a lane\'s health', budget: 2, counted: { file: LANE_HEALTH, label: 'open a lane’s health' } },
+  { action: 'assign/complete a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, notYetCounted: 'assigning is on Store tasks (title, person, branch and due time typed — more than three acts) and completing on My tasks (the assignee only, OB-158), both head-office pages; not counted yet — whether assigning may be shortened is an owner decision (lane 1 R4 report)' },
+>>>>>>> theirs
   // ── The warehouse handheld (inventory-warehouse.md) ──
   { action: 'put away a line', spec: 'inventory-warehouse.md', specWords: 'put away a line', budget: 3, counted: { file: HANDHELDS, label: 'put away a line' } },
   { action: 'warehouse: pick a line', spec: 'inventory-warehouse.md', specWords: 'pick a line', budget: 3, counted: { file: HANDHELDS, label: 'pick a line' } },
@@ -182,8 +193,14 @@ describe('QG-02: every frequent action has a budget, and is counted in a real br
     const open = REGISTER.filter((b) => b.notYetCounted !== undefined).map((b) => b.action);
     // The number is pinned so it can only change on purpose: count one more and move it, or add one and say so.
     // QG-02 lane 1 R4 (26 Oct 2026): 8 of the 14 now counted; 4 measured above the spec as built and 2 with no screen to
+<<<<<<< ours
     // count on. OB-390 (26 Oct 2026): price, case reply, kill switch and assign/complete a task now counted within budget;
     // left: returning one whole line (7, all required checks — the owner's to accept) and a lane's health (no screen yet).
     expect(open).toHaveLength(2);
+=======
+    // count on — each named above, for the owner to decide. OB-392 (26 Oct 2026): "open a lane's health" is counted on the
+    // manager's Today screen now (one tap), so 5 remain.
+    expect(open).toHaveLength(5);
+>>>>>>> theirs
   });
 });

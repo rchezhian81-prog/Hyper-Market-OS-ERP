@@ -90,7 +90,8 @@ describe('the identity job (real Keycloak)', () => {
     expect(identity).toMatch(/openssl rand -hex 24/); // the administrator password is generated per run
     expect(identity).toContain('bash scripts/identity-proof.sh');
     const proof = readFileSync('scripts/identity-proof.sh', 'utf8');
-    for (const suite of ['keycloak-real', 'keycloak-shop-realms', 'keycloak-provisioning', 'identity-front-door']) {
+    // OB-388 · ADR-0029: and the store PC's own head-office sign-in through a real box.
+    for (const suite of ['keycloak-real', 'keycloak-shop-realms', 'keycloak-provisioning', 'identity-front-door', 'keycloak-store-computer']) {
       expect(proof, suite).toContain(`"${suite}:`);
       expect(readdirSync('tests/integration'), suite).toContain(`${suite}.test.ts`);
     }

@@ -42,8 +42,8 @@ describe('role-scoped navigation', () => {
     const labels = nav.flatMap((g) => g.items.map((i) => i.label));
     // The day-close read also opens "Reopen a locked day" — same permission, same people (accountant / owner).
     // OB-16 workspaces: Cash & finance stands before Reports in the rail.
-    // R4 Lane 3: the report read also opens "Bought together" (D-23).
-    expect(labels).toEqual(['Today', 'Over / short sign-off', 'Reopen a locked day', 'Bought together', 'Reports']);
+    // R4 Lane 3: the report read also opens "Bought together" (D-23); OB-391: and the Company report.
+    expect(labels).toEqual(['Today', 'Over / short sign-off', 'Reopen a locked day', 'Bought together', 'Company report', 'Reports']);
     expect(labels).not.toContain('Users & roles'); // not their job
     expect(labels).not.toContain('Stock counts');
   });

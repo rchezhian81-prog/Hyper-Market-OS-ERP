@@ -468,6 +468,7 @@
     'finance': 'landmark',
     'day-book': 'book-open',
     'finance-close': 'calendar-days',
+    'company-report': 'building', // OB-391
     'reconciliation': 'git-compare-arrows',
     'gst-reconciliation': 'git-merge',
     'gst-returns': 'receipt-text',

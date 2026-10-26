@@ -56,6 +56,10 @@ const WORDS = {
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
     deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
     attnApprovals: 'approvals you can clear', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
+    // OB-392: lane health on Today — one tap per lane.
+    lanesTitle: 'Lanes', laneWord: 'Lane', laneAllWorking: 'every device working', laneProblems: 'device problem(s)', laneNotReported: 'the till has not reported its devices yet',
+    lanePrinter: 'Printer', laneScanner: 'Scanner', laneCard: 'Card machine', laneLastHeard: 'Till last reported', laneUnsent: 'Not yet at head office', laneLastSync: 'Last sent to head office',
+    devOk: 'Working', devDegraded: 'Not working properly', devFailed: 'Failed', devNotReported: 'Not reported', laneNever: 'never', laneBills: 'bill(s) or refund(s) from this till',
     biggestFirst: 'Biggest first.', approve: 'Approve', reject: 'Reject', cancel: 'Cancel', ok: 'OK',
     whyApprove: 'Why are you approving this?', whyReject: 'Why are you rejecting this?',
     decided: 'Decided', requestedBy: 'asked for by', noValue: 'no value',
@@ -134,6 +138,9 @@ const WORDS = {
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
     deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
     attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
+    lanesTitle: 'கல்லாக்கள்', laneWord: 'கல்லா', laneAllWorking: 'எல்லாச் சாதனங்களும் வேலை செய்கின்றன', laneProblems: 'சாதனச் சிக்கல்(கள்)', laneNotReported: 'கல்லா இன்னும் தன் சாதனங்களைப் பற்றிச் சொல்லவில்லை',
+    lanePrinter: 'அச்சுப்பொறி', laneScanner: 'ஸ்கேனர்', laneCard: 'கார்டு இயந்திரம்', laneLastHeard: 'கல்லா கடைசியாகச் சொன்னது', laneUnsent: 'தலைமை அலுவலகத்துக்கு இன்னும் செல்லாதவை', laneLastSync: 'தலைமை அலுவலகத்துக்குக் கடைசியாக அனுப்பியது',
+    devOk: 'வேலை செய்கிறது', devDegraded: 'சரியாக வேலை செய்யவில்லை', devFailed: 'செயலிழந்தது', devNotReported: 'சொல்லப்படவில்லை', laneNever: 'ஒருபோதும் இல்லை', laneBills: 'இந்தக் கல்லாவின் பில்(கள்) அல்லது திருப்பம்(கள்)',
     nothingWaiting: 'எதுவும் காத்திருக்கவில்லை.', biggestFirst: 'பெரியது முதலில்.',
     approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து', ok: 'சரி',
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
@@ -678,6 +685,66 @@ function renderWorkspaces() {
     return a;
   }));
 }
+// ── OB-392 · M12-FR-04: lane health on Today, one tap per lane ────────────────────────────────────────────────────
+// Every lane the store computer knows (`window.managerData.lanes`): its printer, scanner and card machine as the till last
+// said, when it last said so, what from it is still not at head office, and when the box last sent to head office. A
+// device the till never reported reads "Not reported", never "Working" (P-08). One tap on a lane opens it; another closes.
+let openLane = null;
+const lanesOf = () => (window.managerData && Array.isArray(window.managerData.lanes) ? window.managerData.lanes : null);
+const shopTime = (s) => (typeof s === 'string' && s !== '' ? s.replace('T', ' ') : null);
+function deviceWords(d) {
+  if (d === null || d === undefined) return { text: t('devNotReported'), iconName: 'circle-help' };
+  const word = d.state === 'ok' ? t('devOk') : d.state === 'failed' ? t('devFailed') : t('devDegraded');
+  return { text: d.detail ? `${word} — ${d.detail}` : word, iconName: d.state === 'ok' ? 'circle-check' : 'triangle-alert' };
+}
+function renderLanes() {
+  const lanes = lanesOf();
+  el('lanes-card').hidden = lanes === null || lanes.length === 0;
+  el('lanes-title').textContent = t('lanesTitle');
+  if (lanes === null) { el('lanes').replaceChildren(); return; }
+  el('lanes').replaceChildren(...lanes.flatMap((lane, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = `lane-${i}`;
+    btn.dataset['lane'] = lane.laneId;
+    const notReported = lane.lastReportAt === null;
+    btn.className = `lane ${notReported ? 'unknown' : lane.problems > 0 ? 'attention' : ''}`;
+    btn.setAttribute('aria-expanded', String(openLane === lane.laneId));
+    btn.setAttribute('aria-controls', `lane-detail-${i}`);
+    const mark = lineIcon('monitor', 18);
+    if (mark) btn.append(mark);
+    const name = document.createElement('b'); name.textContent = `${t('laneWord')} ${lane.laneId}`;
+    const sum = document.createElement('span'); sum.className = 'sum';
+    sum.textContent = notReported ? t('laneNotReported') : lane.problems > 0 ? `${lane.problems} ${t('laneProblems')}` : t('laneAllWorking');
+    btn.append(name, sum);
+    btn.addEventListener('click', () => { openLane = openLane === lane.laneId ? null : lane.laneId; renderLanes(); });
+    const detail = document.createElement('dl');
+    detail.className = 'lane-detail';
+    detail.id = `lane-detail-${i}`;
+    detail.hidden = openLane !== lane.laneId;
+    const row = (iconName, label, text) => {
+      const div = document.createElement('div');
+      const ic = lineIcon(iconName, 16);
+      if (ic) div.append(ic);
+      const dt = document.createElement('dt'); dt.textContent = label;
+      const dd = document.createElement('dd'); dd.textContent = text;
+      div.append(dt, dd);
+      return div;
+    };
+    const devices = lane.devices ?? {};
+    const printer = deviceWords(devices.printer); const scanner = deviceWords(devices.scanner); const card = deviceWords(devices.card_terminal);
+    detail.append(
+      row(printer.iconName === 'circle-check' ? 'receipt' : printer.iconName, t('lanePrinter'), printer.text),
+      row(scanner.iconName === 'circle-check' ? 'scan-barcode' : scanner.iconName, t('laneScanner'), scanner.text),
+      row(card.iconName === 'circle-check' ? 'wallet' : card.iconName, t('laneCard'), card.text),
+      row('clock', t('laneLastHeard'), shopTime(lane.lastReportShop) ?? t('laneNever')),
+      row('send', t('laneUnsent'), `${lane.unsent} ${t('laneBills')}`),
+      row('refresh-cw', t('laneLastSync'), lane.boxLastSentShop === undefined ? `${t('notKnown')} — ${t('boxSilent')}` : (shopTime(lane.boxLastSentShop) ?? t('laneNever'))),
+    );
+    return [btn, detail];
+  }));
+}
+
 function paintTodayWords() {
   el('attention-title').textContent = t('needsAttention');
   el('flow-title').textContent = t('purchaseToShelf');
@@ -723,6 +790,7 @@ function renderHome() {
   renderAttention(floor, today);
   renderFlow(today);
   renderOps(floor, today);
+  renderLanes(); // OB-392
   renderWorkspaces();
   // The one primary action on the home screen (store-manager.md: "clear the next approval or exception"). Shown
   // only when there IS one this manager may clear — a primary button that leads nowhere teaches people to ignore

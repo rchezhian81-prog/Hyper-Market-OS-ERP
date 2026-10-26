@@ -37,6 +37,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'product-content',
   // QG-02 lane 1 R4: the four new head-office pages, served the same way.
   'dock-diary', 'blanket-orders', 'promotion-funding', 'switches',
+  // OB-391 (owner, 26 Oct 2026): the company report, now that it reads head office's own branches and company.
+  'company-report',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -99,6 +101,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'blanket-orders': 'blanketOrdersData',
   'promotion-funding': 'promotionFundingData',
   switches: 'switchesData',
+  'company-report': 'companyReportData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
