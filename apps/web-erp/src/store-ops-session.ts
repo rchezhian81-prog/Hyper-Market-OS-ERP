@@ -206,6 +206,17 @@ export function splitToday(board: FoodSafetyBoard): {
 /** The start of the reader's own day (local midnight), as an ISO time — "today" on the food-safety board. */
 export const startOfToday = (now: Date = new Date()): string => new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 
+/**
+ * OB-390 (store-manager.md "assign/complete a task ≤3"): the deadline a new task starts at — the end of today (23:59 of the
+ * reader's own day), as the value a `datetime-local` field holds. The DAY is `startOfToday`'s, so it follows however
+ * "today" is worked out there; this only writes it in the field's shape. A default only: the manager may change it.
+ */
+export function endOfTodayField(now: Date = new Date()): string {
+  const day = new Date(startOfToday(now));
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${day.getFullYear()}-${two(day.getMonth() + 1)}-${two(day.getDate())}T23:59`;
+}
+
 export interface CheckRecordForm {
   readonly checkId: string;
   /** The slot being answered; absent on a receiving checklist (which names its delivery). */
@@ -233,6 +244,12 @@ export interface StoreOpsSession {
   priceAgeing(branchId: string): Promise<Outcome<PriceAgeingReport>>;
   taskBoard(): Promise<Outcome<{ readonly tasks: readonly StoreTask[] }>>;
   assignTask(form: AssignForm): Promise<Outcome<{ readonly taskId: string }>>;
+  /**
+   * OB-390: the branch the signed-in person works at, as head office's sign-in says it (`GET /v1/identity/me`) — the
+   * store a new task defaults to. `null` when the sign-in names none (head office staff over several stores): the field is
+   * then left for the person to fill, never guessed. A read; nothing is written.
+   */
+  myBranch(): Promise<Outcome<{ readonly branchId: string | null }>>;
   myTasks(): Promise<Outcome<{ readonly tasks: readonly StoreTask[] }>>;
   completeTask(task: StoreTask, form: { readonly evidenceRef: string; readonly stepsDone: readonly string[]; readonly note: string }): Promise<Outcome<{ readonly lateByMinutes: number }>>;
   wasteAnalytics(from: string, to: string): Promise<Outcome<WasteReport>>;
@@ -338,6 +355,13 @@ export function createStoreOpsSession(input: {
         critical: f.critical, evidenceRequired: f.evidenceRequired, steps,
       });
       return out.result === 'ok' ? { result: 'ok', value: { taskId } } : out;
+    },
+    myBranch: async () => {
+      if (!named) return nobody;
+      const out = await call<{ branchId?: unknown }>('GET', '/v1/identity/me');
+      if (out.result !== 'ok') return out;
+      const b = out.value.branchId;
+      return { result: 'ok', value: { branchId: typeof b === 'string' && b.trim() !== '' ? b : null } };
     },
     myTasks: () => (!named ? Promise.resolve(nobody) : !may.ownTasks ? Promise.resolve(cannot) : call('GET', '/v1/hr/workforce/my-tasks')),
     completeTask: async (task, f) => {

@@ -34,7 +34,7 @@ import {
   createRefundView, refundOutcomeOf, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
 } from './refund-view';
 import type { ReturnableLine } from '../../../packages/returns/src/return-register';
-import { assessExchange, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
+import { assessExchange, returnedValueAtOriginalPrices, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
 import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
 import { settle, type Tender } from '../../../packages/tender/src/tender';
 import { billReceipt, billTaxInvoice, type BillReceipt, type BillTaxInvoice } from './bill-receipt';
@@ -879,6 +879,13 @@ export interface RefundLookup {
   readonly sale: { readonly saleId: string; readonly number: string; readonly totalMinor: number };
   readonly returnable: readonly ReturnableLine[];
   readonly maxRefundMinor: number;
+  /**
+   * OB-390: what `quantityMinor` of a product on this bill is worth at the price the bill charged for it (the engine's own
+   * `returnedValueAtOriginalPrices`, over the bill's earlier returns), never above what is still refundable — the refund
+   * AMOUNT the screen offers by default. Only the amount: the method is always the cashier's choice, and the cashier may
+   * still change the amount (the engine judges whatever is sent, M13-FR-03).
+   */
+  readonly lineValueMinor: (productId: string, quantityMinor: number) => number;
   /** Whether a refund of this amount needs a §28 approver, so the screen asks for a manager first. */
   readonly needsApproval: (refundMinor: number, noReceipt?: boolean) => boolean;
   /** Complete the refund, resolving to exactly one plain-English screen state. Never throws. */
@@ -1364,6 +1371,10 @@ export function bootPos(config?: {
       sale: { saleId: originalSale.saleId, number: originalSale.number, totalMinor: originalSale.totalMinor },
       returnable: refundView.returnable(originalSale),
       maxRefundMinor: refundView.maxRefundMinor(originalSale),
+      lineValueMinor: (productId, quantityMinor) => Math.max(0, Math.min(
+        refundView.maxRefundMinor(originalSale),
+        returnedValueAtOriginalPrices(originalSale, [{ productId, quantityMinor }], found.returns.flatMap((r) => r.lines)),
+      )),
       needsApproval: (refundMinor, noReceipt = false) => refundView.needsApproval({
         returnId: '', number: '', originalSale, reasonCode: '', lines: [], refundMinor, refundTender: 'cash', noReceipt,
       }),

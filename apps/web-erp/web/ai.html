@@ -61,6 +61,8 @@
       }
       button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); font-size: 18px; }
+      .stop-one-list { display: grid; gap: 8px; margin-top: 8px; }
+      .stop-one-list button { width: 100%; }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
@@ -153,6 +155,8 @@
         <label for="pull-reason" id="pull-reason-label">Why are you stopping it</label>
         <textarea id="pull-reason"></textarea>
         <button id="pull" class="danger wide" type="button">Stop it now</button>
+        <h3 id="stop-one-title" hidden>Or stop just one assistant — write why above, then press its button</h3>
+        <div id="stop-one" class="stop-one-list"></div>
         <p class="lead" id="pull-note">The shop carries on trading. Nothing on the till, the stock or the money depends on this.</p>
       </section>
 

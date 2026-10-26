@@ -30,6 +30,7 @@ const WORDS = {
     approve: 'Approve', editApprove: 'Edit and approve', reject: 'Reject', editLabel: 'Your words (edit before approving)',
     approvedBy: 'Approved by', rejectedBy: 'Rejected by', send: 'Send it', channel: 'How you reached the customer',
     phone: 'Phone', in_person: 'In person', email: 'Email', sentBy: 'Sent by', via: 'by',
+    reachedBy: 'How the customer reached us', notSaid: 'Not said', approveSend: 'Approve and send by', cameBy: 'came by',
     resolveH: 'Resolve', resolutionL: 'How it was resolved', resolve: 'Resolve the case',
     rcH: 'Root cause', rcLede: 'Why it happened, once it is resolved — so it does not happen again.', rcCause: 'Cause', rcNote: 'What happened', rcPrevent: 'What will stop it (optional)', rcSave: 'Record the root cause',
     summaryH: 'Why cases happen', summaryLede: 'Resolved cases by root cause — and the resolved ones nobody has explained yet.',
@@ -56,6 +57,7 @@ const WORDS = {
     approve: 'ஒப்புதல்', editApprove: 'திருத்தி ஒப்புதல்', reject: 'நிராகரி', editLabel: 'உங்கள் வார்த்தைகள் (ஒப்புதலுக்கு முன் திருத்துங்கள்)',
     approvedBy: 'ஒப்புதல் அளித்தவர்', rejectedBy: 'நிராகரித்தவர்', send: 'அனுப்பு', channel: 'வாடிக்கையாளரை எப்படித் தொடர்பு கொண்டீர்கள்',
     phone: 'தொலைபேசி', in_person: 'நேரில்', email: 'மின்னஞ்சல்', sentBy: 'அனுப்பியவர்', via: 'வழியாக',
+    reachedBy: 'வாடிக்கையாளர் எப்படித் தொடர்பு கொண்டார்', notSaid: 'சொல்லப்படவில்லை', approveSend: 'ஒப்புதல் அளித்து அனுப்பு —', cameBy: 'வந்த வழி',
     resolveH: 'தீர்வு', resolutionL: 'எப்படித் தீர்க்கப்பட்டது', resolve: 'வழக்கைத் தீர்',
     rcH: 'மூல காரணம்', rcLede: 'தீர்ந்த பிறகு, ஏன் நடந்தது — மீண்டும் நடக்காமல் இருக்க.', rcCause: 'காரணம்', rcNote: 'என்ன நடந்தது', rcPrevent: 'எது தடுக்கும் (விருப்பம்)', rcSave: 'மூல காரணத்தைப் பதிவு செய்',
     summaryH: 'வழக்குகள் ஏன் நடக்கின்றன', summaryLede: 'மூல காரணப்படி தீர்ந்த வழக்குகள் — விளக்கப்படாதவையும்.',
@@ -68,6 +70,8 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key] ?? key;
+/** The ways a person can reply today (no SMS/WhatsApp provider is connected — head office refuses those by name). */
+const CHANNELS = ['phone', 'in_person', 'email'];
 const CAUSES = ['product_quality', 'stock_availability', 'pricing_or_billing', 'delivery', 'staff_conduct', 'store_process', 'system_or_app', 'customer_misunderstanding', 'other'];
 const key = (what) => ((crypto.randomUUID && crypto.randomUUID()) || `${what}-${Date.now()}-${Math.random()}`);
 
@@ -105,7 +109,7 @@ const say = (el, outcome, good) => {
 function paintWords() {
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['cases-h', 'casesH'], ['cases-lede', 'casesLede'], ['th-case', 'case'], ['th-kind', 'kind'], ['th-priority', 'priority'], ['th-state', 'state'], ['th-first', 'first'], ['th-resolution', 'resolution'],
-    ['open-h', 'openH'], ['l-new-id', 'caseNo'], ['l-new-kind', 'kind'], ['l-new-priority', 'priority'], ['l-new-customer', 'customer'], ['l-new-order', 'order'], ['l-new-summary', 'said'], ['open-case', 'openCase'],
+    ['open-h', 'openH'], ['l-new-id', 'caseNo'], ['l-new-kind', 'kind'], ['l-new-priority', 'priority'], ['l-new-customer', 'customer'], ['l-new-order', 'order'], ['l-new-channel', 'reachedBy'], ['o-ch-none', 'notSaid'], ['o-ch-phone', 'phone'], ['o-ch-in_person', 'in_person'], ['o-ch-email', 'email'], ['l-new-summary', 'said'], ['open-case', 'openCase'],
     ['o-complaint', 'complaint'], ['o-enquiry', 'enquiry'], ['o-warranty', 'warranty'], ['o-lost_and_found', 'lost_and_found'], ['o-low', 'low'], ['o-normal', 'normal'], ['o-high', 'high'], ['o-urgent', 'urgent'],
     ['l-first-clock', 'firstClock'], ['l-resolution-clock', 'resolutionClock'], ['drafts-h', 'draftsH'], ['drafts-lede', 'draftsLede'], ['l-ask-note', 'askNote'], ['ask-draft', 'askDraft'],
     ['resolve-h', 'resolveH'], ['l-resolution', 'resolutionL'], ['resolve', 'resolve'], ['rc-h', 'rcH'], ['rc-lede', 'rcLede'], ['l-rc-cause', 'rcCause'], ['l-rc-note', 'rcNote'], ['l-rc-prevent', 'rcPrevent'], ['rc-save', 'rcSave'],
@@ -151,7 +155,7 @@ function renderCase() {
   section.hidden = picked === null;
   if (picked === null) return;
   $('case-h').textContent = `${t('caseH')} ${picked.caseId}`;
-  $('case-facts').textContent = `${t(picked.kind)} · ${t(picked.priority)} · ${t(picked.state)}`;
+  $('case-facts').textContent = `${t(picked.kind)} · ${t(picked.priority)} · ${t(picked.state)}${CHANNELS.includes(picked.channel) ? ` · ${t('cameBy')} ${t(picked.channel)}` : ''}`;
   for (const [id, clock] of [['first-badge', pickedSla?.firstResponse], ['resolution-badge', pickedSla?.resolution]]) {
     const b = $(id);
     b.className = `badge ${clock?.status ?? ''}`;
@@ -192,11 +196,30 @@ function renderCase() {
         return b;
       };
       row.append(btn('approve', '', 'approved'), btn('editApprove', 'secondary', 'edited_and_approved'), btn('reject', 'secondary', 'rejected'));
+      // OB-390 · crm-service.md "open and reply to a case ≤3": when the case says how the customer reached the shop, the
+      // reply goes back that way by default — one press approves the words shown (a named person, P-05) and records the
+      // reply sent by that channel. Two acts at head office, each re-checked; if the send is refused the approval stands,
+      // the refusal is shown, and the draft offers "Send it" with the channel to choose.
+      if (CHANNELS.includes(picked.channel)) {
+        const both = document.createElement('button'); both.type = 'button'; both.className = 'approve-send'; both.disabled = !mayAct;
+        both.textContent = `${t('approveSend')} ${t(picked.channel)}`;
+        both.addEventListener('click', async () => {
+          const base = `/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}`;
+          const decided = await post(`${base}/decision`, { decision: 'approved' });
+          const out = decided.ok ? await post(`${base}/send`, { channel: picked.channel }) : decided;
+          say($('draft-status'), out);
+          await pick(picked.caseId);
+          await loadCases();
+        });
+        row.prepend(both);
+      }
       box.append(p, edit, row);
     } else if (d.decision.sendable) {
       const p = document.createElement('p'); p.textContent = `${t('approvedBy')} ${d.decision.approvedBy}`;
       const sel = document.createElement('select'); sel.setAttribute('aria-label', t('channel'));
-      for (const c of ['phone', 'in_person', 'email']) { const o = document.createElement('option'); o.value = c; o.textContent = t(c); sel.append(o); }
+      for (const c of CHANNELS) { const o = document.createElement('option'); o.value = c; o.textContent = t(c); sel.append(o); }
+      // OB-390: the case's own channel is chosen already; the person may still pick another.
+      if (CHANNELS.includes(picked.channel)) sel.value = picked.channel;
       const b = document.createElement('button'); b.type = 'button'; b.textContent = t('send'); b.disabled = !mayAct; b.className = 'send';
       b.addEventListener('click', async () => {
         const out = await post(`/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}/send`, { channel: sel.value });
@@ -261,7 +284,8 @@ $('open-case').addEventListener('click', async () => {
   const caseId = $('new-id').value.trim();
   const body = { kind: $('new-kind').value, priority: $('new-priority').value, customerRef: $('new-customer').value.trim(), summary: $('new-summary').value.trim(), assignedTo: who?.userId ?? '' };
   const orderRef = $('new-order').value.trim();
-  const out = await post(`/v1/service/cases/${encodeURIComponent(caseId)}`, orderRef === '' ? body : { ...body, orderRef });
+  const channel = $('new-channel').value;
+  const out = await post(`/v1/service/cases/${encodeURIComponent(caseId)}`, { ...body, ...(orderRef === '' ? {} : { orderRef }), ...(channel === '' ? {} : { channel }) });
   say($('open-status'), out);
   if (out.ok) { await loadCases(); await pick(caseId); }
 });

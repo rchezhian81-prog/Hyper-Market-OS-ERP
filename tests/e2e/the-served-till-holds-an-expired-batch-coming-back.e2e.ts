@@ -92,7 +92,9 @@ describe.skipIf(!HAVE_BROWSER)('the served till holds an expired batch coming ba
     return page;
   };
   /** The refund against `receipt`, through the screen's own steps; `w` are the words of the language the till is in. */
-  const refundOne = async (page: Page, receipt: string, w: { more: string; refund: string; find: string; which: string; howMany: string; why: string; condition: string; amount: string; how: string }): Promise<{ title: string; text: string }> => {
+  /** OB-390: the till asks how many only when more than one can come back; the reason is one tap; the amount starts at the
+   *  line's value on the bill (shown on the how-is-it-given question), so nothing is keyed for it. */
+  const refundOne = async (page: Page, receipt: string, w: { more: string; refund: string; find: string; which: string; howMany: string; why: string; condition: string; how: string }, asksHowMany: boolean): Promise<{ title: string; text: string }> => {
     await page.click('#more');
     await shows(page, 'pay', 'pay-title', w.more);
     await page.click(`#pay-kinds button:text-is("${w.refund}")`);
@@ -101,16 +103,14 @@ describe.skipIf(!HAVE_BROWSER)('the served till holds an expired batch coming ba
     await page.keyboard.press('Enter');
     await shows(page, 'pay', 'pay-title', w.which);
     await page.click('#pay-kinds button:first-child');
-    await shows(page, 'sheet', 'sheet-title', w.howMany);
-    await page.click('#sheet-ok');
+    if (asksHowMany) {
+      await shows(page, 'sheet', 'sheet-title', w.howMany);
+      await page.click('#sheet-ok');
+    }
     await shows(page, 'sheet', 'sheet-title', w.why);
     await page.click('#reasons button:first-child');
-    await page.click('#sheet-ok');
     await shows(page, 'pay', 'pay-title', w.condition);
     await page.click('#pay-kinds button:first-child'); // Good — back on the shelf
-    await shows(page, 'sheet', 'sheet-title', w.amount);
-    for (const digit of '60') await page.click(`#keypad button:text-is("${digit}")`);
-    await page.click('#sheet-ok');
     await shows(page, 'pay', 'pay-title', w.how);
     await page.click('#pay-kinds button:first-child'); // Cash
     await page.waitForSelector('#refusal:not([hidden])');
@@ -154,8 +154,8 @@ describe.skipIf(!HAVE_BROWSER)('the served till holds an expired batch coming ba
     stops.push(() => back.stop());
     page = await open(back);
 
-    const en = { more: 'More', refund: 'Refund', find: 'Scan the receipt, or key the bill number', which: 'Which item is coming back?', howMany: 'How many are coming back?', why: 'Why is it coming back?', condition: 'What condition is the item in?', amount: 'How much to refund?', how: 'How is the refund given?' };
-    const said = await refundOne(page, sold.number, en);
+    const en = { more: 'More', refund: 'Refund', find: 'Scan the receipt, or key the bill number', which: 'Which item is coming back?', howMany: 'How many are coming back?', why: 'Why is it coming back?', condition: 'What condition is the item in?', how: 'How is the refund given?' };
+    const said = await refundOne(page, sold.number, en, true); // two on the bill: how many is asked
     expect(said.title).toContain('Refund recorded');
     expect(said.text).toContain('1 item(s) are from a batch past its date. Do not put them back on the shelf — put them in the held (quarantine) bin.');
     expect(await auditPage(page, { expectLang: 'en' }), 'the refund outcome').toEqual([]);
@@ -169,8 +169,8 @@ describe.skipIf(!HAVE_BROWSER)('the served till holds an expired batch coming ba
 
     // The second unit, in Tamil.
     await page.click('#lang');
-    const ta = { more: 'மேலும்', refund: 'திரும்பப் பணம்', find: 'ரசீதை ஸ்கேன் செய்யவும்', which: 'எந்தப் பொருள் திரும்புகிறது?', howMany: 'எத்தனை திரும்புகின்றன?', why: 'ஏன் திரும்புகிறது?', condition: 'பொருளின் நிலை என்ன?', amount: 'எவ்வளவு திரும்பத் தர வேண்டும்?', how: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?' };
-    const saidTa = await refundOne(page, sold.number, ta);
+    const ta = { more: 'மேலும்', refund: 'திரும்பப் பணம்', find: 'ரசீதை ஸ்கேன் செய்யவும்', which: 'எந்தப் பொருள் திரும்புகிறது?', howMany: 'எத்தனை திரும்புகின்றன?', why: 'ஏன் திரும்புகிறது?', condition: 'பொருளின் நிலை என்ன?', how: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?' };
+    const saidTa = await refundOne(page, sold.number, ta, false); // one left: nothing to ask
     expect(saidTa.text).toContain('காலாவதியான தொகுதியைச் சேர்ந்தவை');
     await shot(page, 'till-expired-return-held-ta');
     await page.click('#refusal-ok');

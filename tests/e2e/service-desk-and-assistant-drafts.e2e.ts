@@ -125,6 +125,8 @@ describe.skipIf(!HAVE_BROWSER)('the service desk and the assistant\'s drafts, in
     await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A05' });
     await act('POST', '/v1/orders/ORD-9/promise', OWNER, { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: 'store-1' });
     expect((await act('POST', '/v1/service/cases/K-1', DESK, { kind: 'complaint', customerRef: 'c-1', priority: 'normal', summary: 'The milk was sour', assignedTo: DESK, orderRef: 'ORD-9' })).status).toBe(201);
+    // OB-390: a case that says how the customer reached the shop — in person — so the reply goes back that way by default.
+    expect((await act('POST', '/v1/service/cases/K-2', DESK, { kind: 'complaint', customerRef: 'c-2', priority: 'normal', summary: 'The bread was stale', assignedTo: DESK, orderRef: 'ORD-9', channel: 'in_person' })).status).toBe(201);
     await act('POST', '/v1/customer/segments/policy', OWNER, { loyalAtOrders: 3 });
     for (const [i, days] of [5, 4, 3].entries()) await act('POST', `/v1/customer/facts/orders/C1-${i}`, OWNER, { customerRef: 'C1', at: new Date(Date.now() - days * 86_400_000).toISOString(), netMinor: 20_000, marginMinor: 6_000, channel: 'store' });
     for (const purpose of ['profiling', 'marketing']) await act('POST', '/v1/customers/C1/consent', OWNER, { purpose, channel: 'sms', given: true, evidence: 'e2e seed consent' });
@@ -146,23 +148,21 @@ describe.skipIf(!HAVE_BROWSER)('the service desk and the assistant\'s drafts, in
     const { page, close } = await pageAs(DESK, 'service-desk.html');
     try {
       await page.waitForSelector('#case-rows tr[data-case-id="K-1"]', { timeout: 10_000 });
-      // QG-02 (crm-service.md "open and reply to a case ≤3"): measured AS BUILT — open the case, ask the assistant, edit
-      // the words, approve them, choose the channel, send. The spec's three is an owner decision (lane 1 R4 report).
-      const taps = new Tally(page);
-      await taps.tap('#case-rows tr[data-case-id="K-1"]');
+      // The edited reply (not the frequent action QG-02 counts — that is the next test): open, ask, edit the words, approve
+      // them, send by the channel (the select holds the first way, phone, as this case says none).
+      await page.click('#case-rows tr[data-case-id="K-1"]');
       await page.waitForSelector('#case-section:not([hidden])');
-      await taps.tap('#ask-draft');
+      await page.click('#ask-draft');
       await page.waitForSelector('#draft-list .draft blockquote', { timeout: 10_000 });
       expect(await page.textContent('#draft-list .draft blockquote')).toContain('A colleague will look into it today.');
       expect(await page.textContent('#draft-status')).toContain('The assistant drafted a reply');
-      await taps.type('#draft-list .draft textarea', 'Sorry about the milk on ORD-9 — a colleague will call you today.');
-      await taps.tap('#draft-list .draft button.secondary >> text=Edit and approve');
+      expect(await page.$('#draft-list .draft button.approve-send'), 'a case with no channel offers no one-press send').toBeNull();
+      await page.fill('#draft-list .draft textarea', 'Sorry about the milk on ORD-9 — a colleague will call you today.');
+      await page.click('#draft-list .draft button.secondary >> text=Edit and approve');
       await page.waitForSelector('#draft-list .draft button.send', { timeout: 10_000 });
-      await page.selectOption('#draft-list .draft select', 'phone'); taps.count += 1;
-      await taps.tap('#draft-list .draft button.send');
+      await page.selectOption('#draft-list .draft select', 'phone');
+      await page.click('#draft-list .draft button.send');
       await page.waitForSelector('#draft-list .draft .status.good', { timeout: 10_000 });
-      const asBuilt = taps.reset();
-      expect(asBuilt, 'as built: open and reply to a case, with the words edited').toBe(6);
       expect(await page.textContent('#draft-list .draft .status.good')).toContain(`Sent by ${DESK} by Phone`);
       expect(await page.textContent('#draft-list .draft blockquote')).toBe('Sorry about the milk on ORD-9 — a colleague will call you today.');
       expect(await page.textContent('#first-badge')).toBe('met');
@@ -181,6 +181,32 @@ describe.skipIf(!HAVE_BROWSER)('the service desk and the assistant\'s drafts, in
       await page.click('#lang');
       expect(await page.textContent('#title')).toBe('வாடிக்கையாளர் வழக்குகள்');
       expect(await page.textContent('#rc-summary li')).toContain('பொருளின் தரம்');
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  it('QG-02 (crm-service.md "open and reply to a case ≤3") · OB-390: open the case, ask the assistant, approve and send by the case\'s own channel — 3', async () => {
+    const { page, close } = await pageAs(DESK, 'service-desk.html');
+    try {
+      await page.waitForSelector('#case-rows tr[data-case-id="K-2"]', { timeout: 10_000 });
+      const taps = new Tally(page);
+      await taps.tap('#case-rows tr[data-case-id="K-2"]');
+      await page.waitForFunction("(document.querySelector('#case-facts')?.textContent ?? '').includes('came by In person')", undefined, { timeout: 10_000 });
+      await taps.tap('#ask-draft');
+      await page.waitForSelector('#draft-list .draft button.approve-send', { timeout: 10_000 });
+      // The person reads the assistant's words, then one press approves them (in their name) and records the reply sent
+      // the way the customer came — nothing reaches the customer before a person approves it (P-05).
+      expect(await page.textContent('#draft-list .draft button.approve-send')).toBe('Approve and send by In person');
+      await taps.tap('#draft-list .draft button.approve-send');
+      await page.waitForSelector('#draft-list .draft .status.good', { timeout: 10_000 });
+      expect(taps.reset(), 'open and reply to a case').toBeLessThanOrEqual(3);
+      expect(await page.textContent('#draft-list .draft .status.good')).toBe(`Sent by ${DESK} by In person · Approved by ${DESK}`);
+      const drafts = (await h.request({ method: 'GET', path: '/v1/service/cases/K-2/drafts', userId: DESK, tenantId: T })).body as { drafts: { decision: { decision: string; approvedBy: string } | null; sent?: { channel: string; sentBy: string } }[] };
+      expect(drafts.drafts[0]).toMatchObject({ decision: { decision: 'approved', approvedBy: DESK }, sent: { channel: 'in_person', sentBy: DESK } });
+      // Tamil names the way the case came.
+      await page.click('#lang');
+      expect(await page.textContent('#case-facts')).toContain('நேரில்');
     } finally {
       await close();
     }

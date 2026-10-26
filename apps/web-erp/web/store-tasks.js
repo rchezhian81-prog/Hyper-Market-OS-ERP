@@ -72,11 +72,23 @@ $('assign').addEventListener('submit', async (event) => {
   say($('assign-status'), out, t('tkSaved'));
   if (out.result === 'ok') { $('a-title').value = ''; $('a-steps').value = ''; await load(); }
 });
+
+// OB-390 (store-manager.md "assign/complete a task ≤3"): a new task starts in the manager's OWN store (as head office's
+// sign-in names it) and due by the end of today — so assigning is what to do, who does it, Assign. Both are defaults the
+// manager can change; a sign-in that names no store leaves the field empty for them to fill, never a guessed store.
+async function fillDefaults() {
+  if (!may.assignTasks) return;
+  if ($('a-due').value === '' && typeof api.endOfTodayField === 'function') $('a-due').value = api.endOfTodayField();
+  if ($('a-branch').value !== '') return;
+  const mine = await session.myBranch();
+  if (mine.result === 'ok' && mine.value.branchId !== null && $('a-branch').value === '') $('a-branch').value = mine.value.branchId;
+}
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (may.named && !may.readTasks) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 else if (may.named && !may.assignTasks) $('page-status').textContent = t('tkReadOnly');
 if (may.named && may.readTasks) { if ($('page-status').textContent === '') $('page-status').textContent = t('reading'); void load().then(() => { if ($('page-status').textContent === t('reading')) $('page-status').textContent = ''; }); }
+if (session !== null && may.named) void fillDefaults().then(() => { document.body.dataset.taskDefaults = 'ready'; });
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

@@ -40,6 +40,8 @@ const WORDS = {
     scopeAll: 'Every assistant', scopeFacing: 'Only the ones customers talk to', scopeSingle: 'One assistant',
     whichLabel: 'Which one', pullReasonLabel: 'Why are you stopping it',
     pull: 'Stop it now',
+    stopOneTitle: 'Or stop just one assistant — write why above, then press its button',
+    stopThis: 'Stop',
     pullNote: 'The shop carries on trading. Nothing on the till, the stock or the money depends on this.',
     lift: 'Start it again', liftReason: 'Why is it safe to start again', lifted: 'Started again', stopped: 'STOPPED', running: 'running', notEnabled: 'not switched on',
     masterOn: 'The shop-wide AI switch is ON: every assistant is stopped (the owner’s decision OB-296 — the assistants stay rule-based for now).',
@@ -91,6 +93,8 @@ const WORDS = {
     scopeAll: 'எல்லா உதவியாளர்களும்', scopeFacing: 'வாடிக்கையாளருடன் பேசுபவை மட்டும்', scopeSingle: 'ஒரு உதவியாளர்',
     whichLabel: 'எது', pullReasonLabel: 'ஏன் நிறுத்துகிறீர்கள்',
     pull: 'இப்போதே நிறுத்து',
+    stopOneTitle: 'அல்லது ஒரு உதவியாளரை மட்டும் நிறுத்துங்கள் — மேலே காரணம் எழுதி, அதன் பொத்தானை அழுத்துங்கள்',
+    stopThis: 'நிறுத்து',
     pullNote: 'கடை வழக்கம்போல் நடக்கும். பில்லிங், இருப்பு, பணம் எதுவும் இதைச் சார்ந்தது அல்ல.',
     lift: 'மீண்டும் தொடங்கு', liftReason: 'மீண்டும் தொடங்குவது ஏன் பாதுகாப்பானது', lifted: 'மீண்டும் தொடங்கியது', stopped: 'நிறுத்தப்பட்டது', running: 'இயங்குகிறது', notEnabled: 'இயக்கப்படவில்லை',
     masterOn: 'கடை முழுவதற்குமான AI சுவிட்ச் ON: எல்லா உதவியாளர்களும் நிறுத்தப்பட்டுள்ளன (உரிமையாளரின் முடிவு OB-296 — இப்போதைக்கு உதவியாளர்கள் விதிகளின் அடிப்படையில் மட்டுமே).',
@@ -327,6 +331,26 @@ function renderSwitch() {
   el('which').hidden = !single;
   el('which-label').hidden = !single;
   el('pull').disabled = !view.may.stop;
+
+  // OB-390 · ai-control.md "pull an agent's kill switch ≤2": one button per RUNNING assistant, beside the reason. Write why,
+  // press its button — two acts. The reason is never defaulted (a stop with a made-up reason cannot be reviewed); an empty
+  // one is refused on the page exactly as "Stop it now" refuses it, and nothing is sent.
+  const running = view.agents.filter((agent) => !agent.stopped);
+  el('stop-one-title').hidden = running.length === 0;
+  el('stop-one-title').textContent = t('stopOneTitle');
+  el('stop-one').replaceChildren(...running.map((agent) => {
+    const b = button(`${t('stopThis')} ${agent.agentId} — ${agent.name}`, 'pause-circle', 'danger stop-one', () => { pullOne(agent.agentId); }, view.may.stop);
+    b.dataset.agent = agent.agentId;
+    return b;
+  }));
+}
+
+/** Stop ONE assistant with the reason written above (OB-390): the same check and the same POST as "Stop it now". */
+function pullOne(agentId) {
+  const check = kit === undefined
+    ? { ok: false, refusal: 'nobody_is_named_at_this_desk' }
+    : kit.pull(viewer, { scope: 'single_agent', agentId, reason: el('pull-reason').value });
+  void act(check, (b) => b?.detail ?? t('done')).then((sent) => { if (sent) el('pull-reason').value = ''; });
 }
 
 el('scope').addEventListener('change', () => {

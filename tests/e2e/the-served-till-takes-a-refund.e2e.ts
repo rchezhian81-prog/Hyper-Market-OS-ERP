@@ -289,9 +289,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
       await page.click('#sheet-ok');
 
       // Why (a chosen reason, M15), and in what condition (M13-FR-02).
+      // OB-390: the reason chip IS the answer — one tap (pos-refund.md "Choose a reason: 1").
       await sheetTitled(page, 'Why is it coming back?');
       await page.click('#reasons button:text-is("Damaged / faulty")');
-      await page.click('#sheet-ok');
       await panelTitled(page, 'What condition is the item in?');
       await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
 
@@ -318,7 +318,6 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.keyboard.press('Enter');
     await sheetTitled(page, 'Manager: why is this refund approved?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
-    await page.click('#sheet-ok');
     await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
     expect(await page.textContent('#refusal-title')).toBe('Not approved');
     expect(await page.textContent('#refusal-text')).toMatch(/not the person at the till/);
@@ -339,7 +338,6 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.keyboard.press('Enter');
     await sheetTitled(page, 'Manager: why is this refund approved?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
-    await page.click('#sheet-ok');
 
     // The outcome, in the model's own words: recorded — hand over the refund.
     await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
@@ -411,11 +409,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     // Which item is coming back (one tin, still returnable), how many, why, in what condition.
     await panelTitled(page, 'Which item is coming back?');
     await page.click('#pay-kinds button:text-is("Amul Ghee Gold 1L — can return 1")');
-    await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
-    await page.click('#sheet-ok');
+    // OB-390: only one can come back, so the till does not ask how many; the reason is one tap.
     await sheetTitled(page, 'Why is it coming back?');
     await page.click('#reasons button:text-is("Wrong item")');
-    await page.click('#sheet-ok');
     await panelTitled(page, 'What condition is the item in?');
     await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
 
@@ -481,7 +477,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     expect(offers).not.toContain('Return without receipt');
   });
 
-  it('QG-02 (pos-refund.md): looking up a receipt takes 3 (More → Refund → key the number); returning one whole line is measured as built', async () => {
+  it('QG-02 (pos-refund.md): looking up a receipt takes 3 (More → Refund → key the number); returning one whole line is measured at 7 (OB-390)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-served-refund-taps-'));
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
@@ -515,21 +511,19 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await panelTitled(page, 'Which item is coming back?');
     expect(taps.reset(), 'look up a receipt').toBeLessThanOrEqual(3);
 
-    // Return one whole line, AS BUILT: the line → its quantity → a reason → its condition → the amount → how it is given →
-    // the manager's badge, PIN and reason (M13-FR-02 condition, M15 reason codes, §28 a second person). Measured, not
-    // budgeted: the spec's three (tap line → confirm qty → Refund) is an owner decision (lane 1 R4 report).
+    // Return one whole line (OB-390, shortened with defaults; every check kept): the line → a reason (one tap on a chip,
+    // M15) → its condition (M13-FR-02) → how it is given (NEVER defaulted; the amount is already the line's value, shown on
+    // the same question) → the manager's badge, PIN and reason (§28 · ADR-0021, a second person). Only one could come back,
+    // so the till did not ask how many. Seven acts: the spec's three (tap line → confirm qty → Refund) cannot hold the four
+    // checks a refund must keep (condition, method, and a manager's badge and PIN) — the remaining figure is for the owner.
     await taps.tap('#pay-kinds button:text-is("Amul Ghee Gold 1L — can return 1")');
-    await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
-    await taps.tap('#sheet-ok');
     await sheetTitled(page, 'Why is it coming back?');
     await taps.tap('#reasons button:text-is("Damaged / faulty")');
-    await taps.tap('#sheet-ok');
     await panelTitled(page, 'What condition is the item in?');
     await taps.tap('#pay-kinds button:text-is("Good — back on the shelf")');
-    await sheetTitled(page, 'How much to refund?');
-    for (const digit of '640') await taps.tap(`#keypad button:text-is("${digit}")`);
-    await taps.tap('#sheet-ok');
-    await panelTitled(page, 'How is the refund given?');
+    await panelTitled(page, 'How is the refund given? — Refunding ₹640.00');
+    // The method is the cashier's choice, every time: the question offers every method and the way to change the amount.
+    expect(await page.$$eval('#pay-kinds button', (b) => b.map((x) => (x.textContent ?? '').trim()))).toEqual(expect.arrayContaining(['Cash', 'Card', 'UPI', 'Change the amount']));
     await taps.tap('#pay-kinds button:text-is("Cash")');
     await sheetTitled(page, 'Manager: scan your badge or key your staff ID');
     await taps.scan('u-manager');
@@ -537,11 +531,85 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await taps.key(pinOf('u-manager'));
     await sheetTitled(page, 'Manager: why is this refund approved?');
     await taps.tap('#reasons button:text-is("Damaged / faulty")');
-    await taps.tap('#sheet-ok');
     await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
     expect(await page.textContent('#refusal-title')).toBe('Refund recorded');
     const asBuilt = taps.reset();
-    expect(asBuilt, 'as built: return one whole line, from the bill found to the refund recorded').toBe(14);
+    expect(asBuilt, 'as built: return one whole line, from the bill found to the refund recorded').toBe(7);
+    // The default is the amount only, and it is the line's own value on the bill.
+    const refunds = await readLog(edge.returnsLog.path);
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]?.ok === true ? JSON.parse(refunds[0].record) as Record<string, unknown> : undefined).toMatchObject({
+      refundMinor: 64_000, refundTender: 'cash', reasonCode: 'damaged', approvedBy: 'u-manager',
+      lines: [{ productId: 'P1', quantityMinor: 1, disposition: 'resell' }],
+    });
+  });
+
+  it('OB-390: the refund amount starts at the line\'s value and can still be changed; the method is always chosen; several units still ask how many', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-refund-amount-'));
+    dirs.push(dir);
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE, pack: PACK_FILE_WITH_CAP }),
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+    await signInOnPage(page);
+    // Three tins on one bill.
+    const receipt = await page.evaluate(async () => {
+      const w = globalThis as unknown as PosWindow;
+      w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 3 });
+      const number = await w.posSession!.nextReceipt();
+      await w.posSession!.tenderCash('S-T3', number, new Date().toISOString());
+      w.posSession!.newSale();
+      return number;
+    });
+    await page.click('#more');
+    await panelTitled(page, 'More');
+    await page.click('#pay-kinds button:text-is("Refund")');
+    await sheetTitled(page, 'Scan the receipt, or key the bill number');
+    await page.keyboard.type(receipt);
+    await page.keyboard.press('Enter');
+    await panelTitled(page, 'Which item is coming back?');
+    await page.click('#pay-kinds button:text-is("Amul Ghee Gold 1L — can return 3")');
+    // Three could come back, so the till asks how many — two.
+    await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
+    await page.click('#keypad button:text-is("C")');
+    await page.click('#keypad button:text-is("2")');
+    await page.click('#sheet-ok');
+    await sheetTitled(page, 'Why is it coming back?');
+    await page.click('#reasons button:text-is("No longer needed")');
+    await panelTitled(page, 'What condition is the item in?');
+    await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
+    // The two tins' value on the bill — ₹1,280 — is the amount offered; the cashier changes it to ₹1,000.
+    await panelTitled(page, 'How is the refund given? — Refunding ₹1,280.00');
+    await page.click('#pay-kinds button:text-is("Change the amount")');
+    await sheetTitled(page, 'How much to refund?');
+    expect(await page.textContent('#entry-hint')).toBe('Most you can refund: ₹1,920.00');
+    for (const digit of '1000') await page.click(`#keypad button:text-is("${digit}")`);
+    await page.click('#sheet-ok');
+    await panelTitled(page, 'How is the refund given? — Refunding ₹1,000.00');
+    await page.click('#pay-kinds button:text-is("Cash")');
+    await sheetTitled(page, 'Manager: scan your badge or key your staff ID');
+    await page.keyboard.type('u-manager');
+    await page.keyboard.press('Enter');
+    await sheetTitled(page, 'Manager: your till PIN');
+    await page.keyboard.type(pinOf('u-manager'));
+    await page.keyboard.press('Enter');
+    await sheetTitled(page, 'Manager: why is this refund approved?');
+    await page.click('#reasons button:text-is("No longer needed")');
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    expect(await page.textContent('#refusal-title')).toBe('Refund recorded');
+    const refunds = await readLog(edge.returnsLog.path);
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]?.ok === true ? JSON.parse(refunds[0].record) as Record<string, unknown> : undefined).toMatchObject({
+      refundMinor: 100_000, refundTender: 'cash', reasonCode: 'not_needed',
+      lines: [{ productId: 'P1', quantityMinor: 2, disposition: 'resell' }],
+    });
   });
 
   it('refuses to give money back without a manager — every refund needs §28 approval', async () => {

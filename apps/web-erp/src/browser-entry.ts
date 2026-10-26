@@ -318,6 +318,7 @@ import {
   createStoreOpsSession, wordsFor as storeOpsWords, outcomeWords as storeOpsOutcomeWords, slotWords as storeOpsSlotWords, taskWords as storeOpsTaskWords,
   bandWords as storeOpsBandWords, surfaceWords as storeOpsSurfaceWords, kindWords as storeOpsKindWords, reasonWords as storeOpsReasonWords,
   splitToday as storeOpsSplitToday, rupees as storeOpsRupees, percent as storeOpsPercent, OB163_BANDS, type StoreOpsSession,
+  endOfTodayField as storeOpsEndOfTodayField,
 } from './store-ops-session';
 // R3 Lane 4 · D-9: the Staff schedule page (labour-demand forecast, draft roster a manager commits, actuals).
 import { createScheduleSession, scheduleWords, scheduleOutcomeWords, scheduleRupees, type ScheduleSession } from './schedule-session';
@@ -5164,6 +5165,8 @@ interface ManagerWindow {
     readonly surfaceWords: typeof storeOpsSurfaceWords; readonly kindWords: typeof storeOpsKindWords; readonly reasonWords: typeof storeOpsReasonWords;
     readonly splitToday: typeof storeOpsSplitToday; readonly rupees: typeof storeOpsRupees; readonly percent: typeof storeOpsPercent;
     readonly bands: typeof OB163_BANDS;
+    /** OB-390: a new task's default deadline — the end of today, in the deadline field's shape. */
+    readonly endOfTodayField: typeof storeOpsEndOfTodayField;
   };
   /** R3 D-9: the Staff schedule page — who is looking; head office answers the rest. */
   scheduleData?: ViewerIdentity;
@@ -7028,6 +7031,7 @@ if (browserWindow !== undefined) {
     words: storeOpsWords, outcomeWords: storeOpsOutcomeWords, slotWords: storeOpsSlotWords, taskWords: storeOpsTaskWords,
     bandWords: storeOpsBandWords, surfaceWords: storeOpsSurfaceWords, kindWords: storeOpsKindWords, reasonWords: storeOpsReasonWords,
     splitToday: storeOpsSplitToday, rupees: storeOpsRupees, percent: storeOpsPercent, bands: OB163_BANDS,
+    endOfTodayField: storeOpsEndOfTodayField,
   };
   // R3 D-9: the Staff schedule page — its session is the tested model in schedule-session.ts; nothing is written on open,
   // and the draft rosters nobody until a manager commits it (P-05).

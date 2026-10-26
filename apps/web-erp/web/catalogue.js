@@ -68,7 +68,7 @@ const WORDS = {
     priceLead: 'The two limits below are checked before anything is saved. A price over the MRP cannot be saved by anybody.',
     itemCode: 'Item code', mrpPrinted: 'MRP printed on the pack',
     lowestPrice: 'Lowest price that keeps the margin', newPrice: 'New price (in rupees)',
-    startsOn: 'Starts on', checkPrice: 'Check this price',
+    startsOn: 'Starts on', checkPrice: 'Check this price', priceThis: 'Change price', priceThisOf: 'Change the price of',
     saveIt: 'Save this price', priceOk: 'This price is fine', needsApproval: 'Somebody else has to approve this',
     askForApproval: 'Ask for approval', saveWithApproval: 'Save it',
     priceApprovalLead: 'This price needs a second person. 1. Write why and press “Ask for approval”. 2. Someone else who may approve prices approves it on their Approvals page. 3. Come back and press “Save it”. Nothing is saved until then.',
@@ -122,7 +122,7 @@ const WORDS = {
     priceLead: 'கீழே உள்ள இரு வரம்புகளும் சேமிக்கும் முன் சரிபார்க்கப்படும். MRP-ஐ விட அதிக விலையை யாராலும் சேமிக்க முடியாது.',
     itemCode: 'பொருள் குறியீடு', mrpPrinted: 'பாக்கெட்டில் அச்சிடப்பட்ட MRP',
     lowestPrice: 'லாபத்தைக் காக்கும் குறைந்தபட்ச விலை', newPrice: 'புதிய விலை (ரூபாயில்)',
-    startsOn: 'தொடங்கும் நாள்', checkPrice: 'இந்த விலையைச் சரிபார்',
+    startsOn: 'தொடங்கும் நாள்', checkPrice: 'இந்த விலையைச் சரிபார்', priceThis: 'விலையை மாற்று', priceThisOf: 'இதன் விலையை மாற்று:',
     saveIt: 'இந்த விலையைச் சேமி', priceOk: 'இந்த விலை சரியானது', needsApproval: 'வேறு ஒருவர் இதை ஒப்புதல் அளிக்க வேண்டும்',
     askForApproval: 'அனுமதி கேள்', saveWithApproval: 'சேமி',
     priceApprovalLead: 'இந்த விலைக்கு இரண்டாம் நபர் தேவை. 1. ஏன் என்று எழுதி “அனுமதி கேள்” அழுத்தவும். 2. விலைகளை அனுமதிக்கக்கூடிய வேறொருவர் தனது அனுமதிகள் பக்கத்தில் அனுமதிப்பார். 3. பிறகு திரும்பி வந்து “சேமி” அழுத்தவும். அதுவரை எதுவும் சேமிக்கப்படாது.',
@@ -479,8 +479,33 @@ function itemRow(view) {
   open.setAttribute('aria-label', view.product.name);
   open.addEventListener('click', () => { openItem(view.product); });
 
-  row.append(what, pct, open);
+  // OB-390 · product-merchandising.md "edit a price ≤3 (open → new price → submit)": the price form opens ALREADY HOLDING
+  // this item — its code filled, its MRP and margin floor shown — so the person types only the new price.
+  const price = document.createElement('button');
+  price.type = 'button';
+  price.className = 'price-this';
+  price.dataset.sku = view.product.sku;
+  price.setAttribute('aria-label', `${t('priceThisOf')} ${view.product.name === '' ? view.product.sku : view.product.name}`);
+  if (window.sreIcon && typeof window.sreIcon.withWord === 'function') price.replaceChildren(window.sreIcon.withWord('indian-rupee', t('priceThis')));
+  else price.textContent = t('priceThis');
+  price.addEventListener('click', () => { openPriceFor(view.product); });
+
+  row.append(what, pct, price, open);
   return row;
+}
+
+/** OB-390: open "Change a price" holding this item — the code filled, the limits shown, the cursor in the price. */
+function openPriceFor(product) {
+  show('price');
+  el('price-item').value = product.sku;
+  el('new-price').value = '';
+  el('price-verdict').hidden = true;
+  el('save-price').hidden = true;
+  el('price-approval').hidden = true;
+  lastProposal = null;
+  renderLimits();
+  renderHistory(product.productId);
+  el('new-price').focus();
 }
 
 // ── One item ────────────────────────────────────────────────────────────────
@@ -631,15 +656,27 @@ function renderLimits() {
 }
 el('price-item').addEventListener('input', renderLimits);
 
-el('check-price').addEventListener('click', () => {
+/**
+ * Check the price against the MRP and the margin floor (the model's own `proposePrice`, which writes nothing). Pressed,
+ * it says what is missing; `quiet` — as the person types (OB-390) — it checks only once the item, the price and the day
+ * are all there, says nothing otherwise, and leaves Save hidden until the model says the price may be saved. Either way
+ * the check runs BEFORE Save can be pressed, exactly as before.
+ */
+function checkThePrice(quiet) {
   const sku = el('price-item').value.trim();
   const priceText = el('new-price').value.trim();
   const from = el('price-from').value.trim();
+  const view = session.shelf().find((v) => v.product.sku === sku || v.product.productId === sku);
+  if (quiet && (sku === '' || priceText === '' || from === '' || view === undefined || !(toMinor(priceText) > 0))) {
+    lastProposal = null;
+    el('price-verdict').hidden = true;
+    el('save-price').hidden = true;
+    el('price-approval').hidden = true;
+    return;
+  }
   if (sku === '') { tell(t('read'), t('needItem')); return; }
   if (priceText === '') { tell(t('read'), t('needPrice')); return; }
   if (from === '') { tell(t('read'), t('needDate')); return; }
-
-  const view = session.shelf().find((v) => v.product.sku === sku || v.product.productId === sku);
   if (view === undefined) { tell(t('read'), t('unknownItem')); return; }
 
   lastProposal = session.proposePrice({
@@ -649,7 +686,10 @@ el('check-price').addEventListener('click', () => {
     effectiveFrom: from,
   });
   renderProposal(lastProposal, view.product.productId);
-});
+}
+el('check-price').addEventListener('click', () => { checkThePrice(false); });
+// OB-390: the check runs as the price is typed, so Save is the next act — no separate "Check" press needed.
+for (const id of ['new-price', 'price-from', 'price-item']) el(id).addEventListener('input', () => { checkThePrice(true); });
 
 function renderProposal(proposal, productId) {
   const box = el('price-verdict');

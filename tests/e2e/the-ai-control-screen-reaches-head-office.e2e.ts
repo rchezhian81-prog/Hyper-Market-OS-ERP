@@ -144,25 +144,28 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
       await page.click('#tab-agents');
       expect(await page.textContent('#agent-list .row[data-agent="A04"]')).toContain('running');
       expect(await page.textContent('#forbidden-box')).toContain('issue refund');
-      // QG-02 (ai-control.md "pull an agent's kill switch ≤2"): measured AS BUILT — the tab, the scope, the agent, the reason,
-      // Pull. The spec's two is an owner decision (lane 1 R4 report); a choice in a list counts as one act, like a tap.
+      // QG-02 (ai-control.md "pull an agent's kill switch ≤2") · OB-390: the page opens on "Stop the AI"; each running
+      // assistant has its own Stop button beside the reason — write why, press its button. Two. The reason stays required.
+      await page.reload({ waitUntil: 'load' });
+      await page.waitForFunction("document.body.dataset.aiControl === 'ok'", undefined, { timeout: 15_000 });
+      expect(await page.isHidden('#view-switch'), 'the page opens on Stop the AI').toBe(false);
+      await page.waitForSelector('#stop-one button[data-agent="A04"]');
       const taps = new Tally(page);
-      await taps.tap('#tab-switch');
 
-      // No reason → nothing is sent.
-      await page.selectOption('#scope', 'single_agent'); taps.count += 1;
-      await page.selectOption('#which', 'A04'); taps.count += 1;
-      await page.click('#pull');
+      // No reason → refused on the page, nothing is sent.
+      await page.click('#stop-one button[data-agent="A04"]');
       await bannerSays(page, 'write the reason first');
       expect(((await h.request({ method: 'GET', path: '/v1/ai/kill-switches', userId: OWNER, tenantId: T })).body as { active: unknown[] }).active).toEqual([]);
 
       // With a reason → stopped at head office, and its run is refused.
       await taps.type('#pull-reason', 'the shopping assistant offered the wrong milk');
       const n = await reads(page);
-      await taps.tap('#pull');
+      await taps.tap('#stop-one button[data-agent="A04"]');
       expect(await afterAct(page, n)).toMatch(/stopped 1 agent/);
-      const asBuilt = taps.reset();
-      expect(asBuilt, 'as built: stop one assistant with its kill switch').toBe(5);
+      expect(taps.reset(), 'stop one assistant with its kill switch').toBeLessThanOrEqual(2);
+      // A stopped assistant has no Stop button of its own any more; the others still do.
+      await page.waitForFunction("document.querySelector('#stop-one button[data-agent=\"A04\"]') === null");
+      expect(await page.$('#stop-one button[data-agent="A08"]')).not.toBeNull();
       await page.click('#banner-ok');
       await page.waitForSelector('#kill-list .row.stopped');
       expect(await page.textContent('#kill-list .row.stopped')).toContain('the shopping assistant offered the wrong milk');

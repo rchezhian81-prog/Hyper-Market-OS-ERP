@@ -120,18 +120,13 @@ describe.skipIf(!HAVE_BROWSER)('the served till records "Paid on old system" in 
     await page.keyboard.press('Enter');
     await shows(page, 'pay', 'pay-title', 'Which item is coming back?');
     await page.click('#pay-kinds button:first-child');
-    await shows(page, 'sheet', 'sheet-title', 'How many are coming back?');
-    await page.click('#sheet-ok');
+    // OB-390: one could come back (not asked), the reason is one tap, and the amount starts at the line's ₹480.
     await shows(page, 'sheet', 'sheet-title', 'Why is it coming back?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
-    await page.click('#sheet-ok');
     await shows(page, 'pay', 'pay-title', 'What condition is the item in?');
     await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
-    await shows(page, 'sheet', 'sheet-title', 'How much to refund?');
-    for (const digit of '480') await page.click(`#keypad button:text-is("${digit}")`);
-    await page.click('#sheet-ok');
-    await shows(page, 'pay', 'pay-title', 'How is the refund given?');
-    expect(await options(page)).toEqual(['Paid on old system']);
+    await shows(page, 'pay', 'pay-title', 'How is the refund given? — Refunding ₹480.00');
+    expect(await options(page)).toEqual(['Paid on old system', 'Change the amount']);
     await page.click('#pay-kinds button:first-child');
     expect(await said(page)).toMatchObject({ title: expect.stringContaining('Refund recorded'), text: expect.stringContaining('Do not take money from this drawer') });
     await expect.poll(async () => (await readLog(edge.returnsLog.path)).length, { timeout: 10_000 }).toBe(1);
@@ -184,7 +179,6 @@ describe.skipIf(!HAVE_BROWSER)('the served till records "Paid on old system" in 
     await page.click('#sheet-ok');
     await shows(page, 'sheet', 'sheet-title', 'Why is it coming back?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
-    await page.click('#sheet-ok');
     await shows(page, 'pay', 'pay-title', 'What condition is the item in?');
     await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
     await shows(page, 'sheet', 'sheet-title', 'How much to refund?');
