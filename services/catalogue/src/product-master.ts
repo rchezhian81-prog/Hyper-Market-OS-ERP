@@ -24,6 +24,7 @@ import {
   type ProductRecord, type ProductLifecycle, type HandlingClass,
 } from '../../../packages/product/src/index';
 import { liquorReason, LIQUOR_NOT_SOLD } from '../../../packages/restricted-sales/src/liquor';
+import { medicineReason, MEDICINE_NOT_SOLD } from '../../../packages/restricted-sales/src/medicines';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 
@@ -141,6 +142,17 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             whatHappened: `${LIQUOR_NOT_SOLD} "${record.name}" cannot be published: ${liquor}.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Do not list it. If it is a non-alcoholic drink, correct its HSN (non-alcoholic beer is 2202) and take the liquor mark off. Nothing was saved.',
+          });
+        }
+        // B18 (OB-310: "sell no medicines; category stays blocked"): a medicine is refused the same way — mark, a `drug`
+        // (pharmacy/prescription) category or HSN 3003/3004; never the product's name.
+        const medicine = medicineReason({ declaredMedicine: record.safety?.medicine === true, categoryKinds: category?.regulated ?? [], hsn: record.taxClass });
+        if (medicine !== undefined) {
+          throw apiError(422, {
+            code: 'medicine_not_sold',
+            whatHappened: `${MEDICINE_NOT_SOLD} "${record.name}" cannot be published: ${medicine}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not list it. If it is not a medicine (a balm, a cosmetic, a bandage), correct its HSN and category and take the medicine mark off. Nothing was saved.',
           });
         }
         // OB-347 (owner, 24 Oct 2026, in writing): a PUBLISHED product's tax (HSN) class changes only with a Finance approver's

@@ -49,6 +49,11 @@ const WORDS = {
     notSent: 'Not sent to head office, so it is not recorded. Nothing was saved — try again when the store computer is back online.',
     nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be started or closed — a recall carries the name of whoever ran it.',
     sampleData: 'Sample data — this is not your shop.',
+    withdrawIt: 'Withdraw — started by mistake', withdrawn: 'withdrawn — started by mistake',
+    withdrawReasonLabel: 'Why was this recall started by mistake?',
+    noPhoneLabel: 'No customer has been phoned about this recall',
+    withdrawNote: 'Allowed only before any customer is called or any stock is thrown away. After that, close it with evidence.',
+    refused: 'Head office said no',
   },
   ta: {
     title: 'காலாவதி மற்றும் திரும்பப் பெறுதல்',
@@ -73,6 +78,11 @@ const WORDS = {
     notSent: 'தலைமை அலுவலகத்திற்கு அனுப்பப்படவில்லை, எனவே பதிவு செய்யப்படவில்லை. எதுவும் சேமிக்கப்படவில்லை — கடை கணினி மீண்டும் இணையும்போது மீண்டும் முயற்சிக்கவும்.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று இந்தக் கடைப் பெட்டிக்குத் தெரியவில்லை. எதையும் தொடங்கவோ மூடவோ முடியாது — திரும்பப் பெறுதல் அதை நடத்தியவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    withdrawIt: 'திரும்பப் பெறு — தவறாகத் தொடங்கப்பட்டது', withdrawn: 'திரும்பப் பெறப்பட்டது — தவறாகத் தொடங்கப்பட்டது',
+    withdrawReasonLabel: 'இந்தத் திரும்பப் பெறுதல் ஏன் தவறாகத் தொடங்கப்பட்டது?',
+    noPhoneLabel: 'இதைப் பற்றி எந்த வாடிக்கையாளருக்கும் தொலைபேசி அழைப்பு செய்யப்படவில்லை',
+    withdrawNote: 'எந்த வாடிக்கையாளரையும் அழைப்பதற்கு முன்பும், எந்தப் பொருளும் தூக்கி எறியப்படுவதற்கு முன்பும் மட்டுமே அனுமதி. அதன் பிறகு ஆதாரத்துடன் மூடவும்.',
+    refused: 'தலைமை அலுவலகம் மறுத்தது',
   },
 };
 let lang = 'en';
@@ -122,6 +132,36 @@ const CLOSE_REFUSAL_WORDS = {
   },
 };
 
+/** Why a recall could not be withdrawn here — one entry per `WithdrawRefusal`, both languages (OB-383). */
+const WITHDRAW_REFUSAL_WORDS = {
+  nobody_is_named_at_this_desk: CLOSE_REFUSAL_WORDS.nobody_is_named_at_this_desk,
+  no_such_recall: CLOSE_REFUSAL_WORDS.no_such_recall,
+  already_closed: {
+    en: 'This recall is no longer open. Its record is kept as it is.',
+    ta: 'இது இனி திறந்திருக்கவில்லை. அதன் பதிவு அப்படியே வைக்கப்படும்.',
+  },
+  needs_a_reason: {
+    en: 'Say in words why the recall was started by mistake.',
+    ta: 'திரும்பப் பெறுதல் ஏன் தவறாகத் தொடங்கப்பட்டது என்று எழுதவும்.',
+  },
+  confirm_no_customer_phoned: {
+    en: 'A recall can be withdrawn only before any customer is called. If anyone has been phoned, close it with evidence instead.',
+    ta: 'எந்த வாடிக்கையாளரையும் அழைப்பதற்கு முன்பு மட்டுமே திரும்பப் பெற முடியும். யாரையாவது அழைத்திருந்தால், ஆதாரத்துடன் மூடவும்.',
+  },
+};
+
+/** Head office's own refusals of a withdrawal, said in both languages (its own words follow). */
+const HEAD_OFFICE_WITHDRAW_WORDS = {
+  recall_customers_already_contacted: {
+    en: 'A customer has already been contacted about this recall, so it cannot be withdrawn. Close it with evidence.',
+    ta: 'இதைப் பற்றி ஒரு வாடிக்கையாளர் ஏற்கனவே தொடர்பு கொள்ளப்பட்டார், எனவே திரும்பப் பெற முடியாது. ஆதாரத்துடன் மூடவும்.',
+  },
+  recall_stock_already_disposed: {
+    en: 'Some of this batch has already been thrown away, so the recall cannot be withdrawn. Close it with evidence.',
+    ta: 'இந்த batch-இல் சில ஏற்கனவே தூக்கி எறியப்பட்டது, எனவே திரும்பப் பெற முடியாது. ஆதாரத்துடன் மூடவும்.',
+  },
+};
+
 const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).replace(/_/g, ' '));
 
 /** A stand-in with the same surface as the bundled session, announced whenever it is in use. */
@@ -132,6 +172,7 @@ function sampleSession() {
     recalls: () => [],
     start: () => ({ ok: false, refusal: 'nobody_is_named_at_this_desk', detail: 'this is sample data' }),
     close: () => ({ ok: false, refusal: 'nobody_is_named_at_this_desk', detail: 'this is sample data' }),
+    withdraw: () => ({ ok: false, refusal: 'nobody_is_named_at_this_desk', detail: 'this is sample data' }),
   };
 }
 
@@ -236,6 +277,8 @@ function renderRecalls() {
 function recallRow(view) {
   const row = document.createElement('div');
   row.className = `row ${view.open ? 'open' : 'closed'}`;
+  row.id = `recall-${view.recall.recallId}`;
+  const shut = view.recall.withdrawal !== undefined ? t('withdrawn') : t('closed');
 
   const what = document.createElement('span');
   what.className = 'what';
@@ -244,9 +287,9 @@ function recallRow(view) {
   // it is the one that makes a recall look finished.
   name.textContent = view.open
     ? `${view.name} — ${view.stillOutThere} ${t('stillOut')}`
-    : `${view.name} — ${t('closed')}`;
+    : `${view.name} — ${shut}`;
   const sub = document.createElement('small');
-  sub.textContent = `${view.open ? t('open') : t('closed')} · ${t('received')} ${view.trace.receivedQty} · ${t('sold')} ${view.trace.issuedQty}`
+  sub.textContent = `${view.open ? t('open') : shut} · ${t('received')} ${view.trace.receivedQty} · ${t('sold')} ${view.trace.issuedQty}`
     + ` · ${view.identifiedCustomers} ${t('canContact')}, ${view.anonymousSales} ${t('cannotContact')}`
     + ` · ${view.recall.reason}`;
   what.append(name, sub);
@@ -257,9 +300,62 @@ function recallRow(view) {
     close.type = 'button';
     close.textContent = t('closeIt');
     close.addEventListener('click', () => { openCloseForm(view, row); });
-    row.append(close);
+    // OB-383: a recall started by mistake may be withdrawn, only before anyone is told or anything thrown away.
+    const withdraw = document.createElement('button');
+    withdraw.type = 'button';
+    withdraw.id = `withdraw-open-${view.recall.recallId}`;
+    withdraw.textContent = t('withdrawIt');
+    withdraw.addEventListener('click', () => { openWithdrawForm(view, row); });
+    row.append(close, withdraw);
   }
   return row;
+}
+
+/** The withdrawal form (OB-383), opened in place, in the person's language. */
+function openWithdrawForm(view, row) {
+  const form = document.createElement('div');
+  form.className = 'what';
+  const note = document.createElement('small');
+  note.textContent = t('withdrawNote');
+  const reason = document.createElement('textarea');
+  reason.id = `withdraw-reason-${view.recall.recallId}`;
+  reason.setAttribute('aria-label', t('withdrawReasonLabel'));
+  const phoned = document.createElement('input');
+  phoned.type = 'checkbox';
+  phoned.id = `withdraw-nophone-${view.recall.recallId}`;
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'danger';
+  go.id = `withdraw-${view.recall.recallId}`;
+  go.textContent = t('withdrawIt');
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try {
+      const outcome = await session.withdraw({ recallId: view.recall.recallId, reason: reason.value, noCustomerPhoned: phoned.checked });
+      if (!outcome.ok) {
+        // Refused or not sent: the recall stays OPEN. Never a false "withdrawn" (P-08).
+        if (outcome.notSent === true) { tell(t('read'), `${t('notSent')} ${outcome.reason}`); return; }
+        if (outcome.refusedByHeadOffice === true) {
+          tell(t('refused'), `${words(HEAD_OFFICE_WITHDRAW_WORDS, outcome.code)} ${outcome.reason}`);
+          return;
+        }
+        tell(t('read'), `${words(WITHDRAW_REFUSAL_WORDS, outcome.refusal)} ${outcome.detail}`);
+        return;
+      }
+      tell(t('done'), `${t('withdrawn')}: ${outcome.recall.withdrawal.reason}`, true);
+      renderRecalls();
+    } finally {
+      go.disabled = false;
+    }
+  });
+  const label = (text, node) => {
+    const wrap = document.createElement('label');
+    wrap.textContent = text;
+    wrap.setAttribute('for', node.id);
+    return wrap;
+  };
+  form.append(note, label(t('withdrawReasonLabel'), reason), reason, phoned, label(t('noPhoneLabel'), phoned), go);
+  row.append(form);
 }
 
 /** The closure form, opened in place. Never a dialog — a dialog cannot be read in Tamil. */

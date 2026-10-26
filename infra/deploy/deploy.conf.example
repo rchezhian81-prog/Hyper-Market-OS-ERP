@@ -47,3 +47,10 @@ SRE_PREDEPLOY_BACKUP_CMD=
 SRE_BAKE_SECONDS=0
 SRE_BAKE_POLL=15
 SRE_BAKE_MAX_5XX=0
+# QG-10 · WF-20: the books reconciled around every release (the ledger, the outbox, the sync backlog) — on by default.
+# The snapshot runs inside the stack's own migrate container; nothing here is a secret. off = said on every run.
+SRE_RECONCILE=on
+# How far the sync backlog (pending outbox messages) may grow across a release before it counts as a difference.
+SRE_RECONCILE_MAX_BACKLOG_GROWTH=0
+# The append-only file of per-release QG-10 evidence lines (also printed for the pipeline's summary).
+SRE_QG10_LOG=/opt/sre/qg10-evidence.jsonl

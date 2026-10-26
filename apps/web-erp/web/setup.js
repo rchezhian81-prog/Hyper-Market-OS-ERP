@@ -104,6 +104,28 @@ function sampleSession() {
   };
 }
 
+// OB-380: served by the store computer, the setup is head office's — read live before anything is drawn, never a sample.
+const liveKit = window.setupSession === undefined ? (window.setupLive ?? null) : null;
+const liveWords = () => (liveKit === null ? {} : liveKit.words[document.documentElement.lang === 'ta' ? 'ta' : 'en']);
+if (liveKit !== null) { el('live-state').hidden = false; el('live-state').textContent = liveWords().reading; }
+const liveLoad = liveKit === null ? null : await liveKit.load();
+if (liveLoad !== null && liveLoad.ok) {
+  window.setupData = liveLoad.data;
+  window.setupSession = liveLoad.session;
+  window.setupEditing = liveLoad.editing;
+  if (liveLoad.prefixes !== null) window.receiptPrefixSession = liveLoad.prefixes;
+}
+const headOfficeDown = liveLoad !== null && !liveLoad.ok;
+function paintLiveState() {
+  if (liveLoad === null) return;
+  const w = liveWords();
+  el('live-state').hidden = liveLoad.ok;
+  el('live-state').textContent = liveLoad.ok ? '' : liveLoad.why === 'refused' ? `${w.refused} ${liveLoad.detail ?? ''}`.trim() : w[liveLoad.why];
+  // Nothing of the setup is drawn when head office did not answer: no sample, no defaults read as the shop's own.
+  // (style, not the hidden attribute: the headline's own display rule would otherwise win over [hidden].)
+  for (const id of ['headline', 'blocking', 'groups', 'prefixes', 'change-note']) if (headOfficeDown) { el(id).hidden = true; el(id).style.display = 'none'; }
+}
+
 const editing = window.setupEditing || null;
 let session = window.setupSession || sampleSession();
 const canEdit = Boolean(editing) && session.canEdit();
@@ -506,6 +528,7 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintChrome();
+  paintLiveState();
 });
 // The stale strip is its own concern, repainted in the reader's new language on a switch.
 
@@ -519,8 +542,9 @@ window.addEventListener('beforeunload', (e) => {
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 
-el('sample').hidden = window.setupSession !== undefined;
+el('sample').hidden = window.setupSession !== undefined || headOfficeDown;
 paintChrome();
+paintLiveState();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

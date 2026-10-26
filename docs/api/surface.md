@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1539 | 895 | 895 | 167 | 417 |
+| 13 | 1554 | 903 | 903 | 167 | 417 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -77,6 +77,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/identity/people` | `platform.person.read` | core | — |
 | POST | `/v1/identity/people` | `platform.person.provision` | core | yes |
 | GET | `/v1/identity/permission-matrix` | `identity.access.review` | core | — |
+| GET | `/v1/identity/role-scopes` | `identity.role.read` | core | — |
+| POST | `/v1/identity/role-scopes/:userId/:roleId/:dimension` | `identity.role.request` | core | yes |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |
 | GET | `/v1/identity/till-sign-ins` | `lp.case.read` | core | — |
 | POST | `/v1/identity/till-sign-ins/:entryId/synced` | `identity.tillsignin.sync` | core | yes |
@@ -253,6 +255,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/orders/:poId/receipts` | `purchase.order.receive` | core | yes |
 | GET | `/v1/purchase/orders/:poId/related-party` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/orders/:poId/related-party-approval` | `purchase.relatedparty.approve` | core | yes |
+| GET | `/v1/purchase/price-variance` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/rebate-schemes` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/rebate-schemes/:schemeId` | `purchase.contract.manage` | core | yes |
 | GET | `/v1/purchase/rebate-schemes/:schemeId/accruals` | `purchase.commitment.read` | core | — |
@@ -276,10 +279,16 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/suppliers/:supplierId/receipts/:poId` | `purchase.performance.record` | core | yes |
 | GET | `/v1/purchase/suppliers/:supplierId/scorecard` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/suppliers/accounts` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/vmi-proposals` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/vmi-proposals/:proposalId/decide` | `purchase.order.propose` | core | yes |
+| GET | `/v1/purchase/vmi/:supplierId` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/vmi/limits/:supplierId/:storeId/:productId` | `purchase.order.propose` | core | yes |
 | GET | `/v1/supplier-portal/me/orders` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/statement` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/submissions` | `supplier.portal.self` | core | — |
 | POST | `/v1/supplier-portal/me/submissions` | `supplier.portal.self.submit` | core | yes |
+| GET | `/v1/supplier-portal/me/vmi` | `supplier.portal.self` | core | — |
+| POST | `/v1/supplier-portal/me/vmi/proposals/:proposalId` | `supplier.portal.self.submit` | core | yes |
 | GET | `/v1/supplier-portal/orders/:poId/delivery-status` | `supplier.portal.review` | core | — |
 | POST | `/v1/supplier-portal/partners/:partnerId` | `supplier.portal.manage` | core | yes |
 | GET | `/v1/supplier-portal/partners/:partnerId/compliance` | `supplier.portal.review` | core | — |
@@ -356,6 +365,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/expiry-actions` | `inventory.availability.read` | core | yes |
 | POST | `/v1/inventory/expiry-sweep` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/fefo-allocation` | `inventory.availability.read` | core | yes |
+| POST | `/v1/inventory/free-samples/:issueId` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/goods-receipt` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/goods-receipt/:grnId` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/goods-receipt/:grnId` | `inventory.movement.append` | core | yes |
@@ -465,6 +475,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/quality/recalls/:batchId` | `quality.recall.read` | core | — |
 | POST | `/v1/quality/recalls/:batchId` | `quality.recall.initiate` | core | yes |
 | POST | `/v1/quality/recalls/:batchId/closure` | `quality.recall.initiate` | core | yes |
+| POST | `/v1/quality/recalls/:batchId/withdrawal` | `quality.recall.initiate` | core | yes |
 | GET | `/v1/quality/sale-blocks` | `quality.recall.read` | core | — |
 | POST | `/v1/replenishment/order-proposal` | `inventory.availability.read` | core | yes |
 | POST | `/v1/replenishment/propose` | `inventory.availability.read` | core | yes |
@@ -1004,6 +1015,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/fixed-assets/depreciation/:period` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/fleet-settlements` | `finance.period.read` | core | — |
 | POST | `/v1/finance/fleet-settlements/post` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/free-sample-itc` | `finance.itc.read` | core | — |
+| POST | `/v1/finance/free-sample-itc/:issueId/check` | `finance.itc.action` | core | yes |
 | POST | `/v1/finance/gst-portal/gate` | `finance.einvoice.read` | core | yes |
 | GET | `/v1/finance/gst/controls` | `finance.gstr.read` | core | — |
 | PUT | `/v1/finance/gst/controls/einvoice-30-day-guard` | `finance.einvoice.guard.switch` | core | yes |
@@ -1170,6 +1183,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/reporting/brief-schedule/sent` | `owner.brief.manage` | core | yes |
 | GET | `/v1/reporting/brief-today` | `owner.kpi.read` | core | — |
 | POST | `/v1/reporting/compare` | `owner.kpi.read` | core | yes |
+| GET | `/v1/reporting/contract-expiry-alerts` | `owner.alert.read` | core | — |
+| POST | `/v1/reporting/contract-expiry-alerts/warning-days` | `owner.alert.manage` | core | yes |
 | POST | `/v1/reporting/drill` | `owner.kpi.read` | core | yes |
 | GET | `/v1/reporting/drill-audits` | `owner.kpi.read` | core | — |
 | POST | `/v1/reporting/drill/governed` | `owner.kpi.read` | core | yes |

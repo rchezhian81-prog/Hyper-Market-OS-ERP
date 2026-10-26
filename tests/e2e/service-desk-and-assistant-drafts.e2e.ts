@@ -1,3 +1,4 @@
+import { Tally } from './lib/tally';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -145,18 +146,23 @@ describe.skipIf(!HAVE_BROWSER)('the service desk and the assistant\'s drafts, in
     const { page, close } = await pageAs(DESK, 'service-desk.html');
     try {
       await page.waitForSelector('#case-rows tr[data-case-id="K-1"]', { timeout: 10_000 });
-      await page.click('#case-rows tr[data-case-id="K-1"]');
+      // QG-02 (crm-service.md "open and reply to a case ≤3"): measured AS BUILT — open the case, ask the assistant, edit
+      // the words, approve them, choose the channel, send. The spec's three is an owner decision (lane 1 R4 report).
+      const taps = new Tally(page);
+      await taps.tap('#case-rows tr[data-case-id="K-1"]');
       await page.waitForSelector('#case-section:not([hidden])');
-      await page.click('#ask-draft');
+      await taps.tap('#ask-draft');
       await page.waitForSelector('#draft-list .draft blockquote', { timeout: 10_000 });
       expect(await page.textContent('#draft-list .draft blockquote')).toContain('A colleague will look into it today.');
       expect(await page.textContent('#draft-status')).toContain('The assistant drafted a reply');
-      await page.fill('#draft-list .draft textarea', 'Sorry about the milk on ORD-9 — a colleague will call you today.');
-      await page.click('#draft-list .draft button.secondary >> text=Edit and approve');
+      await taps.type('#draft-list .draft textarea', 'Sorry about the milk on ORD-9 — a colleague will call you today.');
+      await taps.tap('#draft-list .draft button.secondary >> text=Edit and approve');
       await page.waitForSelector('#draft-list .draft button.send', { timeout: 10_000 });
-      await page.selectOption('#draft-list .draft select', 'phone');
-      await page.click('#draft-list .draft button.send');
+      await page.selectOption('#draft-list .draft select', 'phone'); taps.count += 1;
+      await taps.tap('#draft-list .draft button.send');
       await page.waitForSelector('#draft-list .draft .status.good', { timeout: 10_000 });
+      const asBuilt = taps.reset();
+      expect(asBuilt, 'as built: open and reply to a case, with the words edited').toBe(6);
       expect(await page.textContent('#draft-list .draft .status.good')).toContain(`Sent by ${DESK} by Phone`);
       expect(await page.textContent('#draft-list .draft blockquote')).toBe('Sorry about the milk on ORD-9 — a colleague will call you today.');
       expect(await page.textContent('#first-badge')).toBe('met');

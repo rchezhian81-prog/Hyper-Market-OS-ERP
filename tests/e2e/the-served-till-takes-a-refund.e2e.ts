@@ -11,6 +11,7 @@ import { prepareTillBox, signInOnPage, pinOf } from '../support/till-operator';
 /** The cashier, and the manager who approves refunds at the till with their own PIN (ADR-0021). */
 const TILL_PEOPLE = [{ userId: 'u-lanecash', displayName: 'Lane cashier' }, { userId: 'u-manager', displayName: 'Manager', manager: true }];
 import { readLog } from '../../edge/store-edge/src/file-log';
+import { Tally } from './lib/tally';
 
 /**
  * **The whole one-PC till, in a real browser: the box gives money back, offline.**
@@ -478,6 +479,69 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const offers = await page.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''));
     expect(offers).toContain('Refund');
     expect(offers).not.toContain('Return without receipt');
+  });
+
+  it('QG-02 (pos-refund.md): looking up a receipt takes 3 (More → Refund → key the number); returning one whole line is measured as built', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-refund-taps-'));
+    dirs.push(dir);
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE, pack: PACK_FILE_WITH_CAP }),
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+    await signInOnPage(page);
+    // A bill to bring back (rung through the cashier's own surface; the counting starts at the refund).
+    const receipt = await page.evaluate(async () => {
+      const w = globalThis as unknown as PosWindow;
+      w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
+      const number = await w.posSession!.nextReceipt();
+      await w.posSession!.tenderCash('S-T1', number, new Date().toISOString());
+      w.posSession!.newSale();
+      return number;
+    });
+
+    const taps = new Tally(page);
+    await taps.tap('#more');
+    await panelTitled(page, 'More');
+    await taps.tap('#pay-kinds button:text-is("Refund")');
+    await sheetTitled(page, 'Scan the receipt, or key the bill number');
+    await taps.key(receipt);
+    await panelTitled(page, 'Which item is coming back?');
+    expect(taps.reset(), 'look up a receipt').toBeLessThanOrEqual(3);
+
+    // Return one whole line, AS BUILT: the line → its quantity → a reason → its condition → the amount → how it is given →
+    // the manager's badge, PIN and reason (M13-FR-02 condition, M15 reason codes, §28 a second person). Measured, not
+    // budgeted: the spec's three (tap line → confirm qty → Refund) is an owner decision (lane 1 R4 report).
+    await taps.tap('#pay-kinds button:text-is("Amul Ghee Gold 1L — can return 1")');
+    await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
+    await taps.tap('#sheet-ok');
+    await sheetTitled(page, 'Why is it coming back?');
+    await taps.tap('#reasons button:text-is("Damaged / faulty")');
+    await taps.tap('#sheet-ok');
+    await panelTitled(page, 'What condition is the item in?');
+    await taps.tap('#pay-kinds button:text-is("Good — back on the shelf")');
+    await sheetTitled(page, 'How much to refund?');
+    for (const digit of '640') await taps.tap(`#keypad button:text-is("${digit}")`);
+    await taps.tap('#sheet-ok');
+    await panelTitled(page, 'How is the refund given?');
+    await taps.tap('#pay-kinds button:text-is("Cash")');
+    await sheetTitled(page, 'Manager: scan your badge or key your staff ID');
+    await taps.scan('u-manager');
+    await sheetTitled(page, 'Manager: your till PIN');
+    await taps.key(pinOf('u-manager'));
+    await sheetTitled(page, 'Manager: why is this refund approved?');
+    await taps.tap('#reasons button:text-is("Damaged / faulty")');
+    await taps.tap('#sheet-ok');
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    expect(await page.textContent('#refusal-title')).toBe('Refund recorded');
+    const asBuilt = taps.reset();
+    expect(asBuilt, 'as built: return one whole line, from the bill found to the refund recorded').toBe(14);
   });
 
   it('refuses to give money back without a manager — every refund needs §28 approval', async () => {

@@ -20,10 +20,24 @@ import { generateKeyPairSync } from 'node:crypto';
  *   • a release that never becomes READY is rolled back to the previous commit, the pipeline goes red (70);
  *   • a forced SSH command carries the arguments; anything but `release …` is refused;
  *   • two deployments cannot run at once; a rollback that itself fails says so (71);
- *   • the secrets file is never printed.
+ *   • the secrets file is never printed;
+ *   • QG-10 · WF-20 (FG-3): the books are snapshotted before the release and compared after it — a lost event, a new
+ *     dead letter or a grown sync backlog rolls the release back (70); books that cannot be read before refuse it (69);
+ *     every attempt writes one QG-10 evidence line (health, smoke, reconciliation, monitoring, rollback).
  */
 
 const REAL_SCRIPT = join(process.cwd(), 'infra/deploy/release.sh');
+// QG-10 (FG-3): the release's own reconcile tool rides in the sandbox commits, as it does in a real release.
+const REAL_RECONCILE = join(process.cwd(), 'scripts/release-reconcile.mjs');
+const REAL_RECONCILE_LIB = join(process.cwd(), 'scripts/lib/release-reconcile.mjs');
+// The stand-in for the migrate container's snapshot: the before-release books, or (with --upto) the after-release ones.
+const SNAPSHOT_STUB = `#!/usr/bin/env bash
+echo "snapshot $*" >> "$SRE_TEST_CALLS"
+case " $* " in *" --upto "*) cat "$SRE_TEST_SNAPS/after.json" 2>/dev/null ;; *) cat "$SRE_TEST_SNAPS/before.json" 2>/dev/null ;; esac
+`;
+const books = (count: number, deadLetter = 0, pending = 0) => ({ version: 1, at: '2026-10-26T00:00:00.000Z', ledger: { count, maxSeq: count, digest: `d${count}`, byFamily: { sales: count } }, outbox: { pending, deadLetter, oldestPendingSeconds: null } });
+const after = (count: number, upTo: { seq: number; count: number; digest: string; sales: number }, deadLetter = 0, pending = 0) =>
+  ({ ...books(count, deadLetter, pending), upTo: { seq: upTo.seq, count: upTo.count, digest: upTo.digest, byFamily: { sales: upTo.sales } } });
 // Constructed from parts so the repository's secret scan (which refuses hard-coded credential assignments) does
 // not trip on obviously-fake test material. It is a sentinel: the test only asserts it NEVER appears in output.
 const KEY_NAME = ['PACK', 'SIGNING', 'KEY'].join('_');
@@ -118,6 +132,9 @@ describe('the release script deploys a merged commit and rolls a broken one back
     await writeFile(join(author, 'scripts/build-app.mjs'), BUILD_STUB);
     await writeFile(join(author, 'scripts/build-service.mjs'), TOOL_STUB);
     await writeFile(join(author, 'scripts/standup-check.mjs'), STANDUP_STUB);
+    await mkdir(join(author, 'scripts/lib'), { recursive: true });
+    await copyFile(REAL_RECONCILE, join(author, 'scripts/release-reconcile.mjs'));
+    await copyFile(REAL_RECONCILE_LIB, join(author, 'scripts/lib/release-reconcile.mjs'));
     await writeFile(join(author, 'package.json'), '{ "name": "sandbox", "private": true, "type": "module" }\n');
     const commit = async (version: string): Promise<string> => {
       await writeFile(join(author, 'VERSION'), `${version}\n`);
@@ -137,7 +154,7 @@ describe('the release script deploys a merged commit and rolls a broken one back
 
     // Stand-ins on PATH.
     const bin = join(sandbox, 'bin'); await mkdir(bin);
-    for (const [name, body] of [['pnpm', PNPM_STUB], ['docker', DOCKER_STUB], ['curl', CURL_STUB]] as const) {
+    for (const [name, body] of [['pnpm', PNPM_STUB], ['docker', DOCKER_STUB], ['curl', CURL_STUB], ['snapshot-books', SNAPSHOT_STUB]] as const) {
       await writeFile(join(bin, name), body); await chmod(join(bin, name), 0o755);
     }
     calls = join(sandbox, 'calls.log'); upResults = join(sandbox, 'up-results'); ready = join(sandbox, 'ready');
@@ -150,10 +167,22 @@ describe('the release script deploys a merged commit and rolls a broken one back
       SRE_API_URL: 'http://127.0.0.1:9', SRE_READY_TIMEOUT: '3', SRE_READY_POLL: '1',
       SRE_RELEASE_LOG: releaseLog, SRE_DEPLOY_LOCK: lock,
       SRE_TEST_CALLS: calls, SRE_TEST_UP_RESULTS: upResults, SRE_TEST_READY: ready, SRE_TEST_METRICS: join(sandbox, 'metrics'), SRE_TEST_SETTINGS: join(sandbox, 'settings'),
+      // QG-10 (FG-3): the books' snapshot comes from the stand-in; the per-release evidence goes to the sandbox.
+      SRE_RECONCILE_CMD: 'snapshot-books', SRE_TEST_SNAPS: join(sandbox, 'snaps'), SRE_QG10_LOG: join(sandbox, 'state', 'qg10.jsonl'),
     };
+    await mkdir(join(sandbox, 'snaps'), { recursive: true });
   });
   afterAll(async () => { await rm(sandbox, { recursive: true, force: true }); });
-  beforeEach(async () => { await writeFile(calls, ''); await writeFile(upResults, ''); await writeFile(ready, 'down\n'); await writeFile(join(sandbox, 'metrics'), '0\n'); await writeFile(join(sandbox, 'settings'), 'complete\n'); });
+  const snaps = async (before: unknown, afterBooks: unknown) => {
+    await writeFile(join(sandbox, 'snaps', 'before.json'), `${JSON.stringify(before)}\n`);
+    await writeFile(join(sandbox, 'snaps', 'after.json'), `${JSON.stringify(afterBooks)}\n`);
+  };
+  const lastQg10 = async () => JSON.parse((await readFile(join(sandbox, 'state', 'qg10.jsonl'), 'utf8')).trim().split('\n').at(-1) ?? '{}') as { release: string; outcome: string; verified: boolean; checks: Record<string, string>; differences: string[]; decision: string; notVerified: string[] };
+  beforeEach(async () => {
+    await writeFile(calls, ''); await writeFile(upResults, ''); await writeFile(ready, 'down\n'); await writeFile(join(sandbox, 'metrics'), '0\n'); await writeFile(join(sandbox, 'settings'), 'complete\n');
+    // The books agree by default: 10 events before; 12 after, the first 10 unchanged.
+    await snaps(books(10), after(12, { seq: 10, count: 10, digest: 'd10', sales: 10 }));
+  });
 
   it('refuses garbage (64) and a commit that is not on origin/main (65) — and touches nothing', async () => {
     expect(run(['not-a-sha']).code).toBe(64);
@@ -416,4 +445,95 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(selftest.stdout).toContain('GREEN — release signing self-test');
     expect(selftest.stdout).toContain('tamperedRefused=true otherKeyRefused=true garbageRefused=true');
   });
+
+  // ── QG-10 · WF-20 (FG-3): the books reconciled around every release, and the per-release QG-10 record ──────────────────
+  it('QG-10: the books are snapshotted before anything changes and compared after; a release they agree on is deployed, with its QG-10 record', async () => {
+    await writeFile(upResults, 'ok\n');
+    await writeFile(join(sandbox, 'metrics'), '0\n0\n0\n');
+    const r = run([V2, 'octocat', '401'], { SRE_BAKE_SECONDS: '2', SRE_BAKE_POLL: '1' });
+    expect(r.code, r.out).toBe(0);
+    const log = await callLog();
+    const before = log.indexOf('snapshot ');
+    expect(before).toBeGreaterThanOrEqual(0);
+    expect(before).toBeLessThan(log.findIndex((l) => l.startsWith('pnpm'))); // before anything is rebuilt
+    expect(log).toContain('snapshot --upto 10'); // after: the ledger re-read up to where it stood
+    expect(r.out).toContain('reconcile: RECONCILED');
+    const q = await lastQg10();
+    expect(q).toMatchObject({ release: V2, outcome: 'deployed', verified: true, checks: { health: 'verified', smoke: 'verified', reconciliation: 'verified', monitoring: 'verified', rollback: 'ready' }, differences: [] });
+    expect(q.decision).toMatch(/evidence for the owner's QG-10 decision/);
+    expect(r.out).toMatch(/release: QG-10 record: \{"gate":"QG-10"/);
+    expect(r.out).not.toContain(SENTINEL);
+  }, 30_000);
+
+  it('QG-10: an event lost across the release rolls it back (70) — the differences said in words, the QG-10 record kept', async () => {
+    await writeFile(upResults, 'ok\nok\n');
+    await snaps(books(10), after(11, { seq: 10, count: 9, digest: 'other', sales: 9 }));
+    const before = head();
+    const r = run([V3, 'octocat', '402']);
+    expect(r.code, r.out).toBe(70);
+    expect(r.out).toContain('THE BOOKS DO NOT RECONCILE');
+    expect(r.out).toMatch(/DIFFERENCE — the ledger held 10 event\(s\) before the release and holds 9 of them now — some were LOST/);
+    expect(r.out).toContain('ROLLED BACK');
+    expect(head()).toBe(before);
+    expect(await lastLogLine()).toContain(`result=rolled_back_on_reconcile sha=${V3} previous=${before}`);
+    const q = await lastQg10();
+    expect(q).toMatchObject({ release: V3, outcome: 'rolled_back_on_reconcile', verified: false, checks: { health: 'verified', smoke: 'verified', reconciliation: 'failed', rollback: 'exercised_ok' } });
+    expect(q.differences.join(' ')).toMatch(/some were LOST/);
+  }, 30_000);
+
+  it('QG-10: a new dead letter or a grown sync backlog is a difference too (70); an allowance set on the box lets the backlog grow that far', async () => {
+    await writeFile(upResults, 'ok\nok\n');
+    await snaps(books(10, 1, 0), after(12, { seq: 10, count: 10, digest: 'd10', sales: 10 }, 2, 0));
+    const dead = run([V3, 'octocat', '403']);
+    expect(dead.code, dead.out).toBe(70);
+    expect(dead.out).toMatch(/DIFFERENCE — 1 new dead letter\(s\) in the outbox since the release \(from 1 to 2; allowed \+0\)/);
+    await writeFile(upResults, 'ok\nok\n');
+    await snaps(books(10, 0, 3), after(12, { seq: 10, count: 10, digest: 'd10', sales: 10 }, 0, 5));
+    const backlog = run([V3, 'octocat', '404']);
+    expect(backlog.code, backlog.out).toBe(70);
+    expect(backlog.out).toMatch(/the sync backlog grew by 2 \(from 3 pending to 5; allowed \+0\)/);
+    await writeFile(upResults, 'ok\n');
+    const allowed = run([V3, 'octocat', '405'], { SRE_RECONCILE_MAX_BACKLOG_GROWTH: '2' });
+    expect(allowed.code, allowed.out).toBe(0);
+    expect(head()).toBe(V3);
+    // A box with no bake: monitoring was not run here, so the record says QG-10 is not fully verified on this box.
+    expect(await lastQg10()).toMatchObject({ outcome: 'deployed', verified: false, notVerified: ['monitoring'], checks: { monitoring: 'not_run_on_this_box' } });
+  }, 60_000);
+
+  it('QG-10: books that cannot be read BEFORE the release refuse it (69) with nothing rebuilt — by default through the stack\'s own migrate container', async () => {
+    const before = head();
+    const r = run([V2, 'octocat', '406'], { SRE_RECONCILE_CMD: '' }); // the default: docker compose run … migrate (the stub prints nothing)
+    expect(r.code, r.out).toBe(69);
+    expect(r.out).toContain('REFUSED — the books could not be read before the release');
+    expect(head()).toBe(before);
+    const log = await callLog();
+    expect(log).toContain(`docker compose -p sre-test -f docker-compose.yml --env-file .env.test run --rm --no-deps -T -v ${join(app, 'scripts')}:/app/scripts:ro migrate node scripts/release-reconcile.mjs snapshot`);
+    expect(log.some((l) => l.startsWith('pnpm') || l.includes(' up -d --build'))).toBe(false);
+    expect(await lastLogLine()).toContain(`result=reconcile_snapshot_failed sha=${V2} previous=${before}`);
+    expect(await lastQg10()).toMatchObject({ release: V2, outcome: 'refused_books_unreadable', verified: false, checks: { reconciliation: 'failed' } });
+    expect(r.out).not.toContain(SENTINEL);
+  }, 30_000);
+
+  it('QG-10: a box with the reconcile switched off says so on every run, and its QG-10 record says reconciliation was not run', async () => {
+    await writeFile(upResults, 'ok\n');
+    const r = run([V2, 'octocat', '407'], { SRE_RECONCILE: 'off' });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('the post-deploy reconcile is SWITCHED OFF on this box');
+    expect((await callLog()).some((l) => l.startsWith('snapshot'))).toBe(false);
+    expect(await lastQg10()).toMatchObject({ outcome: 'deployed', verified: false, checks: { reconciliation: 'not_run' } });
+  }, 30_000);
+
+  it('WF-20 duplicate: the same release sent again is re-applied harmlessly — said, deployed once more, the books reconciled, one more log line', async () => {
+    await writeFile(upResults, 'ok\n');
+    const first = run([V2, 'octocat', '408']);
+    expect(first.code, first.out).toBe(0);
+    await writeFile(upResults, 'ok\n');
+    const again = run([V2, 'octocat', '409']);
+    expect(again.code, again.out).toBe(0);
+    expect(again.out).toContain(`this box is already at ${V2} — re-applying it (harmless, idempotent)`);
+    expect(again.out).toContain('reconcile: RECONCILED');
+    expect(head()).toBe(V2);
+    expect(await lastLogLine()).toContain(`result=deployed sha=${V2} previous=${V2} by=octocat run=409`);
+    expect(await lastQg10()).toMatchObject({ release: V2, outcome: 'deployed' });
+  }, 30_000);
 });

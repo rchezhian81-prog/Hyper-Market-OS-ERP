@@ -71,6 +71,29 @@
         <ul class="rows" id="po-rows"></ul>
       </section>
 
+      <!-- FG-4 · D03-FR-04: supplier-managed stock (VMI) — the buyer's limits, the supplier's top-ups, the buyer's decision. -->
+      <section id="vmi" hidden aria-labelledby="vmi-h">
+        <h3 id="vmi-h"></h3>
+        <p class="lead" id="vmi-lead"></p>
+        <div class="row-form">
+          <label for="vmi-supplier"><span id="vmi-supplier-l"></span><input id="vmi-supplier" autocomplete="off" /></label>
+        </div>
+        <button id="vmi-show" type="button"><span id="vmi-show-text"></span></button>
+        <p class="status" id="vmi-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="vmi-items"></ul>
+        <div class="row-form" id="vmi-limit-form">
+          <label for="vmi-store"><span id="vmi-store-l"></span><input id="vmi-store" autocomplete="off" /></label>
+          <label for="vmi-product"><span id="vmi-product-l"></span><input id="vmi-product" autocomplete="off" /></label>
+          <label for="vmi-min"><span id="vmi-min-l"></span><input id="vmi-min" inputmode="numeric" autocomplete="off" /></label>
+          <label for="vmi-max"><span id="vmi-max-l"></span><input id="vmi-max" inputmode="numeric" autocomplete="off" /></label>
+          <label for="vmi-uom"><span id="vmi-uom-l"></span><input id="vmi-uom" value="ea" autocomplete="off" /></label>
+        </div>
+        <button id="vmi-set" type="button"><span id="vmi-set-text"></span></button>
+        <h3 id="vmi-q-h"></h3>
+        <p class="status" id="vmi-q-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="vmi-q-rows"></ul>
+      </section>
+
       <section id="decided" hidden aria-labelledby="decided-h">
         <h3 id="decided-h"></h3>
         <ul class="rows" id="dc-rows"></ul>

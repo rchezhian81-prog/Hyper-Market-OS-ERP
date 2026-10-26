@@ -267,6 +267,8 @@ export function storefrontAccountAdapter(input: Base & { readonly a05: Route | u
       const p = await productMasterAdapter({ store, now }).product(t, productId);
       return p !== undefined && p.lifecycle === 'active';
     },
+    // B15 (FG-3): a suggestion never names tobacco — the product master's own mark.
+    isTobacco: async (t, productId) => (await productMasterAdapter({ store, now }).product(t, productId))?.safety?.tobacco === true,
     orderOwner: async (t, orderId) => (await orders.placedOrder(t, orderId))?.customerRef,
     a05OrderAnswer: async (t, orderId) => {
       if (input.a05 === undefined) return { answered: false, agentActive: false, text: '' };
@@ -340,6 +342,8 @@ export function journeyAdapter(input: Base & { readonly quote: Route | undefined
       return { queued: false, code: Object.keys(b.excludedByReason ?? {})[0] ?? 'not_queued', detail: b.detail ?? 'not queued' };
     },
     today: async (t) => dayIn(now(), await input.timeZone(t)),
+    // B15 (FG-3): an abandoned-cart reminder never names tobacco — the product master's own mark.
+    isTobacco: async (t, productId) => (await productMasterAdapter({ store, now }).product(t, productId))?.safety?.tobacco === true,
   };
 }
 

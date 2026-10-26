@@ -107,7 +107,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -161,6 +161,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindOrgStructureChange: 'Activate, change or close a company, branch, warehouse or department',
     kindConfigChange: 'Change a high-impact setting', kindFlagChange: 'Turn a high-impact switch on or off',
     kindDepartmentScopeChange: 'Limit a person\'s role to some departments',
+    kindRoleScopeChange: 'Limit a person\'s role to some suppliers, categories or locations', // FG-4 · M02-FR-02
     kindTaxRateChange: 'Change the GST rate of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
     kindHsnClassChange: 'Change the tax (HSN) class of a published product',
     kindB2BContract: 'Approve a business customer\'s contract (prices, dates, credit and terms)',
@@ -236,6 +237,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindOrgStructureChange: 'நிறுவனம், கிளை, கிடங்கு அல்லது துறையைச் செயல்படுத்துதல், மாற்றுதல் அல்லது மூடுதல்',
     kindConfigChange: 'அதிக தாக்கமுள்ள அமைப்பை மாற்றுதல்', kindFlagChange: 'அதிக தாக்கமுள்ள சுவிட்சை இயக்குதல் அல்லது நிறுத்துதல்',
     kindDepartmentScopeChange: 'ஒருவரின் பங்கைச் சில துறைகளுக்கு மட்டும் வரம்பிடுதல்',
+    kindRoleScopeChange: 'ஒருவரின் பங்கைச் சில விநியோகஸ்தர்கள், வகைகள் அல்லது இடங்களுக்கு மட்டும் வரம்பிடுதல்', // FG-4 · M02-FR-02
     kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
     kindHsnClassChange: 'வெளியிடப்பட்ட பொருளின் வரி (HSN) வகையை மாற்றுதல்',
     kindB2BContract: 'வணிக வாடிக்கையாளரின் ஒப்பந்தத்தை அனுமதித்தல் (விலை, தேதிகள், கடன், நிபந்தனைகள்)',
@@ -321,6 +323,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   // OB-288 lane 1 · P1.
   approval_rule_change: 'kindApprovalRuleChange', org_structure_change: 'kindOrgStructureChange', config_change: 'kindConfigChange',
   flag_change: 'kindFlagChange', department_scope_change: 'kindDepartmentScopeChange',
+  role_scope_change: 'kindRoleScopeChange', // FG-4 · M02-FR-02
   // OB-288 P2: a GST rate change (Finance approves) and a supplier's funding of an offer.
   tax_rate_change: 'kindTaxRateChange', promotion_funding: 'kindPromotionFunding',
   // OB-288 till side (OB-347): a published product's tax class changed — Finance approves.

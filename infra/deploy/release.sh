@@ -26,8 +26,9 @@
 # in /opt/sre/deploy.conf (see deploy.conf.example — no secret belongs there either).
 #
 # Exit codes (BSD sysexits, so a pipeline can tell them apart):
-#   0 deployed · 64 usage · 65 refused (not on main) · 69 refused (the pre-release backup failed) ·
-#   70 rolled back to the previous release (it did not come up, or failed its canary bake) ·
+#   0 deployed · 64 usage · 65 refused (not on main) · 69 refused (the pre-release backup failed, or the books could not be
+#   read before the release) ·
+#   70 rolled back to the previous release (it did not come up, failed its canary bake, or its books did not reconcile) ·
 #   71 rollback failed too · 75 another deployment is running · 77 refused (this box checks release signatures and the
 #   release is unsigned or its signature does not verify) · 78 the box is not set up for this (round 32: or its
 #   settings file lacks a setting this release requires — refused before anything is rebuilt, the box untouched).
@@ -35,6 +36,16 @@
 # WF-20 (ADR-0026): before anything changes, the box's pre-release backup runs (SRE_PREDEPLOY_BACKUP_CMD); after the
 # release is up and GREEN, a canary box WATCHES it for SRE_BAKE_SECONDS (READY throughout, no growth in server errors)
 # before calling it deployed. The pipeline deploys to the canary box first and to the full rollout only after that.
+#
+# QG-10 · WF-20 "smoke/RECONCILE" (FG-3): just before the release touches anything, the box SNAPSHOTS head office's books —
+# the ledger (count, last sequence, a digest, per family), the outbox's dead letters and the sync backlog — with
+# scripts/release-reconcile.mjs run inside the stack's own `migrate` container (it reads the database setting from that
+# container's environment; this script never reads a secret). After the release is up, GREEN and watched, it snapshots
+# again and COMPARES: an event lost or altered, a new dead letter or a grown backlog is a DIFFERENCE, and the release is
+# rolled back (70) like any other failure. A snapshot that cannot be taken BEFORE refuses the release (69), untouched.
+# Every release attempt that gets that far appends one QG-10 evidence line (health, smoke, reconciliation, monitoring,
+# rollback — each verified or not) to SRE_QG10_LOG and prints it ("QG-10 record: …") for the pipeline's summary. The
+# record is evidence for the owner's QG-10 decision, never a decision (QG-12).
 #
 # WF-20 · AID-08 "sign releases" (OB-288 P5): a box given the release-signing PUBLIC key (SRE_RELEASE_PUBKEY) deploys
 # only a commit whose signature verifies — the 4th argument, the base64 Ed25519 signature `scripts/release-signing.mjs
@@ -83,6 +94,16 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_BAKE_MAX_5XX:=0}"
 # WF-20 · AID-08: the path of the release-signing PUBLIC key (PEM). Empty = signatures are not checked here (said).
 : "${SRE_RELEASE_PUBKEY:=}"
+# QG-10 · WF-20 post-deploy reconcile (FG-3).
+#   SRE_RECONCILE                      on (the default) | off — off is said on every run and the QG-10 record says "not run".
+#   SRE_RECONCILE_CMD                  the command that prints a snapshot (extra arguments are appended); empty = the stack's
+#                                      own migrate container running this release's scripts/release-reconcile.mjs.
+#   SRE_RECONCILE_MAX_BACKLOG_GROWTH   how far the sync backlog may grow across the release (default 0).
+#   SRE_QG10_LOG                       the append-only file of per-release QG-10 evidence lines.
+: "${SRE_RECONCILE:=on}"
+: "${SRE_RECONCILE_CMD:=}"
+: "${SRE_RECONCILE_MAX_BACKLOG_GROWTH:=0}"
+: "${SRE_QG10_LOG:=/opt/sre/qg10-evidence.jsonl}"
 
 COMPOSE_FILE_ARGS=()
 for f in $SRE_COMPOSE_FILES; do COMPOSE_FILE_ARGS+=(-f "$f"); done
@@ -287,15 +308,20 @@ front_answers() {
   return 1
 }
 
+# QG-10: note how this attempt's stages went (the first attempt only — a rollback re-uses verify()).
+mark() { if [ "${STAGE:-release}" = release ]; then printf -v "$1" '%s' "$2"; fi; }
+
 verify() {
   say "waiting up to ${SRE_READY_TIMEOUT}s for the API to be READY…"
-  wait_ready || { say "the API did not become ready in time."; return 1; }
+  wait_ready || { say "the API did not become ready in time."; mark Q_HEALTH failed; return 1; }
+  mark Q_HEALTH verified
   say "waiting for the web front to answer again after the tool restarts…"
   web_settled || say "  (the web front did not answer within 45 s — the stand-up check will say so)"
   say "running the stand-up check…"
-  STANDUP_ENV_FILE="$SRE_APP_DIR/infra/compose/$SRE_ENV_FILE" node scripts/standup-check.mjs || return 1
+  STANDUP_ENV_FILE="$SRE_APP_DIR/infra/compose/$SRE_ENV_FILE" node scripts/standup-check.mjs || { mark Q_SMOKE failed; return 1; }
   say "checking the public front at ${SRE_FRONT_URL:-"(skipped)"}…"
-  front_answers || { say "the public front did not answer at $SRE_FRONT_URL/readyz while the API behind it is fine — the proxy is down or refused its configuration (an empty name in SRE_PUBLIC_HOST?). See 'When it goes red'."; return 1; }
+  front_answers || { say "the public front did not answer at $SRE_FRONT_URL/readyz while the API behind it is fine — the proxy is down or refused its configuration (an empty name in SRE_PUBLIC_HOST?). See 'When it goes red'."; mark Q_SMOKE failed; return 1; }
+  mark Q_SMOKE verified
 }
 
 # The API's server-error count so far (5xx on /metricz), or "unknown" when it cannot be read.
@@ -312,21 +338,76 @@ bake() {
   [ "${SRE_BAKE_SECONDS:-0}" -gt 0 ] 2>/dev/null || return 0
   local base now deadline
   base="$(server_errors)"
-  if [ "$base" = "unknown" ]; then say "canary bake: the API's error count cannot be read at $SRE_API_URL/metricz."; BAKE_FAILED=1; return 1; fi
+  if [ "$base" = "unknown" ]; then say "canary bake: the API's error count cannot be read at $SRE_API_URL/metricz."; BAKE_FAILED=1; Q_MONITOR=failed; return 1; fi
   say "canary bake: watching $SHA for ${SRE_BAKE_SECONDS}s (server errors now $base, at most +$SRE_BAKE_MAX_5XX allowed)…"
   deadline=$(( $(date +%s) + SRE_BAKE_SECONDS ))
   while :; do
     if ! curl -fsS --max-time 5 "$SRE_API_URL/readyz" >/dev/null 2>&1; then
-      say "canary bake: the API stopped being READY."; BAKE_FAILED=1; return 1
+      say "canary bake: the API stopped being READY."; BAKE_FAILED=1; Q_MONITOR=failed; return 1
     fi
     now="$(server_errors)"
     if [ "$now" = "unknown" ] || [ $(( now - base )) -gt "$SRE_BAKE_MAX_5XX" ]; then
-      say "canary bake: server errors went from $base to $now (allowed +$SRE_BAKE_MAX_5XX)."; BAKE_FAILED=1; return 1
+      say "canary bake: server errors went from $base to $now (allowed +$SRE_BAKE_MAX_5XX)."; BAKE_FAILED=1; Q_MONITOR=failed; return 1
     fi
     [ "$(date +%s)" -ge "$deadline" ] && break
     sleep "$SRE_BAKE_POLL"
   done
   say "canary bake: $SHA stayed READY for ${SRE_BAKE_SECONDS}s with server errors at $now."
+  Q_MONITOR=verified
+}
+
+# ── QG-10 · WF-20: the reconcile around the release, and the per-release QG-10 record ──────────────────────────────────
+# The stages QG-10 names, as this attempt went (kept for the first attempt only — a rollback re-uses verify()).
+STAGE=release
+Q_HEALTH=not_run; Q_SMOKE=not_run; Q_RECONCILE=not_run; Q_MONITOR=not_run; Q_ROLLBACK=ready
+RECON_DIR="$(mktemp -d)"
+trap 'rm -rf "$RECON_DIR"' EXIT
+RECONCILE_FAILED=0
+# THIS release's reconcile tool, kept aside: after a rollback the checkout is the previous release, which may not have it.
+mkdir -p "$RECON_DIR/tool/lib"
+cp scripts/release-reconcile.mjs "$RECON_DIR/tool/" && cp scripts/lib/release-reconcile.mjs "$RECON_DIR/tool/lib/" \
+  || { say "the reconcile tool is missing from $SHA (scripts/release-reconcile.mjs)."; }
+reconcile_tool() { node "$RECON_DIR/tool/release-reconcile.mjs" "$@"; }
+
+# Print one snapshot of head office's books on stdout (extra arguments go to `snapshot`, e.g. --upto <seq>).
+reconcile_snapshot() {
+  if [ -n "$SRE_RECONCILE_CMD" ]; then
+    bash -c "$SRE_RECONCILE_CMD $*"
+  else
+    # The migrate service is the stack's own one-shot container with the database setting; this release's script is
+    # mounted read-only over its scripts folder, so the snapshot logic is the release's even before its image is built.
+    compose run --rm --no-deps -T -v "$SRE_APP_DIR/scripts:/app/scripts:ro" migrate node scripts/release-reconcile.mjs snapshot "$@"
+  fi
+}
+
+# After the release is up: re-read the books and compare with the snapshot taken before it.
+reconcile_after() {
+  [ "$SRE_RECONCILE" = "off" ] && return 0
+  local upto
+  upto="$(reconcile_tool max-seq "$RECON_DIR/before.json")" || { say "reconcile: the before-release snapshot cannot be read back."; Q_RECONCILE=failed; RECONCILE_FAILED=1; return 1; }
+  say "reconcile: re-reading the books (the ledger up to sequence $upto, the outbox, the sync backlog)…"
+  reconcile_snapshot --upto "$upto" > "$RECON_DIR/after.json" 2>/dev/null || true
+  if reconcile_tool compare "$RECON_DIR/before.json" "$RECON_DIR/after.json" \
+       --max-backlog-growth "$SRE_RECONCILE_MAX_BACKLOG_GROWTH" --json "$RECON_DIR/result.json" | sed 's/^/release: reconcile: /'; then
+    Q_RECONCILE=verified
+    return 0
+  fi
+  Q_RECONCILE=failed; RECONCILE_FAILED=1
+  return 1
+}
+
+# Append and print this attempt's QG-10 evidence line. A record that cannot be written is said, loudly (P-08).
+qg10_record() {
+  local outcome="$1" line
+  if line="$(reconcile_tool qg10 --sha "$SHA" --previous "$PREVIOUS" --by "$ACTOR" --run "$RUN" \
+        --box "$(hostname 2>/dev/null || echo box)" --outcome "$outcome" --health "$Q_HEALTH" --smoke "$Q_SMOKE" \
+        --reconciliation "$Q_RECONCILE" --monitoring "$Q_MONITOR" --rollback "$Q_ROLLBACK" \
+        $( [ -f "$RECON_DIR/result.json" ] && printf -- '--differences %s' "$RECON_DIR/result.json" ))" \
+     && mkdir -p "$(dirname "$SRE_QG10_LOG")" && printf '%s\n' "$line" >> "$SRE_QG10_LOG"; then
+    say "QG-10 record: $line"
+  else
+    say "QG-10 record NOT WRITTEN — the evidence line for $SHA could not be made or appended to $SRE_QG10_LOG. Tell the custodian."
+  fi
 }
 
 # Round 32 · OB-116: a release whose settings file lacks a setting THIS release requires (from round 32, BOX_HISTORY_SEAL_KEY,
@@ -340,30 +421,63 @@ if ! STANDUP_ENV_FILE="$SRE_APP_DIR/infra/compose/$SRE_ENV_FILE" node scripts/st
   exit 78
 fi
 
-if bring_up && verify && bake; then
+# QG-10 · WF-20: the books BEFORE the release touches anything. Cannot be read → refused (69), nothing rebuilt.
+if [ "$SRE_RECONCILE" = "off" ]; then
+  say "the post-deploy reconcile is SWITCHED OFF on this box (SRE_RECONCILE=off) — the QG-10 record will say reconciliation was not run."
+else
+  say "reconcile: taking the before-release snapshot of the books (the ledger, the outbox, the sync backlog)…"
+  reconcile_snapshot > "$RECON_DIR/before.json" 2>/dev/null || true
+  if ! reconcile_tool max-seq "$RECON_DIR/before.json" >/dev/null 2>&1; then
+    Q_RECONCILE=failed; qg10_record refused_books_unreadable
+    git checkout --quiet --detach "$PREVIOUS"
+    record reconcile_snapshot_failed
+    echo "REFUSED — the books could not be read before the release (the reconcile snapshot failed), so $SHA was not deployed: after it, nobody could show the ledger, the outbox and the sync backlog still agree (QG-10). Nothing was rebuilt or restarted; the box is still on $PREVIOUS. Check the database container, then deploy again." >&2
+    exit 69
+  fi
+  say "reconcile: before-release snapshot taken (ledger up to sequence $(reconcile_tool max-seq "$RECON_DIR/before.json"))."
+fi
+
+if bring_up && verify && bake && reconcile_after; then
+  [ "$SRE_BAKE_SECONDS" -gt 0 ] 2>/dev/null || Q_MONITOR=not_run_on_this_box
+  [ "$SRE_RECONCILE" = "off" ] && Q_RECONCILE=not_run
   record deployed
+  qg10_record deployed
   say "DEPLOYED $SHA (replaced $PREVIOUS) — merged by $ACTOR, pipeline run $RUN. The stack is up and the stand-up check is GREEN."
   exit 0
 fi
 
-if [ "$BAKE_FAILED" = 1 ]; then
+if [ "$RECONCILE_FAILED" = 1 ]; then
+  say "THE BOOKS DO NOT RECONCILE — $SHA came up healthy, but the ledger, the outbox or the sync backlog differ from before the release (above). Last lines from the api container:"
+elif [ "$BAKE_FAILED" = 1 ]; then
   say "NOT HEALTHY UNDER WATCH — $SHA came up but failed its canary bake. Last lines from the api container:"
 else
   say "NOT HEALTHY — the new release did not come up. Last lines from the api and migrate containers:"
 fi
 compose logs --no-color --tail=60 api migrate 2>/dev/null || true
 say "rolling back to $PREVIOUS…"
+STAGE=rollback
 git checkout --quiet --detach "$PREVIOUS"
 if bring_up && verify; then
+  Q_ROLLBACK=exercised_ok
+  if [ "$RECONCILE_FAILED" = 1 ]; then
+    record rolled_back_on_reconcile
+    qg10_record rolled_back_on_reconcile
+    echo "ROLLED BACK — $SHA came up but its books did not reconcile with the snapshot taken before it (the differences are above); the box is back on $PREVIOUS and GREEN, and the full rollout will not run. Open an incident (POST /v1/platform/incidents/:id) with this release's commit — nothing on the ledger is deleted or overwritten to fix it (hard rule #2)." >&2
+    exit 70
+  fi
   if [ "$BAKE_FAILED" = 1 ]; then
     record rolled_back_in_canary_bake
+    qg10_record rolled_back_in_canary_bake
     echo "ROLLED BACK — $SHA came up but failed its canary bake; the box is back on $PREVIOUS and GREEN, and the full rollout will not run. Open an incident (POST /v1/platform/incidents/:id) with this release's commit. Nothing was lost: the ledger is append-only and migrations are additive." >&2
     exit 70
   fi
   record rolled_back
+  qg10_record rolled_back
   echo "ROLLED BACK — $SHA did not come up healthy; the box is back on $PREVIOUS and GREEN. Nothing was lost: the ledger is append-only and migrations are additive. Fix forward and merge again." >&2
   exit 70
 fi
+Q_ROLLBACK=exercised_failed
 record rollback_failed
+qg10_record rollback_failed
 echo "ROLLBACK FAILED — neither $SHA nor the previous $PREVIOUS came up healthy. A person is needed on the box now: docs/runbooks/automatic-deployment.md, section 'When it goes red'." >&2
 exit 71

@@ -4,6 +4,7 @@ import { PAYROLL_COPY, COPY_KEYS, SENSITIVE_ACTIONS } from '../../apps/web-erp/s
 import { bilingualGaps } from '../../packages/ui/src/index';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { SCREENS } from '../../edge/store-edge/src/screen-data';
+import { headOfficePagePayload } from '../../edge/store-edge/src/head-office-pages';
 
 /**
  * **Payroll guards the most sensitive data in the shop (owner directive 14 Aug 2026; P-04; DPDP).**
@@ -14,7 +15,8 @@ import { SCREENS } from '../../edge/store-edge/src/screen-data';
  *   • online-first — the view registers NO service worker, so nothing sensitive is cached on the device;
  *   • no sensitive data in browser storage — no localStorage / sessionStorage / IndexedDB / cookies;
  *   • sensitive identifiers are shown MASKED — the view never touches a raw bank/PAN/UAN/Aadhaar field;
- *   • it is NOT served by the offline store box (shared floor devices must never retain payroll);
+ *   • the store computer serves it (OB-380) but RETAINS nothing: no figure in the payload it injects (only who is
+ *     looking), not in the offline shell cache, sent no-store, and read live from head office in the person's session;
  *   • DEMO data is unmistakable, the screen is bilingual, and Aadhaar has no reveal on this path.
  */
 
@@ -38,8 +40,11 @@ describe('online-first: the payroll shell caches nothing', () => {
     }
   });
 
-  it('is NOT served by the offline store box (shared floor devices must never retain payroll)', () => {
-    expect((SCREENS as readonly string[]).includes('payroll'), 'payroll is registered as a store-box screen').toBe(false);
+  it('served by the store computer (OB-380), it retains nothing: identity-only payload, not in the shell cache, read live', () => {
+    expect((SCREENS as readonly string[]).includes('payroll'), 'payroll is a store-box screen since OB-380').toBe(true);
+    expect(Object.keys(headOfficePagePayload()).sort(), 'the box injects no payroll figure — only who is looking').toEqual(['permissions', 'servedBy']);
+    expect(readFileSync('apps/web-erp/web/sw.js', 'utf8'), 'payroll is never put in the offline shell cache').not.toMatch(/'\.\/payroll(-payslip)?\.(js|html)'/);
+    expect(code).toMatch(/window\.payrollLive/);
   });
 
   it('disables the state-change buttons when offline, and re-renders on connectivity change', () => {

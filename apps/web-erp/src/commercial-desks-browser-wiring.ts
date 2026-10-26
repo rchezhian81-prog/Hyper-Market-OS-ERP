@@ -6,6 +6,7 @@
 import { createB2BDeskSession, b2bDeskWords, b2bDeskOutcomeWords, rupees as b2bRupees } from './b2b-desk-session';
 import { createSupplierSubmissionsSession, supplierSubmissionsWords, supplierSubmissionsOutcomeWords, documentLine } from './supplier-submissions-session';
 import { createConcessionSession, concessionWords, concessionOutcomeWords, rupees as concessionRupees } from './concession-session';
+import { createVmiDeskSession, vmiDeskWords, vmiDeskOutcomeWords, itemWords as vmiItemWords } from './vmi-desk-session'; // FG-4 · D03-FR-04
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
@@ -15,6 +16,8 @@ export function wireCommercialDeskPages(win: Record<string, unknown>, viewerIden
   }
   if (win['supplierSubmissionsData'] !== undefined) {
     win['supplierSubmissions'] = { session: createSupplierSubmissionsSession({ viewer: viewerIdentity(win['supplierSubmissionsData']) }), words: supplierSubmissionsWords, outcomeWords: supplierSubmissionsOutcomeWords, documentLine };
+    // FG-4 · D03-FR-04: the supplier-managed stock (VMI) desk on the same page.
+    win['vmiDesk'] = { session: createVmiDeskSession({ viewer: viewerIdentity(win['supplierSubmissionsData']) }), words: vmiDeskWords, outcomeWords: vmiDeskOutcomeWords, itemWords: vmiItemWords };
   }
   if (win['concessionsData'] !== undefined) {
     win['concessions'] = { session: createConcessionSession({ viewer: viewerIdentity(win['concessionsData']) }), words: concessionWords, outcomeWords: concessionOutcomeWords, rupees: concessionRupees };

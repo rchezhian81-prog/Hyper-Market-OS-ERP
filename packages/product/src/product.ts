@@ -34,6 +34,7 @@ import type { Money } from '../../contracts/src/money';
 import type { TobaccoWarningRecord } from './tobacco-warning';
 import { nutritionProblems, nutritionRequired, type NutritionFacts } from './nutrition';
 import { liquorReason, LIQUOR_NOT_SOLD } from '../../restricted-sales/src/liquor';
+import { medicineReason, MEDICINE_NOT_SOLD } from '../../restricted-sales/src/medicines';
 
 export type ProductLifecycle = 'draft' | 'new' | 'active' | 'clearance' | 'discontinued';
 
@@ -152,6 +153,11 @@ export interface SafetyContent {
    * or sold — the flag exists so it can be REFUSED by name, not so it can be age-checked.
    */
   readonly liquor?: boolean;
+  /**
+   * B18 (OB-310: "sell no medicines; category stays blocked"): the product is a medicine. Such a product is never published
+   * or sold — the mark exists so it can be REFUSED by name.
+   */
+  readonly medicine?: boolean;
   /** OB-307: SRE itself packs or labels this product (a counter pack, a repack, an own label) — then food needs `nutrition`. */
   readonly packedBySre?: boolean;
   /** M03-FR-03 · D01-FR-04: the nutrition panel, per 100 g or 100 ml (FSSAI 2020 list). Recorded when known (OB-307). */
@@ -507,6 +513,14 @@ export function validateProduct(
   }
   if (safety?.liquor !== undefined && typeof safety.liquor !== 'boolean') {
     issues.push({ field: 'safety.liquor', severity: 'blocks_publish', message: `liquor must be true or false — "${String(safety.liquor)}" cannot be read` });
+  }
+  // B18 (OB-310): a medicine is never published either — mark, `drug` category or HSN 3003/3004. No override.
+  const medicine = medicineReason({ declaredMedicine: safety?.medicine === true, categoryKinds: regulated, hsn: product.taxClass });
+  if (medicine !== undefined) {
+    issues.push({ field: 'safety.medicine', severity: 'blocks_publish', message: `${MEDICINE_NOT_SOLD} This product cannot be published: ${medicine}` });
+  }
+  if (safety?.medicine !== undefined && typeof safety.medicine !== 'boolean') {
+    issues.push({ field: 'safety.medicine', severity: 'blocks_publish', message: `medicine must be true or false — "${String(safety.medicine)}" cannot be read` });
   }
 
   // OB-307 (M03-FR-03 · D01-FR-04): nutrition is required only for food SRE packs or labels itself; recorded when known

@@ -75,3 +75,76 @@ else {
   $('refresh').addEventListener('click', () => { void load(); });
   $('po-look').addEventListener('click', async () => { const o = await session.readDelivery($('po-id').value); if (o.result === 'ok') { looked = o.value; $('po-status').textContent = ''; } else { looked = null; say('po-status', o); } paintLookup(); });
 }
+
+// ── FG-4 · D03-FR-04: supplier-managed stock (VMI). The session (window.vmiDesk) does every call; this lays out its answer. ──
+const vmi = window.vmiDesk ?? null;
+const vmiMay = vmi?.session?.may ?? { named: false, read: false, decide: false };
+const vt = (k) => (vmi === null ? k : vmi.words(lang, k));
+const vsay = (id, out) => { $(id).textContent = vmi.outcomeWords(lang, out); };
+let vmiItems = null; let vmiQueue = null;
+
+function paintVmi() {
+  if (vmi === null) return;
+  for (const [id, key] of [['vmi-h', 'vmiH'], ['vmi-lead', 'vmiLead'], ['vmi-supplier-l', 'supplier'], ['vmi-show-text', 'show'], ['vmi-store-l', 'store'], ['vmi-product-l', 'product'], ['vmi-min-l', 'min'], ['vmi-max-l', 'max'], ['vmi-uom-l', 'uom'], ['vmi-set-text', 'setLimit'], ['vmi-q-h', 'proposalsH']]) $(id).textContent = vt(key);
+  for (const [id, name] of [['vmi-h', 'package'], ['vmi-q-h', 'list-checks']]) { const i = icon(name); if (i !== null) $(id).prepend(i, ' '); } // the text was just reset: one icon each
+  $('vmi-set').disabled = !vmiMay.decide;
+  const items = $('vmi-items'); items.replaceChildren();
+  if (vmiItems !== null) {
+    if (vmiItems.length === 0) items.append(text('li', vt('itemsNone')));
+    for (const i of vmiItems) { const li = text('li', `${i.belowMinimum ? '⚠ ' : ''}${vmi.itemWords(lang, i)}`); li.dataset.product = i.productId; li.dataset.store = i.storeId; items.append(li); }
+  }
+  const ul = $('vmi-q-rows'); ul.replaceChildren();
+  if (vmiQueue === null) return;
+  if (vmiQueue.length === 0) ul.append(text('li', vt('proposalsNone')));
+  for (const p of vmiQueue) {
+    const li = document.createElement('li'); li.dataset.proposal = p.proposalId;
+    li.append(text('strong', `${p.supplierId} → ${p.storeId}: ${p.lines.map((l) => `${l.quantity} × ${l.productId}`).join(', ')}`));
+    li.append(text('span', `${p.proposalId} · ${vt('proposed')} ${p.proposedAt.slice(0, 16).replace('T', ' ')}${p.note ? ` — ${p.note}` : ''}`, 'meta'));
+    const costs = {};
+    const form = document.createElement('div'); form.className = 'row-form';
+    for (const l of p.lines) {
+      const lab = document.createElement('label'); lab.append(text('span', `${vt('unitCost')} — ${l.productId}`));
+      const inp = document.createElement('input'); inp.inputMode = 'decimal'; inp.autocomplete = 'off'; inp.dataset.cost = l.productId; costs[l.productId] = inp; lab.append(inp); form.append(lab);
+    }
+    const poLab = document.createElement('label'); poLab.append(text('span', vt('poId'))); const po = document.createElement('input'); po.autocomplete = 'off'; po.className = 'po'; poLab.append(po); form.append(poLab);
+    const whyLab = document.createElement('label'); whyLab.append(text('span', vt('reason'))); const reason = document.createElement('input'); reason.autocomplete = 'off'; reason.className = 'reason'; whyLab.append(reason); form.append(whyLab);
+    const yes = button(vt('accept'), 'circle-check', 'vmi-accept');
+    const no = button(vt('reject'), 'circle-alert', 'vmi-reject', true);
+    yes.disabled = !vmiMay.decide; no.disabled = !vmiMay.decide;
+    const decide = async (d) => {
+      const typed = Object.fromEntries(Object.entries(costs).map(([k, v]) => [k, v.value]));
+      const out = await vmi.session.decide(p, d, reason.value, po.value, typed);
+      vsay('vmi-q-status', out);
+      if (out.result === 'ok') await loadVmi();
+    };
+    yes.addEventListener('click', () => { void decide('accept'); });
+    no.addEventListener('click', () => { void decide('reject'); });
+    const acts = document.createElement('div'); acts.className = 'actions'; acts.append(yes, no);
+    li.append(form, acts); ul.append(li);
+  }
+}
+
+async function showVmiItems() {
+  const out = await vmi.session.items($('vmi-supplier').value);
+  if (out.result === 'ok') { vmiItems = out.value.items; $('vmi-status').textContent = ''; } else { vmiItems = null; vsay('vmi-status', out); }
+  paintVmi();
+}
+async function loadVmi() {
+  const out = await vmi.session.queue();
+  if (out.result === 'ok') vmiQueue = out.value.proposals; else vsay('vmi-q-status', out);
+  if (vmiItems !== null && $('vmi-supplier').value.trim() !== '') await showVmiItems(); else paintVmi();
+}
+
+if (vmi !== null && vmiMay.read) {
+  $('vmi').hidden = false;
+  for (const [id, name] of [['vmi-show', 'boxes'], ['vmi-set', 'sliders']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+  $('vmi-show').addEventListener('click', () => { void showVmiItems(); });
+  $('vmi-set').addEventListener('click', async () => {
+    const out = await vmi.session.setLimit({ supplierId: $('vmi-supplier').value, storeId: $('vmi-store').value, productId: $('vmi-product').value, min: $('vmi-min').value, max: $('vmi-max').value, uom: $('vmi-uom').value });
+    vsay('vmi-status', out);
+    if (out.result === 'ok') await showVmiItems();
+  });
+  $('lang').addEventListener('click', () => { paintVmi(); });
+  paintVmi();
+  void loadVmi();
+}

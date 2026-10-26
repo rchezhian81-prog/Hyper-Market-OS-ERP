@@ -23,6 +23,7 @@ import {
 } from '../../../packages/storefront/src/listing-duties';
 import type { RatingSummary } from '../../../packages/storefront/src/ratings';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { tobaccoAdvertisingRefusal } from '../../../packages/restricted-sales/src/advertising';
 
 /** One fact on the online listing register — append-only. */
 export type OnlineListingRecord =
@@ -55,6 +56,8 @@ export interface OnlineStoreDeps {
   /** D01-FR-06: the product's current image on the shop's own server, when it has one. */
   readonly imageOf?: (tenantId: string, productId: string) => Promise<{ readonly version: number; readonly mediaType: string } | undefined>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** B15: whether a product is tobacco on the product master — tobacco is never listed online (COTPA s.5). */
+  readonly isTobacco?: (tenantId: string, productId: string) => Promise<boolean>;
   readonly now: () => string;
 }
 
@@ -83,13 +86,20 @@ export type OnlineSaleVerdict = { readonly soldOnline: true } | { readonly soldO
  * still carrying every duty. Else Lane 2's wording: "online listing incomplete: <field>", "other seller's goods: not sold
  * online", or "not sold online: not published online yet" / "not sold online: not in the published catalogue".
  */
-export async function onlineSaleOf(deps: Pick<OnlineStoreDeps, 'shopDetails' | 'listingFacts' | 'deliveryTerms' | 'listings'>, tenantId: string, productId: string): Promise<OnlineSaleVerdict> {
+export async function onlineSaleOf(deps: Pick<OnlineStoreDeps, 'shopDetails' | 'listingFacts' | 'deliveryTerms' | 'listings' | 'isTobacco'>, tenantId: string, productId: string): Promise<OnlineSaleVerdict> {
   const facts = await deps.listingFacts(tenantId, productId);
   if (facts === undefined) return { soldOnline: false, refusal: 'not sold online: not in the published catalogue' };
+  if (await tobaccoListingRefusal(deps, tenantId, productId) !== undefined) return { soldOnline: false, refusal: 'not sold online: tobacco may not be advertised or promoted (COTPA 2003 s.5 · B15)' };
   const verdict = checkOnlineListing(facts, latest(await deps.shopDetails(tenantId)), await deps.deliveryTerms(tenantId));
   if (!verdict.publishable) return { soldOnline: false, refusal: verdict.refusal };
   if (!listedNow(await deps.listings(tenantId)).has(productId)) return { soldOnline: false, refusal: 'not sold online: not published online yet' };
   return { soldOnline: true };
+}
+
+/** B15 (COTPA s.5): the one advertising guard on the online store — a listing is an advertisement. Undefined = may list. */
+async function tobaccoListingRefusal(deps: Pick<OnlineStoreDeps, 'isTobacco'>, tenantId: string, productId: string) {
+  const tobacco = (await deps.isTobacco?.(tenantId, productId)) === true;
+  return tobaccoAdvertisingRefusal('online_listing', [productId], () => tobacco);
 }
 
 export function onlineStoreRoutes(deps: OnlineStoreDeps): readonly Route[] {
@@ -186,6 +196,12 @@ export function onlineStoreRoutes(deps: OnlineStoreDeps): readonly Route[] {
         for (const productId of await deps.catalogueProducts(ctx.tenantId)) {
           const v = await verdictFor(ctx.tenantId, productId, d, terms);
           if (v === undefined) continue;
+          // B15: staff see a tobacco product here, never publishable and never listed, with the guard's own words.
+          const tobacco = await tobaccoListingRefusal(deps, ctx.tenantId, productId);
+          if (tobacco !== undefined) {
+            rows.push({ productId, name: v.facts.name, listed: false, publishable: false, refusal: tobacco.whatHappened, missing: [], lines: [] });
+            continue;
+          }
           rows.push({
             productId, name: v.facts.name, listed: listed.has(productId), publishable: v.verdict.publishable,
             ...(v.verdict.publishable ? {} : { refusal: v.verdict.refusal, missing: v.verdict.missing }),
@@ -211,6 +227,13 @@ export function onlineStoreRoutes(deps: OnlineStoreDeps): readonly Route[] {
           if (!isStr(b['reason'])) throw apiError(400, { code: 'reason_required', whatHappened: 'Withdrawing a product from the online store needs a reason.', wasItSaved: 'not_saved', nextSafeAction: 'Say why, and send again.' });
           await deps.recordListing(ctx.tenantId, { kind: 'withdrawn', productId, reason: (b['reason'] as string).trim(), by: ctx.userId, at }, key);
           return { status: 200, body: { productId, listed: false } };
+        }
+        // B15 first: tobacco is refused by name whatever else is true of it (there is no override — the prohibition is in the Act).
+        const tobacco = await tobaccoListingRefusal(deps, ctx.tenantId, productId);
+        if (tobacco !== undefined) {
+          // Kept: who tried to list tobacco online.
+          await deps.recordListing(ctx.tenantId, { kind: 'refused', productId, refusal: tobacco.code, missing: [], by: ctx.userId, at }, key);
+          throw apiError(422, { code: tobacco.code, whatHappened: tobacco.whatHappened, wasItSaved: 'not_saved', nextSafeAction: 'Tobacco is not listed online. It still sells at the counter, behind it, to customers aged 18 or over.' });
         }
         const v = await verdictFor(ctx.tenantId, productId, await details(ctx.tenantId), await deps.deliveryTerms(ctx.tenantId));
         if (v === undefined) throw notFound(`product ${productId} in the published catalogue`);
@@ -268,6 +291,8 @@ export function onlineStoreRoutes(deps: OnlineStoreDeps): readonly Route[] {
         const store = onlineStorePublishable(d);
         const products = [];
         for (const productId of await deps.catalogueProducts(ctx.tenantId)) {
+          // B15: tobacco is never shown on the customer's listing (an online listing is an advertisement).
+          if (await tobaccoListingRefusal(deps, ctx.tenantId, productId) !== undefined) continue;
           const v = await verdictFor(ctx.tenantId, productId, d, terms);
           if (v === undefined) continue;
           const on = listed.has(productId) && v.verdict.publishable;

@@ -13,7 +13,11 @@ export type Lang = 'en' | 'ta';
 export interface AccessRowView {
   readonly userId: string; readonly displayName: string | null; readonly signIn: 'issued' | 'requested' | 'ended' | 'none';
   readonly secondFactor: boolean | null; readonly privileged: boolean; readonly machine: boolean;
-  readonly roles: readonly { readonly roleId: string; readonly roleName: string; readonly branchScope: readonly string[] | 'all'; readonly departmentScope: readonly string[] | 'all' }[];
+  readonly roles: readonly {
+    readonly roleId: string; readonly roleName: string; readonly branchScope: readonly string[] | 'all'; readonly departmentScope: readonly string[] | 'all';
+    /** FG-4 · M02-FR-02: the supplier / category / location limits on this grant — absent or 'all' when not limited. */
+    readonly supplierScope?: readonly string[] | 'all'; readonly categoryScope?: readonly string[] | 'all'; readonly locationScope?: readonly string[] | 'all';
+  }[];
   readonly emergency: readonly { readonly roleId: string; readonly expiresAt: string }[];
   readonly moneyLimits?: Readonly<Record<string, { readonly state: string; readonly limitMinor: number | null }>>;
   readonly flags: readonly string[];
@@ -27,6 +31,7 @@ export const ACCESS_REVIEW_COPY = {
     read: 'Show who holds what', onlyFlagged: 'Only the ones that need a look', exportCsv: 'Save the permission matrix (CSV)', saved: 'The permission matrix is saved as',
     countK: 'People and machines', flaggedK: 'Need a look',
     rolesK: 'Roles', whereK: 'Where', allBranches: 'all branches', allDepartments: 'all departments', departmentsK: 'departments',
+    suppliersK: 'suppliers', categoriesK: 'categories', locationsK: 'places',
     signInK: 'Sign-in', si_issued: 'Live', si_requested: 'Being set up', si_ended: 'Ended', si_none: 'No sign-in at head office',
     secondK: 'Second factor', yes: 'Yes', no: 'No', machine: 'Machine (store computer or job)',
     limitsK: 'Money limits', k_refund: 'Refund', k_purchase_order: 'Purchase order', k_stock_adjustment: 'Stock adjustment', notSet: 'Not set', unlimited: 'Unlimited',
@@ -46,6 +51,7 @@ export const ACCESS_REVIEW_COPY = {
     read: 'யார் எதை வைத்திருக்கிறார்கள் என்று காட்டு', onlyFlagged: 'பார்வை தேவைப்படுபவை மட்டும்', exportCsv: 'அனுமதி அட்டவணையைச் சேமி (CSV)', saved: 'அனுமதி அட்டவணை இந்தப் பெயரில் சேமிக்கப்பட்டது',
     countK: 'நபர்களும் இயந்திரங்களும்', flaggedK: 'பார்வை தேவை',
     rolesK: 'பங்குகள்', whereK: 'எங்கே', allBranches: 'எல்லாக் கிளைகளும்', allDepartments: 'எல்லாத் துறைகளும்', departmentsK: 'துறைகள்',
+    suppliersK: 'விநியோகஸ்தர்கள்', categoriesK: 'வகைகள்', locationsK: 'இடங்கள்',
     signInK: 'உள்நுழைவு', si_issued: 'இயக்கத்தில்', si_requested: 'அமைக்கப்படுகிறது', si_ended: 'முடிந்தது', si_none: 'தலைமை அலுவலகத்தில் உள்நுழைவு இல்லை',
     secondK: 'இரண்டாம் அடையாளம்', yes: 'ஆம்', no: 'இல்லை', machine: 'இயந்திரம் (கடைக் கணினி அல்லது பணி)',
     limitsK: 'பண வரம்புகள்', k_refund: 'பணத்திருப்பம்', k_purchase_order: 'கொள்முதல் ஆணை', k_stock_adjustment: 'சரக்குத் திருத்தம்', notSet: 'அமைக்கப்படவில்லை', unlimited: 'வரம்பு இல்லை',
@@ -73,7 +79,10 @@ export function whereWords(lang: Lang, r: AccessRowView['roles'][number]): strin
   const w = (k: string) => accessReviewWords(lang, k);
   const branches = r.branchScope === 'all' ? w('allBranches') : r.branchScope.join(', ');
   const departments = r.departmentScope === 'all' ? w('allDepartments') : `${w('departmentsK')}: ${r.departmentScope.join(', ')}`;
-  return `${branches} · ${departments}`;
+  // FG-4 · M02-FR-02: a supplier / category / location limit is said only where one is set.
+  const limits = ([['suppliersK', r.supplierScope], ['categoriesK', r.categoryScope], ['locationsK', r.locationScope]] as const)
+    .filter(([, v]) => v !== undefined && v !== 'all').map(([k, v]) => `${w(k)}: ${(v as readonly string[]).join(', ')}`);
+  return [branches, departments, ...limits].join(' · ');
 }
 
 /** Flagged rows first, then by name — control by exception (P-03). */

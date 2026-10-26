@@ -241,7 +241,7 @@ export function recallNoticeAdapter(input: Input & { readonly transport?: Notifi
 }
 
 /** OB-297: the owner's switch for recall messages and every message attempt, append-only. */
-const RECALL_NOTICE_STREAM = streamName(STREAM.customer, 'recall-notices');
+export const RECALL_NOTICE_STREAM = streamName(STREAM.customer, 'recall-notices');
 
 // ── 1. what is under recall, for the ordering guard ──────────────────────────────────────────────────────────────────
 
@@ -341,16 +341,19 @@ export async function raiseRecallAlert(input: Input, tenantId: string, record: R
   return { raised: true, alertId, to: owners, ackDueBy };
 }
 
-/** Clear the recall's owner alert when the recall closes with evidence (kept, with its history). */
-async function clearRecallAlert(input: Input, tenantId: string, record: RecallRecord): Promise<boolean> {
+/** Clear the recall's owner alert when the recall closes with evidence, or is withdrawn (OB-383) — kept, with its history. */
+export async function clearRecallAlert(input: Input, tenantId: string, record: RecallRecord): Promise<boolean> {
   const lifecycle = alertLifecycleAdapter(input);
   const alertId = `${RECALL_ALERT_PREFIX}${record.batchId}`;
   const current = (await lifecycle.alerts(tenantId)).find((a) => a.alert.alertId === alertId);
   if (current === undefined || current.state === 'cleared') return false;
+  const w = record.withdrawal;
   await lifecycle.recordAlertEvent(tenantId, {
-    alertId, change: 'cleared', by: record.closedBy ?? 'unknown', at: input.now(),
-    detail: `the recall was closed with evidence ${record.evidenceRef ?? ''}`.trim(),
-  }, `${alertId}|cleared|${record.closedAt ?? input.now()}`);
+    alertId, change: 'cleared', by: w?.withdrawnBy ?? record.closedBy ?? 'unknown', at: input.now(),
+    detail: w !== undefined
+      ? `the recall was withdrawn as started by mistake: ${w.reason}`
+      : `the recall was closed with evidence ${record.evidenceRef ?? ''}`.trim(),
+  }, `${alertId}|cleared|${w?.withdrawnAt ?? record.closedAt ?? input.now()}`);
   return true;
 }
 

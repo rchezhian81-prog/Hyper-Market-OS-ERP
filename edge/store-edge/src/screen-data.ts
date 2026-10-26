@@ -40,6 +40,7 @@
 //                      backwards trace both work with the cable out
 
 import { laneScalesFor } from './lane-scales';
+import { HEAD_OFFICE_PAGE_SCREENS, HEAD_OFFICE_PAGE_GLOBALS, HEAD_OFFICE_PAGE_BUILDERS } from './head-office-pages'; // OB-380
 import { laneRollout } from '../../../packages/platform/src/rollout'; // OB-288 P4 (R8-9 · OB-316)
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
@@ -77,6 +78,8 @@ export const SCREENS = Object.freeze([
   'help',
   // OB-288 P6 (R8-3 · D14-FR-02): the self-checkout lane (a till the customer operates) and the read-only price kiosk.
   'self-checkout', 'price-kiosk',
+  // OB-380 (26 Oct 2026): the office pages head office answers, served by the store computer too (head-office-pages.ts).
+  ...HEAD_OFFICE_PAGE_SCREENS,
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -2827,6 +2830,8 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   // OB-288 P6: both read the till's own signed catalogue, under the till's own global.
   'self-checkout': 'posCatalogue',
   'price-kiosk': 'posCatalogue',
+  // OB-380: each head-office page under the global its bundle reads.
+  ...HEAD_OFFICE_PAGE_GLOBALS,
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -2890,6 +2895,8 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   // OB-288 P6: the till's catalogue — the same products, prices and gates the staffed till sells by.
   'self-checkout': posPayload,
   'price-kiosk': posPayload,
+  // OB-380: only who is looking — every figure on these pages is head office's live answer.
+  ...HEAD_OFFICE_PAGE_BUILDERS,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

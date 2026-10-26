@@ -336,11 +336,13 @@ import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gs
 // R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
+import { recallWithdrawSurface } from './recall-withdraw-adapters'; // FG-3 · OB-383
 import { lane2OfflineRoutes } from './lane2-offline-adapters'; // OB-288 lane 2 · P2 — store-box offline queues, expiry move
 // OB-288 P3 (procure-to-pay completion): M06-FR-02/03/04 · M07-FR-01/04 · WF-03 · WF-05 (p3-procure-adapters).
 import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks, p3Segregation, p3RebateHooks } from './p3-procure-adapters';
 // OB-288 P2 (catalogue, pricing and product legal guards): M03-FR-01–04 · M04-FR-04 · M05-FR-03/04 · D02-FR-02/04 · B15 · B17.
 import { p2CatalogueRoutes, p2TaxClassHooks, p2PromotionHooks, p2SeasonSweep } from './p2-catalogue-adapters';
+import { fg4BuyingSurface, contractExpirySweep } from './fg4-buying-adapters'; // FG-4 final gaps — contract-expiry alerts, PPV, free samples, scopes, VMI
 import { commercialDesksRoutes, commercialDeskB2BHooks, withSupplierPartnerIndex, commercialDesksSweep, commercialDeskContractState } from './commercial-desks-adapters'; // OB-288 commercial desks — B2B contracts and desk, supplier review desk, concessions
 import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep, finBridgeDayBookHooks, finBridgePaymentHooks } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
 import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
@@ -2194,6 +2196,7 @@ export function buildSurface(deps: {
     })),
   ];
   lane2RecallSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(deps.notificationTransport === undefined ? {} : { messageTransport: deps.notificationTransport }) }); // Lane 2 · P1 recall and trace (M10-FR-03/04)
+  recallWithdrawSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-3 · OB-383 a recall started by mistake is withdrawn (WF-09)
   p1IdentitySurface(surface, { store, now, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
   followupsSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 integration follow-ups (the seams between the five lanes)
   aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
@@ -2203,6 +2206,7 @@ export function buildSurface(deps: {
   ownerReportingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 4 · P2 (M29-FR-01/03/04 · M28-FR-04 · D13)
   saasRolloutSurface(surface, { store, now, plans: PROPOSED_PLANS, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P4 (M36-FR-01/03 · D12-FR-05/06 · R8-2 · R8-9 · C8 · C9 · OB-316/321/324)
   floorDevicesSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
+  fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));
@@ -2681,6 +2685,7 @@ export async function startApi(
       commercialDesks: commercialDesksSweep({ store, now }), // OB-288 commercial desks — concession expiry (M27-FR-04), B2B contracts ending
       ownerReporting: ownerReportingSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))), routes: () => built.router!.list() }), // OB-288 lane 4 · P2 — owner exception alerts (M29-FR-03), scheduled reports (M29-FR-04)
       saasRollout: saasRolloutSweep({ store, now, plans: PROPOSED_PLANS }), // OB-288 P4 — the hourly usage record (OB-321) and the customer-data volume watch (C9)
+      contractExpiry: contractExpirySweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // FG-4 — an expired / expiring display or supplier contract (M04-FR-04 · M06-FR-03)
       say: (line) => { out(`${line}\n`); },
     }),
   });

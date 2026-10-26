@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { SCREENS, GLOBAL_FOR } from '../../edge/store-edge/src/screen-data';
 import { APP_SHELL, DATA_MARKER } from '../../edge/store-edge/src/screen-server';
 
@@ -191,7 +191,15 @@ describe('the box and the screens cannot drift apart', () => {
     // The lane socket once looked for `saleId` where the record carried `id`, and refused every
     // real sale. Same class of fault, checked rather than hoped for.
     for (const screen of SCREENS) {
-      const entry = readFileSync(`apps/${APP_SHELL[screen].dir}/src/browser-entry.ts`, 'utf8');
+      // The entry and the wiring files it calls at boot (each page family wires its globals in its own file).
+      const src = `apps/${APP_SHELL[screen].dir}/src`;
+      // A thin page that names its viewer itself reads the global in its own view file (OB-380 head-office pages).
+      const view = `apps/${APP_SHELL[screen].dir}/web/${APP_SHELL[screen].file.replace(/\.html$/, '.js')}`;
+      const entry = [
+        readFileSync(`${src}/browser-entry.ts`, 'utf8'),
+        ...readdirSync(src).filter((f) => f.endsWith('-browser-wiring.ts')).map((f) => readFileSync(`${src}/${f}`, 'utf8')),
+        ...(existsSync(view) ? [readFileSync(view, 'utf8')] : []),
+      ].join('\n');
       expect(entry, `${screen}'s entry never reads window.${GLOBAL_FOR[screen]}`)
         .toMatch(new RegExp(`\\b${GLOBAL_FOR[screen]}\\b`));
     }

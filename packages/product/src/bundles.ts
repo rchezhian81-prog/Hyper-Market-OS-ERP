@@ -16,6 +16,7 @@
 // Pure and deterministic.
 
 import type { ProductRecord } from './product';
+import { tobaccoAdvertisingRefusal } from '../../restricted-sales/src/advertising';
 
 export interface BundleComponent {
   readonly productId: string;
@@ -36,7 +37,9 @@ export type BundleRefusal =
   | 'bundle_product_unknown' | 'bundle_needs_components' | 'bundle_component_repeated' | 'bundle_component_quantity'
   | 'bundle_contains_itself' | 'bundle_component_unknown' | 'bundle_component_is_a_bundle' | 'bundle_is_a_component'
   | 'bundle_component_not_sellable' | 'bundle_component_tobacco' | 'bundle_component_liquor' | 'bundle_component_carry_bag'
-  | 'bundle_component_gold';
+  | 'bundle_component_gold'
+  /** B15: the bundle product itself is tobacco — a bundle promotes what it is (COTPA s.5). */
+  | 'bundle_product_tobacco';
 
 export interface BundleProblem {
   readonly refusal: BundleRefusal;
@@ -52,6 +55,10 @@ export function bundleProblems(input: {
 }): readonly BundleProblem[] {
   const out: BundleProblem[] = [];
   const own = input.product(input.bundleProductId);
+  // B15: the ONE advertising guard every surface asks (`tobaccoAdvertisingRefusal`) — over the bundle and what it holds.
+  const tobacco = tobaccoAdvertisingRefusal('bundle', [input.bundleProductId, ...input.components.map((c) => c.productId)], (id) => input.product(id)?.safety?.tobacco === true);
+  const isTobaccoHere = new Set(tobacco?.tobaccoProductIds ?? []);
+  if (isTobaccoHere.has(input.bundleProductId)) out.push({ refusal: 'bundle_product_tobacco', detail: `${input.bundleProductId}: ${tobacco!.whatHappened}` });
   if (own === undefined) out.push({ refusal: 'bundle_product_unknown', detail: `${input.bundleProductId} is not a product head office holds — publish the bundle as a product (its own SKU, barcode and price) first` });
   const total = input.components.reduce((s, c) => s + (Number.isSafeInteger(c.quantityMinor) && c.quantityMinor > 0 ? c.quantityMinor : 0), 0);
   if (input.components.length === 0 || (input.components.length === 1 && total < 2)) {
@@ -71,7 +78,7 @@ export function bundleProblems(input: {
     if (p === undefined) { out.push({ refusal: 'bundle_component_unknown', detail: `${c.productId} is not a product head office holds` }); continue; }
     if (otherBundles.some((b) => b.bundleProductId === c.productId)) out.push({ refusal: 'bundle_component_is_a_bundle', detail: `${c.productId} is itself a bundle — list its own components instead` });
     if (p.lifecycle === 'draft' || p.lifecycle === 'discontinued' || p.recallBlocked === true) out.push({ refusal: 'bundle_component_not_sellable', detail: `${c.productId} is ${p.recallBlocked === true ? 'recall-blocked' : p.lifecycle} and cannot be sold, so a bundle cannot hold it` });
-    if (p.safety?.tobacco === true) out.push({ refusal: 'bundle_component_tobacco', detail: `${c.productId} is tobacco — a bundle promotes what it holds, and tobacco may not be promoted (COTPA s.5 · B15)` });
+    if (isTobaccoHere.has(c.productId)) out.push({ refusal: 'bundle_component_tobacco', detail: `${c.productId} is tobacco — a bundle promotes what it holds. ${tobacco!.whatHappened}` });
     if (p.safety?.liquor === true) out.push({ refusal: 'bundle_component_liquor', detail: `${c.productId} is liquor — SRE does not sell liquor (TASMAC · B17)` });
     if (p.safety?.carryBag === true) out.push({ refusal: 'bundle_component_carry_bag', detail: `${c.productId} is a carry bag — a bag is always its own line at its price (OB-173)` });
     if (p.safety?.gold === true) out.push({ refusal: 'bundle_component_gold', detail: `${c.productId} is a gold piece — each hallmarked piece is sold alone, by its HUID (B13)` });

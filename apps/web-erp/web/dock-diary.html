@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Dock diary</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Dock diary (M07-FR-01 · WF-04 · QG-02). A THIN CLIENT over head office's own dock diary: a store's day door by door, with
+      every booking still open after its window shown as late; book a door for a supplier (head office refuses an overlap by
+      name); mark a booking arrived, done, a no-show or cancelled (the last two with a reason). Its session is
+      apps/web-erp/src/dock-diary-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Dock diary</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Dock diary</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="day" hidden aria-labelledby="day-h">
+        <h3 id="day-h"></h3>
+        <div class="row-form">
+          <label for="d-store"><span id="d-store-l"></span><input id="d-store" autocomplete="off" placeholder="store-1" /></label>
+          <label for="d-date"><span id="d-date-l"></span><input id="d-date" inputmode="numeric" autocomplete="off" placeholder="2026-10-26" /></label>
+          <button id="d-show" type="button"><span id="d-show-text"></span></button>
+        </div>
+        <label for="d-reason"><span id="d-reason-l"></span><input id="d-reason" autocomplete="off" /></label>
+        <p class="status" id="d-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="day-rows"></ul>
+        <h3 id="late-h" hidden></h3>
+        <ul class="rows" id="late-rows"></ul>
+      </section>
+      <section id="book" hidden aria-labelledby="book-h">
+        <h3 id="book-h"></h3>
+        <div class="row-form">
+          <label for="b-store"><span id="b-store-l"></span><input id="b-store" autocomplete="off" placeholder="store-1" /></label>
+          <label for="b-door"><span id="b-door-l"></span><input id="b-door" autocomplete="off" placeholder="dock-1" /></label>
+          <label for="b-from"><span id="b-from-l"></span><input id="b-from" type="datetime-local" /></label>
+          <label for="b-until"><span id="b-until-l"></span><input id="b-until" type="datetime-local" /></label>
+        </div>
+        <div class="row-form">
+          <label for="b-supplier"><span id="b-supplier-l"></span><input id="b-supplier" autocomplete="off" /></label>
+          <label for="b-orders"><span id="b-orders-l"></span><input id="b-orders" autocomplete="off" /></label>
+        </div>
+        <button id="b-book" type="button"><span id="b-book-text"></span></button>
+        <p class="status" id="b-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./dock-diary.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

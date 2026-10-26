@@ -471,7 +471,7 @@ describe('every screen is served, and served its own data', () => {
 
   it('refuses anything that is not a screen, and anything that climbs out', async () => {
     const base = await serve(snapshotOf());
-    expect((await fetch(`${base}/payroll`)).status).toBe(404);
+    expect((await fetch(`${base}/erasure-console`)).status).toBe(404); // OB-380: payroll is served now; this page is not
     expect((await fetch(`${base}/manager/..%2f..%2f..%2fpackage.json`)).status).toBe(400);
     expect((await fetch(`${base}/manager/nothing-here.js`)).status).toBe(404);
   });
@@ -1230,7 +1230,7 @@ describe('the box sends a bare screen path to its own folder first', () => {
 
   it('still refuses a path that is not a screen at all', async () => {
     const base = await serve(snapshotOf());
-    expect((await fetch(`${base}/payroll`, { redirect: 'manual' })).status).toBe(404);
+    expect((await fetch(`${base}/erasure-console`, { redirect: 'manual' })).status).toBe(404);
   });
 
   it('serves each screen’s service worker, so there is something to register', async () => {
@@ -2769,7 +2769,8 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     const groups = menu!['groups'] as { group: { en: string; ta: string }; items: { id: string; path: string; current: boolean; label: { en: string; ta: string } }[] }[];
     expect(groups.map((g) => g.group.en)).toEqual(['Today', 'Receiving & QC', 'Inventory & backstore', 'Cash & finance']); // OB-16 workspaces
     const items = groups.flatMap((g) => g.items);
-    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'counts', 'stock-health', 'unsellable', 'warehouse-supervisor', 'day-reopen']);
+    // OB-380: Transfers and Store events (head-office pages on the same availability read) are served by the box now.
+    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'dock-diary', 'counts', 'transfers', 'stock-health', 'unsellable', 'warehouse-supervisor', 'demand-events', 'day-reopen']);
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
     // Both languages ride along, so the chrome never draws half a menu.
     for (const i of items) expect(i.label.ta, `${i.id} has no Tamil label`).toMatch(/[஀-௿]/);

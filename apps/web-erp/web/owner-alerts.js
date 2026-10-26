@@ -151,3 +151,32 @@ else {
     }
   }
 }
+
+// ── FG-4 · M04-FR-04 / M06-FR-03: contracts ending (window.contractExpiry does every call). The window is "not set" until
+//    the owner enters it; a contract that has already ended is raised to him whatever it says. ──
+const ce = window.contractExpiry ?? null;
+let ceRead = null;
+function paintContracts() {
+  if (ce === null) return;
+  const cw = (k) => ce.words(lang, k);
+  for (const [id, key] of [['contracts-h', 'ceH'], ['contracts-lead', 'ceLead'], ['contracts-days-l', 'days'], ['contracts-save-text', 'save'], ['contracts-why-l', 'clearWhy'], ['contracts-clear-text', 'clear']]) $(id).textContent = cw(key);
+  { const i = icon('calendar-clock'); if (i !== null) $('contracts-h').prepend(i, ' '); }
+  const ul = $('contracts-rows'); ul.replaceChildren();
+  if (ceRead === null) return;
+  const win = $('contracts-window'); win.textContent = ce.windowWords(lang, ceRead.warningDays); win.dataset.state = ceRead.warningDays.state;
+  if (ceRead.due.length === 0) ul.append(text('li', cw('dueNone')));
+  for (const d of ceRead.due) { const li = text('li', `${d.step === 'expired' ? '⚠ ' : ''}${ce.dueWords(lang, d)}`); li.dataset.alert = d.alertId; ul.append(li); }
+}
+async function loadContracts() { const o = await ce.session.read(); if (o.result === 'ok') ceRead = o.value; else $('contracts-status').textContent = ce.outcomeWords(lang, o); paintContracts(); }
+if (ce !== null && ce.session.may.read) {
+  $('contracts').hidden = false;
+  for (const [id, name] of [['contracts-save', 'check'], ['contracts-clear', 'x']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+  if (ce.session.may.manage) {
+    $('contracts-form').hidden = false;
+    $('contracts-save').addEventListener('click', async () => { const o = await ce.session.setDays($('contracts-days').value); $('contracts-status').textContent = ce.outcomeWords(lang, o); if (o.result === 'ok') await loadContracts(); });
+    $('contracts-clear').addEventListener('click', async () => { const o = await ce.session.clear($('contracts-why').value); $('contracts-status').textContent = ce.outcomeWords(lang, o); if (o.result === 'ok') await loadContracts(); });
+  }
+  $('lang').addEventListener('click', () => { paintContracts(); });
+  paintContracts();
+  void loadContracts();
+}

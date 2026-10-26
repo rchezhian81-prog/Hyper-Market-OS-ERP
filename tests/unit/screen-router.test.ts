@@ -61,7 +61,8 @@ describe('the menu resolves each of its paths to the screen it opens on this box
   });
 
   it('a path this box does not serve names nothing — never a guessed screen', () => {
-    expect(screenOfPath('/payroll')).toBeNull();
+    expect(screenOfPath('/erasure-console')).toBeNull(); // OB-380: payroll is served now; the erasure console is not
+    expect(screenOfPath('/payroll')).toBe('payroll');
     expect(screenOfPath('/admin/users')).toBeNull();
     expect(screenOfPath('/')).toBeNull();
   });

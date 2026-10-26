@@ -16,7 +16,10 @@ import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
  *   1. with the pilot's sign-in (no recent, MFA-backed re-authentication — the stand-in issuer records none), a pay-run
  *      APPROVE and LOCK and the salary BANK FILE are refused, and nothing is appended;
  *   2. the release steps still demand that re-authentication at the API boundary (the control is not loosened);
- *   3. the payroll pages stay off the store computer's menu (unserved);
+ *   3. the payroll pages stay off the store computer's menu (unserved) — until OB-380 (owner, 26 Oct 2026) had the store
+ *      computer serve every office page. Since then the hold no longer rests on that: the box's payroll page is a
+ *      READ-ONLY view of head office (payroll-live-session.ts has no write, the page draws no approve / lock / bank
+ *      file), and the switch in 5 refuses those steps whatever page asks;
  *   4. the R4 lane's pay code never reaches the release path: it imports nothing that builds a bank file or moves a pay
  *      run, writes no pay-run event, and none of its routes is a pay-run or bank-file route.
  *
@@ -95,8 +98,14 @@ describe('pay release stays on hold (OB-209)', () => {
     expect(payrollRoutes().find((r) => r.path === '/v1/hr/payroll/bank-file')?.reauth).toEqual(PAYROLL_RELEASE_STEP_UP);
   });
 
-  it('the payroll pages stay off the store computer (unserved)', () => {
-    for (const id of ['payroll', 'my-payslip']) expect(ERP_NAVIGATION.find((i) => i.id === id)?.served, id).toBe('unserved');
+  it('OB-380: the store computer serves the payroll pages only as a read-only view — no write, no approve, lock or bank file', () => {
+    for (const id of ['payroll', 'my-payslip']) expect(ERP_NAVIGATION.find((i) => i.id === id)?.served ?? 'box', id).toBe('box');
+    const live = readFileSync('apps/web-erp/src/payroll-live-session.ts', 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(live.match(/call<[^>]+>\('(GET|POST|PUT)'/g)?.every((c) => c.endsWith("'GET'")), 'every head-office call the box page makes is a read').toBe(true);
+    for (const banned of ['/append', 'bank-file', "'POST'", "'PUT'"]) expect(live.includes(banned), `the box's payroll session reaches "${banned}"`).toBe(false);
+    const view = readFileSync('apps/web-erp/web/payroll.js', 'utf8');
+    const liveView = view.slice(view.indexOf('const live = window.payrollLive'));
+    for (const banned of ['STAGE_ACTIONS', 'renderActions', 'session.can(']) expect(liveView.includes(banned), `the box's payroll view draws "${banned}"`).toBe(false);
   });
 
   it('the R4 pay code never reaches the release path', () => {

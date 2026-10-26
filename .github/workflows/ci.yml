@@ -738,12 +738,37 @@ jobs:
           if [ -z "$RELEASE_SIGNATURE" ]; then
             echo "::notice::NOT SIGNED — $GITHUB_SHA carries no release signature (the release-signing secret is not set). A box without SRE_RELEASE_PUBKEY deploys it and says NOT CHECKED; a box with it refuses it."
           fi
+          # QG-10 · WF-20 (FG-3): the box's own output is kept, so its QG-10 evidence line (health, smoke, reconcile,
+          # monitoring, rollback) reaches this run's summary and artifacts — whether it deployed or rolled back.
+          set -o pipefail
           ssh -i "$HOME/.ssh/deploy_key" \
               -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
               -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
-              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"}
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"} 2>&1 | tee release-output.txt
           echo "Canary: $GITHUB_SHA ($([ -n "$RELEASE_SIGNATURE" ] && echo signed || echo not signed)) deployed to the canary box and stayed healthy through its bake." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: QG-10 — this release's evidence line from the box (health, smoke, reconcile, monitoring, rollback)
+        if: always() && steps.box.outputs.configured == 'true'
+        run: |
+          # The box prints one line "release: QG-10 record: {…}" per attempt (infra/deploy/release.sh). It is EVIDENCE for
+          # the owner's QG-10 decision in the gate register — never a GO by itself (QG-12). A missing line is said, never hidden.
+          touch release-output.txt
+          grep '^release: QG-10 record: ' release-output.txt | sed 's/^release: QG-10 record: //' > qg10-record.jsonl || true
+          if [ -s qg10-record.jsonl ]; then
+            echo "QG-10 evidence (canary): $(node -e 'const r=JSON.parse(require("fs").readFileSync("qg10-record.jsonl","utf8").trim().split("\n").pop());console.log(`${r.outcome} — verified: ${r.verified}${r.notVerified.length?` (not verified: ${r.notVerified.join(", ")})`:""}`)')" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::The canary box printed no QG-10 record for $GITHUB_SHA (an older release script, or it stopped before the release). QG-10 is NOT evidenced for this release."
+            echo "QG-10 evidence (canary): none printed by the box for $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the QG-10 evidence line as an artifact
+        if: always() && steps.box.outputs.configured == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qg10-canary-${{ github.sha }}
+          path: qg10-record.jsonl
+          if-no-files-found: warn
 
       - name: Clean up the key material
         if: always()
@@ -810,12 +835,36 @@ jobs:
           if [ -z "$RELEASE_SIGNATURE" ]; then
             echo "::notice::NOT SIGNED — $GITHUB_SHA carries no release signature (the release-signing secret is not set). A box without SRE_RELEASE_PUBKEY deploys it and says NOT CHECKED; a box with it refuses it."
           fi
+          # QG-10 · WF-20 (FG-3): the box's own output is kept, so its QG-10 evidence line reaches this run's summary.
+          set -o pipefail
           ssh -i "$HOME/.ssh/deploy_key" \
               -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
               -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
-              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"}
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"} 2>&1 | tee release-output.txt
           echo "Deployed $GITHUB_SHA ($([ -n "$RELEASE_SIGNATURE" ] && echo signed || echo not signed)) to the demo box (merged by $GITHUB_ACTOR)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: QG-10 — this release's evidence line from the box (health, smoke, reconcile, monitoring, rollback)
+        if: always() && steps.box.outputs.configured == 'true'
+        run: |
+          # The box prints one line "release: QG-10 record: {…}" per attempt (infra/deploy/release.sh). It is EVIDENCE for
+          # the owner's QG-10 decision in the gate register — never a GO by itself (QG-12). A missing line is said, never hidden.
+          touch release-output.txt
+          grep '^release: QG-10 record: ' release-output.txt | sed 's/^release: QG-10 record: //' > qg10-record.jsonl || true
+          if [ -s qg10-record.jsonl ]; then
+            echo "QG-10 evidence (demo): $(node -e 'const r=JSON.parse(require("fs").readFileSync("qg10-record.jsonl","utf8").trim().split("\n").pop());console.log(`${r.outcome} — verified: ${r.verified}${r.notVerified.length?` (not verified: ${r.notVerified.join(", ")})`:""}`)')" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::The demo box printed no QG-10 record for $GITHUB_SHA (an older release script, or it stopped before the release). QG-10 is NOT evidenced for this release."
+            echo "QG-10 evidence (demo): none printed by the box for $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the QG-10 evidence line as an artifact
+        if: always() && steps.box.outputs.configured == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qg10-demo-${{ github.sha }}
+          path: qg10-record.jsonl
+          if-no-files-found: warn
 
       - name: Clean up the key material
         if: always()

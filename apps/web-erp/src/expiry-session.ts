@@ -41,7 +41,8 @@ import type { Ledger } from '../../../packages/ledger/src/ledger';
 /** What head office said when asked to record a recall's start or its closure. */
 export type RecallCloudResult =
   | { readonly recorded: true; readonly alreadyOpen?: boolean }
-  | { readonly recorded: false; readonly reason: string };
+  /** `code` is head office's own refusal code when it answered and said no (absent when the link dropped). */
+  | { readonly recorded: false; readonly reason: string; readonly code?: string };
 
 /**
  * The authenticated write that makes a recall a DURABLE, CENTRAL record (M10-FR-04, hard rule #6) —
@@ -59,6 +60,11 @@ export interface RecallCloudPort {
   initiate(input: { readonly batchId: string; readonly reason: string }): Promise<RecallCloudResult>;
   /** Record a recall's closure, with the evidence reference it is closed on (never blank). */
   close(input: { readonly batchId: string; readonly evidenceRef: string }): Promise<RecallCloudResult>;
+  /**
+   * OB-383: withdraw a recall started by mistake. Head office refuses it by name once any customer was contacted or
+   * any stock disposed of — the screen shows its words and the recall stays open, to be closed with evidence.
+   */
+  withdraw?(input: { readonly batchId: string; readonly reason: string; readonly noCustomerPhoned: true }): Promise<RecallCloudResult>;
 }
 
 /** What the desk can see, and what it honestly cannot. */
@@ -111,6 +117,12 @@ export interface RecallRecord {
     readonly recoveredQty: number;
     readonly disposedQty: number;
   };
+  /** OB-383: withdrawn as started by mistake, before anyone was told or anything disposed of. Kept, never deleted. */
+  readonly withdrawal?: {
+    readonly withdrawnBy: string;
+    readonly withdrawnAt: string;
+    readonly reason: string;
+  };
 }
 
 export type StartRefusal =
@@ -118,6 +130,22 @@ export type StartRefusal =
   | 'no_such_batch'
   | 'already_recalled'
   | 'needs_a_reason';
+
+export type WithdrawRefusal =
+  | 'nobody_is_named_at_this_desk'
+  | 'no_such_recall'
+  | 'already_closed'
+  | 'needs_a_reason'
+  | 'confirm_no_customer_phoned';
+
+const WITHDRAW_REFUSAL_VALUES: Readonly<Record<WithdrawRefusal, WithdrawRefusal>> = Object.freeze({
+  nobody_is_named_at_this_desk: 'nobody_is_named_at_this_desk',
+  no_such_recall: 'no_such_recall',
+  already_closed: 'already_closed',
+  needs_a_reason: 'needs_a_reason',
+  confirm_no_customer_phoned: 'confirm_no_customer_phoned',
+});
+export const WITHDRAW_REFUSAL_KINDS: readonly WithdrawRefusal[] = Object.freeze(Object.values(WITHDRAW_REFUSAL_VALUES));
 
 export type CloseRefusal =
   | 'nobody_is_named_at_this_desk'
@@ -176,6 +204,13 @@ export type StartOutcome =
   // was down, or the cloud declined. Never reported as a start (P-08); it is a "not sent", to retry.
   | { readonly ok: false; readonly notSent: true; readonly reason: string };
 
+export type WithdrawOutcome =
+  | { readonly ok: true; readonly recall: RecallRecord }
+  | { readonly ok: false; readonly refusal: WithdrawRefusal; readonly detail: string }
+  // Head office answered and said no — e.g. a customer was already contacted or stock already disposed of (OB-383).
+  | { readonly ok: false; readonly refusedByHeadOffice: true; readonly code: string; readonly reason: string }
+  | { readonly ok: false; readonly notSent: true; readonly reason: string };
+
 export type CloseOutcome =
   | { readonly ok: true; readonly recall: RecallRecord }
   | { readonly ok: false; readonly refusal: CloseRefusal; readonly detail: string }
@@ -202,11 +237,23 @@ export interface ExpirySession {
     /** Set only when closing with stock still out there, which needs a reason of its own. */
     readonly acceptUnrecovered?: string;
   }): Promise<CloseOutcome>;
+  /**
+   * OB-383: withdraw a recall started by mistake — only while open, with a reason, with the person's word that no
+   * customer has been phoned, and only if head office agrees nobody was messaged and nothing was disposed of.
+   */
+  withdraw(input: { readonly recallId: string; readonly reason: string; readonly noCustomerPhoned: boolean }): Promise<WithdrawOutcome>;
 }
 
 export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): ExpirySession {
   const nameOf = (productId: string): string =>
     ports.productNames()?.[productId] ?? productId;
+
+  // Withdrawals this screen recorded at head office in this sitting, so the list shows them at once (OB-383).
+  const withdrawnHere = new Map<string, NonNullable<RecallRecord['withdrawal']>>();
+  const current = (r: RecallRecord): RecallRecord => {
+    const w = withdrawnHere.get(r.recallId);
+    return w === undefined || r.withdrawal !== undefined ? r : { ...r, withdrawal: w };
+  };
 
   const viewOf = (recall: RecallRecord): RecallView => {
     const trace = traceBatch(ports.ledger(), recall.batchId);
@@ -225,7 +272,7 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
       // Counted, never hidden. A shop that can contact four of nineteen buyers needs to know it is
       // four of nineteen, because the other fifteen are the reason for a public notice.
       anonymousSales: soldOn.filter((s) => s.customerRef === null).length,
-      open: recall.closure === undefined,
+      open: recall.closure === undefined && recall.withdrawal === undefined,
     };
   };
 
@@ -236,7 +283,7 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
     wouldAllocate: (productId, qty) => allocateFefo(ports.batches(), productId, qty, config.now),
 
     recalls: () => {
-      const views = ports.recalls().map(viewOf);
+      const views = ports.recalls().map(current).map(viewOf);
       // Open first, then most recently started. This is a work list, and an open recall is the
       // most urgent thing on any screen in this product.
       return [...views].sort((a, b) =>
@@ -269,7 +316,7 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
           detail: `this store box has no batch "${input.batchId}". Check the code on the packaging.`,
         };
       }
-      const existing = ports.recalls().find((r) => r.batchId === input.batchId && r.closure === undefined);
+      const existing = ports.recalls().map(current).find((r) => r.batchId === input.batchId && r.closure === undefined && r.withdrawal === undefined);
       if (existing !== undefined) {
         return {
           ok: false,
@@ -304,9 +351,17 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
           detail: 'this store box has not been told who is using this screen. Closing a recall carries a name.',
         };
       }
-      const recall = ports.recalls().find((r) => r.recallId === input.recallId);
-      if (recall === undefined) {
+      const listed = ports.recalls().find((r) => r.recallId === input.recallId);
+      if (listed === undefined) {
         return { ok: false, refusal: CLOSE_REFUSAL_VALUES.no_such_recall, detail: `there is no recall "${input.recallId}".` };
+      }
+      const recall = current(listed);
+      if (recall.withdrawal !== undefined) {
+        return {
+          ok: false,
+          refusal: CLOSE_REFUSAL_VALUES.already_closed,
+          detail: `this recall was withdrawn by ${recall.withdrawal.withdrawnBy} as started by mistake. Its record is kept as it is.`,
+        };
       }
       if (recall.closure !== undefined) {
         return {
@@ -365,6 +420,55 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
           },
         },
       };
+    },
+
+    withdraw: async (input) => {
+      // Local guards first — nothing here is a "not sent", because nothing was sent.
+      if (config.userId === null) {
+        return {
+          ok: false,
+          refusal: WITHDRAW_REFUSAL_VALUES.nobody_is_named_at_this_desk,
+          detail: 'this store box has not been told who is using this screen. Withdrawing a recall carries a name.',
+        };
+      }
+      const found = ports.recalls().find((r) => r.recallId === input.recallId);
+      if (found === undefined) {
+        return { ok: false, refusal: WITHDRAW_REFUSAL_VALUES.no_such_recall, detail: `there is no recall "${input.recallId}".` };
+      }
+      const recall = current(found);
+      if (recall.closure !== undefined || recall.withdrawal !== undefined) {
+        return {
+          ok: false,
+          refusal: WITHDRAW_REFUSAL_VALUES.already_closed,
+          detail: 'this recall is no longer open. Its record is kept as it is.',
+        };
+      }
+      if (input.reason.trim().length < 5) {
+        return {
+          ok: false,
+          refusal: WITHDRAW_REFUSAL_VALUES.needs_a_reason,
+          detail: 'say in words why the recall was started by mistake.',
+        };
+      }
+      if (input.noCustomerPhoned !== true) {
+        return {
+          ok: false,
+          refusal: WITHDRAW_REFUSAL_VALUES.confirm_no_customer_phoned,
+          detail: 'a recall can be withdrawn only before any customer is called. If anyone has been phoned, close it with evidence instead.',
+        };
+      }
+      if (ports.recallCloud.withdraw === undefined) {
+        return { ok: false, notSent: true, reason: 'this screen cannot reach head office to withdraw a recall' };
+      }
+      const saved = await ports.recallCloud.withdraw({ batchId: recall.batchId, reason: input.reason.trim(), noCustomerPhoned: true });
+      if (!saved.recorded) {
+        return saved.code === undefined
+          ? { ok: false, notSent: true, reason: saved.reason }
+          : { ok: false, refusedByHeadOffice: true, code: saved.code, reason: saved.reason };
+      }
+      const withdrawal = { withdrawnBy: config.userId, withdrawnAt: config.now, reason: input.reason.trim() };
+      withdrawnHere.set(recall.recallId, withdrawal);
+      return { ok: true, recall: { ...recall, withdrawal } };
     },
   };
 }

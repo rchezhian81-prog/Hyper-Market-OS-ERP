@@ -57,6 +57,11 @@ async function append(store: EventStore, tenantId: string, stream: string, type:
   await store.append(tenantId, stream, makeEvent({ id: keyed(`r3gst-${type}`, `${tenantId}|${key}`), type, occurredAt: at, idempotencyKey: `r3gst-${tenantId}-${type}-${key}`, source: 'api/finance', payload }));
 }
 
+/** FG-4 · OB-386: the months (MMYYYY) whose GSTR-3B is locked to a filed GSTR-1 — read only (a later return takes a give-back). */
+export async function lockedGstr3bPeriods(store: EventStore, tenantId: string): Promise<ReadonlySet<string>> {
+  return new Set((await payloads<Gstr3bLock>(store, tenantId, GSTR3B, 'Gstr3bLocked')).map((l) => l.period));
+}
+
 /** The shop's own calendar date for an instant, in its time zone. */
 export function localDateOf(instant: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(instant));

@@ -6,6 +6,8 @@
 //   • OB-288 lane 2 · M10-FR-01 — a batch past its date moves to the "expired" state, once (`lane2ExpirySweep`).
 //   • OB-288 lane 4 · P2 · M29-FR-03/04 — the owner's five exception alerts raised into his inbox, and every scheduled
 //     report and export that is due prepared (`ownerReportingSweep`, owner-reporting-adapters.ts).
+//   • FG-4 · M04-FR-04 / M06-FR-03 — an expired (or, once the owner sets his window, expiring) display or supplier
+//     contract raised to every owner, cleared on renewal (`contractExpirySweep`, fg4-buying-adapters.ts).
 //
 // All run on every pass. One failing never stops the others: the rest still run, and the failure is then thrown so
 // the worker records the pass as failed for that shop and tries again next time (P-08 — never quietly).
@@ -33,6 +35,8 @@ export interface EachPassSweeps {
   readonly ownerReporting?: (tenantId: string, at: string) => Promise<number>;
   /** OB-288 P4: the hourly usage record (OB-321) and the customer-data volume watch (C9) — records made and alerts raised/cleared (absent → not run). */
   readonly saasRollout?: (tenantId: string, at: string) => Promise<number>;
+  /** FG-4 (M04-FR-04 · M06-FR-03): how many expired / expiring display or supplier contract alerts it raised (absent → not run). */
+  readonly contractExpiry?: (tenantId: string, at: string) => Promise<number>;
   readonly say: (line: string) => void;
 }
 
@@ -65,6 +69,7 @@ export function alsoEachPassOf(sweeps: EachPassSweeps): (tenantId: string, at: s
     if (sweeps.commercialDesks !== undefined) { try { const n = await sweeps.commercialDesks(tenantId, at); if (n > 0) sweeps.say(`alerts: ${n} concession / B2B contract expiry alert(s) raised to the owners of shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (sweeps.ownerReporting !== undefined) { try { const n = await sweeps.ownerReporting(tenantId, at); if (n > 0) sweeps.say(`owner: ${n} exception alert(s) raised or scheduled report(s) prepared for shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (sweeps.saasRollout !== undefined) { try { const n = await sweeps.saasRollout(tenantId, at); if (n > 0) sweeps.say(`saas: ${n} usage record(s) or data-volume alert change(s) for shop ${tenantId}`); } catch (e) { errors.push(e); } }
+    if (sweeps.contractExpiry !== undefined) { try { const n = await sweeps.contractExpiry(tenantId, at); if (n > 0) sweeps.say(`alerts: ${n} display / supplier contract expiry alert(s) raised to the owners of shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (errors.length > 0) {
       const words = errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; ');
       throw new Error(`a per-shop sweep failed: ${words}`);

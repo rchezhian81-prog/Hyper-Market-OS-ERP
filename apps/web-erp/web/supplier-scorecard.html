@@ -35,6 +35,15 @@
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: 14px; margin: 0; }
       .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      .ppv-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      .ppv-actions button, td button { display: inline-flex; align-items: center; gap: 6px; }
+      td button { min-height: var(--tap); padding: 0 12px; font-size: 14px; }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 14px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      td.over { color: var(--danger-text); font-weight: 700; }
+      h4 { margin: 8px 0 0; font-size: 15px; display: flex; gap: 6px; align-items: center; }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -65,6 +74,27 @@
         <p class="muted" id="nothing" hidden></p>
         <p id="summary"></p>
         <p class="muted" id="sources"></p>
+      </section>
+      <!-- FG-4 · D03-FR-05: the purchase-price variance — receipt cost against the order price and the contract price on the day,
+           per product and per receipt, each row opening the receipt lines behind it (drill-through). Reads only. -->
+      <section aria-labelledby="ppv-h" id="ppv-section">
+        <h3 id="ppv-h">Purchase price variance</h3>
+        <p class="muted" id="ppv-lead"></p>
+        <div class="ppv-actions"><button id="ppv-show" type="button"><span id="ppv-show-text">Show the price variance</span></button></div>
+        <p class="status" id="ppv-status" role="status" aria-live="polite"></p>
+        <div id="ppv-rollups" hidden>
+          <p id="ppv-total"></p>
+          <p class="muted" id="ppv-nc" hidden></p>
+          <h4 id="ppv-h-product"></h4>
+          <div class="table-wrap"><table id="ppv-products"><thead></thead><tbody></tbody></table></div>
+          <h4 id="ppv-h-receipt"></h4>
+          <div class="table-wrap"><table id="ppv-receipts"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div id="ppv-drill" hidden>
+          <h4 id="ppv-drill-h"></h4>
+          <div class="ppv-actions"><button id="ppv-back" type="button"><span id="ppv-back-text">Back to the roll-ups</span></button></div>
+          <div class="table-wrap"><table id="ppv-lines"><thead></thead><tbody></tbody></table></div>
+        </div>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
