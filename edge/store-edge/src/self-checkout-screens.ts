@@ -12,6 +12,8 @@
 // A number the owner has not set is not sent: the screens then say "not set" and never invent one (P-08).
 
 import type { ScreenName } from './screen-data';
+import { isKnownTimeZone } from './shop-zone';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 
 /** The screens that are served like the till: no office sign-in, the till's lane payload beside the catalogue. */
 export const TILL_SHELL_SCREENS: ReadonlySet<ScreenName> = new Set<ScreenName>(['pos', 'self-checkout']);
@@ -42,6 +44,7 @@ export function customerFacingGlobals(screen: ScreenName, policies: unknown): Re
     const watch = selfCheckoutWatchOf(policies);
     return watch === undefined ? {} : { selfCheckoutWatch: watch };
   }
-  if (screen === 'price-kiosk') return { priceKiosk: { staleAfterMinutes: kioskStaleAfterOf(policies) } };
+  // R1c (M01-FR-02): the kiosk quotes a price "from today" by the shop's zone in the pack, never its own device zone.
+  if (screen === 'price-kiosk') return { priceKiosk: { staleAfterMinutes: kioskStaleAfterOf(policies), timeZone: isKnownTimeZone(isObj(policies) ? policies['timeZone'] : undefined) ? (policies as Record<string, unknown>)['timeZone'] : DEFAULT_SHOP_CALENDAR.timeZone } };
   return {};
 }

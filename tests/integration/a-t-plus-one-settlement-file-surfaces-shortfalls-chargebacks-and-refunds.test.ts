@@ -9,6 +9,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **C13 (v2.1 addendum · M23/M14 · P-08) — POS, UPI and card captures are matched to the aggregator's T+1 settlement file;
@@ -25,7 +26,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 
 const OWNER = 'u-owner'; const MGR = 'u-mgr'; const CASHIER = 'u-cash';
 const DAY = 86_400_000;
-const today = new Date().toISOString().slice(0, 10);
+const today = shopDateIn(new Date().toISOString());
 const yesterday = new Date(Date.now() - DAY).toISOString().slice(0, 10);
 const codeOf = (r: { body: unknown }): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
 

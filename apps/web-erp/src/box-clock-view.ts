@@ -20,6 +20,13 @@ export interface BoxClockCheck {
   readonly staffMessage: string;
   readonly staffMessageTa: string;
 }
+/** R1a (M01-FR-02 · P-08): the box's time zone against the shop's (`ZoneCheck`, read loosely). */
+export interface BoxZoneCheck {
+  readonly verdict: 'in_step' | 'differs' | string;
+  readonly needsAttention: boolean;
+  readonly staffMessage: string;
+  readonly staffMessageTa: string;
+}
 export interface BoxClockFlaggedBill { readonly saleId: string; readonly number?: string; readonly laneId?: string; readonly committedAt: string; readonly offsetSeconds: number }
 
 export interface BoxClockView {
@@ -28,6 +35,8 @@ export interface BoxClockView {
   /** The icon beside the words (the one icon set): a clock for a warning, an alert when bills are being marked. */
   readonly icon: 'clock' | 'circle-alert';
   readonly words: string;
+  /** R1a: the words about the machine's time zone when it is not the shop's; empty otherwise. */
+  readonly zoneWords: string;
   readonly billsHeading: string;
   readonly bills: readonly { readonly saleId: string; readonly label: string }[];
 }
@@ -42,7 +51,7 @@ const seconds = (s: number): string => {
   return a >= 60 ? `${Math.floor(a / 60)} min ${a % 60} s` : `${a} s`;
 };
 
-export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null, bills: readonly BoxClockFlaggedBill[] | undefined | null): BoxClockView {
+export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null, bills: readonly BoxClockFlaggedBill[] | undefined | null, zone?: BoxZoneCheck | null): BoxClockView {
   const w = WORDS[lang];
   const list = Array.isArray(bills) ? bills : [];
   const flagMinutes = Math.round((clock?.thresholds?.flagSeconds ?? 300) / 60);
@@ -51,8 +60,10 @@ export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null
     label: `${b.number ?? b.saleId}${b.laneId === undefined ? '' : ` · ${w.lane} ${b.laneId}`} · ${b.committedAt} · ${w.out} ${seconds(b.offsetSeconds)}`,
   }));
   const attention = clock !== undefined && clock !== null && clock.needsAttention === true;
-  const show = attention || rows.length > 0;
-  const tone: BoxClockView['tone'] = clock?.verdict === 'flag_bills' || (rows.length > 0 && clock?.verdict !== 'in_step') ? 'error' : attention ? 'warn' : rows.length > 0 ? 'warn' : 'ok';
+  const zoneAttention = zone !== undefined && zone !== null && zone.needsAttention === true;
+  const show = attention || rows.length > 0 || zoneAttention;
+  const tone: BoxClockView['tone'] = clock?.verdict === 'flag_bills' || (rows.length > 0 && clock?.verdict !== 'in_step') ? 'error' : attention || zoneAttention ? 'warn' : rows.length > 0 ? 'warn' : 'ok';
   const words = clock === undefined || clock === null ? '' : lang === 'ta' ? clock.staffMessageTa : clock.staffMessage;
-  return { show, tone, icon: tone === 'error' ? 'circle-alert' : 'clock', words, billsHeading: w.billsHeading(flagMinutes), bills: rows };
+  const zoneWords = !zoneAttention ? '' : lang === 'ta' ? zone.staffMessageTa : zone.staffMessage;
+  return { show, tone, icon: tone === 'error' ? 'circle-alert' : 'clock', words, zoneWords, billsHeading: w.billsHeading(flagMinutes), bills: rows };
 }

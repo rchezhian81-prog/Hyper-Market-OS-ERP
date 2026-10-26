@@ -31,6 +31,7 @@ import { looksLikeCardNumber } from '../../../packages/ops/src/logging';
 import type { ReturnsDeps, ReturnRecord, StoreCreditIssue, ExchangeSettlement } from './returns';
 import type { PosDeps } from './index';
 import { acceptSale, type IncomingSale, type IncomingTender, type IntakeContext, type IntakeResult } from './sale-intake';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const DISPOSITIONS: ReadonlySet<string> = new Set(['resell', 'quarantine', 'damaged', 'scrap']);
 const SETTLED_AT_DESK: ReadonlySet<string> = new Set(['cash', 'store_credit']);
@@ -40,6 +41,8 @@ export const EXCHANGE_CREDIT_TENDER = 'exchange_credit';
 export interface ExchangeDeps extends
   Pick<ReturnsDeps, 'originalSale' | 'priorReturns' | 'priorRefunds' | 'refundThreshold' | 'returnWindow' | 'storeCreditCap' | 'canApproveRefund' | 'recordAudit' | 'now' | 'refundVersion' | 'refundApproval'>,
   Pick<PosDeps, 'catalogue' | 'currentPackVersion' | 'saleHoldingReceipt' | 'isBanked' | 'recordExceptions'> {
+  /** R1b (M01-FR-02): the shop's calendar — the replacement sale's trading day is the shop's, not the UTC date. */
+  readonly calendar?: ShopCalendarOf;
   /** The banked original as the lane sent it — for the replacement's defaults (currency, location, lane). */
   readonly bankedSale: (tenantId: string, saleId: string) => Promise<IncomingSale | undefined> | IncomingSale | undefined;
   /**
@@ -338,7 +341,7 @@ export function exchangeRoutes(deps: ExchangeDeps): readonly Route[] {
           laneId: banked.laneId,
           ...(req.replacement.locationId !== undefined ? { locationId: req.replacement.locationId } : banked.locationId !== undefined ? { locationId: banked.locationId } : {}),
           cashierId: ctx.userId,
-          tradingDay: processedAt.slice(0, 10),
+          tradingDay: await shopClock(deps.calendar).tradingDayOf(ctx.tenantId, processedAt),
           committedAt: processedAt,
           totalMinor: assessment.replacementTotalMinor,
           currency: banked.currency,

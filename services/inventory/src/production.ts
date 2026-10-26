@@ -61,6 +61,7 @@ import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../p
 import { valueAtUnitCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 /** A committed production run, recorded as the evidence a later report reads. */
 export interface StoredRun {
@@ -774,7 +775,7 @@ export async function releaseRunCore(deps: ProductionDeps, tenantId: string, run
   const produced: Movement = {
     movementId: `prod-run:${runId}:out`, productId: run.outputProductId, locationId: run.locationId, kind: 'produced',
     quantityMinor: run.outputQuantityMinor, uom: run.outputUom, occurredAt: at, enteredBy: releasedBy,
-    batchId: run.outputBatchId, expiry: run.expiresAt.slice(0, 10),
+    batchId: run.outputBatchId, expiry: /^\d{4}-\d{2}-\d{2}$/.test(run.expiresAt) ? run.expiresAt : shopDateIn(run.expiresAt), // R1c: the shop's date
     reason: `production run ${runId} batch ${run.outputBatchId} released by ${releasedBy}`,
     // OB-68: a run with its own cost carries it (the store's average cost and the month-end valuation read it); a run
     // whose ingredients had no cost carries none — "not valued" by name, never zero. (Pre-OB-68 runs: as recorded.)

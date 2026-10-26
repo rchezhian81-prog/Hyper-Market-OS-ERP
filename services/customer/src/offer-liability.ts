@@ -21,6 +21,7 @@ import { postJournal as postMapped, UnmappedKindError, MissingComponentError, Un
 import { postJournal, type FinanceDeps, type JournalEntry } from '../../finance/src/index';
 import { containsCardNumber } from '../../../packages/tender/src/card-token';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface ReferralEarned {
   readonly referralId: string;
@@ -63,6 +64,8 @@ export interface ReferralLiabilityDeps extends Pick<FinanceDeps, 'periodStates' 
   /** An account's balance across every posted journal, credit-positive. */
   readonly creditBalance: (tenantId: string, accountCode: string) => Promise<number>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** R1b (M01-FR-02): the shop's calendar — a movement's journal date and period are its shop trading day's. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -185,7 +188,7 @@ export function referralLiabilityRoutes(deps: ReferralLiabilityDeps): readonly R
             exceptions.push({ movementId: m.movementId, kind, reason, detail: err instanceof Error ? err.message : String(err) });
             continue;
           }
-          const documentDate = m.at.slice(0, 10);
+          const documentDate = await shopClock(deps.calendar).tradingDayOf(t, m.at);
           const belongsTo = documentDate.slice(0, 7);
           const closed = states.get(belongsTo) === 'closed';
           const period = closed ? await deps.nextOpenPeriod(t) : belongsTo;

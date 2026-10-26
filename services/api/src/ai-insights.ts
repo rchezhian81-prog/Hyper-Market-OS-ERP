@@ -16,6 +16,7 @@ import type { IncomingSale } from '../../pos/src/sale-intake';
 import { STREAM, inventoryAdapter, orgStructureAdapter } from './adapters';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import type { ReportProducers } from './report-producers';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 type Draft = Omit<Proposal, 'committed'>;
 const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -88,7 +89,7 @@ export async function purchaseSuggestions(store: EventStore, tenantId: string, n
     const sold = soldUnits.get(`${r.productId}@${r.locationId}`) ?? 0;
     if (r.onHandMinor > 0 || sold === 0) continue;
     out.push({
-      proposalId: `a02-stockout-${r.productId}-${r.locationId}-${now.slice(0, 10)}`, agent: 'A02', createdAt: now,
+      proposalId: `a02-stockout-${r.productId}-${r.locationId}-${shopDateIn(now)}`, agent: 'A02', createdAt: now,
       summary: `${r.productId} is out of stock at ${r.locationId} (on hand ${r.onHandMinor}) and sold ${sold} in the last 7 days — consider reordering. No reorder level is stored, so how many is the buyer's decision`,
       wouldRequire: 'POST /v1/purchase/orders/:poId by a buyer, approved by a second person (§28)',
       evidence: [
@@ -147,7 +148,7 @@ export async function transferSuggestions(store: EventStore, tenantId: string, n
     const [source, held] = best;
     const where = rank(source) === 0 ? 'its own back store' : rank(source) === 1 ? 'head office\'s warehouse' : 'another store';
     out.push({
-      proposalId: `a03-transfer-${productId}-${source}-${destination}-${now.slice(0, 10)}`, agent: 'A03', createdAt: now,
+      proposalId: `a03-transfer-${productId}-${source}-${destination}-${shopDateIn(now)}`, agent: 'A03', createdAt: now,
       summary: `${productId} is out at ${destination} (on hand ${here}) and sold ${units} there in the last 7 days; ${source} (${where}) holds ${held}. Consider a transfer — how many is the manager's decision (no transfer level is stored)`,
       wouldRequire: 'POST /v1/warehouse/transfers/:transferId by a person, dispatched and received by others (M09-FR-03 · §28)',
       evidence: [

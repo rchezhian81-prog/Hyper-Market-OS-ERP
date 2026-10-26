@@ -23,6 +23,7 @@ import type { Transfer } from '../../../packages/warehouse/src/transfers';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { STREAM, STREAM_FOR, streamName, supplierMasterAdapter, eWayBillAdapter, orgStructureAdapter } from './adapters';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
   (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
@@ -305,6 +306,8 @@ export function transferDispatchHooks(input: { readonly store: EventStore; reado
 export function r3TaxPayRoutes(input: {
   readonly store: EventStore | undefined;
   readonly now: () => string;
+  /** R1b · R1c (M01-FR-02): the tenant calendar — every business date these routes read is the shop's. */
+  readonly calendar?: ShopCalendarOf;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }): readonly Route[] {
   const { store, now } = input;
@@ -317,7 +320,7 @@ export function r3TaxPayRoutes(input: {
     ...tdsStoreRoutes(store === undefined
       ? { config: none(undefined), recordConfig: () => {}, switchState: none(undefined), recordSwitch: () => {}, payments: none([]), challans: none([]), recordChallan: (_t, c) => c, now }
       : { ...tdsStoreAdapter({ store, now }), ...audit }),
-    ...paymentDisputeRoutes(store === undefined
+    ...((deps: Parameters<typeof paymentDisputeRoutes>[0]) => paymentDisputeRoutes({ ...deps, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }))(store === undefined
       ? { disputes: none([]), responses: none([]), outcomes: none([]), recordDispute: (_t, d) => d, recordResponse: (_t, r) => r, recordOutcome: (_t, o) => o, paidBy: none(undefined), now }
       : { ...paymentDisputesAdapter({ store, now }), ...audit }),
   ];

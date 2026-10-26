@@ -23,6 +23,7 @@ import type { B2BPortalRefusal } from '../../../packages/b2b/src/portal-access';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { B2BLoginBinding } from './b2b-portal';
 import type { RecordedPayment } from './b2b-collections';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** What the customer said it sent. Pending until finance matches it to money received. */
 export interface B2BTransferNote {
@@ -60,6 +61,8 @@ export interface B2BTransferDecision {
 export type TransferNoteState = 'pending' | 'matched' | 'rejected';
 
 export interface B2BTransferNotesDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly customerForUser: (tenantId: string, userId: string) => Promise<B2BLoginBinding | undefined> | B2BLoginBinding | undefined;
   readonly recordAccessRefusal: (tenantId: string, r: B2BPortalRefusal) => Promise<void> | void;
   readonly notes: (tenantId: string) => Promise<readonly B2BTransferNote[]> | readonly B2BTransferNote[];
@@ -150,7 +153,7 @@ export function b2bTransferNoteRoutes(deps: B2BTransferNotesDeps): readonly Rout
             wasItSaved: 'not_saved', nextSafeAction: 'Send it again with those. Nothing was recorded and nothing on your account changed.',
           });
         }
-        if (b['transferredOn'] > deps.now().slice(0, 10)) {
+        if (b['transferredOn'] > await shopToday(deps, ctx.tenantId)) {
           throw apiError(400, { code: 'transfer_date_in_the_future', whatHappened: `A transfer cannot have been sent on ${b['transferredOn']}, which has not come yet.`, wasItSaved: 'not_saved', nextSafeAction: 'Send the day the money left your bank. Nothing was recorded.' });
         }
         const all = await deps.notes(ctx.tenantId);

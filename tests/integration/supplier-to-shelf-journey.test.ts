@@ -10,6 +10,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { STREAM } from '../../services/api/src/adapters';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **Supplier to shelf, connected — Batch 2's acceptance (M06 · M07 · M08 · M09 · M10 · WF-03 · WF-06 · WF-07 · §28 · P-08 ·
@@ -79,7 +80,7 @@ const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T
 export interface JourneyRow { readonly step: string; readonly route: string; readonly expected: string; readonly actual: string }
 
 async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = shopDateIn(new Date().toISOString());
   const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, idempotencyKey?: string, query?: Readonly<Record<string, string>>): Promise<Reply> =>
     h.request({ method, path, userId, tenantId: t, ...(body === undefined ? {} : { body }), ...(idempotencyKey === undefined ? {} : { idempotencyKey }), ...(query === undefined ? {} : { query }) });
   const ok = async (p: Promise<Reply>, expected: number): Promise<Body> => {
@@ -330,7 +331,7 @@ async function raceSetup(h: ApiHarness, t: string) {
   const onHand = async (loc: string): Promise<number> =>
     ((await call('GET', '/v1/inventory/availability', OWNER, undefined, undefined, { productId: 'p-dal' })).body as { rows: { locationId: string; onHandMinor: number }[] }).rows.filter((r) => r.locationId === loc).reduce((n, r) => n + r.onHandMinor, 0);
   const receive = (grnId: string, userId: string, counted: number, key = grnId) => call('POST', `/v1/inventory/goods-receipt/${grnId}`, userId, {
-    warehouseId: BACK, receivedOnDate: new Date().toISOString().slice(0, 10), currency: 'INR', poId: 'po-race',
+    warehouseId: BACK, receivedOnDate: shopDateIn(new Date().toISOString()), currency: 'INR', poId: 'po-race',
     lines: [{ lineId: 'L1', productId: 'p-dal', orderedMinor: 100, countedMinor: counted, uom: 'ea', unitCost: { minor: COST, currency: 'INR' }, condition: 'good' }],
   }, key);
   return { call, onHand, receive };

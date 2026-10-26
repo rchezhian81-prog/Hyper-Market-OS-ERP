@@ -21,6 +21,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
 import { closeTenant, type ClosureResult, type RetentionObligation, type TenantExport, type TenantLifecycleState } from '../../../packages/platform/src/lifecycle';
 import { statutoryRetentionDecision } from '../../../packages/audit/src/statutory-retention';
+import { shopToday, type ShopCalendarOf, shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 export const TENANT_CLOSURE_APPROVAL = 'tenant_closure';
 
@@ -61,6 +62,8 @@ export interface TenantClosedRecord {
 }
 
 export interface TenantLifecycleDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly exports: (tenantId: string) => Promise<readonly ExportTaken[]>;
   readonly closure: (tenantId: string) => Promise<TenantClosedRecord | undefined>;
   /** The date of the newest business record the shop holds (YYYY-MM-DD), or undefined when it holds none. */
@@ -77,8 +80,8 @@ export interface TenantLifecycleDeps {
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /** What the law still wants kept, from the shop's own newest record and its live holds. */
-export async function retentionObligationsOf(deps: Pick<TenantLifecycleDeps, 'lastBusinessRecordOn' | 'liveHolds' | 'now'>, tenantId: string): Promise<readonly RetentionObligation[]> {
-  const today = deps.now().slice(0, 10);
+export async function retentionObligationsOf(deps: Pick<TenantLifecycleDeps, 'lastBusinessRecordOn' | 'liveHolds' | 'now' | 'calendar'>, tenantId: string): Promise<readonly RetentionObligation[]> {
+  const today = await shopToday(deps, tenantId);
   const last = await deps.lastBusinessRecordOn(tenantId);
   const out: RetentionObligation[] = [];
   if (last !== undefined) {
@@ -116,7 +119,7 @@ export function tenantLifecycleRoutes(deps: TenantLifecycleDeps): readonly Route
         const state: TenantLifecycleState = closed === undefined ? 'active' : 'closed';
         const verdict = closeTenant({
           tenantId: ctx.tenantId, state, obligations, ...(exp === undefined ? {} : { exportTaken: asTenantExport(exp, ctx.tenantId) }),
-          approvedBy: 'readiness-check', today: deps.now().slice(0, 10),
+          approvedBy: 'readiness-check', today: await shopToday(deps, ctx.tenantId),
         });
         return {
           status: 200,
@@ -145,11 +148,11 @@ export function tenantLifecycleRoutes(deps: TenantLifecycleDeps): readonly Route
         }
         const already = await deps.closure(ctx.tenantId);
         if (already !== undefined) {
-          throw apiError(409, { code: 'already_closed', whatHappened: `This shop's account was closed on ${already.at.slice(0, 10)} (${already.closureId}).`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing changed.' });
+          throw apiError(409, { code: 'already_closed', whatHappened: `This shop's account was closed on ${shopDateIn(already.at)} (${already.closureId}).`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing changed.' });
         }
         const exp = await latestExport(ctx.tenantId);
         const obligations = await retentionObligationsOf(deps, ctx.tenantId);
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         // The engine judges the export FIRST (refusing before any approval is spent), then the approval.
         const preJudged = closeTenant({ tenantId: ctx.tenantId, state: 'active', obligations, ...(exp === undefined ? {} : { exportTaken: asTenantExport(exp, ctx.tenantId) }), approvedBy: 'pending', today });
         if (preJudged.outcome === 'export_not_taken') {

@@ -37,6 +37,7 @@ import {
   type SettlementLine,
   type ReconException,
 } from '../../reconciliation/src/reconciliation';
+import { shopDateIn } from '../../calendar/src/shop-clock';
 
 export interface SettlementBatch {
   readonly batchId: string;
@@ -471,7 +472,7 @@ export function openInvestigation(input: {
   if (input.ownerId.trim() === '') {
     return { opened: false, refusedBecause: 'needs_a_named_owner', detail: 'an investigation needs a named owner — an exception owned by "the cash office" is owned by nobody' };
   }
-  if (input.dueBy < input.at.slice(0, 10)) {
+  if (input.dueBy < shopDateIn(input.at)) { // R1c: the shop's date
     return { opened: false, refusedBecause: 'due_date_in_the_past', detail: `a due date of ${input.dueBy} is already in the past` };
   }
 
@@ -587,7 +588,7 @@ export function ageInvestigations(
   return buckets.map(({ label, max }, index) => {
     const min = index === 0 ? -Infinity : (buckets[index - 1]?.max ?? 0);
     const rows = open.filter((i) => {
-      const age = daysBetween(i.openedAt.slice(0, 10), asOf);
+      const age = daysBetween(shopDateIn(i.openedAt), asOf);
       return age > min && age <= max;
     });
     return {

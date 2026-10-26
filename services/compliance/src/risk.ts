@@ -28,6 +28,7 @@ import {
   type Risk, type RiskSeverity, type RiskStatus,
   type Control, type Incident, type IncidentSeverity, type Remediation, type Attestation,
 } from '../../../packages/compliance/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { Risk, Control, Incident, Remediation, Attestation } from '../../../packages/compliance/src/index';
 
@@ -49,6 +50,8 @@ const isoDateOr = (v: unknown, fallback: string): string =>
   typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : fallback;
 
 export interface RiskRegisterDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly risk: (tenantId: string, riskId: string) => Promise<Risk | undefined> | Risk | undefined;
   /** Every risk on the register — the gate-blocking reads fold over these. */
   readonly risks: (tenantId: string) => Promise<readonly Risk[]> | readonly Risk[];
@@ -496,7 +499,7 @@ export function riskRegisterRoutes(deps: RiskRegisterDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/compliance/controls/health',
       permission: 'compliance.risk.read',
       handler: async (ctx) => {
-        const asOfDate = isoDateOr(ctx.query['asOf'], deps.now().slice(0, 10));
+        const asOfDate = isoDateOr(ctx.query['asOf'], await shopToday(deps, ctx.tenantId));
         const attestationValidDays = posIntOr(ctx.query['validDays'], 90);
         const [controls, incidents, remediations, attestations] = await Promise.all([
           deps.controls(ctx.tenantId), deps.incidents(ctx.tenantId), deps.remediations(ctx.tenantId), deps.attestations(ctx.tenantId),
@@ -510,7 +513,7 @@ export function riskRegisterRoutes(deps: RiskRegisterDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/compliance/remediations/overdue',
       permission: 'compliance.risk.read',
       handler: async (ctx) => {
-        const asOfDate = isoDateOr(ctx.query['asOf'], deps.now().slice(0, 10));
+        const asOfDate = isoDateOr(ctx.query['asOf'], await shopToday(deps, ctx.tenantId));
         const overdue = overdueRemediations(await deps.remediations(ctx.tenantId), asOfDate);
         return { status: 200, body: { overdue, count: overdue.length, asOf: asOfDate } };
       },

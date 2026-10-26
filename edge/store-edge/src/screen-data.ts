@@ -65,7 +65,9 @@ import { permissionsOf } from './screen-navigation';
 import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, equipmentWork, helpWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
 import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
+import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
+import { packTimeZone } from './shop-zone';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -147,6 +149,8 @@ export interface ScreenInput {
   readonly laneLink?: { readonly lastSentAt: string | null };
   /** OB-392: the lane this box itself is (`EDGE_LANE_ID`), so a till that has not reported yet still gets its card. */
   readonly ownLaneId?: string;
+  /** R1a (M01-FR-02 · P-08): this machine's time zone against the shop's — the box dates by the shop's either way. */
+  readonly zone?: ZoneCheck;
 }
 
 /**
@@ -801,6 +805,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   if (input.clock !== undefined) payload['clock'] = input.clock;
   // OB-327: bills still commit when the clock is 5+ minutes out (hard rule #1) — and are listed here to be checked.
   if (input.clockFlaggedBills !== undefined) payload['clockFlaggedBills'] = input.clockFlaggedBills;
+  // R1a · P-08: a store computer whose own zone is not the shop's is said here (it still dates by the shop's zone).
+  if (input.zone !== undefined) payload['timeZone'] = input.zone;
 
   return payload;
 }
@@ -2213,6 +2219,8 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     laneId: laneId ?? null,
     tradingDayCutoff: policies?.tradingDayCutoff ?? '00:00',
     tradingDayCutoffKnown: policies !== undefined,
+    // R1a (M01-FR-02): the shop's zone, so the till dates by the shop's clock as this box does — never by its own device zone.
+    timeZone: packTimeZone(input.pack),
     tradingDay: input.tradingDay,
     storeId: policies?.storeId ?? null,
     // B6: the weighing scales this lane takes weight from, with the last day each stamp is valid — or why the box does not

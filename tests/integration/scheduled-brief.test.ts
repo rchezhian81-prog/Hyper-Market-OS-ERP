@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 // Scheduled daily brief, end to end (M29-FR-04, API-10). The brief that sends itself: a durable schedule
 // (due time, language), which briefs are DUE now with a MISSED day carried (not skipped — a silent no-show is
@@ -10,7 +11,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-const TODAY = new Date().toISOString().slice(0, 10); // the harness runs on the real clock, same as the server
+const TODAY = shopDateIn(new Date().toISOString()); // the harness runs on the real clock, same as the server
 
 const figures = (over: Record<string, unknown> = {}) =>
   ({ tradingDay: '2026-09-02', netSalesMinor: 12345600, marginMinor: 2469120, marginBps: 2000, basketCount: 340, cashBankedMinor: 5000000, dataAgeMinutes: 30, ...over });

@@ -21,6 +21,7 @@ import {
   type DataSubjectRequest, type RightKind, type RetentionBasis, type DataCategory, type FulfilmentRefusal,
   type NomineeRecord, type NomineeActivation, type ActivationBasis,
 } from '../../../packages/customer/src/index';
+import { shopDateIn, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { DataSubjectRequest } from '../../../packages/customer/src/index';
 
@@ -47,12 +48,15 @@ const isCategory = (v: unknown): v is DataCategory =>
 
 /** `now` + n days as a YYYY-MM-DD date — the SLA deadline the overdue read is measured against. */
 function dueDate(nowIso: string, slaDays: number): string {
-  const at = new Date(`${nowIso.slice(0, 10)}T00:00:00.000Z`);
+  // R1c: the SLA runs from the shop's own date of the request, never its UTC date (00:00–05:30 IST was a day early).
+  const at = new Date(`${shopDateIn(nowIso)}T00:00:00.000Z`);
   at.setUTCDate(at.getUTCDate() + slaDays);
   return at.toISOString().slice(0, 10);
 }
 
 export interface DataRightsDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly request: (tenantId: string, requestId: string) => Promise<DataSubjectRequest | undefined> | DataSubjectRequest | undefined;
   /** Every data-subject request for the tenant — what the overdue read is taken over. */
   readonly requests: (tenantId: string) => Promise<readonly DataSubjectRequest[]> | readonly DataSubjectRequest[];
@@ -199,7 +203,7 @@ export function dataRightsRoutes(deps: DataRightsDeps): readonly Route[] {
       handler: async (ctx) => {
         const asOf = ctx.query['asOf'];
         if (asOf !== undefined && !isDate(asOf)) throw apiError(400, { code: 'overdue_needs_a_valid_date', whatHappened: 'The overdue read takes ?asOf=YYYY-MM-DD, or none for today.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it. A read never writes.' });
-        const today = isDate(asOf) ? asOf : deps.now().slice(0, 10);
+        const today = isDate(asOf) ? asOf : await shopToday(deps, ctx.tenantId);
         const overdue = overdueRequests(await deps.requests(ctx.tenantId), today);
         return { status: 200, body: { overdue, count: overdue.length, asOf: today } };
       },

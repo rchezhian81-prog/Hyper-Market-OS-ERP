@@ -26,6 +26,7 @@ import {
   type DataSubjectRequest, type RightKind, type NomineeRecord,
 } from '../../../packages/customer/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel } from './index';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 // OB-314 (AI-NFR-11): the customer opts in to — or out of — purchase-based AI suggestions here, like any other purpose.
 const PURPOSES: readonly ConsentPurpose[] = ['transactional', 'marketing', 'profiling', 'third_party', 'ai_personalisation'];
@@ -70,7 +71,8 @@ export function consentPositions(customerId: string, records: readonly ConsentRe
 }
 
 function dueDate(nowIso: string, slaDays: number): string {
-  const at = new Date(`${nowIso.slice(0, 10)}T00:00:00.000Z`);
+  // R1c: the SLA runs from the shop's own date of the request, never its UTC date (00:00–05:30 IST was a day early).
+  const at = new Date(`${shopDateIn(nowIso)}T00:00:00.000Z`);
   at.setUTCDate(at.getUTCDate() + slaDays);
   return at.toISOString().slice(0, 10);
 }

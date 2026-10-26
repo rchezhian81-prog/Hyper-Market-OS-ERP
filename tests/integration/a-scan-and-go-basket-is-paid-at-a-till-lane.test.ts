@@ -12,6 +12,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import { prepareTillBox, signInTill } from '../support/till-operator';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **OB-350 · R8-3 · D04-FR-06 — scan-and-go: the phone builds the basket and shows the total; payment and the bag check are at
@@ -59,7 +60,7 @@ describe.each(backings)('a scan-and-go basket is paid at a till lane (OB-350) �
       if (r.status >= 300) throw new Error(`${method} ${path}: ${r.status} ${JSON.stringify(r.body)}`);
       return r.body as Record<string, unknown>;
     };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     await ok('POST', '/v1/catalogue/tax-classes/0401/rates/2017-07-01', 'u-owner', { rateBps: 0 });
     for (const [p, uom] of [[MILK, 'ea'], [DAL, 'ea'], [LOOSE, 'kg']] as const) {
       await ok('POST', `/v1/catalogue/products/${p.id}/publish`, 'u-owner', { product: { sku: `${p.id}-sku`, name: `Synthetic ${p.id}`, baseUom: uom, primaryCategoryId: 'grocery', taxClass: '0401', lifecycle: 'active' }, categories: [{ categoryId: 'grocery', name: 'Grocery (test)', parentId: null }] });

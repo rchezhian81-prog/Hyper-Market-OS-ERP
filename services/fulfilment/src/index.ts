@@ -29,6 +29,7 @@ import {
   type CodExpectation,
   type CodCollection,
 } from '../../../packages/fulfilment/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /**
  * Every outcome a drop can have. `partially_delivered` and `customer_had_no_cash` were added by the owner's written
@@ -218,6 +219,8 @@ export interface DeliveryStateRecord {
 }
 
 export interface FulfilmentDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today's run" is the shop's today, never the UTC date. */
+  readonly calendar?: ShopCalendarOf;
   readonly appendAttempt: (tenantId: string, a: DeliveryAttempt) => Promise<void> | void;
   readonly attempts: (tenantId: string, driverId: string, runDate: string) => Promise<readonly DeliveryAttempt[]> | readonly DeliveryAttempt[];
   readonly assigned: (tenantId: string, driverId: string, runDate: string) => Promise<readonly string[]> | readonly string[];
@@ -438,7 +441,7 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
       permission: 'delivery.run.read', entitlement: 'delivery',
       handler: async (ctx) => {
         const driverId = ctx.params['driverId'] ?? '';
-        const runDate = ctx.query['runDate'] ?? deps.now().slice(0, 10);
+        const runDate = ctx.query['runDate'] ?? await shopToday(deps, ctx.tenantId);
         return {
           status: 200,
           body: reconcileRun({

@@ -125,7 +125,7 @@ else {
       const out = await session.exportConsent();
       if (out.result !== 'ok') { say('cs-status', out); return; }
       const blob = new Blob([JSON.stringify(out.value, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `consent-record-${new Date().toISOString().slice(0, 10)}.json`; a.click(); URL.revokeObjectURL(a.href);
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `consent-record-${new Date().toLocaleDateString('en-CA')}.json`; a.click(); URL.revokeObjectURL(a.href);
       $('cs-status').textContent = `${t('downloaded')} ${out.value.counts.records} ${t('records')}`;
     });
     $('cs-import').addEventListener('click', async () => {

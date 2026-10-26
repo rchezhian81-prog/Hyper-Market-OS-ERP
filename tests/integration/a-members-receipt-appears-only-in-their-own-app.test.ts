@@ -9,6 +9,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { seedOnlineShop, callsFor, codeOf, saidOf, OWNER, CASHIER, CUSTOMER, OTHER_CUSTOMER, STORE } from '../support/online-shop';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **R4 · D-28 — a member's digital receipt appears only in their own app, and only once they asked — on the real API, in
@@ -55,7 +56,7 @@ describe.each(backings)('D-28 — a member\'s receipt appears only in their own 
     // OB-329: A gives her name at the desk; it is on her own receipts.
     const memberA = await enrol(MOBILE_A, 'Kavitha Raj');
     const memberB = await enrol(MOBILE_B);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     let n = 0;
     const bank = async (memberRef: string, committedAt = new Date().toISOString()) => {
       n += 1;

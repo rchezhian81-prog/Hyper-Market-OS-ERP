@@ -23,6 +23,7 @@
 //
 // Pure and deterministic: the clock is injected, nothing is stored here.
 
+import { shopDateIn } from '../../calendar/src/shop-clock';
 export type CouponKind = 'amount_off' | 'percent_off' | 'free_item' | 'referral' | 'membership';
 
 export interface Coupon {
@@ -118,12 +119,12 @@ export function redeemCoupon(input: {
     };
   }
 
-  const day = r.at.slice(0, 10);
+  const day = shopDateIn(r.at); // R1c: a coupon is judged on the shop's date, never the UTC one
   if (day > c.validUntil) {
     return { ...staleFlag, code: c.code, redeemed: false, outcome: 'expired', discountMinor: 0, detail: `this coupon expired on ${c.validUntil}` };
   }
-  if (day < c.issuedAt.slice(0, 10)) {
-    return { ...staleFlag, code: c.code, redeemed: false, outcome: 'not_yet_valid', discountMinor: 0, detail: `this coupon is not valid until ${c.issuedAt.slice(0, 10)}` };
+  if (day < shopDateIn(c.issuedAt)) {
+    return { ...staleFlag, code: c.code, redeemed: false, outcome: 'not_yet_valid', discountMinor: 0, detail: `this coupon is not valid until ${shopDateIn(c.issuedAt)}` };
   }
 
   const forThisCode = input.knownRedemptions.filter((k) => k.code === c.code);

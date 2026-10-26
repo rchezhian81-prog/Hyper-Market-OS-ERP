@@ -31,10 +31,13 @@ import { rosteredMinutes, productivityReport, departmentLabour } from '../../../
 import { adoptionGate, proposedCurricula, currentChampions, type FloorChampion, type PublishedSop, type AdoptionGateReading } from '../../../packages/workforce/src/adoption-gate';
 import { BUILT_IN_SOPS, OWNER_GUIDE_PARTS } from '../../../packages/workforce/src/sop-library.generated';
 import { STAFF_SIGN_IN_ROLES } from '../../../packages/workforce/src/access-match';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
 export interface WorkforceEnablementDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly now: () => string;
   readonly employees: (tenantId: string) => Promise<readonly Employee[]>;
   readonly shifts: (tenantId: string) => Promise<{ readonly shifts: readonly ShiftRequirement[]; readonly assignments: readonly ShiftAssignment[] }>;
@@ -99,7 +102,7 @@ export async function readAdoptionGate(deps: WorkforceEnablementDeps, tenantId: 
     peopleOf: (roleId) => (roleId === 'owner'
       ? owners.map((u) => byId.get(u) ?? { employeeId: u, name: u, branchId: '', roles: ['owner'], active: true })
       : active.filter((e) => e.roles.includes(roleId))),
-    training: trainingRows({ assignments, completions, signOffs, today: deps.now().slice(0, 10) }),
+    training: trainingRows({ assignments, completions, signOffs, today: await shopToday(deps, tenantId) }),
     sops, acknowledgements: acks, departments, champions: currentChampions(champions), activeStaff: active,
   });
 }
@@ -194,7 +197,7 @@ export function workforceEnablementRoutes(deps: WorkforceEnablementDeps): readon
       handler: async (ctx) => {
         const [assignments, completions, signOffs] = await Promise.all([deps.trainingAssignments(ctx.tenantId), deps.trainingCompletions(ctx.tenantId), deps.competencySignOffs(ctx.tenantId)]);
         const employeeId = isStr(ctx.query['employeeId']) ? ctx.query['employeeId'] : undefined;
-        const rows = trainingRows({ assignments, completions, signOffs, today: deps.now().slice(0, 10) }).filter((r) => employeeId === undefined || r.employeeId === employeeId);
+        const rows = trainingRows({ assignments, completions, signOffs, today: await shopToday(deps, ctx.tenantId) }).filter((r) => employeeId === undefined || r.employeeId === employeeId);
         return { status: 200, body: { rows, count: rows.length } };
       },
     },
@@ -206,7 +209,7 @@ export function workforceEnablementRoutes(deps: WorkforceEnablementDeps): readon
       permission: 'workforce.incentive.read',
       handler: async (ctx) => {
         const now = deps.now();
-        const to = isDay(ctx.query['to']) ? new Date(Date.parse(ctx.query['to']!) + DAY_MS).toISOString() : new Date(Date.parse(now.slice(0, 10)) + DAY_MS).toISOString();
+        const to = isDay(ctx.query['to']) ? new Date(Date.parse(ctx.query['to']!) + DAY_MS).toISOString() : new Date(Date.parse(await shopToday(deps, ctx.tenantId)) + DAY_MS).toISOString();
         const from = isDay(ctx.query['from']) ? new Date(Date.parse(ctx.query['from']!)).toISOString() : new Date(Date.parse(to) - 7 * DAY_MS).toISOString();
         if (Date.parse(from) >= Date.parse(to)) bad('window_backwards', 'The first day is after the last day.');
         const [{ shifts, assignments }, employees, sales] = await Promise.all([deps.shifts(ctx.tenantId), deps.employees(ctx.tenantId), deps.salesByDepartment(ctx.tenantId, from, to)]);

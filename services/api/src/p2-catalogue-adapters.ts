@@ -39,9 +39,10 @@ import { promotionResultRoutes, type WindowTakings } from '../../pricing/src/pro
 import type { StoredPostingMap } from '../../finance/src/day-book';
 import type { WaveLineOutcome } from '../../fulfilment/src/waves';
 import type { StoredSubstitution } from '../../orders/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
-interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }
+interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }
 
 const BUNDLES = streamName(STREAM.catalogue, 'bundles');
 const SUBSTITUTES = (productId: string): string => streamName(STREAM.catalogue, 'substitutes', productId);
@@ -64,7 +65,7 @@ async function append(store: EventStore, tenantId: string, stream: string, type:
 // ── the facts every fold reads: banked bills, their stores, tax, cost ───────────────────────────────────────────────
 
 interface BankedLine { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly unitPriceMinor: number; readonly lineTotalMinor: number; readonly discountMinor?: number }
-interface BankedSale { readonly saleId: string; readonly committedAt: string; readonly locationId?: string; readonly customerRef?: string; readonly lines: readonly BankedLine[] }
+interface BankedSale { readonly saleId: string; readonly committedAt: string; readonly tradingDay?: string; readonly locationId?: string; readonly customerRef?: string; readonly lines: readonly BankedLine[] }
 
 async function latestPack(store: EventStore, tenantId: string): Promise<SignedPack | undefined> {
   return (await store.latestOfType(tenantId, STREAM.catalogue, 'CataloguePublished'))?.event.payload as SignedPack | undefined;
@@ -111,7 +112,8 @@ async function takingsByProduct(input: Base, tenantId: string, fromIso: string, 
       t.units += unitsOf(l);
       t.salesMinor += l.lineTotalMinor;
       t.bills.add(s.saleId);
-      const taxBps = await taxOn(l.productId, s.committedAt.slice(0, 10));
+      // R1b (A6 · M01-FR-02): the rate in force on the sale's own trading day, never the UTC date of its moment.
+      const taxBps = await taxOn(l.productId, typeof s.tradingDay === 'string' && s.tradingDay !== '' ? s.tradingDay : await shopClock(input.calendar).tradingDayOf(tenantId, s.committedAt));
       const unitCost = s.storeId === undefined ? undefined : costs.costOf(l.productId, s.storeId);
       if (taxBps === undefined || unitCost === undefined) t.costKnown = false;
       else {
@@ -223,7 +225,7 @@ async function gapFacts(input: Base, tenantId: string, fromIso: string, toIso: s
 // ── M04-FR-04: placements and the floor plan ────────────────────────────────────────────────────────────────────────
 
 async function primaryPlacements(input: Base, tenantId: string, storeId: string): Promise<ReadonlyMap<string, string>> {
-  const today = input.now().slice(0, 10);
+  const today = await shopClock(input.calendar).today(tenantId, input.now()); // R1c: placements in force in the shop today
   const latest = new Map<string, { version: number; assignments: readonly { productId: string; locationId: string; primary: boolean }[] }>();
   for (const p of await planogramStoreAdapter(input).planograms(tenantId, storeId)) {
     if (p.effectiveFrom.slice(0, 10) > today) continue;
@@ -282,9 +284,9 @@ export async function bundlesInForce(input: Base, tenantId: string): Promise<rea
   return [...latest.values()];
 }
 
-export function p2CatalogueRoutes(raw: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): readonly Route[] {
+export function p2CatalogueRoutes(raw: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }): readonly Route[] {
   // With no ledger (the documented surface only) the routes run on an empty in-memory store — never a silent no-op.
-  const input: Base = { store: raw.store ?? new InMemoryEventStore(), now: raw.now, ...(raw.recordAudit === undefined ? {} : { recordAudit: raw.recordAudit }) };
+  const input: Base = { store: raw.store ?? new InMemoryEventStore(), now: raw.now, ...(raw.recordAudit === undefined ? {} : { recordAudit: raw.recordAudit }), ...(raw.calendar === undefined ? {} : { calendar: raw.calendar }) };
   const { store, now } = input;
   const audit = input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit };
   const master = productMasterAdapter(input);
@@ -303,6 +305,7 @@ export function p2CatalogueRoutes(raw: { readonly store: EventStore | undefined;
     }),
     ...searchMissRoutes({ now, recordMiss: (t, m, key) => append(store, t, SEARCH_MISSES, 'SearchMissRecorded', key, m.at, m) }),
     ...floorPlanRoutes({
+      ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
       now, registeredStores: (t) => registeredStores(input, t),
       shelfLocations: async (t, storeId) => {
         const map = await planogramStoreAdapter(input).shelfMap(t, storeId);
@@ -316,8 +319,9 @@ export function p2CatalogueRoutes(raw: { readonly store: EventStore | undefined;
           productId, salesMinor: v.salesMinor, netSalesMinor: v.netSalesMinor, costMinor: v.costKnown ? v.costMinor : undefined,
         })),
     }),
-    ...seasonPlanRoutes(seasonDeps(input)),
+    ...seasonPlanRoutes({ ...seasonDeps(input), ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }),
     ...rangeGapRoutes({
+      ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
       now,
       gapFacts: (t, from, to) => gapFacts(input, t, from, to),
       searchMisses: async (t, from, to): Promise<readonly SearchMiss[]> => {

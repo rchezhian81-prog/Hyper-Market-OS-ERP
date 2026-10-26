@@ -63,7 +63,7 @@ function paintFound() {
   facts.append(text('span', tierLine, 'tier'));
   if (s.nextTier) facts.append(text('span', `↑ ${api.rupees(s.nextTier.moreSpendMinor)} ${t('more')} ${t('nextTier')} ${s.nextTier.name}`, 'next'));
   const exp = s.expiry.state === 'not_set' ? `○ ${t('expiryNotSet')}`
-    : s.expiry.next ? `⏱ ${t('nextExpiry')}: ${s.expiry.next.points} ${t('points')} ${t('on')} ${s.expiry.next.expiresAt.slice(0, 10)}` : `✓ ${t('nothingToExpire')}`;
+    : s.expiry.next ? `⏱ ${t('nextExpiry')}: ${s.expiry.next.points} ${t('points')} ${t('on')} ${new Date(s.expiry.next.expiresAt).toLocaleDateString('en-CA')}` : `✓ ${t('nothingToExpire')}`;
   facts.append(text('span', exp, 'expiry'));
   li.append(facts);
   $('found').replaceChildren(li);
@@ -121,7 +121,7 @@ function paintTierRows() { $('tier-rows').replaceChildren(...tierDrafts.map(tier
 function draftsFrom(p) {
   tierDrafts = p.tiers.tiers.map((x) => ({ name: x.name, nameTa: x.nameTa ?? '', spendRupees: String(x.minSpend12mMinor / 100), multiplier: api.multiplierWords(x.multiplierBps) }));
 }
-function lastSet(last) { return last === null ? '' : ` · ${t('lastSet')} ${last.setBy} ${last.setAt.slice(0, 10)}: ${last.reason}`; }
+function lastSet(last) { return last === null ? '' : ` · ${t('lastSet')} ${last.setBy} ${new Date(last.setAt).toLocaleDateString('en-CA')}: ${last.reason}`; }
 function paintProgramme() {
   $('owner-only').hidden = may.configure || !may.read; $('owner-only').textContent = `○ ${t('ownerOnly')}`;
   for (const id of ['add-tier', 'save-tiers', 'save-expiry', 'tiers-reason', 'expiry-reason', 'expiry-months']) $(id).disabled = !may.configure;
@@ -177,7 +177,7 @@ function paintReferral() {
   const both = referral.referrer.state === 'set' && referral.referred.state === 'set';
   $('referral-say').className = `status ${both ? 'good' : ''}`;
   $('referral-say').dataset.referrer = referral.referrer.state; $('referral-say').dataset.referred = referral.referred.state;
-  $('referral-say').textContent = `${both ? '✓' : '○'} ${t('referrerL').replace(' (₹)', '')}: ${side(referral.referrer)} · ${t('referredL').replace(' (₹)', '')}: ${side(referral.referred)}${referral.lastSetBy ? ` · ${t('lastSet')} ${referral.lastSetBy} ${referral.lastSetAt.slice(0, 10)}: ${referral.lastReason}` : ''}`;
+  $('referral-say').textContent = `${both ? '✓' : '○'} ${t('referrerL').replace(' (₹)', '')}: ${side(referral.referrer)} · ${t('referredL').replace(' (₹)', '')}: ${side(referral.referred)}${referral.lastSetBy ? ` · ${t('lastSet')} ${referral.lastSetBy} ${new Date(referral.lastSetAt).toLocaleDateString('en-CA')}: ${referral.lastReason}` : ''}`;
 }
 async function loadReferral() {
   const out = await session.referralRewards();

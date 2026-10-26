@@ -5,6 +5,7 @@ import { bootShop, forgetfulBasket, type ShopData } from '../../apps/customer-ap
 import { httpShopTransport } from '../../apps/customer-app/src/shop-transport';
 import type { StorefrontProduct } from '../../packages/storefront/src/browse';
 import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * M20-FR-03 / §31 (Stage C, M20 slice 2) — the customer app's REAL transport against the REAL API.
@@ -47,7 +48,7 @@ async function seeded(entitled = true): Promise<ApiHarness> {
   if (entitled) await h.enableFeature(T, 'customer_app');
   await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: T, idempotencyKey: 'mv-1', body: { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: AT, enteredBy: OWNER } });
   // The shop's own figures the quote is made from (FUL-03): milk published at ₹60 for L1, and a ₹40 delivery fee.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = shopDateIn(new Date().toISOString());
   const ok = async (path: string, body: unknown, key: string) => expect((await h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: key, body })).status, path).toBeLessThan(300);
   await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
   await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', ...onlineReady(70_00) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');

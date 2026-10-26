@@ -7,6 +7,7 @@ import { expect } from 'vitest';
 import type { ApiHarness } from './api-harness';
 import type { TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { sellOnline } from './sell-online';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 export const OWNER = 'u-owner';
 export const MANAGER = 'u-manager';
@@ -54,7 +55,7 @@ export async function seedOnlineShop(h: ApiHarness, T: string, c: ShopCalls): Pr
 export async function seedOnlineCatalogue(c: ShopCalls, store = STORE): Promise<void> {
   const { ok, req } = c;
   // The API runs on the real clock: prices start today, stock arrived an hour ago (no time-of-day trap: whole days only).
-  const today = new Date().toISOString().slice(0, 10);
+  const today = shopDateIn(new Date().toISOString());
   const arrived = new Date(Date.now() - 3_600_000).toISOString();
   await ok(req('POST', '/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 500 }), 'tax 0401');
   await ok(req('POST', '/v1/catalogue/tax-classes/9603/rates/2017-07-01', { rateBps: 1_800 }), 'tax 9603');

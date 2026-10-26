@@ -43,7 +43,7 @@ function paint() {
     return p;
   }));
   $('customer-rows').replaceChildren(...(overview?.customers ?? []).map((c) => row(
-    [c.customerRef, segmentWords(c.segment), `${c.orders} ${t('orders')}`, c.lastOrderAt === null ? t('noOrder') : `${t('lastOrder')} ${c.lastOrderAt.slice(0, 10)}`],
+    [c.customerRef, segmentWords(c.segment), `${c.orders} ${t('orders')}`, c.lastOrderAt === null ? t('noOrder') : `${t('lastOrder')} ${new Date(c.lastOrderAt).toLocaleDateString('en-CA')}`],
     { customer: c.customerRef, segment: c.segment, profiled: String(c.profiled) },
   )));
 
@@ -94,7 +94,7 @@ const MARK = { open: '⚠', waiting_on_customer: '⏱', resolved: '✓', closed:
 function caseItem(c) {
   const li = el('li', `row ${c.state === 'open' || c.state === 'waiting_on_customer' ? 'tone-degraded' : 'tone-ok'}`);
   li.dataset.case = c.caseId; li.dataset.state = c.state; li.dataset.kind = c.kind;
-  li.append(el('strong', '', `${MARK[c.state] ?? '○'} ${c.caseId} — ${t(`state_${c.state}`)} · ${c.openedAt.slice(0, 10)}`));
+  li.append(el('strong', '', `${MARK[c.state] ?? '○'} ${c.caseId} — ${t(`state_${c.state}`)} · ${new Date(c.openedAt).toLocaleDateString('en-CA')}`));
   li.append(el('span', 'summary', c.summary));
   if (c.orderRef) li.append(el('span', 'muted', `${t('order')} ${c.orderRef}`));
   if (c.resolution) li.append(el('span', 'muted', `✓ ${t('answered')}: ${c.resolution}`));
@@ -112,7 +112,7 @@ function paintRecord() {
     return;
   }
   const p = record.purchases ?? { count: 0, grossMinor: 0 };
-  $('record-summary').textContent = `${t('bought')}: ${p.count} ${t('orders')} · ${t('netSpend')} ₹${((record.netSpendMinor ?? 0) / 100).toFixed(2)}${record.lastPurchaseAt ? ` · ${t('lastBill')} ${record.lastPurchaseAt.slice(0, 10)}` : ''}`;
+  $('record-summary').textContent = `${t('bought')}: ${p.count} ${t('orders')} · ${t('netSpend')} ₹${((record.netSpendMinor ?? 0) / 100).toFixed(2)}${record.lastPurchaseAt ? ` · ${t('lastBill')} ${new Date(record.lastPurchaseAt).toLocaleDateString('en-CA')}` : ''}`;
   const sh = record.serviceHistory;
   if (sh === undefined || sh.read !== true) {
     $('record-say').className = 'status err'; $('record-say').textContent = `⚠ ${sh?.say ?? ''}`;

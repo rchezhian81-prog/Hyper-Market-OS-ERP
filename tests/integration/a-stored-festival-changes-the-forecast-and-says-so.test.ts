@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **D-24 (R4, signed OB-227 · OB-220): a festival or local event the manager records changes the forecast and the order
@@ -38,7 +39,7 @@ if (DATABASE_URL !== undefined) {
 type Res = { status: number; body: unknown };
 const codeOf = (r: Res): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
 const STORE = 'store-01';
-const today = (): string => new Date().toISOString().slice(0, 10);
+const today = (): string => shopDateIn(new Date().toISOString());
 const day = (n: number): string => new Date(Date.parse(`${today()}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
 interface Forecast {
   horizon: { day: string; forecastQty: number; signalMultiplier: number; appliedSignals: string[] }[];

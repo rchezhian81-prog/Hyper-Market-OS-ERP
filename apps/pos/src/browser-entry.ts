@@ -132,6 +132,8 @@ export interface PosLane {
   readonly laneId: string | null;
   readonly tradingDayCutoff: string;
   readonly tradingDayCutoffKnown: boolean;
+  /** R1 (M01-FR-02): the shop's time zone from the store pack — the till dates by it. Absent on a page from an older box. */
+  readonly timeZone?: string;
   readonly tradingDay: string;
   readonly storeId: string | null;
   /**
@@ -939,6 +941,8 @@ export function bootPos(config?: {
   tradingDay?: string;
   /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02). Absent = midnight. */
   tradingDayCutoff?: string;
+  /** R1 (M01-FR-02): the shop's IANA time zone (the box serves the pack's). Absent = this device's own wall clock. */
+  timeZone?: string;
   /** B6: the weighing scales this lane takes weight from (store pack, via the box). Absent = never told → no weighed sale. */
   laneScales?: LaneScales;
   /** B13: the HUIDs the store computer has already sold (served with the page). */
@@ -1222,6 +1226,7 @@ export function bootPos(config?: {
     ...(config?.cashierId === undefined ? {} : { cashierId: config.cashierId }),
     ...(config?.tradingDay === undefined ? {} : { tradingDay: config.tradingDay }),
     ...(config?.tradingDayCutoff === undefined ? {} : { tradingDayCutoff: config.tradingDayCutoff }),
+    ...(config?.timeZone === undefined ? {} : { timeZone: config.timeZone }),
   };
   const session = new PosSession(
     {
@@ -2059,6 +2064,7 @@ if (browserWindow !== undefined && (globalThis as { sreQueueTill?: unknown }).sr
     ...(lanePort === undefined ? {} : { lanePort }),
     ...(lane?.laneId === undefined || lane.laneId === null || lane.laneId === '' ? {} : { laneId: lane.laneId }),
     ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
+    ...(typeof lane?.timeZone === 'string' && lane.timeZone !== '' ? { timeZone: lane.timeZone } : {}), // R1: the shop's zone
     // B6: this lane's scales as the box's store pack names them; a page without them sells nothing by weight.
     ...(lane?.scales === undefined ? {} : { laneScales: lane.scales }),
     ...(Array.isArray(lane?.soldHuids) ? { soldHuids: lane.soldHuids } : {}),

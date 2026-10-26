@@ -33,7 +33,7 @@ import {
   DATE_ORDERS, OLD_ERP_FILE_MAX_BYTES, OLD_ERP_REPORTS, columnValuesOf, headerKey, headerRowOf, judgeMapping, oldErpTemplateCsv,
 } from '../../../packages/migration/src/old-erp-reports';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
-import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
+import { makeTradingDayRule, wallClockIn } from '../../../packages/calendar/src/trading-day';
 import {
   APPROVE_REASONS,
   REJECT_REASONS,
@@ -2180,7 +2180,8 @@ function openFacilitiesVerifyPort(): FacilitiesVerifyPort {
 export async function fetchFacilitiesBoard(): Promise<FacilitiesData | null> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return null;
-  const asOf = new Date().toISOString().slice(0, 10);
+  // R1c: the local YYYY-MM-DD this browser's wall clock reads (the shop's day), not the UTC date.
+  const asOf = wallClockIn(new Date().toISOString()).slice(0, 10);
   try {
     const res = await fetchFn(`/v1/facilities/overdue?asOf=${asOf}`, {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',

@@ -27,6 +27,7 @@ import {
 } from '../../../packages/workforce/src/biometric-consent';
 import type { Employee } from '../../../packages/workforce/src/workforce';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface AttendanceMark {
   readonly markId: string;
@@ -40,6 +41,8 @@ export interface AttendanceMark {
 
 export interface BiometricConsentDeps {
   readonly now: () => string;
+  /** R1b (M01-FR-02): the shop's calendar — an attendance mark's date (pay, overtime) is the shop's date, never UTC. */
+  readonly calendar?: ShopCalendarOf;
   readonly events: (tenantId: string) => Promise<readonly BiometricConsentEvent[]>;
   readonly recordEvent: (tenantId: string, e: BiometricConsentEvent) => Promise<void>;
   readonly marks: (tenantId: string, date?: string) => Promise<readonly AttendanceMark[]>;
@@ -207,7 +210,7 @@ export function biometricConsentRoutes(deps: BiometricConsentDeps): readonly Rou
         const now = deps.now();
         const at = typeof b['at'] === 'string' && !Number.isNaN(Date.parse(b['at'])) ? new Date(Date.parse(b['at'])).toISOString() : now;
         if (Date.parse(at) > Date.parse(now) + 5 * 60_000) throw apiError(422, { code: 'mark_in_the_future', whatHappened: `The mark says ${at}, later than now (${now}).`, wasItSaved: 'not_saved', nextSafeAction: 'Check the device clock. Nothing was saved.' });
-        const m: AttendanceMark = { markId, employeeId, kind: b['kind'] as 'in' | 'out', method, at, date: at.slice(0, 10), recordedBy: ctx.userId };
+        const m: AttendanceMark = { markId, employeeId, kind: b['kind'] as 'in' | 'out', method, at, date: await shopClock(deps.calendar).dateOf(ctx.tenantId, at), recordedBy: ctx.userId };
         await deps.recordMark(ctx.tenantId, m);
         return { status: 201, body: { mark: m } };
       },

@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **R3 · C5 — the customer's nominee and the published answer-by time (OB-146 "B": 15 days), on the real API, in memory
@@ -96,7 +97,7 @@ describe.each(backings)('a nominee can be recorded and a grievance has the publi
     expect(g.status, JSON.stringify(g.body)).toBe(201);
     const grievance = g.body as { kind: string; raisedAt: string; dueBy: string; tellTheCustomer: string };
     expect(grievance.kind).toBe('grievance');
-    expect(grievance.dueBy).toBe(plusDays(grievance.raisedAt.slice(0, 10), 15));
+    expect(grievance.dueBy).toBe(plusDays(shopDateIn(grievance.raisedAt), 15)); // the SLA runs from the shop's date of the request
     expect(grievance.tellTheCustomer).toMatch(/We have your complaint \(reference GRV-0001\)\. We must answer it by/);
     // The officer's own grievance record takes the same time; a longer one breaks the published promise and is refused.
     expect((await call('POST', '/v1/privacy/data-requests/GRV-0002', 'u-dpo', { customerRef: CUSTOMER, kind: 'grievance' })).status).toBe(201);
@@ -107,7 +108,7 @@ describe.each(backings)('a nominee can be recorded and a grievance has the publi
     // Every request is due 15 days after the day it was raised (each read against its own raising day — no midnight trap).
     const all = ((await call('GET', '/v1/privacy/data-requests', 'u-dpo', undefined, { state: 'all' })).body as { queue: { requestId: string; kind: string; raisedAt: string; dueBy: string }[] }).queue;
     expect(all.map((r) => r.requestId).sort()).toEqual(['ACC-0001', 'GRV-0001', 'GRV-0002', 'NR-1']);
-    for (const r of all) expect(r.dueBy, r.requestId).toBe(plusDays(r.raisedAt.slice(0, 10), 15));
+    for (const r of all) expect(r.dueBy, r.requestId).toBe(plusDays(shopDateIn(r.raisedAt), 15));
 
     // ── OVERDUE: on the due date nothing is late; the day after, the grievance surfaces like every other request ──
     const overdue = async (asOf: string) => ((await call('GET', '/v1/privacy/data-requests/overdue', 'u-owner', undefined, { asOf })).body as { overdue: { requestId: string; kind: string; daysOverdue: number }[] }).overdue;

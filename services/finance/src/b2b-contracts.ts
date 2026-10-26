@@ -34,6 +34,7 @@ import {
 import { actionDetails, approvalNamedIn, openApproval, NO_APPROVALS, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { StoredB2BDocument, B2BCreditGate } from './b2b-documents';
 import type { B2BAccount } from './b2b-credit';
+import { shopClock, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { StoredB2BContract } from '../../../packages/b2b/src/index';
 
@@ -58,6 +59,7 @@ export interface B2BContractsDeps {
   /** The customer's credit account as it stands (payment terms alone cannot open one: a limit is needed). */
   readonly account?: (tenantId: string, customerId: string) => Promise<B2BAccount | undefined>;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }
 
 export interface B2BDeskDeps {
@@ -68,9 +70,11 @@ export interface B2BDeskDeps {
   /** Customers the desk has met: a contract, a quotation, a quote request. */
   readonly knownCustomers: (tenantId: string) => Promise<readonly string[]>;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }
 
-const today = (now: () => string): string => now().slice(0, 10);
+/** R1c (M01-FR-02): "today" for a contract in force is the shop's date, never the UTC one. */
+const today = (deps: { readonly now: () => string; readonly calendar?: ShopCalendarOf }, tenantId: string): Promise<string> => shopToday(deps, tenantId);
 
 /** A contract as the desk shows it: the record and where it stands today. */
 export function presentContract(c: StoredB2BContract, day: string): StoredB2BContract & { readonly standing: ReturnType<typeof standingOf> } {
@@ -111,7 +115,7 @@ export function b2bContractRoutes(deps: B2BContractsDeps): readonly Route[] {
           throw apiError(409, { code: 'contract_id_in_use', whatHappened: `Contract ${contractId} belongs to another customer.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a new contract id. Nothing was recorded.' });
         }
         if (before?.state === 'approved') {
-          if (sameTerms(before, terms)) return { status: 200, body: { contract: presentContract(before, today(deps.now)), alreadyRecorded: true } };
+          if (sameTerms(before, terms)) return { status: 200, body: { contract: presentContract(before, await today(deps, ctx.tenantId)), alreadyRecorded: true } };
           throw apiError(409, {
             code: 'contract_already_approved',
             whatHappened: `Contract ${contractId} was approved by ${before.approvedBy ?? 'a second person'} on ${(before.approvedAt ?? '').slice(0, 10)} and is never rewritten. New terms are a new contract.`,
@@ -128,10 +132,10 @@ export function b2bContractRoutes(deps: B2BContractsDeps): readonly Route[] {
           valueMinor: null, maker: ctx.userId, usedBy: `b2b-contract:${customerId}/${contractId}`, now: at,
         });
         if (opened === undefined) {
-          if (before !== undefined && sameTerms(before, terms)) return { status: 200, body: { contract: presentContract(before, today(deps.now)), alreadyRecorded: true } };
+          if (before !== undefined && sameTerms(before, terms)) return { status: 200, body: { contract: presentContract(before, await today(deps, ctx.tenantId)), alreadyRecorded: true } };
           const proposed: StoredB2BContract = { ...terms, state: 'proposed', proposedBy: ctx.userId, proposedAt: at };
           await deps.recordContract(ctx.tenantId, proposed);
-          return { status: 201, body: { contract: presentContract(proposed, today(deps.now)), alreadyRecorded: false, needs: 'approval' } };
+          return { status: 201, body: { contract: presentContract(proposed, await today(deps, ctx.tenantId)), alreadyRecorded: false, needs: 'approval' } };
         }
         // P-08: payment terms with no credit account and no limit would set nothing — refused by name, before the approval is spent.
         if (terms.paymentTermsDays !== undefined && terms.creditLimitMinor === undefined && deps.account !== undefined
@@ -154,7 +158,7 @@ export function b2bContractRoutes(deps: B2BContractsDeps): readonly Route[] {
             ...(terms.paymentTermsDays === undefined ? {} : { paymentTermsDays: terms.paymentTermsDays }),
           }, at);
         }
-        return { status: 201, body: { contract: presentContract(approved, today(deps.now)), alreadyRecorded: false } };
+        return { status: 201, body: { contract: presentContract(approved, await today(deps, ctx.tenantId)), alreadyRecorded: false } };
       },
     },
     {
@@ -164,7 +168,7 @@ export function b2bContractRoutes(deps: B2BContractsDeps): readonly Route[] {
       entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = (ctx.params['customerId'] ?? '').trim();
-        const day = today(deps.now);
+        const day = await today(deps, ctx.tenantId);
         const mine = (await deps.contracts(ctx.tenantId)).filter((c) => c.customerId === customerId);
         return { status: 200, body: { customerId, today: day, position: positionWords(contractPosition(mine, customerId, day)), contracts: mine.map((c) => presentContract(c, day)), asAt: deps.now() } };
       },
@@ -175,7 +179,7 @@ export function b2bContractRoutes(deps: B2BContractsDeps): readonly Route[] {
       permission: 'b2b.contract.read',
       entitlement: 'b2b',
       handler: async (ctx) => {
-        const day = today(deps.now);
+        const day = await today(deps, ctx.tenantId);
         const all = await deps.contracts(ctx.tenantId);
         return {
           status: 200,
@@ -205,9 +209,10 @@ function positionWords(p: ReturnType<typeof contractPosition>) {
 export function contractPricing(input: {
   readonly contracts: (tenantId: string) => Promise<readonly StoredB2BContract[]>;
   readonly listPriceOf: (tenantId: string, q: { readonly productId: string; readonly customerId: string; readonly storeId?: string; readonly at: string }) => Promise<number | undefined>;
+  readonly calendar?: ShopCalendarOf;
 }): (tenantId: string, q: { readonly customerId: string; readonly locationId?: string; readonly at: string; readonly lines: readonly LineToPrice[] }) => Promise<PricingResult> {
   return async (tenantId, q) => {
-    const position = contractPosition(await input.contracts(tenantId), q.customerId, q.at.slice(0, 10));
+    const position = contractPosition(await input.contracts(tenantId), q.customerId, await shopClock(input.calendar).dateOf(tenantId, q.at));
     const list = new Map<string, number | undefined>();
     for (const l of q.lines) {
       if (!list.has(l.productId)) list.set(l.productId, await input.listPriceOf(tenantId, { productId: l.productId, customerId: q.customerId, at: q.at, ...(q.locationId === undefined ? {} : { storeId: q.locationId }) }));
@@ -227,6 +232,7 @@ export function contractCreditGate(input: {
   readonly outstandingMinor: (tenantId: string, customerId: string) => Promise<number>;
   readonly approvals?: ApprovalPort;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }): B2BCreditGate {
   return async (tenantId, q) => {
     const account = await input.account(tenantId, q.customerId);
@@ -235,7 +241,7 @@ export function contractCreditGate(input: {
     }
     const outstanding = await input.outstandingMinor(tenantId, q.customerId);
     const at = input.now();
-    const position = contractPosition(await input.contracts(tenantId), q.customerId, at.slice(0, 10));
+    const position = contractPosition(await input.contracts(tenantId), q.customerId, await shopClock(input.calendar).dateOf(tenantId, at));
     const expired = position.inForce === undefined && position.lapsed !== undefined;
     const opened = typeof q.approvalId === 'string' && q.approvalId.trim() !== ''
       ? await openApproval(input.approvals ?? NO_APPROVALS, {
@@ -276,7 +282,7 @@ export function b2bDeskRoutes(deps: B2BDeskDeps): readonly Route[] {
       permission: 'b2b.document.read',
       entitlement: 'b2b',
       handler: async (ctx) => {
-        const day = today(deps.now);
+        const day = await today(deps, ctx.tenantId);
         const contracts = await deps.contracts(ctx.tenantId);
         const ids = [...new Set([...(await deps.knownCustomers(ctx.tenantId)), ...contracts.map((c) => c.customerId)])].sort();
         const customers = [];
@@ -296,7 +302,7 @@ export function b2bDeskRoutes(deps: B2BDeskDeps): readonly Route[] {
       handler: async (ctx) => {
         const customerId = (ctx.params['customerId'] ?? '').trim();
         if (customerId === '') throw notFound('a B2B customer (none named)');
-        const day = today(deps.now);
+        const day = await today(deps, ctx.tenantId);
         const [account, outstanding, documents, contracts] = await Promise.all([
           deps.account(ctx.tenantId, customerId), deps.outstandingMinor(ctx.tenantId, customerId), deps.documents(ctx.tenantId, customerId), deps.contracts(ctx.tenantId),
         ]);

@@ -23,6 +23,7 @@
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError, notFound, scopeOf } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 /** OB-358: who a relabel task goes to, decided when it is raised. */
 export type RelabelAssignee =
@@ -76,7 +77,7 @@ export async function relabelTasksFor(deps: Pick<RelabelTaskDeps, 'shelfPlaces' 
   readonly because: RelabelTask['because']; readonly sourceRef: string;
 }): Promise<readonly RelabelTask[]> {
   const out: RelabelTask[] = [];
-  const day = input.dueAt.slice(0, 10);
+  const day = shopDateIn(input.dueAt); // R1c: the shop's day
   for (const branchId of [...new Set(input.storeIds)].sort()) {
     const places = [...new Set(await deps.shelfPlaces(tenantId, branchId, input.productId))].sort();
     // OB-358: one answer per store for the product — its department's floor champion, else the store manager.

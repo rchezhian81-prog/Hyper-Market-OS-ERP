@@ -20,7 +20,7 @@ const fillIn = (words, values) => Object.entries(values).reduce((w, [k, v]) => w
 // OB-375 · OB-378: the kiosk hours and the watch numbers in force — the owner's written decision until he enters another.
 function paintFloor() {
   if (floor === null) return;
-  const from = (row) => (row.source === 'owner_decision' ? fillIn(t('fromDecision'), { decision: row.decision, date: row.decidedOn }) : fillIn(t('fromEntry'), { by: row.setBy ?? '', at: (row.setAt ?? '').slice(0, 10) }));
+  const from = (row) => (row.source === 'owner_decision' ? fillIn(t('fromDecision'), { decision: row.decision, date: row.decidedOn }) : fillIn(t('fromEntry'), { by: row.setBy ?? '', at: row.setAt ? new Date(row.setAt).toLocaleDateString('en-CA') : '' }));
   const kiosk = floor.settings.find((r) => r.setting === 'kiosk_stale_after');
   const watch = floor.settings.find((r) => r.setting === 'self_checkout_watch');
   if (kiosk) {

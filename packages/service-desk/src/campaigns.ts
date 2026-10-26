@@ -26,6 +26,7 @@
 //
 // Pure and deterministic: nothing is sent from here; this decides who may be sent to.
 
+import { shopDateIn } from '../../calendar/src/shop-clock';
 export type Channel = 'whatsapp' | 'sms' | 'email' | 'push';
 export type Purpose = 'marketing' | 'service' | 'transactional';
 
@@ -132,7 +133,7 @@ export function planCampaign(input: {
       return { customerRef, sendable: false, reason: 'do_not_contact', detail: 'this customer has asked never to be contacted' };
     }
     if (consent.withdrawnAt !== undefined) {
-      return { customerRef, sendable: false, reason: 'withdrawn', detail: `consent withdrawn on ${consent.withdrawnAt.slice(0, 10)}` };
+      return { customerRef, sendable: false, reason: 'withdrawn', detail: `consent withdrawn on ${shopDateIn(consent.withdrawnAt)}` };
     }
     // Transactional messages ride the contract, not consent — but only when they carry
     // no promotion, which is checked above for the whole campaign.

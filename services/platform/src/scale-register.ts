@@ -24,8 +24,8 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { weighingScaleVerification } from '../../../packages/facilities/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 import { approvalNamedIn, actionDetails, type ApprovalPort } from '../../identity/src/approval-requests';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 /** One weighing scale on the register, as set at head office. */
 export interface WeighingScaleRecord {
@@ -171,7 +171,7 @@ export function scaleRegisterRoutes(deps: ScaleRegisterDeps): readonly Route[] {
           after: { storeId: record.storeId, reverificationDueOn: record.reverificationDueOn, laneIds: record.laneIds.join(','), version: String(record.version), certificateRef: record.certificateRef ?? '', approvedBy: record.approvedBy ?? '' },
           correlationId: assetId,
         });
-        const verification = weighingScaleVerification({ reverificationDueOn: record.reverificationDueOn }, wallClockIn(deps.now()).slice(0, 10));
+        const verification = weighingScaleVerification({ reverificationDueOn: record.reverificationDueOn }, shopDateIn(deps.now()));
         return { status: current === undefined ? 201 : 200, body: { scale: record, verification } };
       },
     },
@@ -181,7 +181,7 @@ export function scaleRegisterRoutes(deps: ScaleRegisterDeps): readonly Route[] {
       permission: 'facilities.asset.read',
       handler: async (ctx) => {
         const storeId = typeof ctx.query['storeId'] === 'string' && ctx.query['storeId'] !== '' ? ctx.query['storeId'] : undefined;
-        const today = wallClockIn(deps.now()).slice(0, 10);
+        const today = shopDateIn(deps.now());
         const register = foldScaleRegister(await deps.scaleVersions(ctx.tenantId)).filter((s) => storeId === undefined || s.storeId === storeId);
         return {
           status: 200,

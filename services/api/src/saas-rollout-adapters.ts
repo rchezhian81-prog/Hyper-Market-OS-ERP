@@ -41,11 +41,15 @@ import {
   alertLifecycleAdapter, legalHoldsAdapter, customerAdapter, segmentDataAdapter, billingAdapter,
 } from './adapters';
 import { OWNER_ROLE_ID } from './roles';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 export interface SaasRolloutInput {
   readonly store?: EventStore;
   readonly now: () => string;
+  /** R1b · R1c (M01-FR-02): the tenant calendar — every business date these routes read is the shop's. */
+  readonly calendar?: ShopCalendarOf;
   /** The subscription plans on offer (main.ts's, the owner's OA-12 plans). */
   readonly plans: readonly Plan[];
   readonly recordAudit?: Recorder;
@@ -131,7 +135,7 @@ function meteringAdapter(input: Base): MeteringDeps {
     // The plan the shop is on: the SAME billing adapter and fold the subscription route reads (P-02); no provider call.
     currentPlanId: async (tenantId) => {
       const snap = await billingAdapter({ store, now, provider: new SandboxRecurringBillingProvider(), plans: input.plans }).subscription(tenantId);
-      return snap === undefined || (snap.endsOn !== undefined && snap.endsOn < now().slice(0, 10)) ? undefined : snap.planId;
+      return snap === undefined || (snap.endsOn !== undefined && snap.endsOn < shopDateIn(now())) ? undefined : snap.planId;
     },
     plans: () => input.plans,
     now,
@@ -148,7 +152,7 @@ function lifecycleAdapter(input: Base): TenantLifecycleDeps {
     lastBusinessRecordOn: async (tenantId) => {
       // The newest sale the shop holds, or — conservatively — today when it holds none (books are kept from the close).
       const sale = await store.latestOfType(tenantId, STREAM.sales, 'SaleCommitted');
-      return (sale?.event.occurredAt ?? now()).slice(0, 10);
+      return shopDateIn(sale?.event.occurredAt ?? now()); // R1c: the shop's date
     },
     liveHolds: async (tenantId) => (await legalHoldsAdapter({ store, now }).holds(tenantId)).filter((h) => h.liftedAt === undefined).map((h) => ({ holdId: h.holdId, reason: h.reason })),
     recordClosure: async (tenantId, record) => {
@@ -243,7 +247,7 @@ export function saasRolloutSurface(surface: Route[], raw: SaasRolloutInput): voi
   const metering = meteringAdapter(input);
   surface.push(...rolloutRoutes(rolloutAdapter(input)));
   surface.push(...meteringRoutes(metering));
-  surface.push(...tenantLifecycleRoutes(lifecycleAdapter(input)));
+  surface.push(...tenantLifecycleRoutes({ ...lifecycleAdapter(input), ...(raw.calendar === undefined ? {} : { calendar: raw.calendar }) }));
   surface.push(...consentManagerRoutes({
     ledger: (t, ref) => consentLedger(store, t, ref),
     appendConsent: async (t, r) => { await customerAdapter({ store, now }).appendConsent(t, r); },

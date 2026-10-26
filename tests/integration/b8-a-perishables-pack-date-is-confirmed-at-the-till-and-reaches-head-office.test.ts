@@ -4,6 +4,7 @@ import { bootPos } from '../../apps/pos/src/browser-entry';
 import { PackDateCheckRequiredError } from '../../apps/pos/src/session';
 import { signInTill, signInAtLane, receiptNumberAt, operatorHeader } from '../support/till-operator';
 import { backingsFor, headOffice, linkBoxTo, startBox, storePack, type Box, type Link } from '../support/till-bill-world';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **B8 · OB-298 (owner, 23 Oct 2026) — a perishable's printed pack date, confirmed with one tap at the till, from head
@@ -22,7 +23,7 @@ beforeAll(open);
 afterAll(close);
 
 const STORE = 'store-1';
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 const MILK_CODE = '8902000000016';
 const boxes: Box[] = [];
 let link: Link | undefined;

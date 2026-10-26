@@ -26,6 +26,7 @@
 import { weightedAverageValuation, share, type ValuationMovement } from './valuation';
 import type { StockLot } from './metrics';
 import type { Money } from '../../contracts/src/money';
+import { DEFAULT_SHOP_CALENDAR, shopDateIn } from '../../calendar/src/shop-clock';
 
 /** A movement to age: the valuation fields plus WHEN it happened and its batch. */
 export interface DatedMovement extends ValuationMovement {
@@ -60,6 +61,8 @@ const sumQty = (q: readonly Lot[]): number => q.reduce((s, l) => s + l.qty, 0);
 export function agedStockLots(
   movements: readonly DatedMovement[],
   currency: Money['currency'],
+  /** R1b (M01-FR-02): the shop's time zone — a lot is received on the shop's date, never the UTC date. */
+  timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone,
 ): AgeingSource {
   // Fold once, in occurrence order — weighted average and FIFO draw-down are both sequence-dependent.
   const inOrder = [...movements].sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
@@ -84,7 +87,7 @@ export function agedStockLots(
   for (const m of inOrder) {
     const q = queues.get(keyOf(m)) ?? [];
     if (m.effect === 1) {
-      q.push({ receivedOn: m.occurredAt.slice(0, 10), qty: m.quantityMinor, batchId: m.batchId ?? null });
+      q.push({ receivedOn: shopDateIn(m.occurredAt, timeZone), qty: m.quantityMinor, batchId: m.batchId ?? null });
     } else {
       let remaining = m.quantityMinor;
       while (remaining > 0 && q.length > 0) {

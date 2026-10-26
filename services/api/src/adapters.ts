@@ -331,6 +331,7 @@ import {
 } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
+import { shopClock, shopDateIn, tradingMonthIn } from '../../../packages/calendar/src/shop-clock';
 
 /** Where an adapter reads the shop's trading calendar (its time zone and cut-off, M01-FR-02) for a tenant. */
 export type ShopCalendarOf = (tenantId: string) => Promise<TradingCalendar> | TradingCalendar;
@@ -3007,7 +3008,7 @@ export function saleBlocksAdapter(input: { readonly store: EventStore; readonly 
   };
 }
 
-export function lotTraceAdapter(input: { readonly store: EventStore }): LotTraceDeps {
+export function lotTraceAdapter(input: { readonly store: EventStore; readonly calendar?: ShopCalendarOf }): LotTraceDeps {
   return {
     soldOfBatch: async (tenantId, batchId) => {
       const sales = await allOf<IncomingSale>(input.store, tenantId, STREAM.sales, 'SaleCommitted');
@@ -3049,9 +3050,11 @@ export function lotTraceAdapter(input: { readonly store: EventStore }): LotTrace
         const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
         const product = pack?.snapshot.products.find((p) => p.productId === productId);
         if (product?.batchTracked === true) {
+          // R1b (M01-FR-02): received on the shop's own date, never the UTC date of the moment.
+          const zone = (await shopCalendarOf(input.calendar)(tenantId)).timeZone;
           const receipts: BatchReceipt[] = moves
             .filter((m) => m.productId === productId && m.kind === 'received' && typeof m.batchId === 'string' && m.batchId !== '')
-            .map((m) => ({ batchId: m.batchId as string, receivedDate: m.occurredAt.slice(0, 10), qty: m.quantityMinor }));
+            .map((m) => ({ batchId: m.batchId as string, receivedDate: shopDateIn(m.occurredAt, zone), qty: m.quantityMinor }));
           const history: HistoricalSaleLine[] = [];
           for (const sale of sales) {
             for (const line of sale.lines ?? []) {
@@ -3083,10 +3086,11 @@ export function lotTraceAdapter(input: { readonly store: EventStore }): LotTrace
  * the rules. The universe of batch-tracked products is exactly those with a received batch, so no catalogue
  * lookup is needed and a sale of a non-batch product is ignored.
  */
-export function nearExpiryAdapter(input: { readonly store: EventStore; readonly now: () => string }): NearExpiryDeps {
+export function nearExpiryAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }): NearExpiryDeps {
   return {
     now: input.now,
     nearExpiry: async (tenantId, opts) => {
+      const zone = (await shopCalendarOf(input.calendar)(tenantId)).timeZone; // R1b: the shop's dates, not UTC
       const moves = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => payloadOf<Movement>(e))
         // PA-01-r1: a branch-limited read folds only its own locations' receipts, sales and waste.
         .filter((m) => opts.covers === undefined || opts.covers(m.locationId));
@@ -3095,7 +3099,7 @@ export function nearExpiryAdapter(input: { readonly store: EventStore; readonly 
         .map((m) => ({
           batchId: m.batchId as string,
           productId: m.productId,
-          receivedDate: m.occurredAt.slice(0, 10),
+          receivedDate: shopDateIn(m.occurredAt, zone),
           qty: m.quantityMinor,
           ...(typeof m.expiry === 'string' && m.expiry !== '' ? { expiry: m.expiry } : {}),
         }));
@@ -3113,7 +3117,7 @@ export function nearExpiryAdapter(input: { readonly store: EventStore; readonly 
         .filter((m) => m.kind === 'sold' && receivedProducts.has(m.productId))
         .map((m) => ({
           saleId: m.movementId,
-          soldDate: m.occurredAt.slice(0, 10),
+          soldDate: shopDateIn(m.occurredAt, zone),
           qty: m.quantityMinor,
           batchTracked: true,
           productId: m.productId,
@@ -5567,7 +5571,7 @@ export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; read
   const credit = b2bCreditAdapter(input);
   return {
     afterTaxInvoice: async (tenantId, customerId, doc) => {
-      const issuedOn = doc.issuedAt.slice(0, 10);
+      const issuedOn = shopDateIn(doc.issuedAt); // R1b: the invoice's own date in the shop (its terms run from it)
       const terms = (await credit.account(tenantId, customerId))?.paymentTermsDays ?? 0;
       const dueOn = new Date(Date.parse(`${issuedOn}T00:00:00.000Z`) + terms * 86_400_000).toISOString().slice(0, 10);
       const invoice: CollectionsReceivable = { invoiceId: doc.documentId, number: doc.number, customerId, tenantId, issuedOn, dueOn, grossMinor: doc.grossMinor, settledMinor: 0 };
@@ -6068,7 +6072,7 @@ export function transfersAdapter(input: {
     // that still stand) is shared out across the transfer's lines in order, so two batches cannot both spend it.
     availableAt: async (tenantId, fromLocationId, lines) => {
       const registry = await recalls.registry(tenantId);
-      const today = input.now().slice(0, 10);
+      const today = shopDateIn(input.now()); // R1c: expiry judged on the shop's today
       const batches = (await inv.batches!(tenantId)).filter((b) => b.locationId === fromLocationId);
       const reserved = new Map<string, number>();
       for (const r of await outstandingReservationsAt(input.store, tenantId, fromLocationId, input.now())) {
@@ -6724,6 +6728,7 @@ export function weighedCostingAdapter(input: {
 export function settlementAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }): SettlementRoutesDeps {
   const batches = (tenantId: string) =>
     allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
@@ -6829,7 +6834,8 @@ export function settlementAdapter(input: {
       const out: CapturedTender[] = [];
       for (const e of sales) {
         const sale = e.event.payload as IncomingSale;
-        const capturedOn = sale.committedAt.slice(0, 10);
+        // R1b: the bank day a tender is matched on is the sale's own trading day (the shop's), never the UTC date.
+        const capturedOn = typeof sale.tradingDay === 'string' && sale.tradingDay !== '' ? sale.tradingDay : tradingDayIn(sale.committedAt, await shopCalendarOf(input.calendar)(tenantId));
         sale.tenders.forEach((t, i) => {
           const key = settlementKeyOf(t);
           if (key !== undefined) out.push({ id: `${sale.saleId}:t${i}`, ref: key, amountMinor: t.amountMinor, capturedOn });
@@ -7103,6 +7109,8 @@ export function inventoryAdapter(input: {
   readonly now: () => string;
   /** Overridable so a test can reach the threshold without appending two thousand events. */
   readonly snapshotEvery?: number;
+  /** R1b: the shop's calendar — stock ageing dates each lot by the shop's date. */
+  readonly calendar?: ShopCalendarOf;
 }): InventoryDeps {
   const every = input.snapshotEvery ?? SNAPSHOT_EVERY;
 
@@ -7274,6 +7282,7 @@ export function inventoryAdapter(input: {
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
+        (await shopCalendarOf(input.calendar)(tenantId)).timeZone, // R1b: a lot is received on the shop's date
       );
     },
 
@@ -8368,7 +8377,7 @@ async function recordCutoverGoIn(store: EventStore, tenantId: string, go: Cutove
   const res = await store.append(tenantId, CUTOVER_GO_STREAM, makeEvent({ id: `cutover-go-${go.cutoverId}-${randomUUID()}`, type: 'CutoverGoRecorded', occurredAt: go.goAt, idempotencyKey: `cutover-go-${tenantId}` /* GT-05 / OB-52: ONE GO per tenant, the real cutover's; a later GO under any id resolves to it */, source: 'api/migration', payload: go }));
   return res.record.event.payload as CutoverGo;
 }
-export function openingReversalAdapter(input: { readonly store: EventStore; readonly now: () => string }): OpeningReversalDeps {
+export function openingReversalAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }): OpeningReversalDeps {
   const stockOf = async (tenantId: string, loadId: string): Promise<{ opened: Movement[]; reversed: Movement[] }> => {
     const grnIds = new Set((await goodsReceiptAdapter(input).all(tenantId)).map((g) => g.grnId)
       .filter((id) => id === `opening-${loadId}` || id.startsWith(`opening-${loadId}-`)));
@@ -8514,7 +8523,7 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
       const j = await journalsOf(tenantId, r.loadId);
       if (j.opening !== undefined && j.reversal === undefined) {
         const entry: JournalEntry = {
-          entryId: openingReversalEntryId(r.loadId), period: j.opening.period, documentDate: at.slice(0, 10), narrative: why,
+          entryId: openingReversalEntryId(r.loadId), period: j.opening.period, documentDate: await shopClock(input.calendar).tradingDayOf(tenantId, at), narrative: why,
           lines: j.opening.lines.map((l) => ({ accountCode: l.accountCode, debitMinor: l.creditMinor, creditMinor: l.debitMinor })), postedBy: a.approvedBy,
         };
         const states = await fin.periodStates(tenantId);
@@ -8723,6 +8732,7 @@ export function payablesAdapter(input: { readonly store: EventStore; readonly no
 export function supplierPortalAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }): SupplierPortalDeps {
   const registers = supplierAccountAdapter(input);
   /** The supplier account (SP-7b) as statement lines for the partner whose id is the supplier's — nothing when it names no supplier. */
@@ -8733,13 +8743,14 @@ export function supplierPortalAdapter(input: {
     ]);
     const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: input.now() });
     const lines: StatementLine[] = [];
+    const zone = (await shopCalendarOf(input.calendar)(tenantId)).timeZone; // R1b: the shop's dates on the statement
     for (const i of a.invoices) {
       if (!i.matched) continue;
-      const date = (i.matchedAt ?? i.capturedAt).slice(0, 10);
+      const date = shopDateIn(i.matchedAt ?? i.capturedAt, zone);
       if (i.payableMinor > 0) lines.push({ partnerId, tenantId, documentRef: `account:invoice:${i.invoiceId}`, kind: 'invoice', date, amountMinor: i.payableMinor, status: 'open' });
       if (i.withheldMinor > 0) lines.push({ partnerId, tenantId, documentRef: `account:invoice:${i.invoiceId}:withheld`, kind: 'invoice', date, amountMinor: i.withheldMinor, status: 'disputed' });
     }
-    for (const d of a.debitNotes) lines.push({ partnerId, tenantId, documentRef: `account:debit-note:${d.debitNoteRef}`, kind: 'credit_note', date: d.decidedAt.slice(0, 10), amountMinor: -d.valueMinor, status: 'open' });
+    for (const d of a.debitNotes) lines.push({ partnerId, tenantId, documentRef: `account:debit-note:${d.debitNoteRef}`, kind: 'credit_note', date: shopDateIn(d.decidedAt, zone), amountMinor: -d.valueMinor, status: 'open' });
     for (const p of a.payments) lines.push({ partnerId, tenantId, documentRef: `account:payment:${p.paymentId}`, kind: 'payment', date: p.paidOn, amountMinor: -p.amountMinor, status: 'settled' });
     return lines;
   };
@@ -8901,6 +8912,7 @@ export function addMonths(period: string, n: number): string {
 export function financeAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }): FinanceDeps {
   const journals = (tenantId: string) =>
     allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted');
@@ -8950,7 +8962,8 @@ export function financeAdapter(input: {
      */
     nextOpenPeriod: async (tenantId) => {
       const shut = await closed(tenantId);
-      let period = input.now().slice(0, 7);
+      // R1b: this month is the month of the shop's trading day — never the UTC month (00:00–05:30 IST on the 1st).
+      let period = tradingMonthIn(input.now(), await shopCalendarOf(input.calendar)(tenantId));
       for (let i = 0; i < 120 && shut.has(period); i += 1) period = addMonths(period, 1);
       return period;
     },
@@ -9429,7 +9442,7 @@ export function loyaltyLiabilityAdapter(input: {
  */
 const BANK_STATEMENTS = streamName(STREAM.settlement, 'bank-statements');
 
-export function independentEvidenceAdapter(input: { readonly store: EventStore; readonly now: () => string }): IndependentEvidenceDeps {
+export function independentEvidenceAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }): IndependentEvidenceDeps {
   const statements = (tenantId: string) => allOf<ImportedStatement>(input.store, tenantId, BANK_STATEMENTS, 'BankStatementImported');
   return {
     now: input.now,
@@ -9442,12 +9455,13 @@ export function independentEvidenceAdapter(input: { readonly store: EventStore; 
       }));
     },
     evidenceFor: async (tenantId, period) => {
+      const calendar = await shopCalendarOf(input.calendar)(tenantId); // R1b
       const start = Date.parse(`${period}-01T00:00:00.000Z`);
       const from = new Date(start - 2 * 86_400_000).toISOString();
       const to = new Date(start + 33 * 86_400_000).toISOString();
       const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to }))
         .map((e) => e.event.payload as IncomingSale)
-        .filter((sale) => (sale.tradingDay !== '' ? sale.tradingDay : sale.committedAt).slice(0, 7) === period);
+        .filter((sale) => (sale.tradingDay !== '' ? sale.tradingDay.slice(0, 7) : tradingMonthIn(sale.committedAt, calendar)) === period);
       const tenders = sales.flatMap((sale) => sale.tenders
         .filter((t) => typeof t.ref === 'string' && t.ref.trim() !== '')
         .map((t) => ({ ref: t.ref as string, kind: t.kind, amountMinor: t.amountMinor, saleId: sale.saleId })));
@@ -10194,15 +10208,18 @@ export const orderAttemptsOf = (store: EventStore, tenantId: string, orderId: st
 export function fulfilmentAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /** R1b · R1c: the shop's calendar — a driver's run is the shop's date of the attempt, never its UTC date. */
+  readonly calendar?: ShopCalendarOf;
 }): FulfilmentDeps {
   return {
     now: input.now,
+    ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
 
     // The run IS the stream; and (FUL-05) the same attempt is indexed on the ORDER in the same atomic batch, so the order's
     // fulfilment reads the cash its door took without scanning every driver's every day.
     appendAttempt: async (tenantId, a) => {
       await input.store.appendBatch(tenantId, [
-        { stream: forDriverRun(a.driverId, a.attemptedAt.slice(0, 10)), event: makeEvent({
+        { stream: forDriverRun(a.driverId, await shopClock(input.calendar).dateOf(tenantId, a.attemptedAt)), event: makeEvent({
           id: `att-${a.attemptId}`,
           type: 'DeliveryAttempted',
           occurredAt: a.attemptedAt,
@@ -10425,11 +10442,13 @@ export function fulfilmentWaveAdapter(input: {
 export function driverRunAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }): Omit<SyncedDriverRunDeps, 'recordAudit'> {
   const forRoute = (routeId: string): string => streamName(STREAM.delivery, 'route', routeId);
   const orders = fulfilmentAdapter(input);
   return {
     now: input.now,
+    ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     stopUpdates: (tenantId, routeId) => allOf<RouteStopUpdate>(input.store, tenantId, forRoute(routeId), 'RouteStopUpdateRecorded'),
     recordStopUpdate: async (tenantId, u) => {
@@ -10841,9 +10860,11 @@ export function identityAdapter(input: {
 export function pricingAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
 }): PricingDeps {
   return {
     now: input.now,
+    ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
 
     // SF-01: the change AND its operative store-scope price-list entries, effective from today, in ONE append — the
     // price the catalogue pack resolves per store is now the one the screen saved (before, only the record was kept and
@@ -10851,7 +10872,8 @@ export function pricingAdapter(input: {
     // route numbers them, so the change supersedes whatever stood before.
     recordPriceChange: async (tenantId, change: PriceChangeRecord, storeIds) => {
       const existing = await allOf<PriceEntry>(input.store, tenantId, forPriceList(change.productId), 'PriceListEntryPublished');
-      const effectiveFrom = change.at.slice(0, 10);
+      // R1b: "from today" is the shop's today — a UTC date sorted before an entry scheduled for today in the shop.
+      const effectiveFrom = await shopClock(input.calendar).dateOf(tenantId, change.at);
       await input.store.appendBatch(tenantId, [
         {
           stream: STREAM.pricing,
@@ -11457,6 +11479,8 @@ export function platformAdapter(input: {
 export function billingAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /** R1b: the shop's calendar — a subscription starts and ends on the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly provider: RecurringBillingProvider;
   readonly plans: readonly BillingPlan[];
   readonly policy?: DunningPolicy;
@@ -11506,7 +11530,7 @@ export function billingAdapter(input: {
       const plan = input.plans.find((p) => p.planId === sub.planId);
       if (plan === undefined) throw new Error(`unknown plan ${sub.planId}`); // the route validated this first
       const at = input.now();
-      const startsOn = at.slice(0, 10);
+      const startsOn = await shopClock(input.calendar).dateOf(tenantId, at);
       const anchorDay = Math.min(28, Math.max(1, Number(startsOn.slice(8, 10)) || 1));
       const created = await input.provider.createSubscription({
         tenantId, plan, rail: sub.rail, anchorDay, startsOn, preDebitNoticeHours: noticeHours,
@@ -11533,7 +11557,7 @@ export function billingAdapter(input: {
       const current = foldBilling({ tenantId, events, policy, asAt: input.now() });
       if (current === undefined) return undefined;
       const at = input.now();
-      const endsOn = current.nextCharge?.chargeOn ?? at.slice(0, 10);
+      const endsOn = current.nextCharge?.chargeOn ?? await shopClock(input.calendar).dateOf(tenantId, at);
       const version = events.filter((e) => e.kind === 'subscription_cancelled').length + 1;
       const payload: CancelledPayload = { endsOn, by, at };
       await input.store.append(tenantId, BILLING, makeEvent({
@@ -12642,8 +12666,8 @@ export function privacyDomainHoldingsAdapter(input: {
   };
   /** The eighth financial year after the latest invoice ends 31 March (Indian FY) — the working retention date. */
   const taxRetainUntil = (latestIso: string): string => {
-    const d = new Date(latestIso);
-    const fyEndYear = d.getUTCMonth() >= 3 ? d.getUTCFullYear() + 1 : d.getUTCFullYear();
+    const day = shopDateIn(latestIso); // R1: the shop's date of the invoice (1 April at 01:00 IST is the new year)
+    const fyEndYear = Number(day.slice(5, 7)) >= 4 ? Number(day.slice(0, 4)) + 1 : Number(day.slice(0, 4));
     return `${fyEndYear + 8}-03-31`;
   };
 
@@ -12824,6 +12848,7 @@ export function storeStockFactsAdapter(input: {
 export function replenishmentFactsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
   readonly branchOf?: (tenantId: string) => Promise<(locationId: string) => string> | ((locationId: string) => string);
 }): {
   readonly storeFacts: (tenantId: string, storeId: string) => Promise<StoreReplenishmentFacts>;
@@ -12860,10 +12885,11 @@ export function replenishmentFactsAdapter(input: {
     },
     soldLines: async (tenantId, storeId, fromIso, toIso) => {
       const at = await placeOf(tenantId);
+      const calendar = await shopCalendarOf(input.calendar)(tenantId); // R1b: the shop's trading day of each sold line
       const out: SoldLine[] = [];
       for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved', from: fromIso, to: toIso })) {
         const m = payloadOf<Movement>(e);
-        if (m.kind === 'sold' && at(storeId, m.locationId)) out.push({ productId: m.productId, quantityMinor: m.quantityMinor, tradingDay: m.occurredAt.slice(0, 10) });
+        if (m.kind === 'sold' && at(storeId, m.locationId)) out.push({ productId: m.productId, quantityMinor: m.quantityMinor, tradingDay: tradingDayIn(m.occurredAt, calendar) });
       }
       return out;
     },
@@ -13518,13 +13544,14 @@ export async function stockCostAdjustments(store: EventStore, tenantId: string):
   return allOf<StockCostAdjustment>(store, tenantId, STOCK_COST_ADJUSTMENTS_STREAM, 'StockCostAdjusted');
 }
 
-export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, opts?: {
+export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }, tenantId: string, opts?: {
   /** OB-56: only receipts of this month (YYYY-MM) or earlier — the average as it stood at that month's close. */
   readonly throughPeriod?: string;
 }): Promise<{
   readonly costOf: (productId: string, storeId: string) => number | undefined;
   readonly rows: readonly AverageBuyingCost[];
 }> {
+  const calendar = await shopCalendarOf(input.calendar)(tenantId); // R1b: the month of each receipt is its shop trading day's
   const nodes = await orgStructureAdapter(input).nodes(tenantId);
   const placed = branchOfLocationIn(nodes);
   const backStoreOf = new Map<string, string>();
@@ -13539,7 +13566,7 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
     // consumed, at this average when the run was made) — a `produced` movement carrying that cost averages like a receipt.
     // A run whose ingredients had no cost carries none and stays out: the product is "not valued" by name, never zero.
     if ((m.kind !== 'received' && m.kind !== 'produced') || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
-    if (opts?.throughPeriod !== undefined && m.occurredAt.slice(0, 7) > opts.throughPeriod) continue;
+    if (opts?.throughPeriod !== undefined && tradingMonthIn(m.occurredAt, calendar) > opts.throughPeriod) continue;
     const storeId = branchOf(m.locationId);
     const key = `${m.productId}\u001f${storeId}`;
     const a = acc.get(key) ?? { productId: m.productId, storeId, qty: 0, value: 0, scale: minorPerUnitOf(m.uom) };
@@ -13549,7 +13576,7 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
   }
   // OB-288 P3 (M07-FR-04): a matched bill's freight/duty raises what those receipts cost (value, never quantity).
   for (const adj of await stockCostAdjustments(input.store, tenantId)) {
-    if (opts?.throughPeriod !== undefined && adj.occurredAt.slice(0, 7) > opts.throughPeriod) continue;
+    if (opts?.throughPeriod !== undefined && tradingMonthIn(adj.occurredAt, calendar) > opts.throughPeriod) continue;
     const a = acc.get(`${adj.productId}\u001f${branchOf(adj.locationId)}`);
     if (a !== undefined) a.value += adj.valueMinor;
   }
@@ -13814,13 +13841,13 @@ export function opsIncidentsAdapter(input: { readonly store: EventStore; readonl
  * check appears only when its register has something in it; otherwise it is said in `notChecked`, never counted as
  * agreement.
  */
-async function bookChecksFor(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<{ checks: ControlTotalCheck[]; notChecked: string[]; books: NonNullable<MonthEvidence['books']> }> {
+async function bookChecksFor(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }, tenantId: string, period: string): Promise<{ checks: ControlTotalCheck[]; notChecked: string[]; books: NonNullable<MonthEvidence['books']> }> {
   const checks: ControlTotalCheck[] = [];
   const notChecked: string[] = [];
   // Stock adjustments.
   const pb = periodBooksAdapter(input);
   const [counts, writeOffs, adjJournals] = await Promise.all([pb.counts(tenantId), pb.writeOffs(tenantId), pb.stockAdjustmentJournals(tenantId)]);
-  const stock = stockAdjustmentCheck(period, stockAdjustmentSources(counts, writeOffs), adjJournals);
+  const stock = stockAdjustmentCheck(period, stockAdjustmentSources(counts, writeOffs), adjJournals, await shopCalendarOf(input.calendar)(tenantId)); // R1b
   if (stock.check !== null) checks.push(stock.check);
   else notChecked.push(`Count differences and write-offs: none applied in ${period}.`);
   // OB-56: the stock ledger's closing value (average buying cost) against the inventory account in the books.
@@ -14049,10 +14076,11 @@ export async function applyHeldWriteOffsFor(store: EventStore, tenantId: string,
 }
 
 /** OB-66: held write-offs not yet applied, recorded in the month or earlier — the month-end stock adjustment waits for them. */
-export async function unappliedHeldWriteOffs(store: EventStore, tenantId: string, period: string): Promise<readonly string[]> {
+export async function unappliedHeldWriteOffs(store: EventStore, tenantId: string, period: string, calendar: TradingCalendar = DEFAULT_SHOP_CALENDAR): Promise<readonly string[]> {
   const { held, applied } = await heldWriteOffsOf(store, tenantId);
   const done = new Set(applied.map((a) => a.heldId));
-  return held.filter((h) => !done.has(h.heldId) && h.recordedAt.slice(0, 7) <= period && h.valueMinor > 0)
+  // R1b: a held write-off belongs to the month of its shop trading day, never its UTC month.
+  return held.filter((h) => !done.has(h.heldId) && tradingMonthIn(h.recordedAt, calendar) <= period && h.valueMinor > 0)
     .map((h) => `held_write_off:${h.heldId} (held for count plan ${h.planId})`);
 }
 
@@ -14443,7 +14471,7 @@ function doorCounts(store: EventStore): Map<string, DoorRefusalLine> {
   return m;
 }
 async function countRefusedAtDoor(store: EventStore, tenantId: string, r: { readonly computer: string; readonly storeId: string; readonly at: string; readonly prefixes: readonly string[] }): Promise<void> {
-  const day = r.at.slice(0, 10);
+  const day = shopDateIn(r.at); // R1c: the shop's day, never the UTC one
   const k = `${tenantId}\u0000${r.computer}\u0000${r.storeId}\u0000${day}`;
   const counts = doorCounts(store);
   let line = counts.get(k);

@@ -11,6 +11,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn, shopMonthIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **WF-18 / M23-FR-01/04 / D10-FR-03 / WF-08 "→ adjustment/accounting" — the month's books: count differences and
@@ -42,8 +43,8 @@ const backings: { name: string; harness: () => ApiHarness }[] = [{ name: 'the in
 if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
 
 const codeOf = (r: { body: unknown }): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
-const PERIOD = new Date().toISOString().slice(0, 7);
-const TODAY = new Date().toISOString().slice(0, 10);
+const PERIOD = shopMonthIn(new Date().toISOString());
+const TODAY = shopDateIn(new Date().toISOString());
 
 interface Evidence { agrees: boolean; checks: { name: string; leftMinor: number; rightMinor: number }[]; notChecked: string[]; books: { stockAdjustmentsUnposted: string[]; stockAdjustmentsUnvalued: string[]; payablesUnposted: number } }
 interface Journal { entryId: string; period: string; lines: { accountCode: string; debitMinor: number; creditMinor: number }[]; stockAdjustment?: { sourceId: string; kind: string; valueMinor: number } }

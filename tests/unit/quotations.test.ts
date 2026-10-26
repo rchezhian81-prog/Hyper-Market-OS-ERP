@@ -137,9 +137,11 @@ describe('converting honours the promise — inside the window, and only there',
     expect(result.quotation.state).toBe('expired');
   });
 
-  it('still honours it on the last valid day', () => {
-    const result = convertQuotation({ quotation: issued(), saleId: 'S-1', at: '2026-08-11T23:00:00Z' });
+  it('still honours it on the last valid day — the shop\'s day, up to its midnight', () => {
+    const result = convertQuotation({ quotation: issued(), saleId: 'S-1', at: '2026-08-11T18:00:00Z' }); // 23:30 IST on the 11th
     expect(result.converted).toBe(true);
+    // R1c: 23:00 UTC on the 11th is 04:30 IST on the 12th — the shop's next day, so the promise has run out.
+    expect(convertQuotation({ quotation: issued(), saleId: 'S-2', at: '2026-08-11T23:00:00Z' }).outcome).toBe('expired');
   });
 
   it('converts to exactly ONE sale', () => {

@@ -690,7 +690,8 @@ function labelled(button, iconName, word) {
   button.replaceChildren(...(mark ? [mark, text] : [text]));
   button.classList.add('sre-with-icon');
 }
-const today = () => (window.migrationData?.now ?? new Date().toISOString()).slice(0, 10);
+// R1c (M01-FR-02): this device's own date (it stands in the shop), never the UTC date of the moment.
+const today = () => { const d = new Date(window.migrationData?.now ?? Date.now()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const enteredHere = new Set();
 
 function buildAreas() {

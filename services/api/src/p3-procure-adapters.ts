@@ -45,6 +45,7 @@ import type { JournalEntry } from '../../finance/src/index';
 import { rebateReceiptRoutes, type RebateReceiptDeps, type RebateReceiptJournal } from '../../finance/src/rebate-receipts';
 import type { StoredPostingMap } from '../../finance/src/day-book';
 import type { RebateDeps } from '../../purchase/src/rebates';
+import { DEFAULT_SHOP_CALENDAR, shopClock, shopDateIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }
@@ -262,7 +263,7 @@ async function rebateJournals(store: EventStore, tenantId: string): Promise<read
  * when captured, else the capture day) whose LATEST match lets them be paid — the taxable value paid on goods, before GST
  * and before any landed charges — with the bills it came from.
  */
-export async function rebateBasisFor(store: EventStore, tenantId: string, supplierId: string, from: string, to: string) {
+export async function rebateBasisFor(store: EventStore, tenantId: string, supplierId: string, from: string, to: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone) {
   const latest = new Map<string, StoredMatch>();
   for (const m of await payloads<StoredMatch>(store, tenantId, STREAM.purchase, 'InvoiceMatched')) latest.set(m.invoiceId, m);
   let amountMinor = 0;
@@ -271,7 +272,7 @@ export async function rebateBasisFor(store: EventStore, tenantId: string, suppli
     if (i.supplierId !== supplierId) continue;
     const m = latest.get(i.invoiceId);
     if (m === undefined || m.blocked) continue;
-    const day = i.supplierInvoiceDate ?? i.capturedAt.slice(0, 10);
+    const day = i.supplierInvoiceDate ?? shopDateIn(i.capturedAt, timeZone); // R1b: the shop's date, never UTC
     if (day < from || day > to) continue;
     const charges = (m as StoredMatch & { landedCharges?: { totalMinor: number } }).landedCharges?.totalMinor ?? 0;
     amountMinor += (m.tax?.taxablePayableMinor ?? m.payableMinor) - (m.tax === undefined ? charges : 0);
@@ -288,7 +289,7 @@ export async function rebateBasisFor(store: EventStore, tenantId: string, suppli
  * for, valued at the ORDER's unit price (before GST, before landed charges; OB-31 / OB-46 units and case prices exactly as
  * the match values them). A matched bill whose order head office cannot read is listed as not valued — never a nought.
  */
-export async function volumeRebateBasisFor(store: EventStore, tenantId: string, supplierId: string, from: string, to: string) {
+export async function volumeRebateBasisFor(store: EventStore, tenantId: string, supplierId: string, from: string, to: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone) {
   const latest = new Map<string, StoredMatch>();
   for (const m of await payloads<StoredMatch>(store, tenantId, STREAM.purchase, 'InvoiceMatched')) latest.set(m.invoiceId, m);
   const orders = await foldPurchaseOrders(store, tenantId);
@@ -299,7 +300,7 @@ export async function volumeRebateBasisFor(store: EventStore, tenantId: string, 
     if (i.supplierId !== supplierId) continue;
     const m = latest.get(i.invoiceId);
     if (m === undefined || m.blocked) continue;
-    const day = i.supplierInvoiceDate ?? i.capturedAt.slice(0, 10);
+    const day = i.supplierInvoiceDate ?? shopDateIn(i.capturedAt, timeZone); // R1b: the shop's date, never UTC
     if (day < from || day > to) continue;
     const order = m.poId === null ? undefined : orders.get(m.poId);
     if (order === undefined || order.status !== 'issued') {
@@ -317,10 +318,11 @@ export async function volumeRebateBasisFor(store: EventStore, tenantId: string, 
 }
 
 /** The hooks the rebate routes take (spread into their deps in main.ts): the folded bases and the ledger's "received". */
-export function p3RebateHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<RebateDeps, 'basisFor' | 'volumeBasisFor' | 'receivedFor'> {
+export function p3RebateHooks(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }): Pick<RebateDeps, 'basisFor' | 'volumeBasisFor' | 'receivedFor'> {
+  const zoneOf = async (t: string): Promise<string> => (await shopClock(input.calendar).calendar(t)).timeZone;
   return {
-    basisFor: (tenantId, supplierId, from, to) => rebateBasisFor(input.store, tenantId, supplierId, from, to),
-    volumeBasisFor: (tenantId, supplierId, from, to) => volumeRebateBasisFor(input.store, tenantId, supplierId, from, to),
+    basisFor: async (tenantId, supplierId, from, to) => rebateBasisFor(input.store, tenantId, supplierId, from, to, await zoneOf(tenantId)),
+    volumeBasisFor: async (tenantId, supplierId, from, to) => volumeRebateBasisFor(input.store, tenantId, supplierId, from, to, await zoneOf(tenantId)),
     receivedFor: async (tenantId, schemeId) => (await rebateJournals(input.store, tenantId)).filter((j) => j.rebateReceipt.schemeId === schemeId).reduce((s, j) => s + j.rebateReceipt.amountMinor, 0),
   };
 }
@@ -360,14 +362,15 @@ export function tallyExportAdapter(input: Base): TallyExportDeps {
 // ── the entry point ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every P3 route on head office's surface. With no store, an in-memory one (the bare surface the guardrails build). */
-export function p3ProcureRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): readonly Route[] {
+export function p3ProcureRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }): readonly Route[] {
+  const cal = input.calendar === undefined ? {} : { calendar: input.calendar }; // R1b · R1c: the shop's clock
   const store = input.store ?? new InMemoryEventStore();
   const base: Base = { store, now: input.now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
   return [
-    ...blanketOrderRoutes(blanketAgreementsAdapter(base)),
+    ...blanketOrderRoutes({ ...blanketAgreementsAdapter(base), ...cal }),
     ...commitmentReportRoutes(commitmentReportAdapter(base)),
     ...tallyExportRoutes(tallyExportAdapter(base)),
-    ...rebateReceiptRoutes(rebateReceiptAdapter(base)),
+    ...rebateReceiptRoutes({ ...rebateReceiptAdapter(base), ...cal }),
     ...dockDiaryRoutes(dockDiaryAdapter(base)),
     ...requisitionSourceRoutes(requisitionSourceAdapter(base)),
   ];

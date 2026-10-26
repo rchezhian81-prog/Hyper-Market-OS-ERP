@@ -1438,12 +1438,16 @@ el('do-close').addEventListener('click', () => {
  */
 function paintBoxClock() {
   const md = window.managerData;
-  const v = typeof window.boxClockView === 'function' ? window.boxClockView(lang, md && md.clock, md && md.clockFlaggedBills) : null;
+  const v = typeof window.boxClockView === 'function' ? window.boxClockView(lang, md && md.clock, md && md.clockFlaggedBills, md && md.timeZone) : null;
   const strip = el('box-clock');
   if (v === null || !v.show) { strip.hidden = true; return; }
   strip.hidden = false;
   strip.dataset.tone = v.tone;
-  worded(el('box-clock-words'), v.icon, v.words);
+  el('box-clock-words').hidden = v.words === '';
+  if (v.words !== '') worded(el('box-clock-words'), v.icon, v.words);
+  // R1a · P-08: this store computer's own time zone is not the shop's (it still dates by the shop's zone).
+  el('box-zone-words').hidden = v.zoneWords === '';
+  if (v.zoneWords !== '') worded(el('box-zone-words'), 'globe', v.zoneWords);
   el('box-clock-bills-h').hidden = v.bills.length === 0;
   el('box-clock-bills-h').textContent = v.billsHeading;
   el('box-clock-bills').replaceChildren(...v.bills.map((b) => { const li = document.createElement('li'); li.dataset.sale = b.saleId; li.textContent = b.label; return li; }));

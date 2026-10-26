@@ -14,6 +14,7 @@
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
 import { rupees } from './head-office-http';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -193,7 +194,7 @@ export function planBody(form: NewPlanForm): { readonly body: Record<string, unk
   };
 }
 
-const stamp = (): string => new Date().toISOString().slice(0, 10).replace(/-/g, '');
+const stamp = (): string => wallClockIn(new Date().toISOString()).slice(0, 10).replace(/-/g, ''); // R1c: this device's own date
 const rand = (): string => Math.random().toString(36).slice(2, 7);
 
 export function createCountPlansSession(viewer: CountPlanViewer | undefined, http: HeadOfficeHttp, ids: { plan(): string; count(planId: string, productId: string): string } = {

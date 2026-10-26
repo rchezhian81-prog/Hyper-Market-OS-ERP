@@ -27,7 +27,8 @@ function laneBase() {
 
 const str = (id) => $(id).value.trim();
 const num = (id) => Number($(id).value);
-const today = () => new Date().toISOString().slice(0, 10);
+// R1c (M01-FR-02): this device's own date (it stands in the shop), never the UTC date of the moment.
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 /** The lines this page recorded in this session — what the box accepted, never a claim about the cloud. */
 const recorded = [];

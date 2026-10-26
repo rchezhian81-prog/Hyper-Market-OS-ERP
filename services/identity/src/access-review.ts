@@ -12,6 +12,7 @@ import {
   type ReviewPerson, type ReviewGrant, type ReviewEmergencyGrant, type ReviewRole,
 } from '../../../packages/identity/src/access-review';
 import { LIMITED_SUBJECTS, authorityWords, type Authority } from '../../../packages/approvals/src/authority-rules';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 export interface AccessReviewDeps {
   readonly people: (tenantId: string) => Promise<readonly ReviewPerson[]>;
@@ -63,7 +64,7 @@ export function accessReviewRoutes(deps: AccessReviewDeps): readonly Route[] {
       handler: async (ctx) => {
         const roles = deps.roles();
         if (ctx.query['format'] === 'csv') {
-          return { status: 200, body: { format: 'csv', filename: `permission-matrix-${deps.now().slice(0, 10)}.csv`, csv: permissionMatrixCsv(roles) } };
+          return { status: 200, body: { format: 'csv', filename: `permission-matrix-${shopDateIn(deps.now())}.csv`, csv: permissionMatrixCsv(roles) } };
         }
         return { status: 200, body: { asAt: deps.now(), ...permissionMatrix(roles), roleNames: Object.fromEntries(roles.map((r) => [r.id, r.name])) } };
       },

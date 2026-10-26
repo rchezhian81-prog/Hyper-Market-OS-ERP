@@ -28,6 +28,7 @@ import type { NotificationQueueEvent } from '../../customer/src/notification-que
 import {
   buildScheduledBrief, briefsDue, type BriefFigures, type AttentionLine, type Narrative, type BriefLanguage,
 } from '../../../packages/owner-control/src/index';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -323,7 +324,10 @@ export function scheduledBriefRoutes(deps: ScheduledBriefDeps): readonly Route[]
         }
         const s = await deps.schedule(ctx.tenantId);
         if (s === undefined) throw noSchedule();
-        const due = briefsDue({ schedule: { scheduleId: s.scheduleId, dueAt: s.dueAt, sentDays: s.sentDays }, tradingDays, now: deps.now() });
+        // R1c: briefsDue reads the SHOP's wall clock (its date and hour), never the server's UTC one.
+        const at = deps.now();
+        const calendar = deps.calendar === undefined ? DEFAULT_SHOP_CALENDAR : await deps.calendar(ctx.tenantId);
+        const due = briefsDue({ schedule: { scheduleId: s.scheduleId, dueAt: s.dueAt, sentDays: s.sentDays }, tradingDays, now: `${tradingDayIn(at, calendar)}${shopWallClock(at, calendar.timeZone).slice(10)}:00Z` });
         return { status: 200, body: { due, count: due.length, asAt: deps.now() } };
       },
     },

@@ -28,6 +28,7 @@
 //
 // Pure and deterministic: no clock, no I/O, no stock.
 
+import { shopDateIn } from '../../calendar/src/shop-clock';
 export interface QuotationLine {
   readonly lineId: string;
   readonly productId: string;
@@ -122,7 +123,7 @@ export function issueQuotation(
   if (input.lines.length === 0) {
     return { ...base, issued: false, outcome: 'no_lines', detail: 'a quotation for nothing is not a quotation' };
   }
-  if (input.validUntil < input.issuedAt.slice(0, 10)) {
+  if (input.validUntil < shopDateIn(input.issuedAt)) { // R1c: the shop's date
     return {
       ...base,
       issued: false,
@@ -241,7 +242,7 @@ export function convertQuotation(
       detail: `withdrawn${q.withdrawReason === undefined ? '' : ` (${q.withdrawReason})`}`,
     };
   }
-  if (input.at.slice(0, 10) > q.validUntil) {
+  if (shopDateIn(input.at) > q.validUntil) {
     return {
       ...base,
       converted: false,

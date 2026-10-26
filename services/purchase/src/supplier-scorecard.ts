@@ -26,6 +26,7 @@ import {
   type ReceiptFact, type SupplierContract, type ScorecardWeights,
   type ScorecardOrder, type ScorecardReceipt, type ScorecardMatchedInvoice,
 } from '../../../packages/purchasing/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** D-10: what the scorecard is built from — the registers, never a typed figure. */
 export interface SupplierFacts {
@@ -37,6 +38,8 @@ export interface SupplierFacts {
 }
 
 export interface SupplierScorecardDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Head office's maker-checker engine (ADR-0024): a contract's approver gave it in their own session. Optional on a
    *  bare stub (then every approval is unknown, and a contract records unapproved); the running system provides it. */
   readonly approvals?: ApprovalPort;
@@ -144,7 +147,7 @@ export function supplierScorecardRoutes(deps: SupplierScorecardDeps): readonly R
         const supplierId = (ctx.params['supplierId'] ?? '').trim();
         if (supplierId === '') throw notFound('supplier (none named)');
         const facts: SupplierFacts = deps.facts === undefined ? { orders: [], receipts: [], invoices: [] } : await deps.facts(ctx.tenantId, supplierId);
-        const today = facts.today ?? deps.now().slice(0, 10);
+        const today = facts.today ?? await shopToday(deps, ctx.tenantId);
         const to = ctx.query['to'] ?? today;
         const from = ctx.query['from'] ?? (isDate(to) ? new Date(Date.parse(`${to}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10) : '');
         if (!isDate(from) || !isDate(to) || from > to) {
@@ -169,7 +172,7 @@ export function supplierScorecardRoutes(deps: SupplierScorecardDeps): readonly R
       api: 'API-03', method: 'GET', path: '/v1/purchase/contracts/alerts',
       permission: 'purchase.commitment.read',
       handler: async (ctx) => {
-        const onDate = isDate(ctx.query['onDate']) ? (ctx.query['onDate'] as string) : deps.now().slice(0, 10);
+        const onDate = isDate(ctx.query['onDate']) ? (ctx.query['onDate'] as string) : await shopToday(deps, ctx.tenantId);
         const warnRaw = Number(ctx.query['warnDays']);
         const warnDays = Number.isSafeInteger(warnRaw) && warnRaw > 0 ? warnRaw : undefined;
         const alerts = reviewContracts(await deps.allContracts(ctx.tenantId), onDate, warnDays);

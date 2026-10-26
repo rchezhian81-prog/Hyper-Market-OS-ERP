@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { apiHarness } from '../support/api-harness';
 import { inventoryPredictions, forecastReorders, OVERSTOCK_COVER_DAYS, LOOKAHEAD_DAYS, FIT_DAYS } from '../../services/api/src/ai-predictions';
 import type { ExpiryActionItem } from '../../packages/fefo/src/index';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **A03's expiry prediction and the forecast's limits (OB-288 lane 4 · P1 · A03 "stockout/overstock/expiry prediction").**
@@ -16,7 +17,7 @@ describe('A03 predicts expiry and overstock from the shop\'s own sales', () => {
   it('drafts what will not sell in time, leaves what will, and writes nothing', async () => {
     const h = apiHarness();
     const T = randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     const dayAgo = (n: number): string => new Date(Date.parse(`${today}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-cash', 'cashier');

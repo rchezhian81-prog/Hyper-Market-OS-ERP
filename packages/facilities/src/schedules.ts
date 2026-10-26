@@ -24,6 +24,7 @@
 //
 // Pure and deterministic: the clock is injected, no I/O.
 
+import { shopDateIn } from '../../calendar/src/shop-clock';
 export type ScheduleCategory = 'cleaning' | 'pest_control' | 'fire_safety' | 'electrical_safety' | 'maintenance' | 'statutory';
 
 export type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'half_yearly' | 'annual';
@@ -349,7 +350,7 @@ export function closeIncident(input: {
     ...base,
     closed: true,
     outcome: 'closed',
-    detail: `closed by ${input.closedBy} on ${input.at.slice(0, 10)}: ${input.actionTaken}`,
+    detail: `closed by ${input.closedBy} on ${shopDateIn(input.at)}: ${input.actionTaken}`,
   };
 }
 
@@ -414,7 +415,7 @@ export function buildComplianceEvidence(input: {
   const reportable = incidents.filter((i) => i.severity === 'reportable');
 
   for (const incident of open.filter((i) => i.severity !== 'minor')) {
-    gaps.push(`${incident.occurredAt.slice(0, 10)} ${incident.severity} ${incident.kind.replace(/_/g, ' ')} still open`);
+    gaps.push(`${shopDateIn(incident.occurredAt)} ${incident.severity} ${incident.kind.replace(/_/g, ' ')} still open`);
   }
 
   const presentable = gaps.length === 0;

@@ -19,6 +19,7 @@ import {
   type ImportJobRecord, type JobOutcome, type QualityScore,
   type RowError, type RowErrorKind,
 } from '../../../packages/import/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { ImportJobRecord } from '../../../packages/import/src/index';
 
@@ -49,6 +50,8 @@ function readError(v: unknown): RowError | undefined {
 }
 
 export interface ImportQualityDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Every recorded import job — the history and the scores fold over these. */
   readonly jobs: (tenantId: string) => Promise<readonly ImportJobRecord[]> | readonly ImportJobRecord[];
   /** Append one job outcome — append-only, refusals kept alongside successes (hard rule #6). */
@@ -137,7 +140,7 @@ export function importQualityRoutes(deps: ImportQualityDeps): readonly Route[] {
       api: 'API-03', method: 'GET', path: '/v1/purchase/import-quality',
       permission: 'purchase.import.read',
       handler: async (ctx) => {
-        const to = isoDateOr(ctx.query['to'], deps.now().slice(0, 10));
+        const to = isoDateOr(ctx.query['to'], await shopToday(deps, ctx.tenantId));
         const from = isoDateOr(ctx.query['from'], '1970-01-01');
         const jobs = await deps.jobs(ctx.tenantId);
         const scores = sourcesOf(jobs).map((sourceId): QualityScore => scoreSource({ sourceId, jobs, from, to }));
@@ -156,7 +159,7 @@ export function importQualityRoutes(deps: ImportQualityDeps): readonly Route[] {
       permission: 'purchase.import.read',
       handler: async (ctx) => {
         const sourceId = ctx.params['sourceId'] ?? '';
-        const to = isoDateOr(ctx.query['to'], deps.now().slice(0, 10));
+        const to = isoDateOr(ctx.query['to'], await shopToday(deps, ctx.tenantId));
         const from = isoDateOr(ctx.query['from'], '1970-01-01');
         const jobs = await deps.jobs(ctx.tenantId);
         // A previous window is optional — supplied only when the caller wants a direction (improving/worsening).

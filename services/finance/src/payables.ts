@@ -18,6 +18,8 @@ import {
 } from '../../../packages/finance/src/index';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
 import type { StoredPostingMap } from './day-book';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
 
 /** A payables voucher: a finance journal that also says which supplier, which source and which kind it is made of. */
 export interface PayablesJournal extends JournalEntry {
@@ -39,6 +41,8 @@ export interface PayablesExceptionRecord extends PayablesException {
 }
 
 export interface PayablesDeps extends Pick<FinanceDeps, 'periodStates' | 'nextOpenPeriod' | 'appendJournal' | 'now'> {
+  /** R1b (M01-FR-02): the shop's calendar — a supplier bill's or debit note's journal date is its shop trading day. */
+  readonly calendar?: ShopCalendarOf;
   readonly postingMap: (tenantId: string) => Promise<StoredPostingMap | undefined> | StoredPostingMap | undefined;
   /** Every supplier's account as the purchase service projects it from its registers. */
   readonly supplierAccounts: (tenantId: string) => Promise<readonly PayablesAccount[]> | readonly PayablesAccount[];
@@ -80,7 +84,8 @@ export function payablesRoutes(deps: PayablesDeps): readonly Route[] {
           });
         }
         const [accounts, posted, states] = await Promise.all([deps.supplierAccounts(t), deps.payablesJournals(t), deps.periodStates(t)]);
-        const planned = planPayablesPostings(accounts, posted.map(asPosted));
+        const calendar = await shopClock(deps.calendar).calendar(t);
+        const planned = planPayablesPostings(accounts, posted.map(asPosted), (iso) => tradingDayIn(iso, calendar));
         const outcome = postPayables(planned, map, 'INR');
         const exceptions: PayablesException[] = [...outcome.exceptions];
         const appended: PayablesJournal[] = [];

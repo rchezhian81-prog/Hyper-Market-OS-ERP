@@ -31,6 +31,7 @@ import { apiError } from '../../kernel/src/index';
 import { canTransitionDelivery, transitionDelivery, isDeliveryCode, isFix, IMAGE_PROOF_KINDS, type DeliveryEvent, type DeliveryState, type CodeVerdict, type DeviceFix, type FenceVerdict } from '../../../packages/fulfilment/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { checkAttempt, fulfilmentAfter, type AttemptOutcome, type DeliveryAttempt, type DeliveryStateRecord } from './index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export const STOP_STATES: readonly DeliveryState[] = ['assigned', 'picked_up', 'out_for_delivery', 'attempted', 'delivered', 'partially_delivered', 'failed', 'returned_to_origin'];
 const STEPS: readonly DeliveryEvent[] = ['pick_up', 'depart', 'arrive', 'deliver', 'deliver_partial', 'fail', 'reattempt', 'rto'];
@@ -185,6 +186,8 @@ export interface RouteCash {
 
 export interface SyncedDriverRunDeps {
   readonly permissionsOfUser: Permissions;
+  /** R1c (M01-FR-02): the shop's calendar — the run an attempt belongs to is the shop's date of it, never the UTC date. */
+  readonly calendar?: ShopCalendarOf;
   /** Every stop outcome recorded for a route, oldest first (append-only history — a stop may appear more than once). */
   readonly stopUpdates: (tenantId: string, routeId: string) => Promise<readonly RouteStopUpdate[]> | readonly RouteStopUpdate[];
   readonly recordStopUpdate: (tenantId: string, update: RouteStopUpdate) => Promise<void> | void;
@@ -450,7 +453,7 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
           runAttempt = 'refused';
         } else {
           await deps.recordAttempt(ctx.tenantId, candidate);
-          runAttempt = { attemptId: candidate.attemptId, outcome: candidate.outcome, runDate: candidate.attemptedAt.slice(0, 10) };
+          runAttempt = { attemptId: candidate.attemptId, outcome: candidate.outcome, runDate: await shopClock(deps.calendar).dateOf(ctx.tenantId, candidate.attemptedAt) };
         }
 
         const update: RouteStopUpdate = {

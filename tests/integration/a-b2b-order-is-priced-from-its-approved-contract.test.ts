@@ -10,6 +10,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **OB-288 commercial desks — M22-FR-01: a B2B contract is a RECORD, approved by a second person, and a quotation is priced
@@ -31,7 +32,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 
 const OWNER = 'u-owner'; const ACCT = 'u-acct'; const MGR = 'u-mgr';
 const DAY = 86_400_000;
-const today = (): string => new Date().toISOString().slice(0, 10);
+const today = (): string => shopDateIn(new Date().toISOString());
 const shift = (n: number): string => new Date(Date.parse(`${today()}T00:00:00.000Z`) + n * DAY).toISOString().slice(0, 10);
 const RICE = { lineId: 'l1', productId: 'rice', description: 'Ponni rice 25kg', qty: 4, taxRateBps: 500 };
 const DAL = { lineId: 'l2', productId: 'dal', description: 'Toor dal 1kg', qty: 10, taxRateBps: 500 };

@@ -11,6 +11,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 export interface RestartableBacking {
   readonly name: string;
@@ -37,4 +38,4 @@ export function useRestartableBackings(): readonly RestartableBacking[] {
 }
 
 /** Today and a day `n` days away, as YYYY-MM-DD on the server's clock (validity windows are judged on it). */
-export const dayFromToday = (n: number): string => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+export const dayFromToday = (n: number): string => shopDateIn(new Date(Date.now() + n * 86_400_000).toISOString()); // R1c: the shop's days

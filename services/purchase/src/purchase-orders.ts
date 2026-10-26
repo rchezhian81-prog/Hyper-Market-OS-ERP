@@ -38,6 +38,7 @@ import { checkOrderAgainstBudget, judgeApprovalOnBudget, openToBuyGuardKey, valu
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { segregationConflict } from '../../../packages/purchasing/src/segregation';
 import { segregationRefusal, type SegregationPort } from './segregation-of-duties';
+import { shopClock, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
@@ -116,6 +117,8 @@ export interface BlanketReleaseHooks {
 export type AuthorityOf = (tenantId: string, userId: string, subjectType: string) => Promise<Authority> | Authority;
 
 export interface PurchaseOrderDeps {
+  /** R1b · R1c (M01-FR-02): the shop's calendar — "today" for a release or a range check, and a PO's budget month. */
+  readonly calendar?: ShopCalendarOf;
   /** SF-11: the product's pack hierarchy (case → inner → base), so a line ordered by the case converts exactly. Optional on a stub. */
   readonly packOf?: (tenantId: string, productId: string) => Promise<PackHierarchy | undefined> | PackHierarchy | undefined;
   /** One PO by id, folded to its current state, or undefined. */
@@ -450,7 +453,7 @@ async function judgeRelease(deps: PurchaseOrderDeps, tenantId: string, poId: str
     throw apiError(409, { code: 'blanket_agreements_unavailable', whatHappened: 'Blanket agreements are not wired here, so a release cannot be judged.', wasItSaved: 'not_saved', nextSafeAction: 'Raise an ordinary purchase order. Nothing was ordered.' });
   }
   const judged = await deps.blanket.judge(tenantId, {
-    agreementId, poId, supplierId: isStr(b['supplierId']) ? b['supplierId'] : undefined, onDate: deps.now().slice(0, 10),
+    agreementId, poId, supplierId: isStr(b['supplierId']) ? b['supplierId'] : undefined, onDate: await shopToday(deps, tenantId),
     lines: (lines as { productId: string; orderedQty: number }[]).map((l) => ({ productId: l.productId, quantity: l.orderedQty })),
   });
   if (!judged.ok) {
@@ -468,7 +471,7 @@ async function rejudgeReleaseAtIssue(deps: PurchaseOrderDeps, tenantId: string, 
   const byProduct = new Map<string, number>();
   for (const l of po.lines) byProduct.set(l.productId, (byProduct.get(l.productId) ?? 0) + l.orderedQty);
   const judged = await deps.blanket.judge(tenantId, {
-    agreementId, poId: po.poId, supplierId: po.supplierId, onDate: deps.now().slice(0, 10),
+    agreementId, poId: po.poId, supplierId: po.supplierId, onDate: await shopToday(deps, tenantId),
     lines: [...byProduct].map(([productId, quantity]) => ({ productId, quantity })),
   });
   if (!judged.ok) {
@@ -547,7 +550,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         if (deps.rangeStatus !== undefined) {
           const branches = deps.locationBranches === undefined ? undefined : await deps.locationBranches(ctx.tenantId);
           const storeId = branches?.(deliverToLocationId) ?? deliverToLocationId;
-          const today = deps.now().slice(0, 10);
+          const today = await shopToday(deps, ctx.tenantId);
           for (const l of lines as RawLine[]) {
             const status = await deps.rangeStatus(ctx.tenantId, storeId, l.productId, today);
             if (status === 'no_range' || status === 'listed') continue;
@@ -714,7 +717,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         const blocked = await deps.supplierBlocked(ctx.tenantId, po.supplierId);
         // WF-03 (round 10): the month's open-to-buy guard is read BEFORE the orders the budget is judged on, and the order
         // issues only while it still holds — two approvals at the same moment cannot both spend the same remaining budget.
-        const period = po.at.slice(0, 7);
+        const period = await shopClock(deps.calendar).monthOf(ctx.tenantId, po.at); // R1b: the PO's month in the shop
         const budgetVersion = blocked || deps.openToBuy?.budgetVersion === undefined ? undefined : await deps.openToBuy.budgetVersion(ctx.tenantId, period);
         // WF-03 (round 8): checked again now — an order over open-to-buy escalates to a person who may exceed the budget.
         const judged = blocked || deps.openToBuy === undefined ? undefined
@@ -849,7 +852,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         // an approval is — over budget it escalates to a person allowed to exceed it (the owner) with a reason, recorded — and
         // lands only while the month's open-to-buy guard (read BEFORE the orders are) still holds. A lowering amendment spends
         // no budget and is not judged.
-        const period = po.at.slice(0, 7);
+        const period = await shopClock(deps.calendar).monthOf(ctx.tenantId, po.at); // R1b: the PO's month in the shop
         let judged: Awaited<ReturnType<typeof judgeApprovalOnBudget>> | undefined;
         let budgetGuard: { key: string; expectedVersion: number } | undefined;
         if (deps.openToBuy !== undefined) {

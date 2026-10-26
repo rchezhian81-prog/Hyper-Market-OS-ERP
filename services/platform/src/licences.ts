@@ -16,6 +16,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -103,6 +104,8 @@ export function licenceAlerts(
 }
 
 export interface LicenceDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly licences: (tenantId: string) => Promise<readonly LicenceState[]> | readonly LicenceState[];
   readonly recordLicence: (tenantId: string, event: LicenceEvent, key: string) => Promise<void> | void;
   /** ISO-8601 UTC datetime; the alert read compares on its date portion. */
@@ -151,7 +154,7 @@ export function licenceRoutes(deps: LicenceDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/platform/licences/alerts',
       permission: 'platform.entitlement.read',
       handler: async (ctx) => {
-        const asOfDate = deps.now().slice(0, 10);
+        const asOfDate = await shopToday(deps, ctx.tenantId);
         const alerts = licenceAlerts(await deps.licences(ctx.tenantId), asOfDate, deps.policy);
         return { status: 200, body: { alerts, expired: alerts.filter((a) => a.level === 'expired').length, asAt: deps.now() } };
       },

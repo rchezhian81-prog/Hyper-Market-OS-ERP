@@ -2,3 +2,4 @@
 // trading-day rule (M01-FR-02). Grows one reviewed, tested unit at a time.
 
 export * from './trading-day';
+export * from './shop-clock';

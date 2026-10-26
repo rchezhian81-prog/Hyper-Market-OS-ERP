@@ -24,6 +24,7 @@ import {
   type PartnerCredential, type PartnerAccessDecision, type ApiVersion, type Environment,
   type Certification, type CertificationStatus, type SandboxTenant, type SandboxSeedResult,
 } from '../../../packages/platform/src/partner';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { PartnerCredential, Certification, SandboxTenant } from '../../../packages/platform/src/partner';
 
@@ -73,6 +74,8 @@ function readCertification(certificationId: string, b: Record<string, unknown>):
 }
 
 export interface PartnerDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** The current version of a partner credential, folded latest-wins from the append-only log. */
   readonly credential: (tenantId: string, credentialId: string) => Promise<PartnerCredential | undefined> | PartnerCredential | undefined;
   /** Append a credential version (register or revoke). Idempotent on the key. */
@@ -121,7 +124,7 @@ export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
           credential, environment: b['environment'] as Environment, tenantId: b['tenantId'] as string,
           requiredScope: b['requiredScope'] as string, contract: b['contract'] as string,
           ...(isStr(b['requestedVersion']) ? { requestedVersion: b['requestedVersion'] as string } : {}),
-          versions, today: deps.now().slice(0, 10),
+          versions, today: await shopToday(deps, ctx.tenantId),
         });
         return { status: 200, body: { ...decision, credentialId: credential.credentialId, asAt: deps.now() } };
       },
@@ -158,7 +161,7 @@ export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
         const current = await deps.credential(ctx.tenantId, credentialId);
         if (current === undefined) throw notFound(`partner credential ${credentialId}`);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const revokedOn = isDate(b['revokedOn']) ? (b['revokedOn'] as string) : deps.now().slice(0, 10);
+        const revokedOn = isDate(b['revokedOn']) ? (b['revokedOn'] as string) : await shopToday(deps, ctx.tenantId);
         const revoked: PartnerCredential = { ...current, revokedOn };
         await deps.recordCredential(ctx.tenantId, revoked, `revoke-${revokedOn}`);
         return { status: 200, body: { credentialId, revokedOn } };
@@ -222,7 +225,7 @@ export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
           ...(certification === undefined ? {} : { certification }),
           currentVersions,
           ...(b['validMonths'] !== undefined ? { validMonths: b['validMonths'] as number } : {}),
-          today: deps.now().slice(0, 10),
+          today: await shopToday(deps, ctx.tenantId),
         });
         return { status: 200, body: { ...status, asAt: deps.now() } };
       },
@@ -274,7 +277,7 @@ export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
         }
         const sandbox = await deps.sandbox(ctx.tenantId, sandboxId);
         if (sandbox === undefined) throw notFound(`partner sandbox ${sandboxId}`);
-        const result: SandboxSeedResult = seedSandbox({ sandbox, records, today: deps.now().slice(0, 10) });
+        const result: SandboxSeedResult = seedSandbox({ sandbox, records, today: await shopToday(deps, ctx.tenantId) });
         // 200 with the decision either way (like the access-check): a refused seed reports seeded:false with
         // its reason (production_data_refused / expired). The engine validates; nothing is copied in. Report
         // the sandbox id as `sandboxId`, never `tenantId` (OB-01 cross-tenant response backstop).

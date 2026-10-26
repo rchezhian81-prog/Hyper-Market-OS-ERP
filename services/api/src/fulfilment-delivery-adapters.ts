@@ -39,6 +39,7 @@ import { dispatchBoardRoutes, type DeliveryBooking, type DispatchBoardDeps } fro
 import { orderRoutingRoutes, decideRoute, keepRoute, type OrderRoutingDeps, type RoutingDecision, type RoutingLocation } from '../../fulfilment/src/order-routing';
 import type { StorefrontRouting } from '../../orders/src/storefront';
 import { fleetSettlementRoutes, type FleetSettlementDeps, type FleetSettlementStep, type FleetJournal } from '../../fulfilment/src/fleet-settlement';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -51,6 +52,8 @@ export interface FulDelInput {
   readonly recordAudit?: Recorder;
   /** The courier-partner link. The running system composes the switched-off one (OB-294); tests may hand in the stand-in. */
   readonly courier?: CourierPartnerLink;
+  /** R1b (M01-FR-02): the shop's calendar (zone and cut-off) — the fleet journals' dates are its trading days. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 const S = {
@@ -83,7 +86,7 @@ const OUT_GOING = new Set(['confirmed', 'picking', 'packed']);
 const FINISHED = new Set(['delivered', 'partially_delivered', 'failed', 'returned_to_origin']);
 
 /** Everything the package's routes read, from one event store. Exported for the driver-run hook and the tests. */
-export function fulDelDeps(input: { readonly store: EventStore; readonly now: () => string; readonly signer: CatalogueDeps['signer']; readonly timeZone: (tenantId: string) => Promise<string> | string; readonly recordAudit?: Recorder; readonly courier?: CourierPartnerLink }) {
+export function fulDelDeps(input: { readonly store: EventStore; readonly now: () => string; readonly signer: CatalogueDeps['signer']; readonly timeZone: (tenantId: string) => Promise<string> | string; readonly recordAudit?: Recorder; readonly courier?: CourierPartnerLink; readonly calendar?: ShopCalendarOf }) {
   const { store, now } = input;
   const orders = ordersAdapter({ store, now, holdMinutes: 30 });
   const catalogue = catalogueAdapter({ store, signer: input.signer, now });
@@ -351,6 +354,7 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
       settledRoutes: async (t) => [...new Set((await payloads<{ routeId: string }>(store, t, S.fleetIndex, 'FleetSettlementRouteIndexed')).map((x) => x.routeId))].sort(),
       postingMap: async (t) => (await payloads<StoredPostingMap>(store, t, STREAM.finance, 'PostingMapDefined')).at(-1),
       fleetJournals: async (t) => (await payloads<JournalEntry | FleetJournal>(store, t, STREAM.finance, 'JournalPosted')).filter((j): j is FleetJournal => 'fleet' in j),
+      ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
     },
   };
 

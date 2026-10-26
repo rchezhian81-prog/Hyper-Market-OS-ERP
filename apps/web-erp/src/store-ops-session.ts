@@ -19,6 +19,7 @@
 // page OFFERS; head office re-checks every act.
 
 import type { ViewerIdentity } from './browser-entry';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -281,7 +282,7 @@ export function createStoreOpsSession(input: {
   };
   const rand = (): string => (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
   const newKey = input.newKey ?? (() => `ops-${rand()}`);
-  const newId = input.newId ?? ((prefix: string) => `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${rand().slice(0, 8)}`);
+  const newId = input.newId ?? ((prefix: string) => `${prefix}-${wallClockIn(new Date().toISOString()).slice(0, 10).replace(/-/g, '')}-${rand().slice(0, 8)}`);
   const now = input.now ?? (() => new Date());
   const http = input.fetch ?? ((...a: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...a));
 

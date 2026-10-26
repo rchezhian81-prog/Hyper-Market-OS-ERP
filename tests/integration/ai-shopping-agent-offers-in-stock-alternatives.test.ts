@@ -10,6 +10,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import type { ModelRequest, ModelTransport, ModelTier, TierPricing } from '../../packages/ai/src/index';
 import type { ModelCallAudit } from '../../services/ai/src/model-gateway';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **The Customer Shopping agent (A04) drafts in-stock alternatives from head office's governed records; the customer
@@ -24,7 +25,7 @@ import type { ModelCallAudit } from '../../services/ai/src/model-gateway';
 
 const T0 = 'ab000000-0000-4000-8000-0000000ea048';
 const OWNER = 'u-owner';
-const today = new Date().toISOString().slice(0, 10);
+const today = shopDateIn(new Date().toISOString());
 
 async function seed(h: ApiHarness, T: string): Promise<void> {
   await h.seedOwner(T, OWNER);

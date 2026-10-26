@@ -15,6 +15,7 @@ import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enro
 import { withTillPeople, issueTillPins, signInTill, pinOf, signInOnPhone, type TillPerson } from '../support/till-operator';
 import type { QueueTillSession, QueueWindow } from '../../apps/queue-pos/src/browser-entry';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **D04-FR-05 mobile POS and queue-busting (OB-288 Pkg 6b) — a staff handheld scans in the queue, takes a card payment where
@@ -103,7 +104,7 @@ async function setUp(cloud: Cloud): Promise<void> {
   await ok('POST', '/v1/catalogue/tax-classes/1507/rates/2017-07-01', { rateBps: 500 }, 'tax-1507');
   const product = async (id: string, name: string, taxClass: string, priceMinor: number, code: string) => {
     await ok('POST', `/v1/catalogue/products/${id}/publish`, { product: { sku: `SKU-${id}`, name, baseUom: 'each', primaryCategoryId: 'grocery', taxClass, lifecycle: 'active', handling: 'ambient' }, categories: [GROCERY] }, `publish-${id}`);
-    await ok('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: STORE, priceMinor, mrpMinor: priceMinor, costMinor: Math.floor(priceMinor / 2), marginFloorBps: 0, currency: 'INR', effectiveFrom: AT.slice(0, 10) }, `price-${id}`);
+    await ok('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: STORE, priceMinor, mrpMinor: priceMinor, costMinor: Math.floor(priceMinor / 2), marginFloorBps: 0, currency: 'INR', effectiveFrom: shopDateIn(AT) }, `price-${id}`);
     await ok('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, { kind: 'ean' }, `barcode-${id}`);
   };
   await product('p-dal', 'Toor dal 1kg', '0713', 12_000, CODE.dal);
@@ -341,7 +342,8 @@ async function queueBustOfflineAndSync(cloud: Cloud): Promise<void> {
     expect(filed.status, JSON.stringify(filed.body)).toBe(200);
     expect(filed.body).toMatchObject({ saleId: `S-${number}`, banked: true });
     // OB-373: both copies reached head office through the store computer's relay — who, which till, which copy, of which bill.
-    const copyDay = String(mine['tradingDay']);
+    // R1a: the store computer dates each copy by the shop's zone from its pack (the shop default here), whatever the device's.
+    const copyDay = shopDateIn(new Date().toISOString());
     const copies = (await cloud.request({ method: 'GET', path: `/v1/bill-copies?branchId=${STORE}&day=${copyDay}`, userId: OWNER })).body as { count: number; ofHandheldBills: number; flagged: number; copies: Record<string, unknown>[] };
     expect(copies).toMatchObject({ count: 2, ofHandheldBills: 2, flagged: 0 });
     expect(copies.copies.map((c) => [c['billNumber'], c['copyNumber'], c['printedBy'], c['laneId'], c['billLaneId'], c['storeId']])).toEqual([

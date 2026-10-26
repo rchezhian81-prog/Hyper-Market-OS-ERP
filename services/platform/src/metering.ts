@@ -22,6 +22,7 @@
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { meterUsage, assessPlanChange, type Plan, type UsageRecord, type MeteredDimension, type PlanChangeResult } from '../../../packages/platform/src/plans';
+import { DEFAULT_SHOP_CALENDAR, shopDateIn, shopMonthIn } from '../../../packages/calendar/src/shop-clock';
 
 /** One hour's measured figures for a shop. AI spend is month-to-date (it only grows within a month). */
 export interface UsageSnapshot {
@@ -72,23 +73,24 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const DIMENSION_OF: Readonly<Record<'stores' | 'lanes' | 'users', MeteredDimension>> = { stores: 'branches', lanes: 'lanes', users: 'named_users' };
 
 /** The month's records as the plans engine's usage records (peaks; AI spend is not a plan dimension). */
-export function usageRecordsOf(tenantId: string, snapshots: readonly UsageSnapshot[], month: string): readonly UsageRecord[] {
-  return snapshots.filter((s) => s.tenantId === tenantId && s.hour.startsWith(month)).flatMap((s) => (['stores', 'lanes', 'users'] as const)
-    .map((k) => ({ tenantId, dimension: DIMENSION_OF[k], units: s[k], onDate: s.hour.slice(0, 10) })));
+export function usageRecordsOf(tenantId: string, snapshots: readonly UsageSnapshot[], month: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone): readonly UsageRecord[] {
+  // R1b (M01-FR-02): a snapshot belongs to the shop's month and date, never the UTC ones (00:00–05:30 IST on the 1st).
+  return snapshots.filter((s) => s.tenantId === tenantId && shopMonthIn(s.at, timeZone) === month).flatMap((s) => (['stores', 'lanes', 'users'] as const)
+    .map((k) => ({ tenantId, dimension: DIMENSION_OF[k], units: s[k], onDate: shopDateIn(s.at, timeZone) })));
 }
 
 /** Record this hour's figures (the ops-alert worker's pass). Idempotent by the hour; answers whether a record was new. */
 export async function recordUsageHour(deps: Pick<MeteringDeps, 'live' | 'snapshots' | 'recordSnapshot'>, tenantId: string, at: string): Promise<boolean> {
   const hour = at.slice(0, 13);
   if ((await deps.snapshots(tenantId)).some((s) => s.hour === hour)) return false;
-  const live = await deps.live(tenantId, at.slice(0, 7));
+  const live = await deps.live(tenantId, shopMonthIn(at));
   await deps.recordSnapshot(tenantId, { tenantId, hour, ...live, at });
   return true;
 }
 
 export function meteringRoutes(deps: MeteringDeps): readonly Route[] {
   const monthOf = (ctx: RequestContext): string => {
-    const m = (ctx.query['month'] ?? deps.now().slice(0, 7)).trim();
+    const m = (ctx.query['month'] ?? shopMonthIn(deps.now())).trim();
     if (!MONTH.test(m)) throw apiError(400, { code: 'not_a_month', whatHappened: `"${m}" is not a month (YYYY-MM).`, wasItSaved: 'not_saved', nextSafeAction: 'Ask for ?month=YYYY-MM, or leave it out for this month.' });
     return m;
   };
@@ -103,9 +105,9 @@ export function meteringRoutes(deps: MeteringDeps): readonly Route[] {
       handler: async (ctx): Promise<HandlerResult> => {
         const month = monthOf(ctx);
         const at = deps.now();
-        const thisMonth = month === at.slice(0, 7);
+        const thisMonth = month === shopMonthIn(at);
         const [all, planId] = await Promise.all([deps.snapshots(ctx.tenantId), deps.currentPlanId(ctx.tenantId)]);
-        const inMonth = all.filter((s) => s.hour.startsWith(month));
+        const inMonth = all.filter((s) => shopMonthIn(s.at) === month);
         const live = thisMonth ? await deps.live(ctx.tenantId, month) : undefined;
         const peak = (k: 'stores' | 'lanes' | 'users'): number | null => (inMonth.length === 0 ? null : Math.max(...inMonth.map((s) => s[k])));
         const latest = inMonth.reduce<UsageSnapshot | undefined>((l, s) => (l === undefined || s.at > l.at ? s : l), undefined);
@@ -149,9 +151,9 @@ export async function previewPlanChange(deps: MeteringDeps, tenantId: string, pl
   const currentId = await deps.currentPlanId(tenantId);
   const current = plans.find((p) => p.planId === currentId) ?? { planId: 'none', name: 'no plan', grants: [], limits: {}, monthlyPriceMinor: 0 };
   const at = deps.now();
-  const usage = usageRecordsOf(tenantId, await deps.snapshots(tenantId), at.slice(0, 7));
-  const live = await deps.live(tenantId, at.slice(0, 7));
-  const today = at.slice(0, 10);
+  const usage = usageRecordsOf(tenantId, await deps.snapshots(tenantId), shopMonthIn(at));
+  const live = await deps.live(tenantId, shopMonthIn(at));
+  const today = shopDateIn(at);
   const nowUsage: UsageRecord[] = [
     { tenantId, dimension: 'branches', units: live.stores, onDate: today },
     { tenantId, dimension: 'lanes', units: live.lanes, onDate: today },

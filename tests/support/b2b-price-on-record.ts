@@ -3,6 +3,7 @@
 // therefore put the item on the price list first: a CUSTOMER-scope price-list entry (the price-list engine's highest
 // precedence, so it applies whatever store the quotation names), through the ordinary price-list route.
 
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 /** Strip the typed price from quotation lines — the record prices them now (OB-361). */
 export function unpriced<T extends { readonly unitPriceMinor?: number }>(lines: readonly T[]): Omit<T, 'unitPriceMinor'>[] {
   return lines.map((l) => Object.fromEntries(Object.entries(l).filter(([k]) => k !== 'unitPriceMinor')) as Omit<T, 'unitPriceMinor'>);
@@ -14,7 +15,7 @@ export function customerListPrice(productId: string, customerId: string, priceMi
     path: `/v1/prices/list/${encodeURIComponent(productId)}/entries/b2b-${encodeURIComponent(customerId)}-${encodeURIComponent(productId)}-${priceMinor}`,
     body: {
       scope: 'customer', scopeRef: customerId, priceMinor, currency: 'INR', mrpMinor: priceMinor, costMinor: Math.floor(priceMinor * 0.8),
-      marginFloorBps: 0, effectiveFrom: new Date().toISOString().slice(0, 10),
+      marginFloorBps: 0, effectiveFrom: shopDateIn(new Date().toISOString()),
     },
   };
 }

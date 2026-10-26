@@ -27,6 +27,8 @@ import {
 } from '../../../packages/settlement/src/settlement';
 import type { PosTender, SettlementLine } from '../../../packages/reconciliation/src/reconciliation';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayWindow } from '../../../packages/calendar/src/trading-day';
 
 export type { SettlementBatch } from '../../../packages/settlement/src/settlement';
 export type { Investigation, PosRefund } from '../../../packages/settlement/src/settlement';
@@ -38,6 +40,8 @@ const OUTCOMES: readonly InvestigationOutcome[] = ['provider_error_recovered', '
 export type CapturedTender = PosTender & { readonly capturedOn: string };
 
 export interface SettlementRoutesDeps {
+  /** R1c (M01-FR-02): the shop's calendar — a day asked for is the shop's day, from its midnight to the next. */
+  readonly calendar?: ShopCalendarOf;
   /** Batch ids already imported, so importing one twice is refused rather than doubling its credits. */
   readonly importedBatchIds: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   /** Record an accepted batch (its lines become the credits the review reconciles against). */
@@ -168,10 +172,13 @@ export function settlementRoutes(deps: SettlementRoutesDeps): readonly Route[] {
         }
 
         const from = shiftDays(asOf, -windowDays);
-        const tenders = await deps.electronicTenders(ctx.tenantId, `${from}T00:00:00.000Z`, `${shiftDays(asOf, 1)}T00:00:00.000Z`);
+        const cal = await shopClock(deps.calendar).calendar(ctx.tenantId);
+        const fromIso = tradingDayWindow(from, cal).from;
+        const toIso = tradingDayWindow(asOf, cal).to;
+        const tenders = await deps.electronicTenders(ctx.tenantId, fromIso, toIso);
         const credits = await deps.credits(ctx.tenantId);
         const refunds = deps.electronicRefunds === undefined ? undefined
-          : await deps.electronicRefunds(ctx.tenantId, `${from}T00:00:00.000Z`, `${shiftDays(asOf, 1)}T00:00:00.000Z`);
+          : await deps.electronicRefunds(ctx.tenantId, fromIso, toIso);
         const review = reviewSettlement({ tenders, credits, ...(refunds === undefined ? {} : { refunds }), settlementCycleDays: cycleDays, asOf });
 
         // The window is part of the answer, not a hidden assumption: an unmatched tender older than

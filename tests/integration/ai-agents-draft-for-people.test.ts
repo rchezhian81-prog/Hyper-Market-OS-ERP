@@ -10,6 +10,7 @@ import { SqlEventStore, type EventStore } from '../../packages/persistence/src/e
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM, streamName } from '../../services/api/src/adapters';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **The agents draft for people and commit nothing (OB-288 lane 4 · P1 · A01/A02/A03/A05 · AI-NFR-04/11 · OB-296/314).**
@@ -50,7 +51,7 @@ describe.each(backings)('the agents draft for people and commit nothing — on $
   it('A02 forecast and quotes, A03 predictions, A01 action list, A05 answers, the customer\'s AI notice and opt-in — and a cold restart', async () => {
     let h = make();
     const T = randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     const dayAgo = (n: number): string => new Date(Date.parse(`${today}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
     await h.seedOwner(T, OWNER);
     await h.provisionOwner(T, OWNER2);

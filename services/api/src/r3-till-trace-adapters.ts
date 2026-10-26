@@ -25,6 +25,7 @@ import {
   STREAM, streamName, productMasterAdapter, peopleAdapter, goodsReceiptAdapter, foldPurchaseOrders, transfersAdapter, lotTraceAdapter,
 } from './adapters';
 import { productionInputsForOutputBatch, productionTraceRunsOf } from './r3-ops-adapters';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const PICTURES = streamName(STREAM.catalogue, 'tobacco-warning-pictures');
 const PICTURE_RECORDED = 'TobaccoWarningPictureRecorded';
@@ -189,6 +190,8 @@ export function lotTraceRequestsAdapter(input: Input): Pick<LotTraceChainDeps, '
 export function r3TillTraceRoutes(input: {
   readonly store: EventStore | undefined;
   readonly now: () => string;
+  /** R1b · R1c (M01-FR-02): the tenant calendar — every business date these routes read is the shop's. */
+  readonly calendar?: ShopCalendarOf;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }): readonly Route[] {
   const { store, now } = input;
@@ -205,7 +208,7 @@ export function r3TillTraceRoutes(input: {
     ];
   }
   return [
-    ...tobaccoWarningRoutes(tobaccoWarningAdapter({ store, now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) })),
+    ...tobaccoWarningRoutes({ ...tobaccoWarningAdapter({ store, now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) }), ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }),
     ...lotTraceChainRoutes({ now, facts: lotTraceFactsAdapter({ store, now }), ...lotTraceRequestsAdapter({ store, now }) }),
   ];
 }

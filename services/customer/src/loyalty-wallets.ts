@@ -18,6 +18,7 @@ import {
   type SpendTender, type WalletFeed, type MemberWallet, type Instrument, type ValueMovement,
 } from '../../../packages/loyalty/src/index';
 import type { LoyaltyRule, MemberRecord } from './loyalty-members';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** What one spend did at head office — one fact per sale and kind, on the member's own stream. */
 export interface SpendApplied {
@@ -45,6 +46,8 @@ export interface HeldCredit {
 }
 
 export interface LoyaltyWalletDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
   /** Every member fact in the tenant, oldest first (the latest per code is its state). */
   readonly allMembers: (tenantId: string) => Promise<readonly MemberRecord[]> | readonly MemberRecord[];
@@ -172,7 +175,7 @@ async function applyStoreCredit(
         const remaining = t.amountMinor - applied;
         if (remaining <= 0) break;
         if (c.movements.some((m) => m.movementId === movementFor(c.instrument.instrumentId))) continue;
-        if (c.instrument.expiresOn !== undefined && c.instrument.expiresOn < at.slice(0, 10)) continue;
+        if (c.instrument.expiresOn !== undefined && c.instrument.expiresOn < await shopClock(deps.calendar).dateOf(tenantId, at)) continue; // R1c
         const balance = balanceOf(c.movements, c.instrument.instrumentId);
         const take = Math.min(balance, remaining);
         if (take <= 0) continue;

@@ -31,6 +31,7 @@ import {
   DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, sayHandling, receivingChecklistGate, acceptCarriedChecklist, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder,
   type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag,
 } from './goods-receipt';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 // The flag vocabulary and the default policy live with the direct route since SP-4 (ii) (both routes read the same
 // master and policy); re-exported here for the readers that learned them on this module.
@@ -41,6 +42,8 @@ export interface SyncedGoodsReceiptDeps extends GoodsReceiptDeps {
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /** The cloud's own unit cost for the product (weighted average of what it cost to buy); `undefined` when never costed. */
   readonly unitCostMinor: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
+  /** R1b (M01-FR-02): the shop's calendar — a receipt's received-on date (the shelf-life check) is the shop's date. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -182,7 +185,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         try {
           captured = captureReceipt({
             receiptId: grnId, lines: captureLines, rules: master.rules, policy: inForce.policy,
-            receivedOnDate: r.receivedAt.slice(0, 10), currency: 'INR',
+            receivedOnDate: await shopClock(deps.calendar).dateOf(ctx.tenantId, r.receivedAt), currency: 'INR',
           });
         } catch (err) {
           if (err instanceof IncompleteCaptureError) {

@@ -28,6 +28,7 @@ import { paymentPosition, type OrderPayment, type OrderPaymentResolution, type O
 import type { PackResult, Manifest } from '../../../packages/fulfilment/src/index';
 import type { IncomingSale, IncomingTender } from '../../pos/src/sale-intake';
 import type { DeliveryAttempt, DeliveryStateRecord } from './index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** The goods that came back to the store from a door, counted, per packed line (needed for a partial delivery). */
 export interface OrderHandback {
@@ -62,6 +63,8 @@ export interface FulfilmentSettlement {
 
 export interface OrderFulfilmentDeps {
   readonly now: () => string;
+  /** R1b (M01-FR-02): the shop's calendar — the banked sale's trading day is the shop's, not the UTC date. */
+  readonly calendar?: ShopCalendarOf;
   readonly orderState: (tenantId: string, orderId: string) => Promise<OrderStateView | undefined> | OrderStateView | undefined;
   readonly recordTransition: (tenantId: string, t: OrderTransition) => Promise<void> | void;
   readonly orderReservations: (tenantId: string, orderId: string, locationId: string) => Promise<readonly Reservation[]> | readonly Reservation[];
@@ -243,7 +246,7 @@ export async function applyOrderFulfilment(deps: OrderFulfilmentDeps, tenantId: 
       })));
       await deps.bankSale(tenantId, {
         saleId, receiptNumber: `ORD-${orderId}`, laneId: 'online-orders', locationId: order.locationId, cashierId: by,
-        tradingDay: at.slice(0, 10), committedAt: at, totalMinor: keptTotal, currency: 'INR', packVersion: 0,
+        tradingDay: await shopClock(deps.calendar).tradingDayOf(tenantId, at), committedAt: at, totalMinor: keptTotal, currency: 'INR', packVersion: 0,
         lines: saleLines, tenders,
       } as IncomingSale);
     }

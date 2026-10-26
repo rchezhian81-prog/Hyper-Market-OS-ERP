@@ -24,6 +24,7 @@ import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import type { StoredPurchaseOrder } from './purchase-orders';
+import { shopClock, shopMonthIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export const UNCATEGORISED = 'uncategorised';
 
@@ -85,6 +86,8 @@ export interface BudgetOverride {
 }
 
 export interface OpenToBuyDeps {
+  /** R1b (M01-FR-02): the shop's calendar — an order's budget month is the month of its shop date, never its UTC month. */
+  readonly calendar?: ShopCalendarOf;
   readonly budgets: (tenantId: string) => Promise<readonly PurchaseBudget[]> | readonly PurchaseBudget[];
   readonly recordBudget: (tenantId: string, budget: PurchaseBudget) => Promise<void> | void;
   readonly orders: (tenantId: string) => Promise<readonly StoredPurchaseOrder[]> | readonly StoredPurchaseOrder[];
@@ -131,12 +134,13 @@ const governing = (budgets: readonly PurchaseBudget[], categoryId: string, perio
  * this order < 0.
  */
 export async function checkOrderAgainstBudget(deps: OpenToBuyDeps, tenantId: string, po: StoredPurchaseOrder): Promise<BudgetCheck> {
-  const period = po.at.slice(0, 7);
+  const zone = (await shopClock(deps.calendar).calendar(tenantId)).timeZone;
+  const period = shopMonthIn(po.at, zone);
   const storeOf = deps.storeOf === undefined ? (l: string) => l : await deps.storeOf(tenantId);
   const storeId = po.deliverToLocationId === undefined ? null : storeOf(po.deliverToLocationId);
   const [budgets, orders] = await Promise.all([deps.budgets(tenantId), deps.orders(tenantId)]);
   const mine = await valueByCategory(deps, tenantId, po);
-  const others = orders.filter((o) => o.poId !== po.poId && o.at.slice(0, 7) === period);
+  const others = orders.filter((o) => o.poId !== po.poId && shopMonthIn(o.at, zone) === period);
   const otherValues = await Promise.all(others.map(async (o) => ({ o, v: await valueByCategory(deps, tenantId, o), store: o.deliverToLocationId === undefined ? null : storeOf(o.deliverToLocationId) })));
   const categories: CategoryCheck[] = [];
   for (const [categoryId, thisOrderMinor] of [...mine].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
@@ -253,7 +257,8 @@ export function openToBuyRoutes(deps: OpenToBuyDeps): readonly Route[] {
         const storeId = isStr(ctx.query['storeId']) ? ctx.query['storeId'] : null;
         const storeOf = deps.storeOf === undefined ? (l: string) => l : await deps.storeOf(ctx.tenantId);
         const [budgets, orders, overrides] = await Promise.all([deps.budgets(ctx.tenantId), deps.orders(ctx.tenantId), deps.overrides(ctx.tenantId)]);
-        const inMonth = orders.filter((o) => o.at.slice(0, 7) === period && (storeId === null || (o.deliverToLocationId !== undefined && storeOf(o.deliverToLocationId) === storeId)));
+        const zone = (await shopClock(deps.calendar).calendar(ctx.tenantId)).timeZone; // R1b
+        const inMonth = orders.filter((o) => shopMonthIn(o.at, zone) === period && (storeId === null || (o.deliverToLocationId !== undefined && storeOf(o.deliverToLocationId) === storeId)));
         const byCat = new Map<string, { committedMinor: number; waitingMinor: number }>();
         for (const o of inMonth) {
           for (const [c, v] of await valueByCategory(deps, ctx.tenantId, o)) {

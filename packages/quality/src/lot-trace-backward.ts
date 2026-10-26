@@ -18,6 +18,7 @@
 // the batches this walk asks for (`batchesStillToFetch`) until none are left, then builds the trace.
 
 import type { TraceReceipt } from './lot-trace-chain';
+import { shopDateIn } from '../../calendar/src/shop-clock';
 
 /** How the shop knows which batch a sale line drew from. */
 export type BatchKnownBy = 'till_recorded' | 'fifo_estimate';
@@ -172,7 +173,7 @@ export function buildBackwardTrace(input: {
     }
     const receipts = origin.receipts.map((r) => {
       const reference = r.grnId === null ? `movement ${r.movementId ?? 'not known'}` : `GRN ${r.grnNumber ?? r.grnId}${r.poId === null ? '' : ` (PO ${r.poId})`}`;
-      if (r.grnId === null) gaps.push(`batch ${batchId}: ${r.quantityMinor} received at ${r.locationId} on ${r.receivedAt.slice(0, 10)} with no goods-receipt note — the supplier is not known`);
+      if (r.grnId === null) gaps.push(`batch ${batchId}: ${r.quantityMinor} received at ${r.locationId} on ${shopDateIn(r.receivedAt)} with no goods-receipt note — the supplier is not known`);
       else if (r.supplierId === null) gaps.push(`batch ${batchId}: goods receipt ${r.grnNumber ?? r.grnId} names no purchase order, so its supplier is not known`);
       if (r.supplierId !== null) {
         const s = suppliers.get(r.supplierId) ?? { batchIds: new Set<string>(), references: new Set<string>() };

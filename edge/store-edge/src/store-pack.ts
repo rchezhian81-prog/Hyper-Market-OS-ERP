@@ -979,6 +979,12 @@ export interface PackPolicies {
   readonly branchName: string;
   /** Where the trading day ends, "HH:MM" local (M01-FR-02). */
   readonly tradingDayCutoff: string;
+  /**
+   * The IANA time zone the shop's clocks keep (head office's `locale.time_zone`, M01-FR-02 · re-audit R1a). The box dates
+   * every bill, shift, cash movement and day close by it — never by the machine's own zone. Absent (an older pack): the
+   * shop default, Asia/Kolkata, and the box says so.
+   */
+  readonly timeZone?: string;
   /** Seconds after which the owner's figures count as stale. */
   readonly staleAfterSeconds: number;
   /** Variance value at/above which a stock count needs a second approver (§28). */

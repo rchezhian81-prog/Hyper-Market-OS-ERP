@@ -19,6 +19,7 @@
 // Pure and deterministic — no clock, no I/O.
 
 // --- thresholds (paise) — CONFIRM the intra-TN figure with the CA before production -------------------
+import { shopDateIn } from '../../calendar/src/shop-clock';
 /** Inter-State: an e-way bill is required above ₹50,000 consignment value (Rule 138, national). */
 export const EWB_INTER_STATE_THRESHOLD_MINOR = 5_000_000;
 /** Intra-Tamil-Nadu: the state notification sets the floor at ₹1,00,000 (CONFIRM with the CA). */
@@ -198,9 +199,10 @@ export function buildEwayBillRequest(input: {
 
 /** The Indian financial year (April–March) label for a date, e.g. 2026-08-12 → "2026-27". */
 function financialYearOf(dateStr: string): string {
-  const d = new Date(Date.parse(dateStr));
-  const y = d.getUTCFullYear();
-  const startYear = d.getUTCMonth() >= 3 ? y : y - 1; // April (month 3) starts the FY
+  // R1 (M01-FR-02): a moment is read on the shop's date (00:00–05:30 IST on 1 April is the new year); a date is a date.
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : shopDateIn(dateStr);
+  const y = Number(day.slice(0, 4));
+  const startYear = Number(day.slice(5, 7)) >= 4 ? y : y - 1; // April starts the FY
   return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
 }
 

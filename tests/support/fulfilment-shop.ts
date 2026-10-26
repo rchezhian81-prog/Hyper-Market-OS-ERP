@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ApiHarness } from './api-harness';
 import { listableProduct } from './sell-online';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 export const OWNER = 'u-owner';
 export const DISPATCHER = 'u-dispatch';
@@ -78,7 +79,7 @@ export async function fulfilmentShop(h: ApiHarness, opts: { readonly oilUnbinned
   await putAway('pa-dal', 'DAL', 'A-02', 30);
   await putAway('pa-oil', 'OIL', opts.oilUnbinned === true ? 'H-01' : 'A-02', 30);
   await ok('PUT', '/v1/serviceability/delivery-service', OWNER, { storeLocation: STORE, slotsPerDay: 6, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 });
-  const tomorrowUtc = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const tomorrowUtc = shopDateIn(new Date(Date.now() + 864e5).toISOString()); // the shop's tomorrow
   const svc = await ok('GET', '/v1/serviceability/delivery-service', OWNER, undefined, { day: tomorrowUtc });
   const slots = (svc['slots'] as { startsAt: string; endsAt: string }[]);
   const runDate = svc['day'] as string;

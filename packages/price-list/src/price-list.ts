@@ -10,6 +10,8 @@
 // only the Money primitive.
 
 import type { Money } from '../../contracts/src/money';
+import { instantOf } from '../../calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
 
 /** Price scopes, highest precedence first. */
 export type PriceScope = 'customer' | 'channel' | 'zone' | 'store';
@@ -42,6 +44,8 @@ export interface PriceEntry {
 export interface ResolveContext {
   readonly productId: string;
   readonly at: string; // ISO-8601 UTC evaluation instant
+  /** R1c (M01-FR-02): the shop's zone — a date-only effective date starts at the SHOP's midnight. Default: the shop default zone. */
+  readonly timeZone?: string;
   readonly storeId: string;
   readonly zoneId?: string;
   readonly channel?: string;
@@ -66,14 +70,22 @@ function scopeValue(scope: PriceScope, ctx: ResolveContext): string | undefined 
 }
 
 /** Published and within its effective window at `at` — a future price is not yet live. */
-function isEffective(entry: PriceEntry, at: string): boolean {
+/**
+ * An effective date as an instant. A date alone (YYYY-MM-DD) means the start of that day on the SHOP's clock (R1c ·
+ * M01-FR-02) — read as UTC midnight, a price "from today" began only at 05:30 IST. An instant is taken as written.
+ */
+export function effectiveInstant(value: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone): number {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? Date.parse(instantOf(`${value}T00:00`, timeZone)) : Date.parse(value);
+}
+
+function isEffective(entry: PriceEntry, at: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone): boolean {
   if (entry.status !== 'active') return false;
   const t = Date.parse(at);
-  const from = Date.parse(entry.effectiveFrom);
+  const from = effectiveInstant(entry.effectiveFrom, timeZone);
   if (Number.isNaN(t) || Number.isNaN(from)) return false;
   if (t < from) return false;
   if (entry.effectiveTo !== undefined && entry.effectiveTo !== null) {
-    const to = Date.parse(entry.effectiveTo);
+    const to = effectiveInstant(entry.effectiveTo, timeZone);
     if (Number.isNaN(to) || t > to) return false;
   }
   return true;
@@ -100,7 +112,7 @@ export function resolvePrice(
         e.scope === scope &&
         e.scopeRef === ref &&
         (e.batchId ?? null) === (ctx.batchId ?? null) &&
-        isEffective(e, ctx.at),
+        isEffective(e, ctx.at, ctx.timeZone),
     );
     if (candidates.length === 0) continue;
     candidates.sort((a, b) => {

@@ -22,6 +22,7 @@ import {
   clusterStores, seasonEndDecisions, seasonEnded, dropFromRange, RangeDecisionError,
   type ClusterMembership, type SeasonPlan, type AssortmentEntry, type DropReason, type SeasonEndDecision,
 } from '../../../packages/merchandising/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface SeasonEnd {
   readonly planId: string;
@@ -31,6 +32,8 @@ export interface SeasonEnd {
 }
 
 export interface SeasonPlanDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly memberships: (tenantId: string) => Promise<readonly ClusterMembership[]>;
   readonly productKnown: (tenantId: string, productId: string) => Promise<boolean>;
   readonly storeOnHand: (tenantId: string, storeId: string, productId: string) => Promise<number>;
@@ -64,7 +67,7 @@ async function storesOfCluster(deps: SeasonPlanDeps, tenantId: string, zoneId: s
 
 /** End every season whose last day has passed and that has not ended yet. Returns how many ended. Idempotent. */
 export async function endDueSeasons(deps: SeasonPlanDeps, tenantId: string, endedBy: string): Promise<readonly SeasonEnd[]> {
-  const today = deps.now().slice(0, 10);
+  const today = await shopToday(deps, tenantId);
   const ended = new Set((await deps.ends(tenantId)).map((e) => e.planId));
   const out: SeasonEnd[] = [];
   for (const plan of await deps.plans(tenantId)) {
@@ -188,7 +191,7 @@ export function seasonPlanRoutes(deps: SeasonPlanDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/merchandising/season-plans',
       permission: 'merchandising.range.read',
       handler: async (ctx) => {
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         const ends = new Map((await deps.ends(ctx.tenantId)).map((e) => [e.planId, e] as const));
         const plans = (await deps.plans(ctx.tenantId)).map((p) => {
           const end = ends.get(p.planId);

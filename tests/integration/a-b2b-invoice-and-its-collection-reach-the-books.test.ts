@@ -11,6 +11,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **FUL-09 — a B2B invoice and its collection carry their money (M22-FR-01/02/04 → M23-FR-01 · P-02 · P-08).** A business
@@ -46,7 +47,7 @@ describe.each(backings)('FUL-09 — a B2B invoice and its collection move AR and
     const call = (method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, user = 'u-owner', key?: string) =>
       h.request({ method, path, userId: user, tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `${path}-${user}` }) });
     const ok = async (p: ReturnType<typeof call>, what: string) => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
-    const asOf = async (path: string) => (await h.request({ method: 'GET', path, userId: 'u-owner', tenantId: T, query: { asOf: new Date().toISOString().slice(0, 10) } })).body;
+    const asOf = async (path: string) => (await h.request({ method: 'GET', path, userId: 'u-owner', tenantId: T, query: { asOf: shopDateIn(new Date().toISOString()) } })).body;
 
     await ok(setApprovedCreditLimit(h, T, 'u-owner', 'CUST1', { creditLimitMinor: 1_000_000, paymentTermsDays: 30 }, { checker: 'u-acct' }), 'terms'); // OB-360: a second person approves
     await ok(call('POST', '/v1/b2b/documents/CUST1/quotations/q1', { lines: await onThePriceList(harnessPriceList(h, T), 'CUST1', LINES) }), 'quote');
@@ -55,7 +56,7 @@ describe.each(backings)('FUL-09 — a B2B invoice and its collection move AR and
     await ok(call('POST', '/v1/b2b/documents/CUST1/orders/so1', { fromQuotationId: 'q1', locationId: 'S1' }), 'order');
     await ok(call('POST', '/v1/b2b/documents/CUST1/challans/dc1', { fromOrderId: 'so1', dispatched: { l1: 10 } }), 'challan');
     const inv = await ok(call('POST', '/v1/b2b/documents/CUST1/invoices/inv1', { fromOrderId: 'so1' }), 'invoice');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     const due = new Date(Date.parse(`${today}T00:00:00.000Z`) + 30 * 86_400_000).toISOString().slice(0, 10);
     expect(inv.body).toMatchObject({ grossMinor: 105_000, dueOn: due });
 

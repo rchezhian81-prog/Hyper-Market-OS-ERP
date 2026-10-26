@@ -52,7 +52,7 @@ function paintLookup() {
   const ul = $('po-rows'); ul.replaceChildren();
   if (looked === null) return;
   if (looked.updates.length === 0) { ul.append(text('li', t('noWord'))); return; }
-  for (const d of looked.updates) ul.append(text('li', `${deliveryWords(d)} · ${t('received')} ${d.receivedAt.slice(0, 10)}`));
+  for (const d of looked.updates) ul.append(text('li', `${deliveryWords(d)} · ${t('received')} ${new Date(d.receivedAt).toLocaleDateString('en-CA')}`));
 }
 
 function paint() {

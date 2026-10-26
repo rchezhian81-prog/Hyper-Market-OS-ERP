@@ -23,8 +23,11 @@ import {
 } from '../../../packages/facilities/src/index';
 import type { SafetyIncident } from '../../../packages/facilities/src/schedules';
 import type { EquipmentRangeReg, EquipmentContents } from './facilities-monitoring';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface FacilitiesOfficeDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly assets: (tenantId: string) => Promise<readonly Asset[]>;
   readonly services: (tenantId: string) => Promise<readonly ServiceLog[]>;
   readonly downtime: (tenantId: string) => Promise<readonly DowntimeEvent[]>;
@@ -55,7 +58,7 @@ export function facilitiesOfficeRoutes(deps: FacilitiesOfficeDeps): readonly Rou
         if (!isStr(branchId)) throw apiError(400, { code: 'office_needs_a_branch', whatHappened: 'The facilities office read needs ?branchId= (and optionally ?asOf=YYYY-MM-DD).', wasItSaved: 'not_saved', nextSafeAction: 'Send the branch. A read changes nothing.' });
         assertBranchInScope(ctx, branchId);
         const now = deps.now();
-        const day = isDay(ctx.query['asOf']) ? ctx.query['asOf']! : now.slice(0, 10);
+        const day = isDay(ctx.query['asOf']) ? ctx.query['asOf']! : await shopToday(deps, ctx.tenantId);
         const at = isDay(ctx.query['asOf']) ? `${day}T23:59:59.999Z` : now;
         const [assets, services, downtime, energy, ranges, readings, contents, incidents] = await Promise.all([
           deps.assets(ctx.tenantId), deps.services(ctx.tenantId), deps.downtime(ctx.tenantId), deps.energyReadings(ctx.tenantId),

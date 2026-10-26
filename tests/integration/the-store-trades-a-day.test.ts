@@ -102,7 +102,7 @@ describeOrSkip('the store trades a day, connected: real API Â· real PostgreSQL Â
     const packFile = join(dataDir, 'store-pack.json');
     await writeFile(packFile, JSON.stringify({
       version: 1,
-      policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: BACK, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+      policies: { timeZone: 'UTC', storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: BACK, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       lossPreventionRules: [],
     }), 'utf8');
     // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).

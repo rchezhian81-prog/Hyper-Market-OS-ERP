@@ -32,6 +32,7 @@ import { fleetSettlementOf, type CourierPartnerLink, type FleetRate } from '../.
 import { postJournal as postMapped, UnmappedKindError, MissingComponentError, UnbalancedJournalError, type PostingMap } from '../../../packages/finance/src/posting';
 import { postJournal, type FinanceDeps, type JournalEntry } from '../../finance/src/index';
 import { latestStops, type RouteStopUpdate } from './driver-runs';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type FleetSettlementStep =
   | { readonly step: 'proposed'; readonly routeId: string; readonly driverId: string; readonly drops: number; readonly rate: FleetRate; readonly amountMinor: number; readonly by: string; readonly at: string }
@@ -57,6 +58,8 @@ export interface FleetBooksDeps extends Pick<FinanceDeps, 'periodStates' | 'next
   readonly settledRoutes: (tenantId: string) => Promise<readonly string[]>;
   readonly postingMap: (tenantId: string) => Promise<PostingMap | undefined>;
   readonly fleetJournals: (tenantId: string) => Promise<readonly FleetJournal[]>;
+  /** R1b (M01-FR-02): the shop's calendar — a movement's journal date and period are its shop trading day's. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 export interface FleetJournal extends JournalEntry {
@@ -283,7 +286,7 @@ export function fleetSettlementRoutes(deps: FleetSettlementDeps): readonly Route
               exceptions.push({ movementId: m.movementId, kind, reason, detail: err instanceof Error ? err.message : String(err) });
               continue;
             }
-            const documentDate = m.at.slice(0, 10);
+            const documentDate = await shopClock(b.calendar).tradingDayOf(t, m.at);
             const belongsTo = documentDate.slice(0, 7);
             const closed = states.get(belongsTo) === 'closed';
             const period = closed ? await b.nextOpenPeriod(t) : belongsTo;

@@ -10,7 +10,8 @@ const may = session?.may ?? { named: false, readPrices: false };
 
 let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
-const day = (iso) => (typeof iso === 'string' ? iso.slice(0, 10) : '');
+// R1c: this device's own date of a moment, never its UTC date.
+const day = (iso) => (typeof iso === 'string' ? (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date(iso).toLocaleDateString('en-CA')) : '');
 let report = null;
 
 function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }

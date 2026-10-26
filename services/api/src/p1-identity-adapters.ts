@@ -52,6 +52,7 @@ import {
   pricingAdapter, storeRulesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 type Base = { readonly store: EventStore; readonly now: () => string; readonly settings: DurableTenantSettings };
@@ -221,6 +222,8 @@ export function approvalAgeSweep(input: Base): (tenantId: string, at: string) =>
 export function p1IdentitySurface(surface: Route[], input: {
   readonly store: EventStore | undefined;
   readonly now: () => string;
+  /** R1b · R1c (M01-FR-02): the tenant calendar — every business date these routes read is the shop's. */
+  readonly calendar?: ShopCalendarOf;
   readonly settings: DurableTenantSettings;
   readonly recordAudit?: Recorder;
   readonly applyDecision?: (tenantId: string, record: ApprovalDecisionRecord) => Promise<AppliedDecision>;
@@ -238,7 +241,7 @@ export function p1IdentitySurface(surface: Route[], input: {
     new Map((await escalations(store, tenantId)).map((e) => [e.requestId, { escalatedAt: e.escalatedAt, waitedMinutes: e.waitedMinutes, waitMinutes: e.waitMinutes, escalatedTo: 'owner' as const }]));
 
   // 1. The identity routes that decide, rebuilt with the server-held authority (same paths, same permissions).
-  swapIn(surface, delegationRoutes({ ...delegationAdapter({ store, now }), authorityOf }));
+  swapIn(surface, delegationRoutes({ ...delegationAdapter({ store, now }), authorityOf, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }));
   swapIn(surface, approvalDecisionRoutes({
     ...approvalDecisionAdapter({ store, now }), ...audit, authorityOf,
     ...(input.applyDecision === undefined ? {} : { applyDecision: input.applyDecision }),
@@ -320,6 +323,7 @@ export function p1IdentitySurface(surface: Route[], input: {
   // 3. OB-291: a price change larger than the set size needs a second person — judged by the price route after the MRP
   //    ceiling and the margin floor, so those still speak first.
   swapIn(surface, pricingRoutes({
+    ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
     ...pricingAdapter({ store, now }), ...audit, approvals,
     // The same composition as main.ts (M05: the floor is the store's own rules) — plus the owner's size rule.
     marginFloorFor: async (t: string, storeId: string) => (await storeRulesAdapter({ store }).rules(t, storeId))?.marginFloorBps,
@@ -393,6 +397,7 @@ export function p1IdentitySurface(surface: Route[], input: {
       departmentIds: async (tenantId) => (await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'department' && n.status !== 'closed').map((n) => n.nodeId),
     }),
     ...orgDepartmentRoutes({
+      ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
       approvals, ...audit, now,
       nodes: async (tenantId) => orgStructureAdapter({ store, now }).nodes(tenantId),
       links: (tenantId) => payloads<DepartmentLinkRecord>(store, tenantId, DEPARTMENT_LINKS_STREAM, 'DepartmentCategoriesSet'),

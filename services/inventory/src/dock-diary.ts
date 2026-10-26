@@ -20,6 +20,7 @@ import { ConcurrencyConflictError } from '../../../packages/persistence/src/even
 import { bookDockSlot, DockConflictError, type DockSlot } from '../../../packages/receiving/src/asn';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 export interface DiaryBooking extends DockSlot {
   readonly bookedBy: string;
@@ -149,7 +150,7 @@ export function dockDiaryRoutes(deps: DockDiaryDeps): readonly Route[] {
         const scope = await stockReadScope(ctx, deps.locationBranches);
         if (!scope.covers(storeId)) throw apiError(403, { code: 'outside_your_branches', whatHappened: `${storeId} is outside your branches.`, wasItSaved: 'not_saved', nextSafeAction: 'Ask for a store you work at. Nothing was changed.' });
         const now = deps.now();
-        const day = (await deps.bookings(ctx.tenantId)).filter((x) => x.storeId === storeId && (date === undefined || x.startsAt.slice(0, 10) === date))
+        const day = (await deps.bookings(ctx.tenantId)).filter((x) => x.storeId === storeId && (date === undefined || shopDateIn(x.startsAt) === date)) // R1c: a 02:00 IST booking is on that day
           .sort((a, b) => (a.dockId === b.dockId ? a.startsAt.localeCompare(b.startsAt) : a.dockId.localeCompare(b.dockId)));
         const late = day.filter((x) => x.status === 'booked' && x.endsAt < now).map((x) => ({ slotId: x.slotId, dockId: x.dockId, supplierId: x.supplierId ?? null, endedAt: x.endsAt }));
         return { status: 200, body: { storeId, date: date ?? null, bookings: day, count: day.length, late, asAt: now } };

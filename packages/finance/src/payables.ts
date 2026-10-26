@@ -12,6 +12,8 @@
 
 import { postJournal, type PostingInput, type PostingMap, type PostingRule, type JournalEntry as PostedJournal } from './posting';
 import type { CurrencyCode } from '../../contracts/src/money';
+import { tradingDayIn } from '../../calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
 
 export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance'
   /** OB-44: a signed opening reversed inside the cutover window — the posting undone by its own compensating journal. */
@@ -189,7 +191,11 @@ function split(grossKey: 'payable' | 'amount', gross: number, tax: Record<(typeo
  * (a re-match that withheld more) reverses the difference as its own journal. An unmatched invoice posts nothing:
  * nothing is owed until the three documents have been compared. A debit note posts once, at its value.
  */
-export function planPayablesPostings(accounts: readonly PayablesAccount[], prior: readonly PostedPayable[]): readonly PayablesPosting[] {
+export function planPayablesPostings(
+  accounts: readonly PayablesAccount[], prior: readonly PostedPayable[],
+  /** R1b (M01-FR-02): the shop's trading day of a moment — the journal's document date. Default: the shop calendar, never UTC. */
+  dayOf: (isoInstant: string) => string = (iso) => tradingDayIn(iso, DEFAULT_SHOP_CALENDAR),
+): readonly PayablesPosting[] {
   const out: PayablesPosting[] = [];
   for (const a of accounts) {
     for (const inv of a.invoices) {
@@ -199,7 +205,7 @@ export function planPayablesPostings(accounts: readonly PayablesAccount[], prior
       const nowTax = taxIn(inv.tax);
       const dTax = { cgst: nowTax.cgst - heldTax.cgst, sgst: nowTax.sgst - heldTax.sgst, igst: nowTax.igst - heldTax.igst };
       if (delta === 0 && dTax.cgst === 0 && dTax.sgst === 0 && dTax.igst === 0) continue;
-      const base = { sourceKind: 'supplier_invoice' as const, sourceId: inv.invoiceId, supplierId: a.supplierId, documentDate: inv.matchedAt.slice(0, 10) };
+      const base = { sourceKind: 'supplier_invoice' as const, sourceId: inv.invoiceId, supplierId: a.supplierId, documentDate: dayOf(inv.matchedAt) };
       out.push(delta >= 0
         ? { ...base, kind: 'supplier_invoice', components: split('payable', delta, dTax) }
         : { ...base, kind: 'supplier_invoice_reversal', components: split('amount', -delta, { cgst: 0 - dTax.cgst, sgst: 0 - dTax.sgst, igst: 0 - dTax.igst }) });
@@ -211,7 +217,7 @@ export function planPayablesPostings(accounts: readonly PayablesAccount[], prior
       const nowTax = taxIn(dn.tax);
       out.push({
         kind: 'supplier_debit_note', sourceKind: 'supplier_debit_note', sourceId: dn.debitNoteRef, supplierId: a.supplierId,
-        documentDate: dn.decidedAt.slice(0, 10),
+        documentDate: dayOf(dn.decidedAt),
         components: split('amount', delta, { cgst: nowTax.cgst - heldTax.cgst, sgst: nowTax.sgst - heldTax.sgst, igst: nowTax.igst - heldTax.igst }),
       });
     }

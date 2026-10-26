@@ -39,7 +39,7 @@ const FINE = 'p-dal';
 
 const packFor = (): Record<string, unknown> => ({
   version: 1,
-  policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+  policies: { timeZone: 'UTC', storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
   servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 150_000, agentAuthorityMinor: 0, compensationCapMinor: 0 },
   lossPreventionRules: [],
 });
