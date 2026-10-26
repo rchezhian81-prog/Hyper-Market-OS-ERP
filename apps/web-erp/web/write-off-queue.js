@@ -97,11 +97,63 @@ if (fs !== null && fs.session.may.named) {
     const out = await fs.session.record({ productId: el('fs-product').value, locationId: el('fs-location').value, qty: el('fs-qty').value, uom: el('fs-uom').value, note: el('fs-note').value });
     const r = el('fs-result');
     r.dataset.result = out.result;
-    r.textContent = out.result === 'ok' ? `✓ ${fs.words(lang(), 'recorded')} ${out.value.itcWords}` : `⚠ ${fs.outcomeWords(lang(), out)}`;
-    if (out.result === 'ok') { el('fs-qty').value = ''; el('fs-note').value = ''; }
+    r.textContent = out.result === 'ok' ? `✓ ${fs.words(lang(), 'recorded')}` : `⚠ ${fs.outcomeWords(lang(), out)}`;
+    if (out.result === 'ok') { el('fs-qty').value = ''; el('fs-note').value = ''; if (pendingShown) void loadPending(); }
   });
   el('lang').addEventListener('click', () => { paintFreeSample(); });
   paintFreeSample();
+}
+
+// ── OB-393: the free samples waiting for a store manager other than the giver. Read on a click, never on open; the giver's
+//    own rows carry no buttons (head office refuses a self-approval by name anyway). ──
+let pendingShown = false;
+let pendingRows = null; // null = not read
+function paintPending() {
+  if (fs === null) return;
+  const fw = (k) => fs.words(lang(), k);
+  el('fsp-title').textContent = fw('pendingH');
+  el('fsp-lead').textContent = fw('pendingLead');
+  el('fsp-load-text').textContent = fw('loadPending');
+  const rows = el('fsp-rows');
+  if (pendingRows === null) { rows.replaceChildren(); return; }
+  if (pendingRows.length === 0) { rows.replaceChildren(text('li', fw('pendingNone'), 'muted')); return; }
+  rows.replaceChildren(...pendingRows.map((p) => {
+    const li = document.createElement('li');
+    li.className = 'row tone-degraded'; li.dataset.issue = p.issueId;
+    li.append(text('strong', `⏳ ${p.qty} ${p.uom} ${p.productId} · ${p.locationId}`), text('span', `${p.note} — ${fw('givenBy')} ${p.requestedBy} · ${p.tradingDay}`, 'facts'));
+    if (fs.session.viewerId !== null && p.requestedBy === fs.session.viewerId) { li.append(text('span', fw('yours'), 'muted')); return li; }
+    if (!fs.session.may.approve) return li;
+    const label = document.createElement('label');
+    const reason = document.createElement('input'); reason.className = 'decision-reason'; reason.autocomplete = 'off'; reason.maxLength = 300;
+    label.append(text('span', fw('decisionReason')), reason);
+    const said = text('p', '', 'result'); said.setAttribute('role', 'status');
+    const go = async (decision) => {
+      const out = await fs.session.decide(p, decision, reason.value);
+      said.dataset.result = out.result;
+      if (out.result !== 'ok') { said.textContent = `⚠ ${fs.outcomeWords(lang(), out)}`; return; }
+      el('fsp-said').textContent = decision === 'approve' ? `✓ ${fw('approved')} ${out.value.itcWords ?? ''}` : `✓ ${fw('rejectedOk')}`;
+      el('fsp-said').dataset.result = 'ok';
+      await loadPending();
+    };
+    const yes = button(fw('approve'), 'check', 'primary'); yes.dataset.act = 'approve'; yes.addEventListener('click', () => { void go('approve'); });
+    const no = button(fw('reject'), 'x'); no.dataset.act = 'reject'; no.addEventListener('click', () => { void go('reject'); });
+    li.append(label, yes, no, said);
+    return li;
+  }));
+}
+async function loadPending() {
+  const out = await fs.session.pending();
+  pendingShown = true;
+  if (out.result !== 'ok') { pendingRows = null; el('fsp-said').textContent = `⚠ ${fs.outcomeWords(lang(), out)}`; el('fsp-said').dataset.result = out.result; paintPending(); return; }
+  pendingRows = out.value.pending;
+  paintPending();
+}
+if (fs !== null && fs.session.may.named && (fs.session.may.approve || fs.session.may.record)) {
+  el('fsp').hidden = false;
+  { const i = icon('list-checks'); if (i !== null) el('fsp-load').prepend(i); }
+  el('fsp-load').addEventListener('click', () => { void loadPending(); });
+  el('lang').addEventListener('click', () => { paintPending(); });
+  paintPending();
 }
 void syncQueue();
 setInterval(() => { void syncQueue(); }, 15_000);

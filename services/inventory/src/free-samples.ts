@@ -12,6 +12,14 @@
 //   • POST /v1/finance/free-sample-itc/:issueId/check — the accountant checks it: { outcome: agreed | query, note }. Never
 //     the person who recorded the issue (§28). Append-only: a later check stands over an earlier one, both are kept.
 //
+// OB-393 (owner decision, 26 Oct 2026): a store manager OTHER THAN THE GIVER approves each free sample BEFORE the stock
+// leaves and the GST give-back is placed. So the POST above now records a REQUEST, waiting; nothing moves:
+//   • GET  /v1/inventory/free-samples/pending — every sample waiting for approval (who gave it, what, where, since when);
+//   • POST /v1/inventory/free-samples/:issueId/decision — { decision: approve | reject, reason }. Refused BY NAME when the
+//     approver is the giver (`free_sample_self_approval`). Approved: valued at head office's buying cost NOW, the stock
+//     leaves, the give-back is worked out and placed (all as before), the issue names both people. Rejected: kept with the
+//     reason; nothing moves. Once only. The accountant's list shows the waiting ones on their own, never as "nothing".
+//
 // A free sample is a stock ISSUE, not waste: it is kept on its own register, so the waste reason list (OB-159) and its
 // analytics are not touched. Every record here is append-only and audited (hard rules #2, #6).
 
@@ -48,6 +56,34 @@ export interface FreeSampleIssue {
   /** Set when the issue's own month was already locked, so it went into a later return. */
   readonly movedFrom?: string;
   readonly reversalId?: string;
+  /** OB-393: when the giver asked, and the store manager (never the giver) who approved it — the stock left then. */
+  readonly requestedAt?: string;
+  readonly approvedBy?: string;
+  readonly approvedAt?: string;
+}
+
+/** OB-393: a free sample as the giver recorded it — waiting for another store manager; nothing has moved yet. */
+export interface FreeSampleRequest {
+  readonly issueId: string;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly qty: number;
+  readonly uom: string;
+  readonly batchId?: string;
+  readonly note: string;
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  /** The shop's trading day it was given. */
+  readonly tradingDay: string;
+}
+
+/** OB-393: the approver's decision on one request — once; kept for good. */
+export interface FreeSampleDecision {
+  readonly issueId: string;
+  readonly decision: 'approved' | 'rejected';
+  readonly reason: string;
+  readonly by: string;
+  readonly at: string;
 }
 
 export interface FreeSampleCheck {
@@ -59,6 +95,11 @@ export interface FreeSampleCheck {
 }
 
 export interface FreeSampleDeps {
+  /** OB-393: every request the givers recorded, and every decision on them (append-only). */
+  readonly requests: (tenantId: string) => Promise<readonly FreeSampleRequest[]>;
+  readonly recordRequest: (tenantId: string, request: FreeSampleRequest) => Promise<void>;
+  readonly decisions: (tenantId: string) => Promise<readonly FreeSampleDecision[]>;
+  readonly recordDecision: (tenantId: string, decision: FreeSampleDecision) => Promise<void>;
   readonly issues: (tenantId: string) => Promise<readonly FreeSampleIssue[]>;
   /** Record the issue AND its compensating stock movement (keyed on the issue id, so a retry is one movement, not two). */
   readonly recordIssue: (tenantId: string, issue: FreeSampleIssue) => Promise<void>;
@@ -99,6 +140,43 @@ export function itcWords(issue: Pick<FreeSampleIssue, 'itc' | 'returnMonth' | 'm
   return `${rupees(total)} (${heads}) on a buying value of ${rupees(i.buyingValueMinor)}, at the rate of bill ${i.fromInvoiceId}; in the ${issue.returnMonth ?? ''} return${issue.movedFrom === undefined ? '' : ` (the ${issue.movedFrom} return was already locked)`}.`;
 }
 
+const AWAITING_WORDS = 'Recorded and waiting: a store manager other than you approves it before the stock leaves and the GST credit is given back (OB-393).';
+
+/** OB-393: the requests with no decision yet, oldest first. */
+export async function pendingOf(deps: Pick<FreeSampleDeps, 'requests' | 'decisions'>, tenantId: string): Promise<FreeSampleRequest[]> {
+  const decided = new Set((await deps.decisions(tenantId)).map((d) => d.issueId));
+  return (await deps.requests(tenantId)).filter((r) => !decided.has(r.issueId)).sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+}
+
+/** OB-393: on approval — value the stock at head office's cost now, work out the give-back, place it, and move the stock. */
+async function placeIssue(deps: FreeSampleDeps, tenantId: string, request: FreeSampleRequest, approvedBy: string, at: string): Promise<FreeSampleIssue> {
+  const { issueId, productId, locationId, qty, uom, tradingDay } = request;
+  const unitCost = await deps.unitCostAt(tenantId, locationId, productId);
+  const buyingValueMinor = unitCost === undefined ? undefined : valueAtUnitCost(qty, uom, unitCost);
+  const itc = freeSampleItc({ productId, buyingValueMinor, bills: await deps.bills(tenantId) });
+  let placed: { month: string; movedFrom?: string } | undefined;
+  let reversalId: string | undefined;
+  if (itc.state === 'computed') {
+    // The give-back goes into the return of the month the sample was GIVEN, or the first later one not yet locked.
+    placed = returnMonthFor(tradingDay.slice(0, 7), await deps.lockedMonths(tenantId));
+    reversalId = `free-sample-${issueId}`;
+    await deps.recordReversal(tenantId, {
+      reversalId, period: placed.month, rule: 'free_samples', sourceRef: `free-sample:${issueId}`,
+      reason: `Free sample of ${qty} ${uom} ${productId} at ${locationId} on ${tradingDay} (${request.note.slice(0, 120)}), given by ${request.requestedBy} and approved by ${approvedBy}: credit given back on its buying cost — computed by the system, for the accountant to check (OB-386, OB-393).`,
+      igstMinor: itc.igstMinor, cgstMinor: itc.cgstMinor, sgstMinor: itc.sgstMinor, cessMinor: itc.cessMinor, by: 'system:free-sample', at,
+    });
+  }
+  const issue: FreeSampleIssue = {
+    issueId, productId, locationId, qty, uom, ...(request.batchId === undefined ? {} : { batchId: request.batchId }),
+    note: request.note, issuedBy: request.requestedBy, issuedAt: at, tradingDay, unitCostMinor: unitCost ?? null, itc,
+    ...(placed === undefined ? {} : { returnMonth: placed.month, ...(placed.movedFrom === undefined ? {} : { movedFrom: placed.movedFrom }) }),
+    ...(reversalId === undefined ? {} : { reversalId }),
+    requestedAt: request.requestedAt, approvedBy, approvedAt: at,
+  };
+  await deps.recordIssue(tenantId, issue);
+  return issue;
+}
+
 export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
   const audit = async (tenantId: string, entry: AuditEntry) => { await deps.recordAudit?.(tenantId, entry); };
   return [
@@ -120,7 +198,7 @@ export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
         const productId = b['productId'].trim();
         const locationId = b['locationId'].trim();
         await assertLocationInScope(ctx, locationId, deps.locationBranches);
-        if ((await deps.issues(ctx.tenantId)).some((i) => i.issueId === issueId)) {
+        if ((await deps.requests(ctx.tenantId)).some((r) => r.issueId === issueId) || (await deps.issues(ctx.tenantId)).some((i) => i.issueId === issueId)) {
           throw apiError(409, { code: 'free_sample_already_recorded', whatHappened: `Free sample ${issueId} is already recorded — an id is used once; a correction is a new, compensating record.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a new id. Nothing was changed.' });
         }
         await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, [{ productId, locationId, kind: 'wasted' }], 'free sample');
@@ -129,42 +207,94 @@ export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
           throw apiError(422, { code: 'stock_not_owned_by_the_store', whatHappened: `${productId} at ${locationId} holds stock owned by ${others[0]!.ownerId} (${others[0]!.ownership}); the store does not give away stock it does not own (M27-FR-02).`, wasItSaved: 'not_saved', nextSafeAction: 'Take the sample from the store\'s own stock. Nothing was recorded.' });
         }
         const at = deps.now();
-        const qty = b['qty'] as number;
-        const uom = b['uom'].trim();
-        const unitCost = await deps.unitCostAt(ctx.tenantId, locationId, productId);
-        const buyingValueMinor = unitCost === undefined ? undefined : valueAtUnitCost(qty, uom, unitCost);
-        const itc = freeSampleItc({ productId, buyingValueMinor, bills: await deps.bills(ctx.tenantId) });
-        const tradingDay = await deps.tradingDay(ctx.tenantId, at);
-        let placed: { month: string; movedFrom?: string } | undefined;
-        let reversalId: string | undefined;
-        if (itc.state === 'computed') {
-          placed = returnMonthFor(tradingDay.slice(0, 7), await deps.lockedMonths(ctx.tenantId));
-          reversalId = `free-sample-${issueId}`;
-          await deps.recordReversal(ctx.tenantId, {
-            reversalId, period: placed.month, rule: 'free_samples', sourceRef: `free-sample:${issueId}`,
-            reason: `Free sample of ${qty} ${uom} ${productId} at ${locationId} on ${tradingDay} (${b['note'].trim().slice(0, 120)}): credit given back on its buying cost — computed by the system, for the accountant to check (OB-386).`,
-            igstMinor: itc.igstMinor, cgstMinor: itc.cgstMinor, sgstMinor: itc.sgstMinor, cessMinor: itc.cessMinor, by: 'system:free-sample', at,
-          });
-        }
-        const issue: FreeSampleIssue = {
-          issueId, productId, locationId, qty, uom, ...(isStr(b['batchId']) ? { batchId: b['batchId'].trim() } : {}),
-          note: b['note'].trim().slice(0, 300), issuedBy: ctx.userId, issuedAt: at, tradingDay, unitCostMinor: unitCost ?? null, itc,
-          ...(placed === undefined ? {} : { returnMonth: placed.month, ...(placed.movedFrom === undefined ? {} : { movedFrom: placed.movedFrom }) }),
-          ...(reversalId === undefined ? {} : { reversalId }),
+        const request: FreeSampleRequest = {
+          issueId, productId, locationId, qty: b['qty'] as number, uom: b['uom'].trim(), ...(isStr(b['batchId']) ? { batchId: b['batchId'].trim() } : {}),
+          note: b['note'].trim().slice(0, 300), requestedBy: ctx.userId, requestedAt: at, tradingDay: await deps.tradingDay(ctx.tenantId, at),
         };
-        await deps.recordIssue(ctx.tenantId, issue);
+        // OB-393: nothing moves yet — the stock and the GST give-back wait for another store manager's approval.
+        await deps.recordRequest(ctx.tenantId, request);
         await audit(ctx.tenantId, {
-          actorId: ctx.userId, action: 'stock.free_sample', objectType: 'product', objectId: productId, at,
+          actorId: ctx.userId, action: 'stock.free_sample.request', objectType: 'product', objectId: productId, at,
           origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: null,
-          after: {
-            issueId, locationId, qty: String(qty), uom, buyingValueMinor: buyingValueMinor === undefined ? 'not known' : String(buyingValueMinor),
-            itc: itc.state, returnMonth: placed?.month ?? '', reversalId: reversalId ?? '',
-          },
-          reason: issue.note, correlationId: issueId,
+          after: { issueId, locationId, qty: String(request.qty), uom: request.uom, status: 'awaiting_approval' },
+          reason: request.note, correlationId: issueId,
         });
-        return { status: 201, body: { issue, itcWords: itcWords(issue) } };
+        return { status: 202, body: { request, status: 'awaiting_approval', detail: AWAITING_WORDS } };
       },
     },
+    {
+      // OB-393: every free sample waiting for a store manager's approval — nothing of these has moved yet.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/free-samples/pending',
+      permission: 'inventory.free_sample.approve',
+      handler: async (ctx) => {
+        const pending = await pendingOf(deps, ctx.tenantId);
+        return {
+          status: 200,
+          body: {
+            pending, count: pending.length, asAt: deps.now(),
+            detail: pending.length === 0 ? 'No free sample is waiting for approval.' : `${pending.length} free sample(s) wait for a store manager other than the giver; their stock has not left and no GST credit has been given back yet.`,
+          },
+        };
+      },
+    },
+    {
+      // OB-393: a store manager other than the giver approves (the stock leaves, the give-back is placed) or rejects it.
+      // Body: { decision: "approve" | "reject", reason }.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/free-samples/:issueId/decision',
+      permission: 'inventory.free_sample.approve', idempotent: true,
+      handler: async (ctx) => {
+        const issueId = (ctx.params['issueId'] ?? '').trim();
+        const b = (ctx.body !== null && typeof ctx.body === 'object' ? ctx.body : {}) as Record<string, unknown>;
+        if ((b['decision'] !== 'approve' && b['decision'] !== 'reject') || !isStr(b['reason'])) {
+          throw apiError(400, { code: 'not_readable_as_a_free_sample_decision', whatHappened: 'A decision on a free sample is { decision: "approve" | "reject", reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the decision and a reason. Nothing was changed.' });
+        }
+        const decision: FreeSampleDecision['decision'] = b['decision'] === 'approve' ? 'approved' : 'rejected';
+        const request = (await deps.requests(ctx.tenantId)).find((r) => r.issueId === issueId);
+        if (request === undefined) throw notFound(`free sample ${issueId} waiting for approval`);
+        if (request.requestedBy === ctx.userId) {
+          throw apiError(403, { code: 'free_sample_self_approval', whatHappened: `${ctx.userId} gave free sample ${issueId} and cannot also approve it — a store manager other than the giver approves each free sample (OB-393).`, wasItSaved: 'not_saved', nextSafeAction: 'Ask another store manager to approve it. Nothing was changed; the stock has not left.' });
+        }
+        await assertLocationInScope(ctx, request.locationId, deps.locationBranches);
+        const done = (await deps.decisions(ctx.tenantId)).find((d) => d.issueId === issueId);
+        const issued = (await deps.issues(ctx.tenantId)).find((i) => i.issueId === issueId);
+        if (done !== undefined) {
+          if (done.decision === decision && done.by === ctx.userId) return { status: 200, body: { decision: done, alreadyDecided: true, ...(issued === undefined ? {} : { issue: issued, itcWords: itcWords(issued) }) } };
+          throw apiError(409, { code: 'free_sample_already_decided', whatHappened: `Free sample ${issueId} was already ${done.decision} by ${done.by} at ${done.at} — a decision is made once.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. A correction is a new, compensating record.' });
+        }
+        const at = deps.now();
+        const record: FreeSampleDecision = { issueId, decision, reason: b['reason'].trim().slice(0, 300), by: ctx.userId, at };
+        if (decision === 'rejected') {
+          await deps.recordDecision(ctx.tenantId, record);
+          await audit(ctx.tenantId, {
+            actorId: ctx.userId, action: 'stock.free_sample.reject', objectType: 'free_sample', objectId: issueId, at,
+            origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { status: 'awaiting_approval', requestedBy: request.requestedBy },
+            after: { status: 'rejected' }, reason: record.reason, correlationId: issueId,
+          });
+          return { status: 201, body: { decision: record, alreadyDecided: false, detail: 'Rejected. Nothing moved: the stock stays and no GST credit is given back.' } };
+        }
+        // Approved: the same checks as at the request, on the stock as it stands NOW (a count freeze since is a visible refusal).
+        await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, [{ productId: request.productId, locationId: request.locationId, kind: 'wasted' }], 'free sample');
+        const others = await deps.ownersOfStockAt(ctx.tenantId, request.productId, request.locationId);
+        if (others.length > 0) {
+          throw apiError(422, { code: 'stock_not_owned_by_the_store', whatHappened: `${request.productId} at ${request.locationId} holds stock owned by ${others[0]!.ownerId} (${others[0]!.ownership}); the store does not give away stock it does not own (M27-FR-02).`, wasItSaved: 'not_saved', nextSafeAction: 'Reject this sample, or take it from the store\'s own stock. Nothing was changed.' });
+        }
+        // A retry after the issue was placed but before the decision was written finds the issue and does not place it twice.
+        const issue = issued ?? await placeIssue(deps, ctx.tenantId, request, ctx.userId, at);
+        await deps.recordDecision(ctx.tenantId, record);
+        await audit(ctx.tenantId, {
+          actorId: ctx.userId, action: 'stock.free_sample', objectType: 'product', objectId: issue.productId, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { status: 'awaiting_approval', requestedBy: request.requestedBy },
+          after: {
+            issueId, locationId: issue.locationId, qty: String(issue.qty), uom: issue.uom, givenBy: issue.issuedBy, approvedBy: ctx.userId,
+            buyingValueMinor: issue.itc.buyingValueMinor === null ? 'not known' : String(issue.itc.buyingValueMinor),
+            itc: issue.itc.state, returnMonth: issue.returnMonth ?? '', reversalId: issue.reversalId ?? '',
+          },
+          reason: record.reason, correlationId: issueId,
+        });
+        return { status: 201, body: { decision: record, alreadyDecided: false, issue, itcWords: itcWords(issue) } };
+      },
+    },
+
     {
       // The accountant's list (?month=YYYY-MM narrows to the issues whose give-back went into that return, or — for one not
       // computed — were given that month). Each with its check, if any.
@@ -175,7 +305,7 @@ export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
         if (month !== undefined && !isMonth(month)) {
           throw apiError(400, { code: 'not_a_month', whatHappened: `"${month}" is not a month — send ?month=YYYY-MM, or none for every month.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct the month. Nothing was changed; this only reads.' });
         }
-        const [issues, checks] = await Promise.all([deps.issues(ctx.tenantId), deps.checks(ctx.tenantId)]);
+        const [issues, checks, waiting] = await Promise.all([deps.issues(ctx.tenantId), deps.checks(ctx.tenantId), pendingOf(deps, ctx.tenantId)]);
         const latest = new Map<string, FreeSampleCheck>();
         for (const c of checks) latest.set(c.issueId, c);
         const rows = issues
@@ -186,7 +316,10 @@ export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
           body: {
             month: month ?? null, issues: rows, count: rows.length,
             toCheck: rows.filter((r) => r.check === null || r.check.outcome === 'query').length,
-            notComputed: rows.filter((r) => r.itc.state === 'not_computed').length, asAt: deps.now(),
+            notComputed: rows.filter((r) => r.itc.state === 'not_computed').length,
+            // OB-393: samples given but not yet approved — no credit is given back for them yet; listed, never left out (P-08).
+            awaitingApproval: waiting.filter((w) => month === undefined || w.tradingDay.slice(0, 7) === month),
+            asAt: deps.now(),
           },
         };
       },

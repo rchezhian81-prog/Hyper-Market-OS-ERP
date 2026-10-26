@@ -23,7 +23,13 @@
 // OB-362 (owner, 24–25 Oct 2026, in writing): the ONE exception is a "Delivery update" form — for the supplier's OWN open
 // orders only (`GET /v1/supplier-portal/me/orders`, scoped on the server) — which sends the existing `delivery_status`
 // submission (dispatched, in transit or delayed, and when it should now arrive). `readDeliveryUpdate` checks it before
-// anything is sent; nothing else on this screen writes.
+// anything is sent.
+//
+// OB-389 (owner, 26 Oct 2026, in writing): the SECOND and last exception is a "Top-up proposal" form for vendor-managed
+// inventory (D03-FR-04) — the supplier's OWN VMI items only (`GET /v1/supplier-portal/me/vmi`, scoped on the server), each
+// with the buyer's minimum and maximum, on hand, on order and the room left. It sends a replenishment PROPOSAL
+// (`POST /v1/supplier-portal/me/vmi/proposals/:proposalId`) that waits for a buyer; it orders nothing and sets no price
+// (P-05, §28). `readTopUpProposal` checks it against the room before anything is sent; nothing else on this screen writes.
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -80,6 +86,8 @@ export interface SupplierPortalData {
   readonly statement: StatementView | null;
   /** OB-362: the supplier's own open orders — absent until read. */
   readonly orders?: SupplierOrdersFeed | null;
+  /** OB-389: the supplier's own VMI items and proposals — absent until read. */
+  readonly vmi?: SupplierVmiFeed | null;
   readonly asAt: string;
 }
 
@@ -106,6 +114,71 @@ export function readDeliveryUpdate(input: DeliveryUpdateInput, feed: SupplierOrd
   const note = input.note.trim();
   if (note.length > 300) return { ok: false, why: 'noteTooLong' };
   return { ok: true, document: { poId, status: input.status as DeliveryUpdateStatus, expectedOn: day, ...(note === '' ? {} : { note }) } };
+}
+
+/** OB-389: one of the supplier's own VMI items at a store, as `/me/vmi` answers it. */
+export interface SupplierVmiItem {
+  readonly storeId: string;
+  readonly productId: string;
+  readonly minQty: number;
+  readonly maxQty: number;
+  readonly uom: string;
+  readonly onHand: number;
+  readonly onOrder: number;
+  /** How much more may be proposed: maximum − on hand − on order, never below 0. */
+  readonly room: number;
+  readonly belowMinimum: boolean;
+}
+
+/** OB-389: a top-up proposal the supplier sent, with the buyer's decision and its reason once made. */
+export interface SupplierVmiProposalView {
+  readonly proposalId: string;
+  readonly storeId: string;
+  readonly lines: readonly { readonly productId: string; readonly quantity: number }[];
+  readonly proposedAt: string;
+  readonly status: 'awaiting_buyer' | 'accepted' | 'rejected';
+  readonly reason: string | null;
+}
+
+/** OB-389: the supplier's own VMI items and proposals as last read. */
+export interface SupplierVmiFeed {
+  readonly items: readonly SupplierVmiItem[];
+  /** The server's "Not set" words when the buyer has set no limits yet — never an empty list read as nothing to do. */
+  readonly notSet: string | null;
+  readonly proposals: readonly SupplierVmiProposalView[];
+  /** This login holds the grant a proposal needs (`supplier.portal.self.submit`); the server re-checks it. */
+  readonly mayPropose: boolean;
+}
+
+/** OB-389: what the Top-up proposal form holds, as typed — one store, a quantity box per item there. */
+export interface TopUpInput { readonly storeId: string; readonly quantities: Readonly<Record<string, string>>; readonly note: string }
+/** OB-389: the proposal the form sends — or why it is not sent. */
+export type TopUpRead =
+  | { readonly ok: true; readonly document: { readonly storeId: string; readonly lines: readonly { readonly productId: string; readonly quantity: number }[]; readonly note?: string } }
+  | { readonly ok: false; readonly why: 'cannotPropose' | 'needStore' | 'notYourStore' | 'needQuantity' | 'badQuantity' | 'aboveRoom' | 'notYourItem' | 'noteTooLong'; readonly productId?: string };
+
+/** OB-389: read the form against the supplier's own VMI items at that store — refused here, before anything is sent. */
+export function readTopUpProposal(input: TopUpInput, feed: SupplierVmiFeed | null | undefined): TopUpRead {
+  if (feed === null || feed === undefined || !feed.mayPropose) return { ok: false, why: 'cannotPropose' };
+  const storeId = input.storeId.trim();
+  if (storeId === '') return { ok: false, why: 'needStore' };
+  const here = feed.items.filter((i) => i.storeId === storeId);
+  if (here.length === 0) return { ok: false, why: 'notYourStore' };
+  const lines: { productId: string; quantity: number }[] = [];
+  for (const [productId, raw] of Object.entries(input.quantities)) {
+    const typed = raw.trim();
+    if (typed === '') continue;
+    const item = here.find((i) => i.productId === productId);
+    if (item === undefined) return { ok: false, why: 'notYourItem', productId };
+    if (!/^\d+$/.test(typed) || Number(typed) <= 0) return { ok: false, why: 'badQuantity', productId };
+    const quantity = Number(typed);
+    if (quantity > item.room) return { ok: false, why: 'aboveRoom', productId };
+    lines.push({ productId, quantity });
+  }
+  if (lines.length === 0) return { ok: false, why: 'needQuantity' };
+  const note = input.note.trim();
+  if (note.length > 300) return { ok: false, why: 'noteTooLong' };
+  return { ok: true, document: { storeId, lines, ...(note === '' ? {} : { note }) } };
 }
 
 export interface SupplierPortalPorts {
@@ -135,7 +208,10 @@ export type CopyKey =
   | 'notIdentified' | 'staleShell' | 'sampleData'
   | 'deliveryH' | 'deliveryLead' | 'orderL' | 'chooseOrder' | 'statusL' | 'status_dispatched' | 'status_in_transit' | 'status_delayed'
   | 'expectedL' | 'noteL' | 'sendUpdate' | 'updateSent' | 'needOrder' | 'notYourOrder' | 'needStatus' | 'needDate' | 'noteTooLong'
-  | 'cannotUpdate' | 'noOpenOrders' | 'ordersUnknown' | 'notSent' | 'refusedSay';
+  | 'cannotUpdate' | 'noOpenOrders' | 'ordersUnknown' | 'notSent' | 'refusedSay'
+  | 'vmiH' | 'vmiLead' | 'vmiStoreL' | 'chooseStore' | 'vmiItemFacts' | 'vmiQtyL' | 'vmiNoteL' | 'sendTopUp' | 'topUpSent'
+  | 'cannotPropose' | 'needStore' | 'notYourStore' | 'needQuantity' | 'badQuantity' | 'aboveRoom' | 'notYourItem'
+  | 'vmiUnknown' | 'vmiProposalsH' | 'vmiAwaiting' | 'vmiAccepted' | 'vmiRejected' | 'vmiBelowMin' | 'topUpNotSent';
 
 export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -161,6 +237,15 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     needDate: 'Give the day it should now arrive. Nothing was sent.', noteTooLong: 'The note is longer than 300 letters. Nothing was sent.',
     cannotUpdate: 'Your login cannot send delivery updates. Ask us to turn it on.', noOpenOrders: 'You have no open orders with us right now.',
     ordersUnknown: 'Your orders could not be read just now, so no update can be sent.', notSent: 'No connection — the update was not sent. Try again when you are online.', refusedSay: 'We could not take it:',
+    vmiH: 'Top-up proposal', vmiLead: 'For the items you keep stocked for us: propose how much to send to a store, within the room the buyer\'s maximum leaves. A buyer decides; nothing is ordered until then, and you set no price.',
+    vmiStoreL: 'Store', chooseStore: 'Choose a store', vmiItemFacts: 'min {min} · max {max} · on hand {onHand} · on order {onOrder} · room {room} {uom}',
+    vmiQtyL: 'How many to send', vmiNoteL: 'Note (optional, up to 300 letters)', sendTopUp: 'Send the top-up proposal', topUpSent: 'Sent — it waits for a buyer to decide.',
+    cannotPropose: 'Your login cannot send top-up proposals. Ask us to turn it on.', needStore: 'Choose the store first. Nothing was sent.',
+    notYourStore: 'You keep no items stocked at that store. Nothing was sent.', needQuantity: 'Give a quantity for at least one item. Nothing was sent.',
+    badQuantity: 'A quantity is a whole number above 0. Nothing was sent.', aboveRoom: 'That is more than the room the buyer\'s maximum leaves. Nothing was sent.',
+    notYourItem: 'That item is not one of yours at this store. Nothing was sent.', vmiUnknown: 'Your stocked items could not be read just now, so no proposal can be sent.',
+    vmiProposalsH: 'Your top-up proposals', vmiAwaiting: 'Waiting for a buyer', vmiAccepted: 'Accepted — the buyer raised an order', vmiRejected: 'Not accepted',
+    vmiBelowMin: 'Below the minimum', topUpNotSent: 'No connection — the proposal was not sent. Try again when you are online.',
   },
   ta: {
     title: 'SRE உடன் உங்கள் கணக்கு', langName: 'English',
@@ -185,6 +270,15 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     needDate: 'இப்போது வந்து சேர வேண்டிய நாளைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.', noteTooLong: 'குறிப்பு 300 எழுத்துகளை விட நீளமானது. எதுவும் அனுப்பப்படவில்லை.',
     cannotUpdate: 'உங்கள் உள்நுழைவு டெலிவரி நிலவரம் அனுப்ப முடியாது. இயக்க எங்களிடம் கேளுங்கள்.', noOpenOrders: 'இப்போது எங்களிடம் உங்கள் திறந்த ஆர்டர் எதுவும் இல்லை.',
     ordersUnknown: 'உங்கள் ஆர்டர்களை இப்போது படிக்க முடியவில்லை, எனவே நிலவரம் அனுப்ப முடியாது.', notSent: 'இணைப்பு இல்லை — நிலவரம் அனுப்பப்படவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.', refusedSay: 'எங்களால் ஏற்க முடியவில்லை:',
+    vmiH: 'இருப்பு நிரப்பும் முன்மொழிவு', vmiLead: 'எங்களுக்காக நீங்கள் இருப்பு வைக்கும் பொருட்களுக்கு: வாங்குபவரின் அதிகபட்ச அளவு விடும் இடத்திற்குள், ஒரு கடைக்கு எவ்வளவு அனுப்பலாம் என்று முன்மொழியுங்கள். வாங்குபவர் முடிவு செய்வார்; அதுவரை எதுவும் ஆர்டர் செய்யப்படாது, விலையையும் நீங்கள் நிர்ணயிப்பதில்லை.',
+    vmiStoreL: 'கடை', chooseStore: 'ஒரு கடையைத் தேர்ந்தெடுங்கள்', vmiItemFacts: 'குறைந்தது {min} · அதிகபட்சம் {max} · கையிருப்பு {onHand} · ஆர்டரில் {onOrder} · இடம் {room} {uom}',
+    vmiQtyL: 'எத்தனை அனுப்புவது', vmiNoteL: 'குறிப்பு (விருப்பம், 300 எழுத்துகள் வரை)', sendTopUp: 'முன்மொழிவை அனுப்பு', topUpSent: 'அனுப்பப்பட்டது — வாங்குபவர் முடிவுக்காகக் காத்திருக்கிறது.',
+    cannotPropose: 'உங்கள் உள்நுழைவு முன்மொழிவுகளை அனுப்ப முடியாது. இயக்க எங்களிடம் கேளுங்கள்.', needStore: 'முதலில் கடையைத் தேர்ந்தெடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    notYourStore: 'அந்தக் கடையில் நீங்கள் இருப்பு வைக்கும் பொருள் எதுவும் இல்லை. எதுவும் அனுப்பப்படவில்லை.', needQuantity: 'குறைந்தது ஒரு பொருளுக்கு அளவைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    badQuantity: 'அளவு 0-க்கு மேற்பட்ட முழு எண். எதுவும் அனுப்பப்படவில்லை.', aboveRoom: 'வாங்குபவரின் அதிகபட்ச அளவு விடும் இடத்தை விட அதிகம். எதுவும் அனுப்பப்படவில்லை.',
+    notYourItem: 'அந்தப் பொருள் இந்தக் கடையில் உங்களுடையது அல்ல. எதுவும் அனுப்பப்படவில்லை.', vmiUnknown: 'உங்கள் இருப்புப் பொருட்களை இப்போது படிக்க முடியவில்லை, எனவே முன்மொழிவு அனுப்ப முடியாது.',
+    vmiProposalsH: 'உங்கள் முன்மொழிவுகள்', vmiAwaiting: 'வாங்குபவருக்காகக் காத்திருக்கிறது', vmiAccepted: 'ஏற்கப்பட்டது — வாங்குபவர் ஆர்டர் எழுப்பினார்', vmiRejected: 'ஏற்கப்படவில்லை',
+    vmiBelowMin: 'குறைந்த அளவுக்குக் கீழே', topUpNotSent: 'இணைப்பு இல்லை — முன்மொழிவு அனுப்பப்படவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
   },
 };
 

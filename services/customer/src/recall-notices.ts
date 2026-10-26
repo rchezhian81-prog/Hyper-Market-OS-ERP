@@ -18,6 +18,11 @@
 //     has switched recall messages on, in writing (POST /v1/quality/recall-notices/switch). Its rule did NOT change with
 //     OB-328: it messages only customers whose own consent to SERVICE messages (purpose `transactional`) on SMS stands at
 //     the moment of sending, each once, and keeps every attempt — sent or failed — on the record.
+//   • THE "PHONED" TICK (OB-387, owner decision 26 Oct 2026) — POST /v1/quality/recalls/:batchId/call-list/:customerRef/phoned.
+//     The person who phoned a customer on the call list ticks them: who, when, kept for good on an append-only stream and
+//     sealed on the audit trail. The first tick stands (a second tick for the same customer on the same recall is
+//     answered with the first one — never re-written). Only on an OPEN recall, only for a customer on its call list.
+//     Any tick refuses the recall's withdrawal by name (`recall_customers_already_phoned`, `recall-withdrawal.ts`).
 //
 // The list and the port exist only for a recalled batch (purpose limitation, PRV-03): this is not a way to find out who
 // bought what. Reading the list is sealed on the audit trail by the composition root, like every trace read.
@@ -99,6 +104,18 @@ export interface CallListEntry {
   readonly notes: readonly CallNote[];
   readonly noteSay: readonly string[];
   readonly bought: readonly BoughtLot[];
+  /** OB-387: the "phoned" tick on this recall — who ticked it and when; null while nobody has. */
+  readonly phoned: { readonly by: string; readonly at: string } | null;
+}
+
+/** OB-387: one "phoned" tick — a customer on a recall's call list was phoned. Append-only; never re-written. */
+export interface RecallPhonedTick {
+  readonly batchId: string;
+  readonly customerRef: string;
+  /** The recall this tick belongs to (its start time): a later recall on the same batch starts with no ticks. */
+  readonly recallStartedAt: string;
+  readonly phonedBy: string;
+  readonly phonedAt: string;
 }
 
 export interface RecallNoticeList {
@@ -116,6 +133,8 @@ export interface RecallNoticeList {
   readonly estimatedSales: number;
   /** Of the call list, who a message notice would reach (service-message consent on SMS). */
   readonly smsConsented: number;
+  /** OB-387: how many on the call list carry a "phoned" tick. */
+  readonly phonedCount: number;
   readonly detail: string;
 }
 
@@ -147,6 +166,8 @@ export function buildRecallNoticeList(input: {
   readonly consentOf: ReadonlyMap<string, readonly ConsentRecord[]>;
   readonly nameOf: ReadonlyMap<string, string>;
   readonly phoneLast4Of: ReadonlyMap<string, string>;
+  /** OB-387: the "phoned" ticks on this recall, by customer (the first tick for each). */
+  readonly phonedOf?: ReadonlyMap<string, RecallPhonedTick>;
   readonly now: string;
 }): RecallNoticeList {
   const byCustomer = new Map<string, RecallBuyer[]>();
@@ -176,19 +197,22 @@ export function buildRecallNoticeList(input: {
       smsAllowed: channels.includes(RECALL_NOTICE_CHANNEL),
       notes, noteSay: notes.map((n) => CALL_NOTE_SAY[n]),
       bought: [...bought].sort((a, b) => (a.soldDate < b.soldDate ? -1 : a.soldDate > b.soldDate ? 1 : a.saleId < b.saleId ? -1 : 1)).map((b) => lotOf(input.recall.batchId, b)),
+      phoned: ((tick) => (tick === undefined ? null : { by: tick.phonedBy, at: tick.phonedAt }))(input.phonedOf?.get(customerRef)),
     });
   }
   const estimatedSales = input.buyers.filter((b) => b.source === 'fifo_receipt_estimate').length;
   const smsConsented = callList.filter((c) => c.smsAllowed).length;
+  const phonedCount = callList.filter((c) => c.phoned !== null).length;
   const parts = [
     `${callList.length} customer(s) to call: everyone the shop knows bought from batch ${input.recall.batchId} (a safety recall)`,
+    `${phonedCount} ticked as phoned`,
     `${smsConsented} of them said yes to service messages by SMS`,
     `${anonymousSales} sale(s) named no customer`,
   ];
   if (estimatedSales > 0) parts.push(`${estimatedSales} sale(s) are on this list by head office's FIFO estimate, not a till record of the batch`);
   return {
     batchId: input.recall.batchId, recall: input.recall, decisions: ['OB-297', 'OB-328', 'OB-329'], dataLawBasis: DATA_LAW_BASIS,
-    smsConsentPurpose: RECALL_NOTICE_PURPOSE, callList, anonymousSales, estimatedSales, smsConsented,
+    smsConsentPurpose: RECALL_NOTICE_PURPOSE, callList, anonymousSales, estimatedSales, smsConsented, phonedCount,
     detail: `${parts.join('; ')}. ${DATA_LAW_BASIS.en}`,
   };
 }
@@ -230,6 +254,10 @@ export interface RecallNoticeDeps {
   readonly recordSwitch: (tenantId: string, s: RecallNoticeSwitch) => Promise<void>;
   readonly attempts: (tenantId: string, batchId: string) => Promise<readonly RecallNoticeAttempt[]>;
   readonly recordAttempt: (tenantId: string, a: RecallNoticeAttempt) => Promise<void>;
+  /** OB-387: the "phoned" ticks on the recall that started at `recallStartedAt` on this batch (first per customer). */
+  readonly phonedTicks: (tenantId: string, batchId: string, recallStartedAt: string) => Promise<readonly RecallPhonedTick[]>;
+  /** OB-387: append a tick — one per customer and recall; a second answers with the first (`first`), never re-written. */
+  readonly recordPhoned: (tenantId: string, tick: RecallPhonedTick) => Promise<{ readonly tick: RecallPhonedTick; readonly first: boolean }>;
   /** The message provider. NEVER set in production until one is certified; tests hand in a stand-in. */
   readonly transport?: NotificationTransport;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -266,7 +294,11 @@ async function listFor(deps: RecallNoticeDeps, tenantId: string, batchId: string
     const last4 = await deps.phoneLast4(tenantId, ref);
     if (last4 !== undefined) phoneLast4Of.set(ref, last4);
   }
-  return buildRecallNoticeList({ recall, buyers, consentOf, nameOf, phoneLast4Of, now: deps.now() });
+  const phonedOf = new Map<string, RecallPhonedTick>();
+  for (const tick of await deps.phonedTicks(tenantId, batchId, recall.initiatedAt)) {
+    if (!phonedOf.has(tick.customerRef)) phonedOf.set(tick.customerRef, tick);
+  }
+  return buildRecallNoticeList({ recall, buyers, consentOf, nameOf, phoneLast4Of, phonedOf, now: deps.now() });
 }
 
 const sendingSaid = (deps: RecallNoticeDeps, s: RecallNoticeSwitch | undefined) => ({
@@ -290,6 +322,50 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
         const batchId = batchOf(ctx.params['batchId']);
         const list = await listFor(deps, ctx.tenantId, batchId);
         return { status: 200, body: { ...list, messages: sendingSaid(deps, await deps.switchState(ctx.tenantId)) } };
+      },
+    },
+    {
+      // OB-387: tick a customer on the call list as PHONED — who, when; append-only and sealed. Any tick refuses the
+      // recall's withdrawal. No body is needed; the person is the one signed in, the time is head office's.
+      api: 'API-06', method: 'POST', path: '/v1/quality/recalls/:batchId/call-list/:customerRef/phoned',
+      permission: 'quality.recall.notice.phoned', idempotent: true,
+      handler: async (ctx) => {
+        const batchId = batchOf(ctx.params['batchId']);
+        const customerRef = (ctx.params['customerRef'] ?? '').trim();
+        const list = await listFor(deps, ctx.tenantId, batchId);
+        if (list.recall.status !== 'open') {
+          throw apiError(409, {
+            code: 'recall_is_not_open_for_phone_ticks',
+            whatHappened: `The recall on batch ${batchId} is ${list.recall.status}, so no customer is ticked as phoned on it now. Its call list is kept as it was.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Record any later call in the recall\'s closure evidence.',
+          });
+        }
+        const entry = list.callList.find((c) => c.customerRef === customerRef);
+        if (entry === undefined) {
+          throw apiError(404, {
+            code: 'customer_not_on_the_recall_call_list',
+            whatHappened: `Customer "${customerRef}" is not on the call list of the recall on batch ${batchId}.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Open the call list again and tick the customer from it. Nothing was changed.',
+          });
+        }
+        const at = deps.now();
+        const { tick, first } = await deps.recordPhoned(ctx.tenantId, { batchId, customerRef, recallStartedAt: list.recall.initiatedAt, phonedBy: ctx.userId, phonedAt: at });
+        if (first) {
+          await deps.recordAudit?.(ctx.tenantId, {
+            actorId: ctx.userId, action: 'quality.recall.customer.phoned', objectType: 'recall-call', objectId: `recall:${batchId}:customer:${customerRef}`,
+            at: tick.phonedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { phoned: 'no' },
+            after: { phoned: 'yes', phonedBy: tick.phonedBy, recallStartedAt: tick.recallStartedAt }, correlationId: ctx.traceId,
+          });
+        }
+        return {
+          status: first ? 201 : 200,
+          body: {
+            batchId, customerRef, phoned: { by: tick.phonedBy, at: tick.phonedAt }, alreadyTicked: !first,
+            detail: first
+              ? `Ticked as phoned by ${tick.phonedBy}. The recall can no longer be withdrawn; it is closed with evidence (OB-387).`
+              : `Already ticked as phoned by ${tick.phonedBy} at ${tick.phonedAt}. The first tick stands; nothing was changed.`,
+          },
+        };
       },
     },
     {

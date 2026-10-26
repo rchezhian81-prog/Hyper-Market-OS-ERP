@@ -38,7 +38,7 @@ import { republishWithBlocks } from '../../catalogue/src/recall-republish';
 import { blockedProductIds } from '../../inventory/src/sale-blocks';
 import { lotTraceBackwardRoutes, type LotTraceBackwardDeps } from '../../inventory/src/lot-trace-backward';
 import { withRecallOrderGuard, type ProductUnderRecall, type RecallOrderGuardDeps } from '../../purchase/src/recall-order-guard';
-import { recallNoticeRoutes, type RecallBuyer, type RecallNoticeDeps, type RecallNoticeSwitch, type RecallNoticeAttempt } from '../../customer/src/recall-notices';
+import { recallNoticeRoutes, type RecallBuyer, type RecallNoticeDeps, type RecallNoticeSwitch, type RecallNoticeAttempt, type RecallPhonedTick } from '../../customer/src/recall-notices';
 import type { NotificationTransport } from '../../../packages/notifications/src/transport';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import {
@@ -235,9 +235,28 @@ export function recallNoticeAdapter(input: Input & { readonly transport?: Notifi
         source: 'api/customer', payload: a,
       }));
     },
+    phonedTicks: (tenantId, batchId, recallStartedAt) => recallPhonedTicksOf(store, tenantId, batchId, recallStartedAt),
+    recordPhoned: async (tenantId, tick) => {
+      // One tick per customer and recall: the key holds no time, so a second tick collapses onto the first (OB-387).
+      const r = await store.append(tenantId, RECALL_NOTICE_STREAM, makeEvent({
+        id: `recall-phoned-${tick.batchId}-${tick.recallStartedAt}-${tick.customerRef}`, type: RECALL_PHONED_EVENT, occurredAt: tick.phonedAt,
+        idempotencyKey: `recall-phoned-${tenantId}-${tick.batchId}-${tick.recallStartedAt}-${tick.customerRef}`, source: 'api/customer', payload: tick,
+      }));
+      return { tick: r.record.event.payload as RecallPhonedTick, first: !r.deduped };
+    },
     ...(input.transport === undefined ? {} : { transport: input.transport }),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
+}
+
+/** OB-387: the event a "phoned" tick is kept as, on the recall-notice stream. */
+export const RECALL_PHONED_EVENT = 'RecallCustomerPhoned';
+
+/** OB-387: the "phoned" ticks on one recall (batch + start time), oldest first. Read by the call list and the withdrawal. */
+export async function recallPhonedTicksOf(store: EventStore, tenantId: string, batchId: string, recallStartedAt: string): Promise<RecallPhonedTick[]> {
+  return (await store.readStream(tenantId, RECALL_NOTICE_STREAM, { type: RECALL_PHONED_EVENT }))
+    .map((e) => e.event.payload as RecallPhonedTick)
+    .filter((t) => t.batchId === batchId && t.recallStartedAt === recallStartedAt);
 }
 
 /** OB-297: the owner's switch for recall messages and every message attempt, append-only. */
@@ -563,6 +582,7 @@ export function lane2RecallSurface(surface: Route[], input: {
       ? {
           now, recall: async () => undefined, buyers: none, consentRecords: () => [], name: async () => undefined, phoneLast4: async () => undefined,
           switchState: async () => undefined, recordSwitch: async () => {}, attempts: none, recordAttempt: async () => {},
+          phonedTicks: none, recordPhoned: async (_t, tick) => ({ tick, first: false }),
         }
       : recallNoticeAdapter({
           store, now,

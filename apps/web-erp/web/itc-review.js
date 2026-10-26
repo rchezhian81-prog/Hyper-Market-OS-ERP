@@ -277,7 +277,7 @@ function paintFreeSamples() {
 async function loadFreeSamples() {
   if (fsApi === null) return;
   const out = await fsApi.session.list(period());
-  if (out.result === 'ok') { fsRows = out.value.issues; el('fs-status').textContent = `${out.value.toCheck} ${fsw('toCheck')} · ${out.value.notComputed} ${fsw('notComputed')}`; }
+  if (out.result === 'ok') { fsRows = out.value.issues; el('fs-status').textContent = `${out.value.toCheck} ${fsw('toCheck')} · ${out.value.notComputed} ${fsw('notComputed')} · ${(out.value.awaitingApproval ?? []).length} ${fsw('awaitingApproval')}`; }
   else { fsRows = null; el('fs-status').textContent = fsApi.outcomeWords(lang, out); }
   paintFreeSamples();
 }

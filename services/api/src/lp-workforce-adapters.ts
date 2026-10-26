@@ -412,7 +412,7 @@ export function writeOffCaptureAdapter(input: Base, surface: readonly Route[]): 
   };
 }
 
-const RELABEL_STREAM = streamName(STREAM.pricing, 'relabel-tasks');
+export const RELABEL_STREAM = streamName(STREAM.pricing, 'relabel-tasks');
 export function relabelTaskAdapter(input: Base, surface: readonly Route[]): RelabelTaskDeps {
   const { store, now } = input;
   const plans = planogramStoreAdapter({ store, now });

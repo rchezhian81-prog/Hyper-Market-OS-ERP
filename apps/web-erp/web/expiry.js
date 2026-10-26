@@ -156,6 +156,10 @@ const HEAD_OFFICE_WITHDRAW_WORDS = {
     en: 'A customer has already been contacted about this recall, so it cannot be withdrawn. Close it with evidence.',
     ta: 'இதைப் பற்றி ஒரு வாடிக்கையாளர் ஏற்கனவே தொடர்பு கொள்ளப்பட்டார், எனவே திரும்பப் பெற முடியாது. ஆதாரத்துடன் மூடவும்.',
   },
+  recall_customers_already_phoned: {
+    en: 'A customer on the call list is ticked as phoned about this recall, so it cannot be withdrawn. Close it with evidence.',
+    ta: 'அழைப்புப் பட்டியலில் ஒரு வாடிக்கையாளர் இதைப் பற்றி அழைக்கப்பட்டதாகக் குறிக்கப்பட்டுள்ளார், எனவே திரும்பப் பெற முடியாது. ஆதாரத்துடன் மூடவும்.',
+  },
   recall_stock_already_disposed: {
     en: 'Some of this batch has already been thrown away, so the recall cannot be withdrawn. Close it with evidence.',
     ta: 'இந்த batch-இல் சில ஏற்கனவே தூக்கி எறியப்பட்டது, எனவே திரும்பப் பெற முடியாது. ஆதாரத்துடன் மூடவும்.',

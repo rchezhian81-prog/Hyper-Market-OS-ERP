@@ -33,9 +33,13 @@
 // nobody can see.
 
 <<<<<<< ours
+<<<<<<< ours
 const CACHE = 'sre-erp-shell-2f8959366d58';
 =======
 const CACHE = 'sre-erp-shell-c5d036dfb889';
+>>>>>>> theirs
+=======
+const CACHE = 'sre-erp-shell-dfe11c60c486';
 >>>>>>> theirs
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
