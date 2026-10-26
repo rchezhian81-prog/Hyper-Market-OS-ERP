@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1781. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1782. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 97 · Integration (in-process) 104 · Real PostgreSQL 102 · Browser (stub cloud) 90 · Browser (connected) 70 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 42 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 39 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -49,7 +49,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M20 | PARTIALLY_WIRED | 21 | 20 | 10 | 6 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M21 | INTEGRATION_TESTED | 7 | 18 | 4 | 3 | 3 | · | · | ✓ an integration test cites it |
 | M22 | WIRED | 12 | 13 | 6 | 4 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M23 | PARTIALLY_WIRED | 27 | 36 | 22 | 6 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| M23 | PARTIALLY_WIRED | 27 | 37 | 22 | 6 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M24 | E2E_VERIFIED | 4 | 10 | 4 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M25 | E2E_VERIFIED | 11 | 24 | 9 | 6 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M26 | E2E_VERIFIED | 4 | 12 | 5 | 4 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |

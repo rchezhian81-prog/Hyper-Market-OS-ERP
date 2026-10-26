@@ -14,7 +14,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Tests run**
 - New test: 9 of 9 (7 failed before the fix).
-- Every test touching finance routes or the body schemas, the contract guardrail, lint and typecheck: all passing. Full default suite: see the pull request.
+- Every test touching finance routes or the body schemas, the contract guardrail, lint and typecheck: all passing.
+- Full default suite: 13,777 passed after regenerating the evidence ledger (it failed once only because the ledger had not yet counted the new M23 test).
 
 **Next / blocked / owner decision**
 - Unchanged from batch 8 below. No owner decision needed.
