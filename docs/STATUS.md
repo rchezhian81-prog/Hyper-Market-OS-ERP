@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 final gaps, batch 9 (26 October 2026): the shop clock, head-office sign-in on the store PC, shorter everyday actions, declared API bodies
+
+**What changed**
+- PR #812 (batch 8) is merged and deployed to the demo.
+- **Shop clock (R1, M01-FR-02, A12 (2)):**
+  - Every business date on the store computer, head office and the till comes from the shop's own calendar: the zone and cut-off in store setup, carried in the signed store pack. Nothing uses UTC or the machine's zone.
+  - About 150 sites are fixed, including the books, GST dates on gift cards, stock ageing, attendance, price start dates and validity checks.
+  - A store computer whose zone differs from the shop's says so on the manager screen.
+- **OB-388 / ADR-0029, head-office sign-in on the store PC:** after the PIN, each person signs in to head office with their own login and second step, and the box carries their own session for the office pages. It never uses a machine credential or a PIN. Revocation, refused renewal, the ten-hour limit and sign-out each end it, and the till is untouched.
+- **OB-391:** the Company report reads real branches and is served on the box. The development erasure console is retired.
+- **OB-392:** lane health on the manager's Today screen, one tap per lane.
+- **Recalls and buying:**
+  - OB-387: phoned ticks on the recall call list; any tick refuses withdrawal.
+  - OB-389: a top-up proposal form on the supplier portal.
+  - OB-393: a store manager approves each free sample.
+  - Scopes now also cover relayed receipts and counts, replenishment-made requisitions and relabel completion.
+- **OB-390 / OB-394, shorter actions:** price edit 3, case reply 3, stopping an assistant 2, assign a task 3, complete a task 1, refund 7 (accepted in writing).
+- **M32-FR-01 / D14-FR-06:** all 1,554 routes declare request and reply bodies, and every published event declares its payload. All are derived from the code and proved against the running handlers.
+- **Decisions:** owner decisions OB-394 to OB-397 recorded.
+
+**Tests run (exactly)**
+- Each builder ran its own unit, in-memory integration and browser suites, all green.
+- The shop-clock builder also ran the whole suite with the clock pinned to 02:00 IST. Two files failed there, and they fail the same way on the older base.
+- On this merge: guardrails and type check (results in the PR).
+- PostgreSQL and real Keycloak could not be started for the builders, so those halves run in CI.
+
+**What is next**
+- OB-395: the accountant reads branch names.
+- OB-396: the owner approves a free sample only when the giver is the only store manager.
+- OB-397: a mistaken phoned tick can be unticked with a reason by someone else.
+- An empty journal or period-close body currently answers 500; it should be a named refusal (P-08).
+- The box's zone warning should also reach head office.
+
+**Needs an owner decision**
+- None open.
+
+---
+
 ## OB-288 final gaps, batch 8 (26 October 2026): the re-audit, office pages served, recall withdraw, release reconcile, compliance guards, buying and scopes
 
 **The re-audit (25 Oct, 391 roadmap rows, checked in code and tests)**
