@@ -1,3 +1,4 @@
+import { Tally } from './lib/tally';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -123,11 +124,22 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
     const ho = newHeadOffice(pricingContext());
     const { page, errors, teardown } = await openPriceTab(ho);
     try {
-      await checkPrice(page, 'SKU-DAL', '150'); // below MRP 160, above the 20% floor at cost 100
+      // QG-02 (product-merchandising.md "edit a price ≤3"): measured AS BUILT — the Change-a-price tab (opened above), the
+      // item, the new price, Check, Save; the start day defaults to today. The spec's three is an owner decision (R4 report).
+      const taps = new Tally(page);
+      taps.count = 1; // the tab openPriceTab tapped
+      await taps.type('#price-item', 'SKU-DAL');
+      await taps.type('#new-price', '150'); // below MRP 160, above the 20% floor at cost 100
+      await page.fill('#price-from', '2026-10-07'); // the default (today) made fixed for the test — a person does not type it
+      await taps.tap('#check-price');
+      await page.waitForSelector('#save-price:not([hidden])', { timeout: 10_000 });
       expect(await hidden(page, 'price-approval'), 'a clean price shows no approval step').toBe(true);
       expect(await page.textContent('#save-price')).toBe('Save this price');
+      taps.count += 1; // Save, tapped by clickFor
       const said = await clickFor(page, '#save-price', /starts on the day you gave/);
       expect(said.title).toBe('Price saved');
+      const asBuilt = taps.reset();
+      expect(asBuilt, 'as built: edit a price (a clean one)').toBe(5);
 
       const change = posts(ho, '/v1/prices/changes');
       expect(change).toHaveLength(1);
@@ -138,6 +150,27 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       expect(errors).toEqual([]);
     } finally {
       await teardown();
+    }
+  });
+
+  it('QG-02 (product-merchandising.md): a recall block is set in 2 — open the item, "Stop selling this everywhere"', async () => {
+    const ho = newHeadOffice(pricingContext());
+    const srv = await startPricingHeadOffice(ho);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).catalogueSession !== undefined, undefined, { timeout: 10_000 });
+      await page.waitForSelector('button[aria-label="Toor dal 1kg"]');
+      const taps = new Tally(page);
+      await taps.tap('button[aria-label="Toor dal 1kg"]');
+      await page.waitForSelector('#recall:not([hidden])');
+      await taps.tap('#recall');
+      await page.waitForFunction(() => !((globalThis as unknown as BrowserGlobals).document.getElementById('banner')?.hidden ?? true));
+      expect(taps.reset(), 'set a recall block on an item').toBeLessThanOrEqual(2);
+      expect(await page.textContent('#recall')).toBe('Allow selling this again');
+    } finally {
+      await context.close(); await srv.stop();
     }
   });
 

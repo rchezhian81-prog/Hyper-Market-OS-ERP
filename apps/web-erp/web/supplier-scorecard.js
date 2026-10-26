@@ -12,6 +12,10 @@ let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 let card = null;
 let contractId = null;
+// FG-4 · D03-FR-05: the price variance shown (the roll-ups), and the drill-through open on it (the lines behind one row).
+let ppv = null;
+let drill = null; // { kind: 'product' | 'receipt', key, view }
+let ppvAsked = null; // the supplier and period the variance was asked for — a drill asks the same
 
 /** Rejection rate is a rate (lower is better); the other four are scores (higher is better). */
 function toneOf(figure, r) {
@@ -58,6 +62,89 @@ function paint() {
   $('sources').textContent = t('sources');
 }
 
+const icon = (name, size = 18) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+// Icons always beside the words; added once (a repaint that keeps the element's children does not stack them).
+const withIcon = (el, name) => { if ([...el.children].some((c) => c.tagName.toLowerCase() === 'svg')) return el; const i = icon(name); if (i) el.prepend(i, ' '); return el; };
+function cell(text, cls) { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; }
+function head(table, cols) {
+  const tr = document.createElement('tr');
+  for (const [k, num] of cols) { const th = document.createElement('th'); th.textContent = t(k); if (num) th.className = 'num'; tr.append(th); }
+  table.querySelector('thead').replaceChildren(tr);
+}
+function rollupRows(table, rows, kind) {
+  head(table, [[kind === 'product' ? 'ppvProduct' : 'ppvReceipt', false], ['ppvCompared', true], ['ppvReceived', true], ['ppvAgreed', true], ['ppvVariance', true], ['ppvVsContract', true], ['ppvOpen', false]]);
+  table.querySelector('tbody').replaceChildren(...rows.map((r) => {
+    const tr = document.createElement('tr');
+    tr.dataset.key = r.key;
+    const open = document.createElement('button');
+    open.type = 'button'; open.dataset.drill = kind; open.dataset.key = r.key;
+    open.append(t('ppvOpen')); withIcon(open, 'list');
+    open.addEventListener('click', () => { void openDrill(kind, r.key); });
+    const td = document.createElement('td'); td.append(open);
+    tr.append(
+      cell(r.key), cell(`${r.comparedLines}/${r.lines}`, 'num'), cell(api.signedRupees(r.receivedValueMinor).replace('+', ''), 'num'), cell(api.signedRupees(r.orderValueMinor).replace('+', ''), 'num'),
+      cell(api.signedRupees(r.varianceMinor), r.varianceMinor > 0 ? 'num over' : 'num'),
+      cell(r.contractLines === 0 ? t('ppvNoContract') : api.signedRupees(r.contractVarianceMinor), r.contractVarianceMinor > 0 ? 'num over' : 'num'),
+      td,
+    );
+    return tr;
+  }));
+}
+function lineRows(table, lines) {
+  head(table, [['ppvReceipt', false], ['ppvProduct', false], ['ppvOrder', false], ['ppvKept', true], ['ppvReceived', true], ['ppvAgreed', true], ['ppvVariance', true], ['ppvContract', true], ['ppvVsContract', true]]);
+  table.querySelector('tbody').replaceChildren(...lines.map((l) => {
+    const tr = document.createElement('tr');
+    tr.dataset.grn = l.grnId; tr.dataset.product = l.productId;
+    const order = l.order === undefined ? `${t('ppvNotCompared')} ${t(`nc_${l.notCompared}`)}` : api.costWords(l.order.unitCost) + (l.order.basis === 'blanket_release' ? ` (${t('ppvBlanket')})` : '');
+    tr.append(
+      cell(`${l.receiptNumber} · ${l.receivedOn}`), cell(l.productId), cell(l.poNumber ?? '—'), cell(`${l.keptMinor} ${l.uom}`, 'num'), cell(api.costWords(l.receivedUnitCost), 'num'),
+      cell(order, 'num'), cell(l.order === undefined ? '—' : api.signedRupees(l.order.varianceMinor), l.order !== undefined && l.order.varianceMinor > 0 ? 'num over' : 'num'),
+      cell(l.contract === undefined ? t('ppvNoContract') : `${api.costWords(l.contract.unitCost)} (${l.contract.agreementId})`, 'num'),
+      cell(l.contract === undefined ? '—' : api.signedRupees(l.contract.varianceMinor), l.contract !== undefined && l.contract.varianceMinor > 0 ? 'num over' : 'num'),
+    );
+    return tr;
+  }));
+}
+
+function paintPpv() {
+  for (const [id, k] of [['ppv-h', 'ppvTitle'], ['ppv-lead', 'ppvLead'], ['ppv-show-text', 'ppvShow'], ['ppv-h-product', 'ppvByProduct'], ['ppv-h-receipt', 'ppvByReceipt'], ['ppv-back-text', 'ppvBack']]) $(id).textContent = t(k);
+  for (const [id, name] of [['ppv-h', 'percent'], ['ppv-show', 'chart-column'], ['ppv-h-product', 'package'], ['ppv-h-receipt', 'receipt'], ['ppv-back', 'rotate-ccw']]) withIcon($(id), name);
+  $('ppv-show').disabled = !may.read;
+  $('ppv-rollups').hidden = ppv === null || drill !== null;
+  $('ppv-drill').hidden = drill === null;
+  if (ppv !== null && drill === null) {
+    const tot = ppv.totals;
+    $('ppv-total').textContent = ppv.receipts === 0 ? t('ppvNothing')
+      : `${t('ppvTotal')}: ${t('ppvVariance')} ${api.signedRupees(tot.varianceMinor)} · ${t('ppvVsContract')} ${tot.contractLines === 0 ? t('ppvNoContract') : api.signedRupees(tot.contractVarianceMinor)} · ${tot.comparedLines}/${tot.lines} ${t('ppvCompared')} · ${ppv.period.from} – ${ppv.period.to}`;
+    const nc = api.notComparedWords(lang, tot.notCompared);
+    $('ppv-nc').hidden = nc === ''; $('ppv-nc').textContent = nc;
+    rollupRows($('ppv-products'), ppv.byProduct, 'product');
+    rollupRows($('ppv-receipts'), ppv.byReceipt, 'receipt');
+  }
+  if (drill !== null) {
+    $('ppv-drill-h').textContent = `${t('ppvLines')}: ${t(drill.kind === 'product' ? 'ppvProduct' : 'ppvReceipt')} ${drill.key}`;
+    withIcon($('ppv-drill-h'), 'list');
+    lineRows($('ppv-lines'), drill.view.lines);
+  }
+}
+
+async function showPpv() {
+  ppvAsked = { supplier: $('supplier').value, from: $('from').value, to: $('to').value };
+  const out = await session.priceVariance(ppvAsked.supplier, ppvAsked.from, ppvAsked.to);
+  drill = null;
+  if (out.result === 'ok') { ppv = out.value; $('ppv-status').className = 'status'; $('ppv-status').textContent = ''; }
+  else { ppv = null; $('ppv-status').className = 'status err'; $('ppv-status').textContent = api.outcomeWords(lang, out); }
+  paintPpv();
+}
+
+async function openDrill(kind, key) {
+  if (ppvAsked === null) return;
+  const out = await session.priceVariance(ppvAsked.supplier, ppvAsked.from, ppvAsked.to, kind === 'product' ? { productId: key } : { grnId: key });
+  if (out.result === 'ok') { drill = { kind, key, view: out.value }; $('ppv-status').className = 'status'; $('ppv-status').textContent = ''; }
+  else { $('ppv-status').className = 'status err'; $('ppv-status').textContent = api.outcomeWords(lang, out); }
+  paintPpv();
+}
+
 async function show(event) {
   event?.preventDefault();
   const out = await session.scorecard($('supplier').value, $('from').value, $('to').value);
@@ -67,8 +154,11 @@ async function show(event) {
 }
 
 $('ask').addEventListener('submit', (e) => { void show(e); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintPpv(); });
+$('ppv-show').addEventListener('click', () => { void showPpv(); });
+$('ppv-back').addEventListener('click', () => { drill = null; paintPpv(); });
 paint();
+paintPpv();
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 
 if ('serviceWorker' in navigator) {

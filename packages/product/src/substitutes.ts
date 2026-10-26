@@ -16,6 +16,7 @@
 // Pure and deterministic.
 
 import type { ProductRecord } from './product';
+import { tobaccoAdvertisingRefusal } from '../../restricted-sales/src/advertising';
 
 export const MAX_SUBSTITUTES = 10;
 
@@ -72,7 +73,10 @@ export function substituteProblems(input: {
     if (p.lifecycle === 'draft' || p.lifecycle === 'discontinued' || p.recallBlocked === true) {
       problems.push({ refusal: 'substitute_not_sellable', productId: id, detail: `${id} is ${p.recallBlocked === true ? 'recall-blocked' : p.lifecycle} and cannot be sold, so it cannot stand in for anything` });
     }
-    if (controlled(p)) problems.push({ refusal: 'substitute_controlled', productId: id, detail: `${id} is a controlled item (tobacco, liquor or age-restricted) — it is never given as a substitute` });
+    // B15: a tobacco substitute is a suggestion to buy tobacco — the one advertising guard says so in its own words.
+    const tobacco = tobaccoAdvertisingRefusal('substitute', [id], () => p.safety?.tobacco === true);
+    if (tobacco !== undefined) problems.push({ refusal: 'substitute_controlled', productId: id, detail: `${id}: ${tobacco.whatHappened}` });
+    else if (controlled(p)) problems.push({ refusal: 'substitute_controlled', productId: id, detail: `${id} is a controlled item (tobacco, liquor or age-restricted) — it is never given as a substitute` });
     const theirs = allergensOf(p);
     if (theirs === undefined && ownAllergens !== undefined) warnings.push(`${id} has no allergen declaration, while ${input.productId} declares its allergens — check before a picker offers it`);
     const extra = theirs === undefined || ownAllergens === undefined ? [] : theirs.filter((a) => !ownAllergens.includes(a));

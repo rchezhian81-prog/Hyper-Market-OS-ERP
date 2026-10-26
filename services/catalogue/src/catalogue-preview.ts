@@ -26,6 +26,7 @@ import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
 import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till-gate';
 import { liquorReason } from '../../../packages/restricted-sales/src/liquor';
+import { medicineReason } from '../../../packages/restricted-sales/src/medicines';
 import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
 import { cessRateOn, type CessRate, type CessRatePeriod } from '../../../packages/finance/src/cess';
 import type { BundleDefinition } from '../../../packages/product/src/bundles';
@@ -140,11 +141,11 @@ export function toMaster(r: ProductRecord, asOf: string): MasterProduct {
  * (`catalogueAdapter.buildSnapshot`), so there is ONE fold path: the same products reach a preview and a
  * published pack. `version` is the version the snapshot will carry (0 for a preview; previous+1 when publishing).
  */
-/** B17 (OB-288 P2): a product left out of every pack because it is never sold — liquor (TASMAC). */
+/** B17 (OB-288 P2): a product left out of every pack because it is never sold — liquor (TASMAC), or a medicine (B18 · OB-310). */
 export interface NotSoldProduct {
   readonly productId: string;
   readonly sku: string;
-  readonly reason: 'liquor_not_sold';
+  readonly reason: 'liquor_not_sold' | 'medicine_not_sold';
   readonly detail: string;
 }
 
@@ -156,9 +157,12 @@ export async function assembleCatalogueSnapshot(
   // B17 (TASMAC · OB-288 P2): liquor never reaches a pack — a product master published before the rule (by its flag or its
   // HSN) is LEFT OUT and said, so no till is ever handed one to sell, offline or not.
   const everything = await deps.products(opts.tenantId);
-  const notSold: NotSoldProduct[] = everything.flatMap((r) => {
+  const notSold: NotSoldProduct[] = everything.flatMap((r): NotSoldProduct[] => {
     const why = liquorReason({ declaredLiquor: r.safety?.liquor === true, hsn: r.taxClass });
-    return why === undefined ? [] : [{ productId: r.productId, sku: r.sku, reason: 'liquor_not_sold' as const, detail: why }];
+    if (why !== undefined) return [{ productId: r.productId, sku: r.sku, reason: 'liquor_not_sold' as const, detail: why }];
+    // B18 (OB-310): a medicine published before the rule (by its mark or its HSN) is left out of every pack too.
+    const medicine = medicineReason({ declaredMedicine: r.safety?.medicine === true, hsn: r.taxClass });
+    return medicine === undefined ? [] : [{ productId: r.productId, sku: r.sku, reason: 'medicine_not_sold' as const, detail: medicine }];
   });
   const all = notSold.length === 0 ? everything : everything.filter((r) => !notSold.some((n) => n.productId === r.productId));
   // B16 (COTPA s.7 · OB-140 "A"): a tobacco product reaches the pack only with a named person's confirmation for the
@@ -251,7 +255,7 @@ export async function assembleCatalogueSnapshot(
   // B17 · OB-348: the liquor left out above is an EXCLUSION too, with its reason — the shrink check and the preview count it.
   const leftOut = [
     ...unconfirmed.map((r) => ({ productId: r.productId, sku: r.sku, reason: 'tobacco_warning_not_confirmed' as const })),
-    ...notSold.map((n) => ({ productId: n.productId, sku: n.sku, reason: 'liquor_not_sold' as const })),
+    ...notSold.map((n) => ({ productId: n.productId, sku: n.sku, reason: n.reason })),
   ];
   const withTobacco = leftOut.length === 0 ? built : { ...built, excluded: [...built.excluded, ...leftOut] };
   const withOffers = promotions.length === 0 ? withTobacco : { ...withTobacco, snapshot: { ...withTobacco.snapshot, promotions } };

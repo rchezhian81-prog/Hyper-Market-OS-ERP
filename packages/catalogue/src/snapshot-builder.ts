@@ -20,6 +20,7 @@
 import { resolvePrice, type PriceEntry } from '../../price-list/src/price-list';
 import { checkDemeritHoldover, readCessRate, type CessRate } from '../../finance/src/cess';
 import { isLiquorHsn } from '../../restricted-sales/src/liquor';
+import { isMedicineHsn } from '../../restricted-sales/src/medicines';
 import type {
   CatalogueBarcode,
   CatalogueProduct,
@@ -82,7 +83,9 @@ export type ExclusionReason = 'no_price' | 'no_tax_class' | 'price_above_mrp'
   /** B16 (COTPA s.7 · OB-140 "A"): a tobacco product with no named person's confirmation for the warning picture in force. */
   | 'tobacco_warning_not_confirmed'
   /** B17 · OB-348: liquor — refused by the shop's state (Tamil Nadu: TASMAC), never handed to a lane to sell. */
-  | 'liquor_not_sold';
+  | 'liquor_not_sold'
+  /** B18 · OB-310: a medicine — SRE sells no medicines, so none is handed to a lane to sell. */
+  | 'medicine_not_sold';
 
 export interface ExcludedProduct {
   readonly productId: string;
@@ -114,6 +117,11 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
     // B17 · OB-348: liquor never reaches a lane — flagged on the master, or under an alcoholic-drink HSN. Left out and said.
     if (master.regulatedFlags?.['liquor'] === true || isLiquorHsn(master.taxClassId)) {
       excluded.push({ productId: master.productId, sku: master.sku, reason: 'liquor_not_sold' });
+      continue;
+    }
+    // B18 · OB-310: nor does a medicine — marked on the master, or under a medicaments HSN (3003/3004). Left out and said.
+    if (master.regulatedFlags?.['medicine'] === true || isMedicineHsn(master.taxClassId)) {
+      excluded.push({ productId: master.productId, sku: master.sku, reason: 'medicine_not_sold' });
       continue;
     }
     const taxBps = input.taxClasses[master.taxClassId];

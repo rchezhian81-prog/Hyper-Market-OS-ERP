@@ -23,6 +23,8 @@ import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { wireLpWorkforcePages } from './lpw-browser-wiring';
 import { wireCommercialDeskPages } from './commercial-desks-browser-wiring'; // OB-288 commercial desks
+import { createFreeSampleSession, freeSampleWords, freeSampleOutcomeWords } from './free-sample-session'; // FG-4 · OB-386 free samples
+import { createContractExpirySession, contractExpiryWords, contractExpiryOutcomeWords, windowWords as contractWindowWords, dueWords as contractDueWords } from './contract-expiry-session'; // FG-4 · M04-FR-04 / M06-FR-03
 import { wireOwnerReportingPages } from './owner-reporting-browser-wiring'; // OB-288 lane 4 · P2
 import { wireSaasPages } from './saas-browser-wiring'; // OB-288 P4: Trial switches and shop account
 import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
@@ -103,6 +105,8 @@ import {
 import {
   createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
 } from './payroll-session';
+import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
+import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
 } from './payroll-ess-session';
@@ -344,7 +348,7 @@ import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWor
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
 // ── P3 procure-to-pay (OB-288) — the Requisitions and quotes page's session.
 import { createRequisitionsSession, requisitionsWords, requisitionsOutcomeWords, offerRows as requisitionOfferRows, rupees as requisitionRupees, type RequisitionsSession } from './requisitions-session';
-import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
+import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, signedRupees as ppvSignedRupees, costWords as ppvCostWords, notComparedWords as ppvNotComparedWords, type ScorecardSession } from './supplier-scorecard-session';
 import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
 import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type BaysSession } from './planogram-bays-session';
 // ── R4 Lane 4 — end
@@ -4180,6 +4184,25 @@ export function bootPayroll(data: PayrollData | undefined): PayrollSession {
   );
 }
 
+/** OB-380: true when the store computer served this page (its payload says so) — every figure is then a live read. */
+export function servedByStoreComputer(raw: unknown): boolean {
+  return raw !== null && typeof raw === 'object' && !Array.isArray(raw) && (raw as { servedBy?: unknown }).servedBy === 'store_computer';
+}
+
+/** What the payroll pages' view layer is handed on the store computer: the tested live session and its words. */
+export interface PayrollLiveKit {
+  readonly session: PayrollLiveSession;
+  readonly words: typeof payrollLiveWords;
+  readonly outcome: typeof payrollLiveOutcome;
+  readonly runRows: typeof payRunRows;
+  readonly holdWords: typeof payrollHoldWords;
+  readonly rupees: typeof payrollLiveRupees;
+}
+
+export function payrollLiveKit(raw: unknown): PayrollLiveKit {
+  return { session: createPayrollLiveSession({ viewer: viewerIdentity(raw) }), words: payrollLiveWords, outcome: payrollLiveOutcome, runRows: payRunRows, holdWords: payrollHoldWords, rupees: payrollLiveRupees };
+}
+
 // ── Payroll employee self-service (own payslip) — a SEPARATE surface, permission and shell ───────────────
 
 const PAYROLL_ESS_PERMISSION = 'payroll.ess.self';
@@ -4641,6 +4664,54 @@ export function bootSetup(data: SetupData | undefined): SetupSession | null {
     },
     { status: () => status },
   );
+}
+
+/**
+ * OB-380: the store-setup page as the STORE COMPUTER serves it. The box carries only who is looking (it holds no copy of
+ * head office's setup), so before the page draws anything it reads head office live — the setup status and, when this
+ * person may see them, the till bill-number prefixes — in the person's own session. Nothing is drawn from a sample:
+ * unreachable → the page says so and shows no settings; refused → head office's own words.
+ */
+export type SetupLiveLoad =
+  | { readonly ok: true; readonly data: SetupData; readonly session: SetupSession; readonly editing: SetupEditingApi; readonly prefixes: ReceiptPrefixSession | null }
+  | { readonly ok: false; readonly why: 'unreachable' | 'refused' | 'nobody'; readonly detail?: string };
+
+export const SETUP_LIVE_WORDS = Object.freeze({
+  en: Object.freeze({
+    reading: 'Reading the store setup from head office…',
+    unreachable: 'Head office cannot be reached — no setting is shown, because none of it would be current.',
+    refused: 'Head office refused:', nobody: 'Nobody is signed in on this screen, so the store setup is not read.',
+  }),
+  ta: Object.freeze({
+    reading: 'கடை அமைப்பு தலைமை அலுவலகத்திலிருந்து படிக்கப்படுகிறது…',
+    unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எந்த அமைப்பும் காட்டப்படவில்லை, ஏனெனில் அது தற்போதையதாக இருக்காது.',
+    refused: 'தலைமை அலுவலகம் மறுத்தது:', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை; அதனால் கடை அமைப்பு படிக்கப்படவில்லை.',
+  }),
+});
+
+export async function loadSetupLive(raw: unknown, fetchFn: typeof fetch = (...a) => globalThis.fetch(...a)): Promise<SetupLiveLoad> {
+  const viewer = viewerIdentity(raw);
+  if (viewer?.userId === undefined) return { ok: false, why: 'nobody' };
+  let status: SetupStatus;
+  try {
+    const res = await fetchFn('/v1/platform/setup', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || !Array.isArray(body['items'])) {
+      const err = (body['error'] ?? {}) as { whatHappened?: unknown };
+      return { ok: false, why: 'refused', detail: typeof err.whatHappened === 'string' ? err.whatHappened : `status ${res.status}` };
+    }
+    status = body as unknown as SetupStatus;
+  } catch {
+    return { ok: false, why: 'unreachable' };
+  }
+  let receiptPrefixes: ReceiptPrefixesRead | undefined;
+  try {
+    const res = await fetchFn('/v1/receipt-prefixes', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    const body = res.ok ? (await res.json().catch(() => null)) as ReceiptPrefixesRead | null : null;
+    if (body !== null && Array.isArray(body.tills)) receiptPrefixes = body;
+  } catch { /* the prefix panel is simply not drawn — never an empty "no tills" */ }
+  const data: SetupData = { userId: viewer.userId, permissions: viewer.permissions, status, ...(receiptPrefixes === undefined ? {} : { receiptPrefixes }) };
+  return { ok: true, data, session: bootSetup(data)!, editing: makeSetupEditing(data), prefixes: bootReceiptPrefixes(data) };
 }
 
 /**
@@ -5147,7 +5218,7 @@ interface ManagerWindow {
   requisitions?: { readonly session: RequisitionsSession; readonly words: typeof requisitionsWords; readonly outcomeWords: typeof requisitionsOutcomeWords; readonly offerRows: typeof requisitionOfferRows; readonly rupees: typeof requisitionRupees };
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
   supplierScorecardData?: ViewerIdentity;
-  supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES };
+  supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES; readonly signedRupees: typeof ppvSignedRupees; readonly costWords: typeof ppvCostWords; readonly notComparedWords: typeof ppvNotComparedWords };
   /** R4 D-21: the "Seen together" panel on the Investigations page (reads who is looking from the inbox's own payload). */
   lpCorrelation?: { readonly session: CorrelationSession; readonly words: typeof correlationWords; readonly outcomeWords: typeof correlationOutcomeWords; readonly rupees: typeof correlationRupees };
   /** R4 D-13: the Shelf compliance by bay page — who is looking; head office answers the rest. */
@@ -5333,11 +5404,16 @@ interface ManagerWindow {
   payrollEssSession?: PayrollEssSession;
   /** The shell calls this after a successful MFA step to refresh the sensitive-action re-auth window. */
   payrollReauth?: () => void;
+  /** OB-380: served by the store computer, the payroll pages read head office live and only read (payroll-live-session.ts). */
+  payrollLive?: PayrollLiveKit;
+  payrollEssLive?: PayrollLiveKit;
   adminData?: AdminData;
   adminSession?: AdminSession;
   peopleSession?: PeopleSession;
   outsideLoginsSession?: OutsideLoginsSession;
   setupData?: SetupData;
+  /** OB-380: the store computer's live read of head office's setup (loadSetupLive). */
+  setupLive?: { readonly load: () => Promise<SetupLiveLoad>; readonly words: typeof SETUP_LIVE_WORDS };
   setupSession?: SetupSession;
   setupEditing?: SetupEditingApi;
   /** OB-81: the till bill-number prefixes on the setup page (head office's `GET /v1/receipt-prefixes`). */
@@ -5892,12 +5968,13 @@ export function openRecallCloudPort(): RecallCloudPort {
         credentials: 'same-origin',
         body: JSON.stringify(body),
       });
-      const parsed = (await res.json().catch(() => ({}))) as { recall?: unknown; alreadyOpen?: boolean; whatHappened?: string };
+      const parsed = (await res.json().catch(() => ({}))) as { recall?: unknown; alreadyOpen?: boolean; whatHappened?: string; error?: { code?: string; whatHappened?: string } };
       if (res.status >= 200 && res.status < 300 && parsed.recall !== undefined) {
         return { recorded: true, alreadyOpen: parsed.alreadyOpen === true };
       }
       // 400/403/409/422 or any other non-2xx — head office declined; surface exactly why it said no.
-      return { recorded: false, reason: parsed.whatHappened ?? 'head office did not record the recall' };
+      const said = parsed.error?.whatHappened ?? parsed.whatHappened ?? 'head office did not record the recall';
+      return parsed.error?.code === undefined ? { recorded: false, reason: said } : { recorded: false, reason: said, code: parsed.error.code };
     } catch {
       return { recorded: false, reason: lostLink };
     }
@@ -5909,6 +5986,10 @@ export function openRecallCloudPort(): RecallCloudPort {
     close: ({ batchId, evidenceRef }) =>
       send(`/v1/quality/recalls/${encodeURIComponent(batchId)}/closure`, { evidenceRef },
         'no connection to head office — the closure was not recorded'),
+    // OB-383: withdraw a recall started by mistake (head office refuses by name once anyone was told or anything disposed of).
+    withdraw: ({ batchId, reason, noCustomerPhoned }) =>
+      send(`/v1/quality/recalls/${encodeURIComponent(batchId)}/withdrawal`, { reason, noCustomerPhoned },
+        'no connection to head office — the withdrawal was not recorded'),
   };
 }
 
@@ -6820,6 +6901,9 @@ if (browserWindow !== undefined) {
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);
   browserWindow.payrollReauth = markPayrollReauthenticated;
+  // OB-380 · OB-228: on the store computer the payroll pages carry only who is looking; they read head office live, read only.
+  if (servedByStoreComputer(browserWindow.payrollData)) browserWindow.payrollLive = payrollLiveKit(browserWindow.payrollData);
+  if (servedByStoreComputer(browserWindow.payrollEssData)) browserWindow.payrollEssLive = payrollLiveKit(browserWindow.payrollEssData);
   // Outside access (M33-FR-03 · §28 · audit PA-03): the support tab reads head office's own requests and sessions, and
   // the owner approves, rejects or ends one in THEIR OWN session — never on a typed name. Without a payload the page
   // shows its sample, which is not connected to head office and decides nothing.
@@ -6836,6 +6920,11 @@ if (browserWindow !== undefined) {
   }
   const prefixes = bootReceiptPrefixes(browserWindow.setupData);
   if (prefixes !== null) browserWindow.receiptPrefixSession = prefixes;
+  // OB-380: served by the store computer with no setup of its own, the page reads head office before it draws a thing.
+  if (servedByStoreComputer(browserWindow.setupData) && browserWindow.setupData?.status === undefined) {
+    const raw = browserWindow.setupData;
+    browserWindow.setupLive = { load: () => loadSetupLive(raw), words: SETUP_LIVE_WORDS };
+  }
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
   // OB-288 lane 4 · P1: the AI control screen reads head office LIVE (GET /v1/ai/control) in the person's own session and
@@ -6990,7 +7079,7 @@ if (browserWindow !== undefined) {
   // ── R4 Lane 4 — begin
   // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
   browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
-  browserWindow.supplierScorecard = { session: createScorecardSession({ viewer: browserWindow.supplierScorecardData }), words: scorecardWords, outcomeWords: scorecardOutcomeWords, ratingWords: scorecardRatingWords, figures: SCORECARD_FIGURES };
+  browserWindow.supplierScorecard = { session: createScorecardSession({ viewer: browserWindow.supplierScorecardData }), words: scorecardWords, outcomeWords: scorecardOutcomeWords, ratingWords: scorecardRatingWords, figures: SCORECARD_FIGURES, signedRupees: ppvSignedRupees, costWords: ppvCostWords, notComparedWords: ppvNotComparedWords };
   // R4 D-21: "Seen together" — only where the Investigations page was given who is looking; it opens nothing on read.
   if (browserWindow.lossPreventionInboxData !== undefined) {
     browserWindow.lpCorrelation = { session: createCorrelationSession({ viewer: viewerIdentity(browserWindow.lossPreventionInboxData) }), words: correlationWords, outcomeWords: correlationOutcomeWords, rupees: correlationRupees };
@@ -7013,4 +7102,16 @@ if (browserWindow !== undefined) {
   wireOwnerReportingPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // OB-288 lane 4 · P2 — owner alerts and schedules
   // OB-288 P4 (R8-9 · M36-FR-01 · C8 · C9): the Trial switches and shop account page — its session, in its own file.
   wireSaasPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // FG-4 · OB-386: free samples — recorded on the write-off capture screen (who is looking, from its data), checked on the ITC page.
+  (browserWindow as unknown as Record<string, unknown>)['freeSample'] = {
+    session: createFreeSampleSession(browserWindow.writeOffCaptureData === undefined ? {} : { viewer: viewerIdentity(browserWindow.writeOffCaptureData) ?? { permissions: [] } }),
+    words: freeSampleWords, outcomeWords: freeSampleOutcomeWords,
+  };
+  // FG-4 · M04-FR-04 / M06-FR-03: contract endings on the Owner alerts page (its viewer, `ownerAlertsData`).
+  const ownerAlertsViewer = (browserWindow as unknown as Record<string, unknown>)['ownerAlertsData'];
+  if (ownerAlertsViewer !== undefined) {
+    (browserWindow as unknown as Record<string, unknown>)['contractExpiry'] = { session: createContractExpirySession({ viewer: viewerIdentity(ownerAlertsViewer) }), words: contractExpiryWords, outcomeWords: contractExpiryOutcomeWords, windowWords: contractWindowWords, dueWords: contractDueWords };
+  }
+  // QG-02 lane 1 R4: the Dock diary, Standing orders, Supplier offer funding and Feature switches pages.
+  wireR4Screens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
 }

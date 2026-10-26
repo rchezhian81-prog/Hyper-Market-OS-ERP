@@ -222,6 +222,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'department_scope_change', label: 'Limit a person\'s role to some departments',
     makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
   },
+  // FG-4 · M02-FR-02 · §28 "Purchase User — assigned suppliers/categories", "Receiver/QC, Warehouse User — assigned
+  // locations": limiting a person's role to some suppliers, categories or locations inside a branch.
+  role_scope_change: {
+    kind: 'role_scope_change', label: 'Limit a person\'s role to some suppliers, categories or locations',
+    makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
+  },
   // ── OB-288 lane 1 · P1 — end
   // ── OB-288 P2 (catalogue, pricing and product legal guards) — begin
   // M03.md "Permissions (§28): tax change with Finance approval": a new GST rate on an HSN class that already has one is

@@ -40,6 +40,7 @@ import { isHandheldSource } from '../../../packages/sync/src/device-relay';
 import type { EveningCheckBox } from './evening-check-box';
 import { counterLabelFor, readCounterLabelRequest } from './store-work';
 import { TILL_SHELL_SCREENS, CUSTOMER_FACING_SCREENS, customerFacingGlobals } from './self-checkout-screens'; // OB-288 P6
+import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall } from './head-office-pages'; // OB-380
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -147,6 +148,8 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   // OB-288 P6 (R8-3 · D14-FR-02): the self-checkout lane and the price kiosk, each its own app.
   'self-checkout': { dir: 'self-checkout', file: 'index.html' },
   'price-kiosk': { dir: 'price-kiosk', file: 'index.html' },
+  // OB-380 (26 Oct 2026): the office pages head office answers, each its own web-erp page (head-office-pages.ts).
+  ...HEAD_OFFICE_PAGE_SHELLS,
 });
 
 export interface ScreenServer {
@@ -533,6 +536,15 @@ export function startScreenServer(input: {
       // OB-288 lane 2 · M11-FR-03: the counter label, rendered here from what this box holds (works offline).
       if (doorPath === PRODUCTION_LABEL_PATH) {
         await labelDoor(req, res);
+        return;
+      }
+      // OB-380 · P-08: a page's same-origin call to head office that nothing in front of this box carried there. The box
+      // holds no head-office answer and never makes one up (no copy, no blank list, no "refused"): the call fails as a lost
+      // link, exactly as it does when the line is down, so every page says in its OWN tested words, in English or Tamil,
+      // that head office cannot be reached and nothing on it is current.
+      if (isHeadOfficeCall(doorPath)) {
+        req.resume();
+        req.socket.destroy();
         return;
       }
       if (req.method !== 'GET') {

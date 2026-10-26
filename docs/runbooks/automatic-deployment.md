@@ -163,6 +163,8 @@ computers' saved history. The administrator adds it to the box's settings file O
 | `Permission denied (publickey)` or `Host key verification failed` | the key or host key in the `demo` environment does not match the box | redo steps 5–7; never lower `StrictHostKeyChecking` |
 | `REFUSED — the pre-release backup did not succeed` (exit 69) | the box's `SRE_PREDEPLOY_BACKUP_CMD` failed, so nothing was deployed | the box is untouched; fix the backup (backup runbook), then re-run the job |
 | `failed its canary bake` (exit 70, `rolled_back_in_canary_bake`) in the **Canary stage** job | the release came up but lost READY or added server errors while it was being watched; the canary box is back on the previous release and the full rollout did not run | open an incident (below) naming the release commit; fix forward and merge again |
+| `THE BOOKS DO NOT RECONCILE` (exit 70, `rolled_back_on_reconcile`) | the release came up healthy, but the ledger, the outbox or the sync backlog differ from the snapshot taken just before it — each `DIFFERENCE — …` line says which (an event lost or changed, a new dead letter, a grown backlog) | the box is back on the previous release; open an incident (below) naming the release commit and the differences. Nothing on the ledger is deleted or overwritten to "fix" it (hard rule #2) |
+| `REFUSED — the books could not be read before the release` (exit 69, `reconcile_snapshot_failed`) | the snapshot (run in the stack's own `migrate` container) could not read the database, so the release would have nothing to be compared with | the box is untouched; check the database container is up (`docker compose … ps db`), then re-run the job |
 
 ## The canary stage and the backup before a release (WF-20, ADR-0026)
 
@@ -174,6 +176,27 @@ computers' saved history. The administrator adds it to the box's settings file O
 - **The backup before a release:** set `SRE_PREDEPLOY_BACKUP_CMD` in `/opt/sre/deploy.conf` to a command that takes a
   backup and exits 0 only when it worked (the demo: `sudo /bin/systemctl start --wait sre-pilot-backup.service`, with a
   sudoers line allowing the `deploy` user exactly that). A failed backup stops the release before anything changes.
+
+## The books, reconciled around every release, and the QG-10 record (QG-10, WF-20)
+
+QG-10 asks that "health, smoke, reconciliation, monitoring and rollback" are verified after **every** release. The
+release script now does the reconciliation itself:
+
+- **Before** anything is rebuilt it snapshots head office's books: how many events the ledger holds, its last sequence
+  number, a digest over every event, the count per ledger family (sales, stock, cash, …), and the outbox's pending and
+  dead-letter counts. The snapshot runs inside the stack's own `migrate` container, which already has the database
+  setting — the release script never reads a secret. It is read only.
+- **After** the release is up, GREEN and (on the canary box) watched, it snapshots again and compares. Trading during the
+  release is fine; an earlier event lost or changed, a new dead letter, or a sync backlog that grew past
+  `SRE_RECONCILE_MAX_BACKLOG_GROWTH` (default 0) is a **difference**, and the release is rolled back (exit 70).
+- **Every attempt** appends one line to `SRE_QG10_LOG` (default `/opt/sre/qg10-evidence.jsonl`) and prints it as
+  `release: QG-10 record: {…}`: each of the five checks `verified`, `failed` or `not run`, the differences, and the words
+  "evidence for the owner's QG-10 decision". The pipeline copies that line into the run's summary and keeps it as an
+  artifact (`qg10-canary-…`, `qg10-demo-…`). It is **evidence, never a decision**: the owner (or the person he names)
+  records GO / HOLD / REWORK for QG-10 in the gate register, citing it (QG-12 — silence is not approval).
+- A box without a bake (the demo box) records monitoring as `not_run_on_this_box` — the canary box is where a release is
+  watched. `SRE_RECONCILE=off` switches the reconcile off; the script says so on every run and the record says
+  "not run". Leave it on.
 
 ## Signed releases (WF-20, AID-08 "sign releases")
 

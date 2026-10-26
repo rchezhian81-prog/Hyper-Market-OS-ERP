@@ -242,6 +242,7 @@ function renderLocked(view) {
 }
 
 function render() {
+  if (window.payrollLive) return; // OB-380: the store computer's read-only view draws itself (renderLive)
   const view = session.view(lang);
 
   el('title').textContent = t('title');
@@ -307,7 +308,60 @@ el('lang').addEventListener('click', () => {
 globalThis.addEventListener?.('online', render);
 globalThis.addEventListener?.('offline', render);
 
-render();
+// ── OB-380 · OB-228: served by the store computer — head office's payroll, read live, read only ─────────────
+// The box carries only who is looking. The model-only sections (and their buttons) are not drawn: what shows is head
+// office's own answer — the pay-release switch and the pay run asked for — or that head office could not be reached.
+const live = window.payrollLive ?? null;
+let liveHold = null;
+let liveRun = null;
+let liveStatus = null;
+
+function renderLive() {
+  const w = (k) => live.words(lang, k);
+  el('title').textContent = t('title');
+  el('lead').textContent = t('lead');
+  el('lang').textContent = t('langName');
+  el('demo').hidden = true;
+  el('offline').hidden = true;
+  el('nobody').hidden = live.session.may.named;
+  el('nobody').textContent = live.session.may.named ? '' : w('nobody');
+  for (const child of document.querySelector('main').children) if (child.id !== 'live' && !child.contains(el('title'))) child.hidden = true;
+  el('live').hidden = false;
+  el('live-lead').textContent = w('servedLead');
+  const hold = liveHold === null ? null : liveHold.result === 'ok' ? live.holdWords(lang, liveHold.value) : null;
+  el('live-hold').textContent = hold === null ? (liveHold === null ? w('reading') : `✕ ${live.outcome(lang, liveHold)}`) : `${hold.on ? '✓' : '⏸'} ${hold.headline}`;
+  el('live-hold-detail').textContent = hold === null ? '' : hold.detail;
+  el('live-run').placeholder = w('runNumber');
+  el('live-run').setAttribute('aria-label', w('runNumber'));
+  const btn = el('live-show');
+  btn.replaceChildren();
+  const icon = typeof window.sreIcon === 'function' ? window.sreIcon('search', 18) : null;
+  if (icon !== null) btn.append(icon);
+  const label = document.createElement('span'); label.textContent = w('show'); btn.append(label);
+  btn.disabled = !live.session.may.readRun;
+  el('live-status').textContent = liveStatus === null ? '' : live.outcome(lang, liveStatus);
+  el('live-rows').replaceChildren(...(liveRun === null ? [] : live.runRows(lang, liveRun).map((r) => {
+    const row = document.createElement('div'); row.className = 'row';
+    const a = document.createElement('span'); a.textContent = r.label;
+    const b = document.createElement('span'); b.textContent = r.value;
+    row.append(a, b); return row;
+  })));
+}
+
+if (live !== null) {
+  el('live-show').addEventListener('click', async () => {
+    liveRun = null; liveStatus = null;
+    el('live-status').textContent = live.words(lang, 'reading');
+    const out = await live.session.readRun(el('live-run').value);
+    if (out.result === 'ok') liveRun = out.value; else liveStatus = out;
+    renderLive();
+  });
+  el('lang').addEventListener('click', renderLive);
+  renderLive();
+  live.session.readHold().then((out) => { liveHold = out; renderLive(); });
+} else {
+  render();
+}
 
 // NOTE: no `navigator.serviceWorker.register` here, by design — payroll is online-first and must never cache
 // sensitive data on the device (owner directive). Do not add one.

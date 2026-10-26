@@ -4,6 +4,7 @@ import { PAYROLL_ESS_COPY, ESS_COPY_KEYS, ESS_SENSITIVE_ACTIONS } from '../../ap
 import { bilingualGaps } from '../../packages/ui/src/index';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { SCREENS } from '../../edge/store-edge/src/screen-data';
+import { headOfficePagePayload } from '../../edge/store-edge/src/head-office-pages';
 
 /**
  * **The self-service payslip is own-record only, and holds the same security bar as the admin screen.**
@@ -44,9 +45,14 @@ describe('same security posture as the admin payroll screen', () => {
     }
   });
 
-  it('is NOT served by the offline store box (a payslip must never be retained on a shared device)', () => {
-    expect((SCREENS as readonly string[]).includes('my-payslip')).toBe(false);
-    expect((SCREENS as readonly string[]).includes('payroll-payslip')).toBe(false);
+  it('served by the store computer (OB-380), it retains nothing: identity-only payload, not cached, the person\'s own read', () => {
+    expect((SCREENS as readonly string[]).includes('my-payslip')).toBe(true);
+    expect(Object.keys(headOfficePagePayload()).sort(), 'the box injects no payslip figure — only who is looking').toEqual(['permissions', 'servedBy']);
+    expect(readFileSync('apps/web-erp/web/sw.js', 'utf8')).not.toMatch(/'\.\/payroll-payslip\.(js|html)'/);
+    const live = readFileSync('apps/web-erp/src/payroll-live-session.ts', 'utf8');
+    expect(live).toContain("call<OwnPayslipRead>('GET', '/v1/hr/payroll/my-payslip')");
+    expect(live, 'only the self-scoped route — never another person\'s payslip by id').not.toMatch(/payslips\//);
+    expect(VIEW).toMatch(/window\.payrollEssLive/);
   });
 
   it('uses no browser dialogs and gates the export on a fresh re-auth (MFA)', () => {

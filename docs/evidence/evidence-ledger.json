@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1743,
+  "testFiles": 1781,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,9 +18,9 @@
     "PARTIALLY_WIRED": 39
   },
   "totals": {
-    "unit": 96,
-    "integration": 103,
-    "realDb": 101,
+    "unit": 97,
+    "integration": 104,
+    "realDb": 102,
     "browser": 90,
     "connected": 70,
     "device": 0,
@@ -32,10 +32,10 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
+        "unit": 23,
         "integration": 23,
         "realDb": 12,
-        "browser": 6,
+        "browser": 7,
         "connected": 4,
         "device": 0,
         "uat": 0
@@ -63,6 +63,7 @@
           "tests/unit/reporting-kpis-run-on-the-engine.test.ts",
           "tests/unit/tenant-setup.test.ts",
           "tests/unit/the-owner-setup-commands-refuse-before-they-call.test.ts",
+          "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/trading-day.test.ts"
         ],
         "integration": [
@@ -110,6 +111,7 @@
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
+          "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts"
         ],
         "connected": [
@@ -128,8 +130,8 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 28,
-        "integration": 26,
+        "unit": 30,
+        "integration": 27,
         "realDb": 12,
         "browser": 8,
         "connected": 3,
@@ -146,6 +148,7 @@
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/edge-today-figures.test.ts",
           "tests/unit/effective-grants.test.ts",
+          "tests/unit/erp-access-review-role-scopes.test.ts",
           "tests/unit/erp-access-review-session.test.ts",
           "tests/unit/erp-admin-session.test.ts",
           "tests/unit/erp-approvals-session.test.ts",
@@ -163,11 +166,13 @@
           "tests/unit/p1-authority-rules.test.ts",
           "tests/unit/people-sign-ins.test.ts",
           "tests/unit/rbac.test.ts",
+          "tests/unit/role-scopes.test.ts",
           "tests/unit/service-store-core.test.ts",
           "tests/unit/sign-in-service.test.ts",
           "tests/unit/till-operators.test.ts"
         ],
         "integration": [
+          "tests/integration/a-buyer-and-a-receiver-act-only-in-their-scope.test.ts",
           "tests/integration/access-durability.test.ts",
           "tests/integration/access-lifecycle.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
@@ -302,17 +307,19 @@
       "id": "M04",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 7,
-        "integration": 9,
-        "realDb": 2,
-        "browser": 2,
-        "connected": 1,
+        "unit": 9,
+        "integration": 10,
+        "realDb": 3,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/contract-expiry-alerts.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/erp-contract-expiry-session.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
           "tests/unit/merchandising-assortment.test.ts",
           "tests/unit/merchandising-shelf-count.test.ts",
@@ -321,6 +328,7 @@
           "tests/unit/planogram-store-route.test.ts"
         ],
         "integration": [
+          "tests/integration/an-expiring-display-or-supplier-contract-reaches-the-owner.test.ts",
           "tests/integration/assortment.test.ts",
           "tests/integration/floor-indents.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
@@ -332,15 +340,18 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/an-expiring-display-or-supplier-contract-reaches-the-owner.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
           "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts"
         ],
         "browser": [
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
-          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts"
+          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
+          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts"
+          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
+          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -352,10 +363,10 @@
       "id": "M05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 15,
+        "unit": 16,
         "integration": 21,
         "realDb": 7,
-        "browser": 5,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -376,6 +387,7 @@
           "tests/unit/rate.test.ts",
           "tests/unit/screen-router.test.ts",
           "tests/unit/service-catalogue.test.ts",
+          "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/till-side-the-till-carries-head-offices-catalogue-rules.test.ts"
         ],
         "integration": [
@@ -415,6 +427,7 @@
           "tests/e2e/catalogue-promotion-launch-delivery.e2e.ts",
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
           "tests/e2e/pricing-promotions-menu-links.e2e.ts",
+          "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-gives-the-launched-offer.e2e.ts"
         ],
         "connected": [
@@ -430,11 +443,11 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 14,
-        "integration": 23,
-        "realDb": 13,
-        "browser": 5,
-        "connected": 3,
+        "unit": 17,
+        "integration": 24,
+        "realDb": 14,
+        "browser": 7,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -444,21 +457,25 @@
           "tests/unit/bank-controls.test.ts",
           "tests/unit/blanket-po-and-segregation.test.ts",
           "tests/unit/buying-scope.test.ts",
+          "tests/unit/contract-expiry-alerts.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-buying-boot.test.ts",
           "tests/unit/erp-buying-session.test.ts",
+          "tests/unit/erp-contract-expiry-session.test.ts",
           "tests/unit/erp-manager-session.test.ts",
           "tests/unit/erp-suppliers-session.test.ts",
           "tests/unit/goods-receipt-order-fold.test.ts",
           "tests/unit/purchasing.test.ts",
           "tests/unit/requisitions-session.test.ts",
           "tests/unit/rfq.test.ts",
-          "tests/unit/supplier-performance.test.ts"
+          "tests/unit/supplier-performance.test.ts",
+          "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-blanket-po-releases-only-what-its-agreement-allows.test.ts",
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/an-expiring-display-or-supplier-contract-reaches-the-owner.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/an-over-limit-purchase-order-goes-to-the-owner.test.ts",
           "tests/integration/duplicate-bank.test.ts",
@@ -484,6 +501,7 @@
           "tests/integration/a-blanket-po-releases-only-what-its-agreement-allows.test.ts",
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/an-expiring-display-or-supplier-contract-reaches-the-owner.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/every-order-carries-its-buying-scope-and-the-open-commitment-reports-by-it.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
@@ -500,11 +518,14 @@
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts",
           "tests/e2e/suppliers-on-the-production-api.e2e.ts",
+          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
+          "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/suppliers-on-the-production-api.e2e.ts",
+          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "device": [],
@@ -517,10 +538,10 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 28,
         "realDb": 9,
-        "browser": 5,
+        "browser": 6,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -537,6 +558,7 @@
           "tests/unit/purchase-match-lines.test.ts",
           "tests/unit/receiving-asn.test.ts",
           "tests/unit/supplier-account-fold.test.ts",
+          "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/warehouse-handheld-receives-against-the-cached-asn.test.ts"
         ],
         "integration": [
@@ -584,6 +606,7 @@
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
+          "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
           "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts"
         ],
@@ -1223,10 +1246,10 @@
       "id": "M15",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 17,
+        "unit": 18,
         "integration": 18,
         "realDb": 6,
-        "browser": 7,
+        "browser": 8,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1249,7 +1272,8 @@
           "tests/unit/related-party-controls.test.ts",
           "tests/unit/service-pos.test.ts",
           "tests/unit/settlement.test.ts",
-          "tests/unit/stored-fraud-signals.test.ts"
+          "tests/unit/stored-fraud-signals.test.ts",
+          "tests/unit/the-lp-records-session-reads-signals-staff-and-bank.test.ts"
         ],
         "integration": [
           "tests/integration/a-related-party-order-needs-the-owner.test.ts",
@@ -1283,6 +1307,7 @@
           "tests/e2e/loss-prevention-close-delivery.e2e.ts",
           "tests/e2e/loss-prevention-inbox-shows-raised-exceptions.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-investigations-page-reads-the-shops-own-records.e2e.ts",
           "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts",
           "tests/e2e/the-served-till-keeps-void-evidence.e2e.ts",
           "tests/e2e/the-served-till-records-no-sale-and-price-override.e2e.ts",
@@ -2622,7 +2647,7 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 17,
+        "unit": 16,
         "integration": 39,
         "realDb": 31,
         "browser": 3,
@@ -2639,7 +2664,6 @@
           "tests/unit/alert-lifecycle.test.ts",
           "tests/unit/cert-in-capacity-and-suppression.test.ts",
           "tests/unit/customer-pii-safeguards.test.ts",
-          "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/incidents-session.test.ts",
           "tests/unit/kernel-payment-data-residency.test.ts",
           "tests/unit/observed-health-routes.test.ts",
@@ -2917,31 +2941,36 @@
       "id": "D03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 5,
-        "integration": 14,
+        "unit": 8,
+        "integration": 16,
         "realDb": 8,
-        "browser": 3,
-        "connected": 2,
+        "browser": 5,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/erp-buying-session.test.ts",
-          "tests/unit/erp-navigation-catalogue.test.ts",
+          "tests/unit/erp-supplier-price-variance-session.test.ts",
+          "tests/unit/erp-vmi-desk-session.test.ts",
           "tests/unit/goods-in.test.ts",
           "tests/unit/landed-cost.test.ts",
-          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
+          "tests/unit/purchase-price-variance.test.ts",
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
+          "tests/unit/vmi.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
+          "tests/integration/a-supplier-proposes-replenishment-within-the-buyers-limits.test.ts",
           "tests/integration/a-typed-scan-is-linked-to-its-invoice.test.ts",
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/goods-receipt.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-orders.test.ts",
+          "tests/integration/purchase-price-variance-per-product-and-receipt.test.ts",
           "tests/integration/rebates.test.ts",
           "tests/integration/rfq.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -2962,11 +2991,15 @@
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
-          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
+          "tests/e2e/the-buyer-decides-a-supplier-managed-top-up.e2e.ts",
+          "tests/e2e/the-supplier-page-shows-purchase-price-variance.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
-          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
+          "tests/e2e/the-buyer-decides-a-supplier-managed-top-up.e2e.ts",
+          "tests/e2e/the-supplier-page-shows-purchase-price-variance.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4268,7 +4301,7 @@
       "id": "WF-05",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 3,
+        "unit": 2,
         "integration": 9,
         "realDb": 4,
         "browser": 2,
@@ -4278,7 +4311,6 @@
       },
       "files": {
         "unit": [
-          "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
           "tests/unit/tally-export.test.ts"
         ],
@@ -4362,7 +4394,7 @@
       "id": "WF-07",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 5,
+        "unit": 4,
         "integration": 8,
         "realDb": 5,
         "browser": 4,
@@ -4373,7 +4405,6 @@
       "files": {
         "unit": [
           "tests/unit/erp-indents-session.test.ts",
-          "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/floor-indents-engine.test.ts",
           "tests/unit/transfers-session.test.ts",
           "tests/unit/warehouse-handheld-transfers.test.ts"
@@ -4414,9 +4445,9 @@
       "id": "WF-08",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
-        "integration": 14,
-        "realDb": 9,
+        "unit": 1,
+        "integration": 15,
+        "realDb": 10,
         "browser": 1,
         "connected": 1,
         "device": 0,
@@ -4424,11 +4455,11 @@
       },
       "files": {
         "unit": [
-          "tests/unit/count-plans-session.test.ts",
-          "tests/unit/erp-navigation-catalogue.test.ts"
+          "tests/unit/count-plans-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-count-plan-is-closed-once-approved-or-cancelled-never-both.test.ts",
+          "tests/integration/a-count-sent-from-the-phone-whose-reply-is-lost-is-counted-once.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
@@ -4445,6 +4476,7 @@
         ],
         "realDb": [
           "tests/integration/a-count-plan-is-closed-once-approved-or-cancelled-never-both.test.ts",
+          "tests/integration/a-count-sent-from-the-phone-whose-reply-is-lost-is-counted-once.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
@@ -4471,8 +4503,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 1,
-        "integration": 9,
-        "realDb": 1,
+        "integration": 11,
+        "realDb": 3,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -4483,7 +4515,9 @@
           "tests/unit/lane2-recall-and-trace-engines.test.ts"
         ],
         "integration": [
+          "tests/integration/a-recall-closure-re-sent-is-one-closure.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
+          "tests/integration/a-recall-started-by-mistake-is-withdrawn-only-before-anyone-is-told.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
           "tests/integration/inventory-expiry-actions.test.ts",
           "tests/integration/inventory-near-expiry.test.ts",
@@ -4494,7 +4528,9 @@
           "tests/integration/waste-write-off.test.ts"
         ],
         "realDb": [
-          "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts"
+          "tests/integration/a-recall-closure-re-sent-is-one-closure.test.ts",
+          "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
+          "tests/integration/a-recall-started-by-mistake-is-withdrawn-only-before-anyone-is-told.test.ts"
         ],
         "browser": [
           "tests/e2e/expiry-recall-delivery.e2e.ts",
@@ -4973,9 +5009,9 @@
       "id": "WF-20",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 9,
-        "realDb": 6,
+        "unit": 2,
+        "integration": 10,
+        "realDb": 7,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -4983,7 +5019,8 @@
       },
       "files": {
         "unit": [
-          "tests/unit/incidents-session.test.ts"
+          "tests/unit/incidents-session.test.ts",
+          "tests/unit/qg10-the-books-are-reconciled-around-every-release.test.ts"
         ],
         "integration": [
           "tests/integration/alerts-reach-their-named-owner.test.ts",
@@ -4992,6 +5029,7 @@
           "tests/integration/dr-readiness.test.ts",
           "tests/integration/pilot-failure-drills.test.ts",
           "tests/integration/platform-version-policy.test.ts",
+          "tests/integration/qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts",
           "tests/integration/the-release-script-deploys-and-rolls-back.test.ts"
@@ -5001,6 +5039,7 @@
           "tests/integration/an-incident-is-recorded-and-closed-by-a-named-person.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/dr-readiness.test.ts",
+          "tests/integration/qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts"
         ],
@@ -5056,11 +5095,11 @@
       "id": "QG-02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 1,
         "realDb": 0,
-        "browser": 3,
-        "connected": 1,
+        "browser": 12,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -5069,6 +5108,7 @@
           "tests/unit/compliance-gate-decisions.test.ts",
           "tests/unit/customer-app-boot.test.ts",
           "tests/unit/owner-session.test.ts",
+          "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/ui-foundation.test.ts"
         ],
         "integration": [
@@ -5076,12 +5116,23 @@
         ],
         "realDb": [],
         "browser": [
+          "tests/e2e/catalogue-price-change-delivery.e2e.ts",
+          "tests/e2e/every-office-page-on-the-store-computer-says-when-head-office-is-down.e2e.ts",
+          "tests/e2e/f7-the-served-till-spreads-an-offer-by-what-each-line-charges.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts",
           "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
+          "tests/e2e/the-owner-app-meets-its-interaction-budget.e2e.ts",
+          "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
+          "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
           "tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -5373,18 +5424,25 @@
       "id": "QG-10",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 0,
-        "realDb": 0,
+        "unit": 1,
+        "integration": 2,
+        "realDb": 1,
         "browser": 0,
         "connected": 0,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
-        "integration": [],
-        "realDb": [],
+        "unit": [
+          "tests/unit/qg10-the-books-are-reconciled-around-every-release.test.ts"
+        ],
+        "integration": [
+          "tests/integration/qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts",
+          "tests/integration/the-release-script-deploys-and-rolls-back.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts"
+        ],
         "browser": [],
         "connected": [],
         "device": [],

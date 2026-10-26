@@ -735,7 +735,9 @@ describe('the screens socket refuses what it should', () => {
     expect(routeOf('/manager')).toEqual({ screen: 'manager', file: 'index.html' });
     expect(routeOf('/manager/app.js')).toEqual({ screen: 'manager', file: 'app.js' });
     expect(routeOf('/owner/?x=1')).toEqual({ screen: 'owner', file: 'index.html' });
-    expect(routeOf('/payroll')).toBeNull();
+    // OB-380: payroll is an office page the box serves now; the erasure console is the one web-erp page it does not.
+    expect(routeOf('/payroll')).toEqual({ screen: 'payroll', file: 'payroll.html' });
+    expect(routeOf('/erasure-console')).toBeNull();
     expect(routeOf('/')).toBeNull();
   });
 

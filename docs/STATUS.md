@@ -5,6 +5,60 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 final gaps, batch 8 (26 October 2026): the re-audit, office pages served, recall withdraw, release reconcile, compliance guards, buying and scopes
+
+**The re-audit (25 Oct, 391 roadmap rows, checked in code and tests)**
+- Done 348, partly done 20, missing 0, decision 0, external 22, deferred in writing 1. On 23 Oct the figures were 206, 148, 7, 15, 15 and 0.
+- Lane tables are in the session scratchpad; the main findings are recorded here.
+- **Office pages:** 47 office pages were built but served by nothing.
+- **Time zone:** the store computer takes its time zone from the machine.
+  - Natively on Windows in the store it is India time, and dates are right.
+  - In a container (the demo copy) it is UTC, so trading dates go wrong between 00:00 and 05:30 IST.
+- **Date sweep:** about 125 server sites take "today" from UTC. A shop-clock builder (FG-1) is fixing them all.
+
+**What changed in this batch**
+- **OB-380:** the store computer serves all 47 office pages, behind its PIN door and each screen's permission. When head office is unreachable, each page says so plainly. Payroll is a read-only live view; approve, lock and the bank file stay held (OB-228).
+- **QG-02:** four new screens: dock diary, standing orders, supplier offer funding and feature switches. Eight more everyday actions are tap-counted.
+- **M15-FR-02:** the Investigations page is tested.
+- **Recalls:** a recall started by mistake can be withdrawn before anyone is told or anything is disposed of (OB-383).
+- **Releases:** each release is reconciled before and after; a difference rolls it back, and a QG-10 evidence line is kept (WF-20).
+- **Compliance:** tobacco is never promoted on any surface (B15). Medicines are refused everywhere (B18, OB-310).
+- **Scenario lists:** written for WF-07 to WF-20, each row pointing at a real test.
+- **Buying:**
+  - supplier-managed stock (D03-FR-04);
+  - purchase-price variance per product and per receipt (D03-FR-05);
+  - free samples give back their GST credit (OB-386);
+  - contract-ending alerts (M04-FR-04, M06-FR-03).
+- **Scopes:** department, supplier, category and location scopes, each set by two other people (M02-FR-02, SEC-03).
+- **Decisions:** owner decisions OB-380 to OB-393 are recorded.
+
+**Tests run for this merge (exactly)**
+- Guardrails: 1,786 of 1,786.
+- Whole unit suite: 8,869 of 8,869.
+- Each builder ran the in-memory integration suite; one picker test was a timing flake under load and passes alone.
+- PostgreSQL could not be started for the builders, so every PostgreSQL half and the browser tests that need it ran first in CI on this pull request.
+
+**What is next (builders running)**
+- The shop clock (FG-1).
+- Staff's own head-office sign-in on the store PC (OB-388).
+- The Company report and retiring the erasure console (OB-391).
+- Lane health on Today (OB-392).
+- Phoned ticks on the recall call list (OB-387).
+- The supplier top-up form (OB-389).
+- Manager approval of free samples (OB-393).
+- Scopes on relayed receipts and counts.
+- Shorter everyday actions (OB-390).
+- Declared request and reply bodies for every route and event (M32-FR-01).
+
+**Blocked / external**
+- Real hardware, live providers, staff UAT and the pen test, as before.
+- In the shop, office pages show "head office cannot be reached" until OB-388 is built.
+
+**Needs an owner decision**
+- None open.
+
+---
+
 ## OB-288 wave 7 (25 October 2026): the owner's floor-device decisions OB-372 to OB-379 built
 
 **What changed**

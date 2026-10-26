@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Supplier offer funding</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Supplier offer funding (M05-FR-04 · QG-02). A THIN CLIENT over head office's own funding record: per offer and supplier,
+      the rate, the cap, the units sold under the offer folded from the banked bills, what that earned, what was received, what
+      the books hold and what is outstanding — every finding shown; the agreement recorded with Finance's approval number; a
+      receipt recorded as a journal. Its session is apps/web-erp/src/promotion-funding-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Supplier offer funding</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Supplier offer funding</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="register" hidden aria-labelledby="register-h">
+        <h3 id="register-h"></h3>
+        <button id="r-show" type="button"><span id="r-show-text"></span></button>
+        <p class="status" id="r-status" role="status" aria-live="polite"></p>
+        <p class="meta" id="r-totals"></p>
+        <p class="meta" id="r-from"></p>
+        <ul class="rows" id="register-rows"></ul>
+      </section>
+      <section id="agree" hidden aria-labelledby="agree-h">
+        <h3 id="agree-h"></h3>
+        <div class="row-form">
+          <label for="a-offer"><span id="a-offer-l"></span><input id="a-offer" autocomplete="off" /></label>
+          <label for="a-supplier"><span id="a-supplier-l"></span><input id="a-supplier" autocomplete="off" /></label>
+          <label for="a-rate"><span id="a-rate-l"></span><input id="a-rate" inputmode="decimal" autocomplete="off" /></label>
+          <label for="a-cap"><span id="a-cap-l"></span><input id="a-cap" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <div class="row-form">
+          <label for="a-products"><span id="a-products-l"></span><input id="a-products" autocomplete="off" /></label>
+          <label for="a-approval"><span id="a-approval-l"></span><input id="a-approval" autocomplete="off" /></label>
+        </div>
+        <button id="a-record" type="button"><span id="a-record-text"></span></button>
+        <p class="status" id="a-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="receipt" hidden aria-labelledby="receipt-h">
+        <h3 id="receipt-h"></h3>
+        <div class="row-form">
+          <label for="c-offer"><span id="c-offer-l"></span><input id="c-offer" autocomplete="off" /></label>
+          <label for="c-supplier"><span id="c-supplier-l"></span><input id="c-supplier" autocomplete="off" /></label>
+          <label for="c-amount"><span id="c-amount-l"></span><input id="c-amount" inputmode="decimal" autocomplete="off" /></label>
+          <label for="c-on"><span id="c-on-l"></span><input id="c-on" inputmode="numeric" autocomplete="off" placeholder="2026-10-26" /></label>
+          <label for="c-ref"><span id="c-ref-l"></span><input id="c-ref" autocomplete="off" /></label>
+        </div>
+        <button id="c-record" type="button"><span id="c-record-text"></span></button>
+        <p class="status" id="c-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./promotion-funding.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

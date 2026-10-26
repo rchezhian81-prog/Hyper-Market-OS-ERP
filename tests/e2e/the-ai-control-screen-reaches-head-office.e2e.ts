@@ -1,3 +1,4 @@
+import { Tally } from './lib/tally';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -143,20 +144,25 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
       await page.click('#tab-agents');
       expect(await page.textContent('#agent-list .row[data-agent="A04"]')).toContain('running');
       expect(await page.textContent('#forbidden-box')).toContain('issue refund');
-      await page.click('#tab-switch');
+      // QG-02 (ai-control.md "pull an agent's kill switch ≤2"): measured AS BUILT — the tab, the scope, the agent, the reason,
+      // Pull. The spec's two is an owner decision (lane 1 R4 report); a choice in a list counts as one act, like a tap.
+      const taps = new Tally(page);
+      await taps.tap('#tab-switch');
 
       // No reason → nothing is sent.
-      await page.selectOption('#scope', 'single_agent');
-      await page.selectOption('#which', 'A04');
+      await page.selectOption('#scope', 'single_agent'); taps.count += 1;
+      await page.selectOption('#which', 'A04'); taps.count += 1;
       await page.click('#pull');
       await bannerSays(page, 'write the reason first');
       expect(((await h.request({ method: 'GET', path: '/v1/ai/kill-switches', userId: OWNER, tenantId: T })).body as { active: unknown[] }).active).toEqual([]);
 
       // With a reason → stopped at head office, and its run is refused.
-      await page.fill('#pull-reason', 'the shopping assistant offered the wrong milk');
+      await taps.type('#pull-reason', 'the shopping assistant offered the wrong milk');
       const n = await reads(page);
-      await page.click('#pull');
+      await taps.tap('#pull');
       expect(await afterAct(page, n)).toMatch(/stopped 1 agent/);
+      const asBuilt = taps.reset();
+      expect(asBuilt, 'as built: stop one assistant with its kill switch').toBe(5);
       await page.click('#banner-ok');
       await page.waitForSelector('#kill-list .row.stopped');
       expect(await page.textContent('#kill-list .row.stopped')).toContain('the shopping assistant offered the wrong milk');
@@ -188,7 +194,9 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
   it('a draft shows its confidence and evidence; approving it records the decision and commits nothing', async () => {
     const { page, close } = await pageAs(OWNER);
     try {
-      await page.click('#tab-queue');
+      // QG-02 (ai-control.md): approve/reject an AI suggestion with reason — the queue, the reason, the decision: 3.
+      const taps = new Tally(page);
+      await taps.tap('#tab-queue');
       // A01's action list sits above the drafts: what needs a person today, from the records.
       expect(await page.textContent('#actions-box')).toMatch(/What needs you today/);
       const row = '#queue-list .row.held';
@@ -199,8 +207,10 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
       expect(text).toContain('what it rests on');
       const id = await page.getAttribute(row, 'data-proposal');
       const n = await reads(page);
-      await page.click(`${row} button.primary`);
+      await taps.type(`${row} textarea`, 'checked against the stock on hand');
+      await taps.tap(`${row} button.primary`);
       expect(await afterAct(page, n)).toMatch(/Nothing has happened yet/);
+      expect(taps.reset(), 'approve/reject an AI suggestion with reason').toBeLessThanOrEqual(3);
       const register = (await h.request({ method: 'GET', path: '/v1/ai/proposals', userId: OWNER, tenantId: T })).body as { proposals: { proposalId: string; outcome: { decision: string; by: string } | null }[]; committedAnything: boolean };
       expect(register.committedAnything).toBe(false);
       expect(register.proposals.find((p) => p.proposalId === id)!.outcome).toMatchObject({ decision: 'approved', by: OWNER });

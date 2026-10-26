@@ -14,6 +14,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { findJourneyCandidates, type JourneyKind, type JourneyCandidate } from '../../../packages/service-desk/src/campaigns';
 import { journeyTriggers, JOURNEY_WINDOWS, type HeldCart, type Occasion, type Purchase } from '../../../packages/service-desk/src/journey-facts';
+import { tobaccoAdvertisingRefusal } from '../../../packages/restricted-sales/src/advertising';
 
 export const JOURNEY_KINDS: readonly JourneyKind[] = ['abandoned_cart', 'occasion', 'win_back'];
 
@@ -38,6 +39,11 @@ export interface JourneyDeps {
   /** One message through the campaign send (consent, cap, do-not-contact, budget, approved template). */
   readonly send: (tenantId: string, input: { readonly campaignId: string; readonly customerRef: string; readonly templateId: string; readonly channel: string; readonly values: Readonly<Record<string, string>> }) => Promise<{ readonly queued: true } | { readonly queued: false; readonly code: string; readonly detail: string }>;
   readonly today: (tenantId: string) => Promise<string>;
+  /**
+   * B15 (COTPA s.5): whether a product is tobacco on the product master. A journey message is a campaign: an abandoned-cart
+   * reminder never counts — or is ever sent for — tobacco left in a basket.
+   */
+  readonly isTobacco?: (tenantId: string, productId: string) => Promise<boolean>;
   readonly now: () => string;
 }
 
@@ -49,8 +55,23 @@ const shortHash = (s: string): string => { let h = 2166136261; for (let i = 0; i
 /** One campaign per trigger, so each trigger reaches its customer once (the send keys a message on campaign + customer). */
 export const journeyCampaignId = (kind: JourneyKind, ref: string): string => `jr-${kind.replace('_', '-')}-${shortHash(ref)}-${shortHash(`${ref}|2`)}`.slice(0, 48);
 
+/**
+ * B15: the one advertising guard on a held basket — the tobacco in it is taken out before the basket can become a campaign
+ * ("you left these in your basket"). A basket of nothing but tobacco is no reminder at all; the rest is valued again.
+ */
+async function withoutTobacco(deps: JourneyDeps, tenantId: string, c: CartFact): Promise<CartFact> {
+  if (deps.isTobacco === undefined || c.lines.length === 0) return c;
+  const tobacco = new Set<string>();
+  for (const l of c.lines) if (await deps.isTobacco(tenantId, l.productId)) tobacco.add(l.productId);
+  const refused = tobaccoAdvertisingRefusal('campaign', c.lines.map((l) => l.productId), (id) => tobacco.has(id));
+  if (refused === undefined) return c;
+  const lines = c.lines.filter((l) => !refused.tobaccoProductIds.includes(l.productId));
+  return { ...c, lines, valueMinor: lines.length === 0 ? 0 : await deps.valueOf(tenantId, lines) };
+}
+
 async function candidatesOf(deps: JourneyDeps, tenantId: string, kind: JourneyKind): Promise<readonly JourneyCandidate[]> {
-  const carts = latestBy(await deps.carts(tenantId), (c) => c.customerRef).map((c): HeldCart => ({ customerRef: c.customerRef, lineCount: c.lines.length, valueMinor: c.valueMinor, updatedAt: c.updatedAt }));
+  const held = await Promise.all(latestBy(await deps.carts(tenantId), (c) => c.customerRef).map((c) => withoutTobacco(deps, tenantId, c)));
+  const carts = held.filter((c) => c.lines.length > 0).map((c): HeldCart => ({ customerRef: c.customerRef, lineCount: c.lines.length, valueMinor: c.valueMinor, updatedAt: c.updatedAt }));
   const occasions = latestBy(await deps.occasions(tenantId), (o) => o.occasionId);
   const t = journeyTriggers({ kind, carts, occasions, purchases: await deps.purchases(tenantId), today: await deps.today(tenantId), lapsingAfterDays: await deps.lapsingAfterDays(tenantId) });
   return findJourneyCandidates({ kind, triggers: t.triggers, completedRefs: t.completedRefs, now: deps.now(), ...JOURNEY_WINDOWS[kind] });

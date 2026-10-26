@@ -78,6 +78,21 @@
         <p class="lead" id="lead"></p>
       </div>
 
+      <!-- OB-380 · OB-228: on the store computer this page reads head office live and only reads (payroll-live-session.ts). -->
+      <section id="live" hidden aria-labelledby="live-hold">
+        <p class="lead" id="live-lead"></p>
+        <div class="stage" role="status" aria-live="polite">
+          <span class="badge" id="live-hold"></span>
+          <span class="who2" id="live-hold-detail"></span>
+        </div>
+        <div class="actions">
+          <input type="text" id="live-run" autocomplete="off" maxlength="64" />
+          <button type="button" id="live-show"></button>
+        </div>
+        <p class="status" id="live-status" role="status" aria-live="polite"></p>
+        <div class="depts" id="live-rows"></div>
+      </section>
+
       <div class="stage" role="status" aria-live="polite">
         <span class="badge" id="stage-badge"><span class="icon" id="stage-icon" aria-hidden="true"></span><span id="stage-label"></span></span>
         <span class="who2" id="stage-who"></span>
@@ -136,6 +151,7 @@
       <button id="banner-ok" type="button">OK</button>
     </div>
 
+    <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./payroll.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->

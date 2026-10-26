@@ -11,11 +11,14 @@ export interface RecallRecord {
   readonly reason: string;
   readonly initiatedBy: string;
   readonly initiatedAt: string;
-  readonly status: 'open' | 'closed';
+  /** `withdrawn` (OB-383): started by mistake and withdrawn before any customer was called or any stock disposed of. */
+  readonly status: 'open' | 'closed' | 'withdrawn';
   readonly closedBy: string | null;
   readonly closedAt: string | null;
   /** Closure evidence reference — required to close (P-04). */
   readonly evidenceRef: string | null;
+  /** OB-383: who withdrew a recall started by mistake, when and why. Absent unless withdrawn. */
+  readonly withdrawal?: { readonly withdrawnBy: string; readonly withdrawnAt: string; readonly reason: string };
 }
 
 export class RecalledBatchError extends Error {
@@ -30,6 +33,31 @@ export class MissingRecallEvidenceError extends Error {
     super(`Recall on batch "${batchId}" can only be closed with evidence (M10-FR-04 / hard rule #6).`);
     this.name = 'MissingRecallEvidenceError';
   }
+}
+
+/** Why a recall cannot be withdrawn (OB-383) — each refused by name. */
+export type RecallWithdrawRefusal =
+  | 'no_open_recall'
+  | 'needs_a_reason'
+  | 'customers_already_contacted'
+  | 'stock_already_disposed';
+
+export class RecallWithdrawRefusedError extends Error {
+  constructor(readonly batchId: string, readonly refusal: RecallWithdrawRefusal, detail: string) {
+    super(`Recall on batch "${batchId}" cannot be withdrawn (${refusal}): ${detail}`);
+    this.name = 'RecallWithdrawRefusedError';
+  }
+}
+
+export interface WithdrawRecallInput {
+  readonly batchId: string;
+  readonly withdrawnBy: string;
+  readonly reason: string;
+  readonly at: string;
+  /** How many customers the shop has already contacted about this recall (messages sent or attempted). */
+  readonly customersContacted: number;
+  /** How much of the batch has already been disposed of (written off / destroyed) since the recall started. */
+  readonly stockDisposed: number;
 }
 
 export interface InitiateRecallInput {
@@ -100,6 +128,36 @@ export class RecallRegistry {
     });
     this.records.set(input.batchId, closed);
     return closed;
+  }
+
+  /**
+   * OB-383 — withdraw a recall started by mistake. Allowed ONLY while it is open, with a reason, and before any customer
+   * has been contacted or any stock disposed of; after that it must be closed with evidence (`close`). The record is
+   * retained, marked withdrawn, never deleted (hard rule #6). The block on the batch lifts, as on a closure.
+   */
+  withdraw(input: WithdrawRecallInput): RecallRecord {
+    const existing = this.records.get(input.batchId);
+    if (existing === undefined || existing.status !== 'open') {
+      throw new RecallWithdrawRefusedError(input.batchId, 'no_open_recall', 'there is no open recall on this batch to withdraw.');
+    }
+    if (typeof input.reason !== 'string' || input.reason.trim().length < 5) {
+      throw new RecallWithdrawRefusedError(input.batchId, 'needs_a_reason', 'say in words why the recall was started by mistake.');
+    }
+    if (input.customersContacted > 0) {
+      throw new RecallWithdrawRefusedError(input.batchId, 'customers_already_contacted',
+        `${input.customersContacted} customer(s) have already been contacted about it, so it must be closed with evidence.`);
+    }
+    if (input.stockDisposed > 0) {
+      throw new RecallWithdrawRefusedError(input.batchId, 'stock_already_disposed',
+        `${input.stockDisposed} of the batch has already been disposed of, so it must be closed with evidence.`);
+    }
+    const withdrawn: RecallRecord = Object.freeze({
+      ...existing,
+      status: 'withdrawn',
+      withdrawal: Object.freeze({ withdrawnBy: input.withdrawnBy, withdrawnAt: input.at, reason: input.reason.trim() }),
+    });
+    this.records.set(input.batchId, withdrawn);
+    return withdrawn;
   }
 
   /** All open recalls — the set a POS caches to enforce blocks offline. */

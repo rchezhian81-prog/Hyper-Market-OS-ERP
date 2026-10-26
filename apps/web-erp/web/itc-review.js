@@ -238,6 +238,54 @@ if (asked !== null && /^\d{4}-\d{2}$/.test(asked)) el('period').value = asked;
 paint();
 void refresh();
 
+// ── FG-4 · OB-386: free samples — the GST credit each one gave back, in the return it went into, for the accountant to
+//    check (window.freeSample makes the calls; head office's own sentence is shown, never a figure worked out here). ──
+const fsApi = window.freeSample ?? null;
+let fsRows = null;
+const fsw = (k) => (fsApi === null ? k : fsApi.words(lang, k));
+function paintFreeSamples() {
+  if (fsApi === null) return;
+  el('fs-heading').textContent = fsw('listH'); el('fs-lead').textContent = fsw('listLead');
+  { const i = typeof window.sreIcon === 'function' ? window.sreIcon('ticket', 18) : null; if (i !== null) el('fs-heading').prepend(i, ' '); }
+  const ul = el('fs-rows'); ul.replaceChildren();
+  if (fsRows === null) return;
+  if (fsRows.length === 0) { const li = document.createElement('li'); li.textContent = fsw('listNone'); ul.append(li); return; }
+  for (const r of fsRows) {
+    const li = document.createElement('li'); li.dataset.issue = r.issueId;
+    li.className = `row tone-${r.check === null ? 'degraded' : r.check.outcome === 'agreed' ? 'ok' : 'error'}`;
+    const head = document.createElement('strong'); head.textContent = `${r.qty} ${r.uom} ${r.productId} · ${r.locationId} · ${r.tradingDay} — ${r.note}`;
+    const said = document.createElement('span'); said.className = 'meta'; said.textContent = r.itcWords;
+    const state = document.createElement('span'); state.className = 'meta check';
+    state.textContent = r.check === null ? `⚠ ${fsw('unchecked')}` : `${r.check.outcome === 'agreed' ? '✓' : '⚠'} ${fsw(r.check.outcome === 'agreed' ? 'agreed' : 'queried')} — ${r.check.note} · ${fsw('by')} ${r.check.by}`;
+    const label = document.createElement('label'); const span = document.createElement('span'); span.textContent = fsw('checkNote');
+    const note = document.createElement('input'); note.autocomplete = 'off'; note.className = 'check-note'; label.append(span, note);
+    const mk = (words, iconName, outcome) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'act'; b.dataset.act = outcome;
+      const i = typeof window.sreIcon === 'function' ? window.sreIcon(iconName, 18) : null; if (i !== null) b.append(i, ' ');
+      b.append(words);
+      b.addEventListener('click', async () => {
+        const out = await fsApi.session.check(r.issueId, outcome, note.value);
+        el('fs-status').textContent = fsApi.outcomeWords(lang, out);
+        if (out.result === 'ok') await loadFreeSamples();
+      });
+      return b;
+    };
+    li.append(head, said, state, label, mk(fsw('agree'), 'circle-check', 'agreed'), mk(fsw('query'), 'circle-help', 'query'));
+    ul.append(li);
+  }
+}
+async function loadFreeSamples() {
+  if (fsApi === null) return;
+  const out = await fsApi.session.list(period());
+  if (out.result === 'ok') { fsRows = out.value.issues; el('fs-status').textContent = `${out.value.toCheck} ${fsw('toCheck')} · ${out.value.notComputed} ${fsw('notComputed')}`; }
+  else { fsRows = null; el('fs-status').textContent = fsApi.outcomeWords(lang, out); }
+  paintFreeSamples();
+}
+el('ask').addEventListener('submit', () => { void loadFreeSamples(); });
+el('lang').addEventListener('click', () => { paintFreeSamples(); });
+paintFreeSamples();
+if (period() !== '') void loadFreeSamples();
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */

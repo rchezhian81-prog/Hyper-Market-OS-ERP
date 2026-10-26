@@ -546,7 +546,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     expect(await page.textContent('#sre-menu .who-can')).toBe('Screens for u-mgr'); // this pack names no people: the id, never an invented name
     expect(await page.textContent('#sre-menu .branch b')).toBe('Main');
     // SP-8c-ii: "Products nobody can sell" is gated on the same availability read as stock health, so this reader sees it too.
-    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Stock counts', 'Stock health', 'Products nobody can sell', 'Warehouse']);
+    // OB-380: Transfers and Store events (head-office pages on the same read) are served by the box now, so it offers them; QG-02 R4: and the Dock diary.
+    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Dock diary', 'Stock counts', 'Transfers', 'Stock health', 'Products nobody can sell', 'Warehouse', 'Store events']);
     expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);
 
     await page.click('#sre-menu a:has-text("Stock health")');

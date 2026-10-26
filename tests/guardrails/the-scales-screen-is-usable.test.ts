@@ -139,6 +139,8 @@ describe('the view defers to the session, uses no browser dialogs, and writes on
     expect(HTML).toMatch(/web-erp\.bundle\.js/);
     expect(HTML).toContain('<!--SCREEN-DATA-->');
     expect(HTML).toMatch(/id="lang"[^>]*aria-label=/);
-    expect(ERP_NAVIGATION.find((i) => i.id === 'scales')).toMatchObject({ path: '/scales', requires: 'facilities.asset.read', served: 'unserved' });
+    expect(ERP_NAVIGATION.find((i) => i.id === 'scales')).toMatchObject({ path: '/scales', requires: 'facilities.asset.read' });
+    // OB-380: the store computer serves it now, as its other office pages.
+    expect(ERP_NAVIGATION.find((i) => i.id === 'scales')?.served ?? 'box').toBe('box');
   });
 });

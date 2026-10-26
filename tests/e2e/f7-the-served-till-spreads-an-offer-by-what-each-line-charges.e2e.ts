@@ -1,3 +1,4 @@
+import { Tally } from './lib/tally';
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync, mkdirSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
@@ -115,7 +116,12 @@ describe.skipIf(!HAVE_BROWSER)('F7: the served till spreads an offer by what eac
 
   it('NEW-2: banana 333 g + rice + bag under ₹100 off — ₹8.29 on screen; the disk adds up, nothing below zero, the bag at ₹5', async () => {
     const { edge, page } = await till();
-    for (const code of [BANANA_333G, RICE, BAG]) await scan(page, code);
+    // QG-02 (lane 1 R4): sell a weighed item — the scale's label is scanned, the weight read off it: one act (≤3).
+    const taps = new Tally(page);
+    await taps.scan(BANANA_333G);
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.basket().length === 1);
+    expect(taps.reset(), 'sell a weighed item').toBeLessThanOrEqual(3);
+    for (const code of [RICE, BAG]) await scan(page, code);
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.basket().length === 3);
     expect(await page.textContent('#total')).toBe('₹8.29');
     if (SHOTS !== undefined) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, 'till-offer-by-what-each-line-charges.png') }); }

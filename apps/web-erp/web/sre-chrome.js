@@ -489,6 +489,11 @@
     // ── end R4 Lane 3 ──
     // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
     'supplier-scorecard': 'list-checks',
+    // QG-02 lane 1 R4: the four new pages' menu icons, from icons already in the set.
+    'blanket-orders': 'files',
+    'dock-diary': 'truck',
+    'promotion-funding': 'banknote',
+    'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set
     'requisitions': 'clipboard-list',

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Standing orders</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Standing orders — blanket purchase orders (M06-FR-02 · §28 · QG-02). A THIN CLIENT over head office's own agreements: each
+      with its drawdown (ceiling, committed, waiting, left, per product) and its call-offs; a buyer proposes one (products at
+      agreed prices, a ceiling, dates); a second person approves it with a reason (never the proposer). It spends nothing by
+      itself — a call-off is an ordinary purchase order on the Buying page. Its session is apps/web-erp/src/blanket-orders-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Standing orders</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Standing orders</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="list" hidden aria-labelledby="list-h">
+        <h3 id="list-h"></h3>
+        <button id="l-show" type="button"><span id="l-show-text"></span></button>
+        <p class="status" id="l-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="list-rows"></ul>
+      </section>
+      <section id="propose" hidden aria-labelledby="propose-h">
+        <h3 id="propose-h"></h3>
+        <div class="row-form">
+          <label for="p-supplier"><span id="p-supplier-l"></span><input id="p-supplier" autocomplete="off" /></label>
+          <label for="p-ceiling"><span id="p-ceiling-l"></span><input id="p-ceiling" inputmode="decimal" autocomplete="off" /></label>
+          <label for="p-from"><span id="p-from-l"></span><input id="p-from" inputmode="numeric" autocomplete="off" placeholder="2026-11-01" /></label>
+          <label for="p-to"><span id="p-to-l"></span><input id="p-to" inputmode="numeric" autocomplete="off" placeholder="2027-03-31" /></label>
+          <label for="p-deliver"><span id="p-deliver-l"></span><input id="p-deliver" autocomplete="off" /></label>
+        </div>
+        <label for="p-lines"><span id="p-lines-l"></span><textarea id="p-lines" rows="4"></textarea></label>
+        <button id="p-propose" type="button"><span id="p-propose-text"></span></button>
+        <p class="status" id="p-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./blanket-orders.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

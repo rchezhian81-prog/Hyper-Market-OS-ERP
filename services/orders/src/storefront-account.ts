@@ -17,6 +17,7 @@
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { recommend } from '../../../packages/storefront/src/browse';
+import { tobaccoAdvertisingRefusal } from '../../../packages/restricted-sales/src/advertising';
 
 export interface SavedAddress {
   readonly addressId: string;
@@ -48,6 +49,8 @@ export interface StorefrontAccountDeps {
   readonly boughtBefore: (tenantId: string, customerRef: string) => Promise<readonly { readonly productId: string; readonly lastBoughtAt: string }[]>;
   /** Whether a product is on the shop's catalogue now (suggestions name only real, sellable products). */
   readonly sellable: (tenantId: string, productId: string) => Promise<boolean>;
+  /** B15: whether a product is tobacco on the product master — a suggestion never names one (COTPA s.5). */
+  readonly isTobacco?: (tenantId: string, productId: string) => Promise<boolean>;
   /** A05: the service assistant's order answer for an order (the staff-side engine), or that it is not running. */
   readonly a05OrderAnswer: (tenantId: string, orderId: string) => Promise<{ readonly answered: boolean; readonly agentActive: boolean; readonly text: string }>;
   /** The order's owner, to scope the answer to the customer's OWN order. */
@@ -153,10 +156,16 @@ export function storefrontAccountRoutes(deps: StorefrontAccountDeps): readonly R
         const out = recommend({ customerRef: ctx.userId, consents: mayPersonalise ? ['profiling'] : [], aggregateAlsoBought: aggregate, ...(mayPersonalise ? { personalHistory: history } : {}), limit: 6 });
         const sellable: typeof out.recommendations[number][] = [];
         for (const r of out.recommendations) if (await deps.sellable(ctx.tenantId, r.productId)) sellable.push(r);
+        // B15 (COTPA s.5): a recommendation is a promotion — the one advertising guard takes tobacco off it, and says so.
+        const tobaccoIds = new Set<string>();
+        for (const r of sellable) if (await deps.isTobacco?.(ctx.tenantId, r.productId) === true) tobaccoIds.add(r.productId);
+        const refused = tobaccoAdvertisingRefusal('recommendation', sellable.map((r) => r.productId), (id) => tobaccoIds.has(id));
+        const shown = refused === undefined ? sellable : sellable.filter((r) => !refused.tobaccoProductIds.includes(r.productId));
         return {
           status: 200,
           body: {
-            productId, recommendations: sellable, personalised: mayPersonalise,
+            productId, recommendations: shown, personalised: mayPersonalise,
+            ...(refused === undefined ? {} : { withheld: { count: refused.tobaccoProductIds.length, code: refused.code, why: refused.whatHappened } }),
             say: mayPersonalise ? 'Including things you bought before, because you said yes to that.' : 'From what other customers bought together — not from what you bought, because you have not said yes to that.',
           },
         };

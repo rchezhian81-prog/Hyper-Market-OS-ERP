@@ -78,5 +78,30 @@ async function loadDecide() {
 el('lang').addEventListener('click', () => { paintQueue(); paintDecide(); });
 paintQueue(); paintDecide();
 void loadDecide();
+
+// ── FG-4 · OB-386: give a free sample (window.freeSample does the call; head office values it and works out the GST
+//    credit to give back — the screen shows head office's sentence, never a figure of its own). ──
+const fs = window.freeSample ?? null;
+function paintFreeSample() {
+  if (fs === null) return;
+  const fw = (k) => fs.words(lang(), k);
+  for (const [id, key] of [['fs-title', 'fsH'], ['fs-lead', 'fsLead'], ['fs-product-l', 'product'], ['fs-location-l', 'location'], ['fs-qty-l', 'qty'], ['fs-uom-l', 'uom'], ['fs-note-l', 'note'], ['fs-save-text', 'record']]) el(id).textContent = fw(key);
+  { const i = typeof window.sreIcon === 'function' ? window.sreIcon('ticket', 18) : null; if (i !== null) el('fs-title').prepend(i, ' '); }
+}
+if (fs !== null && fs.session.may.named) {
+  el('fs').hidden = false;
+  { const i = typeof window.sreIcon === 'function' ? window.sreIcon('package-minus', 18) : null; if (i !== null) el('fs-save').prepend(i); }
+  el('fs-save').disabled = !fs.session.may.record;
+  el('fs-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const out = await fs.session.record({ productId: el('fs-product').value, locationId: el('fs-location').value, qty: el('fs-qty').value, uom: el('fs-uom').value, note: el('fs-note').value });
+    const r = el('fs-result');
+    r.dataset.result = out.result;
+    r.textContent = out.result === 'ok' ? `✓ ${fs.words(lang(), 'recorded')} ${out.value.itcWords}` : `⚠ ${fs.outcomeWords(lang(), out)}`;
+    if (out.result === 'ok') { el('fs-qty').value = ''; el('fs-note').value = ''; }
+  });
+  el('lang').addEventListener('click', () => { paintFreeSample(); });
+  paintFreeSample();
+}
 void syncQueue();
 setInterval(() => { void syncQueue(); }, 15_000);

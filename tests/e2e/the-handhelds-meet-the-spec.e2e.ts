@@ -356,6 +356,13 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.payload.productId ?? null])');
     expect(queued).toHaveLength(1);
     expect(JSON.stringify(queued)).toContain('p-rice');
+
+    // QG-02 (lane 1 R4): delivery complete — one tap sends the receipt (SP-6b, ≤1); a dry-goods delivery asks no checklist.
+    await page.click('#banner-ok');
+    await page.waitForSelector('#done-receiving:not([hidden])');
+    await taps.tap('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    expect(taps.reset(), 'delivery complete').toBeLessThanOrEqual(1);
   });
 
   it('warehouse budget — pick a line 3 (scan the bin from the list → scan the item → confirm), W1', async () => {

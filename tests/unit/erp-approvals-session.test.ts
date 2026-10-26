@@ -183,6 +183,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       config_change: { en: APPROVALS_COPY.en.kindConfigChange, ta: APPROVALS_COPY.ta.kindConfigChange },
       flag_change: { en: APPROVALS_COPY.en.kindFlagChange, ta: APPROVALS_COPY.ta.kindFlagChange },
       department_scope_change: { en: APPROVALS_COPY.en.kindDepartmentScopeChange, ta: APPROVALS_COPY.ta.kindDepartmentScopeChange },
+      // FG-4 · M02-FR-02: a supplier / category / location scope on a person's role.
+      role_scope_change: { en: APPROVALS_COPY.en.kindRoleScopeChange, ta: APPROVALS_COPY.ta.kindRoleScopeChange },
       // OB-288 P2: a GST rate change (Finance approves) and a supplier's funding of an offer.
       tax_rate_change: { en: APPROVALS_COPY.en.kindTaxRateChange, ta: APPROVALS_COPY.ta.kindTaxRateChange },
       promotion_funding: { en: APPROVALS_COPY.en.kindPromotionFunding, ta: APPROVALS_COPY.ta.kindPromotionFunding },

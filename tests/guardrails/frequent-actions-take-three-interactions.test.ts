@@ -36,6 +36,15 @@ const TILL = `${E2E}/the-till-and-manager-meet-the-interaction-budget.e2e.ts`;
 const HANDHELDS = `${E2E}/the-handhelds-meet-the-spec.e2e.ts`;
 const CUSTOMER = `${E2E}/the-customer-app-meets-wcag-aa.e2e.ts`;
 const BUYING = `${E2E}/open-to-buy-on-the-production-api.e2e.ts`;
+// QG-02 lane 1 R4: the browser tests that now count the actions that were "not yet counted".
+const WEIGHED = `${E2E}/f7-the-served-till-spreads-an-offer-by-what-each-line-charges.e2e.ts`;
+const REFUND = `${E2E}/the-served-till-takes-a-refund.e2e.ts`;
+const OWNER = `${E2E}/the-owner-app-meets-its-interaction-budget.e2e.ts`;
+const AI = `${E2E}/the-ai-control-screen-reaches-head-office.e2e.ts`;
+const CATALOGUE = `${E2E}/catalogue-price-change-delivery.e2e.ts`;
+/** Why an action is above its spec as built, and where it is measured (`asBuilt`, never a `taps.reset()` bar). */
+const ABOVE_SPEC = (n: number, file: string, why: string): string =>
+  `measured AS BUILT at ${n} in ${file} — above the spec's budget because ${why}; reducing it or accepting it as a written exception is an owner decision (lane 1 R4 report)`;
 
 const REGISTER: readonly Budgeted[] = [
   // ── The till (pos-cashier.md) ──
@@ -45,22 +54,22 @@ const REGISTER: readonly Budgeted[] = [
   { action: 'suspend', spec: 'pos-cashier.md', specWords: 'Suspend / recall', budget: 3, counted: { file: TILL, label: 'suspend' } },
   { action: 'recall', spec: 'pos-cashier.md', specWords: 'Suspend / recall', budget: 3, counted: { file: TILL, label: 'recall' } },
   { action: 'sign in for the shift', spec: 'pos-cashier.md', specWords: 'Sign in for the shift', budget: 3, counted: { file: TILL, label: 'sign in for the shift' } },
-  { action: 'sell a weighed item', spec: 'pos-cashier.md', specWords: 'Sell a weighed item', budget: 3, notYetCounted: 'needs a scale reading in the browser test; the till\'s weighed line is proven by tests/e2e/f7-… but its taps are not counted' },
-  { action: 'go to tender', spec: 'pos-cashier.md', specWords: 'Go to tender', budget: 1, notYetCounted: 'counted inside "take cash payment" (Tender → Cash → confirm), not on its own' },
+  { action: 'sell a weighed item', spec: 'pos-cashier.md', specWords: 'Sell a weighed item', budget: 3, counted: { file: WEIGHED, label: 'sell a weighed item' } },
+  { action: 'go to tender', spec: 'pos-cashier.md', specWords: 'Go to tender', budget: 1, counted: { file: TILL, label: 'go to tender' } },
   // ── The refund screen (pos-refund.md) ──
-  { action: 'look up a receipt', spec: 'pos-refund.md', specWords: 'Look up a receipt', budget: 3, notYetCounted: 'the refund flow is proven in the browser, but its taps are not counted yet' },
-  { action: 'return one whole line', spec: 'pos-refund.md', specWords: 'Return one whole line', budget: 3, notYetCounted: 'as above — refund taps are not counted yet' },
+  { action: 'look up a receipt', spec: 'pos-refund.md', specWords: 'Look up a receipt', budget: 3, counted: { file: REFUND, label: 'look up a receipt' } },
+  { action: 'return one whole line', spec: 'pos-refund.md', specWords: 'Return one whole line', budget: 3, notYetCounted: ABOVE_SPEC(14, REFUND, 'the till also asks the reason (M15), the condition (M13-FR-02), the amount on the keypad, how it is given, and a manager\'s badge, PIN and reason (§28)') },
   // ── The store manager (store-manager.md) ──
   { action: 'approve with a reason', spec: 'store-manager.md', specWords: 'approve/reject a request', budget: 3, counted: { file: TILL, label: 'approve with a reason' } },
   { action: 'start the day close', spec: 'store-manager.md', specWords: 'start day close', budget: 2, counted: { file: TILL, label: 'start the day close' } },
-  { action: 'open a lane\'s health', spec: 'store-manager.md', specWords: 'open a lane\'s health', budget: 2, notYetCounted: 'not counted yet' },
-  { action: 'assign/complete a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, notYetCounted: 'not counted yet' },
+  { action: 'open a lane\'s health', spec: 'store-manager.md', specWords: 'open a lane\'s health', budget: 2, notYetCounted: 'the manager\'s screen has no lane-by-lane health view to open (the sync badge and the device fleet page are not it) — which screen it belongs on is an owner decision (lane 1 R4 report)' },
+  { action: 'assign/complete a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, notYetCounted: 'assigning is on Store tasks (title, person, branch and due time typed — more than three acts) and completing on My tasks (the assignee only, OB-158), both head-office pages; not counted yet — whether assigning may be shortened is an owner decision (lane 1 R4 report)' },
   // ── The warehouse handheld (inventory-warehouse.md) ──
   { action: 'put away a line', spec: 'inventory-warehouse.md', specWords: 'put away a line', budget: 3, counted: { file: HANDHELDS, label: 'put away a line' } },
   { action: 'warehouse: pick a line', spec: 'inventory-warehouse.md', specWords: 'pick a line', budget: 3, counted: { file: HANDHELDS, label: 'pick a line' } },
   { action: 'count a bin (start a count)', spec: 'inventory-warehouse.md', specWords: 'start a count', budget: 2, counted: { file: HANDHELDS, label: 'start a count' } },
   { action: 'raise an adjustment (with reason)', spec: 'inventory-warehouse.md', specWords: 'record an adjustment with reason', budget: 3, counted: { file: HANDHELDS, label: 'record an adjustment with reason' } },
-  { action: 'delivery complete', spec: 'inventory-warehouse.md', specWords: 'delivery complete', budget: 1, notYetCounted: 'proven in tests/e2e/goods-receipt-delivery.e2e.ts, taps not counted yet' },
+  { action: 'delivery complete', spec: 'inventory-warehouse.md', specWords: 'delivery complete', budget: 1, counted: { file: HANDHELDS, label: 'delivery complete' } },
   // ── Receiving and buying (purchase-receiving.md: "Receiving/QC (handheld)", "PO approval") — QG-02's own design bar ──
   { action: 'receive a line', spec: 'purchase-receiving.md', specWords: 'Receiving/QC (handheld)', budget: 3, counted: { file: HANDHELDS, label: 'receive a line' } },
   { action: 'approve a PO', spec: 'purchase-receiving.md', specWords: 'PO approval', budget: 3, counted: { file: BUYING, label: 'approve a PO' } },
@@ -77,13 +86,13 @@ const REGISTER: readonly Budgeted[] = [
   { action: 'add a searched item to the cart', spec: 'customer-app.md', specWords: 'add a searched item to cart', budget: 2, counted: { file: CUSTOMER, label: 'add a searched item to the cart' } },
   { action: 'reach checkout from the cart', spec: 'customer-app.md', specWords: 'reach checkout from cart', budget: 2, counted: { file: CUSTOMER, label: 'reach checkout from the cart' } },
   // ── The owner, AI control, CRM and merchandising screens ──
-  { action: 'drill a KPI to its detail', spec: 'owner-command-centre.md', specWords: 'drill a KPI to its detail', budget: 3, notYetCounted: 'not counted yet' },
-  { action: 'approve a pending item (owner)', spec: 'owner-command-centre.md', specWords: 'approve a pending item', budget: 3, notYetCounted: 'not counted yet' },
-  { action: 'approve/reject an AI suggestion with reason', spec: 'ai-control.md', specWords: 'approve/reject an AI suggestion with reason', budget: 3, notYetCounted: 'not counted yet' },
-  { action: 'pull an agent\'s kill switch', spec: 'ai-control.md', specWords: 'pull an agent\'s kill switch', budget: 2, notYetCounted: 'not counted yet' },
-  { action: 'open and reply to a case', spec: 'crm-service.md', specWords: 'open and reply to a case', budget: 3, notYetCounted: 'not counted yet' },
-  { action: 'edit a price', spec: 'product-merchandising.md', specWords: 'edit a price', budget: 3, notYetCounted: 'not counted yet' },
-  { action: 'set a recall block on an item', spec: 'product-merchandising.md', specWords: 'set a recall block on an item', budget: 2, notYetCounted: 'not counted yet' },
+  { action: 'drill a KPI to its detail', spec: 'owner-command-centre.md', specWords: 'drill a KPI to its detail', budget: 3, counted: { file: OWNER, label: 'drill a KPI to its detail' } },
+  { action: 'approve a pending item (owner)', spec: 'owner-command-centre.md', specWords: 'approve a pending item', budget: 3, counted: { file: OWNER, label: 'approve a pending item (owner)' } },
+  { action: 'approve/reject an AI suggestion with reason', spec: 'ai-control.md', specWords: 'approve/reject an AI suggestion with reason', budget: 3, counted: { file: AI, label: 'approve/reject an AI suggestion with reason' } },
+  { action: 'pull an agent\'s kill switch', spec: 'ai-control.md', specWords: 'pull an agent\'s kill switch', budget: 2, notYetCounted: ABOVE_SPEC(5, AI, 'the Stop tab asks the scope, the agent and a written reason before Pull (AI-NFR: a stop is reviewable)') },
+  { action: 'open and reply to a case', spec: 'crm-service.md', specWords: 'open and reply to a case', budget: 3, notYetCounted: ABOVE_SPEC(6, `${E2E}/service-desk-and-assistant-drafts.e2e.ts`, 'a reply is drafted by the assistant, approved (or edited and approved) by the person, a channel chosen, then sent — 4 at the least without editing') },
+  { action: 'edit a price', spec: 'product-merchandising.md', specWords: 'edit a price', budget: 3, notYetCounted: ABOVE_SPEC(5, CATALOGUE, 'the price is typed against a typed item code and checked against MRP and the margin floor before Save') },
+  { action: 'set a recall block on an item', spec: 'product-merchandising.md', specWords: 'set a recall block on an item', budget: 2, counted: { file: CATALOGUE, label: 'set a recall block on an item' } },
 ];
 
 /** The four frequent actions of the receiving / count / adjustment / buying slice the QG-02 audit names (audit-1 P6). */
@@ -144,9 +153,23 @@ describe('QG-02: every frequent action has a budget, and is counted in a real br
     }
   });
 
+  it('an action measured above its spec says the number its browser test actually measures (no stale "as built" figure)', () => {
+    const measured = REGISTER.flatMap((b) => {
+      const m = /^measured AS BUILT at (\d+) in (\S+) —/.exec(b.notYetCounted ?? '');
+      return m === null ? [] : [{ action: b.action, n: Number(m[1]), file: m[2]! }];
+    });
+    expect(measured.map((x) => x.action).sort()).toEqual(['edit a price', 'open and reply to a case', 'pull an agent\'s kill switch', 'return one whole line']);
+    for (const x of measured) {
+      const code = readFileSync(x.file, 'utf8');
+      expect(new RegExp(`expect\\(asBuilt, 'as built: [^']*'\\)\\.toBe\\(${x.n}\\)`).test(code), `${x.file} measures "${x.action}" at ${x.n}`).toBe(true);
+    }
+  });
+
   it('says out loud how many frequent actions are still not counted (QG-02 is not done while this is above zero)', () => {
     const open = REGISTER.filter((b) => b.notYetCounted !== undefined).map((b) => b.action);
     // The number is pinned so it can only change on purpose: count one more and move it, or add one and say so.
-    expect(open).toHaveLength(14);
+    // QG-02 lane 1 R4 (26 Oct 2026): 8 of the 14 now counted; 4 measured above the spec as built and 2 with no screen to
+    // count on — each named above, for the owner to decide.
+    expect(open).toHaveLength(6);
   });
 });

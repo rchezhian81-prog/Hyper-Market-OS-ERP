@@ -46,6 +46,7 @@ function renderReauth(view) {
 }
 
 function render() {
+  if (window.payrollEssLive) return; // OB-380: the store computer's live view draws itself (renderLive)
   const view = session.view(lang);
 
   el('title').textContent = t('title');
@@ -73,7 +74,23 @@ function render() {
   }
   state.hidden = true;
   payslip.hidden = false;
-  const p = view.payslip;
+  paintPayslip(view.payslip);
+  renderReauth(view);
+
+  const actions = el('actions');
+  actions.replaceChildren();
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = t('actExport'); btn.disabled = !view.online;
+  btn.addEventListener('click', () => {
+    const outcome = session.can('exportOwnPayslip');
+    if (outcome.ok) tell(t('actExport'), outcome.detail, true);
+    else tell(t('title'), outcome.refusalLabelKey ? t(outcome.refusalLabelKey) : outcome.detail);
+  });
+  actions.append(btn);
+}
+
+/** Draw one payslip view (the model's, or head office's own redacted view on the store computer). */
+function paintPayslip(p) {
 
   el('earnings-title').textContent = t('earningsTitle');
   moneyRows('earnings', p.earnings.map((e) => ({ amountMinor: e.amountMinor, code: e.code })), (l) => l.code);
@@ -108,18 +125,6 @@ function render() {
   }
 
   el('confirm-ca').textContent = t('confirmWithCa');
-  renderReauth(view);
-
-  const actions = el('actions');
-  actions.replaceChildren();
-  const btn = document.createElement('button');
-  btn.type = 'button'; btn.textContent = t('actExport'); btn.disabled = !view.online;
-  btn.addEventListener('click', () => {
-    const outcome = session.can('exportOwnPayslip');
-    if (outcome.ok) tell(t('actExport'), outcome.detail, true);
-    else tell(t('title'), outcome.refusalLabelKey ? t(outcome.refusalLabelKey) : outcome.detail);
-  });
-  actions.append(btn);
 }
 
 el('lang').addEventListener('click', () => {
@@ -130,7 +135,44 @@ el('lang').addEventListener('click', () => {
 globalThis.addEventListener?.('online', render);
 globalThis.addEventListener?.('offline', render);
 
-render();
+// ── OB-380: served by the store computer — the person's OWN payslip, read live from head office, read only ──────────
+// The box carries only who is looking; head office answers for the signed-in person alone (self-scoped, redacted). No
+// figure is drawn until head office has answered; "none issued yet" and "cannot be reached" are said, never a demo.
+const live = window.payrollEssLive ?? null;
+let liveOut = null;
+
+function renderLive() {
+  const w = (k) => live.words(lang, k);
+  el('title').textContent = t('title');
+  el('lead').textContent = t('lead');
+  el('lang').textContent = t('langName');
+  el('demo').hidden = true;
+  el('offline').hidden = true;
+  el('nobody').hidden = live.session.may.named;
+  el('nobody').textContent = live.session.may.named ? '' : w('nobody');
+  const ok = liveOut !== null && liveOut.result === 'ok' && liveOut.value.issued === true && liveOut.value.view !== undefined;
+  el('whoami').textContent = ok ? `${liveOut.value.view.employeeId} · ${liveOut.value.view.payPeriod}` : '';
+  el('payslip').hidden = !ok;
+  el('state').hidden = ok;
+  if (ok) {
+    paintPayslip(liveOut.value.view);
+    el('reauth').replaceChildren();
+    el('actions').replaceChildren();
+    return;
+  }
+  const said = liveOut === null ? w('reading') : liveOut.result === 'ok' ? w('noneIssued') : live.outcome(lang, liveOut);
+  el('state').className = `state tone-${liveOut === null ? 'idle' : liveOut.result === 'ok' ? 'idle' : 'error'}`;
+  el('state-icon').textContent = liveOut === null ? '…' : liveOut.result === 'ok' ? 'ℹ' : '✕';
+  el('state-text').textContent = said;
+}
+
+if (live !== null) {
+  el('lang').addEventListener('click', renderLive);
+  renderLive();
+  live.session.readOwn().then((out) => { liveOut = out; renderLive(); });
+} else {
+  render();
+}
 
 // NOTE: no navigator.serviceWorker.register here, by design — the payslip is online-first and must never be
 // cached on the device (owner directive). Do not add one.

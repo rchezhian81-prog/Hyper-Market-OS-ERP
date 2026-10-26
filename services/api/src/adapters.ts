@@ -2858,6 +2858,9 @@ export function recallAdapter(input: {
           registry.initiate({ batchId: r.batchId, reason: r.reason, initiatedBy: r.initiatedBy, at: r.initiatedAt });
         } else if (e.event.type === 'RecallClosed' && r.evidenceRef !== null && r.closedBy !== null && r.closedAt !== null) {
           registry.close({ batchId: r.batchId, closedBy: r.closedBy, evidenceRef: r.evidenceRef, at: r.closedAt });
+        } else if (e.event.type === 'RecallWithdrawn' && r.withdrawal !== undefined) {
+          // OB-383: the reach was checked when it was withdrawn (recall-withdraw-adapters.ts); replay records the fact.
+          registry.withdraw({ batchId: r.batchId, withdrawnBy: r.withdrawal.withdrawnBy, reason: r.withdrawal.reason, at: r.withdrawal.withdrawnAt, customersContacted: 0, stockDisposed: 0 });
         }
       }
       return registry;

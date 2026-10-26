@@ -218,6 +218,8 @@ export type SaleExceptionKind =
   | 'tobacco_sold_below_pack'
   /** B17 · OB-348: liquor was sold — refused by the shop's state (Tamil Nadu: TASMAC). **Critical**: against state law. */
   | 'liquor_sold'
+  /** B18 · OB-310: a medicine was sold — SRE sells no medicines (no drug licence). **Critical**: against the Drugs and Cosmetics Act. */
+  | 'medicine_sold'
   /** B13 (OB-138): a gold piece was sold with no hallmark HUID on head office's product. **Critical**: BIS hallmarking. */
   | 'gold_sold_without_huid'
   /** B13: a HUID head office already holds a sale for was sold again — one hallmarked piece, sold twice. **Critical**. */
@@ -476,10 +478,15 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       const liquor = productRuleRefusals({
         productId: line.productId, description: line.productId, quantityMinor: line.quantityMinor, uom: line.uom, unitPriceMinor: line.unitPriceMinor,
         ...(text(line.hsnCode) === '' ? {} : { hsnCode: text(line.hsnCode) }),
-      }, ctx.shopState === undefined ? {} : { shopState: ctx.shopState }).find((r) => r.reason === 'liquor_not_sold');
-      if (liquor !== undefined) {
+      }, ctx.shopState === undefined ? {} : { shopState: ctx.shopState }).find((r) => r.reason === 'liquor_not_sold' || r.reason === 'medicine_not_sold');
+      if (liquor?.reason === 'liquor_not_sold') {
         add('liquor_sold', 'critical', `${line.productId}: ${liquor.detail}`,
           'ACT NOW: liquor was sold, which the shop\'s state does not allow (Tamil Nadu: only TASMAC may sell liquor). Find the till that sold it and why its pack carried it, and keep the receipt for the record.',
+          { productId: line.productId });
+      } else if (liquor?.reason === 'medicine_not_sold') {
+        // B18 · OB-310: a product head office does not hold, sold under a medicaments HSN the till froze on the line.
+        add('medicine_sold', 'critical', `${line.productId}: ${liquor.detail}`,
+          'ACT NOW: a medicine was sold, and SRE holds no drug licence (OB-310). Find the till that sold it and why its pack carried it, and keep the receipt for the record.',
           { productId: line.productId });
       }
       continue;
@@ -585,6 +592,13 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       ...((h) => (h === undefined ? {} : { hsnCode: h }))(text(product.hsnCode) !== '' ? text(product.hsnCode) : text(line.hsnCode) !== '' ? text(line.hsnCode) : undefined),
     }, ctx.shopState === undefined ? {} : { shopState: ctx.shopState });
     for (const r of legal) {
+      if (r.reason === 'medicine_not_sold') {
+        add('medicine_sold', 'critical',
+          `${product.sku}: ${r.detail}`,
+          'ACT NOW: a medicine was sold, and SRE holds no drug licence (OB-310). Take it off sale, find why the till did not stop it (an old till, or a pack that predates the rule), and keep the receipt for the record.',
+          { productId: line.productId });
+        continue;
+      }
       if (r.reason === 'liquor_not_sold') {
         add('liquor_sold', 'critical',
           `${product.sku}: ${r.detail}`,

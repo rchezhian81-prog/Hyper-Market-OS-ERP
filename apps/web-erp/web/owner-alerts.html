@@ -54,6 +54,21 @@
         <p class="status" id="t-status" role="status" aria-live="polite"></p>
       </section>
 
+      <!-- FG-4 · M04-FR-04 / M06-FR-03: contracts ending — the owner's warning window ("not set" until entered) and what is due. -->
+      <section id="contracts" hidden aria-labelledby="contracts-h">
+        <h3 id="contracts-h"></h3>
+        <p class="meta" id="contracts-lead"></p>
+        <p id="contracts-window"></p>
+        <div class="row-form" id="contracts-form" hidden>
+          <label for="contracts-days"><span id="contracts-days-l"></span><input id="contracts-days" inputmode="numeric" autocomplete="off" /></label>
+          <button id="contracts-save" type="button"><span id="contracts-save-text"></span></button>
+          <label for="contracts-why"><span id="contracts-why-l"></span><input id="contracts-why" autocomplete="off" /></label>
+          <button id="contracts-clear" type="button" class="quiet"><span id="contracts-clear-text"></span></button>
+        </div>
+        <ul class="rows" id="contracts-rows"></ul>
+        <p class="status" id="contracts-status" role="status" aria-live="polite"></p>
+      </section>
+
       <!-- OB-375 · OB-378: the owner's numbers for the price kiosk and the self-checkout watch (his alone to enter). -->
       <section id="floor" hidden aria-labelledby="floor-h">
         <h3 id="floor-h"></h3>

@@ -23,6 +23,7 @@ import { checkSingleUsePlastic } from './single-use-plastic';
 import { checkRestrictedSale } from './restricted-sales';
 import { weighingScaleVerification, InvalidScaleVerification } from '../../facilities/src/weighing-verification';
 import { isLiquorHsn, LIQUOR_NOT_SOLD, liquorRuleForState } from './liquor';
+import { isMedicineHsn, MEDICINE_NOT_SOLD, MEDICINE_LANE_WORDS } from './medicines';
 
 /** The age a tobacco product needs at the very least (COTPA 2003 s.6 · B14). */
 export const TOBACCO_MINIMUM_AGE = 18;
@@ -43,6 +44,8 @@ export const TILL_RULE_FLAG_KEYS = [
   'perishable',
   // OB-288 P2 · B17: liquor is not sold at all (TASMAC). A pack never carries one; a line flagged so is refused.
   'liquor',
+  // FG-3 · B18 (OB-310): a medicine is not sold at all. A pack never carries one; a line marked so is refused.
+  'medicine',
 ] as const;
 
 /** B13: a Hallmark Unique ID as the till reads it — six capital letters and digits (BIS). */
@@ -73,6 +76,8 @@ export interface TillRuleFlags {
   readonly perishable?: boolean;
   /** B17: the product is liquor — never sold (TASMAC monopoly). */
   readonly liquor?: boolean;
+  /** B18 (OB-310): the product is a medicine — never sold (no drug licence, no pharmacist). */
+  readonly medicine?: boolean;
 }
 
 const posInt = (v: unknown): number | undefined => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : undefined);
@@ -98,6 +103,7 @@ export function tillRuleFlagsOf(flags: Readonly<Record<string, unknown>> | undef
     ...(isCalendarDate(flags['bisLicenceValidUntil']) ? { bisLicenceValidUntil: flags['bisLicenceValidUntil'] } : {}),
     ...(flags['perishable'] === true ? { perishable: true } : {}),
     ...(flags['liquor'] === true ? { liquor: true } : {}),
+    ...(flags['medicine'] === true ? { medicine: true } : {}),
   };
 }
 
@@ -154,6 +160,8 @@ export type TillRefusalReason =
   | 'gold_huid_already_sold'
   /** B17: liquor — never sold (TASMAC state monopoly), whatever the customer's age. */
   | 'liquor_not_sold'
+  /** B18 (OB-310): a medicine — never sold here (no drug licence, no pharmacist). */
+  | 'medicine_not_sold'
   /** B13: one HUID is one piece — a gold line is exactly one. */
   | 'gold_huid_more_than_one_piece'
   /** B12 (OB-325): a BIS-controlled product with no BIS licence number, or no licence expiry date, on record. */
@@ -316,6 +324,15 @@ export function productRuleRefusals(line: TillGateLine, rules: ProductRuleContex
     out.push({ reason: 'liquor_not_sold', productId: line.productId,
       detail: `${line.productId}: ${flags.liquor === true || line.regulatedFlags?.['liquor'] === true ? 'flagged liquor' : `HSN ${String(line.hsnCode)} is an alcoholic-drink heading`} — ${rule.why}. ${LIQUOR_NOT_SOLD}`,
       laneMessage: `${name} is liquor. ${rule.laneWords.en}` });
+    return out;
+  }
+
+  // ── B18 · medicines (OB-310) — refused like liquor, with no override ───────────────────────────────────────────
+  // Marked on the pack, or sold under a medicaments HSN (3003/3004) — a pack built before the rule, or a mark never set.
+  if (flags.medicine === true || line.regulatedFlags?.['medicine'] === true || isMedicineHsn(line.hsnCode)) {
+    out.push({ reason: 'medicine_not_sold', productId: line.productId,
+      detail: `${line.productId}: ${flags.medicine === true || line.regulatedFlags?.['medicine'] === true ? 'marked a medicine' : `HSN ${String(line.hsnCode)} is a medicaments heading`}. ${MEDICINE_NOT_SOLD}`,
+      laneMessage: `${name} is a medicine. ${MEDICINE_LANE_WORDS.en}` });
     return out;
   }
 

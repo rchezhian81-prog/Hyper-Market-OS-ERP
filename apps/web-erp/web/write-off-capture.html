@@ -174,6 +174,21 @@
         <ul class="loss-requests" id="wod-rows"></ul>
         <p class="lead" id="wod-status" role="status" aria-live="polite"></p>
       </section>
+
+      <!-- FG-4 · OB-386: a free sample — a stock ISSUE (not a loss); head office values it and works out the GST give-back. -->
+      <section class="losses" id="fs" hidden aria-labelledby="fs-title">
+        <h3 id="fs-title"></h3>
+        <p class="lead" id="fs-lead"></p>
+        <form id="fs-form" class="woq-form">
+          <label for="fs-product"><span id="fs-product-l"></span><input id="fs-product" autocomplete="off" /></label>
+          <label for="fs-location"><span id="fs-location-l"></span><input id="fs-location" autocomplete="off" /></label>
+          <label for="fs-qty"><span id="fs-qty-l"></span><input id="fs-qty" type="number" min="1" step="1" inputmode="numeric" /></label>
+          <label for="fs-uom"><span id="fs-uom-l"></span><input id="fs-uom" value="ea" autocomplete="off" /></label>
+          <label for="fs-note"><span id="fs-note-l"></span><input id="fs-note" maxlength="300" autocomplete="off" /></label>
+          <button id="fs-save" class="act primary" type="submit"><span id="fs-save-text"></span></button>
+        </form>
+        <p class="result" id="fs-result" role="status" aria-live="polite"></p>
+      </section>
     </main>
 
     <!--SCREEN-DATA-->

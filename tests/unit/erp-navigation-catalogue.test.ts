@@ -77,16 +77,16 @@ describe('every screen the store computer serves has a door, and every door open
   it('an unserved or unbuilt item opens nothing on the box — and the unserved ones are exactly the pages nothing serves yet', () => {
     const notBox = ERP_NAVIGATION.filter((i) => (i.served ?? 'box') !== 'box');
     for (const i of notBox) expect(screenOfPath(i.path), `${i.id} is marked ${i.served} but the box serves it`).toBeNull();
-    // The pages in apps/web-erp/web the box does not serve. Three have an item (marked unserved); the other two —
-    // the owner's company report and the DPO's erasure console — have no item yet (docs/STATUS.md, G5c). Approvals
-    // (ADR-0024) is served by the box and is NOT on this list.
+    // The pages in apps/web-erp/web the box does not serve. Approvals (ADR-0024) is served by the box and is NOT on this list.
     const servedFiles = new Set(BOX_SCREENS.map((s) => APP_SHELL[s].file));
     const unservedPages = readdirSync('apps/web-erp/web').filter((f) => f.endsWith('.html') && !servedFiles.has(f)).sort();
-    // Round 10: Organisation and Delegation are head-office pages (served in front of head office's API, not by the box).
-    // Round 26: so is Store computers (OB-99).
-    // Round 12: so are Month-end (finance-close), Supplier bills (D03-FR-02 · WF-05), Count plans (WF-08), Transfers (WF-07) and Incidents (M35).
-    expect(unservedPages).toEqual(['access-review.html', 'adoption.html', 'appointment-letters.html', 'approval-rules.html', 'b2b.html', 'basket-affinity.html', 'campaigns.html', 'company-report.html', 'concessions.html', 'count-plans.html', 'customers.html', 'delegation.html', 'demand-events.html', 'dispatch.html', 'epr.html', 'erasure-console.html', 'finance-close.html', 'floor-heat-map.html', 'food-safety.html', 'gates.html', 'incidents.html', 'itc-review.html', 'loyalty.html', 'morning-brief.html', 'my-tasks.html', 'online-store.html', 'order-refunds.html', 'organisation.html', 'owner-alerts.html', 'payroll-payslip.html', 'payroll.html', 'planogram-compliance.html', 'posh-report.html', 'price-integrity.html', 'product-content.html', 'related-parties.html', 'requisitions.html', 'rollout.html', 'scales.html', 'schedule.html', 'setup.html', 'store-computers.html', 'store-tasks.html', 'supplier-bills.html', 'supplier-scorecard.html', 'supplier-submissions.html', 'tally-files.html', 'transfers.html', 'waste-analytics.html']);
-    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['access-review', 'adoption', 'appointment-letters', 'approval-rules', 'b2b', 'basket-affinity', 'campaigns', 'concessions', 'count-plans', 'customers', 'delegation', 'demand-events', 'dispatch', 'epr', 'finance-close', 'floor-heat-map', 'food-safety', 'gates', 'incidents', 'itc-review', 'loyalty-desk', 'morning-brief', 'my-payslip', 'my-tasks', 'online-store', 'order-refunds', 'organisation', 'owner-alerts', 'payroll', 'planogram-compliance', 'posh-report', 'price-integrity', 'product-content', 'related-parties', 'requisitions', 'rollout', 'scales', 'schedule', 'store-computers', 'store-setup', 'store-tasks', 'supplier-bills', 'supplier-scorecard', 'supplier-submissions', 'tally-files', 'transfers', 'waste-analytics']);
+    // OB-380 (owner, 26 Oct 2026): the store computer serves every office page that was marked `unserved` (47). Two pages
+    // with no menu item stay off the box, named, until the owner decides (docs/STATUS.md, G5c): the company report still
+    // draws practice branch names ("Anna Nagar", "T. Nagar") and a fixed company node, and the DPO's erasure console is a
+    // development workflow on a typed staff id against a stand-in server (OB-49 keeps erasure synthetic-only). Serving
+    // either in the shop would show invented names or offer an unsafe door.
+    expect(unservedPages).toEqual(['company-report.html', 'erasure-console.html']);
+    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id)).toEqual([]);
     // `recall-trace` left this list with the integration follow-ups (23 Oct 2026): the box serves the Recalls and trace page.
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
     expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);

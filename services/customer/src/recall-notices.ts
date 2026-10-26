@@ -52,7 +52,7 @@ export interface RecallBuyer {
 /** The recall as the notice list shows it (from the recall register). */
 export interface NoticeRecall {
   readonly batchId: string;
-  readonly status: 'open' | 'closed';
+  readonly status: 'open' | 'closed' | 'withdrawn';
   readonly reason: string;
   readonly initiatedAt: string;
   readonly closedAt: string | null;

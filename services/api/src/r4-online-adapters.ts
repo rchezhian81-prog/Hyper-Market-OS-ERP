@@ -166,6 +166,8 @@ function onlineStoreDepsOf(input: { readonly store: EventStore; readonly now: ()
       const cur = currentImage(await imageVersions(t, productId), productId);
       return cur === undefined ? undefined : { version: cur.version, mediaType: cur.mediaType };
     },
+    // B15 (FG-3): tobacco is never listed online — the product master's own mark.
+    isTobacco: async (t, productId) => (await master.product(t, productId))?.safety?.tobacco === true,
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
 }
