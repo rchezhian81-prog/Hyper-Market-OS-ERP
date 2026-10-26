@@ -12,7 +12,8 @@
 //     closed to its three token facts (hard rule #3: no raw card data, its security code or its expiry is ever a field of any contract);
 //   • tests/integration/money-route-schemas-match-the-handlers.test.ts drives every declared route through the real API and
 //     checks the bodies it sent and the replies it got against these schemas, so a schema cannot drift from its handler.
-// Every other route still says "not declared" in the document (P-08: said, never hidden).
+// Every other route's bodies are DERIVED from its handler's own code (api-body-derive.ts); the guardrail holds the fields
+// these nine schemas require to exactly the ones the derivation finds the handler refuses without, so they cannot drift.
 
 type Json = string | number | boolean | null | readonly Json[] | { readonly [k: string]: Json };
 
@@ -130,8 +131,8 @@ export const DECLARED_BODIES: Readonly<Record<string, DeclaredBodies>> = {
     name: 'SupplierPayment',
     request: open({
       amountMinor: posInt, paidOn: day, method: { type: 'string', enum: [...PAYMENT_METHODS] }, reference: str,
-      approvalId: { type: 'string', description: 'The supplier_payment approval a second person gave (§28).' },
-    }, ['amountMinor', 'paidOn', 'method', 'reference'], 'OB-341: refused 422 payment_exceeds_balance above what is owed LESS what advances already settled.'),
+      approvalId: { type: 'string', description: 'The supplier_payment approval a second person gave (§28). A new payment without one is refused 422 payment_needs_approval.' },
+    }, ['amountMinor', 'paidOn', 'method', 'reference', 'approvalId'], 'OB-341: refused 422 payment_exceeds_balance above what is owed LESS what advances already settled.'),
     reply: {
       status: '201', alsoStatus: '200', description: 'Recorded (201), or the same payment already recorded (200, alreadyRecorded).',
       schema: open({
@@ -147,8 +148,8 @@ export const DECLARED_BODIES: Readonly<Record<string, DeclaredBodies>> = {
     name: 'SupplierAdvance',
     request: open({
       supplierId: str, amountMinor: posInt, paidOn: day, method: { type: 'string', enum: [...PAYMENT_METHODS] }, reference: str, poId: str,
-      approvalId: { type: 'string', description: 'The supplier_payment approval a second person gave (§28).' },
-    }, ['supplierId', 'amountMinor', 'paidOn', 'method', 'reference']),
+      approvalId: { type: 'string', description: 'The supplier_payment approval a second person gave (§28). A new advance without one is refused 422.' },
+    }, ['supplierId', 'amountMinor', 'paidOn', 'method', 'reference', 'approvalId']),
     reply: {
       status: '201', alsoStatus: '200', description: 'Paid and posted (201), or already recorded (200).',
       schema: open({ advance: supplierAdvanceTag, entryId: str, period: month, alreadyRecorded: bool }, ['advance', 'entryId', 'alreadyRecorded']),

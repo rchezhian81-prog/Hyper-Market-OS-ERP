@@ -7,11 +7,19 @@
 > [`openapi.json`](openapi.json) (OpenAPI 3.1 — every endpoint, its permission, feature, step-up and
 > Idempotency-Key header, and the shared error shape) and [`asyncapi.json`](asyncapi.json) (AsyncAPI 3.0 —
 > the §30.2 events and the signed webhooks published to partners), kept equal to the router by
-> `tests/guardrails/the-openapi-and-asyncapi-documents-equal-the-router.test.ts`. The **money routes** declare
-> their request and reply body schemas (`x-body-schema: "declared"`, from `services/platform/src/api-body-schemas.ts`):
-> sales intake, refunds, supplier payments and advances, purchase orders, journals and the day book — each checked
-> against its real handler by `tests/integration/money-route-schemas-match-the-handlers.test.ts`. Every other
-> endpoint's body is **not yet declared** and is marked `x-body-schema: "not declared"`. This catalogue fixes the
+> `tests/guardrails/the-openapi-and-asyncapi-documents-equal-the-router.test.ts`. **Every route declares its request
+> and reply body, and every event its payload** (M32-FR-01, D14-FR-06), DERIVED from the code itself by
+> `services/platform/src/api-body-derive.ts` (`x-body-schema: "derived"`, with the file it is read from): what the handler
+> reads from the body, typed by its own checks, REQUIRED exactly where it refuses (400 / 422) a body without it; the
+> type its code returns, per status; the type of the payload the code builds each event with. The guardrail derives them
+> again on every run and refuses an undeclared body. The nine **money routes** keep their fuller hand-written schemas
+> (`x-body-schema: "declared"`, `services/platform/src/api-body-schemas.ts`), checked against the real handlers by
+> `tests/integration/money-route-schemas-match-the-handlers.test.ts` and held by the guardrail to require every field
+> the derivation finds. A sample in every domain is checked against the running handlers by
+> `tests/integration/every-domain-route-schemas-match-the-handlers.test.ts`. A write that reads no body says
+> `x-request-body: "none"`; a retired route that only refuses says `x-never-succeeds`; a request property the handler
+> passes on without checking its type says `x-unchecked`; §30.2 events no code builds yet say `x-payload-schema: "not
+> published"`. This catalogue fixes the
 > conventions and the domain/event map.
 
 ## 1. Conventions — all APIs
@@ -429,7 +437,6 @@ build; it is not invented ahead of the roadmap.)*
 **EDI (M24-FR-04) — deferred in writing to R8 (OB-312, 23 Oct 2026):** no EDIFACT / X12 / EANCOM. Partners use the versioned
 JSON API and CSV until a named supplier asks for EDI.
 
-Per-endpoint request/reply body schemas (and per-event payload schemas) are declared per domain as each
-release is built; the money routes declare theirs now (above), and until a route does the generated OpenAPI/AsyncAPI
-documents mark its body `not declared`. R4/R5/R7 domains (Customer/CRM, OMS/Fulfilment, AI) are named at family level here
+Per-endpoint request/reply body schemas and per-event payload schemas are in the generated OpenAPI/AsyncAPI documents
+for every route and every event the code builds (above). R4/R5/R7 domains (Customer/CRM, OMS/Fulfilment, AI) are named at family level here
 and expanded when their release is reached.
