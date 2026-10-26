@@ -30,12 +30,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the VMI de
         await cloud.grant(SUPPLIER_MAKER, 'store_manager');
         await cloud.grant(SUPPLIER_CHECKER, 'accountant');
         await approveSupplierWith((method, path, userId, body, idempotencyKey) => cloud.request({ method, path, userId, idempotencyKey, body }), 'sup-v');
+        await post('/v1/catalogue/products/p-rice/publish', { product: { sku: 'p-rice', name: 'Rice 5kg', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }, 'publish');
+        await post('/v1/inventory/movements', { movementId: 'rice-in', productId: 'p-rice', locationId: 'br-1', kind: 'received', quantityMinor: 15, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER, unitCostMinor: 4_000 }, 'rice-in');
+        await post('/v1/supplier-portal/partners/sup-v', { grants: ['view_orders'], documents: [], requiredDocuments: [], logins: [] }, 'cfg', SUPPLIER_MAKER);
         // An outside party's login is given only through the invite a second person approves, bound to its record (OB-76).
         await post('/v1/identity/outside-logins/suppliers/sup-v/invites/inv-sup', { userId: 'u-sup', displayName: 'Supplier clerk (synthetic)' }, 'invite-sup', SUPPLIER_MAKER);
         await post('/v1/identity/outside-logins/suppliers/invites/inv-sup/approve', {}, 'approve-sup');
-        await post('/v1/catalogue/products/p-rice/publish', { product: { sku: 'p-rice', name: 'Rice 5kg', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }, 'publish');
-        await post('/v1/inventory/movements', { movementId: 'rice-in', productId: 'p-rice', locationId: 'br-1', kind: 'received', quantityMinor: 15, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER, unitCostMinor: 4_000 }, 'rice-in');
-        await post('/v1/supplier-portal/partners/sup-v', { grants: ['view_orders'], documents: [], requiredDocuments: [], logins: ['u-sup'] }, 'cfg', SUPPLIER_MAKER);
         await post('/v1/purchase/vmi/limits/sup-v/br-1/p-rice', { minQty: 20, maxQty: 50, uom: 'ea' }, 'limit', SUPPLIER_MAKER);
         await post('/v1/supplier-portal/me/vmi/proposals/vp-1', { storeId: 'br-1', lines: [{ productId: 'p-rice', quantity: 30 }], note: 'weekly top-up (synthetic)' }, 'propose', 'u-sup');
       },
