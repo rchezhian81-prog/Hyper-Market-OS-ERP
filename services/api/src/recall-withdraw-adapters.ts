@@ -16,7 +16,7 @@ import { RecallRegistry } from '../../../packages/traceability/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { recallWithdrawalRoutes, type RecallWithdrawalDeps, type RecallReach } from '../../inventory/src/recall-withdrawal';
 import { STREAM, streamName, recallAdapter } from './adapters';
-import { RECALL_NOTICE_STREAM, clearRecallAlert, recallPhonedTicksOf } from './lane2-recall-adapters';
+import { RECALL_NOTICE_STREAM, clearRecallAlert, recallStandingPhoneTicksOf } from './lane2-recall-adapters';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -30,8 +30,9 @@ export async function recallReachOf(store: EventStore, tenantId: string, batchId
     const a = e.event.payload as { batchId?: string; customerRef?: string; at?: string };
     if (a.batchId === batchId && typeof a.customerRef === 'string' && (a.at ?? '') >= since) contacted.add(a.customerRef);
   }
-  // OB-387: every customer on this recall's call list ticked as phoned (the recall that started at `since`).
-  const phoned = new Set((await recallPhonedTicksOf(store, tenantId, batchId, since)).map((t) => t.customerRef));
+  // OB-387: every customer on this recall's call list ticked as phoned (the recall that started at `since`) — OB-397: the
+  // ticks STILL STANDING; a mistaken tick taken back by someone else, with a reason, no longer counts.
+  const phoned = new Set((await recallStandingPhoneTicksOf(store, tenantId, batchId, since)).map((t) => t.customerRef));
   let disposed = 0;
   for (const e of await store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
     const m = e.event.payload as { kind?: string; batchId?: string; quantityMinor?: number; occurredAt?: string };

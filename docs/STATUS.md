@@ -23,7 +23,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Scopes now also cover relayed receipts and counts, replenishment-made requisitions and relabel completion.
 - **OB-390 / OB-394, shorter actions:** price edit 3, case reply 3, stopping an assistant 2, assign a task 3, complete a task 1, refund 7 (accepted in writing).
 - **M32-FR-01 / D14-FR-06:** all 1,554 routes declare request and reply bodies, and every published event declares its payload. All are derived from the code and proved against the running handlers.
-- **Decisions:** owner decisions OB-394 to OB-397 recorded.
+- **Decisions:** owner decisions OB-394 to OB-400 recorded.
 
 **Tests run (exactly)**
 - Each builder ran its own unit, in-memory integration and browser suites, all green.
@@ -31,12 +31,15 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - On this merge: guardrails and type check (results in the PR).
 - PostgreSQL and real Keycloak could not be started for the builders, so those halves run in CI.
 
+**Also in this batch (round 3)**
+- OB-395: the accountant reads branch names, so the Company report works for them.
+- OB-396 / OB-398 / OB-400: free samples are decided by another store manager of that store. The owner decides only when the giver is the sole store manager or the store has none. The same rule covers rejecting.
+- OB-397 / OB-399: a mistaken phoned tick can be unticked, with a reason, by someone else. A later real call is a new tick.
+- P-08: no write route answers an empty body with a 500 (a sweep of every write route proves it).
+- The box's wrong-time-zone warning reaches head office and the Store computers page.
+
 **What is next**
-- OB-395: the accountant reads branch names.
-- OB-396: the owner approves a free sample only when the giver is the only store manager.
-- OB-397: a mistaken phoned tick can be unticked with a reason by someone else.
-- An empty journal or period-close body currently answers 500; it should be a named refusal (P-08).
-- The box's zone warning should also reach head office.
+- A final re-audit of the remaining PARTIAL rows after this batch.
 
 **Needs an owner decision**
 - None open.

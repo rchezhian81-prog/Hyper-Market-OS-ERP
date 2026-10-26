@@ -52555,7 +52555,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "inventory.free_sample.approve",
+        "x-permission": "inventory.freesample.approve",
         "x-entitlement": null,
         "x-body-schema": "derived",
         "responses": {
@@ -52573,7 +52573,7 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"inventory.free_sample.approve\".",
+            "description": "Not \"inventory.freesample.approve\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -52683,7 +52683,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "inventory.free_sample.approve",
+        "x-permission": "inventory.freesample.approve",
         "x-entitlement": null,
         "x-idempotent": true,
         "parameters": [
@@ -52745,7 +52745,7 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"inventory.free_sample.approve\".",
+            "description": "Not \"inventory.freesample.approve\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -94683,6 +94683,108 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostQualityRecallsByBatchIdCallListByCustomerRefPhonedReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"quality.recall.notice.phoned\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/quality/recalls/{batchId}/call-list/{customerRef}/phoned/untick": {
+      "post": {
+        "operationId": "postQualityRecallsByBatchIdCallListByCustomerRefPhonedUntick",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "quality.recall.notice.phoned",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerRef",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostQualityRecallsByBatchIdCallListByCustomerRefPhonedUntickRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostQualityRecallsByBatchIdCallListByCustomerRefPhonedUntickReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostQualityRecallsByBatchIdCallListByCustomerRefPhonedUntickReply201"
                 }
               }
             }
@@ -221253,6 +221355,88 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/customer/src/recall-notices.ts"
       },
+      "PostQualityRecallsByBatchIdCallListByCustomerRefPhonedUntickReply200": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "customerRef",
+          "untick",
+          "alreadyUnticked",
+          "ticksStillStanding",
+          "detail"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "customerRef": {
+            "type": "string"
+          },
+          "untick": {
+            "$ref": "#/components/schemas/RecallPhonedUntick"
+          },
+          "alreadyUnticked": {
+            "type": "boolean"
+          },
+          "ticksStillStanding": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/customer/src/recall-notices.ts"
+      },
+      "PostQualityRecallsByBatchIdCallListByCustomerRefPhonedUntickReply201": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "customerRef",
+          "untick",
+          "alreadyUnticked",
+          "ticksStillStanding",
+          "detail"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "customerRef": {
+            "type": "string"
+          },
+          "untick": {
+            "$ref": "#/components/schemas/RecallPhonedUntick"
+          },
+          "alreadyUnticked": {
+            "type": "boolean"
+          },
+          "ticksStillStanding": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/customer/src/recall-notices.ts"
+      },
+      "PostQualityRecallsByBatchIdCallListByCustomerRefPhonedUntickRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/customer/src/recall-notices.ts"
+      },
       "PostQualityRecallsByBatchIdClosureReply": {
         "anyOf": [
           {
@@ -226808,6 +226992,32 @@
               },
               "additionalProperties": true
             }
+          },
+          "zoneCheck": {
+            "type": "object",
+            "properties": {
+              "machineTimeZone": {
+                "type": "string"
+              },
+              "shopTimeZone": {
+                "type": "string"
+              },
+              "shopTimeZoneFrom": {
+                "type": "string",
+                "enum": [
+                  "shop_default",
+                  "store_pack"
+                ]
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "differs",
+                  "in_step"
+                ]
+              }
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true,
@@ -241387,6 +241597,9 @@
           "billNumbering": {
             "$ref": "#/components/schemas/BillNumberingState"
           },
+          "zoneCheck": {
+            "$ref": "#/components/schemas/BoxZoneCheck"
+          },
           "queueContradiction": {
             "type": "string"
           }
@@ -241521,6 +241734,16 @@
               }
             ]
           },
+          "zoneCheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoxZoneCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "billNumberFindings": {
             "type": "array",
             "items": {
@@ -241636,6 +241859,38 @@
               },
               "additionalProperties": true
             }
+          }
+        },
+        "additionalProperties": true
+      },
+      "BoxZoneCheck": {
+        "type": "object",
+        "required": [
+          "verdict",
+          "shopTimeZone",
+          "shopTimeZoneFrom",
+          "machineTimeZone"
+        ],
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "differs",
+              "in_step"
+            ]
+          },
+          "shopTimeZone": {
+            "type": "string"
+          },
+          "shopTimeZoneFrom": {
+            "type": "string",
+            "enum": [
+              "shop_default",
+              "store_pack"
+            ]
+          },
+          "machineTimeZone": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -242573,7 +242828,8 @@
           "notes",
           "noteSay",
           "bought",
-          "phoned"
+          "phoned",
+          "phoneHistory"
         ],
         "properties": {
           "customerRef": {
@@ -242660,6 +242916,12 @@
                 "additionalProperties": true
               }
             ]
+          },
+          "phoneHistory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PhoneHistoryItem"
+            }
           }
         },
         "additionalProperties": true
@@ -270858,6 +271120,64 @@
         },
         "additionalProperties": true
       },
+      "PhoneHistoryItem": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "by",
+              "at",
+              "reason",
+              "tickBy",
+              "tickAt"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "unticked"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "tickBy": {
+                "type": "string"
+              },
+              "tickAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "by",
+              "at"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "ticked"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
       "PlaceMovement": {
         "type": "object",
         "required": [
@@ -274227,6 +274547,50 @@
             "type": "string"
           },
           "at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RecallPhonedUntick": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "customerRef",
+          "recallStartedAt",
+          "round",
+          "tickedBy",
+          "tickedAt",
+          "untickedBy",
+          "untickedAt",
+          "reason"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "customerRef": {
+            "type": "string"
+          },
+          "recallStartedAt": {
+            "type": "string"
+          },
+          "round": {
+            "type": "number"
+          },
+          "tickedBy": {
+            "type": "string"
+          },
+          "tickedAt": {
+            "type": "string"
+          },
+          "untickedBy": {
+            "type": "string"
+          },
+          "untickedAt": {
             "type": "string"
           },
           "reason": {

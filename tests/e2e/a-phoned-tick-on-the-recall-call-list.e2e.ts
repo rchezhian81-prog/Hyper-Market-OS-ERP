@@ -190,3 +190,107 @@ describe.skipIf(!existsSync(CHROMIUM))('OB-387: a "phoned" tick on the recall ca
     }
   });
 });
+
+/**
+ * **OB-397 on the recall screen, in a real browser — a mistaken "phoned" tick is taken back, with a written reason, by
+ * someone other than the person who ticked it.** A stub head office answers; the screen decides nothing.
+ *
+ *   • a ticked customer shows "Untick — the tick was a mistake" with its icon beside the word, and a reason box;
+ *   • tapping it with no reason sends nothing and says a reason is needed;
+ *   • with a reason it POSTs `…/call-list/<customer>/phoned/untick` { reason } with an idempotency-key; only after head
+ *     office answers does the row read "Not phoned yet" and show BOTH records — "Ticked by …" and "Taken back by …: why";
+ *   • the person who ticked sees no untick button, only that someone else takes it back; head office's refusal is shown in
+ *     its words; Tamil.
+ */
+describe.skipIf(!existsSync(CHROMIUM))('OB-397: a mistaken "phoned" tick is unticked on the recall screen, in a real browser', () => {
+  let browser: Browser;
+
+  beforeAll(async () => {
+    execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+  }, 60_000);
+  afterAll(async () => { await browser?.close(); });
+
+  const ticked = { by: 'u-mgr', at: '2026-10-26T10:00:00.000Z' };
+  const withHistory = (history: unknown[], phoned: { by: string; at: string } | null) => {
+    const base = callList(phoned);
+    return { ...base, callList: base.callList.map((c) => (c.customerRef === 'cust-B' ? { ...c, phoneHistory: history } : c)) };
+  };
+  const open = async (shop: Shop, userId: string) => {
+    const srv = await startShop({ ...shop, inject: `<script>window.recallTraceData = ${JSON.stringify({ userId, permissions: ['quality.recall.notice.read', 'quality.recall.notice.phoned'] })};</script>` });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+    await page.click('#tab-calls');
+    await page.fill('#c-batch', 'B-77');
+    await page.click('#c-load');
+    await page.waitForSelector('#c-rows li[data-customer="cust-B"]', { timeout: 10_000 });
+    return { page, teardown: async () => { await context.close(); await srv.stop(); } };
+  };
+
+  it('needs a reason, then takes the tick back: keyed POST, both records shown only after head office answered; Tamil', async () => {
+    const answers: Shop['answers'] = new Map([
+      ['GET /v1/quality/recalls', { status: 200, body: { recalls: [] } }],
+      ['GET /v1/quality/recalls/B-77/notice-list', { status: 200, body: withHistory([{ kind: 'ticked', ...ticked }], ticked) }],
+      ['POST /v1/quality/recalls/B-77/call-list/cust-B/phoned/untick', { status: 201, body: { batchId: 'B-77', customerRef: 'cust-B', untick: { tickedBy: 'u-mgr', untickedBy: 'u-mgr2' }, alreadyUnticked: false, ticksStillStanding: 0 } }],
+    ]);
+    const shop: Shop = { answers, requests: [], page: 'recall-trace.html', inject: '' };
+    const { page, teardown } = await open(shop, 'u-mgr2');
+    try {
+      const b = '#c-rows li[data-customer="cust-B"]';
+      await waitForWords(page, `${b} .phoned`, 'Phoned by u-mgr');
+      await waitForWords(page, '#untick-cust-B', 'Untick — the tick was a mistake');
+      expect(await page.locator('#untick-cust-B svg').count()).toBeGreaterThan(0);
+      // No reason: nothing is sent.
+      await page.click('#untick-cust-B');
+      await waitForWords(page, '#result', 'Write why the tick was a mistake first.');
+      expect(shop.requests.some((r) => r.path.endsWith('/phoned/untick'))).toBe(false);
+
+      // Head office now answers the list with both records.
+      answers.set('GET /v1/quality/recalls/B-77/notice-list', { status: 200, body: withHistory([
+        { kind: 'ticked', ...ticked },
+        { kind: 'unticked', by: 'u-mgr2', at: '2026-10-26T11:00:00.000Z', reason: 'ticked the wrong row', tickBy: 'u-mgr', tickAt: ticked.at },
+      ], null) });
+      await page.fill('#untick-reason-cust-B', 'ticked the wrong row');
+      await page.click('#untick-cust-B');
+      await waitForWords(page, '#result', 'The tick was taken back.');
+      await waitForWords(page, `${b} .phoned`, 'Not phoned yet');
+      await waitForWords(page, `${b} .phone-history`, 'Ticked by u-mgr');
+      await waitForWords(page, `${b} .phone-history`, 'Taken back by u-mgr2');
+      await waitForWords(page, `${b} .phone-history`, 'ticked the wrong row');
+      const req = shop.requests.find((r) => r.method === 'POST' && r.path === '/v1/quality/recalls/B-77/call-list/cust-B/phoned/untick');
+      expect(req, 'the untick was not POSTed').toBeDefined();
+      expect((req!.idem ?? '').length).toBeGreaterThan(0);
+      expect(await page.locator('#untick-cust-B').count()).toBe(0);
+      // The tick button is back for a real call later.
+      expect(await page.locator('#phoned-cust-B').count()).toBe(1);
+
+      await page.click('#lang');
+      await waitForWords(page, `${b} .phone-history`, 'திரும்பப் பெற்றார்');
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('the person who ticked sees no untick button; a refusal from head office is shown in its words and the tick stays', async () => {
+    const answers: Shop['answers'] = new Map([
+      ['GET /v1/quality/recalls', { status: 200, body: { recalls: [] } }],
+      ['GET /v1/quality/recalls/B-77/notice-list', { status: 200, body: withHistory([{ kind: 'ticked', ...ticked }], ticked) }],
+      ['POST /v1/quality/recalls/B-77/call-list/cust-B/phoned/untick', { status: 403, body: { error: { code: 'recall_untick_by_the_person_who_ticked', whatHappened: 'u-mgr ticked customer "cust-B" as phoned and cannot also take that tick back', nextSafeAction: 'Nothing was changed; the tick stands.' } } }],
+    ]);
+    const mine = await open({ answers, requests: [], page: 'recall-trace.html', inject: '' }, 'u-mgr');
+    try {
+      await waitForWords(mine.page, '#c-rows li[data-customer="cust-B"]', 'someone else takes it back');
+      expect(await mine.page.locator('#untick-cust-B').count()).toBe(0);
+    } finally { await mine.teardown(); }
+    // Not told who is looking: head office decides — and refuses by name; the screen shows its words.
+    const shop: Shop = { answers, requests: [], page: 'recall-trace.html', inject: '' };
+    const other = await open(shop, '');
+    try {
+      await other.page.fill('#untick-reason-cust-B', 'ticked the wrong row');
+      await other.page.click('#untick-cust-B');
+      await waitForWords(other.page, '#result', 'cannot also take that tick back');
+      await waitForWords(other.page, '#c-rows li[data-customer="cust-B"] .phoned', 'Phoned by u-mgr');
+    } finally { await other.teardown(); }
+  });
+});

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { RequestContext } from '../../services/kernel/src/index';
 import {
-  freeSampleRoutes, type FreeSampleDeps, type FreeSampleIssue, type FreeSampleRequest, type FreeSampleDecision,
+  freeSampleRoutes, type FreeSampleDeps, type FreeSampleIssue, type FreeSampleRequest, type FreeSampleDecision, type FreeSampleGrant,
+  freeSampleApproverRefusal, storeManagersOf,
 } from '../../services/inventory/src/free-samples';
 import type { ItcReversal } from '../../packages/input-tax/src/index';
 import { createFreeSampleSession } from '../../apps/web-erp/src/free-sample-session';
@@ -19,6 +20,12 @@ function world() {
   const issues: FreeSampleIssue[] = [];
   const reversals: ItcReversal[] = [];
   const audit: string[] = [];
+  // OB-396: who holds which role where — u-mgr1 and u-mgr2 manage every store; u-owner is the owner.
+  const grants: FreeSampleGrant[] = [
+    { userId: 'u-mgr1', roleId: 'store_manager', branchScope: 'all' },
+    { userId: 'u-mgr2', roleId: 'store_manager', branchScope: 'all' },
+    { userId: 'u-owner', roleId: 'owner', branchScope: 'all' },
+  ];
   const deps: FreeSampleDeps = {
     now: () => AT,
     requests: async () => requests, recordRequest: async (_t, r) => { requests.push(r); },
@@ -31,6 +38,7 @@ function world() {
     recordReversal: async (_t, r) => { reversals.push(r); return r; },
     checks: async () => [], recordCheck: async () => {},
     tradingDay: async () => '2026-10-26',
+    grants: async () => grants,
     recordAudit: (_t, e) => { audit.push(`${e.actorId}:${e.action}`); },
   };
   const routes = freeSampleRoutes(deps);
@@ -40,7 +48,7 @@ function world() {
   const give = async (userId: string, id: string) => route('POST', '/v1/inventory/free-samples/:issueId').handler(ctx(userId, { issueId: id }, { productId: 'rice', locationId: 'wh-1', qty: 2, uom: 'ea', note: 'tasting' }));
   const decide = async (userId: string, id: string, decision: string, reason = 'seen at the counter') => route('POST', '/v1/inventory/free-samples/:issueId/decision').handler(ctx(userId, { issueId: id }, { decision, reason }));
   const pending = async () => route('GET', '/v1/inventory/free-samples/pending').handler(ctx('u-mgr2', {}));
-  return { requests, decisions, issues, reversals, audit, give, decide, pending };
+  return { requests, decisions, issues, reversals, audit, grants, give, decide, pending };
 }
 
 const codeOf = async (p: unknown): Promise<string> => {
@@ -92,6 +100,55 @@ describe('a free sample waits for a store manager other than the giver (OB-393)'
   });
 });
 
+describe('OB-396: who decides a free sample — a store manager of that store; the owner only when the giver is its only one', () => {
+  const sm = (userId: string, branchScope: readonly string[] | 'all' = 'all'): FreeSampleGrant => ({ userId, roleId: 'store_manager', branchScope });
+  const owner: FreeSampleGrant = { userId: 'u-owner', roleId: 'owner', branchScope: 'all' };
+  const judge = (approver: string, giver: string, grants: FreeSampleGrant[], store = 'store-1') => freeSampleApproverRefusal({ approver, giver, store, grants })?.code ?? 'may decide';
+
+  it('the store managers of a store are those whose live grant reaches it', () => {
+    expect(storeManagersOf([sm('a'), sm('b', ['store-1']), sm('c', ['store-2']), owner, sm('a', ['store-1'])], 'store-1')).toEqual(['a', 'b']);
+  });
+
+  it('another store manager of that store may; one of another store, a cashier or the giver may not', () => {
+    expect(judge('b', 'a', [sm('a'), sm('b', ['store-1'])])).toBe('may decide');
+    expect(judge('c', 'a', [sm('a'), sm('c', ['store-2'])])).toBe('free_sample_approver_not_a_store_manager');
+    expect(judge('u-cash', 'a', [sm('a'), sm('b'), { userId: 'u-cash', roleId: 'cashier', branchScope: 'all' }])).toBe('free_sample_approver_not_a_store_manager');
+  });
+
+  it('the owner may ONLY when the giver is the only store manager of that store — refused by name otherwise, naming who may', () => {
+    expect(judge('u-owner', 'a', [sm('a'), owner])).toBe('may decide');
+    expect(judge('u-owner', 'a', [sm('a'), sm('c', ['store-2']), owner])).toBe('may decide'); // c manages another store only
+    const two = freeSampleApproverRefusal({ approver: 'u-owner', giver: 'a', store: 'store-1', grants: [sm('a'), sm('b'), owner] });
+    expect(two?.code).toBe('free_sample_owner_only_when_the_giver_is_the_only_store_manager');
+    expect(two?.nextSafeAction).toContain('Ask b');
+    // A giver who is not a store manager: the owner may not; the store's store manager decides.
+    expect(judge('u-owner', 'u-cash', [sm('b'), owner])).toBe('free_sample_owner_only_when_the_giver_is_the_only_store_manager');
+    // OB-398 (owner, 26 Oct 2026): a store with NO store manager at all — the owner decides, never the giver.
+    expect(judge('u-owner', 'u-cash', [owner])).toBe('may decide');
+    expect(judge('u-owner', 'u-owner', [owner])).toBe('free_sample_owner_only_when_the_giver_is_the_only_store_manager');
+    // An owner who is ALSO a store manager of that store decides as a store manager.
+    expect(judge('u-owner', 'a', [sm('a'), sm('b'), owner, sm('u-owner', ['store-1'])])).toBe('may decide');
+  });
+
+  it('on the route: the owner is refused while another store manager exists, and decides once the giver is the only one; nothing moves on a refusal', async () => {
+    const w = world();
+    await w.give('u-mgr1', 'fs-1');
+    expect(await codeOf(w.decide('u-owner', 'fs-1', 'approve'))).toBe('free_sample_owner_only_when_the_giver_is_the_only_store_manager');
+    expect(await codeOf(w.decide('u-owner', 'fs-1', 'reject'))).toBe('free_sample_owner_only_when_the_giver_is_the_only_store_manager');
+    expect([w.issues.length, w.decisions.length]).toEqual([0, 0]);
+    w.grants.splice(w.grants.findIndex((g) => g.userId === 'u-mgr2'), 1); // u-mgr2's grant is revoked
+    expect((await w.decide('u-owner', 'fs-1', 'approve')).status).toBe(201);
+    expect(w.issues).toEqual([expect.objectContaining({ issuedBy: 'u-mgr1', approvedBy: 'u-owner' })]);
+  });
+
+  it('a store manager whose grant does not reach the sample\'s store is refused by name', async () => {
+    const w = world();
+    w.grants.push({ userId: 'u-mgr9', roleId: 'store_manager', branchScope: ['store-9'] });
+    await w.give('u-mgr1', 'fs-1');
+    expect(await codeOf(w.decide('u-mgr9', 'fs-1', 'approve'))).toBe('free_sample_approver_not_a_store_manager');
+  });
+});
+
 describe('the write-off screen\'s free-sample session lists and decides (OB-393)', () => {
   const recorder = () => {
     const calls: { url: string; method: string; body?: unknown }[] = [];
@@ -104,7 +161,7 @@ describe('the write-off screen\'s free-sample session lists and decides (OB-393)
 
   it('may.approve follows the permission; the viewer\'s own sample is refused here before anything is sent; a reason is needed', async () => {
     const r = recorder();
-    const s = createFreeSampleSession({ viewer: { userId: 'u-mgr1', permissions: ['inventory.movement.append', 'inventory.free_sample.approve'] }, fetch: r.fetch, newKey: () => 'k' });
+    const s = createFreeSampleSession({ viewer: { userId: 'u-mgr1', permissions: ['inventory.movement.append', 'inventory.freesample.approve'] }, fetch: r.fetch, newKey: () => 'k' });
     expect(s.may).toEqual({ named: true, record: true, approve: true });
     expect(createFreeSampleSession({ viewer: { userId: 'u', permissions: ['inventory.movement.append'] }, fetch: r.fetch }).may.approve).toBe(false);
     expect(await s.decide({ issueId: 'fs-1', requestedBy: 'u-mgr1' }, 'approve', 'ok')).toEqual({ result: 'invalid', why: 'yours' });

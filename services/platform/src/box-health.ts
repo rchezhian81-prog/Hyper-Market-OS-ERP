@@ -64,6 +64,18 @@ export interface TillDeviceReport {
   readonly adapterObservedAt?: string;
 }
 
+/**
+ * R3 (round 3 · P-08): the store computer's own check of its machine's time zone against the shop's (edge/store-edge/src/
+ * shop-zone.ts `zoneCheck`). The box still dates by the shop's zone either way; a difference is told to head office so it is
+ * shown on the Store computers page and in head office's health — never only on the box's own screens.
+ */
+export interface BoxZoneCheck {
+  readonly verdict: 'in_step' | 'differs';
+  readonly shopTimeZone: string;
+  readonly shopTimeZoneFrom: 'store_pack' | 'shop_default';
+  readonly machineTimeZone: string;
+}
+
 /** One report, as head office keeps it. */
 export interface BoxHealthRecord {
   readonly storeId: string;
@@ -91,6 +103,8 @@ export interface BoxHealthRecord {
   readonly receiptNumbersNotFolded?: readonly { readonly prefix: string; readonly through: number }[];
   /** Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness, and any held restore. */
   readonly billNumbering?: BillNumberingState;
+  /** R3 · P-08: the box's machine time zone against the shop's (absent on a box that predates it). */
+  readonly zoneCheck?: BoxZoneCheck;
   /**
    * Verifier r21 UNSENT-CEILING (a): the report's per-prefix bills still to send (or given up on) add up to MORE than its own
    * whole queue holds — the box contradicts itself. Said here in words; head office then believes none of its per-prefix
@@ -228,7 +242,7 @@ const earlier = (a: string, b: string): string => (Date.parse(a) <= Date.parse(b
 export function readBoxHealthReport(body: unknown, receivedAt: string):
   {
     observedAt: string; disk: BoxDisk; queue: { unsent: number; deadLettered: number }; tills: TillDeviceReport[]; clockAheadCorrected: boolean;
-    receiptNumbersIssued?: IssuedReport[]; billNumbering?: BillNumberingState;
+    receiptNumbersIssued?: IssuedReport[]; billNumbering?: BillNumberingState; zoneCheck?: BoxZoneCheck;
   } | { problems: string[] } {
   const b = isObj(body) ? body : {};
   const problems: string[] = [];
@@ -366,6 +380,18 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
       };
     }
   }
+  // R3 · P-08: the box's time-zone check (optional — an older box does not say).
+  const rawZone = b['zoneCheck'];
+  let zone: BoxZoneCheck | undefined;
+  if (rawZone !== undefined) {
+    const z = isObj(rawZone) ? rawZone : {};
+    if ((z['verdict'] !== 'in_step' && z['verdict'] !== 'differs') || !isWord(z['shopTimeZone'], 64) || !isWord(z['machineTimeZone'], 64)
+      || (z['shopTimeZoneFrom'] !== 'store_pack' && z['shopTimeZoneFrom'] !== 'shop_default')) {
+      problems.push('zoneCheck needs verdict (in_step or differs), shopTimeZone, shopTimeZoneFrom (store_pack or shop_default) and machineTimeZone');
+    } else {
+      zone = { verdict: z['verdict'], shopTimeZone: z['shopTimeZone'], shopTimeZoneFrom: z['shopTimeZoneFrom'], machineTimeZone: z['machineTimeZone'] };
+    }
+  }
   if (problems.length > 0) return { problems };
   const observedRaw = b['observedAt'] as string;
   const observedAt = earlier(observedRaw, receivedAt);
@@ -381,6 +407,7 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
     tills, clockAheadCorrected: corrected,
     ...(rawIssued === undefined ? {} : { receiptNumbersIssued }),
     ...(billNumbering === undefined ? {} : { billNumbering }),
+    ...(zone === undefined ? {} : { zoneCheck: zone }),
   };
 }
 
@@ -3537,6 +3564,8 @@ export interface BoxHealthView {
   readonly tradingHoursLeftSays: string | null;
   /** Verifier r19 OB87-1: the box's latest witness check (null when never reported or an older box). */
   readonly billNumbering?: BillNumberingState | null;
+  /** R3 · P-08: the box's machine time zone against the shop's, from its latest report (null: never said). */
+  readonly zoneCheck?: BoxZoneCheck | null;
   /** Verifier r19: bills issued but never received, and reports head office refused to count. */
   readonly billNumberFindings?: readonly BillNumberFinding[];
   /**
@@ -3707,7 +3736,7 @@ export function judgeBoxes(input: {
     boxes.push({
       storeId, state: 'reported', lastReportAt: r.observedAt, ageSeconds, stale, canRecordSales: can, disk: r.disk, queue: r.queue, tills: r.tills,
       tradingHoursLeft: estimate.known ? estimate.hoursLeft : null, tradingHoursLeftSays: estimateSays,
-      billNumbering: r.billNumbering ?? null, billNumberFindings: findings, computer: r.reportedBy,
+      billNumbering: r.billNumbering ?? null, billNumberFindings: findings, computer: r.reportedBy, zoneCheck: r.zoneCheck ?? null,
       ...(otherComputers.length === 0 ? {} : { otherComputers }), ...(unusedDays.length === 0 ? {} : { unusedNumbers: unusedDays }),
       ...(several ? {
         canRecordSales: heads.every((h) => boxCanRecordSales(h.disk)),
@@ -3728,6 +3757,20 @@ export function judgeBoxes(input: {
         name: `box_unused_numbers:${storeId}`, status: 'ok',
         detail: `taken but never used (information — nothing to look for): store ${storeId}'s computer says these bill numbers were given and never put on a bill — ${unusedDays.map((d) => `till ${d.prefix} on ${d.day}: ${d.count} number(s), ${rangeWords(d.prefix, d.ranges)}${d.moreRanges > 0 ? ` and ${d.moreRanges} more range(s)` : ''}`).join('; ')}. A bill abandoned at the till or a card declined after the number was taken keeps its number; if one day shows many, ask the store why${(input.unusedCapped?.get(storeId) ?? []).map((c) => (cappedWords(c) === '' ? '' : `. Under ${c.prefix}:${cappedWords(c).replace(/\.$/, '')}`)).join('')}`,
         evidence: { days: unusedDays.length, numbers: unusedDays.reduce((n, d) => n + d.count, 0), byTillAndDay: unusedDays.map((d) => `${d.prefix}@${d.day}:${d.count}`).join(',') },
+      });
+    }
+    // R3 · P-08: a store computer whose machine keeps another time zone than the shop's is SAID at head office — `degraded`
+    // (it still dates bills, shifts and the day close by the shop's zone, so a sale is never stopped); stale: old news.
+    if (r.zoneCheck !== undefined) {
+      const z = r.zoneCheck;
+      const says = z.verdict === 'differs'
+        ? `store ${storeId}'s computer (${r.reportedBy}) keeps the time zone ${z.machineTimeZone}, not the shop's (${z.shopTimeZone}${z.shopTimeZoneFrom === 'shop_default' ? ', the shop default — its store pack names none' : ''}). Bills, shifts and the day close are still dated by the shop's zone; ask IT to set that computer to ${z.shopTimeZone}`
+        : `store ${storeId}'s computer keeps the shop's time zone (${z.shopTimeZone})`;
+      components.push({
+        name: `box_time_zone:${storeId}`,
+        status: stale ? 'unknown' : z.verdict === 'differs' ? 'degraded' : 'ok',
+        detail: stale ? `${staleNote}. Then: ${says}` : says,
+        evidence: { verdict: z.verdict, shopTimeZone: z.shopTimeZone, shopTimeZoneFrom: z.shopTimeZoneFrom, machineTimeZone: z.machineTimeZone, computer: r.reportedBy, reportedAt: r.observedAt, ageSeconds },
       });
     }
     // Verifier r19 OB87-1 / BOX-1 / lost sales: the store computer's bill numbering, as the owner must see it (P-08, P-03).
@@ -4236,6 +4279,7 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
         ...(judged === undefined ? {} : { receiptNumbersIssued: judged.accepted }),
         ...(judged === undefined || judged.refused.length === 0 ? {} : { receiptNumbersRefused: judged.refused }),
         ...(read.billNumbering === undefined ? {} : { billNumbering: read.billNumbering }),
+        ...(read.zoneCheck === undefined ? {} : { zoneCheck: read.zoneCheck }),
       };
       // The reply is what head office KEPT (a re-send answers the first record, never an unsaved copy).
       const kept = (await deps.record(ctx.tenantId, r)) ?? r;

@@ -344,6 +344,8 @@ function freeSampleSurface(input: Base): readonly Route[] {
       }));
     },
     tradingDay: (t, at) => shopDay(input, t, at),
+    // OB-396: who is a store manager of which store, and who is the owner — head office's live grants, never the request.
+    grants: (t) => effectiveGrants(store, t),
     locationBranches: nodesBranches,
     countFreeze: async (t, l, p, k) => (await countPlanFreezing(plans, t, l, p, k))?.planId,
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),

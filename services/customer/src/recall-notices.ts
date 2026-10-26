@@ -23,6 +23,12 @@
 //     sealed on the audit trail. The first tick stands (a second tick for the same customer on the same recall is
 //     answered with the first one — never re-written). Only on an OPEN recall, only for a customer on its call list.
 //     Any tick refuses the recall's withdrawal by name (`recall_customers_already_phoned`, `recall-withdrawal.ts`).
+//   • THE UNTICK (OB-397, owner decision 26 Oct 2026) — POST /v1/quality/recalls/:batchId/call-list/:customerRef/phoned/untick
+//     { reason }. A tick made by mistake is taken back by SOMEONE OTHER than the person who ticked it, with a written reason
+//     (refused by name for the same person: `recall_untick_by_the_person_who_ticked`). It is a compensating event on the same
+//     append-only stream — the tick is never deleted or re-written; both stay on record, sealed on the audit trail, and the
+//     call list shows both. Withdrawal is judged on the ticks STILL STANDING. A customer unticked and then truly phoned is
+//     ticked again (a new tick, never the old one revived).
 //
 // The list and the port exist only for a recalled batch (purpose limitation, PRV-03): this is not a way to find out who
 // bought what. Reading the list is sealed on the audit trail by the composition root, like every trace read.
@@ -104,9 +110,16 @@ export interface CallListEntry {
   readonly notes: readonly CallNote[];
   readonly noteSay: readonly string[];
   readonly bought: readonly BoughtLot[];
-  /** OB-387: the "phoned" tick on this recall — who ticked it and when; null while nobody has. */
+  /** OB-387: the "phoned" tick STILL STANDING on this recall — who ticked it and when; null while none stands. */
   readonly phoned: { readonly by: string; readonly at: string } | null;
+  /** OB-397: every tick and every untick on this recall for this customer, oldest first — both stay on record. */
+  readonly phoneHistory: readonly PhoneHistoryItem[];
 }
+
+/** OB-397: one line of a customer's phone-tick record on a recall. */
+export type PhoneHistoryItem =
+  | { readonly kind: 'ticked'; readonly by: string; readonly at: string }
+  | { readonly kind: 'unticked'; readonly by: string; readonly at: string; readonly reason: string; readonly tickBy: string; readonly tickAt: string };
 
 /** OB-387: one "phoned" tick — a customer on a recall's call list was phoned. Append-only; never re-written. */
 export interface RecallPhonedTick {
@@ -116,6 +129,63 @@ export interface RecallPhonedTick {
   readonly recallStartedAt: string;
   readonly phonedBy: string;
   readonly phonedAt: string;
+  /** OB-397: which tick this is for the customer on this recall — 0 the first, n after n unticks. Absent = 0. */
+  readonly round?: number;
+}
+
+/** OB-397: a compensating "untick" of one phoned tick (the tick of that `round`) — never deletes or re-writes it. */
+export interface RecallPhonedUntick {
+  readonly batchId: string;
+  readonly customerRef: string;
+  readonly recallStartedAt: string;
+  /** The tick it takes back: its round, who ticked and when. */
+  readonly round: number;
+  readonly tickedBy: string;
+  readonly tickedAt: string;
+  readonly untickedBy: string;
+  readonly untickedAt: string;
+  /** The written reason the tick was a mistake. */
+  readonly reason: string;
+}
+
+const roundOf = (t: Pick<RecallPhonedTick, 'round'>): number => t.round ?? 0;
+
+/** OB-397: one customer's folded tick record on one recall. */
+export interface FoldedPhoneTicks {
+  /** The tick still standing (the latest round, with no untick), or null. */
+  readonly standing: RecallPhonedTick | null;
+  /** The round the next tick takes. */
+  readonly nextRound: number;
+  readonly history: readonly PhoneHistoryItem[];
+}
+
+/** OB-397: fold one recall's ticks and unticks, per customer. Pure; the first record of each round stands. */
+export function foldPhoneTicks(ticks: readonly RecallPhonedTick[], unticks: readonly RecallPhonedUntick[]): Map<string, FoldedPhoneTicks> {
+  const refs = new Set([...ticks.map((t) => t.customerRef), ...unticks.map((u) => u.customerRef)]);
+  const out = new Map<string, FoldedPhoneTicks>();
+  for (const ref of refs) {
+    const mine = new Map<number, RecallPhonedTick>();
+    for (const t of ticks) if (t.customerRef === ref && !mine.has(roundOf(t))) mine.set(roundOf(t), t);
+    const undone = new Map<number, RecallPhonedUntick>();
+    for (const u of unticks) if (u.customerRef === ref && mine.has(u.round) && !undone.has(u.round)) undone.set(u.round, u);
+    const rounds = [...mine.keys()].sort((a, b) => a - b);
+    const last = rounds.length === 0 ? undefined : rounds[rounds.length - 1]!;
+    const standing = last !== undefined && !undone.has(last) ? mine.get(last)! : null;
+    const history: PhoneHistoryItem[] = [];
+    for (const r of rounds) {
+      const t = mine.get(r)!;
+      history.push({ kind: 'ticked', by: t.phonedBy, at: t.phonedAt });
+      const u = undone.get(r);
+      if (u !== undefined) history.push({ kind: 'unticked', by: u.untickedBy, at: u.untickedAt, reason: u.reason, tickBy: u.tickedBy, tickAt: u.tickedAt });
+    }
+    out.set(ref, { standing, nextRound: last === undefined ? 0 : undone.has(last) ? last + 1 : last, history });
+  }
+  return out;
+}
+
+/** OB-397: the ticks still standing on one recall — what its withdrawal is judged on. */
+export function standingPhoneTicks(ticks: readonly RecallPhonedTick[], unticks: readonly RecallPhonedUntick[]): RecallPhonedTick[] {
+  return [...foldPhoneTicks(ticks, unticks).values()].flatMap((f) => (f.standing === null ? [] : [f.standing]));
 }
 
 export interface RecallNoticeList {
@@ -166,8 +236,10 @@ export function buildRecallNoticeList(input: {
   readonly consentOf: ReadonlyMap<string, readonly ConsentRecord[]>;
   readonly nameOf: ReadonlyMap<string, string>;
   readonly phoneLast4Of: ReadonlyMap<string, string>;
-  /** OB-387: the "phoned" ticks on this recall, by customer (the first tick for each). */
+  /** OB-387: the "phoned" tick still standing on this recall, by customer. */
   readonly phonedOf?: ReadonlyMap<string, RecallPhonedTick>;
+  /** OB-397: every tick and untick, by customer, oldest first. */
+  readonly historyOf?: ReadonlyMap<string, readonly PhoneHistoryItem[]>;
   readonly now: string;
 }): RecallNoticeList {
   const byCustomer = new Map<string, RecallBuyer[]>();
@@ -198,6 +270,7 @@ export function buildRecallNoticeList(input: {
       notes, noteSay: notes.map((n) => CALL_NOTE_SAY[n]),
       bought: [...bought].sort((a, b) => (a.soldDate < b.soldDate ? -1 : a.soldDate > b.soldDate ? 1 : a.saleId < b.saleId ? -1 : 1)).map((b) => lotOf(input.recall.batchId, b)),
       phoned: ((tick) => (tick === undefined ? null : { by: tick.phonedBy, at: tick.phonedAt }))(input.phonedOf?.get(customerRef)),
+      phoneHistory: input.historyOf?.get(customerRef) ?? [],
     });
   }
   const estimatedSales = input.buyers.filter((b) => b.source === 'fifo_receipt_estimate').length;
@@ -256,8 +329,12 @@ export interface RecallNoticeDeps {
   readonly recordAttempt: (tenantId: string, a: RecallNoticeAttempt) => Promise<void>;
   /** OB-387: the "phoned" ticks on the recall that started at `recallStartedAt` on this batch (first per customer). */
   readonly phonedTicks: (tenantId: string, batchId: string, recallStartedAt: string) => Promise<readonly RecallPhonedTick[]>;
-  /** OB-387: append a tick — one per customer and recall; a second answers with the first (`first`), never re-written. */
+  /** OB-387: append a tick — one per customer, recall and round; a second answers with the first (`first`), never re-written. */
   readonly recordPhoned: (tenantId: string, tick: RecallPhonedTick) => Promise<{ readonly tick: RecallPhonedTick; readonly first: boolean }>;
+  /** OB-397: the unticks on the recall that started at `recallStartedAt` on this batch. */
+  readonly phoneUnticks: (tenantId: string, batchId: string, recallStartedAt: string) => Promise<readonly RecallPhonedUntick[]>;
+  /** OB-397: append an untick — once per tick (customer, recall, round); a second answers with the first. */
+  readonly recordUntick: (tenantId: string, untick: RecallPhonedUntick) => Promise<{ readonly untick: RecallPhonedUntick; readonly first: boolean }>;
   /** The message provider. NEVER set in production until one is certified; tests hand in a stand-in. */
   readonly transport?: NotificationTransport;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -279,7 +356,7 @@ function batchOf(raw: string | undefined): string {
   return batchId;
 }
 
-async function listFor(deps: RecallNoticeDeps, tenantId: string, batchId: string): Promise<RecallNoticeList> {
+async function listFor(deps: RecallNoticeDeps, tenantId: string, batchId: string): Promise<RecallNoticeList & { readonly ticks: ReadonlyMap<string, FoldedPhoneTicks> }> {
   const recall = await deps.recall(tenantId, batchId);
   if (recall === undefined) throw notFound(`recall on batch ${batchId} (a call list exists only for a recalled batch)`);
   const buyers = await deps.buyers(tenantId, batchId);
@@ -294,11 +371,14 @@ async function listFor(deps: RecallNoticeDeps, tenantId: string, batchId: string
     const last4 = await deps.phoneLast4(tenantId, ref);
     if (last4 !== undefined) phoneLast4Of.set(ref, last4);
   }
+  const ticks = foldPhoneTicks(await deps.phonedTicks(tenantId, batchId, recall.initiatedAt), await deps.phoneUnticks(tenantId, batchId, recall.initiatedAt));
   const phonedOf = new Map<string, RecallPhonedTick>();
-  for (const tick of await deps.phonedTicks(tenantId, batchId, recall.initiatedAt)) {
-    if (!phonedOf.has(tick.customerRef)) phonedOf.set(tick.customerRef, tick);
+  const historyOf = new Map<string, readonly PhoneHistoryItem[]>();
+  for (const [ref, f] of ticks) {
+    if (f.standing !== null) phonedOf.set(ref, f.standing);
+    historyOf.set(ref, f.history);
   }
-  return buildRecallNoticeList({ recall, buyers, consentOf, nameOf, phoneLast4Of, phonedOf, now: deps.now() });
+  return { ...buildRecallNoticeList({ recall, buyers, consentOf, nameOf, phoneLast4Of, phonedOf, historyOf, now: deps.now() }), ticks };
 }
 
 const sendingSaid = (deps: RecallNoticeDeps, s: RecallNoticeSwitch | undefined) => ({
@@ -320,7 +400,8 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
       permission: 'quality.recall.notice.read',
       handler: async (ctx) => {
         const batchId = batchOf(ctx.params['batchId']);
-        const list = await listFor(deps, ctx.tenantId, batchId);
+        // The fold (`ticks`) is the route's working, not part of the reply.
+        const list = Object.fromEntries(Object.entries(await listFor(deps, ctx.tenantId, batchId)).filter(([k]) => k !== 'ticks')) as unknown as RecallNoticeList;
         return { status: 200, body: { ...list, messages: sendingSaid(deps, await deps.switchState(ctx.tenantId)) } };
       },
     },
@@ -349,12 +430,15 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
           });
         }
         const at = deps.now();
-        const { tick, first } = await deps.recordPhoned(ctx.tenantId, { batchId, customerRef, recallStartedAt: list.recall.initiatedAt, phonedBy: ctx.userId, phonedAt: at });
+        // OB-397: a tick still standing answers as before; after an untick, a real call is a NEW tick (the next round).
+        const folded = list.ticks.get(customerRef);
+        const round = folded === undefined ? 0 : folded.standing !== null ? roundOf(folded.standing) : folded.nextRound;
+        const { tick, first } = await deps.recordPhoned(ctx.tenantId, { batchId, customerRef, recallStartedAt: list.recall.initiatedAt, phonedBy: ctx.userId, phonedAt: at, ...(round === 0 ? {} : { round }) });
         if (first) {
           await deps.recordAudit?.(ctx.tenantId, {
             actorId: ctx.userId, action: 'quality.recall.customer.phoned', objectType: 'recall-call', objectId: `recall:${batchId}:customer:${customerRef}`,
             at: tick.phonedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { phoned: 'no' },
-            after: { phoned: 'yes', phonedBy: tick.phonedBy, recallStartedAt: tick.recallStartedAt }, correlationId: ctx.traceId,
+            after: { phoned: 'yes', phonedBy: tick.phonedBy, recallStartedAt: tick.recallStartedAt, round: String(roundOf(tick)) }, correlationId: ctx.traceId,
           });
         }
         return {
@@ -364,6 +448,76 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
             detail: first
               ? `Ticked as phoned by ${tick.phonedBy}. The recall can no longer be withdrawn; it is closed with evidence (OB-387).`
               : `Already ticked as phoned by ${tick.phonedBy} at ${tick.phonedAt}. The first tick stands; nothing was changed.`,
+          },
+        };
+      },
+    },
+    {
+      // OB-397: take back a MISTAKEN "phoned" tick — { reason } in words; never by the person who ticked it. A compensating
+      // event: the tick stays on record beside its untick. The withdrawal is then judged on the ticks still standing.
+      api: 'API-06', method: 'POST', path: '/v1/quality/recalls/:batchId/call-list/:customerRef/phoned/untick',
+      permission: 'quality.recall.notice.phoned', idempotent: true,
+      handler: async (ctx) => {
+        const batchId = batchOf(ctx.params['batchId']);
+        const customerRef = (ctx.params['customerRef'] ?? '').trim();
+        const b = (ctx.body !== null && typeof ctx.body === 'object' && !Array.isArray(ctx.body) ? ctx.body : {}) as Record<string, unknown>;
+        if (!isStr(b['reason']) || b['reason'].trim().length < 5) {
+          throw apiError(400, {
+            code: 'recall_untick_needs_a_reason',
+            whatHappened: 'Taking back a "phoned" tick needs { reason } — in words (at least 5 letters), why the tick was a mistake. The record keeps it.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Write why the tick was a mistake, then send again. Nothing was changed; the tick stands.',
+          });
+        }
+        const list = await listFor(deps, ctx.tenantId, batchId);
+        if (list.recall.status !== 'open') {
+          throw apiError(409, {
+            code: 'recall_is_not_open_for_phone_ticks',
+            whatHappened: `The recall on batch ${batchId} is ${list.recall.status}, so no tick on it is changed now. Its call list is kept as it was.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Record any correction in the closure evidence.',
+          });
+        }
+        if (!list.callList.some((c) => c.customerRef === customerRef)) {
+          throw apiError(404, {
+            code: 'customer_not_on_the_recall_call_list',
+            whatHappened: `Customer "${customerRef}" is not on the call list of the recall on batch ${batchId}.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Open the call list again and choose the customer from it. Nothing was changed.',
+          });
+        }
+        const standing = list.ticks.get(customerRef)?.standing ?? null;
+        if (standing === null) {
+          throw apiError(409, {
+            code: 'recall_customer_not_ticked_as_phoned',
+            whatHappened: `Customer "${customerRef}" carries no "phoned" tick on the recall on batch ${batchId} to take back.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Open the call list again. Nothing was changed.',
+          });
+        }
+        if (standing.phonedBy === ctx.userId) {
+          throw apiError(403, {
+            code: 'recall_untick_by_the_person_who_ticked',
+            whatHappened: `${ctx.userId} ticked customer "${customerRef}" as phoned and cannot also take that tick back — someone other than the person who ticked it does, with a written reason (OB-397).`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Ask another store manager or the owner to take the tick back. Nothing was changed; the tick stands.',
+          });
+        }
+        const reason = b['reason'].trim().slice(0, 300);
+        const { untick, first } = await deps.recordUntick(ctx.tenantId, {
+          batchId, customerRef, recallStartedAt: list.recall.initiatedAt, round: roundOf(standing),
+          tickedBy: standing.phonedBy, tickedAt: standing.phonedAt, untickedBy: ctx.userId, untickedAt: deps.now(), reason,
+        });
+        if (first) {
+          await deps.recordAudit?.(ctx.tenantId, {
+            actorId: ctx.userId, action: 'quality.recall.customer.unticked', objectType: 'recall-call', objectId: `recall:${batchId}:customer:${customerRef}`,
+            at: untick.untickedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+            before: { phoned: 'yes', phonedBy: untick.tickedBy, phonedAt: untick.tickedAt },
+            after: { phoned: 'no', untickedBy: untick.untickedBy, recallStartedAt: untick.recallStartedAt, round: String(untick.round) },
+            reason: untick.reason, correlationId: ctx.traceId,
+          });
+        }
+        const stillStanding = standingPhoneTicks(await deps.phonedTicks(ctx.tenantId, batchId, list.recall.initiatedAt), await deps.phoneUnticks(ctx.tenantId, batchId, list.recall.initiatedAt)).length;
+        return {
+          status: first ? 201 : 200,
+          body: {
+            batchId, customerRef, untick, alreadyUnticked: !first, ticksStillStanding: stillStanding,
+            detail: `The tick by ${untick.tickedBy} was taken back by ${untick.untickedBy}: ${untick.reason}. Both stay on record. ${stillStanding === 0 ? 'No tick stands on this recall now; its withdrawal is judged on that.' : `${stillStanding} tick(s) still stand on this recall, so it still cannot be withdrawn.`}`,
           },
         };
       },

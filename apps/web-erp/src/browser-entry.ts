@@ -356,7 +356,7 @@ import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type Bay
 import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
-  unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable,
+  unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable, zoneWords as storeComputersZoneWords,
 } from './store-computers-session';
 import {
   createScalesSession, wordsFor as scalesWords, outcomeWords as scalesOutcomeWords, summarise as scalesSummary,
@@ -5144,6 +5144,8 @@ interface ManagerWindow {
     readonly findingWords: typeof storeComputersFindingWords;
     readonly unusedWords: typeof storeComputersUnusedWords;
     readonly acknowledgeable: typeof storeComputersAcknowledgeable;
+    /** R3 · P-08: a store computer's time zone against the shop's, in words. */
+    readonly zoneWords: typeof storeComputersZoneWords;
   };
   /** OB-154 "A" (B6 · B7 · L2): the Weighing scales page — who is looking; head office re-checks every act. */
   scalesData?: ViewerIdentity;
@@ -7014,7 +7016,7 @@ if (browserWindow !== undefined) {
     session: createStoreComputersSession({ viewer: browserWindow.storeComputersData }),
     words: storeComputersWords, outcomeWords: storeComputersOutcomeWords, summarise: storeComputersSummary,
     requestWords: storeComputersRequestWords, findingWords: storeComputersFindingWords,
-    unusedWords: storeComputersUnusedWords, acknowledgeable: storeComputersAcknowledgeable,
+    unusedWords: storeComputersUnusedWords, acknowledgeable: storeComputersAcknowledgeable, zoneWords: storeComputersZoneWords,
   };
   // OB-154 "A" (B6 · B7 · L2): the Weighing scales page — its session is the tested model in scales-session.ts; it offers
   // only what the person's permissions allow, head office re-checks every act, and nothing is written on open.

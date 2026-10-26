@@ -29,8 +29,8 @@ const T = 'tenant-e2e';
 const MGR1 = 'u-mgr1';
 const MGR2 = 'u-mgr2';
 const PERMS: Record<string, readonly string[]> = {
-  [MGR1]: ['inventory.movement.append', 'inventory.free_sample.approve'],
-  [MGR2]: ['inventory.movement.append', 'inventory.free_sample.approve'],
+  [MGR1]: ['inventory.movement.append', 'inventory.freesample.approve'],
+  [MGR2]: ['inventory.movement.append', 'inventory.freesample.approve'],
 };
 
 interface HeadOffice {
@@ -59,6 +59,8 @@ function newHeadOffice(): HeadOffice {
     recordReversal: async (_t, r) => { reversals.push(r); return r; },
     checks: async () => [], recordCheck: async () => {},
     tradingDay: async () => '2026-10-26',
+    // OB-396: both are store managers of the store; the decider is judged from these grants.
+    grants: async () => [{ userId: MGR1, roleId: 'store_manager', branchScope: 'all' }, { userId: MGR2, roleId: 'store_manager', branchScope: 'all' }],
   })]);
   if (!built.ok || built.router === undefined) throw new Error(`stub head office refused its routes: ${JSON.stringify(built.refusals)}`);
   return { router: built.router, requests, decisions, issues, reversals, signedIn: MGR1 };

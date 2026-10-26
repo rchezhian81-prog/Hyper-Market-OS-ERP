@@ -2906,6 +2906,8 @@ export async function startEdge(
     // the report is made is in both or neither, so an honest report never contradicts its own queue.
     const report: BoxHealthReport = await boxHealthReportOf({
       now: () => new Date().toISOString(),
+      // R3 · P-08: this machine's zone against the shop's — told to head office as well as said on the box's screens.
+      zone: zoneNow,
       disk: async () => {
         const fsInfo = await statfs(settings['EDGE_DATA_DIR']!);
         return {

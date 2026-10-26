@@ -85,7 +85,7 @@ export function createFreeSampleSession(input: { readonly viewer?: { readonly us
   const known = input.viewer !== undefined;
   const named = !known || input.viewer?.userId !== undefined;
   const held = input.viewer?.permissions ?? [];
-  const may = { named, record: named && (!known || held.includes('inventory.movement.append')), approve: named && (!known || held.includes('inventory.free_sample.approve')) };
+  const may = { named, record: named && (!known || held.includes('inventory.movement.append')), approve: named && (!known || held.includes('inventory.freesample.approve')) };
   const viewerId = input.viewer?.userId ?? null;
   const call = makeCaller({ keyPrefix: 'free-sample', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const enc = encodeURIComponent;

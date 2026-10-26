@@ -6,7 +6,8 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startRealCloud, type RealCloud } from '../support/real-store';
-import { TEST_IDP } from '../support/api-harness';
+import { TEST_IDP, apiHarness, type ApiHarness } from '../support/api-harness';
+import type { HttpRequest } from '../../services/kernel/src/index';
 
 /**
  * **Company-wide report drill-down, end to end in a real browser against the PRODUCTION API (audit EA-04 · M01 / M29 /
@@ -44,6 +45,7 @@ const WEB_DIR = 'apps/web-erp/web';
 const KEY = ['company', 'report', 'e2e', 'signing', 'key'].join('-').padEnd(48, '0');
 const OWNER = 'u-owner';
 const MGR1 = 'u-mgr-br1';
+const ACCT = 'u-accountant';
 
 const PERIOD = new Date().toISOString().slice(0, 7);
 const ago = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -115,6 +117,9 @@ describe.skipIf(!HAVE_BROWSER || DATABASE_URL === undefined)('company-wide repor
     const gid = `grant-${MGR1}`;
     expect((await cloud.request({ method: 'POST', path: '/v1/identity/grants', userId: 'u-hr', idempotencyKey: `${gid}-ask`, body: { grantId: gid, userId: MGR1, roleId: 'store_manager', branchScope: ['br-1'], reason: 'br-1 only' } })).status).toBe(202);
     expect((await cloud.request({ method: 'POST', path: `/v1/identity/grants/${gid}/approve`, userId: OWNER, idempotencyKey: `${gid}-approve`, body: {} })).status).toBe(201);
+    // OB-395: the accountant, company-wide — asked for by u-hr, approved by the owner.
+    expect((await cloud.request({ method: 'POST', path: '/v1/identity/grants', userId: 'u-hr', idempotencyKey: `grant-${ACCT}-ask`, body: { grantId: `grant-${ACCT}`, userId: ACCT, roleId: 'accountant', branchScope: 'all', reason: 'company accounts' } })).status).toBe(202);
+    expect((await cloud.request({ method: 'POST', path: `/v1/identity/grants/grant-${ACCT}/approve`, userId: OWNER, idempotencyKey: `grant-${ACCT}-approve`, body: {} })).status).toBe(201);
     // Three branches under co-1; br-1 reported 30 minutes ago (fresh), br-2 two days ago (stale), br-3 never.
     for (const b of ['br-1', 'br-2', 'br-3']) {
       expect((await cloud.request({ method: 'POST', path: '/v1/consolidation/memberships', userId: OWNER, idempotencyKey: `mem-${b}`, body: { branchId: b, parentId: 'co-1', from: '2026-01-01' } })).status).toBe(201);
@@ -191,6 +196,19 @@ describe.skipIf(!HAVE_BROWSER || DATABASE_URL === undefined)('company-wide repor
       const mine = log.exports.filter((e) => e.domain === 'reporting.consolidation');
       expect(mine.map((e) => e.rowCount).sort()).toEqual([1, 2]);
       expect(mine.every((e) => e.userId === OWNER)).toBe(true);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  it('OB-395: the accountant, signed in as themselves, sees the company figures by head office\'s branch names', async () => {
+    const { page, close } = await signedInAs(ACCT);
+    try {
+      await page.goto(`${shell.base}/company-report?period=${PERIOD}`, { waitUntil: 'load' });
+      await page.locator('.kpi .v[data-measure="grossMinor"]', { hasText: /3,500\.00/ }).waitFor({ timeout: 10_000 });
+      await page.locator('#rows tr[data-branch="br-2"]', { hasText: 'Test Branch South (br-2)' }).waitFor({ timeout: 10_000 });
+      await page.locator('#missing', { hasText: 'Test Branch East (br-3)' }).waitFor({ timeout: 10_000 });
+      expect(await page.locator('#missing').textContent()).not.toMatch(/would not tell this page/);
     } finally {
       await close();
     }
@@ -311,5 +329,76 @@ describe.skipIf(!HAVE_BROWSER)('OB-391: the company report takes its company and
         expect(asked.filter((a) => a.startsWith('consolidation'))).toEqual([]);
       } finally { await close(); }
     }
+  }, 60_000);
+});
+
+/**
+ * OB-395 (owner, 26 Oct 2026), in a real browser with no database: the page in front of the API exactly as `main.ts`
+ * composes it (in memory), signed in as the ACCOUNTANT. Before OB-395 head office refused the accountant the organisation
+ * read, so the page said it "would not tell this page the company's branches" and showed no figure; now it shows the
+ * company total and every branch by head office's name. The accountant still cannot change the organisation.
+ */
+describe.skipIf(!HAVE_BROWSER)('OB-395: the accountant sees the company report figures (in-memory API)', () => {
+  const T = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  let browser: Browser;
+  let server: Server;
+  let base = '';
+  let h: ApiHarness;
+
+  beforeAll(async () => {
+    h = apiHarness();
+    await h.seedOwner(T, OWNER);
+    await h.provisionRole(T, ACCT, 'accountant', 'all');
+    const as = (path: string, key: string, body: Record<string, unknown>) => h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: key, body });
+    expect((await as('/v1/org/nodes/co-1', 'n-co', { kind: 'company', name: 'Test Company One' })).status).toBe(201);
+    for (const [b, name] of [['br-1', 'Test Branch North'], ['br-2', 'Test Branch South']] as const) {
+      expect((await as(`/v1/org/nodes/${b}`, `n-${b}`, { kind: 'branch', name, parentId: 'co-1', companyId: 'co-1' })).status).toBe(201);
+      expect((await as('/v1/consolidation/memberships', `m-${b}`, { branchId: b, parentId: 'co-1', from: '2026-01-01' })).status).toBe(201);
+    }
+    for (const [b, gross] of [['br-1', 100_000], ['br-2', 250_000]] as const) {
+      expect((await as('/v1/consolidation/contributions', `c-${b}`, { branchId: b, period: '2026-09', family: 'sales', measures: { grossMinor: gross, netMinor: gross }, lastRefreshAt: ago(30), revision: 1 })).status).toBe(200);
+    }
+    server = createServer((req, res) => {
+      void (async () => {
+        const url = new URL(req.url ?? '/', 'http://x');
+        if (url.pathname.startsWith('/v1/')) {
+          const chunks: Buffer[] = [];
+          for await (const c of req) chunks.push(c as Buffer);
+          const reply = await h.raw({
+            method: (req.method ?? 'GET') as HttpRequest['method'], path: url.pathname, query: Object.fromEntries(url.searchParams),
+            token: TEST_IDP.issue({ sub: ACCT, tenantId: T }),
+            ...(req.headers['idempotency-key'] === undefined ? {} : { idempotencyKey: String(req.headers['idempotency-key']) }),
+            ...(chunks.length === 0 ? {} : { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown }),
+          });
+          res.writeHead(reply.status, { 'content-type': 'application/json' }).end(JSON.stringify(reply.body));
+          return;
+        }
+        const file = url.pathname === '/company-report' ? 'company-report.html' : url.pathname.replace(/^\//, '');
+        try {
+          const buf = await readFile(join(WEB_DIR, file));
+          const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'application/octet-stream';
+          res.writeHead(200, { 'content-type': `${type}; charset=utf-8` }).end(buf);
+        } catch { res.writeHead(404).end(); }
+      })();
+    });
+    await new Promise<void>((r) => { server.listen(0, '127.0.0.1', () => r()); });
+    const addr = server.address();
+    base = `http://127.0.0.1:${typeof addr === 'object' && addr !== null ? addr.port : 0}`;
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+  }, 60_000);
+  afterAll(async () => { await browser?.close(); server?.close(); });
+
+  it('the accountant sees the company total and the branches by name, never the "would not tell" refusal', async () => {
+    const context = await browser.newContext({ serviceWorkers: 'block' });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${base}/company-report?period=2026-09`, { waitUntil: 'load' });
+      await page.locator('.kpi .v[data-measure="grossMinor"]', { hasText: /3,500\.00/ }).waitFor({ timeout: 10_000 });
+      await page.locator('#rows tr[data-branch="br-2"]', { hasText: 'Test Branch South (br-2)' }).waitFor({ timeout: 10_000 });
+      await page.locator('#scope option', { hasText: 'Test Branch North — branch only' }).waitFor({ state: 'attached', timeout: 10_000 });
+      expect(await page.locator('#missing').textContent()).not.toMatch(/would not tell this page/);
+      // Read only: the accountant may not change the organisation.
+      expect((await h.request({ method: 'POST', path: '/v1/org/nodes/br-9', userId: ACCT, tenantId: T, idempotencyKey: 'n-9', body: { kind: 'branch', name: 'X', parentId: 'co-1', companyId: 'co-1' } })).status).toBe(403);
+    } finally { await context.close(); }
   }, 60_000);
 });

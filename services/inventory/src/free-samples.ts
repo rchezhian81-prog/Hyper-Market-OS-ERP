@@ -20,6 +20,11 @@
 //     leaves, the give-back is worked out and placed (all as before), the issue names both people. Rejected: kept with the
 //     reason; nothing moves. Once only. The accountant's list shows the waiting ones on their own, never as "nothing".
 //
+// OB-396 (owner decision, 26 Oct 2026): WHO may decide. A store manager of the sample's store (their live grant reaches
+// it), never the giver. The owner may decide ONLY when the giver is the only store manager of that store — worked out
+// here, on the server, from head office's live grants, never from the request. Anyone else is refused by name
+// (`free_sample_approver_not_a_store_manager`, `free_sample_owner_only_when_the_giver_is_the_only_store_manager`).
+//
 // A free sample is a stock ISSUE, not waste: it is kept on its own register, so the waste reason list (OB-159) and its
 // analytics are not touched. Every record here is append-only and audited (hard rules #2, #6).
 
@@ -29,7 +34,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import { freeSampleItc, returnMonthFor, type FreeSampleItc, type PurchaseTaxLine } from '../../../packages/input-tax/src/free-sample-itc';
 import type { ItcReversal } from '../../../packages/input-tax/src/index';
-import { assertLocationInScope, type LocationBranches } from './location-scope';
+import { assertLocationInScope, locationIsItsOwnBranch, type LocationBranches } from './location-scope';
 import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 
 export const FREE_SAMPLE_REASON = 'free_sample';
@@ -86,6 +91,52 @@ export interface FreeSampleDecision {
   readonly at: string;
 }
 
+/** One live role grant as head office holds it (the same shape every authority reader folds). */
+export interface FreeSampleGrant {
+  readonly userId: string;
+  readonly roleId: string;
+  readonly branchScope: readonly string[] | 'all';
+}
+
+/** Mirrors services/api/src/roles.ts STORE_MANAGER_ROLE_ID and OWNER_ROLE_ID (this service does not import the API). */
+export const FREE_SAMPLE_STORE_MANAGER_ROLE = 'store_manager';
+export const FREE_SAMPLE_OWNER_ROLE = 'owner';
+
+/** OB-396: the people whose live store-manager grant reaches this store, sorted. */
+export function storeManagersOf(grants: readonly FreeSampleGrant[], store: string): string[] {
+  return [...new Set(grants
+    .filter((g) => g.roleId === FREE_SAMPLE_STORE_MANAGER_ROLE && (g.branchScope === 'all' || g.branchScope.includes(store)))
+    .map((g) => g.userId))].sort();
+}
+
+/**
+ * OB-396: why `approver` may NOT decide the free sample `giver` gave at `store`, or undefined when they may. The giver
+ * deciding their own is judged first, elsewhere (`free_sample_self_approval`).
+ */
+export function freeSampleApproverRefusal(input: { readonly approver: string; readonly giver: string; readonly store: string; readonly grants: readonly FreeSampleGrant[] }): { code: string; whatHappened: string; nextSafeAction: string } | undefined {
+  const { approver, giver, store, grants } = input;
+  const managers = storeManagersOf(grants, store);
+  if (approver !== giver && managers.includes(approver)) return undefined;
+  const isOwner = grants.some((g) => g.userId === approver && g.roleId === FREE_SAMPLE_OWNER_ROLE);
+  const others = managers.filter((m) => m !== giver);
+  if (isOwner) {
+    // OB-396: the giver is the store's only store manager; OB-398: the store has no store manager at all. Never the giver.
+    if (approver !== giver && ((managers.length === 1 && managers[0] === giver) || managers.length === 0)) return undefined;
+    return {
+      code: 'free_sample_owner_only_when_the_giver_is_the_only_store_manager',
+      whatHappened: others.length > 0
+        ? `${approver} is the owner, and the owner decides a free sample only when the giver is the only store manager of ${store}. ${giver} gave it, and ${others.join(', ')} ${others.length === 1 ? 'is another store manager' : 'are other store managers'} of ${store} (OB-396).`
+        : `${approver} is the owner and gave this free sample, and nobody decides their own (OB-393).`,
+      nextSafeAction: others.length > 0 ? `Ask ${others.join(' or ')} to decide it.` : `Ask a store manager of ${store} to decide it.`,
+    };
+  }
+  return {
+    code: 'free_sample_approver_not_a_store_manager',
+    whatHappened: `${approver} is not a store manager of ${store}; a store manager other than the giver decides each free sample (OB-393, OB-396).`,
+    nextSafeAction: others.length > 0 ? `Ask ${others.join(' or ')} to decide it.` : `Ask a store manager of ${store} to decide it.`,
+  };
+}
+
 export interface FreeSampleCheck {
   readonly issueId: string;
   readonly outcome: 'agreed' | 'query';
@@ -114,6 +165,8 @@ export interface FreeSampleDeps {
   readonly checks: (tenantId: string) => Promise<readonly FreeSampleCheck[]>;
   readonly recordCheck: (tenantId: string, check: FreeSampleCheck) => Promise<void>;
   readonly tradingDay: (tenantId: string, at: string) => Promise<string>;
+  /** OB-396: head office's live role grants — who is a store manager of which store, and who is the owner. */
+  readonly grants: (tenantId: string) => Promise<readonly FreeSampleGrant[]>;
   readonly locationBranches?: LocationBranches;
   readonly countFreeze?: CountFreezeCheck;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -225,7 +278,7 @@ export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
     {
       // OB-393: every free sample waiting for a store manager's approval — nothing of these has moved yet.
       api: 'API-04', method: 'GET', path: '/v1/inventory/free-samples/pending',
-      permission: 'inventory.free_sample.approve',
+      permission: 'inventory.freesample.approve',
       handler: async (ctx) => {
         const pending = await pendingOf(deps, ctx.tenantId);
         return {
@@ -241,7 +294,7 @@ export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
       // OB-393: a store manager other than the giver approves (the stock leaves, the give-back is placed) or rejects it.
       // Body: { decision: "approve" | "reject", reason }.
       api: 'API-04', method: 'POST', path: '/v1/inventory/free-samples/:issueId/decision',
-      permission: 'inventory.free_sample.approve', idempotent: true,
+      permission: 'inventory.freesample.approve', idempotent: true,
       handler: async (ctx) => {
         const issueId = (ctx.params['issueId'] ?? '').trim();
         const b = (ctx.body !== null && typeof ctx.body === 'object' ? ctx.body : {}) as Record<string, unknown>;
@@ -260,6 +313,12 @@ export function freeSampleRoutes(deps: FreeSampleDeps): readonly Route[] {
         if (done !== undefined) {
           if (done.decision === decision && done.by === ctx.userId) return { status: 200, body: { decision: done, alreadyDecided: true, ...(issued === undefined ? {} : { issue: issued, itcWords: itcWords(issued) }) } };
           throw apiError(409, { code: 'free_sample_already_decided', whatHappened: `Free sample ${issueId} was already ${done.decision} by ${done.by} at ${done.at} — a decision is made once.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. A correction is a new, compensating record.' });
+        }
+        // OB-396: a store manager of this store; the owner only when the giver is that store's only store manager.
+        const store = (await (deps.locationBranches ?? locationIsItsOwnBranch)(ctx.tenantId))(request.locationId);
+        const wrongPerson = freeSampleApproverRefusal({ approver: ctx.userId, giver: request.requestedBy, store, grants: await deps.grants(ctx.tenantId) });
+        if (wrongPerson !== undefined) {
+          throw apiError(403, { code: wrongPerson.code, whatHappened: wrongPerson.whatHappened, wasItSaved: 'not_saved', nextSafeAction: `${wrongPerson.nextSafeAction} Nothing was changed; the stock has not left.` });
         }
         const at = deps.now();
         const record: FreeSampleDecision = { issueId, decision, reason: b['reason'].trim().slice(0, 300), by: ctx.userId, at };

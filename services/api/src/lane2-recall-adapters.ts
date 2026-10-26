@@ -38,7 +38,7 @@ import { republishWithBlocks } from '../../catalogue/src/recall-republish';
 import { blockedProductIds } from '../../inventory/src/sale-blocks';
 import { lotTraceBackwardRoutes, type LotTraceBackwardDeps } from '../../inventory/src/lot-trace-backward';
 import { withRecallOrderGuard, type ProductUnderRecall, type RecallOrderGuardDeps } from '../../purchase/src/recall-order-guard';
-import { recallNoticeRoutes, type RecallBuyer, type RecallNoticeDeps, type RecallNoticeSwitch, type RecallNoticeAttempt, type RecallPhonedTick } from '../../customer/src/recall-notices';
+import { recallNoticeRoutes, standingPhoneTicks, type RecallBuyer, type RecallNoticeDeps, type RecallNoticeSwitch, type RecallNoticeAttempt, type RecallPhonedTick, type RecallPhonedUntick } from '../../customer/src/recall-notices';
 import type { NotificationTransport } from '../../../packages/notifications/src/transport';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import {
@@ -237,12 +237,23 @@ export function recallNoticeAdapter(input: Input & { readonly transport?: Notifi
     },
     phonedTicks: (tenantId, batchId, recallStartedAt) => recallPhonedTicksOf(store, tenantId, batchId, recallStartedAt),
     recordPhoned: async (tenantId, tick) => {
-      // One tick per customer and recall: the key holds no time, so a second tick collapses onto the first (OB-387).
+      // One tick per customer, recall and round: the key holds no time, so a second tick collapses onto the first (OB-387).
+      // OB-397: after an untick, a real call is the next round — a new key; round 0 keeps the key every earlier tick has.
+      const round = tick.round === undefined || tick.round === 0 ? '' : `-r${tick.round}`;
       const r = await store.append(tenantId, RECALL_NOTICE_STREAM, makeEvent({
-        id: `recall-phoned-${tick.batchId}-${tick.recallStartedAt}-${tick.customerRef}`, type: RECALL_PHONED_EVENT, occurredAt: tick.phonedAt,
-        idempotencyKey: `recall-phoned-${tenantId}-${tick.batchId}-${tick.recallStartedAt}-${tick.customerRef}`, source: 'api/customer', payload: tick,
+        id: `recall-phoned-${tick.batchId}-${tick.recallStartedAt}-${tick.customerRef}${round}`, type: RECALL_PHONED_EVENT, occurredAt: tick.phonedAt,
+        idempotencyKey: `recall-phoned-${tenantId}-${tick.batchId}-${tick.recallStartedAt}-${tick.customerRef}${round}`, source: 'api/customer', payload: tick,
       }));
       return { tick: r.record.event.payload as RecallPhonedTick, first: !r.deduped };
+    },
+    phoneUnticks: (tenantId, batchId, recallStartedAt) => recallPhoneUnticksOf(store, tenantId, batchId, recallStartedAt),
+    recordUntick: async (tenantId, u) => {
+      // OB-397: a compensating event, once per tick (customer, recall, round) — the tick itself is never touched.
+      const r = await store.append(tenantId, RECALL_NOTICE_STREAM, makeEvent({
+        id: `recall-unticked-${u.batchId}-${u.recallStartedAt}-${u.customerRef}-r${u.round}`, type: RECALL_UNTICKED_EVENT, occurredAt: u.untickedAt,
+        idempotencyKey: `recall-unticked-${tenantId}-${u.batchId}-${u.recallStartedAt}-${u.customerRef}-r${u.round}`, source: 'api/customer', payload: u,
+      }));
+      return { untick: r.record.event.payload as RecallPhonedUntick, first: !r.deduped };
     },
     ...(input.transport === undefined ? {} : { transport: input.transport }),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
@@ -257,6 +268,21 @@ export async function recallPhonedTicksOf(store: EventStore, tenantId: string, b
   return (await store.readStream(tenantId, RECALL_NOTICE_STREAM, { type: RECALL_PHONED_EVENT }))
     .map((e) => e.event.payload as RecallPhonedTick)
     .filter((t) => t.batchId === batchId && t.recallStartedAt === recallStartedAt);
+}
+
+/** OB-397: the event an untick (a compensating take-back of one mistaken tick) is kept as, on the same stream. */
+export const RECALL_UNTICKED_EVENT = 'RecallCustomerPhonedUnticked';
+
+/** OB-397: the unticks on one recall (batch + start time), oldest first. */
+export async function recallPhoneUnticksOf(store: EventStore, tenantId: string, batchId: string, recallStartedAt: string): Promise<RecallPhonedUntick[]> {
+  return (await store.readStream(tenantId, RECALL_NOTICE_STREAM, { type: RECALL_UNTICKED_EVENT }))
+    .map((e) => e.event.payload as RecallPhonedUntick)
+    .filter((u) => u.batchId === batchId && u.recallStartedAt === recallStartedAt);
+}
+
+/** OB-397: the ticks STILL STANDING on one recall (every tick minus those taken back) — what the withdrawal is judged on. */
+export async function recallStandingPhoneTicksOf(store: EventStore, tenantId: string, batchId: string, recallStartedAt: string): Promise<RecallPhonedTick[]> {
+  return standingPhoneTicks(await recallPhonedTicksOf(store, tenantId, batchId, recallStartedAt), await recallPhoneUnticksOf(store, tenantId, batchId, recallStartedAt));
 }
 
 /** OB-297: the owner's switch for recall messages and every message attempt, append-only. */
@@ -583,6 +609,7 @@ export function lane2RecallSurface(surface: Route[], input: {
           now, recall: async () => undefined, buyers: none, consentRecords: () => [], name: async () => undefined, phoneLast4: async () => undefined,
           switchState: async () => undefined, recordSwitch: async () => {}, attempts: none, recordAttempt: async () => {},
           phonedTicks: none, recordPhoned: async (_t, tick) => ({ tick, first: false }),
+          phoneUnticks: none, recordUntick: async (_t, untick) => ({ untick, first: false }),
         }
       : recallNoticeAdapter({
           store, now,

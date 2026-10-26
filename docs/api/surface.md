@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1557 | 905 | 905 | 167 | 419 |
+| 13 | 1558 | 906 | 906 | 167 | 419 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -366,8 +366,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/expiry-sweep` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/fefo-allocation` | `inventory.availability.read` | core | yes |
 | POST | `/v1/inventory/free-samples/:issueId` | `inventory.movement.append` | core | yes |
-| POST | `/v1/inventory/free-samples/:issueId/decision` | `inventory.free_sample.approve` | core | yes |
-| GET | `/v1/inventory/free-samples/pending` | `inventory.free_sample.approve` | core | — |
+| POST | `/v1/inventory/free-samples/:issueId/decision` | `inventory.freesample.approve` | core | yes |
+| GET | `/v1/inventory/free-samples/pending` | `inventory.freesample.approve` | core | — |
 | GET | `/v1/inventory/goods-receipt` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/goods-receipt/:grnId` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/goods-receipt/:grnId` | `inventory.movement.append` | core | yes |
@@ -703,6 +703,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/quality/recall-notices/switch` | `quality.recall.notice.read` | core | — |
 | POST | `/v1/quality/recall-notices/switch` | `quality.recall.notice.switch` | core | yes |
 | POST | `/v1/quality/recalls/:batchId/call-list/:customerRef/phoned` | `quality.recall.notice.phoned` | core | yes |
+| POST | `/v1/quality/recalls/:batchId/call-list/:customerRef/phoned/untick` | `quality.recall.notice.phoned` | core | yes |
 | GET | `/v1/quality/recalls/:batchId/notice-list` | `quality.recall.notice.read` | core | — |
 | POST | `/v1/quality/recalls/:batchId/notices` | `quality.recall.notice.send` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
