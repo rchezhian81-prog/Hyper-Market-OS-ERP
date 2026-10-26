@@ -109,9 +109,10 @@
 
       .row {
         background: var(--panel); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px;
-        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
       }
-      .row .what { display: grid; gap: 2px; }
+      /* A long Tamil name and the row's buttons wrap on a phone rather than push the page sideways (WCAG 1.4.10). */
+      .row .what { display: grid; gap: 2px; min-width: 0; flex: 1 1 12rem; overflow-wrap: anywhere; }
       .row .what small { color: var(--muted); font-size: 14px; }
       .row .pct { font-variant-numeric: tabular-nums; font-weight: 700; }
       .row > button { min-width: var(--tap); }
