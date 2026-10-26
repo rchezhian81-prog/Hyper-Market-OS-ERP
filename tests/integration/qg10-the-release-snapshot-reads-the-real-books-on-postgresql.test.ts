@@ -37,6 +37,7 @@ describe.skipIf(!DATABASE_URL)('QG-10: the release snapshot reads the real books
   it('trading after the snapshot reconciles; a new dead letter does not; nothing is written by the snapshot', async () => {
     const T = randomUUID();
     const store = new SqlEventStore(pgPoolClient(pool));
+    await store.registerTenant(T, 'test/provision'); // the tenant exists before its first row (db/migrations/0013)
     const sale = (n: number) => makeEvent({ id: randomUUID(), type: 'SaleCommitted', occurredAt: '2026-10-26T09:00:00.000Z', idempotencyKey: `qg10-${T}-${n}`, source: 'test/qg10', payload: { n } });
     await store.append(T, 'sales', sale(1));
     await store.append(T, 'sales', sale(2));
