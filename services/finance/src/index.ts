@@ -56,6 +56,30 @@ export interface PostResult {
   readonly ownerAction?: string;
 }
 
+/**
+ * What a journal body is missing, or has in the wrong kind (P-08). Empty when it can be read as a `JournalEntry`.
+ * Without this an empty or partial body reached `postJournal` and failed as a 500 `unhandled` ("was it saved:
+ * unknown") on `lines.reduce` / `narrative.trim()`, when nothing had been saved and the sender only needed telling what to send.
+ */
+export function journalBodyProblems(body: unknown): readonly string[] {
+  const b = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {};
+  const text = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
+  const minor = (v: unknown): boolean => Number.isSafeInteger(v) && (v as number) >= 0;
+  const problems = (['entryId', 'period', 'documentDate', 'narrative'] as const)
+    .filter((f) => !text(b[f])).map((f) => `${f} (text)`);
+  if (!Array.isArray(b['lines'])) {
+    problems.push('lines (a list of { accountCode, debitMinor, creditMinor })');
+  } else {
+    b['lines'].forEach((l: unknown, i) => {
+      const line = l !== null && typeof l === 'object' ? l as Record<string, unknown> : undefined;
+      if (line === undefined || !text(line['accountCode']) || !minor(line['debitMinor']) || !minor(line['creditMinor'])) {
+        problems.push(`lines[${i}] (needs accountCode, and debitMinor and creditMinor as whole paise, 0 or more)`);
+      }
+    });
+  }
+  return problems;
+}
+
 /** Post a journal, or refuse — and when the period is closed, say where it should go instead. */
 export function postJournal(input: {
   readonly entry: JournalEntry;
@@ -186,6 +210,15 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
       api: 'API-09', method: 'POST', path: '/v1/finance/journals',
       permission: 'finance.journal.post', idempotent: true,
       handler: async (ctx) => {
+        const problems = journalBodyProblems(ctx.body);
+        if (problems.length > 0) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_journal',
+            whatHappened: `This cannot be read as a journal. Missing or not the right kind: ${problems.join('; ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { entryId, period (YYYY-MM), documentDate (YYYY-MM-DD), narrative, lines: [{ accountCode, debitMinor, creditMinor }] }. Nothing was posted.',
+          });
+        }
         const entry = ctx.body as JournalEntry;
         // M23-FR-01: a line that names a centre must name one the organisation has — a typo is not a new centre.
         const named = Array.isArray(entry?.lines) ? entry.lines.map((l) => (l as { centre?: unknown }).centre).filter((c) => c !== undefined) : [];

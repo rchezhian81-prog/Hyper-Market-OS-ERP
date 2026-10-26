@@ -86897,7 +86897,7 @@
             "minItems": 2
           }
         },
-        "description": "Debits must equal credits; a closed month takes nothing (422 with the reason).",
+        "description": "Debits must equal credits; a closed month takes nothing (422 with the reason). A body missing any required field, or a line without accountCode, debitMinor and creditMinor, is refused 400 not_readable_as_a_journal naming each one.",
         "x-body-schema": "declared"
       },
       "PurchaseOrderIssueReply": {

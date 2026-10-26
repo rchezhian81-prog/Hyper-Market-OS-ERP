@@ -185,7 +185,7 @@ export const DECLARED_BODIES: Readonly<Record<string, DeclaredBodies>> = {
     name: 'Journal',
     request: open({
       entryId: str, period: month, documentDate: day, narrative: str, postedBy: str, lines: arrayOf(journalLine, { minItems: 2 }),
-    }, ['entryId', 'period', 'documentDate', 'narrative', 'lines'], 'Debits must equal credits; a closed month takes nothing (422 with the reason).'),
+    }, ['entryId', 'period', 'documentDate', 'narrative', 'lines'], 'Debits must equal credits; a closed month takes nothing (422 with the reason). A body missing any required field, or a line without accountCode, debitMinor and creditMinor, is refused 400 not_readable_as_a_journal naming each one.'),
     reply: { status: '201', description: 'Posted.', schema: open({ entryId: str, postedTo: month }, ['entryId', 'postedTo']) },
   },
   'POST /v1/finance/day-book/:tradingDay/post': {

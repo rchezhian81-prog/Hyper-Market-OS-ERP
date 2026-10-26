@@ -5,6 +5,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Journal body check (26 October 2026): an empty journal is refused by name, not a crash
+
+**What changed**
+- **M23 · API-09 · P-08:** posting a journal with an empty or incomplete body used to fail as a 500 "unhandled — was it saved: unknown". It is now a 400 `not_readable_as_a_journal` that names each missing or wrong field (entryId, period, documentDate, narrative, lines, or a line without its account and amounts). Nothing is posted.
+- **Period close:** checked and left as it is. An empty body already gets a named refusal (422 "nothing was checked" or "not signed"); it has no required field, so a 400 there would be a new rule the roadmap does not ask for.
+- The journal schema's description and `docs/api/openapi.json` now mention the 400.
+
+**Tests run**
+- New test: 9 of 9 (7 failed before the fix).
+- Every test touching finance routes or the body schemas, the contract guardrail, lint and typecheck: all passing. Full default suite: see the pull request.
+
+**Next / blocked / owner decision**
+- Unchanged from batch 8 below. No owner decision needed.
+
+---
+
 ## OB-288 final gaps, batch 8 (26 October 2026): the re-audit, office pages served, recall withdraw, release reconcile, compliance guards, buying and scopes
 
 **The re-audit (25 Oct, 391 roadmap rows, checked in code and tests)**
