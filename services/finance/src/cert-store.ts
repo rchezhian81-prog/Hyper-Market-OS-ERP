@@ -24,8 +24,11 @@ import {
   canPerformTask,
   type Certification, type Employee,
 } from '../../../packages/workforce/src/workforce';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface CertStoreDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Record/replace one certificate (latest-per-certificationId). */
   readonly putCertification: (tenantId: string, cert: Certification, key: string) => Promise<void> | void;
   /** The stored certificates, optionally narrowed to one employee. */
@@ -112,7 +115,7 @@ export function certStoreRoutes(deps: CertStoreDeps): readonly Route[] {
         }
         const employee = await deps.employee(ctx.tenantId, employeeId);
         if (employee === undefined) throw notFound(`employee ${employeeId}`);
-        const today = typeof ctx.query['today'] === 'string' && ctx.query['today'] !== '' ? ctx.query['today'] : deps.now().slice(0, 10);
+        const today = typeof ctx.query['today'] === 'string' && ctx.query['today'] !== '' ? ctx.query['today'] : await shopToday(deps, ctx.tenantId);
         const decision = canPerformTask({
           employee,
           task,

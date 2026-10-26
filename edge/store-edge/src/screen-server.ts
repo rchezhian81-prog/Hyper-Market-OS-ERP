@@ -40,7 +40,10 @@ import { isHandheldSource } from '../../../packages/sync/src/device-relay';
 import type { EveningCheckBox } from './evening-check-box';
 import { counterLabelFor, readCounterLabelRequest } from './store-work';
 import { TILL_SHELL_SCREENS, CUSTOMER_FACING_SCREENS, customerFacingGlobals } from './self-checkout-screens'; // OB-288 P6
-import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall } from './head-office-pages'; // OB-380
+import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall, isHeadOfficePage } from './head-office-pages'; // OB-380
+import { HEAD_OFFICE_CALL_MAX_BYTES, headOfficeCallRefusal, headOfficeSignInPage, type HeadOfficeCallRefusal, type HeadOfficeLink } from './head-office-link'; // OB-388
+import { rolesAtThisStore } from './office-sign-in';
+import { peopleFrom } from './screen-navigation';
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -342,6 +345,11 @@ export interface OfficeGate {
   signOut(token: string | undefined): Promise<boolean>;
 }
 
+/** A person's name from the store setup, or their id when the setup names them not. */
+function displayNameIn(pack: ScreenInput['pack'], userId: string): string {
+  return (pack.people.known ? peopleFrom(pack.people.value).find((p) => p.userId === userId)?.displayName : undefined) ?? userId;
+}
+
 /** Read a request body, up to `limit` bytes; anything longer reads as too long (never buffered whole). */
 function readBody(req: IncomingMessage, limit: number): Promise<string | null> {
   return new Promise((resolve) => {
@@ -408,8 +416,15 @@ export function startScreenServer(input: {
   readonly officeSignIn?: OfficeGate;
   /** OB-263: the evening check kept on this box, and whether it is open (the mirror pilot). Absent: its doors answer 404. */
   readonly eveningCheck?: { readonly box: EveningCheckBox; readonly on: () => boolean };
+  /**
+   * OB-388 · ADR-0029: the link to head office for the office pages — the person's OWN head-office sign-in (the product's
+   * sign-in service, code + PKCE, second step) and each page's `/v1` call carried with THAT person's token. Made once the
+   * socket knows its own address (the sign-in returns to it). Absent: the box never answers `/v1` (a lost link, P-08).
+   */
+  readonly headOffice?: (origin: string) => HeadOfficeLink;
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
+  let link: HeadOfficeLink | undefined;
   const page = (res: ServerResponse, status: number, html: string, cookie?: string): void => {
     if (cookie !== undefined) res.setHeader('set-cookie', cookie);
     send(res, status, 'text/html; charset=utf-8', html);
@@ -505,15 +520,52 @@ export function startScreenServer(input: {
     const label = counterLabelFor(snap, request);
     json(res, label.ok ? 200 : 422, label);
   };
+  /**
+   * OB-388 · ADR-0029: a page's `/v1` call, carried to head office with the person's OWN head-office session — never the
+   * box's machine credential, never a PIN. Refused here, in head office's own error shape, when there is no head-office
+   * session (401), when the office PIN sign-in (if on) has ended (401) or is another person (403), when the person holds no
+   * role at this store (403), or when a write did not come from a page this box served (403).
+   */
+  const carryToHeadOffice = async (req: IncomingMessage, res: ServerResponse, ho: HeadOfficeLink): Promise<void> => {
+    const refuse = (status: number, code: HeadOfficeCallRefusal): void => { req.resume(); send(res, status, 'application/json; charset=utf-8', headOfficeCallRefusal(code)); };
+    const write = req.method !== 'GET' && req.method !== 'HEAD';
+    if (write && !sameOrigin(req)) { refuse(403, 'not_from_this_screen'); return; }
+    let pinUser: string | null = null;
+    if (office !== undefined) {
+      const pin = await office.check(officeTokenOf(req.headers['cookie']));
+      if (!pin.ok) { refuse(401, 'office_sign_in_needed'); return; }
+      pinUser = pin.userId;
+    }
+    const session = await ho.sessionOf(req);
+    if (session === null) { refuse(401, 'head_office_sign_in_needed'); return; }
+    if (pinUser !== null && pinUser !== session.userId) { refuse(403, 'not_the_signed_in_person'); return; }
+    const roles = rolesAtThisStore(session.userId, input.snapshot().pack);
+    if (roles === null || roles.length === 0) { refuse(403, 'not_at_this_store'); return; }
+    const body = write ? await readBody(req, HEAD_OFFICE_CALL_MAX_BYTES) : null;
+    if (write && body === null) { send(res, 413, 'application/json; charset=utf-8', headOfficeCallRefusal('too_large')); return; }
+    if (!write) req.resume();
+    await ho.carry(req, res, session, body === null ? null : Buffer.from(body, 'utf8'));
+  };
+
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
       const doorPath = (req.url ?? '/').split('?')[0];
+      // OB-388: Sign out on a box with the head-office link also ends the person's head-office session here.
+      if (office === undefined && link !== undefined && req.method === 'POST' && doorPath === '/office/sign-out') {
+        if (!sameOrigin(req)) { send(res, 403, 'text/plain; charset=utf-8', 'refused: not from a page this store computer served'); return; }
+        await link.end(req);
+        res.writeHead(303, { location: '/manager/', 'set-cookie': 'sre_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict', 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+        res.end();
+        return;
+      }
       if (office !== undefined && req.method === 'POST' && (doorPath === '/office/sign-in' || doorPath === '/office/sign-out')) {
         if (!sameOrigin(req)) { send(res, 403, 'text/plain; charset=utf-8', 'refused: not from a page this store computer served'); return; }
         if (doorPath === '/office/sign-out') {
           await office.signOut(officeTokenOf(req.headers['cookie']));
-          page(res, 200, signInPage({ next: '/manager/' }), officeCookie(undefined));
+          await link?.end(req); // OB-388: the head-office session on this PC ends with the office sign-in
+          res.setHeader('set-cookie', [officeCookie(undefined), 'sre_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict']);
+          send(res, 200, 'text/html; charset=utf-8', signInPage({ next: '/manager/' }));
           return;
         }
         const body = await readBody(req, 4096);
@@ -542,9 +594,20 @@ export function startScreenServer(input: {
       // holds no head-office answer and never makes one up (no copy, no blank list, no "refused"): the call fails as a lost
       // link, exactly as it does when the line is down, so every page says in its OWN tested words, in English or Tamil,
       // that head office cannot be reached and nothing on it is current.
-      if (isHeadOfficeCall(doorPath)) {
+      // OB-388: the head-office sign-in doors (`/login/`, `/login/callback`, `/login/logout`) — the product's own sign-in.
+      if (link !== undefined && link.isSignInPath(doorPath ?? '')) {
+        if (req.method === 'POST' && !sameOrigin(req)) { req.resume(); send(res, 403, 'text/plain; charset=utf-8', 'refused: not from a page this store computer served'); return; }
         req.resume();
-        req.socket.destroy();
+        await link.signInDoor(req, res);
+        return;
+      }
+      if (isHeadOfficeCall(doorPath)) {
+        if (link === undefined) {
+          req.resume();
+          req.socket.destroy();
+          return;
+        }
+        await carryToHeadOffice(req, res, link);
         return;
       }
       if (req.method !== 'GET') {
@@ -612,6 +675,31 @@ export function startScreenServer(input: {
         }
         officeUser = session;
       }
+      // OB-388 · ADR-0029: an office page head office answers opens only for a person signed in to head office on this PC
+      // with their own login and second step — the SAME person as the office PIN sign-in, when that is on. With nobody
+      // signed in to head office the box sends them to the sign-in (which says plainly when head office cannot be reached).
+      let headOfficeUser: string | null = null;
+      if (link !== undefined && isHeadOfficePage(route.screen)) {
+        const ho = await link.sessionOf(req);
+        if (ho === null) {
+          res.writeHead(303, { location: `/login/?next=${encodeURIComponent(safeNext(req.url))}`, 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+          res.end();
+          return;
+        }
+        if (officeUser !== null && officeUser.userId !== ho.userId) {
+          page(res, 403, headOfficeSignInPage({ problem: 'not_the_same_person', next: safeNext(req.url) }));
+          return;
+        }
+        if (officeUser === null) {
+          const needs = permissionForScreen(route.screen);
+          if (needs !== null && !(permissionsOf(ho.userId, snap.pack) ?? []).includes(needs)) {
+            const menu = navigationPayload({ screen: route.screen, pack: snap.pack, payload: { userId: ho.userId }, screenOf: screenOfPath });
+            page(res, 403, notAllowedPage({ displayName: ho.userId, links: menu.groups.flatMap((g) => g.items.map((i) => ({ path: i.path, label: i.label }))) }));
+            return;
+          }
+        }
+        headOfficeUser = ho.userId;
+      }
       // OB-16: behind the authenticated relay the ERP screens run as the person who SIGNED IN — their id, their
       // permissions from this box's role register — never as whoever the pack named for the screen. The till is
       // untouched: the person signs in at the till itself.
@@ -619,6 +707,7 @@ export function startScreenServer(input: {
       // front signed in, exactly as a phone on the shop wifi does it as the person who signed in on it with their PIN.
       const handheld = isHandheldSource(route.screen) ? route.screen : null;
       const signedIn = officeUser !== null ? officeUser.userId
+        : headOfficeUser !== null ? headOfficeUser
         : input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;
       const built = payloadFor(route.screen, snap, handheld !== null && signedIn !== null ? signedIn : undefined);
       const payload = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn) : asSignedInPerson(built, signedIn, snap.pack);
@@ -655,6 +744,8 @@ export function startScreenServer(input: {
         {
           // OB-259: who is signed in to the office screens, and until when — the box draws the Sign out bar from it.
           ...(officeUser === null ? {} : signedInGlobals(officeUser)),
+          // OB-388: with no office PIN on this box, the head-office sign-in names who is looking — and draws the Sign out bar.
+          ...(officeUser !== null || headOfficeUser === null ? {} : signedInGlobals({ userId: headOfficeUser, displayName: displayNameIn(snap.pack, headOfficeUser), expiresAt: '' })),
           catalogueFreshness: catalogueFreshness(snap),
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
           ...(posLane === undefined ? {} : { posLane }),
@@ -669,7 +760,8 @@ export function startScreenServer(input: {
         },
       );
       // The Sign out bar goes on every office page, drawn by the box, just before the page's own end.
-      send(res, 200, type, officeUser === null ? served : served.includes('</body>') ? served.replace('</body>', `${SIGN_OUT_BAR}</body>`) : `${served}${SIGN_OUT_BAR}`);
+      const barred = officeUser !== null || headOfficeUser !== null;
+      send(res, 200, type, !barred ? served : served.includes('</body>') ? served.replace('</body>', `${SIGN_OUT_BAR}</body>`) : `${served}${SIGN_OUT_BAR}`);
     })();
   });
 
@@ -679,6 +771,8 @@ export function startScreenServer(input: {
     server.listen(input.port, input.host ?? SCREEN_HOST, () => {
       const address = server.address();
       const port = typeof address === 'object' && address !== null ? address.port : input.port;
+      // OB-388: the head-office sign-in returns to THIS PC's own screen address (the person's browser is on this PC).
+      if (input.headOffice !== undefined) link = input.headOffice(`http://127.0.0.1:${port}`);
       resolve({
         port,
         host: input.host ?? SCREEN_HOST,

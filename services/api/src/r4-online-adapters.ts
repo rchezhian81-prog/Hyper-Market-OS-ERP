@@ -35,6 +35,7 @@ import {
   serviceabilityAdapter, serviceCaseAdapter, loyaltyMembersAdapter, fulfilmentPackingAdapter, categoryRegisterAdapter,
   permissionsHeldBy,
 } from './adapters';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -150,7 +151,7 @@ function onlineStoreDepsOf(input: { readonly store: EventStore; readonly now: ()
     catalogueProducts: async (t) => ((await pack(t))?.snapshot.products ?? []).map((p) => p.productId),
     listingFacts,
     deliveryTerms: async (t) => {
-      const { policy, source } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter(base).schedule(t), on: now().slice(0, 10) });
+      const { policy, source } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter(base).schedule(t), on: shopDateIn(now()) });
       // The D08 default carries no fee the owner set — "not set", never a silent zero.
       return source === 'default' ? {} : { ...(policy.deliveryFeeMinor === undefined ? {} : { deliveryFeeMinor: policy.deliveryFeeMinor }), ...(policy.freeDeliveryAboveMinor === undefined ? {} : { freeDeliveryAboveMinor: policy.freeDeliveryAboveMinor }) };
     },

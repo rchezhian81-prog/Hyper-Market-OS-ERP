@@ -23,6 +23,7 @@ import {
   type PortalGrant, type SubmissionKind, type PartnerDocument, type PartnerDocumentKind, type StatementLine,
   type PartnerAuditEntry, type PartnerSession,
 } from '../../../packages/supplier-portal/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { PartnerDocument, StatementLine, PartnerAuditEntry } from '../../../packages/supplier-portal/src/index';
 
@@ -161,6 +162,8 @@ function asnFrom(document: Readonly<Record<string, unknown>>, partnerId: string)
 }
 
 export interface SupplierPortalDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly partner: (tenantId: string, partnerId: string) => Promise<PartnerConfig | undefined> | PartnerConfig | undefined;
   /**
    * Which partner (if any) this authenticated user is a portal login for (M24-FR-01, §35). Resolved from
@@ -297,7 +300,7 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
     }
 
     const compliance = checkPartnerCompliance({
-      partnerId, documents: config.documents, required: config.requiredDocuments, today: deps.now().slice(0, 10),
+      partnerId, documents: config.documents, required: config.requiredDocuments, today: await shopToday(deps, ctx.tenantId),
     });
     const session = { sessionId: `portal-${partnerId}`, partnerId, tenantId: ctx.tenantId, userId: submittedBy, grants: config.grants };
     const result = acceptSubmission({
@@ -473,7 +476,7 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
         const config = await deps.partner(ctx.tenantId, partnerId);
         if (config === undefined) throw notFound(`supplier-portal partner ${partnerId}`);
         const check = checkPartnerCompliance({
-          partnerId, documents: config.documents, required: config.requiredDocuments, today: isDate(asOf) ? asOf : deps.now().slice(0, 10),
+          partnerId, documents: config.documents, required: config.requiredDocuments, today: isDate(asOf) ? asOf : await shopToday(deps, ctx.tenantId),
         });
         return { status: 200, body: check };
       },

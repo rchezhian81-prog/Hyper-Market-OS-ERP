@@ -2,7 +2,7 @@
 //
 // The route is `services/inventory/src/recall-withdrawal.ts`. This file gives it head office's own facts:
 //   • the recall register (the same event-sourced `recallAdapter` the start and the closure use);
-//   • how far the recall has gone — the customers a recall message was sent or attempted to (the append-only notice
+//   • how far the recall has gone — the customers ticked as phoned on its call list (OB-387), the customers a recall message was sent or attempted to (the append-only notice
 //     attempts, `lane2-recall-adapters.ts`), and the batch's stock disposed of since the recall started (every `wasted`
 //     movement — a write-off, a destruction — and every return to the supplier, on that batch);
 //   • the `RecallWithdrawn` event on the recall's own stream, and the owner's recall alert cleared (kept, with history).
@@ -16,7 +16,7 @@ import { RecallRegistry } from '../../../packages/traceability/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { recallWithdrawalRoutes, type RecallWithdrawalDeps, type RecallReach } from '../../inventory/src/recall-withdrawal';
 import { STREAM, streamName, recallAdapter } from './adapters';
-import { RECALL_NOTICE_STREAM, clearRecallAlert } from './lane2-recall-adapters';
+import { RECALL_NOTICE_STREAM, clearRecallAlert, recallStandingPhoneTicksOf } from './lane2-recall-adapters';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -30,6 +30,9 @@ export async function recallReachOf(store: EventStore, tenantId: string, batchId
     const a = e.event.payload as { batchId?: string; customerRef?: string; at?: string };
     if (a.batchId === batchId && typeof a.customerRef === 'string' && (a.at ?? '') >= since) contacted.add(a.customerRef);
   }
+  // OB-387: every customer on this recall's call list ticked as phoned (the recall that started at `since`) — OB-397: the
+  // ticks STILL STANDING; a mistaken tick taken back by someone else, with a reason, no longer counts.
+  const phoned = new Set((await recallStandingPhoneTicksOf(store, tenantId, batchId, since)).map((t) => t.customerRef));
   let disposed = 0;
   for (const e of await store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
     const m = e.event.payload as { kind?: string; batchId?: string; quantityMinor?: number; occurredAt?: string };
@@ -38,7 +41,7 @@ export async function recallReachOf(store: EventStore, tenantId: string, batchId
     if (e.event.occurredAt < since && (m.occurredAt ?? '') < since) continue;
     disposed += Math.abs(typeof m.quantityMinor === 'number' ? m.quantityMinor : 0) || 1;
   }
-  return { customersContacted: contacted.size, stockDisposed: disposed };
+  return { customersContacted: contacted.size, customersPhoned: phoned.size, stockDisposed: disposed };
 }
 
 export function recallWithdrawalAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): RecallWithdrawalDeps {
@@ -74,6 +77,6 @@ export function recallWithdrawalAdapter(input: { readonly store: EventStore; rea
 export function recallWithdrawSurface(surface: Route[], input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): void {
   const { store, now } = input;
   surface.push(...recallWithdrawalRoutes(store === undefined
-    ? { now, registry: () => new RecallRegistry(), reach: async () => ({ customersContacted: 0, stockDisposed: 0 }), recordWithdrawn: () => {}, recordAudit: () => {} }
+    ? { now, registry: () => new RecallRegistry(), reach: async () => ({ customersContacted: 0, customersPhoned: 0, stockDisposed: 0 }), recordWithdrawn: () => {}, recordAudit: () => {} }
     : recallWithdrawalAdapter({ store, now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) })));
 }

@@ -61,7 +61,7 @@ describe.each(backings)('the owner\'s floor-device numbers and a handheld lane\'
       boxes.push(box);
       expect(await box.edge.refreshStorePack!()).toMatchObject({ status: 'updated' });
       const screens = async (path: string) => (await fetch(`http://127.0.0.1:${box.edge.screens!.port}${path}`)).text();
-      expect(globalOf(await screens('/price-kiosk/'), 'priceKiosk')).toEqual({ staleAfterMinutes: 1_440 });
+      expect(globalOf(await screens('/price-kiosk/'), 'priceKiosk')).toEqual({ staleAfterMinutes: 1_440, timeZone: 'Asia/Kolkata' }) // R1c: the shop's zone rides with it;
       expect(globalOf(await screens('/self-checkout/'), 'selfCheckoutWatch')).toEqual(DECIDED_WATCH);
 
       // The owner enters 12 hours: a new version, the decision still on the record; the same value again records nothing.
@@ -75,7 +75,7 @@ describe.each(backings)('the owner\'s floor-device numbers and a handheld lane\'
       expect((await box.edge.refreshStorePack!()).status).toBe('updated');
       link.online = false;
       await box.restartCold();
-      expect(globalOf(await screens('/price-kiosk/'), 'priceKiosk')).toEqual({ staleAfterMinutes: 720 });
+      expect(globalOf(await screens('/price-kiosk/'), 'priceKiosk')).toEqual({ staleAfterMinutes: 720, timeZone: 'Asia/Kolkata' });
       link.online = true;
 
       // ── OB-376: a handheld queue till's lane gets its own prefix, like a till ──────────────────────────────────────

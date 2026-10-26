@@ -7,6 +7,7 @@ import { money } from '../../packages/contracts/src/money';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **SF-01 (offers) — an offer launched at head office is the offer the till gives (Wave 4 · M05-FR-03 · M05-FR-04 ·
@@ -21,7 +22,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
  */
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 const day = (offset: number): string => new Date(Date.now() + offset * 864e5).toISOString();
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
 const MARGIN_OK = { description: '10% off salt', normalPrice: { minor: 2_000, currency: 'INR' }, promoPrice: { minor: 1_800, currency: 'INR' }, unitCost: { minor: 1_000, currency: 'INR' }, baselineUnits: 100, expectedUnits: 200 };

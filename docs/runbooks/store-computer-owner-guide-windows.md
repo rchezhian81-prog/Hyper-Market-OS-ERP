@@ -842,6 +842,23 @@ sign-in lasts 30 minutes; the **Sign out** button at the bottom right of every o
 2. In your own account, open the same address and sign in with **your** staff ID and PIN: the manager's screen opens,
    with your name and **Sign out** at the bottom right. Press **Sign out**.
 
+### 26f — The office pages that need head office ask for your own head-office sign-in too (OB-388)
+
+Some office pages (Month-end, Supplier bills, the Company report and the others in the menu that show head office's
+figures) read head office live. On this PC they now ask, after your PIN, for **your own head-office sign-in**: your
+head-office user name, your password and the **six-digit code from the phone app** (the second step). The PIN alone is
+never enough for these pages, and nobody else's sign-in is ever used: what you see is head office's answer to **you**.
+The technician switches it on once (the till's settings get `EDGE_HEAD_OFFICE_SIGN_IN_ISSUER`, written by the installer
+with `--head-office-sign-in`; head office's address `CLOUD_API_URL` is already there).
+
+1. In your own account, open the manager's screen, sign in with your PIN, then open **Month-end** from the menu.
+   - **When it worked:** head office's sign-in page opens; type your user name, password and the phone code. You come back
+     to **Month-end**, and it shows head office's figures (for example "No card or UPI payment is waiting for an
+     answer"). **Send:** a photo of the Month-end page.
+2. Press **Sign out** (bottom right). Open **Month-end** again: it asks for your PIN and your head-office sign-in again.
+3. If head office or the internet is down, the sign-in page says **"Head office cannot be reached from this computer right
+   now"** in English and Tamil — the till keeps selling. Nothing is wrong with the PC; try again when the line is back.
+
 ## Part 27 — The UPS and the power-cut test (OB-250 · OB-260)
 
 You told us the shop has **three Numeric Onfinity 6 kVA UPS units**, with a **diesel generator** behind them (OB-260).

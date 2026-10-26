@@ -19,6 +19,7 @@ import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enro
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
 import { withTillPeople, issueTillPins, signInOnPhone } from '../support/till-operator';
 import { seedOnlineShop, listShopOnline, deliveredOrder, callsFor, codeOf, MANAGER, CHECKER, CUSTOMER, STORE, type ShopCalls } from '../support/online-shop';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **R4 · WF-16 (signed, OB-227) — an online return after delivery is COLLECTED BY THE DRIVER: his phone → the REAL store box
@@ -98,7 +99,7 @@ describe.each(backings)('WF-16 — the driver collects an online return through 
     await ok(req('POST', '/v1/me/orders/ORD-1/online-returns/RET-1', { lines: [{ productId: 'MILK', quantityMinor: 2 }], reason: 'sour (synthetic)' }, CUSTOMER), 'raise RET-1');
     await ok(req('POST', '/v1/me/orders/ORD-1/online-returns/RET-2', { lines: [{ productId: 'BROOM', quantityMinor: 1 }], reason: 'not needed (synthetic)' }, CUSTOMER), 'raise RET-2');
     await ok(req('POST', '/v1/me/orders/ORD-2/online-returns/RET-3', { lines: [{ productId: 'MILK', quantityMinor: 1 }], reason: 'sour (synthetic)' }, CUSTOMER), 'raise RET-3');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     await ok(req('POST', '/v1/online-returns/RET-1/collection', { collectOn: today }, MANAGER), 'book RET-1');
     await ok(req('POST', '/v1/online-returns/RET-3/collection', { collectOn: today }, MANAGER), 'book RET-3');
 

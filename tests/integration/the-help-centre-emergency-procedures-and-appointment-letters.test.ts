@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID, createHash } from 'node:crypto';
 import { useRestartableBackings } from '../support/p3-backings';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 // M25-FR-04 ("a cashier sees cashier SOPs; acknowledgement is recorded; help works offline") · D11-FR-06 (emergency
 // procedures) · C17 / OB-323 (appointment letters: HR generates from the record, the signed scan kept as HR evidence).
@@ -92,7 +93,7 @@ describe.each(backings)('the help centre, emergency procedures and appointment l
     await ok(call('POST', '/v1/org/nodes/br-1', 'u-it', { kind: 'branch', name: 'Main store', parentId: 'C1', companyId: 'C1', gstin: G1 }), 'branch');
     expect((await call('POST', '/v1/hr/workforce/employees/u-cash/appointment-letters/AL-1', 'u-cash', { effectiveFrom: '2026-11-01' })).status).toBe(403);
     const made = (await ok(call('POST', '/v1/hr/workforce/employees/u-cash/appointment-letters/AL-1', 'u-mgr', { effectiveFrom: '2026-11-01' }), 'letter')).body as { letter: { textEn: string; textTa: string; wordingVersion: number } };
-    expect(made.letter.textEn).toBe(`SRE Hyper Market Private Limited appoints Asha (u-cash) as cashier at br-1 from 2026-11-01, at ₹125.00 per hour. Issued ${new Date().toISOString().slice(0, 10)}.`);
+    expect(made.letter.textEn).toBe(`SRE Hyper Market Private Limited appoints Asha (u-cash) as cashier at br-1 from 2026-11-01, at ₹125.00 per hour. Issued ${shopDateIn(new Date().toISOString())}.`);
     expect(made.letter.textTa).toMatch(/^SRE Hyper Market Private Limited — Asha \(u-cash\) cashier ஆக br-1 இல்/);
     // The owner changes the words: the letter already made keeps the words it was made with (frozen).
     await ok(call('POST', '/v1/hr/workforce/appointment-letters/wording', 'u-owner', { bodyEn: 'New words for {{employeeName}}.', bodyTa: 'புதிய சொற்கள் {{employeeName}}.' }), 'wording v2');

@@ -48,6 +48,7 @@ import type { OnlinePricingDeps, OrderPricingFact } from '../../orders/src/store
 import { currentMemberLink, type MemberAppLink } from '../../customer/src/digital-receipts';
 import { customerOverviewRoutes } from '../../customer/src/customer-overview';
 import { customerOverviewAdapter } from './r4-insight-adapters';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 export interface CustomerCommerceInput {
   readonly store: EventStore | undefined;
@@ -248,8 +249,8 @@ export function storefrontAccountAdapter(input: Base & { readonly a05: Route | u
     recordAddress: (t, a) => addresses.append(t, `${a.customerRef}|${a.addressId}|${a.change}|${a.at}`, a, a.at),
     consentRecords: async (t, c) => (await customerAdapter(input).consentRecords(t, c)).map((r) => ({ purpose: r.purpose, given: r.given, recordedAt: r.recordedAt })),
     alsoBought: async (t, productId) => {
-      const to = now().slice(0, 10);
-      const from = new Date(Date.parse(now()) - 90 * 86_400_000).toISOString().slice(0, 10);
+      const to = shopDateIn(now()); // R1c: the shop's dates
+      const from = shopDateIn(new Date(Date.parse(now()) - 90 * 86_400_000).toISOString());
       const counts = new Map<string, number>();
       for (const b of await basketAffinityAdapter(input).baskets(t, from, to)) {
         const ids = new Set(b.lines.map((l) => l.productId));
@@ -287,7 +288,7 @@ export function storefrontAccountAdapter(input: Base & { readonly a05: Route | u
       return `You can return within these days after delivery: ${Object.entries(w).map(([c, d]) => `${c} ${d}`).join(', ')}. ${list}`;
     },
     deliveryWords: async (t) => {
-      const { policy } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter({ store, now }).schedule(t), on: now().slice(0, 10) });
+      const { policy } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter({ store, now }).schedule(t), on: shopDateIn(now()) });
       const fee = policy.deliveryFeeMinor ?? 0;
       return `We deliver within ${((policy.radiusMetres ?? 10_000) / 1000).toFixed(0)} km. Delivery costs ${fee === 0 ? 'nothing' : rupeesOf(fee)}${policy.freeDeliveryAboveMinor === undefined ? '' : `, and is free on orders of ${rupeesOf(policy.freeDeliveryAboveMinor)} or more`}${policy.minimumOrderMinor === undefined ? '' : `. The smallest order we deliver is ${rupeesOf(policy.minimumOrderMinor)}`}. You can also collect from the store at no charge.`;
     },

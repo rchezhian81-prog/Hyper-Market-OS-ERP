@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { aBranch } from '../support/a-branch';
 import { storeRules } from '../support/store-rules';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **SF-01 (prices) — a price saved on the screen is the price the till charges (Wave 4 · M05-FR-01 · M05-FR-02 ·
@@ -14,7 +15,7 @@ import { storeRules } from '../support/store-rules';
  */
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
 
 async function shop(): Promise<{ h: ApiHarness; req: (method: 'POST' | 'GET', path: string, body?: unknown, key?: string) => Promise<{ status: number; body: unknown }> }> {

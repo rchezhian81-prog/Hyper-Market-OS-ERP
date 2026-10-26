@@ -98,6 +98,10 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
+      # R1 (M01-FR-02): a BACKSTOP only. Every business date is read from the shop's own calendar in store setup
+      # (`locale.time_zone`, `trading_day.cutoff`), never from this container's zone; this keeps logs and any stray
+      # local-time reading in the shop's time as well, instead of UTC.
+      TZ: Asia/Kolkata
       DATABASE_URL: ${DATABASE_URL}
       # Signs the catalogue packs the lanes trade on. Generate with:
       #   openssl rand -base64 48
@@ -165,6 +169,10 @@ services:
       dockerfile: infra/docker/edge.Dockerfile
     restart: unless-stopped
     environment:
+      # R1a (M01-FR-02 · P-08): a BACKSTOP only. The store computer dates every bill, shift, cash movement and day close by
+      # the shop's zone carried in its signed store pack (`policies.timeZone`), never by this container's zone, and it shows
+      # a warning on the manager's screen when the two differ. Without this line the container keeps world time (UTC).
+      TZ: Asia/Kolkata
       EDGE_DATA_DIR: /var/lib/sre-edge
       # OB-87 · verifier r19 OB87-1: the bill-number WITNESS log lives OUTSIDE the data folder, on its own volume, so a
       # restore of the data volume from an older backup is told apart from an ordinary restart (the box then numbers

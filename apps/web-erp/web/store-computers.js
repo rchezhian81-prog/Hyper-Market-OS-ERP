@@ -25,8 +25,9 @@ function say(el, out, good) {
 
 function paintSummary() {
   const s = api.summarise(board);
-  for (const [k, v] of [['bindings', s.bindings], ['replaced', s.replaced], ['needs', s.needs], ['waiting', s.waiting], ['unused', s.unused]]) $(`v-${k}`).textContent = v === null ? '—' : String(v);
+  for (const [k, v] of [['bindings', s.bindings], ['replaced', s.replaced], ['needs', s.needs], ['waiting', s.waiting], ['unused', s.unused], ['zones', s.zones]]) $(`v-${k}`).textContent = v === null || v === undefined ? '—' : String(v);
   $('p-needs').classList.toggle('attention', (s.needs ?? 0) > 0);
+  $('p-zones').classList.toggle('attention', (s.zones ?? 0) > 0);
 }
 
 function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
@@ -64,6 +65,22 @@ function paintUnused() {
     const tr = document.createElement('tr');
     tr.dataset.store = u.storeId; tr.dataset.prefix = u.prefix; tr.dataset.day = u.day; tr.dataset.count = String(u.count);
     tr.append(cell(u.storeId), cell(u.prefix), cell(u.day), cell(String(u.count)), cell(api.unusedWords(lang, u)));
+    body.append(tr);
+  }
+}
+
+// R3 · P-08: each store computer's own time zone against the shop's — a wrong one is said in words (P-08), wrong ones first.
+function paintZones() {
+  const body = $('zone-rows');
+  body.replaceChildren();
+  const rows = board?.zones ?? [];
+  $('no-zones').hidden = board === null || rows.length > 0;
+  $('no-zones').textContent = t('noZones');
+  for (const z of rows) {
+    const tr = document.createElement('tr');
+    tr.dataset.store = z.storeId; tr.dataset.verdict = z.verdict;
+    if (z.verdict === 'differs') tr.className = 'attention';
+    tr.append(cell(z.storeId), cell(z.computer ?? ''), cell(z.machineTimeZone), cell(`${z.shopTimeZone}${z.shopTimeZoneFrom === 'shop_default' ? ` ${t('zoneDefault')}` : ''}`), cell(api.zoneWords(lang, z)), cell(when(z.lastReportAt)));
     body.append(tr);
   }
 }
@@ -134,6 +151,7 @@ function paintWords() {
   document.title = `SRE ${t('title')}`;
   const pairs = [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['open-replace', 'replace'],
     ['k-bindings', 'sumBindings'], ['k-replaced', 'sumReplaced'], ['k-needs', 'sumNeeds'], ['k-waiting', 'sumWaiting'], ['k-unused', 'sumUnused'],
+    ['k-zones', 'sumZones'], ['zones-h', 'zonesH'], ['zones-lead', 'zonesLead'], ['c-z-store', 'colStore'], ['c-z-computer', 'colComputer'], ['c-z-zone', 'colZone'], ['c-z-shop', 'colShopZone'], ['c-z-says', 'colZoneSays'], ['c-z-reported', 'colReported'],
     ['unused-h', 'unusedH'], ['unused-lead', 'unusedLead'], ['c-u-store', 'colStore'], ['c-u-prefix', 'colPrefix'], ['c-u-day', 'colDay'], ['c-u-count', 'colCount'], ['c-u-numbers', 'colNumbers'],
     ['tab-bindings', 'tabBindings'], ['tab-findings', 'tabFindings'], ['tab-requests', 'tabRequests'],
     ['bindings-h', 'tabBindings'], ['bindings-lead', 'bindingsLead'], ['findings-h', 'tabFindings'], ['findings-lead', 'findingsLead'], ['requests-h', 'tabRequests'], ['requests-lead', 'requestsLead'],
@@ -150,7 +168,7 @@ function paintWords() {
   else if (board !== null && !you().mayReplace && !you().mayAcknowledge) { status.className = 'status'; status.textContent = t('notYours'); }
 }
 
-function paintAll() { paintWords(); paintSummary(); paintBindings(); paintUnused(); paintFindings(); paintRequests(); }
+function paintAll() { paintWords(); paintSummary(); paintBindings(); paintUnused(); paintZones(); paintFindings(); paintRequests(); }
 
 function showTab(which) {
   tab = which;

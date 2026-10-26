@@ -33,6 +33,8 @@ import type { B2BDocumentsDeps } from '../../finance/src/b2b-documents';
 import { concessionDeskRoutes, raiseConcessionAlerts, type ConcessionDeskDeps } from '../../finance/src/concession-desk';
 import { supplierReviewDeskRoutes } from '../../purchase/src/supplier-review-desk';
 import type { SupplierPortalDeps } from '../../purchase/src/supplier-portal';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 interface Base { readonly store: EventStore; readonly now: () => string }
 
@@ -80,7 +82,7 @@ export function b2bContractsDeps(input: Base): B2BContractsDeps {
     approvals: approvalRequestsAdapter(input),
     mrpOf: async (tenantId, productId) => {
       const record = await master.product(tenantId, productId);
-      return record === undefined ? undefined : toMaster(record, now().slice(0, 10)).mrpMinor;
+      return record === undefined ? undefined : toMaster(record, shopDateIn(now())).mrpMinor; // R1c: the MRP in force in the shop today
     },
     account: async (tenantId, customerId) => credit.account(tenantId, customerId),
     applyAccountTerms: async (tenantId, customerId, terms, at) => {
@@ -131,7 +133,7 @@ export function commercialDeskB2BHooks(input: Base): Pick<B2BDocumentsDeps, 'pri
 export function commercialDeskContractState(input: Base): (tenantId: string, customerId: string) => Promise<{ readonly expired: boolean; readonly policy: 'block' | 'fallback' } | undefined> {
   const register = b2bContractsAdapter(input);
   return async (tenantId, customerId) => {
-    const position = contractPosition(await register.contracts(tenantId), customerId, input.now().slice(0, 10));
+    const position = contractPosition(await register.contracts(tenantId), customerId, shopDateIn(input.now()));
     const c = position.inForce ?? position.lapsed;
     return c === undefined ? undefined : { expired: position.inForce === undefined, policy: c.onExpiry };
   };
@@ -175,7 +177,7 @@ function concessionDeskDeps(input: Base): ConcessionDeskDeps {
 
 // ── the routes ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-export function commercialDesksRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string }): readonly Route[] {
+export function commercialDesksRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly calendar?: ShopCalendarOf }): readonly Route[] {
   const base: Base = { store: input.store ?? new InMemoryEventStore(), now: input.now };
   const register = b2bContractsAdapter(base);
   const credit = b2bCreditAdapter(base);
@@ -195,7 +197,7 @@ export function commercialDesksRoutes(input: { readonly store: EventStore | unde
       ],
       now: base.now,
     }),
-    ...concessionDeskRoutes(concessionDeskDeps(base)),
+    ...concessionDeskRoutes({ ...concessionDeskDeps(base), ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }),
     ...supplierReviewDeskRoutes({
       partners: async (t) => (await payloads<{ partnerId: string }>(base.store, t, SUPPLIER_PARTNER_INDEX_STREAM, 'SupplierPartnerIndexed')).map((x) => x.partnerId),
       submissions: (t, p) => portal.submissions(t, p),
@@ -219,7 +221,7 @@ export function commercialDesksSweep(input: Base): (tenantId: string, at: string
     let raised = 0;
     if (await featureOn(input.store, tenantId, 'dept.concession')) raised += await raiseConcessionAlerts(concessionDeskDeps(input), tenantId, at);
     if (await featureOn(input.store, tenantId, 'b2b')) {
-      const ending = contractsEndingWithin(await b2bContractsAdapter(input).contracts(tenantId), at.slice(0, 10), CONTRACT_WARN_DAYS);
+      const ending = contractsEndingWithin(await b2bContractsAdapter(input).contracts(tenantId), shopDateIn(at), CONTRACT_WARN_DAYS);
       for (const x of ending) {
         const step = x.daysLeft <= CONTRACT_URGENT_DAYS ? 'within_7_days' : 'within_30_days';
         const alertId = `b2b-contract-ending:${x.contract.customerId}:${x.contract.contractId}:${x.contract.validTo}:${step}`;

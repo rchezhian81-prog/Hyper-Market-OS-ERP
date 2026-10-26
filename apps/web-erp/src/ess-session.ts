@@ -10,6 +10,8 @@
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 
 /** A shift the employee is rostered for. */
 export interface EssShift {
@@ -122,14 +124,12 @@ function money(minor: number): string {
   return `₹${grouped}.${paise}`;
 }
 
-/** Read a start time as "Sun 06:00" (UTC, deterministic — the box's own day, never the browser clock's zone). */
+/** Read a start time as "Sun 06:00" on the SHOP's clock (R1c: deterministic in the shop zone — never UTC, never the browser's). */
 function whenLabel(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()] ?? '';
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${day} ${hh}:${mm}`;
+  if (Number.isNaN(Date.parse(iso))) return iso;
+  const local = wallClockIn(iso, DEFAULT_SHOP_CALENDAR.timeZone);
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${local.slice(0, 10)}T00:00:00Z`).getUTCDay()] ?? '';
+  return `${day} ${local.slice(11, 16)}`;
 }
 
 export function createEssSession(config: EssConfig, ports: EssPorts): EssSession {

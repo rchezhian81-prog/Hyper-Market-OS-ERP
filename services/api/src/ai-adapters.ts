@@ -42,6 +42,7 @@ import { evaluationStore } from './ai-governance-stores';
 import { customerAdapter, serviceCaseAdapter, inventoryAdapter } from './adapters';
 import type { PlacedOrder } from '../../orders/src/index';
 import { latestLimits } from '../../ai/src/governance';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 // The fold helpers adapters.ts keeps private — the same few lines, so the moved bodies read exactly as they did.
 const payloadOf = <T>(e: PersistedEvent): T => e.event.payload as T;
@@ -159,7 +160,7 @@ function investigationProposals(worklist: OpenCaseWorklist, now: string): Omit<P
     evidence: [{
       source: 'loss-prevention cases',
       reference: c.caseId,
-      summary: `subject ${c.subjectRef}: ${c.summary} — ${Math.round(c.valueMinor / 100)} at stake, ${c.evidenceCount} evidence item(s), open since ${c.openedAt.slice(0, 10)}, assigned to ${c.assignedTo}`,
+      summary: `subject ${c.subjectRef}: ${c.summary} — ${Math.round(c.valueMinor / 100)} at stake, ${c.evidenceCount} evidence item(s), open since ${shopDateIn(c.openedAt)}, assigned to ${c.assignedTo}`,
     }],
     createdAt: now,
   }));
@@ -516,7 +517,7 @@ export function aiAdapter(input: {
       // A03 Inventory — the near-expiry stock now on hand: mark down before it expires, dispose what already has.
       // Round 8: and the transfer leg — out at a selling place while another place of the company holds it (a manager decides).
       if (agent === 'A03') {
-        const items = input.nearExpiry === undefined ? [] : await input.nearExpiry(tenantId, { asOf: now.slice(0, 10), nearExpiryDays: 7 });
+        const items = input.nearExpiry === undefined ? [] : await input.nearExpiry(tenantId, { asOf: shopDateIn(now), nearExpiryDays: 7 }); // R1c: the shop's today
         const transfers = input.transferSuggestions === undefined ? [] : await input.transferSuggestions(tenantId);
         // OB-288 lane 4 · P1: the prediction legs — a forecast stock-out with stock to spare elsewhere, overstock, and a
         // batch that will not sell before its expiry at the rate it sells.

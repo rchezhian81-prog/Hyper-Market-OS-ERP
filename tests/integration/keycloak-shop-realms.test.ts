@@ -148,7 +148,9 @@ describe.skipIf(!READY).sequential('a second shop\'s own realm, made by head off
     const rep = await (await admin('GET', `/realms/${realmB}`)).json() as { loginTheme?: string; displayName?: string };
     expect(rep).toMatchObject({ loginTheme: 'sre', displayName: 'SRE Proof Shop' });
     const client = ((await (await admin('GET', `/realms/${realmB}/clients?clientId=sre-web`)).json()) as { redirectUris: string[]; protocolMappers: { config: Record<string, string> }[] }[])[0]!;
-    expect(client.redirectUris).toEqual([`${ORIGIN}/login/callback`]);
+    // Its own address to return to, and the store PC's own screen port (OB-388 / ADR-0029: each shop's store computer signs
+    // a person in to head office on its loopback — the same port the installer serves its screens on).
+    expect(client.redirectUris).toEqual([`${ORIGIN}/login/callback`, 'http://127.0.0.1:8091/login/callback']);
     expect(client.protocolMappers.map((m) => m.config['claim.value']).filter((v) => v !== undefined)).toEqual([TENANT_B]);
     // The only people are those added since; the provisioner's account (listed apart) manages users and nothing else.
     const users = await (await admin('GET', `/realms/${realmB}/users?briefRepresentation=true`)).json() as { username: string }[];

@@ -58,11 +58,14 @@ import { latestPlanograms } from '../../inventory/src/planograms';
 import { relabelTaskRoutes, relabelTasksFor, raiseRelabelTasks, type RelabelTaskDeps, type RelabelTask, type RelabelDone } from '../../pricing/src/relabel-tasks';
 import { facilitiesAssetsAdapter, facilitiesMonitoringAdapter, facilitiesAdapter, writeOffAdapter, planogramStoreAdapter } from './adapters';
 import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from './roles';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 export interface LpWorkforceInput {
   readonly store: EventStore | undefined;
   readonly now: () => string;
+  /** R1b · R1c (M01-FR-02): the tenant calendar — every business date these routes read is the shop's. */
+  readonly calendar?: ShopCalendarOf;
   readonly recordAudit?: Recorder;
 }
 interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }
@@ -412,7 +415,7 @@ export function writeOffCaptureAdapter(input: Base, surface: readonly Route[]): 
   };
 }
 
-const RELABEL_STREAM = streamName(STREAM.pricing, 'relabel-tasks');
+export const RELABEL_STREAM = streamName(STREAM.pricing, 'relabel-tasks');
 export function relabelTaskAdapter(input: Base, surface: readonly Route[]): RelabelTaskDeps {
   const { store, now } = input;
   const plans = planogramStoreAdapter({ store, now });
@@ -576,10 +579,11 @@ function pointsAttribution(surface: Route[], input: Base): void {
 export function lpWorkforceSurface(surface: Route[], raw: LpWorkforceInput): void {
   const input: Base = { store: raw.store ?? new InMemoryEventStore(), now: raw.now, ...(raw.recordAudit === undefined ? {} : { recordAudit: raw.recordAudit }) };
   surface.push(...lpControlsRoutes(lpControlsAdapter(input)));
-  surface.push(...workforceEnablementRoutes(workforceEnablementAdapter(input)));
-  surface.push(...helpCentreRoutes(helpCentreAdapter(input)));
+  const cal = raw.calendar === undefined ? {} : { calendar: raw.calendar }; // R1c: the shop's today
+  surface.push(...workforceEnablementRoutes({ ...workforceEnablementAdapter(input), ...cal }));
+  surface.push(...helpCentreRoutes({ ...helpCentreAdapter(input), ...cal }));
   surface.push(...appointmentLetterRoutes(appointmentLetterAdapter(input)));
-  surface.push(...facilitiesOfficeRoutes(facilitiesOfficeAdapter(input, surface)));
+  surface.push(...facilitiesOfficeRoutes({ ...facilitiesOfficeAdapter(input, surface), ...cal }));
   surface.push(...writeOffCaptureRoutes(writeOffCaptureAdapter(input, surface)));
   surface.push(...relabelTaskRoutes(relabelTaskAdapter(input, surface)));
   relabelOnPriceChange(surface, input);

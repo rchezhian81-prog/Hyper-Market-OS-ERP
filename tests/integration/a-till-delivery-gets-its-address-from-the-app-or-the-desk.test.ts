@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { useRestartableBackings } from '../support/p3-backings';
 import { fulfilmentShop, dayFigures, codeOf, OWNER, DISPATCHER, CASHIER, STORE_ID, DOORS } from '../support/fulfilment-shop';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 // M12-FR-02 · OB-299 · OB-352 (owner, 24 Oct 2026, in writing: "the customer app's saved address and slot when the customer
 // has the app; otherwise the delivery desk enters them against the till job — the till prints a delivery slip"). Through
@@ -23,7 +24,7 @@ describe.each(backings)('a till delivery gets its address and slot from the app 
   it('no member → the desk enters it from the slip; a member with the app → they choose in the app; booked once; the board plans both; a restart', async () => {
     const h = harness();
     const shop = await fulfilmentShop(h);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     const slot = shop.slots[2]!;
 
     // The service desk enrols a member and ties the membership to c-1's app account (seen on the phone).

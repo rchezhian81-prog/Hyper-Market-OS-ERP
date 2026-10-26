@@ -29,6 +29,7 @@ import {
 } from '../../../packages/approvals/src/index';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { Authority } from '../../../packages/approvals/src/authority-rules';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const CURRENCIES: readonly CurrencyCode[] = ['INR', 'USD', 'EUR', 'GBP'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -88,6 +89,8 @@ function readApprovalRequest(v: unknown): ApprovalRequest | undefined {
 }
 
 export interface DelegationDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Every delegation recorded for the tenant — folded latest-per-delegationId (a revocation supersedes). */
   readonly delegations: (tenantId: string) => Promise<readonly Delegation[]> | readonly Delegation[];
   readonly recordDelegation: (tenantId: string, delegation: Delegation, key: string) => Promise<void> | void;
@@ -153,7 +156,7 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         const result = effectiveAuthority({
           userId: b['userId'] as string, subjectType: b['subjectType'] as string,
           delegations: await deps.delegations(ctx.tenantId),
-          today: isDate(b['onDate']) ? b['onDate'] as string : deps.now().slice(0, 10),
+          today: isDate(b['onDate']) ? b['onDate'] as string : await shopToday(deps, ctx.tenantId),
           ...(ownServer !== undefined ? { own: ownServer } : {}),
         });
         return { status: 200, body: { ...result, ...(deps.authorityOf === undefined ? {} : { limitFrom: 'server' }) } };
@@ -199,7 +202,7 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         };
         // Judged per subject type against the lender's authority for THAT type: the cap, and a named scope never widened.
         const existing = await deps.delegations(ctx.tenantId);
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         // OB-290: the lender's limit is the server's for EACH lent kind — a cap above what they may approve is refused.
         const limitFor = async (t: string): Promise<Money | null> => (await withServerLimit(deps, ctx.tenantId, granter, t)).authorityLimit;
         const judge = (scope: readonly string[] | 'all', limit: Money | null = granter.authorityLimit) => grantDelegation({
@@ -235,7 +238,7 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         }
         const existing = (await deps.delegations(ctx.tenantId)).find((d) => d.delegationId === delegationId);
         if (existing === undefined) throw apiError(404, { code: 'delegation_not_found', whatHappened: `No delegation "${delegationId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Check the delegation id.' });
-        const revokedOn = isDate(b['revokedOn']) ? b['revokedOn'] as string : deps.now().slice(0, 10);
+        const revokedOn = isDate(b['revokedOn']) ? b['revokedOn'] as string : await shopToday(deps, ctx.tenantId);
         const revoked: Delegation = { ...existing, revokedOn };
         await deps.recordDelegation(ctx.tenantId, revoked, `${delegationId}-revoke-${revokedOn}`);
         return { status: 200, body: { delegationId, revokedOn } };
@@ -247,7 +250,7 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
       api: 'API-01', method: 'GET', path: '/v1/access/delegations',
       permission: 'approvals.delegation.read',
       handler: async (ctx) => {
-        const today = isDate(ctx.query['onDate']) ? ctx.query['onDate'] as string : deps.now().slice(0, 10);
+        const today = isDate(ctx.query['onDate']) ? ctx.query['onDate'] as string : await shopToday(deps, ctx.tenantId);
         const warnRaw = Number(ctx.query['warnWithinDays']);
         const rows = reviewDelegations({
           delegations: await deps.delegations(ctx.tenantId), today,
@@ -290,7 +293,7 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         const authority = effectiveAuthority({
           userId: ctx.userId, subjectType: request.subjectType,
           delegations: await deps.delegations(ctx.tenantId),
-          today: isDate(b['onDate']) ? b['onDate'] as string : deps.now().slice(0, 10),
+          today: isDate(b['onDate']) ? b['onDate'] as string : await shopToday(deps, ctx.tenantId),
           ...(ownScoped !== undefined ? { own: ownScoped } : {}),
         });
         const outcome = decideWithDelegation({

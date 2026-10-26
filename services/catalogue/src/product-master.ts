@@ -27,6 +27,7 @@ import { liquorReason, LIQUOR_NOT_SOLD } from '../../../packages/restricted-sale
 import { medicineReason, MEDICINE_NOT_SOLD } from '../../../packages/restricted-sales/src/medicines';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 export interface ProductMasterDeps {
   /**
@@ -219,7 +220,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         // carry the health-warning picture in force today. Without one, a product sent as a draft is kept as a draft (not on
         // sale, never in the pack); one sent to be sold now is refused. There is no override.
         if (isTobacco(published) && SELLING.includes(published.lifecycle)) {
-          const standing = warningStanding(published.tobaccoWarning, (deps.now?.() ?? new Date().toISOString()).slice(0, 10));
+          const standing = warningStanding(published.tobaccoWarning, shopDateIn(deps.now?.() ?? new Date().toISOString())); // R1c: in force in the shop today
           if (!standing.sellable) {
             if (read.lifecycle !== 'draft') {
               throw apiError(422, {

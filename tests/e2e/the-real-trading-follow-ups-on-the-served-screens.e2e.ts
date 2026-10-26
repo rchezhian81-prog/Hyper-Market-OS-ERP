@@ -163,11 +163,9 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 follow-ups — the served till and the ma
       await till.keyboard.press('Enter');
       await shows(till, 'pay', 'pay-title', words.which);
       await till.click('#pay-kinds button:first-child');
-      await shows(till, 'sheet', 'sheet-title', words.howMany);
-      await till.click('#sheet-ok');
+      // OB-390: one dal on the bill, so how many is not asked; the reason is one tap.
       await shows(till, 'sheet', 'sheet-title', words.why);
       await till.click(`#reasons button:text-is("${words.damaged}")`);
-      await till.click('#sheet-ok');
       await shows(till, 'pay', 'pay-title', words.condition);
       await till.click(`#pay-kinds button:text-is("${words.resell}")`);
       // The quote: the credit at the bill's price, the difference against the replacement's ROUNDED bill.

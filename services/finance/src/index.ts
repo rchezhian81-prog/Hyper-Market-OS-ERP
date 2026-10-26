@@ -180,12 +180,79 @@ export interface FinanceDeps {
   readonly now: () => string;
 }
 
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const isText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const isWholeNonNeg = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+
+/**
+ * P-08: what is wrong with a journal body, in words — or undefined when it is readable as one. Judged BEFORE any rule
+ * reads it, so an empty, malformed or half-sent body is a named refusal (400), never an unexpected failure (500). The
+ * shape is the declared one (services/platform/src/api-body-schemas.ts, `POST /v1/finance/journals`).
+ */
+export function journalBodyProblem(body: unknown): string | undefined {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return 'the body is not a journal (send a JSON object)';
+  const b = body as Record<string, unknown>;
+  const missing = [
+    ...(isText(b['entryId']) ? [] : ['entryId']),
+    ...(typeof b['period'] === 'string' && MONTH.test(b['period']) ? [] : ['period (YYYY-MM)']),
+    ...(typeof b['documentDate'] === 'string' && DAY.test(b['documentDate']) ? [] : ['documentDate (YYYY-MM-DD)']),
+    ...(typeof b['narrative'] === 'string' ? [] : ['narrative']),
+    ...(b['postedBy'] === undefined || isText(b['postedBy']) ? [] : ['postedBy (text)']),
+  ];
+  if (missing.length > 0) return `it is missing or has an unreadable ${missing.join(', ')}`;
+  const lines = b['lines'];
+  if (!Array.isArray(lines) || lines.length < 2) return 'it needs lines: a list of at least two { accountCode, debitMinor, creditMinor }';
+  const bad = lines.findIndex((l) => l === null || typeof l !== 'object' || Array.isArray(l)
+    || !isText((l as Record<string, unknown>)['accountCode']) || !isWholeNonNeg((l as Record<string, unknown>)['debitMinor']) || !isWholeNonNeg((l as Record<string, unknown>)['creditMinor']));
+  if (bad >= 0) return `line ${bad + 1} is not { accountCode, debitMinor, creditMinor } with whole, non-negative paise`;
+  return undefined;
+}
+
+/** P-08: a period in a path must be a month (YYYY-MM) — anything else is a named refusal, never an unexpected failure. */
+function periodOf(raw: string | undefined): string {
+  const period = (raw ?? '').trim();
+  if (!MONTH.test(period)) {
+    throw apiError(400, {
+      code: 'not_a_period',
+      whatHappened: `"${period}" is not a period — a period is a month, written YYYY-MM (for example 2026-09).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Send the month as YYYY-MM. Nothing was changed.',
+    });
+  }
+  return period;
+}
+
+/** P-08: a body that is there but is not a JSON object is refused by name. */
+function objectBodyOf(body: unknown, what: string): Record<string, unknown> {
+  if (body === undefined || body === null) return {};
+  if (typeof body !== 'object' || Array.isArray(body)) {
+    throw apiError(400, {
+      code: 'not_readable_as_a_request',
+      whatHappened: `The body is not readable as ${what} — send a JSON object.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Send the request again as a JSON object. Nothing was changed.',
+    });
+  }
+  return body as Record<string, unknown>;
+}
+
 export function financeRoutes(deps: FinanceDeps): readonly Route[] {
   return [
     {
       api: 'API-09', method: 'POST', path: '/v1/finance/journals',
       permission: 'finance.journal.post', idempotent: true,
       handler: async (ctx) => {
+        // P-08: an empty, malformed or half-sent body is a named refusal, never a 500.
+        const problem = journalBodyProblem(ctx.body);
+        if (problem !== undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_journal',
+            whatHappened: `This is not readable as a journal: ${problem}. A journal is { entryId, period (YYYY-MM), documentDate (YYYY-MM-DD), narrative, lines: [{ accountCode, debitMinor, creditMinor, centre? }, …] }.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Correct the journal and send it again. Nothing was posted.',
+          });
+        }
         const entry = ctx.body as JournalEntry;
         // M23-FR-01: a line that names a centre must name one the organisation has — a typo is not a new centre.
         const named = Array.isArray(entry?.lines) ? entry.lines.map((l) => (l as { centre?: unknown }).centre).filter((c) => c !== undefined) : [];
@@ -222,8 +289,9 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
       api: 'API-09', method: 'POST', path: '/v1/finance/periods/:period/close',
       permission: 'finance.period.close', idempotent: true,
       handler: async (ctx) => {
-        const period = ctx.params['period'] ?? '';
-        const body = (ctx.body ?? {}) as { signedBy?: unknown; approvalId?: unknown };
+        // P-08: a period that is not a month, or a body that is not an object, is a named refusal — never a 500.
+        const period = periodOf(ctx.params['period']);
+        const body = objectBodyOf(ctx.body, 'a period close') as { signedBy?: unknown; approvalId?: unknown };
         // A period is not closed twice. If figures changed after signing, it is REOPENED (with a second
         // person's approval), never silently re-closed over the top of the signed set.
         if ((await deps.periodStates(ctx.tenantId)).get(period) === 'closed') {

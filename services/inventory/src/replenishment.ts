@@ -34,6 +34,7 @@ import { salesHistory, type SoldLine } from '../../../packages/demand/src/sales-
 import type { AssortmentEntry } from '../../../packages/merchandising/src/index';
 import { rangeStatusOf } from './assortment';
 import { assertLocationInScope, type LocationBranches } from './location-scope';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** Head office's own stock facts for one store (the store and every place the org hierarchy puts under it). */
 export interface StoreReplenishmentFacts {
@@ -51,6 +52,8 @@ export interface StoreReplenishmentFacts {
 }
 
 export interface ReplenishmentRoutesDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly now: () => string;
   /**
    * Optional (M09 loop): the lines the stock ledger recorded SOLD at the store's places over [fromIso, toIso), used to
@@ -187,7 +190,7 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
             }
             windowDays = n;
           }
-          const to = deps.now().slice(0, 10);
+          const to = await shopToday(deps, ctx.tenantId);
           const from = addDays(to, -(windowDays - 1));
           const lines = await deps.soldLines(ctx.tenantId, storeId, `${from}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`);
           const rate = new Map(salesHistory({ lines, from, to }).products.map((p) => [p.productId, p.avgDailyDemandMinor]));
@@ -200,7 +203,7 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
         // FUL-11: the store's effective range ALWAYS decides what may be proposed for it at all.
         const outOfRange: { productId: string; status: string }[] = [];
         const entries = deps.rangeOf === undefined ? [] : await deps.rangeOf(ctx.tenantId, storeId);
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         // The one range rule (`rangeStatusOf`, as the purchase order asks it): only a listed item is reordered; a store with
         // no range recorded yet is not judged (as at the order).
         priced = priced.filter((it) => {

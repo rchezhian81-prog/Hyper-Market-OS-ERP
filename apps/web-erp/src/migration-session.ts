@@ -66,6 +66,7 @@ import { dayDigestOf, signParallelDay, unexplainedDifferences, type DaySignRefus
 import { SLICE_FILES, SLICE_TEMPLATES, sliceTemplateCsv, type SliceFile } from '../../../packages/migration/src/slice-import';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { makeEvent } from '../../../packages/contracts/src/event';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 
 /** What this surface can see, and what it honestly cannot. */
 export interface MigrationPorts {
@@ -429,7 +430,7 @@ export function createMigrationSession(config: MigrationConfig, ports: Migration
         archive,
         cutoverAccepted: config.cutoverAccepted,
         openAssessments,
-        today: config.now.slice(0, 10),
+        today: Number.isNaN(Date.parse(config.now)) ? config.now.slice(0, 10) : wallClockIn(config.now).slice(0, 10), // R1c: this device's own date
       });
     },
 

@@ -27,6 +27,11 @@
 export type CaseKind = 'complaint' | 'enquiry' | 'warranty' | 'lost_and_found';
 export type CasePriority = 'low' | 'normal' | 'high' | 'urgent';
 export type CaseState = 'open' | 'waiting_on_customer' | 'resolved' | 'closed';
+/**
+ * OB-390: how the customer reached the shop with this case — the way a reply goes back by default. Only the ways a person
+ * can reply today (no SMS/WhatsApp provider is connected). Absent: not said, and the desk chooses.
+ */
+export type CaseChannel = 'phone' | 'in_person' | 'email';
 
 export interface ServiceCase {
   readonly caseId: string;
@@ -40,6 +45,8 @@ export interface ServiceCase {
   readonly summary: string;
   /** Related order or product, so the desk is not working blind. */
   readonly orderRef?: string;
+  /** OB-390: how the customer reached the shop — the reply's default way back. */
+  readonly channel?: CaseChannel;
   /** When a human first replied. Absent means nobody has answered yet. */
   readonly firstRespondedAt?: string;
   readonly resolvedAt?: string;

@@ -16,6 +16,8 @@ import type { AdapterCategory, AdapterConfig } from '../../../packages/integrati
 import type { PosRefund } from '../../../packages/settlement/src/settlement';
 import type { ProcessorRegisterDeps } from '../../customer/src/processor-register';
 import { STREAM, streamName, PERSONAL_DATA_POLICY, settlementKeyOf } from './adapters';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
   (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
@@ -156,9 +158,10 @@ const ELECTRONIC = new Set(['card', 'upi']);
  * that balance IS a till refund the provider will debit (C13, verifier NEW-5). It is read here for `balanceMinor`, keyed
  * to the original bill's tender of that kind exactly like a plain refund, so it matches the provider's refund line.
  */
-export function settlementRefundsAdapter(input: { readonly store: EventStore }) {
+export function settlementRefundsAdapter(input: { readonly store: EventStore; readonly calendar?: ShopCalendarOf }) {
   return {
     electronicRefunds: async (tenantId: string, fromIso: string, toIso: string): Promise<readonly PosRefund[]> => {
+      const calendar = await shopClock(input.calendar).calendar(tenantId); // R1b: refunded on the shop's trading day
       const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from: fromIso, to: toIso });
       const out: PosRefund[] = [];
       for (const e of returns) {
@@ -182,7 +185,7 @@ export function settlementRefundsAdapter(input: { readonly store: EventStore }) 
           const ref = original === undefined ? undefined : settlementKeyOf(original);
           if (ref !== undefined) originalRef = ref;
         }
-        out.push({ id: r.returnId, originalRef, amountMinor, refundedOn: r.processedAt.slice(0, 10) });
+        out.push({ id: r.returnId, originalRef, amountMinor, refundedOn: tradingDayIn(r.processedAt, calendar) });
       }
       return out;
     },

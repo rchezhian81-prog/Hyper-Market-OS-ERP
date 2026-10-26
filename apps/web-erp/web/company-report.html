@@ -11,8 +11,9 @@
       are missing or stale, and, when the viewer is scoped, what was withheld. Drill from the company total
       to the per-branch contributors. Export takes the numbers out as an open CSV through the one authorised
       export path. In production the backend is the cloud reporting API running the production @sre/reporting
-      `consolidate`; in the browser E2E it is a local Node server running the SAME engine, so no money maths
-      ever enters this page (P-08 no silent failure, §28 scope, hard rule #2 append-only source).
+      `consolidate`, on the same origin (the store computer serves this page, OB-391); the company and its branches
+      are head office's own, read from GET /v1/org/nodes. No money maths and no branch name ever enters this page
+      (P-08 no silent failure, §28 scope, hard rule #2 append-only source).
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -74,11 +75,13 @@
               <option value="returns" id="opt-returns">Returns</option>
             </select>
           </label>
+          <label for="company" id="company-wrap" hidden><span id="company-label">Company</span>
+            <select id="company"></select>
+          </label>
           <label for="scope"><span id="scope-label">View as</span>
+            <!-- OB-391: the branches are head office's own (GET /v1/org/nodes), filled in by the page — none written here. -->
             <select id="scope">
               <option value="all" id="opt-all">Whole company</option>
-              <option value="br-1" id="opt-br-1">Anna Nagar — branch only</option>
-              <option value="br-2" id="opt-br-2">T. Nagar — branch only</option>
             </select>
           </label>
         </div>
@@ -111,8 +114,11 @@
         <a id="download" class="download" hidden download="company-report.csv">Download the file</a>
         <pre id="preview" hidden aria-label="CSV preview"></pre>
         <p class="foot" id="foot">Every export is authorised and logged; a branch view never carries another branch's rows.</p>
+        <p class="foot" id="served" hidden></p>
       </section>
     </main>
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
     <script type="module" src="./company-report.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>

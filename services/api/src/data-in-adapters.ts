@@ -38,8 +38,9 @@ import {
   STREAM, STREAM_FOR, streamName, productMasterAdapter, supplierMasterAdapter, productUomFrom, registeredStores, knownStockPlace, storeRulesAdapter,
   foldPurchaseOrders, liveSupplierInvoices, transfersAdapter, wasteAdapter, serviceCaseAdapter, INVOICE_WITHDRAWN,
 } from './adapters';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
-interface Base { readonly store: EventStore; readonly now: () => string }
+interface Base { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }
 
 export const DATA_IN_STREAMS = Object.freeze({
   imports: streamName(STREAM.purchase, 'data-imports'),
@@ -88,6 +89,7 @@ export function dataInTemplates(input: Base & { readonly memberKey?: Buffer }): 
       storeIds: async (t) => [...await registeredStores(input, t)],
       marginFloorFor: async (t, storeId) => (await storeRulesAdapter(input).rules(t, storeId))?.marginFloorBps,
       entries: priceEntries(input),
+      shopDateOf: (t, at) => shopClock(input.calendar).dateOf(t, at), // R1b: "from today" in the shop
     }),
     openingStockTemplate({
       productIds: async (t) => (await products.products(t)).map((p) => p.productId),
@@ -150,7 +152,7 @@ export function dataInCommitDeps(input: Base): Pick<DataImportDeps, 'recordDomai
           const idx = mine.findIndex((x) => x.id === `import-${record.jobId}-${storeId}`);
           const before = mine.slice(0, idx < 0 ? mine.length : idx).filter((x) => x.status === 'active').at(-1);
           if (before === undefined) continue; // refused before here (`blocksRollback`): never left with no price
-          const back: PriceEntry = { ...before, id: `rollback-${record.jobId}-${storeId}`, effectiveFrom: at.slice(0, 10), effectiveTo: null, status: 'active', version: (mine.at(-1)?.version ?? 0) + 1 };
+          const back: PriceEntry = { ...before, id: `rollback-${record.jobId}-${storeId}`, effectiveFrom: await shopClock(input.calendar).dateOf(t, at), effectiveTo: null, status: 'active', version: (mine.at(-1)?.version ?? 0) + 1 };
           out.push(entry(STREAM.pricing, `pricechange-rollback-${record.jobId}-${productId}-${storeId}`, 'PriceChangeRecorded', at, `pricechange-${t}-rollback-${record.jobId}-${productId}-${storeId}`, { id: `price-${productId}`, productId, priceMinor: before.price.minor, currency: before.price.currency, setBy: record.requestedBy, verdict: 'ok', approvedBy: record.approvedBy, reason: why, at, operativeAt: [storeId] }, 'api/pricing'));
           out.push(entry(DATA_IN_STREAMS.priceList(productId), `price-entry-${productId}-${back.id}`, 'PriceListEntryPublished', at, `price-entry-${t}-${productId}-${back.id}`, { ...back, price: money(before.price.minor, before.price.currency) }, 'api/pricing'));
         } else if (e.kind === 'opening_stock') {

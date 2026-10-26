@@ -15,6 +15,8 @@
 //
 // A held basket holds no stock: it is a note of intent, not a movement.
 
+import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import {
@@ -94,6 +96,7 @@ export class HeldBills {
       readonly storeId: () => string;
       readonly tenantId: string;
       readonly now: () => string;
+      readonly tradingDayOf: (iso: string) => string;
     },
     restored: readonly SuspendedBill[],
     unreadable: number,
@@ -111,6 +114,11 @@ export class HeldBills {
     readonly policy: () => SuspensionPolicy | null;
     readonly storeId: () => string;
     readonly now?: () => string;
+    /**
+     * R1a (M01-FR-02): the shop's trading day of an instant — the box passes its pack's zone and cut-off. Used only when the
+     * till sent no trading day. Absent: the shop default calendar (Asia/Kolkata, midnight), never the UTC date.
+     */
+    readonly tradingDayOf?: (iso: string) => string;
   }): Promise<HeldBills> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'held-bills.log' });
     const restored: SuspendedBill[] = [];
@@ -123,7 +131,7 @@ export class HeldBills {
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
-    return new HeldBills(log, { policy: input.policy, storeId: input.storeId, tenantId: input.tenantId, now: input.now ?? (() => new Date().toISOString()) }, restored, unreadable);
+    return new HeldBills(log, { policy: input.policy, storeId: input.storeId, tenantId: input.tenantId, now: input.now ?? (() => new Date().toISOString()), tradingDayOf: input.tradingDayOf ?? ((iso) => tradingDayIn(iso, DEFAULT_SHOP_CALENDAR)) }, restored, unreadable);
   }
 
   private serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -158,7 +166,7 @@ export class HeldBills {
       const scratch = SerialisedSuspendedBillStore.hydrate(this.bills.serialise());
       const result = suspendBill({
         billId: input.billId, tenantId: this.deps.tenantId, storeId: this.deps.storeId(), laneId: input.laneId,
-        cashierId: input.cashierId, tradingDay: isStr(input.tradingDay) ? input.tradingDay : this.deps.now().slice(0, 10),
+        cashierId: input.cashierId, tradingDay: isStr(input.tradingDay) ? input.tradingDay : this.deps.tradingDayOf(this.deps.now()),
         currency: 'INR', lines: lines as SuspendedLine[], at: this.deps.now(),
         ...(isStr(input.reason) ? { reason: input.reason } : {}),
         ...(answers.length === 0 ? {} : { ageAnswers: answers }),

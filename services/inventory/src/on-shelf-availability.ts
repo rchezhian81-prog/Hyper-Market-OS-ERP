@@ -20,6 +20,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { AdjustmentRequestRecord, AdjustmentRequestFlag } from './adjustment-requests';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 /** The default look-back, the same 28 days the sales-history read uses by default. */
 export const OSA_DEFAULT_LOOKBACK_DAYS = 28;
@@ -110,7 +111,7 @@ async function judge(deps: OnShelfAvailabilityDeps, ctx: RequestContext, asOf: s
 }
 
 function readWindow(ctx: RequestContext, now: string): { asOf: string; lookbackDays: number } {
-  const asOf = ctx.query['asOf'] ?? now.slice(0, 10);
+  const asOf = ctx.query['asOf'] ?? shopDateIn(now); // R1c: the shop's today
   if (!DAY.test(asOf)) bad('invalid_on_shelf_availability_query', 'asOf must be a YYYY-MM-DD day.');
   const lb = ctx.query['lookbackDays'];
   const lookbackDays = lb === undefined ? OSA_DEFAULT_LOOKBACK_DAYS : Number(lb);

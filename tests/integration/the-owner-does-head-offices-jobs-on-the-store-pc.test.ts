@@ -5,6 +5,7 @@ import { TEST_IDP } from '../support/api-harness';
 import { r3OpsBackings, tenantClient } from '../support/r3-ops-backings';
 import { runOwnerSetup, type SetupClient } from '../../packages/migration/src/owner-steps-command';
 import { buildOperatorToken, buildPersonToken } from '../../scripts/lib/operator-env';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * OB-257 (owner, 20 Oct 2026, "Owner setup commands") · W-3 — head office's own jobs, done on the store PC by the
@@ -51,7 +52,7 @@ describe.each(backings)('the owner does head office\'s jobs on the store PC — 
     await h.provisionRole(T, 'u-it', 'platform_admin');
     const client = personClient(() => h);
     const deps = { client, confirm: async () => true, askPin: async () => '123456', verifyPin: () => 'ok' as const };
-    const run = (step: string, values: Record<string, string>) => runOwnerSetup({ step, tenantId: T, targetKind: 'rehearsal', demoTenantIds: ['pilot-demo'], values, today: new Date().toISOString().slice(0, 10), now: () => new Date().toISOString() }, deps);
+    const run = (step: string, values: Record<string, string>) => runOwnerSetup({ step, tenantId: T, targetKind: 'rehearsal', demoTenantIds: ['pilot-demo'], values, today: shopDateIn(new Date().toISOString()), now: () => new Date().toISOString() }, deps);
     const expectDone = async (p: ReturnType<typeof run>): Promise<void> => { const o = await p; expect(o.exitCode, o.lines.join('\n')).toBe(0); };
 
     await expectDone(run('shop', { as: 'u-it', approver: OWNER, company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: GSTIN, store: STORE, 'store-name': 'SRE Hyper Market' }));
@@ -64,7 +65,7 @@ describe.each(backings)('the owner does head office\'s jobs on the store PC — 
     const { req, ok } = tenantClient(() => h, T);
     await ok(req('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', { rateBps: 500 }), 'tax rate');
     await ok(req('POST', '/v1/catalogue/products/p-rice/publish', { product: { sku: 'RICE-5KG', name: 'Ponni rice 5kg', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }), 'product');
-    await ok(req('POST', '/v1/prices/list/p-rice/entries/e1', { scope: 'store', scopeRef: STORE, priceMinor: 48_000, mrpMinor: 50_000, costMinor: 40_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: new Date().toISOString().slice(0, 10) }), 'price');
+    await ok(req('POST', '/v1/prices/list/p-rice/entries/e1', { scope: 'store', scopeRef: STORE, priceMinor: 48_000, mrpMinor: 50_000, costMinor: 40_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: shopDateIn(new Date().toISOString()) }), 'price');
     await expectDone(run('publish-catalogue', { as: OWNER, store: STORE }));
 
     // A cashier cannot do head office's jobs; a stand-in token with no PIN evidence cannot grant.

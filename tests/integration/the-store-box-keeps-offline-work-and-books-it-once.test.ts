@@ -218,7 +218,7 @@ describe.each(backings)('the store box keeps offline work through a cut and a co
     const outcomes = await box.refreshWorkFeeds!();
     expect(outcomes.map((o) => [o.name, o.status])).toEqual([['production', 'updated'], ['food-safety', 'updated'], ['transfers', 'updated'], ['quality-holds', 'updated'], ['equipment', 'updated'], ['help', 'updated']]); // OB-288 LP/workforce: + the monitored rooms and the help library
     const mgr = await served(box, 'manager');
-    expect(mgr['clock']).toMatchObject({ verdict: 'flag_bills', offsetSeconds: 360, thresholds: { warnSeconds: 120, flagSeconds: 300, by: 'owner_decision_ob327' }, needsAttention: true });
+    expect(mgr['clock']).toMatchObject({ verdict: 'flag_bills', offsetSeconds: expect.toSatisfy((n: number) => Math.abs(n - 360) <= 5), thresholds: { warnSeconds: 120, flagSeconds: 300, by: 'owner_decision_ob327' }, needsAttention: true });
 
     // Head office cancels t-cancel; the box — offline — sends it anyway from the handheld.
     expect((await c.call('POST', '/v1/warehouse/transfers/t-cancel/cancel', 'u-owner', { reason: 'store 2 is full' })).status).toBe(200);
@@ -234,7 +234,7 @@ describe.each(backings)('the store box keeps offline work through a cut and a co
     const wh = await served(cold, 'warehouse');
     expect(((wh['transfers'] as Body)['toSend'] as Body[]).map((t) => t['transferId']).sort()).toEqual(['t-cancel', 't-send']);
     // The clock verdict is still said after the restart (from the box's own clock log), as last checked.
-    expect((await served(cold, 'manager'))['clock']).toMatchObject({ verdict: 'flag_bills', offsetSeconds: 360 });
+    expect((await served(cold, 'manager'))['clock']).toMatchObject({ verdict: 'flag_bills', offsetSeconds: expect.toSatisfy((n: number) => Math.abs(n - 360) <= 5) }); // the round trip adds a second or two on a busy runner
 
     const late = ev('TransferDispatchRecorded', 'transfer-dispatch:t-cancel', 'warehouse-app', { transferId: 't-cancel', storeId: S1, dispatchedBy: 'u-wh', at: new Date().toISOString(), source: 'warehouse-handheld' });
     expect((await hand(cold, 'warehouse', [late]))[0]?.status).toBe('accepted');

@@ -37,6 +37,7 @@
       .panel .k { color: var(--muted); font-size: 14px; }
       .panel .v { font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
       .panel.attention { border-left: 6px solid var(--degraded); }
+      tr.attention td { font-weight: 700; color: var(--danger-text); }
       #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
       table { width: 100%; border-collapse: collapse; }
       .table-wrap { overflow-x: auto; max-width: 100%; }
@@ -75,6 +76,7 @@
           <div class="panel" id="p-needs"><span class="k" id="k-needs">Needs a person</span><span class="v" id="v-needs">—</span></div>
           <div class="panel" id="p-waiting"><span class="k" id="k-waiting">Your requests waiting</span><span class="v" id="v-waiting">—</span></div>
           <div class="panel" id="p-unused"><span class="k" id="k-unused">Taken but never used</span><span class="v" id="v-unused">—</span></div>
+          <div class="panel" id="p-zones"><span class="k" id="k-zones">Store computers on the wrong time zone</span><span class="v" id="v-zones">—</span></div>
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
@@ -101,6 +103,14 @@
           <tbody id="unused-rows"></tbody>
         </table></div>
         <p class="muted" id="no-unused" hidden></p>
+        <!-- R3 · P-08: each store computer's own time zone against the shop's, from its latest health report. -->
+        <h3 id="zones-h">Time zone</h3>
+        <p class="lead" id="zones-lead">Each store computer's own clock zone against the shop's.</p>
+        <div class="table-wrap"><table aria-labelledby="zones-h">
+          <thead><tr><th id="c-z-store">Store</th><th id="c-z-computer">Store computer (sign-in)</th><th id="c-z-zone">Its time zone</th><th id="c-z-shop">The shop's time zone</th><th id="c-z-says">What it means</th><th id="c-z-reported">Reported</th></tr></thead>
+          <tbody id="zone-rows"></tbody>
+        </table></div>
+        <p class="muted" id="no-zones" hidden></p>
       </section>
 
       <section id="view-findings" aria-labelledby="findings-h" hidden>

@@ -106,7 +106,7 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
     const packFile = join(dataDir, 'store-pack.json');
     await writeFile(packFile, JSON.stringify({
       version: 1,
-      policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+      policies: { timeZone: 'UTC', storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 },
       lossPreventionRules: [],
     }), 'utf8');

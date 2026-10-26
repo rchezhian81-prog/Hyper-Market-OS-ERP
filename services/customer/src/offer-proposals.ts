@@ -27,6 +27,7 @@ import {
   draftPersonalOffers, offerGate, InvalidOfferDraftError, OFFER_EXCLUSION_WORDS, OFFER_CAP,
   type OfferMember, type MemberPurchaseLine, type OfferPricing, type DraftedOffer, type ExcludedMember, type OfferExclusion,
 } from '../../../packages/loyalty/src/next-best-offer';
+import { shopDateIn, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface AgeConfirmation {
   readonly customerRef: string;
@@ -59,6 +60,8 @@ export interface OfferBatch {
 }
 
 export interface OfferProposalDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly now: () => string;
   /** The members an offer may be drafted for, each with consent (both purposes) and age as recorded now. */
   readonly members: (tenantId: string) => Promise<readonly OfferMember[]>;
@@ -98,7 +101,7 @@ export function issuedDaysByMember(batches: readonly OfferBatch[]): Map<string, 
   const out = new Map<string, string[]>();
   for (const b of latestBatches(batches)) {
     if (b.state !== 'approved' || b.approvedAt === undefined) continue;
-    for (const i of b.issued ?? []) out.set(i.customerRef, [...(out.get(i.customerRef) ?? []), b.approvedAt.slice(0, 10)]);
+    for (const i of b.issued ?? []) out.set(i.customerRef, [...(out.get(i.customerRef) ?? []), shopDateIn(b.approvedAt)]);
   }
   return out;
 }
@@ -127,7 +130,7 @@ export function offerProposalRoutes(deps: OfferProposalDeps): readonly Route[] {
         }
         const prior = await findBatch(ctx.tenantId, batchId);
         if (prior !== undefined) return { status: 200, body: { batch: prior, alreadyDrafted: true } };
-        const asOfDay = deps.now().slice(0, 10);
+        const asOfDay = await shopToday(deps, ctx.tenantId);
         const fromDay = addDays(asOfDay, -((b['lookbackDays'] as number) - 1));
         const issued = issuedDaysByMember(await deps.batches(ctx.tenantId));
         let drafted;
@@ -165,7 +168,7 @@ export function offerProposalRoutes(deps: OfferProposalDeps): readonly Route[] {
           throw apiError(409, { code: 'offer_batch_rejected', whatHappened: `Batch ${batchId} was rejected by ${batch.rejectedBy ?? 'someone'}; it cannot be approved.`, wasItSaved: 'not_saved', nextSafeAction: 'Draft a new batch. Nothing was issued.' });
         }
         const at = deps.now();
-        const today = at.slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId); // R1c: valid from the shop's today
         const validUntil = addDays(today, batch.validDays - 1);
         const issuedDays = issuedDaysByMember(await deps.batches(ctx.tenantId));
         const issued: { customerRef: string; code: string; productId: string; discountMinor: number; validUntil: string }[] = [];

@@ -208,6 +208,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // store manager only), and sending its SMS notice once switched on. Switching recall messages on is the owner's alone.
       'quality.recall.notice.read', 'quality.recall.notice.send', 'quality.recall.notice.switch',
       // ── Lane 2 · P1 — end
+      // ── FU-2 · OB-387 (recall "phoned" ticks) — begin
+      // Tick a customer on a recall's call list as phoned (who, when; append-only). Any tick refuses the withdrawal.
+      'quality.recall.notice.phoned',
+      // ── FU-2 · OB-387 — end
+      // ── FU-2 · OB-393 (free samples approved by a store manager other than the giver) — begin
+      'inventory.freesample.approve',
+      // ── FU-2 · OB-393 — end
       // ── OB-288 lane 1 · P1 (identity, authority, configuration) — begin
       // OB-290/291/292: the owner reads, proposes and alone APPROVES the approval rules; approves structural and
       // high-impact configuration changes; reviews who holds what (M02-FR-01/02).
@@ -507,6 +514,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // once the owner has switched recall messages on.
       'quality.recall.notice.read', 'quality.recall.notice.send',
       // ── Lane 2 · P1 — end
+      // ── FU-2 · OB-387 (recall "phoned" ticks) — begin
+      // The store manager phones the customers on the call list and ticks each one (who, when; append-only).
+      'quality.recall.notice.phoned',
+      // ── FU-2 · OB-387 — end
+      // ── FU-2 · OB-393 (free samples approved by a store manager other than the giver) — begin
+      // Approve or reject a free sample before its stock leaves and its GST give-back is placed — never one they gave.
+      'inventory.freesample.approve',
+      // ── FU-2 · OB-393 — end
       // ── OB-288 lane 1 · P1 (identity, authority, configuration) — begin
       // The store manager reads the approval rules and may ask for a change — never to their own role's limits (§28).
       'approvals.rules.read', 'approvals.rules.propose',
@@ -768,6 +783,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // "contract/credit changes approved". The credit override above a limit stays the owner's (OB-290).
       'b2b.contract.manage', 'b2b.contract.read',
       // ── OB-288 commercial desks — end
+      // ── OB-288 round 3 — begin
+      // OB-395 (owner, 26 Oct 2026): the accountant READS head office's company and branch names (GET /v1/org/nodes) so
+      // the Company report shows its figures for them. Read only — no org write (`platform.setup.write`) comes with it.
+      'org.branch.read',
+      // ── OB-288 round 3 — end
     ],
   },
   {

@@ -193,6 +193,7 @@ const WORDS = {
     refundMax: 'Most you can refund',
     refundTooMuch: 'That is more than this bill allows —',
     refundGiving: 'Refunding',
+    refundChangeAmount: 'Change the amount',
     refundHow: 'How is the refund given?',
     storeCredit: 'Store credit',
     refundCustomerId: 'Store credit: key the loyalty member\'s mobile number',
@@ -428,6 +429,7 @@ const WORDS = {
     refundMax: 'திரும்பத் தரக்கூடிய அதிகபட்சம்',
     refundTooMuch: 'இந்த பில் அனுமதிப்பதை விட அதிகம் —',
     refundGiving: 'திரும்பத் தருவது',
+    refundChangeAmount: 'தொகையை மாற்று',
     refundHow: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?',
     storeCredit: 'கடை வரவு',
     refundCustomerId: 'கடை வரவு: லாயல்டி உறுப்பினரின் கைபேசி எண்ணை உள்ளிடவும்',
@@ -1007,7 +1009,7 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
   entryValue = initial;
@@ -1048,6 +1050,9 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
         for (const other of el('reasons').children) other.setAttribute('aria-pressed', 'false');
         button.setAttribute('aria-pressed', 'true');
         chosen = reason.code;
+        // OB-390 · pos-refund.md "Choose a reason: 1 (tap a reason chip)": where the question is a reason and nothing
+        // else, the chip IS the answer — the words on it are the reason taken, as a quick-row value is (never free text).
+        if (commit) closeSheet(reason.code);
       });
       return button;
     }));
@@ -2238,11 +2243,33 @@ async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFU
   if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager'), STOP); return null; }
   const pin = await ask({ title: t('managerPinTitle'), mode: 'number', hint: t('managerPinHint'), initial: '', mask: true });
   if (pin === null || pin === '') { tell(t('read'), t('refundNeedManager'), STOP); return null; }
-  const reason = await ask({ title: t(reasonTitle), mode: 'choice', choices: reasons });
+  // OB-390: the manager's reason for a RETURN is the refund's own preset list, answered with one tap on a chip (as the
+  // cashier's is). The other approvals (no sale, a price change, a card refund's check) keep their tap and OK.
+  const reason = await ask({ title: t(reasonTitle), mode: 'choice', choices: reasons, commit: reasons === REFUND_REASONS });
   if (!reason) return null;
   const outcome = await session.approveAtTill({ managerId: String(by), pin: String(pin), kind, ...(billRef ? { billRef } : {}), valueMinor, reason });
   if (!outcome.approved) { tell(t('approvalRefused'), outcome.laneMessage, STOP); return null; }
   return { by: outcome.approvedBy, reason, approvalId: outcome.approvalId };
+}
+
+/** The "Change the amount" answer on the refund's how-is-it-given question (OB-390) — never a refund method. */
+const CHANGE_AMOUNT = 'change_amount';
+
+/**
+ * How many of a bill's line are coming back, capped at what is still returnable. OB-390: when exactly ONE can come back
+ * there is nothing to choose, so the till does not ask — it is that one. Otherwise the keypad, as before. `null` when the
+ * cashier cancelled or keyed a number that cannot come back (and was told so).
+ */
+async function howManyBack(productId, line) {
+  if (line.returnableMinor === 1) return 1;
+  const qtyAns = await ask({
+    title: `${t('refundHowMany')} — ${descOf(productId)}`, mode: 'number', initial: '1',
+    hint: `${t('refundCanReturn')}: ${line.returnableMinor}`,
+  });
+  if (qtyAns === null) return null;
+  const qty = Number(qtyAns);
+  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty'), STOP); return null; }
+  return qty;
 }
 
 /**
@@ -2287,16 +2314,11 @@ async function startRefund() {
   if (productId === null) return;
   const line = returnable.find((l) => l.productId === productId);
 
-  const qtyAns = await ask({
-    title: `${t('refundHowMany')} — ${descOf(productId)}`, mode: 'number', initial: '1',
-    hint: `${t('refundCanReturn')}: ${line.returnableMinor}`,
-  });
-  if (qtyAns === null) return;
-  const qty = Number(qtyAns);
-  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty'), STOP); return; }
+  const qty = await howManyBack(productId, line);
+  if (qty === null) return;
 
   // 3. Reason (chosen, never typed — M15), and the condition the goods come back in (M13-FR-02).
-  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
+  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS, commit: true });
   if (!reason) return;
 
   const disposition = await choose(t('refundCondition'), [
@@ -2305,20 +2327,38 @@ async function startRefund() {
   ]);
   if (disposition === null) return;
 
-  // 4. The amount — shown against the ceiling as they type; the engine caps it too (M13-FR-03).
-  const amount = await ask({
-    title: t('refundAmount'), mode: 'number',
-    hint: `${t('refundMax')}: ${inr(bill.maxRefundMinor)}`,
-    onChange: (rupees) => (Math.round(rupees * 100) > bill.maxRefundMinor
-      ? `${t('refundTooMuch')} ${inr(bill.maxRefundMinor)}`
-      : `${t('refundGiving')}: ${inr(Math.round(rupees * 100))}`),
-  });
-  if (amount === null) return;
-  const refundMinor = Math.round(Number(amount) * 100);
-  if (refundMinor <= 0) return;
-
-  const refundTender = await choose(t('refundHow'), refundTenders());
-  if (refundTender === null) return;
+  // 4. The amount and how it is given (OB-390). The amount STARTS at what the goods coming back were charged on this bill
+  // (the engine's own valuation, never above what is left to refund) and is shown on the question that asks how it is
+  // given; "Change the amount" opens the keypad, shown against the ceiling as they type. The METHOD is never chosen for
+  // the cashier: it is always one of their taps. The engine judges whatever amount is sent (M13-FR-03).
+  const typeAmount = async () => {
+    const amount = await ask({
+      title: t('refundAmount'), mode: 'number',
+      hint: `${t('refundMax')}: ${inr(bill.maxRefundMinor)}`,
+      onChange: (rupees) => (Math.round(rupees * 100) > bill.maxRefundMinor
+        ? `${t('refundTooMuch')} ${inr(bill.maxRefundMinor)}`
+        : `${t('refundGiving')}: ${inr(Math.round(rupees * 100))}`),
+    });
+    return amount === null ? null : Math.round(Number(amount) * 100);
+  };
+  let refundMinor = typeof bill.lineValueMinor === 'function' ? bill.lineValueMinor(productId, qty) : 0;
+  if (!(refundMinor > 0)) {
+    // No value the bill can give (nothing priced, nothing left): the cashier keys it, as before.
+    const typed = await typeAmount();
+    if (typed === null || typed <= 0) return;
+    refundMinor = typed;
+  }
+  let refundTender = null;
+  while (refundTender === null) {
+    const pick = await choose(`${t('refundHow')} — ${t('refundGiving')} ${inr(refundMinor)}`, [
+      ...refundTenders(),
+      { value: CHANGE_AMOUNT, label: t('refundChangeAmount') },
+    ]);
+    if (pick === null) return;
+    if (pick !== CHANGE_AMOUNT) { refundTender = pick; break; }
+    const typed = await typeAmount();
+    if (typed !== null && typed > 0) refundMinor = typed; // cancelled or nought: back to the question, amount unchanged
+  }
 
   // 4a. Store credit is money on the customer's account, so it must go to a NAMED customer (M13-FR-03).
   // Capture them scanned or keyed; if none is given, the credit cannot be issued to nobody — stop and
@@ -2405,16 +2445,11 @@ async function startExchange() {
   })));
   if (productId === null) return;
   const line = returnable.find((l) => l.productId === productId);
-  const qtyAns = await ask({
-    title: `${t('refundHowMany')} — ${descOf(productId)}`, mode: 'number', initial: '1',
-    hint: `${t('refundCanReturn')}: ${line.returnableMinor}`,
-  });
-  if (qtyAns === null) return;
-  const qty = Number(qtyAns);
-  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty'), STOP); return; }
+  const qty = await howManyBack(productId, line);
+  if (qty === null) return;
 
   // 3. Reason (chosen, never typed — M15) and the condition the goods come back in (M13-FR-02).
-  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
+  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS, commit: true });
   if (!reason) return;
   const disposition = await choose(t('refundCondition'), [
     { value: 'resell', label: t('dispResell') },
@@ -2555,7 +2590,7 @@ async function startNoReceiptReturn() {
   if (!Number.isInteger(qty) || qty <= 0) { tell(t('read'), t('refundBadQty'), STOP); return; }
 
   // 3. Reason (chosen, never typed — M15) and the condition the goods come back in (M13-FR-02).
-  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
+  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS, commit: true });
   if (!reason) return;
   const disposition = await choose(t('refundCondition'), [
     { value: 'resell', label: t('dispResell') },

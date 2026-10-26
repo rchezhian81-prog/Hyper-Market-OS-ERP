@@ -25,6 +25,7 @@
 //                        signed-in person — PA-06 part 3b)
 // Not yet built here (DF-3-c): the practice warehouse delivery and bins, counts.
 
+import { DEFAULT_SHOP_CALENDAR, shopClock, shopDateIn, tradingMonthIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
@@ -85,6 +86,11 @@ export interface StorePackBuildInput {
    * (`selfCheckoutWatch`) — his latest entry, else his written decision. Carried in the policies. Absent → never sent.
    */
   readonly floorDevices?: (tenantId: string) => Promise<Record<string, unknown>>;
+  /**
+   * R1a (M01-FR-02): the tenant's calendar (its `locale.time_zone`). The pack carries the zone to the store box, which
+   * dates every bill, shift and day close by it — never by its container's own zone (UTC). Absent: the shop default.
+   */
+  readonly calendar?: ShopCalendarOf;
 }
 
 /**
@@ -130,6 +136,9 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
 
   // ── the store itself ────────────────────────────────────────────────────────────────────────────────────────────
   const settings = await input.settings(tenantId, storeId);
+  // R1a: the shop's zone (tenant setting) with this store's own cut-off — the box's calendar, and the pack's own dates.
+  const shopZone = (await shopClock(input.calendar).calendar(tenantId)).timeZone;
+  const packCalendar = { timeZone: shopZone, tradingDayCutoff: settings?.tradingDayCutoff ?? DEFAULT_SHOP_CALENDAR.tradingDayCutoff };
   if (settings !== undefined) {
     // OB-271 · CGST Rule 46(a): the shop's legal identity as the real-trading tax invoice prints it — the GST registration
     // the store's sales are filed under (its legal name and GSTIN, OB-257 `shop`) and the store's own address. Left out when
@@ -140,7 +149,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const taxInvoice = registration === undefined ? undefined : { legalName: registration.legalName, gstin: registration.gstin, placeOfBusiness: [...(branch?.placeOfBusiness ?? [])] };
     // B10: the store's current FSSAI licence from the compliance register — printed on every bill. Absent when none is in
     // force (the till prints no number rather than a wrong one).
-    const fssaiLicence = currentFoodLicence(await complianceAdapter({ store, now }).obligations(tenantId), { branchId: storeId, day: now().slice(0, 10) });
+    const fssaiLicence = currentFoodLicence(await complianceAdapter({ store, now }).obligations(tenantId), { branchId: storeId, day: shopDateIn(now(), shopZone) });
     // A22 (OB-326): the B2C dynamic QR rides only when the shop switched it on — with the details it has given.
     const b2cQr = input.b2cDynamicQr === undefined ? undefined : await input.b2cDynamicQr(tenantId);
     // OB-348 · OB-299: the shop's state and the delivery-fee product, only when set.
@@ -158,7 +167,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       ...(taxInvoice === undefined ? {} : { taxInvoice }),
       ...(fssaiLicence === undefined ? {} : { fssaiLicence: { number: fssaiLicence.number, ...(fssaiLicence.validUntil === undefined ? {} : { validUntil: fssaiLicence.validUntil }) } }),
       storeId, branchId: storeId, branchName: (await input.storeName(tenantId, storeId)) ?? storeId,
-      tradingDayCutoff: settings.tradingDayCutoff, staleAfterSeconds: settings.staleAfterSeconds,
+      tradingDayCutoff: settings.tradingDayCutoff, timeZone: shopZone, staleAfterSeconds: settings.staleAfterSeconds,
       countApprovalThresholdMinor: settings.countApprovalThresholdMinor, handoverToleranceMinor: settings.handoverToleranceMinor,
       cashVarianceToleranceMinor: settings.cashVarianceToleranceMinor, privacySlaDays: readStoreSettings(settings).privacySlaDays, // R3 C5 · OB-195: always 15
       warehouseId: settings.warehouseId ?? storeId,
@@ -261,10 +270,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     sections['expiryPolicy'] = { nearExpiryDays: rules.nearExpiryDays };
     sections['servicePolicy'] = { ...rules.service };
     if (settings !== undefined) {
-      sections['financePolicy'] = { period: now().slice(0, 7), tradingDayCutoff: settings.tradingDayCutoff, journalPrefixes: { ...rules.journalPrefixes } };
+      sections['financePolicy'] = { period: tradingMonthIn(now(), packCalendar), tradingDayCutoff: settings.tradingDayCutoff, journalPrefixes: { ...rules.journalPrefixes } };
     }
     sections['adminPolicy'] = { dormantAfterDays: rules.dormantAfterDays, permissions: [] };
-    sections['aiPolicy'] = { staleAfterMinutes: rules.aiStaleAfterMinutes, period: now().slice(0, 7) };
+    sections['aiPolicy'] = { staleAfterMinutes: rules.aiStaleAfterMinutes, period: tradingMonthIn(now(), packCalendar) };
     sections['merchandisingPolicy'] = { ...rules.merchandising, permissions: [] };
     sections['writeOffCapturePolicy'] = { permissions: [], materialThresholdMinor: rules.writeOffMaterialThresholdMinor };
   }

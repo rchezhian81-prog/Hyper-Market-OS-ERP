@@ -35,7 +35,7 @@ artifact._
 | Tamper-evident audit chain (edit/drop/forge detected) | `tests/integration/the-trail-is-kept.test.ts`, `tests/unit/audit-chain.test.ts` |
 | Day-close / sync reaches cloud through the edge | `tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts` |
 | Company-wide report honesty (missing/stale/scope) | `tests/e2e/company-report.e2e.ts`, `tests/integration/reporting-consolidation.test.ts` |
-| Governed erasure + prevent-restore | `tests/e2e/erasure-console.e2e.ts`, `tests/integration/erasure-execution.test.ts` |
+| Governed erasure + prevent-restore | `tests/integration/erasure-execution.test.ts` (the real privacy routes; the old stand-in erasure page was retired by OB-391) |
 
 > Phase 6 (pilot failure tests) will assemble these into a single executed failure-drill report and add any
 > gaps (backup/restore rehearsal, rollback rehearsal, monitoring-alert delivery) with recorded evidence.

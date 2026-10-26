@@ -115,3 +115,22 @@ describe('install-till — the files it writes', () => {
     expect(renderNextSteps({ settings: { ...settings, CLOUD_API_URL: 'http://c' }, installDir: '/t', platform: 'linux' })).toContain('Sync target: http://c');
   });
 });
+
+describe('install-till — the office pages\' head-office sign-in (OB-388 · ADR-0029)', () => {
+  it('writes the realm\'s https address when named, keeps it on a re-install, refuses anything else, and says when it is absent', () => {
+    const realm = 'https://ho.example.test/auth/realms/sre-store';
+    const named = plan({ flags: flags({ tenant: 't-sre', generateKey: true, headOfficeSignIn: realm }), generatedKey: KEY });
+    expect(named.ok).toBe(true);
+    expect(named.settings.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER).toBe(realm);
+    expect(renderTillEnv(named.settings)).toContain(`EDGE_HEAD_OFFICE_SIGN_IN_ISSUER=${realm}`);
+    const kept = plan({ flags: flags({ tenant: 't-sre' }), existing: { PACK_SIGNING_KEY: KEY, EDGE_TENANT_ID: 't-sre', EDGE_HEAD_OFFICE_SIGN_IN_ISSUER: realm } });
+    expect(kept.settings.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER).toBe(realm);
+    const plain = plan({ flags: flags({ tenant: 't-sre', generateKey: true, headOfficeSignIn: 'http://ho.example.test/auth/realms/sre-store' }), generatedKey: KEY });
+    expect(plain.ok).toBe(false);
+    expect(plain.problems.join(' ')).toMatch(/--head-office-sign-in must be the identity server realm's https address/);
+    const none = plan({ flags: flags({ tenant: 't-sre', generateKey: true }), generatedKey: KEY });
+    expect(none.settings.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER).toBeUndefined();
+    expect(none.notes.join(' ')).toMatch(/no head-office sign-in named/);
+    expect(parseArgs(['--head-office-sign-in', realm])).toMatchObject({ headOfficeSignIn: realm, unknown: [] });
+  });
+});

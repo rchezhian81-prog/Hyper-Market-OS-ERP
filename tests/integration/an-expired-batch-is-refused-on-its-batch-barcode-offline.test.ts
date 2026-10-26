@@ -6,6 +6,7 @@ import { acceptPack, canonicalise, type SignedPack } from '../../services/catalo
 import { hmacSigner } from '../../services/catalogue/src/index';
 import { CatalogueCache, ExpiredItemError } from '../../packages/catalogue/src/catalogue';
 import { expirySweepThatPublishes } from '../../services/api/src/followups-adapters';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **M10-FR-01 · B8 — the integration follow-up: the expired-batch state reaches the till.** Lane 2 · P2's daily expiry move
@@ -39,13 +40,13 @@ describe.each(backings)('an expired batch is refused on its batch barcode, offli
     const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
     await ok(req('POST', '/v1/catalogue/tax-classes/04031000/rates/2017-07-01', { rateBps: 500 }), 'tax');
     await ok(req('POST', '/v1/catalogue/products/p-curd/publish', { product: { sku: 'SKU-CURD', name: 'Curd 400g', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '04031000', lifecycle: 'draft' }, categories: [GROCERY] }), 'publish curd');
-    await ok(req('POST', '/v1/prices/list/p-curd/entries/e1', { scope: 'store', scopeRef: STORE, priceMinor: 6_000, mrpMinor: 6_500, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: day(0) }), 'price');
+    await ok(req('POST', '/v1/prices/list/p-curd/entries/e1', { scope: 'store', scopeRef: STORE, priceMinor: 6_000, mrpMinor: 6_500, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: shopDateIn(new Date().toISOString()) }), 'price');
     await ok(req('POST', `/v1/catalogue/products/p-curd/barcodes/${CURD}`, { kind: 'ean' }), 'barcode');
     // Two batches on the shelf: B-OLD past its date two days ago, B-NEW good for a week.
     for (const [b, expiry] of [['B-OLD', day(-2)], ['B-NEW', day(7)]] as const) {
       await ok(req('POST', '/v1/inventory/movements', { movementId: `rx-${b}`, productId: 'p-curd', locationId: STORE, kind: 'received', quantityMinor: 12, uom: 'EA', occurredAt: new Date(Date.now() - 10 * 86_400_000).toISOString(), enteredBy: 'u-owner', batchId: b, expiry }), `receive ${b}`);
     }
-    await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: day(0) }), 'first pack');
+    await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: shopDateIn(new Date().toISOString()) }), 'first pack');
 
     let held: SignedPack | undefined;
     const lane = async (): Promise<CatalogueCache> => {
@@ -91,7 +92,7 @@ describe.each(backings)('an expired batch is refused on its batch barcode, offli
     const version = held!.snapshot.version;
     expect(await expirySweepThatPublishes({ store: h.store, now: () => at, signer })(T, at)).toBe(0);
     expect(((await req('GET', '/v1/catalogue/pack')).body as SignedPack).snapshot.version).toBe(version);
-    await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: day(0) }), 'full publish');
+    await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: shopDateIn(new Date().toISOString()) }), 'full publish');
     const full = await lane();
     expect(() => full.scan(twoD('B-OLD'))).toThrow(ExpiredItemError);
     // Run by hand, the move says what it did to the tills' pack too.

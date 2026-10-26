@@ -9,6 +9,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **D-18 (R4, OB-216) — a competitor's price drafts a price change; a person commits it through the existing price route**,
@@ -69,7 +70,7 @@ describe.each(backings)('a competitor gap drafts a price a person approves — o
     const req = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner', query?: Record<string, string>): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
     const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     await ok(req('POST', '/v1/catalogue/tax-classes/09024020/rates/2017-07-01', { rateBps: 500 }), 'tax');
     await ok(req('POST', `/v1/stores/${STORE}/rules`, RULES), 'store rules (20% floor)');
     const product = async (id: string, shelf: number, mrp: number, cost: number | null) => {

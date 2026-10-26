@@ -18,10 +18,13 @@ import {
   MissingResponsiblePersonError, currentFoodLicence,
   type Obligation, type ObligationKind, type EvidenceRef,
 } from '../../../packages/compliance/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { Obligation } from '../../../packages/compliance/src/index';
 
 export interface ComplianceDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Every obligation on the register (active and closed) — the alerts and status fold over these. */
   readonly obligations: (tenantId: string) => Promise<readonly Obligation[]> | readonly Obligation[];
   /** Register (or re-state) an obligation — append-only; idempotent on the obligation id. */
@@ -31,7 +34,7 @@ export interface ComplianceDeps {
 
 const KINDS: readonly ObligationKind[] = ['licence', 'certificate', 'registration', 'inspection', 'calibration', 'insurance', 'training'];
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const today = (deps: ComplianceDeps): string => deps.now().slice(0, 10);
+const today = (deps: ComplianceDeps, tenantId: string): Promise<string> => shopToday(deps, tenantId); // R1c: the shop's today
 
 export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
   return [
@@ -100,7 +103,7 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
           throw apiError(400, { code: 'fssai_licence_needs_a_store', whatHappened: 'Say which store: ?storeId=…', wasItSaved: 'not_saved', nextSafeAction: 'Send the store id.' });
         }
         assertRecordBranchInScope(ctx, storeId);
-        const licence = currentFoodLicence(await deps.obligations(ctx.tenantId), { branchId: storeId, day: today(deps) });
+        const licence = currentFoodLicence(await deps.obligations(ctx.tenantId), { branchId: storeId, day: await today(deps, ctx.tenantId) });
         return { status: 200, body: {
           storeId, licence: licence ?? null,
           said: licence === undefined
@@ -117,7 +120,7 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
       handler: async (ctx) => {
         const asOf = ctx.query['asOf'];
         if (asOf !== undefined && !DATE.test(asOf)) throw apiError(400, { code: 'alerts_date_invalid', whatHappened: '?asOf=, if given, must be YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it for today.' });
-        const on = asOf ?? today(deps);
+        const on = asOf ?? await today(deps, ctx.tenantId);
         const alerts = expiryAlerts(recordsInScope(ctx, await deps.obligations(ctx.tenantId), (o) => o.branchId), on); // PA-01-r1
         return { status: 200, body: { asOf: on, count: alerts.length, alerts } };
       },
@@ -129,7 +132,7 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
       handler: async (ctx) => {
         const asOf = ctx.query['asOf'];
         if (asOf !== undefined && !DATE.test(asOf)) throw apiError(400, { code: 'status_date_invalid', whatHappened: '?asOf=, if given, must be YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it for today.' });
-        const on = asOf ?? today(deps);
+        const on = asOf ?? await today(deps, ctx.tenantId);
         const branchId = ctx.query['branchId'];
         // PA-01-r1: a branch not held is refused by name; with none named, the caller's branches (and shop-wide ones).
         if (typeof branchId === 'string' && branchId !== '') assertBranchInScope(ctx, branchId);

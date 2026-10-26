@@ -15,6 +15,8 @@ import { forecastDemand } from '../../../packages/demand/src/forecast';
 import { compareQuotes } from '../../../packages/purchasing/src/rfq';
 import { DEFAULT_AGEING_BUCKETS } from '../../../packages/stock/src/metrics';
 import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
+import { shiftDate, tradingDayIn, tradingDayWindow } from '../../../packages/calendar/src/trading-day';
 
 type Draft = Omit<Proposal, 'committed'>;
 const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -35,14 +37,15 @@ interface DemandPoint { readonly productId: string; readonly locationId: string;
 
 /** Daily units sold per product and selling place over the fit window, from the sales ledger. */
 async function demandSeries(store: EventStore, tenantId: string, now: string): Promise<{ readonly from: string; readonly to: string; readonly series: ReadonlyMap<string, DemandPoint> }> {
-  const to = now.slice(0, 10);
-  const from = new Date(Date.parse(`${to}T00:00:00Z`) - (FIT_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
-  const sales = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: `${from}T00:00:00.000Z`, to: now });
+  // R1b · R1c (M01-FR-02): the shop's trading days (the shop calendar), never the UTC date of a moment.
+  const to = tradingDayIn(now, DEFAULT_SHOP_CALENDAR);
+  const from = shiftDate(to, -(FIT_DAYS - 1));
+  const sales = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: tradingDayWindow(from, DEFAULT_SHOP_CALENDAR).from, to: now });
   const series = new Map<string, DemandPoint>();
   for (const e of sales) {
     const s = e.event.payload as IncomingSale;
     if (s.locationId === undefined) continue;
-    const day = s.tradingDay ?? e.event.occurredAt.slice(0, 10);
+    const day = s.tradingDay ?? tradingDayIn(e.event.occurredAt, DEFAULT_SHOP_CALENDAR);
     for (const line of s.lines) {
       const key = `${line.productId}@${s.locationId}`;
       const point = series.get(key) ?? { productId: line.productId, locationId: s.locationId, history: [] };

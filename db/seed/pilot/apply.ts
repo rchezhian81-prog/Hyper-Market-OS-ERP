@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import type { PilotFoundation, PilotCatalogue, PilotTradingPartners, PilotTransactions } from './dataset';
 import { PILOT_DEMO_BRANCH } from './dataset';
 import { assessShiftClose } from '../../../packages/till/src/assess-shift';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 export interface SeedResponse {
   readonly status: number;
@@ -57,7 +58,7 @@ export interface SeedReport {
 export interface ApplyOptions {
   /** Throw on the first failed step instead of collecting it into the report. */
   readonly throwOnError?: boolean;
-  /** The day store price-list entries take effect (YYYY-MM-DD). Default: today (UTC). The price route
+  /** The day store price-list entries take effect (YYYY-MM-DD). Default: the shop's today (R1c — never the UTC date). The price route
    *  refuses a back-dated entry, so this is never earlier than the day the seed runs. */
   readonly today?: string;
 }
@@ -320,7 +321,7 @@ export async function applyPilotCatalogue(
   //    do not feed it). Same governed gate (never above MRP, never back-dated, below cost only with a
   //    separate approver). Keyed by day, so re-seeding on another day adds a same-price entry for that day
   //    rather than colliding with yesterday's key — append-only, nothing overwritten (hard rule #2).
-  const today = options.today ?? new Date().toISOString().slice(0, 10);
+  const today = options.today ?? shopDateIn(new Date().toISOString());
   for (const product of catalogue.products) {
     const entryId = `seed-${product.productId}-${PILOT_DEMO_BRANCH}-${today}`;
     await post(

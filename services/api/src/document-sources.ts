@@ -29,6 +29,7 @@ import {
   STREAM, foldPurchaseOrders, goodsReceiptAdapter, orgStructureAdapter, storeOfLane, supplierAccountAdapter,
   b2bCollectionsAdapter,
 } from './adapters';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 /** A stable text for any JSON value (object keys sorted), so the same record always fingerprints the same. */
 function canonical(v: unknown): string {
@@ -127,8 +128,8 @@ export function documentSourcesAdapter(input: {
     },
 
     supplier_statement: async (tenantId, supplierId, asAt) => {
-      if (asAt !== now().slice(0, 10)) {
-        return { outcome: 'incomplete', detail: `A supplier's statement is drawn as at today (${now().slice(0, 10)}); head office keeps no account as at ${asAt}.` };
+      if (asAt !== shopDateIn(now())) {
+        return { outcome: 'incomplete', detail: `A supplier's statement is drawn as at today (${shopDateIn(now())}); head office keeps no account as at ${asAt}.` };
       }
       const regs = await accountRegisters(supplierAccountAdapter({ store, now }), tenantId);
       const known = regs.invoices.some((i) => i.supplierId === supplierId) || regs.orders.some((o) => o.supplierId === supplierId)

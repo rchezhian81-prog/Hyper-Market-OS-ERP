@@ -22,6 +22,7 @@ import {
   renderLetter, unknownPlaceholders, hourlyRateWords,
   type LetterWording, type AppointmentLetter, type SignedScan,
 } from '../../../packages/workforce/src/appointment-letter';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -113,7 +114,7 @@ export function appointmentLetterRoutes(deps: AppointmentLetterDeps): readonly R
         const issuedAt = deps.now();
         const rendered = renderLetter(wording!, {
           employeeName: employee.name, employeeId: employee.employeeId, roles: employee.roles.join(', '), branch: employee.branchId,
-          effectiveFrom: effectiveFrom as string, issuedOn: issuedAt.slice(0, 10),
+          effectiveFrom: effectiveFrom as string, issuedOn: shopDateIn(issuedAt), // R1c: the shop's date on the letter
           ...(employer === undefined ? {} : { employerName: employer }),
           ...(employee.hourlyRateMinor === undefined ? {} : { hourlyRate: hourlyRateWords(employee.hourlyRateMinor) }),
         });

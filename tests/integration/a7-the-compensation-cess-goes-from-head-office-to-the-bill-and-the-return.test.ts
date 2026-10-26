@@ -5,6 +5,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { splitInclusiveWithCess } from '../../packages/finance/src/cess';
 import { signInTill } from '../support/till-operator';
 import { backingsFor, headOffice, linkBoxTo, startBox, storePack, type Box, type Link } from '../support/till-bill-world';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **A7 — the GST Compensation Cess from head office's per-HSN schedule to the till's bill and the GST return: in memory AND
@@ -22,7 +23,7 @@ beforeAll(open);
 afterAll(close);
 
 const STORE = 'store-1';
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 const HSN = '21069020';
 const PAN = { advaloremBps: 6_000, specificPerQuantityMinor: 0, perQuantity: 1 };
 const boxes: Box[] = [];
@@ -63,7 +64,7 @@ describe.each(backings)('A7 — the cess goes from head office to the bill and t
     // (before the integration fix the served catalogue dropped the cess, and the served till charged none).
     const html = await (await fetch(`http://127.0.0.1:${box.edge.screens!.port}/pos/`)).text();
     const served = JSON.parse(/<script>window\.posCatalogue = ([\s\S]*?);<\/script>/.exec(html)![1]!) as CatalogueSnapshot;
-    const till = bootPos({ laneId: 'lane-1', lanePort: box.edge.lane!.port, catalogue: served });
+    const till = bootPos({ laneId: 'lane-1', lanePort: box.edge.lane!.port, catalogue: served, timeZone: 'Asia/Kolkata' }); // R1: the shop's zone, as the box serves it
     await signInTill(till, 'u-meena');
     for (let i = 0; i < 3; i += 1) till.scanBarcode('8903000000013');
     const n = await till.nextReceipt();

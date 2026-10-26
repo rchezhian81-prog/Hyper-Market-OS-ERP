@@ -14,6 +14,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { GLOBAL_FOR } from '../../edge/store-edge/src/screen-data';
 import { searchCatalogue, type StorefrontProduct } from '../../packages/storefront/src/browse';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **D01-FR-06 · WF-01 "→ app publication" (round 8) — a product's app content and synonyms flow from the product master
@@ -46,7 +47,7 @@ describe.each(backings)('product content and synonyms reach the customer app —
   it('authored on the product master → head office\'s store pack → the box\'s customer page → the app finds it by a customer\'s word', async () => {
     const h = harness();
     const T = randomUUID();
-    const TODAY = new Date().toISOString().slice(0, 10);
+    const TODAY = shopDateIn(new Date().toISOString());
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-box', 'store_computer', ['S1']);
     await h.provisionRole(T, 'u-till', 'cashier');

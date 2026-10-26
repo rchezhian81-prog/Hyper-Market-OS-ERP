@@ -21,8 +21,11 @@ import {
 } from '../../../packages/payment-disputes/src/index';
 import { containsCardNumber } from '../../../packages/tender/src/card-token';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface PaymentDisputeDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly disputes: (tenantId: string) => Promise<readonly DisputeRecord[]> | readonly DisputeRecord[];
   readonly responses: (tenantId: string) => Promise<readonly DisputeResponse[]> | readonly DisputeResponse[];
   readonly outcomes: (tenantId: string) => Promise<readonly DisputeOutcome[]> | readonly DisputeOutcome[];
@@ -54,7 +57,7 @@ export function paymentDisputeRoutes(deps: PaymentDisputeDeps): readonly Route[]
         if (asOfRaw !== undefined && !isIsoDate(asOfRaw)) {
           throw apiError(400, { code: 'disputes_need_a_date', whatHappened: '?asOf must be YYYY-MM-DD (default today).', wasItSaved: 'not_saved', nextSafeAction: 'Send a date or leave it out. A read never writes.' });
         }
-        const asOf = asOfRaw ?? deps.now().slice(0, 10);
+        const asOf = asOfRaw ?? await shopToday(deps, ctx.tenantId);
         const [disputes, responses, outcomes] = await Promise.all([deps.disputes(ctx.tenantId), deps.responses(ctx.tenantId), deps.outcomes(ctx.tenantId)]);
         const views = disputeViews({ disputes, responses, outcomes, asOf });
         const exceptions = disputeExceptions(views);

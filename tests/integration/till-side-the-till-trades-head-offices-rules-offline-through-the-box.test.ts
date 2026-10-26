@@ -11,6 +11,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { issueTillPins, signInTill, signInAtLane, operatorHeader, receiptNumberAt } from '../support/till-operator';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **OB-288 till side — the till trades on head office's new catalogue rules with the network CUT, through a REAL store
@@ -32,7 +33,7 @@ const OWNER = 'u-owner';
 const STORE = 'S1';
 const LANE = 'lane-1';
 const CASHIER = 'u-meena';
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 const AT = new Date(Date.now() - 60_000).toISOString();
 const SETTINGS = { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: STORE };
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };

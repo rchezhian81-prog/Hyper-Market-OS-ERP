@@ -22,6 +22,7 @@ import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/cont
 import { checkPrice } from '../../../packages/price-guard/src/price-guard';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import { shopToday, type ShopCalendarOf, shopClock } from '../../../packages/calendar/src/shop-clock';
 
 const SCOPES: readonly PriceScope[] = ['customer', 'channel', 'zone', 'store'];
 const isScope = (v: unknown): v is PriceScope => typeof v === 'string' && (SCOPES as readonly string[]).includes(v);
@@ -30,6 +31,8 @@ const isDateLike = (v: unknown): v is string => typeof v === 'string' && !Number
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
 export interface PriceListDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly entries: (tenantId: string, productId: string) => Promise<readonly PriceEntry[]> | readonly PriceEntry[];
   readonly recordEntry: (tenantId: string, productId: string, entry: PriceEntry) => Promise<void> | void;
   /** Whether a user holds `price.change.approve` — the §28 approver of a below-cost/floor price must genuinely hold it. */
@@ -102,7 +105,10 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
 
         // Back-dating is refused first — checkPrice does not judge dates, and a price active before today
         // rewrites what past sales should have charged.
-        if ((b.effectiveFrom as string).slice(0, 10) < deps.now().slice(0, 10)) {
+        // R1c: both sides on the shop's calendar — a date is a date; an instant is read on the shop's date, never its UTC one.
+        const from = b.effectiveFrom as string;
+        const fromDay = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : await shopClock(deps.calendar).dateOf(ctx.tenantId, from);
+        if (fromDay < await shopToday(deps, ctx.tenantId)) {
           throw apiError(422, {
             code: 'price_back_dated',
             whatHappened: 'A price-list entry cannot take effect before today — that would change what past sales should have charged.',

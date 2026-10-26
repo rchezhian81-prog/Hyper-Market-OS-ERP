@@ -41,6 +41,7 @@ import {
   readReceiptPrefix, receiptNumberFor, GST_INVOICE_NUMBER_MAX, RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX,
   isFinancialYear, financialYearOf, nextFinancialYear,
 } from '../../../packages/contracts/src/receipt-number';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 /** One issue of a prefix to a (store, till) — append-only. */
 export interface ReceiptPrefixIssue {
@@ -195,8 +196,8 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
             throw apiError(409, {
               code: 'receipt_prefix_taken',
               whatHappened: sameTill
-                ? `The prefix ${prefix} was this till's for ${holder.financialYear ?? 'every year'} (issued ${holder.setAt.slice(0, 10)}). Bill numbers start again each financial year, so a prefix used in one year can never number another, or the numbers would repeat.`
-                : `The prefix ${prefix} was issued to till ${holder.tillId} at ${holderName} (${holder.storeId}) on ${holder.setAt.slice(0, 10)}. Two tills must never share a prefix, or their bill numbers would clash.`,
+                ? `The prefix ${prefix} was this till's for ${holder.financialYear ?? 'every year'} (issued ${shopDateIn(holder.setAt)}). Bill numbers start again each financial year, so a prefix used in one year can never number another, or the numbers would repeat.`
+                : `The prefix ${prefix} was issued to till ${holder.tillId} at ${holderName} (${holder.storeId}) on ${shopDateIn(holder.setAt)}. Two tills must never share a prefix, or their bill numbers would clash.`,
               wasItSaved: 'not_saved',
               nextSafeAction: 'Choose a prefix no other till has used, for example the store and till numbers (S2L1-). Nothing was saved.',
             });

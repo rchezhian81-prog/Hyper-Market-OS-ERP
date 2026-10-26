@@ -10,6 +10,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **OB-41 "A" (owner, 11 Oct 2026) · FUL-09 · M22-FR-04 — a business customer pays through the portal by a BANK-TRANSFER
@@ -59,7 +60,7 @@ describe.each(backings)('OB-41 — a B2B bank-transfer note is pending until fin
       h.request({ method, path, userId: user, tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `${path}-${user}-${randomUUID()}` }), ...(query === undefined ? {} : { query }) });
     const ok = async (p: ReturnType<typeof call>, what: string) => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
     const owed = async (): Promise<number> => ((await call('GET', '/v1/b2b-portal/me/account', CUST_LOGIN)).body as { outstandingMinor: number }).outstandingMinor;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
 
     // The caterer is billed for 5 bags (a real tax invoice: the receivable, the AR ledger and the books' postable).
     await ok(call('POST', '/v1/inventory/movements', OWNER, { movementId: 'rice-in', productId: 'rice', locationId: 'S1', kind: 'received', quantityMinor: 20, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER }), 'stock');

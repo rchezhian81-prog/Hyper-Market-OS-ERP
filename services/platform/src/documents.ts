@@ -26,6 +26,7 @@ import {
   type TemplateVersion, type DocumentKind, type IssuedDocument, type DocumentDisposal, type FrozenFigures, type IssueResult,
 } from '../../../packages/documents/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { TemplateVersion } from '../../../packages/documents/src/index';
 export type { IssuedDocument } from '../../../packages/documents/src/index';
@@ -90,6 +91,8 @@ export interface DocumentReprint {
 }
 
 export interface DocumentsDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Every published version of one template — the publish folds over these to pick the next number. */
   readonly versions: (tenantId: string, templateId: string) => Promise<readonly TemplateVersion[]> | readonly TemplateVersion[];
   /** Append a newly published version. Idempotent on templateId+version. */
@@ -281,7 +284,7 @@ export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
         if (!allowedKinds.includes(kind)) {
           throw apiError(400, { code: 'kind_follows_the_source', whatHappened: `A ${sourceType.replace('_', ' ')} is issued as ${allowedKinds.map((k) => `a ${k.replace('_', ' ')}`).join(' or ')}, not a ${String(b['kind'])}.`, wasItSaved: 'not_saved', nextSafeAction: 'Leave the kind out; it follows the source. Nothing was issued.' });
         }
-        const asAt = b['asAt'] ?? deps.now().slice(0, 10);
+        const asAt = b['asAt'] ?? await shopToday(deps, ctx.tenantId);
         if (typeof asAt !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(asAt)) {
           throw apiError(400, { code: 'statement_needs_a_date', whatHappened: 'asAt, when sent, is a YYYY-MM-DD date.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or leave it out for today. Nothing was issued.' });
         }
@@ -426,7 +429,7 @@ export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
         if (today !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
           throw apiError(400, { code: 'retention_date_invalid', whatHappened: '?today=, if given, must be a YYYY-MM-DD date.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it for today.' });
         }
-        const on = today ?? deps.now().slice(0, 10);
+        const on = today ?? await shopToday(deps, ctx.tenantId);
         // A document already disposed drops off the plan — it is no longer a live thing to decide about
         // (the disposal fact is kept forever; hard rule #6). Everything else is assessed as before.
         const disposedIds = new Set((await deps.disposals(ctx.tenantId)).map((x) => x.documentId));
@@ -449,7 +452,7 @@ export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
         const reason = typeof b['reason'] === 'string' ? b['reason'] : '';
         const document = await deps.issued(ctx.tenantId, documentId);
         const alreadyDisposed = (await deps.disposals(ctx.tenantId)).some((x) => x.documentId === documentId);
-        const decision = decideDisposal({ document, today: deps.now().slice(0, 10), disposedBy: ctx.userId, reason, alreadyDisposed });
+        const decision = decideDisposal({ document, today: await shopToday(deps, ctx.tenantId), disposedBy: ctx.userId, reason, alreadyDisposed });
         if (!decision.allowed) {
           const status = decision.outcome === 'unknown_document' ? 404
             : decision.outcome === 'already_disposed' ? 409

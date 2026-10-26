@@ -42,6 +42,7 @@ import { ERASED_TEXT, KEY_MISSING_TEXT } from '../../../packages/persistence/src
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 import { isSuppressed, type SuppressionFact } from './suppression-register';
 import { sentInWindow, type CampaignFrequencyPolicy } from './campaign-send';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
@@ -254,7 +255,7 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
       const sentNow = cap === undefined ? 0 : deliveredMarketingInWindow(events, intents, queued.intent.customerId, queued.channel, now, cap.windowDays) + (deliveredThisPass.get(key) ?? 0);
       if (cap === undefined || sentNow >= cap.capPerWindow) {
         const why = cap === undefined ? 'frequency_cap_not_set: the owner has not set the frequency cap, so no marketing message is sent' : `frequency_cap: ${queued.intent.customerId} already has ${sentNow} marketing message(s) on ${queued.channel} in ${cap.windowDays} day(s), against a cap of ${cap.capPerWindow}`;
-        await deps.record(tenantId, { id: item.id, change: 'held', by, at: now, reason: why }, `notif-held-${item.id}-${now.slice(0, 10)}-${cap === undefined ? 'nocap' : `cap${cap.capPerWindow}-${sentNow}`}`);
+        await deps.record(tenantId, { id: item.id, change: 'held', by, at: now, reason: why }, `notif-held-${item.id}-${shopDateIn(now)}-${cap === undefined ? 'nocap' : `cap${cap.capPerWindow}-${sentNow}`}`);
         outcome.push({ id: item.id, result: 'held', detail: why });
         continue;
       }

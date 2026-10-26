@@ -3,6 +3,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { seedSubstitutionTruth } from '../support/substitution-truth';
 import { sellOnline, onlineReady } from '../support/sell-online';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **The storefront's own surface, through the real authenticated API (M20-FR-02/FR-03 · M18-FR-01/FR-02 · §31 · §35 · #3 · #6).**
@@ -40,7 +41,7 @@ async function listOnline(h: ApiHarness, products: readonly string[]): Promise<v
 }
 /** Head office publishes milk at ₹50 for store L1 — the shop's own price, which the quote is made from (FUL-03). */
 async function publishMilk(h: ApiHarness): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = shopDateIn(new Date().toISOString());
   const ok = async (path: string, body: unknown, key: string) => expect((await post(h, path, OWNER, key, body)).status, path).toBeLessThan(300);
   await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
   await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', ...onlineReady(6_000) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');

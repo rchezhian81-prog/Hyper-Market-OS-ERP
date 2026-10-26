@@ -107,6 +107,7 @@ import { pullConcessionTradingFeed, type ConcessionTradingPullOutcome } from '..
 import { httpWalletFeedSource, pullWalletFeed, type WalletFeedPullOutcome } from '../../sync-agent/src/loyalty-wallets-feed';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { openOfficeGate } from './office-sign-in';
+import { createHeadOfficeLink, headOfficeLinkSettingsFrom } from './head-office-link'; // OB-388 · ADR-0029
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { withDeciderSeal } from './decision-seal';
@@ -129,7 +130,8 @@ import {
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/earn-rule';
-import { makeTradingDayRule, tradingDate, wallClockIn, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
+import { type TradingDayRule } from '../../../packages/calendar/src/trading-day';
+import { packRule, packTradingDay, packCalendarDate, packWallClock, zoneCheck, type ZoneCheck } from './shop-zone';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
@@ -321,8 +323,8 @@ const MAX_INTERVAL_MS = 300_000;
  * than hidden — a shop that trades past midnight and has not configured a cut-off would otherwise
  * silently split one trading day into two, and nobody would find out until the day close.
  */
-export function packCutoff(pack: { readonly policies: { readonly known: boolean; readonly value?: { readonly tradingDayCutoff: string } } }): TradingDayRule {
-  return makeTradingDayRule(pack.policies.known ? pack.policies.value!.tradingDayCutoff : '00:00');
+export function packCutoff(pack: { readonly policies: { readonly known: boolean; readonly value?: { readonly tradingDayCutoff: string; readonly timeZone?: string } } }): TradingDayRule {
+  return packRule(pack);
 }
 
 export function nextInterval(consecutiveQuietPasses: number): number {
@@ -530,6 +532,8 @@ export interface EdgeProcess {
   readonly refreshWorkFeeds: (() => Promise<readonly WorkFeedPullOutcome[]>) | null;
   /** OB-288 lane 2 · §31.1 · OB-327: this box's clock against head office's, as last measured. */
   readonly clockCheck: () => ClockCheck;
+  /** R1a (M01-FR-02 · P-08): this machine's time zone against the shop's, as the signed pack names it. */
+  readonly zoneCheck: () => ZoneCheck;
   /**
    * Where the six screens are served from, or null when `EDGE_SCREEN_PORT` is unset.
    *
@@ -760,6 +764,14 @@ export async function startEdge(
   const storeSetupStatus = (): StoreSetupStatus => (heldStorePack !== undefined
     ? { source: 'head-office', version: heldStorePack.version, issuedAt: heldStorePack.issuedAt, expiresAt: heldStorePack.expiresAt, expired: Date.parse(heldStorePack.expiresAt) <= Date.now() }
     : { source: packPath !== undefined ? 'file' : 'none', version: pack.version, issuedAt: null, expiresAt: null, expired: false });
+
+  // R1a (M01-FR-02 · P-08): the box dates by the SHOP's zone from its signed pack, never the machine's. When the machine's
+  // own zone is not the shop's (a container on UTC), that is said in the log here and on the manager's screen, every time.
+  const zoneNow = (): ZoneCheck => zoneCheck(pack);
+  {
+    const z = zoneNow();
+    say(z.needsAttention ? `TIME ZONE: ${z.staffMessage}` : `time zone: ${z.staffMessage} (${z.shopTimeZoneFrom === 'store_pack' ? 'from the store pack' : 'the shop default — the store pack names none'})`);
+  }
 
   // Which store this box IS, as its store pack names it — stamped on every sale that leaves here as the stock
   // location (M08-FR-01, Stage D slice 2), for a sale rung live and for one re-queued below on restart. Read live:
@@ -1084,7 +1096,7 @@ export async function startEdge(
    * as every relayed record. The till removes the line only once this says `recorded`. A re-sent void is the same one.
    */
   // OB-288 P6 (R8-3 · R8-7): a self-checkout basket's evidence rides the same door, kept as its own record (self-checkout-baskets.ts).
-  const recordSelfCheckoutBasket = selfCheckoutBasketRecorder({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => tradingDate(wallClockIn(at), packCutoff(pack)) });
+  const recordSelfCheckoutBasket = selfCheckoutBasketRecorder({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => packTradingDay(pack, at) });
   const recordTillActivity: LaneTillActivityHandler = async ({ laneId, cashierId, via, body }) => {
     if (body['kind'] === 'self_checkout_basket') return recordSelfCheckoutBasket({ laneId, cashierId, via, body });
     const str = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -1154,7 +1166,7 @@ export async function startEdge(
     }
     const at = new Date().toISOString();
     // The trading day it belongs to, by the shop's cut-off from the pack — head office judges days by it.
-    const tradingDay = tradingDate(wallClockIn(at), packCutoff(pack));
+    const tradingDay = packTradingDay(pack, at);
     const common = { activityId: body['activityId'], kind, laneId, cashierId, via, reason: (body['reason'] as string).trim(), at, tradingDay };
     const payload = kind === 'void'
       ? { ...common, billRef: body['billRef'], lineId: body['lineId'], productId: body['productId'], description: body['description'], valueMinor: value }
@@ -1427,7 +1439,7 @@ export async function startEdge(
     const trade = shiftFigures({ state, laneId, closedAt: req.at, sales: await parsedRecords(log.path), returns: await parsedRecords(returnsLog.path) });
     const decision = decideCashMovement({
       state, request: req, laneId,
-      tradingDay: tradingDate(wallClockIn(req.at), packCutoff(pack)),
+      tradingDay: packTradingDay(pack, req.at),
       tradingCashMinor: trade.cashSalesMinor - trade.cashRefundsMinor,
     });
     if (!decision.ok) return refuseCash(decision.refusedBecause);
@@ -1456,7 +1468,7 @@ export async function startEdge(
     const figures = shiftFigures({ state, laneId, closedAt: req.closedAt, sales: await parsedRecords(log.path), returns: await parsedRecords(returnsLog.path) });
     const decision = decideShiftClose({
       state, request: req, laneId, figures,
-      tradingDay: tradingDate(wallClockIn(req.closedAt), packCutoff(pack)),
+      tradingDay: packTradingDay(pack, req.closedAt),
       toleranceMinor: cashToleranceOfPack(),
     });
     if (!decision.ok) return refuseClose(decision.refusedBecause, decision.varianceMinor);
@@ -1609,6 +1621,7 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), tenantId,
     policy: () => (pack.suspensionPolicy.known ? pack.suspensionPolicy.value : null),
     storeId: () => (pack.policies.known ? pack.policies.value.storeId : 'this-store'),
+    tradingDayOf: (iso) => packTradingDay(pack, iso), // R1a: the shop's zone and cut-off, from the pack
   });
   // CARD AND UPI ATTEMPTS (audit PF-06): recorded before the machine is asked; a no-answer settles only against the
   // provider's record — through the provider port, which no live provider fills yet.
@@ -1665,7 +1678,7 @@ export async function startEdge(
     if ((await carriedOnBox()).has(a.attemptId)) return;
     const record = JSON.stringify({
       noAnswerAttemptId: a.attemptId, attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor, askedAt: a.askedAt,
-      tradingDay: tradingDate(wallClockIn(a.askedAt), packCutoff(pack)), recordedAt: a.answeredAt ?? new Date().toISOString(), recordedBy: a.answeredBy ?? a.askedBy, storeId: storeIdOfThisBox(),
+      tradingDay: packTradingDay(pack, a.askedAt), recordedAt: a.answeredAt ?? new Date().toISOString(), recordedBy: a.answeredBy ?? a.askedBy, storeId: storeIdOfThisBox(),
     });
     await dayCloseLog.append(record);
     const event = dayCloseEventFrom(record, 0);
@@ -1704,7 +1717,7 @@ export async function startEdge(
     const a = pa.get(i.attemptId);
     const rule = packCutoff(pack);
     const late = a !== undefined && a.state === 'asked' && a.laneId === i.laneId && (i.outcome === 'approved' || i.outcome === 'declined')
-      && tradingDate(wallClockIn(a.askedAt), rule) < tradingDate(wallClockIn(new Date().toISOString()), rule);
+      && packTradingDay(pack, a.askedAt, rule) < packTradingDay(pack, new Date().toISOString(), rule);
     if (!late || a === undefined) return pa.answer(i);
     if (tillApprovals === null) return { ok: false, refusedBecause: 'approval_required', laneMessage: 'This payment was asked on an earlier day. Its answer needs a manager\'s approval, and this store computer cannot take one. Nothing was recorded.', attempt: a };
     const spent = await tillApprovals.spendOverride({ approvalId: i.approvalId, kind: 'late_payment_answer', billRef: a.attemptId, valueMinor: a.amountMinor, requestedBy: i.by, laneId: i.laneId, activityId: `late-answer:${a.attemptId}` });
@@ -1713,7 +1726,7 @@ export async function startEdge(
     if (out.ok && out.attempt.state === i.outcome) {
       const record = JSON.stringify({
         lateAnswerAttemptId: a.attemptId, attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor,
-        askedAt: a.askedAt, tradingDay: tradingDate(wallClockIn(a.askedAt), rule), outcome: i.outcome, answeredBy: i.by,
+        askedAt: a.askedAt, tradingDay: packTradingDay(pack, a.askedAt, rule), outcome: i.outcome, answeredBy: i.by,
         approvedBy: spent.stamp!.approvedBy, approvalId: spent.stamp!.approvalId, answeredAt: out.attempt.answeredAt ?? new Date().toISOString(), storeId: storeIdOfThisBox(),
       });
       await dayCloseLog.append(record);
@@ -1735,7 +1748,7 @@ export async function startEdge(
       return checkTillRules(record, {
         products: gateProductsOf(pack, node.pack(), now),
         scales: laneScalesFor(pack, laneId),
-        today: tradingDate(wallClockIn(now), makeTradingDayRule('00:00')),
+        today: packCalendarDate(pack, now),
         soldHuids: soldHuids.asSet(),
         // OB-348 (B17): liquor is judged by the shop's state, as this box's store pack names it.
         ...((st) => (st === undefined ? {} : { shopState: st }))(shopStateOf(pack)),
@@ -1758,7 +1771,7 @@ export async function startEdge(
   // signed in at the till; the copy's record is kept on the device-events log before the bill is answered, then relayed.
   const recordBillCopy = billCopyRecorder({
     tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(),
-    tradingDayOf: (at) => tradingDate(wallClockIn(at), packCutoff(pack)),
+    tradingDayOf: (at) => packTradingDay(pack, at),
     findSale: async (numberOrId) => saleIn((await readLog(log.path)).flatMap((r) => (r.ok ? [r.record] : [])), numberOrId),
     priorCopies: async () => priorCopiesIn((await readLog(deviceEventsLog.path)).flatMap((r) => (r.ok ? [r.record] : []))),
     productName: (productId) => {
@@ -1811,8 +1824,8 @@ export async function startEdge(
         // machine — the till's list for matching the day against the machine's settlement slip.
         status: (laneId) => {
           const rule = packCutoff(pack);
-          const today = tradingDate(wallClockIn(new Date().toISOString()), rule);
-          const onToday = (at: unknown): boolean => typeof at === 'string' && tradingDate(wallClockIn(at), rule) === today;
+          const today = packTradingDay(pack, new Date().toISOString(), rule);
+          const onToday = (at: unknown): boolean => typeof at === 'string' && packTradingDay(pack, at, rule) === today;
           const s = payments.status(laneId);
           return {
             ...s, tradingDay: today, paid: payments.paid(laneId).filter((a) => onToday(a.askedAt)),
@@ -1887,7 +1900,7 @@ export async function startEdge(
     concessionTrading: {
       check: (record) => concessionTrading.check(
         record,
-        tradingDate(wallClockIn(new Date().toISOString()), packCutoff(pack)),
+        packTradingDay(pack, new Date().toISOString()),
         (pack.policies.known ? pack.policies.value.branchId : undefined) ?? undefined,
       ),
     },
@@ -2039,7 +2052,7 @@ export async function startEdge(
         ...(p.categoryId === undefined ? {} : { categoryId: p.categoryId }), ...(p.taxBps === undefined ? {} : { taxBps: p.taxBps }),
       })),
       records: async () => ({ sales: await parsedRecords(log.path), refunds: await parsedRecords(returnsLog.path) }),
-      tradingDayOf: (iso) => tradingDate(wallClockIn(iso), packCutoff(pack)),
+      tradingDayOf: (iso) => packTradingDay(pack, iso),
       relay: async (event, by, via = 'office_pin') => {
         const sealed = withDeciderSeal(sealKey, tenantId, event, { userId: by, via, laneId: OFFICE_LANE });
         if (deviceEventKeys.has(sealed.idempotencyKey)) return { queued: true, detail: 'already queued' };
@@ -2060,8 +2073,8 @@ export async function startEdge(
    */
   const cardDayOf = (pa: PaymentAttempts, nowIso: string): NonNullable<ScreenInput['cardPayments']> => {
     const rule = packCutoff(pack);
-    const today = tradingDate(wallClockIn(nowIso), rule);
-    const onToday = (at: unknown): boolean => typeof at === 'string' && tradingDate(wallClockIn(at), rule) === today;
+    const today = packTradingDay(pack, nowIso, rule);
+    const onToday = (at: unknown): boolean => typeof at === 'string' && packTradingDay(pack, at, rule) === today;
     const lanes = [...new Set(pa.all().map((a) => a.laneId))];
     return {
       tradingDay: today,
@@ -2071,6 +2084,9 @@ export async function startEdge(
     };
   };
 
+  // OB-392: the box's last send to head office, for the manager's lane cards — set once the drains exist (a box with no
+  // head office configured has none, and its cards say the link is not known).
+  const laneLinkRelay: { current: (() => { readonly lastSentAt: string | null }) | undefined } = { current: undefined };
   // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
   // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
   const snapshot = (): ScreenInput => {
@@ -2091,13 +2107,16 @@ export async function startEdge(
       now,
       // The shop's own wall clock, not UTC: dated in UTC, a Tamil Nadu shop was on the wrong day for five and a half
       // hours after midnight UTC (SP-4b). The till dates each sale by the same rule at the moment it is taken.
-      tradingDay: tradingDate(wallClockIn(now), packCutoff(pack)),
+      tradingDay: packTradingDay(pack, now),
       ...(heldCatalogue === undefined ? {} : { cataloguePack: heldCatalogue }),
       ...(payments === null ? {} : { pendingPayments: payments.pending() }),
       // OB-271 · audit A9: REAL TRADING only — today's card/UPI payments on every till of this box with the machine's
       // approval numbers, and the refunds done on the machine, for the manager's day close. Absent in the mirror pilot.
       ...(payments === null || !realTrading().on ? {} : { cardPayments: cardDayOf(payments, now) }),
       ...(peripheralReports === null ? {} : { peripheralReports: peripheralReports.latest() }),
+      // OB-392: the lane cards — this box's own lane, and its last send to head office.
+      ...(laneOfBox === undefined ? {} : { ownLaneId: laneOfBox }),
+      ...(laneLinkRelay.current === undefined ? {} : { laneLink: laneLinkRelay.current() }),
       // OB-256: the till is told it is in the mirror pilot, and who turned it on.
       mirrorPilot: mirrorPilot(),
       // OB-264: the mirror sales and their old ERP bill numbers, for the evening check's bill-wise list.
@@ -2110,14 +2129,27 @@ export async function startEdge(
       boxQualityReleases: boxQualityReleases(), // OB-333
       clock: clockGuard.check(),
       clockFlaggedBills: clockGuard.flaggedBills(recordsNow.sales),
+      zone: zoneNow(), // R1a · P-08: the machine's zone against the shop's
     };
   };
 
   const screenPort = settings['EDGE_SCREEN_PORT'];
   const screenHost = settings['EDGE_SCREEN_HOST'];
   if (officeGate !== null) say(`office screens: staff ID and own till PIN, checked on this box; a cashier opens only the till (${officeGate.live().length} office sign-in(s) still open).`);
+  // OB-388 · ADR-0029: the office pages reach head office as the person signed in — their own head-office login and second
+  // step, their own session carried to head office (never this box's machine credential, never a PIN). Off unless both
+  // the identity server and head office's API are named; the boot log says which, and never prints either address.
+  const headOfficeLinkSetting = headOfficeLinkSettingsFrom(settings);
+  if (headOfficeLinkSetting.on) say('office pages: each person signs in to head office with their own login and second step on this PC; their own session is carried to head office (OB-388).');
+  else if (headOfficeLinkSetting.why !== null) say(`office pages: the head-office sign-in is NOT on — ${headOfficeLinkSetting.why}. The pages say head office cannot be reached.`);
   const screens = screenPort === undefined ? null : await startScreenServer({
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
+    ...(headOfficeLinkSetting.on ? {
+      headOffice: (origin: string) => createHeadOfficeLink({
+        settings: { ...headOfficeLinkSetting.settings, origin }, fetch: globalThis.fetch,
+        audit: (l) => { say(`head-office sign-in: ${l.event}${l.userId === undefined ? '' : ` — ${l.userId}`}${l.why === undefined ? '' : ` (${l.why})`}`); },
+      }),
+    } : {}),
     port: Number(screenPort),
     ...(screenHost === undefined ? {} : { host: screenHost }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
@@ -2237,7 +2269,7 @@ export async function startEdge(
     // The day being closed is the most-recently-ENDED trading day: the previous trading date relative
     // to now. The engine refuses to close a day whose cut-off has not passed (currentTradingDate must
     // be later than the day closed), so closing the previous date is the only one that can succeed.
-    const currentTradingDate = tradingDate(wallClockIn(input.now), rule);
+    const currentTradingDate = packTradingDay(input.pack, input.now, rule);
     const dayToClose = ((): string => {
       const dt = new Date(`${currentTradingDate}T00:00:00Z`);
       dt.setUTCDate(dt.getUTCDate() - 1);
@@ -2260,13 +2292,13 @@ export async function startEdge(
     const openShifts = [...new Set(cashRecords.map((r) => r.tillId))].sort().flatMap((tillId) => {
       const state = foldTillCash(cashRecords, tillId);
       if (state.custodian === null || state.openedAt === null) return [];
-      if (tradingDate(wallClockIn(state.openedAt), rule) > dayToClose) return [];
+      if (packTradingDay(input.pack, state.openedAt, rule) > dayToClose) return [];
       return [{ tillId, custodian: state.custodian, openedAt: state.openedAt }];
     });
     // D04-FR-02 · PF-06 · WF-12: every card/UPI payment asked on or before the day being closed that still has no final
     // answer — read from the box's own payment-attempt log. A payment asked on the NEW day does not hold yesterday.
     const pendingPayments = (payments?.pending() ?? [])
-      .filter((a) => tradingDate(wallClockIn(a.askedAt), rule) <= dayToClose)
+      .filter((a) => packTradingDay(input.pack, a.askedAt, rule) <= dayToClose)
       .map((a) => ({ attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor, askedAt: a.askedAt, state: a.state as 'asked' | 'no_answer' }));
 
     // Gate-check with the tested engine (a throwaway outbox — the durable write + enqueue below is what
@@ -2279,7 +2311,7 @@ export async function startEdge(
     try {
       decideDayClose({
         id: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose, closedBy: (req.closedBy ?? '').trim() || (req.verifiedPerson?.userId ?? 'unconfirmed'),
-        closedAtLocal: wallClockIn(input.now), closedAt: input.now, tradingDayRule: rule,
+        closedAtLocal: packWallClock(input.pack, input.now), closedAt: input.now, tradingDayRule: rule,
         unresolvedExceptions, unsentSyncItems, openShifts, pendingPayments,
         ...(carryInput === undefined ? {} : { carriedForward: carryInput }),
       }, new SyncOutbox());
@@ -2329,7 +2361,7 @@ export async function startEdge(
       if (!approval.ok) return { closed: false, reason: `the second person's approval was not confirmed: ${approval.laneMessage}` };
       const block = carriedForwardOf({ ...carryInput, approvalId: approval.approvalId, approvedBy: approval.approvedBy }, pendingPayments);
       // Each payment carries the trading day it was asked on — the day whose tender figures it leaves unresolved.
-      carried = { ...block, payments: block.payments.map((p) => ({ ...p, tradingDay: tradingDate(wallClockIn(p.askedAt), rule) })) };
+      carried = { ...block, payments: block.payments.map((p) => ({ ...p, tradingDay: packTradingDay(input.pack, p.askedAt, rule) })) };
     }
     // Durable-write-then-enqueue, the same order as every other seam: the locked day is on the disk
     // before it is called done, then queued. `dayCloseEventFrom` re-mints the identical event on restart.
@@ -2461,7 +2493,7 @@ export async function startEdge(
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
       agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, refreshLoyaltyWallets: null, loyaltyWallets, refreshConcessionTrading: null, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
-      refreshWorkFeeds: null, clockCheck: () => clockGuard.check(),
+      refreshWorkFeeds: null, clockCheck: () => clockGuard.check(), zoneCheck: zoneNow,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -2513,6 +2545,11 @@ export async function startEdge(
   const returnsAgent = new SyncAgent(returnsOutbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
+  // OB-392: the lane cards say when a bill or a refund from this box last reached head office.
+  laneLinkRelay.current = () => {
+    const times = [agent.health().lastSuccessAt, returnsAgent.health().lastSuccessAt].filter((t): t is string => t !== null).sort();
+    return { lastSentAt: times[times.length - 1] ?? null };
+  };
   // The completion pipeline's own agent (M25-FR-02) — same transport, its own outbox, for the same
   // reason a refund has its own: three small agents beside one another keep each drain and each cursor
   // exactly its own, so a completion that cannot get through never holds a sale or a refund, and none
@@ -2790,7 +2827,10 @@ export async function startEdge(
             say(`the new store setup could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is in use now and will be pulled again next time.`);
           }
           heldStorePack = env;
+          const zoneBefore = zoneNow();
           pack = withHeldFeeds(readPack(packPayloadOf(env), receivedAt));
+          const zoneAfter = zoneNow();
+          if (zoneAfter.needsAttention && (!zoneBefore.needsAttention || zoneBefore.shopTimeZone !== zoneAfter.shopTimeZone)) say(`TIME ZONE: ${zoneAfter.staffMessage}`);
         },
         // PA-06-r1: the same setup signed again — keep the renewed envelope (version, issue, expiry); nothing is rebuilt.
         renew: async (env) => {
@@ -2866,6 +2906,8 @@ export async function startEdge(
     // the report is made is in both or neither, so an honest report never contradicts its own queue.
     const report: BoxHealthReport = await boxHealthReportOf({
       now: () => new Date().toISOString(),
+      // R3 · P-08: this machine's zone against the shop's — told to head office as well as said on the box's screens.
+      zone: zoneNow,
       disk: async () => {
         const fsInfo = await statfs(settings['EDGE_DATA_DIR']!);
         return {
@@ -3120,6 +3162,7 @@ export async function startEdge(
     refreshIndentsFeed,
     refreshWorkFeeds,
     clockCheck: () => clockGuard.check(),
+    zoneCheck: zoneNow,
     refreshAssignmentsFeed,
     refreshLoyaltyWallets,
     loyaltyWallets,

@@ -11,6 +11,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
 import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '../support/till-operator';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **A driver's phone's stop outcomes, settlement and cash handover reach head office through the store box's DEVICE socket —
@@ -311,7 +312,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     expect(pass.dead).toBe(0);
     const view = await routeAt(c.h, 'R-3');
     expect(view.flags).toEqual([]);
-    const runDate = (view.stops[0]!['at'] as string).slice(0, 10);
+    const runDate = shopDateIn(view.stops[0]!['at'] as string); // the shop's date of the run (R1c)
     expect(view.stops.map((s) => [s['stopId'], s['state'], s['runAttempt']])).toEqual([
       ['s1', 'partially_delivered', { attemptId: 'R-3/s1/partially_delivered', outcome: 'partially_delivered', runDate }],
       ['s2', 'returned_to_origin', 'not_a_door_outcome'],

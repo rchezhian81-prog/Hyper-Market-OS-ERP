@@ -4,7 +4,9 @@
 // supplier sent (waiting-on-us first, then processed) and its statement (the money we owe it, disputed shown
 // separately) — each row a tone AND an icon AND a word, never colour alone. It changes nothing but ONE thing: the
 // "Delivery update" form (OB-362) for one of the supplier's OWN open orders, which the bundle sends
-// (window.supplierPortal.sendDeliveryUpdate — this file issues no write verb itself). Refresh re-reads the feeds (GETs).
+// (window.supplierPortal.sendDeliveryUpdate — this file issues no write verb itself) — and, since OB-389, the "Top-up
+// proposal" form for the supplier's OWN vendor-managed items at one store (window.supplierPortal.sendTopUpProposal),
+// which waits for a buyer and orders nothing. Refresh re-reads the feeds (GETs).
 // Offline the screen keeps its view and the stale strip says the page is what it was last shown; an update not sent is
 // said so. No prompt/confirm/alert.
 
@@ -137,6 +139,7 @@ function paint() {
     state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
     for (const id of sections) el(id).hidden = true;
     el('delivery').hidden = true;
+    el('vmi').hidden = true;
     return;
   }
   state.hidden = true;
@@ -153,6 +156,7 @@ function paint() {
 
   paintStatement(view);
   paintDelivery();
+  paintVmi();
 }
 
 // OB-362: the Delivery update form — the supplier's own open orders only; the bundle checks and sends it.
@@ -173,7 +177,7 @@ function paintDelivery() {
   const order = el('du-order');
   const keep = order.value;
   const opts = [new Option(t('chooseOrder'), '')];
-  for (const o of feed?.orders ?? []) opts.push(new Option(`${o.number}${o.issuedAt ? ` · ${o.issuedAt.slice(0, 10)}` : ''}`, o.poId));
+  for (const o of feed?.orders ?? []) opts.push(new Option(`${o.number}${o.issuedAt ? ` · ${new Date(o.issuedAt).toLocaleDateString('en-CA')}` : ''}`, o.poId));
   order.replaceChildren(...opts);
   if ([...order.options].some((x) => x.value === keep)) order.value = keep;
   const status = el('du-status');
@@ -197,6 +201,99 @@ async function sendDelivery() {
   if (out.result === 'sent') { el('du-note').value = ''; await refresh(); }
 }
 el('du-send').addEventListener('click', () => { void sendDelivery(); });
+
+// OB-389: the Top-up proposal form — the supplier's own VMI items at one store; the bundle checks and sends it.
+const fill = (text, vars) => text.replace(/\{(\w+)\}/g, (_m, k) => String(vars[k] ?? ''));
+const typedQty = new Map(); // `${store}|${product}` → what the supplier typed, kept across repaints
+function paintVmi() {
+  const api = window.supplierPortal;
+  const box = el('vmi');
+  const feed = api && typeof api.vmi === 'function' ? api.vmi() : null;
+  const v = session.view(lang);
+  const notPermitted = v.screenState.tone === 'error' && v.awaiting.length === 0 && v.processed.length === 0 && v.statement === null && !v.statementInaccessible;
+  box.hidden = window.supplierPortalSession === undefined || notPermitted;
+  el('vmi-h').textContent = t('vmiH');
+  el('vmi-lead').textContent = t('vmiLead');
+  el('vmi-store-l').textContent = t('vmiStoreL');
+  el('vmi-note-l').textContent = t('vmiNoteL');
+  el('vmi-send-text').textContent = t('sendTopUp');
+  const said = el('vmi-said');
+  said.textContent = feed === null ? (ordersTried ? t('vmiUnknown') : '') : feed.items.length === 0 ? (feed.notSet ?? '') : !feed.mayPropose ? t('cannotPropose') : '';
+  said.hidden = said.textContent === '';
+  const usable = feed !== null && feed.items.length > 0 && feed.mayPropose;
+  el('vmi-form').hidden = !usable;
+  el('vmi-send').hidden = !usable;
+  const store = el('vmi-store');
+  const keep = store.value;
+  const stores = [...new Set((feed?.items ?? []).map((i) => i.storeId))];
+  store.replaceChildren(new Option(t('chooseStore'), ''), ...stores.map((s) => new Option(s, s)));
+  if (stores.includes(keep)) store.value = keep; else if (stores.length === 1) store.value = stores[0];
+  const here = usable ? feed.items.filter((i) => i.storeId === store.value) : [];
+  el('vmi-items').replaceChildren(...here.map((i) => {
+    const li = document.createElement('li');
+    li.className = `row tone-${i.belowMinimum ? 'degraded' : 'ok'}`;
+    li.dataset.product = i.productId;
+    const head = document.createElement('div'); head.className = 'head';
+    const name = document.createElement('span'); name.className = 'headline'; name.textContent = i.productId;
+    head.append(name);
+    if (i.belowMinimum) {
+      const st = document.createElement('span'); st.className = 'status';
+      const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = '⚠';
+      const w = document.createElement('span'); w.textContent = t('vmiBelowMin');
+      st.append(ic, w); st.setAttribute('aria-label', t('vmiBelowMin'));
+      head.append(st);
+    }
+    const facts = document.createElement('div'); facts.className = 'facts';
+    facts.textContent = fill(t('vmiItemFacts'), { min: i.minQty, max: i.maxQty, onHand: i.onHand, onOrder: i.onOrder, room: i.room, uom: i.uom });
+    const label = document.createElement('label'); label.className = 'vmi-qty';
+    const lw = document.createElement('span'); lw.textContent = t('vmiQtyL');
+    const input = document.createElement('input');
+    input.inputMode = 'numeric'; input.autocomplete = 'off'; input.dataset.product = i.productId; input.className = 'vmi-qty-input';
+    input.value = typedQty.get(`${i.storeId}|${i.productId}`) ?? '';
+    input.addEventListener('input', () => { typedQty.set(`${i.storeId}|${i.productId}`, input.value); });
+    label.append(lw, input);
+    li.append(head, facts, label);
+    return li;
+  }));
+  const proposals = feed?.proposals ?? [];
+  el('vmi-proposals-h').hidden = proposals.length === 0;
+  el('vmi-proposals-h').textContent = t('vmiProposalsH');
+  el('vmi-proposals').replaceChildren(...proposals.map((p) => {
+    const li = document.createElement('li');
+    const tone = p.status === 'accepted' ? 'ok' : p.status === 'rejected' ? 'error' : 'degraded';
+    li.className = `row tone-${tone}`;
+    li.dataset.proposal = p.proposalId;
+    const st = document.createElement('span'); st.className = 'status';
+    const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = p.status === 'accepted' ? '✓' : p.status === 'rejected' ? '✕' : '⏳';
+    const word = t(p.status === 'accepted' ? 'vmiAccepted' : p.status === 'rejected' ? 'vmiRejected' : 'vmiAwaiting');
+    const w = document.createElement('span'); w.textContent = `${word}${p.reason ? ` — ${p.reason}` : ''}`;
+    st.append(ic, w); st.setAttribute('aria-label', word);
+    const facts = document.createElement('div'); facts.className = 'facts';
+    facts.textContent = `${p.storeId} · ${p.lines.map((l) => `${l.productId} × ${l.quantity}`).join(', ')} · ${p.proposedAt}`;
+    li.append(st, facts);
+    return li;
+  }));
+}
+async function sendTopUp() {
+  const api = window.supplierPortal;
+  if (!api || typeof api.sendTopUpProposal !== 'function') return;
+  const storeId = el('vmi-store').value;
+  const quantities = {};
+  for (const input of el('vmi-items').querySelectorAll('input.vmi-qty-input')) quantities[input.dataset.product] = input.value;
+  const out = await api.sendTopUpProposal({ storeId, quantities, note: el('vmi-note').value });
+  const st = el('vmi-result');
+  st.className = `status-line ${out.result === 'sent' ? 'tone-ok' : 'tone-error'}`;
+  st.textContent = out.result === 'sent' ? `✓ ${t('topUpSent')}` : out.result === 'invalid' ? `⚠ ${t(out.why)}${out.productId ? ` (${out.productId})` : ''}` : out.result === 'refused' ? `⚠ ${t('refusedSay')} ${out.whatHappened}` : `⚠ ${t('topUpNotSent')}`;
+  st.dataset.result = out.result;
+  if (out.result === 'sent') {
+    el('vmi-note').value = '';
+    for (const k of [...typedQty.keys()]) if (k.startsWith(`${storeId}|`)) typedQty.delete(k);
+    await refresh();
+  }
+}
+el('vmi-send').addEventListener('click', () => { void sendTopUp(); });
+el('vmi-store').addEventListener('change', () => { paintVmi(); });
+{ const i = icon('package'); if (i !== null) el('vmi-send').prepend(i); }
 { const i = icon('truck'); if (i !== null) el('du-send').prepend(i); }
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
@@ -212,7 +309,7 @@ async function refresh() {
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
   ordersTried = true;
-  if (data) { session = api.present(data); paint(); } else paintDelivery();
+  if (data) { session = api.present(data); paint(); } else { paintDelivery(); paintVmi(); }
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 

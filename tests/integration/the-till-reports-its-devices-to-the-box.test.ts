@@ -74,4 +74,30 @@ describe('D04-FR-05 — the till reports its devices; the manager sees what fail
     expect(await report(edge, { devices: [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'ok' }, { kind: 'card_terminal', state: 'ok' }] }, token2)).toMatchObject({ recorded: true });
     expect((await today(edge))['tillDevices']).toMatchObject({ known: true, value: 0, note: expect.stringMatching(/^every device reported working/) });
   }, 60_000);
+
+  it('OB-392: the manager\'s Today payload carries one card per lane — printer, scanner, card machine, last report, unsent, last send — and keeps it over a restart', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-lane-cards-'));
+    dirs.push(dir);
+    const ready = await prepareTillBox({ dir, key: KEY, people: [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }, { userId: 'u-mgr', displayName: 'Manager', manager: true }], pack: PACK });
+    let edge = await start(dir, ready);
+    const lanes = async (): Promise<Record<string, unknown>[]> => {
+      const html = await (await fetch(`http://127.0.0.1:${edge.screens!.port}/manager`)).text();
+      const m = new RegExp(`<script>window\\.${GLOBAL_FOR.manager} = ([\\s\\S]*?);</script>`).exec(html);
+      return (JSON.parse(m![1]!) as { lanes: Record<string, unknown>[] }).lanes;
+    };
+    // Before the till says anything: its own lane has a card, and every device on it is "not reported" — never "working".
+    expect(await lanes()).toEqual([{
+      laneId: 'lane-1', lastReportAt: null, lastReportShop: null, devices: { printer: null, scanner: null, card_terminal: null }, unsent: 0, problems: 0,
+    }]);
+    const token = await signInAtLane(edge.lane!.port, 'u-lanecash');
+    expect(await report(edge, { devices: [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'failed', detail: 'paper out' }] }, token)).toMatchObject({ recorded: true });
+    const [card] = await lanes();
+    expect(card).toMatchObject({ laneId: 'lane-1', devices: { printer: { state: 'failed', detail: 'paper out' }, scanner: { state: 'ok' }, card_terminal: null }, unsent: 0, problems: 1 });
+    expect(card!['lastReportAt']).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
+    expect(card!['lastReportShop']).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/));
+    await edge.stop();
+    stops.splice(0);
+    edge = await start(dir, ready);
+    expect((await lanes())[0]).toMatchObject({ laneId: 'lane-1', devices: { printer: { state: 'failed' } }, problems: 1 });
+  }, 60_000);
 });

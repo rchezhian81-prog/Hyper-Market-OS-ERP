@@ -40,7 +40,7 @@ import {
 } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
 import { foldBlanketAgreements } from './p3-procure-adapters';
-import { freeSampleRoutes, FREE_SAMPLE_REASON, type FreeSampleIssue, type FreeSampleCheck } from '../../inventory/src/free-samples';
+import { freeSampleRoutes, FREE_SAMPLE_REASON, type FreeSampleIssue, type FreeSampleCheck, type FreeSampleRequest, type FreeSampleDecision } from '../../inventory/src/free-samples';
 import { frozenBy as countPlanFreezing } from '../../inventory/src/count-plans';
 import type { PurchaseTaxLine } from '../../../packages/input-tax/src/free-sample-itc';
 import { lockedGstr3bPeriods } from './r3-gst-adapters';
@@ -54,6 +54,8 @@ import { departmentOfCategory, withinDepartmentScope } from '../../../packages/o
 import { currentLinks, type DepartmentLinkRecord } from '../../platform/src/org-departments';
 import { departmentScopeOf, DEPARTMENT_LINKS_STREAM } from './p1-identity-adapters';
 import { ROLE_CATALOGUE } from './roles';
+import { RELABEL_STREAM } from './lp-workforce-adapters';
+import type { RelabelTask } from '../../pricing/src/relabel-tasks';
 import {
   effectiveGrants, liveEmergencyRoles, approvalRequestsAdapter, categoryRegisterAdapter, productMasterAdapter, supplierMasterAdapter,
   rosterStoreAdapter, warehouseAdapter, transfersAdapter, supplierPortalAdapter,
@@ -297,6 +299,22 @@ function freeSampleSurface(input: Base): readonly Route[] {
   const plans = countPlansAdapter({ store, now });
   return freeSampleRoutes({
     now,
+    // OB-393: the giver's request and the other store manager's decision, on the same append-only register.
+    requests: (t) => payloads<FreeSampleRequest>(store, t, FG4_STREAMS.freeSamples, 'FreeSampleRequested'),
+    recordRequest: async (t, r) => {
+      await store.append(t, FG4_STREAMS.freeSamples, makeEvent({
+        id: `free-sample-request-${r.issueId}`, type: 'FreeSampleRequested', occurredAt: r.requestedAt,
+        idempotencyKey: `free-sample-request-${t}-${r.issueId}`, source: 'api/inventory', payload: r as unknown as Record<string, unknown>,
+      }));
+    },
+    decisions: (t) => payloads<FreeSampleDecision>(store, t, FG4_STREAMS.freeSamples, 'FreeSampleDecided'),
+    recordDecision: async (t, d) => {
+      // Once per sample: the key holds no time or person, so a second decision collapses onto the first.
+      await store.append(t, FG4_STREAMS.freeSamples, makeEvent({
+        id: `free-sample-decision-${d.issueId}`, type: 'FreeSampleDecided', occurredAt: d.at,
+        idempotencyKey: `free-sample-decision-${t}-${d.issueId}`, source: 'api/inventory', payload: d as unknown as Record<string, unknown>,
+      }));
+    },
     issues: (t) => payloads<FreeSampleIssue>(store, t, FG4_STREAMS.freeSamples, 'FreeSampleIssued'),
     recordIssue: async (t, issue) => {
       // One truth (P-02): the sample REDUCES on-hand — a compensating issue keyed on the issue id (a retry is one, not two).
@@ -326,6 +344,8 @@ function freeSampleSurface(input: Base): readonly Route[] {
       }));
     },
     tradingDay: (t, at) => shopDay(input, t, at),
+    // OB-396: who is a store manager of which store, and who is the owner — head office's live grants, never the request.
+    grants: (t) => effectiveGrants(store, t),
     locationBranches: nodesBranches,
     countFreeze: async (t, l, p, k) => (await countPlanFreezing(plans, t, l, p, k))?.planId,
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
@@ -437,6 +457,10 @@ function scopeGuards(surface: Route[], input: Base): void {
   };
   // A requisition names no supplier yet: only its products' categories are judged (the supplier is judged at the quote).
   guardBefore(surface, 'POST', '/v1/purchase/requisitions/:requisitionId', (ctx) => categoryGuard(ctx, productIdsOf(body(ctx)['lines'])));
+  // FU-2: a requisition made FROM a replenishment proposal (the lines the buyer accepts) or FROM A02 drafts (the products the
+  // buyer pairs with them) holds exactly those products — judged the same way, before anything is raised.
+  guardBefore(surface, 'POST', '/v1/purchase/requisitions/:requisitionId/from-replenishment', (ctx) => categoryGuard(ctx, productIdsOf(body(ctx)['accept'])));
+  guardBefore(surface, 'POST', '/v1/purchase/requisitions/:requisitionId/from-drafts', (ctx) => categoryGuard(ctx, productIdsOf(body(ctx)['lines'])));
   for (const path of ['/v1/purchase/requisitions/:requisitionId/quotes/:quoteId', '/v1/purchase/blanket-orders/:agreementId']) {
     guardBefore(surface, 'POST', path, async (ctx) => { await supplierGuard(ctx, str(body(ctx)['supplierId'])); await categoryGuard(ctx, productIdsOf(body(ctx)['lines'])); });
   }
@@ -451,16 +475,33 @@ function scopeGuards(surface: Route[], input: Base): void {
 
   // (c) Location scope inside a branch — those who receive, count and move stock (§28 "Receiver/QC, Warehouse User —
   //     assigned locations"). A location reaches the places under it in the organisation.
-  const locationGuard = async (ctx: RequestContext, locationIds: readonly (string | undefined)[]) => {
-    const scope = await facts.roleScope(ctx.tenantId, ctx.userId, 'inventory.movement.append', 'locations');
+  const locationGuard = async (ctx: RequestContext, locationIds: readonly (string | undefined)[], who: { readonly userId: string; readonly permission: string; readonly relayed: boolean } = { userId: ctx.userId, permission: 'inventory.movement.append', relayed: false }) => {
+    const scope = await facts.roleScope(ctx.tenantId, who.userId, who.permission, 'locations');
     if (scope === 'all') return;
     const parentOf = await facts.locationTree(ctx.tenantId);
     for (const l of locationIds) {
       if (l === undefined) continue;
       if (!withinTreeScope(scope, l, parentOf)) {
+        if (who.relayed) {
+          // A relayed record is refused by name and kept at the store as a visible dead letter for a person — never lost.
+          throw apiError(403, {
+            code: 'outside_your_location_scope',
+            whatHappened: `${who.userId} recorded this at ${l}, which is not one of the places their role reaches inside the branch (${scope.length === 0 ? 'none' : scope.join(', ')}). Head office judged it on their grants, not on the store computer's.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store: it stays in the queue for a person. Someone whose role covers that place records it, or the owner widens the role\'s places.',
+          });
+        }
         throw refusal('outside_your_location_scope', `${l} is not one of the places this account's role reaches inside the branch (${scope.join(', ')}).`, 'Work at the places your role covers, or ask someone who works at this one.');
       }
     }
+  };
+  /** The person a store computer relays for is judged on THEIR grants (the box's own are not theirs). A person who holds no
+   *  grant with the permission is left to the route, which flags them (`receiver_unknown`, `counter_lacks_authority`). */
+  const holdsByGrant = async (tenantId: string, userId: string, permission: string): Promise<boolean> =>
+    (await effectiveGrants(store, tenantId)).some((g) => g.userId === userId && (ROLE_CATALOGUE.find((r) => r.id === g.roleId)?.permissions ?? []).includes(permission));
+  const relayedGuard = async (ctx: RequestContext, person: string | undefined, places: readonly (string | undefined)[]) => {
+    if (person === undefined || !(await holdsByGrant(ctx.tenantId, person, 'inventory.movement.append'))) return;
+    await locationGuard(ctx, places, { userId: person, permission: 'inventory.movement.append', relayed: true });
   };
   /** Where a bin is: its location when it names one, else its store. Unknown bins are left to the route to refuse. */
   const binPlaces = async (tenantId: string, binIds: readonly unknown[]): Promise<(string | undefined)[]> => {
@@ -469,6 +510,10 @@ function scopeGuards(surface: Route[], input: Base): void {
   };
   guardBefore(surface, 'POST', '/v1/inventory/goods-receipt/:grnId', (ctx) => locationGuard(ctx, [str(body(ctx)['warehouseId'])]));
   guardBefore(surface, 'POST', '/v1/inventory/counts/:countId', (ctx) => locationGuard(ctx, [str(body(ctx)['locationId'])]));
+  // FU-2: the same places for a receipt or a count the STORE COMPUTER relays — judged on the person who booked it in or
+  // counted it (named in the relayed record), from their own grants on head office's register.
+  guardBefore(surface, 'POST', '/v1/inventory/goods-receipt/:grnId/synced', (ctx) => relayedGuard(ctx, str(body(ctx)['receivedBy']), [str(body(ctx)['warehouseId'])]));
+  guardBefore(surface, 'POST', '/v1/inventory/counts/:countId/synced', async (ctx) => relayedGuard(ctx, str(body(ctx)['counterId']), [str(body(ctx)['locationId']), ...(isStr(body(ctx)['binId']) ? await binPlaces(ctx.tenantId, [body(ctx)['binId']]) : [])]));
   guardBefore(surface, 'POST', '/v1/warehouse/bins/:binId', async (ctx) => locationGuard(ctx, [str(body(ctx)['locationId']) ?? str(body(ctx)['storeId']), ...(await binPlaces(ctx.tenantId, [ctx.params['binId']]))]));
   guardBefore(surface, 'POST', '/v1/warehouse/movements/:commandId', async (ctx) => locationGuard(ctx, await binPlaces(ctx.tenantId, [body(ctx)['fromBinId'], body(ctx)['toBinId']])));
   guardBefore(surface, 'POST', '/v1/warehouse/transfers/:transferId', (ctx) => locationGuard(ctx, [str(body(ctx)['fromLocationId']), str(body(ctx)['toLocationId'])]));
@@ -479,6 +524,15 @@ function scopeGuards(surface: Route[], input: Base): void {
   guardBefore(surface, 'POST', '/v1/warehouse/transfers/:transferId/receive', async (ctx) => {
     const t = await transfersAdapter({ store, now }).transfer(ctx.tenantId, (ctx.params['transferId'] ?? '').trim());
     if (t !== undefined) await locationGuard(ctx, [t.toLocationId]);
+  });
+
+  // FU-2: closing a shelf relabel task (OB-370: the assignee or a store manager) — the product's department and the shelf
+  // place are judged too, on the closer's grants for that route's permission. Unknown task → the route says so.
+  guardBefore(surface, 'POST', '/v1/pricing/relabel-tasks/:taskId/done', async (ctx) => {
+    const task = (await payloads<RelabelTask>(store, ctx.tenantId, RELABEL_STREAM, 'RelabelTaskRaised')).find((t) => t.taskId === (ctx.params['taskId'] ?? '').trim());
+    if (task === undefined) return;
+    await departmentGuard(ctx, 'workforce.task.complete.own', [task.productId]);
+    if (task.locationId !== null) await locationGuard(ctx, [task.locationId], { userId: ctx.userId, permission: 'workforce.task.complete.own', relayed: false });
   });
 
   // The access review shows these limits beside the branch and department on every role they narrow (M02-FR-01/02).

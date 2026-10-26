@@ -34,6 +34,14 @@ const WORDS = {
     callsSummary: '{n} customer(s) to call; {s} also said yes to service messages by SMS; {a} sale(s) named nobody (put the notice at the entrance).',
     nameNotOnRecord: 'Name not on record — ask at the desk', phone: 'Phone ends', noPhone: 'No phone on record', bought: 'Bought', lot: 'lot', madeFrom: 'made from lot', estimate: 'estimate',
     serviceYes: 'Service messages: yes by {c}', serviceNone: 'Service messages: no yes on record',
+    markPhoned: 'Phoned — tick', phonedBy: 'Phoned by {by} at {at}', notPhoned: 'Not phoned yet',
+    phonedSaved: 'Ticked as phoned. This recall can no longer be withdrawn — close it with evidence.', phonedAlready: 'Already ticked as phoned by {by}. The first tick stands.',
+    phonedCount: '{p} of {n} ticked as phoned.',
+    untickPhoned: 'Untick — the tick was a mistake', untickReasonLabel: 'Why the tick was a mistake',
+    needUntickReason: 'Write why the tick was a mistake first.',
+    untickSaved: 'The tick was taken back. Both stay on record; the withdrawal is judged on the ticks still standing.',
+    untickNotYours: 'You ticked this one — someone else takes it back.',
+    tickedRecord: 'Ticked by {by} at {at}', untickedRecord: 'Taken back by {by} at {at}: {reason}',
     said_no_to_promotions: 'said no to promotions — safety call only',
     said_no_to_service_messages: 'said no to service messages — safety call only; no message is sent',
     no_answer_on_service_messages: 'no answer on service messages — call only; no message is sent',
@@ -69,6 +77,14 @@ const WORDS = {
     callsSummary: 'அழைக்க வேண்டியவர்கள் {n}; அவர்களில் {s} பேர் SMS மூலம் சேவைச் செய்திகளுக்கு ஒப்புதல் அளித்தனர்; {a} விற்பனைகளில் யாருடைய பெயரும் இல்லை (நுழைவாயிலில் அறிவிப்பை வைக்கவும்).',
     nameNotOnRecord: 'பெயர் பதிவில் இல்லை — மேசையில் கேட்கவும்', phone: 'கைபேசி கடைசி இலக்கங்கள்', noPhone: 'கைபேசி எண் பதிவில் இல்லை', bought: 'வாங்கியது', lot: 'தொகுதி', madeFrom: 'இதிலிருந்து தயாரிக்கப்பட்டது', estimate: 'மதிப்பீடு',
     serviceYes: 'சேவைச் செய்திகள்: {c} மூலம் ஒப்புதல்', serviceNone: 'சேவைச் செய்திகள்: ஒப்புதல் பதிவில் இல்லை',
+    markPhoned: 'அழைக்கப்பட்டது — குறி', phonedBy: '{by} {at} அன்று அழைத்தார்', notPhoned: 'இன்னும் அழைக்கப்படவில்லை',
+    phonedSaved: 'அழைக்கப்பட்டதாகக் குறிக்கப்பட்டது. இனி இந்தத் திரும்பப்பெறலைத் திரும்பப் பெற முடியாது — ஆதாரத்துடன் மூடவும்.', phonedAlready: '{by} ஏற்கனவே அழைக்கப்பட்டதாகக் குறித்தார். முதல் குறியே நிற்கும்.',
+    phonedCount: '{n} பேரில் {p} பேர் அழைக்கப்பட்டதாகக் குறிக்கப்பட்டனர்.',
+    untickPhoned: 'குறியை நீக்கு — தவறான குறி', untickReasonLabel: 'குறி ஏன் தவறு',
+    needUntickReason: 'குறி ஏன் தவறு என்பதை முதலில் எழுதுங்கள்.',
+    untickSaved: 'குறி திரும்பப் பெறப்பட்டது. இரண்டும் பதிவில் இருக்கும்; இன்னும் நிற்கும் குறிகளின்படியே திரும்பப்பெறல் தீர்மானிக்கப்படும்.',
+    untickNotYours: 'இதை நீங்கள் குறித்தீர்கள் — வேறொருவர் திரும்பப் பெற வேண்டும்.',
+    tickedRecord: '{by} {at} அன்று குறித்தார்', untickedRecord: '{by} {at} அன்று திரும்பப் பெற்றார்: {reason}',
     said_no_to_promotions: 'விளம்பரங்கள் வேண்டாம் என்றார் — பாதுகாப்பு அழைப்பு மட்டும்',
     said_no_to_service_messages: 'சேவைச் செய்திகள் வேண்டாம் என்றார் — பாதுகாப்பு அழைப்பு மட்டும்; செய்தி அனுப்பப்படாது',
     no_answer_on_service_messages: 'சேவைச் செய்திகள் பற்றிப் பதில் இல்லை — அழைப்பு மட்டும்; செய்தி அனுப்பப்படாது',
@@ -281,7 +297,83 @@ function callRow(c) {
   add((c.serviceMessagesOn ?? []).length === 0 ? t('serviceNone') : t('serviceYes', { c: c.serviceMessagesOn.join(', ') }));
   li.append(head, facts);
   for (const n of c.notes ?? []) { const p = document.createElement('span'); p.className = 'note'; p.textContent = t(n); li.append(p); }
+  // OB-387: the "phoned" tick — who and when, as head office keeps it. Once ticked it stays; the first tick stands.
+  const phoned = document.createElement('span');
+  phoned.className = 'phoned';
+  phoned.textContent = c.phoned ? `✓ ${t('phonedBy', { by: c.phoned.by, at: new Date(c.phoned.at).toLocaleString() })}` : t('notPhoned');
+  li.append(phoned);
+  const mayTick = PERMS === null || PERMS.includes('quality.recall.notice.phoned');
+  if (!c.phoned && mayTick && callReply?.recall?.status === 'open') {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'quiet tick-phoned'; b.id = `phoned-${c.customerRef}`;
+    label(b, 'check-square', 'markPhoned');
+    b.addEventListener('click', () => { void tickPhoned(c.customerRef, b); });
+    li.append(b);
+  }
+  // OB-397: a tick taken back stays on record beside its untick — the whole record is shown once there is one.
+  const history = Array.isArray(c.phoneHistory) ? c.phoneHistory : [];
+  if (history.some((x) => x.kind === 'unticked')) {
+    const ul = document.createElement('ul');
+    ul.className = 'phone-history';
+    for (const x of history) {
+      const item = document.createElement('li');
+      item.className = x.kind;
+      item.textContent = x.kind === 'unticked'
+        ? t('untickedRecord', { by: x.by, at: new Date(x.at).toLocaleString(), reason: x.reason })
+        : t('tickedRecord', { by: x.by, at: new Date(x.at).toLocaleString() });
+      ul.append(item);
+    }
+    li.append(ul);
+  }
+  // OB-397: a mistaken tick is taken back with a written reason — never by the person who ticked it (head office decides).
+  if (c.phoned && mayTick && callReply?.recall?.status === 'open') {
+    if (typeof DATA.userId === 'string' && DATA.userId === c.phoned.by) {
+      const mine = document.createElement('span'); mine.className = 'note untick-not-yours'; mine.textContent = t('untickNotYours');
+      li.append(mine);
+    } else {
+      const why = document.createElement('input');
+      why.type = 'text'; why.id = `untick-reason-${c.customerRef}`; why.className = 'untick-reason';
+      why.setAttribute('aria-label', t('untickReasonLabel')); why.placeholder = t('untickReasonLabel');
+      const u = document.createElement('button');
+      u.type = 'button'; u.className = 'quiet untick-phoned'; u.id = `untick-${c.customerRef}`;
+      label(u, 'rotate-ccw', 'untickPhoned');
+      u.addEventListener('click', () => { void untickPhoned(c.customerRef, why, u); });
+      li.append(why, u);
+    }
+  }
   return li;
+}
+
+/** OB-397: take back a mistaken tick, with a written reason. The screen shows the change only after head office answers. */
+async function untickPhoned(customerRef, input, button) {
+  const batch = callReply?.batchId;
+  if (!batch) return;
+  const reason = input.value.trim();
+  if (reason === '') { tell(false, t('needUntickReason')); return; }
+  button.disabled = true;
+  try {
+    const r = await call('POST', `/v1/quality/recalls/${enc(batch)}/call-list/${enc(customerRef)}/phoned/untick`, { reason }, `untick-${batch}-${customerRef}`);
+    if (!r.ok) { tell(false, refusal(r)); button.disabled = false; return; }
+    const fresh = await call('GET', `/v1/quality/recalls/${enc(batch)}/notice-list`);
+    if (fresh.ok) callReply = fresh.body;
+    tell(true, t('untickSaved'));
+  } catch { tell(false, t('unreachable')); button.disabled = false; return; }
+  paint();
+}
+
+/** OB-387: tick one customer as phoned. Head office records who and when; the screen shows it only after it answers. */
+async function tickPhoned(customerRef, button) {
+  const batch = callReply?.batchId;
+  if (!batch) return;
+  button.disabled = true;
+  try {
+    const r = await call('POST', `/v1/quality/recalls/${enc(batch)}/call-list/${enc(customerRef)}/phoned`, undefined, `phoned-${batch}-${customerRef}`);
+    if (!r.ok) { tell(false, refusal(r)); button.disabled = false; return; }
+    tell(true, r.body.alreadyTicked === true ? t('phonedAlready', { by: r.body.phoned?.by ?? '' }) : t('phonedSaved'));
+    const entry = (callReply?.callList ?? []).find((x) => x.customerRef === customerRef);
+    if (entry && r.body.phoned) entry.phoned = r.body.phoned;
+  } catch { tell(false, t('unreachable')); button.disabled = false; return; }
+  paint();
 }
 
 // ── messages ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -379,7 +471,7 @@ function paint() {
   el('c-basis').textContent = callReply?.dataLawBasis?.[lang] ?? BASIS[lang];
   el('l-c-batch').textContent = t('callsBatch');
   label(el('c-load'), 'users', 'loadCalls');
-  el('c-summary').textContent = callReply === null ? '' : t('callsSummary', { n: callReply.callList.length, s: callReply.smsConsented, a: callReply.anonymousSales });
+  el('c-summary').textContent = callReply === null ? '' : `${t('callsSummary', { n: callReply.callList.length, s: callReply.smsConsented, a: callReply.anonymousSales })} ${t('phonedCount', { p: callReply.callList.filter((c) => c.phoned).length, n: callReply.callList.length })}`;
   el('c-rows').replaceChildren(...(callReply?.callList ?? []).map(callRow));
   // messages
   el('messages-h').textContent = t('messagesH');

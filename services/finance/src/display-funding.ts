@@ -24,6 +24,7 @@ import { postJournal as mapToJournal, type PostingMap } from '../../../packages/
 import type { DisplayContract } from '../../../packages/merchandising/src/index';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
 import type { StoredPostingMap } from './day-book';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** A display-funding receipt: a finance journal that also says which contract and receipt it is. */
 export interface DisplayFundingJournal extends JournalEntry {
@@ -39,6 +40,8 @@ export interface DisplayFundingJournal extends JournalEntry {
 }
 
 export interface DisplayFundingDeps extends Pick<FinanceDeps, 'periodStates' | 'nextOpenPeriod' | 'appendJournal' | 'now'> {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly postingMap: (tenantId: string) => Promise<StoredPostingMap | undefined> | StoredPostingMap | undefined;
   /** Every display contract as merchandising recorded it (latest per contract). */
   readonly contracts: (tenantId: string) => Promise<readonly DisplayContract[]> | readonly DisplayContract[];
@@ -177,7 +180,7 @@ export function displayFundingRoutes(deps: DisplayFundingDeps): readonly Route[]
         const storeId = ctx.query['storeId'];
         const result = reconcileDisplayFunding({
           contracts: isStr(storeId) ? contracts.filter((c) => c.storeId === storeId) : contracts,
-          journals, incomeAccount: displayFundingIncomeAccount(map), today: deps.now().slice(0, 10),
+          journals, incomeAccount: displayFundingIncomeAccount(map), today: await shopToday(deps, ctx.tenantId),
         });
         return {
           status: 200,

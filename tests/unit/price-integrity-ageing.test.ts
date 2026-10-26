@@ -56,14 +56,15 @@ describe('D-7 price of record vs shelf vs POS vs app — an ageing exception rep
 
   it('ages each exception from the moment it began — the price change for a label nobody re-checked, the first wrong sighting, the first wrong charge', () => {
     const by = (p: string, s: string) => report.exceptions.find((e) => e.productId === p && e.surface === s)!;
-    expect(by('P1', 'shelf_label')).toMatchObject({ openSince: '2026-10-10T00:00:00.000Z', ageDays: 6, band: '3-7 days', differenceMinor: -500, shelfAddress: 'A3-2' });
+    // R1c: a price effective from 10 October starts at the SHOP's midnight (18:30 UTC on the 9th), never 05:30 IST.
+    expect(by('P1', 'shelf_label')).toMatchObject({ openSince: '2026-10-09T18:30:00.000Z', ageDays: 6, band: '3-7 days', differenceMinor: -500, shelfAddress: 'A3-2' });
     expect(by('P3', 'shelf_label')).toMatchObject({ openSince: '2026-10-01T09:00:00.000Z', ageDays: 15, band: 'over 7 days' });
     expect(by('P1', 'pos')).toMatchObject({ openSince: '2026-10-15T10:00:00.000Z', ageDays: 1, band: '1-3 days', evidence: 'charged ₹60.00 on sale s2 at 2026-10-15T10:00:00.000Z' });
-    expect(by('P2', 'shelf_label')).toMatchObject({ openSince: '2026-09-01T00:00:00.000Z', band: 'over 7 days' });
+    expect(by('P2', 'shelf_label')).toMatchObject({ openSince: '2026-08-31T18:30:00.000Z', band: 'over 7 days' });
     expect(report.byBand).toEqual([
       { band: 'under 1 day', count: 0 }, { band: '1-3 days', count: 1 }, { band: '3-7 days', count: 1 }, { band: 'over 7 days', count: 2 },
     ]);
-    expect(report.oldestOpenSince).toBe('2026-09-01T00:00:00.000Z');
+    expect(report.oldestOpenSince).toBe('2026-08-31T18:30:00.000Z'); // the shop's midnight on 1 September
     expect(by('P1', 'shelf_label').detail).toContain('the shown price is what the customer was offered');
   });
 

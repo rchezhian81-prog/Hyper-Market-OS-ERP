@@ -5,7 +5,9 @@
 //
 //   • allowed only on an OPEN recall, with a reason in words, and with the person's own statement that no customer has
 //     been phoned (the shop phones customers from the call list; the system cannot see a phone call, so the person who
-//     withdraws says so in writing, on the record);
+//     withdraws says so in writing, on the record) — kept as an extra check beside the ticks below (OB-387);
+//   • OB-387 (owner decision, 26 Oct 2026): each customer on the call list carries a "phoned" tick (who, when —
+//     append-only, sealed). ANY tick on this recall refuses the withdrawal by name (`customers_already_phoned`);
 //   • REFUSED BY NAME once head office holds any sign that the recall has reached a customer or the stock — a recall
 //     message sent or attempted to any customer (`customers_already_contacted`), or any of the batch disposed of since
 //     the recall started (`stock_already_disposed`). After that the recall is closed with evidence, as before;
@@ -28,6 +30,8 @@ import {
 export interface RecallReach {
   /** Distinct customers a recall message was sent or attempted to, for this batch. */
   readonly customersContacted: number;
+  /** OB-387: distinct customers on this recall's call list ticked as phoned. */
+  readonly customersPhoned: number;
   /** Quantity of this batch disposed of (written off / destroyed) since the recall started, in its own minor units. */
   readonly stockDisposed: number;
 }
@@ -48,6 +52,7 @@ const REFUSAL_CODE: Readonly<Record<RecallWithdrawRefusal, { status: number; cod
   no_open_recall: { status: 409, code: 'no_open_recall_to_withdraw', next: 'Check the batch code. A closed or withdrawn recall stays as it is; its record is kept.' },
   needs_a_reason: { status: 400, code: 'recall_withdrawal_needs_a_reason', next: 'Say in words why the recall was started by mistake (at least five letters). Nothing was changed.' },
   customers_already_contacted: { status: 409, code: 'recall_customers_already_contacted', next: 'Close the recall with evidence instead — what was found, who was told. Nothing was changed.' },
+  customers_already_phoned: { status: 409, code: 'recall_customers_already_phoned', next: 'A customer on the call list is ticked as phoned. Close the recall with evidence instead — who was phoned, what they were told. Nothing was changed.' },
   stock_already_disposed: { status: 409, code: 'recall_stock_already_disposed', next: 'Close the recall with evidence instead — what was disposed of, and why. Nothing was changed.' },
 };
 
@@ -74,7 +79,7 @@ export function recallWithdrawalRoutes(deps: RecallWithdrawalDeps): readonly Rou
         const open = registry.find(batchId);
         const reach: RecallReach = open !== undefined && open.status === 'open'
           ? await deps.reach(ctx.tenantId, batchId, open.initiatedAt)
-          : { customersContacted: 0, stockDisposed: 0 };
+          : { customersContacted: 0, customersPhoned: 0, stockDisposed: 0 };
         let record: RecallRecord;
         try {
           record = registry.withdraw({ batchId, withdrawnBy: ctx.userId, reason, at: deps.now(), ...reach });
@@ -90,7 +95,7 @@ export function recallWithdrawalRoutes(deps: RecallWithdrawalDeps): readonly Rou
           actorId: ctx.userId, action: 'quality.recall.withdraw', objectType: 'recall', objectId: `recall:${batchId}`,
           at: record.withdrawal?.withdrawnAt ?? deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: { status: 'open', initiatedBy: record.initiatedBy, initiatedAt: record.initiatedAt },
-          after: { status: 'withdrawn', customersContacted: '0', stockDisposed: '0', noCustomerPhoned: 'confirmed' },
+          after: { status: 'withdrawn', customersContacted: '0', customersPhoned: '0', stockDisposed: '0', noCustomerPhoned: 'confirmed' },
           reason: record.withdrawal?.reason ?? reason, correlationId: ctx.traceId,
         });
         return { status: 200, body: { recall: record } };

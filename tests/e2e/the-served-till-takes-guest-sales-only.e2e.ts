@@ -83,7 +83,6 @@ describe.skipIf(!HAVE_BROWSER)('the served till says "guest sales only" and take
     await page.click('#sheet-ok');
     await shows(page, 'sheet', 'sheet-title', 'Why is it coming back?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
-    await page.click('#sheet-ok');
     await shows(page, 'pay', 'pay-title', 'What condition is the item in?');
     await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
     await shows(page, 'sheet', 'sheet-title', 'How much to refund?');

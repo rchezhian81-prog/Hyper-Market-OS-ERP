@@ -12,6 +12,7 @@ import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/earn-rule';
 import { issueTillPins, signInTill, signInAtLane, operatorHeader, receiptNumberAt } from '../support/till-operator';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **OB-301 (M15-FR-03, owner 23 Oct 2026, in writing) — a staff member's own shopping is judged AT THE TILL, before the
@@ -35,7 +36,7 @@ const LANE = 'lane-1';
 const CASHIER = 'u-meena';
 const STAFF = 'u-ravi';
 const MOBILE = { ravi: '9840011111', meena: '9840022222', customer: '9840033333' };
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 const AT = new Date(Date.now() - 60_000).toISOString();
 const SETTINGS = { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: STORE };
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };

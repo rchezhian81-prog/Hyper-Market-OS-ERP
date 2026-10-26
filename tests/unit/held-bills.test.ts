@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HeldBills } from '../../edge/store-edge/src/held-bills';
+import { readLog } from '../../edge/store-edge/src/file-log';
 import { PosSession, taxRateFromPercent } from '../../apps/pos/src/session';
 import { money } from '../../packages/contracts/src/money';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
@@ -17,6 +18,7 @@ import type { SuspensionPolicy } from '../../packages/suspended-sales/src/suspen
 const dirs: string[] = [];
 afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }); });
 
+const heldDays = async (dir: string): Promise<string[]> => (await readLog(join(dir, 'held-bills.log'))).flatMap((r) => (r.ok ? [(JSON.parse(r.record) as { tradingDay: string }).tradingDay] : []));
 const LINE = { lineId: 'L1', productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 12_000, quantityMinor: 1, uom: 'ea', taxBps: 500, voided: false };
 const open = async (policy: SuspensionPolicy | null, now: () => string = () => '2026-10-09T10:00:00.000Z') => {
   const dir = await mkdtemp(join(tmpdir(), 'sre-held-register-'));
@@ -25,6 +27,22 @@ const open = async (policy: SuspensionPolicy | null, now: () => string = () => '
 };
 
 describe('the box\'s held-basket register (audit PF-05)', () => {
+  it('a basket held at 00:40 IST with no trading day from the till is dated to the shop day, not the UTC day (R1a)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-held-register-'));
+    dirs.push(dir);
+    const at = () => '2026-10-25T19:10:00.000Z';
+    const shopDefault = await HeldBills.open({ dataDir: dir, capacityBytes: 1_048_576, tenantId: 't-sre', policy: () => null, storeId: () => 'store-1', now: at });
+    await shopDefault.hold({ laneId: 'lane-1', cashierId: 'u1', billId: 'H-1', lines: [LINE] });
+    expect(await heldDays(dir)).toEqual(['2026-10-26']);
+    await shopDefault.close();
+    const dir2 = await mkdtemp(join(tmpdir(), 'sre-held-register-'));
+    dirs.push(dir2);
+    const dubai = await HeldBills.open({ dataDir: dir2, capacityBytes: 1_048_576, tenantId: 't-sre', policy: () => null, storeId: () => 'store-1', now: at, tradingDayOf: () => '2026-10-25' });
+    await dubai.hold({ laneId: 'lane-1', cashierId: 'u1', billId: 'H-2', lines: [LINE] });
+    expect(await heldDays(dir2)).toEqual(['2026-10-25']);
+    await dubai.close();
+  });
+
   it('another till may recall a basket only when the shop\'s policy allows it', async () => {
     const strict = await open(null);
     await strict.hold({ laneId: 'lane-1', cashierId: 'u1', billId: 'H-1', lines: [LINE] });

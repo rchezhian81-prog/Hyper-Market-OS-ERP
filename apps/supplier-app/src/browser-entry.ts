@@ -11,7 +11,10 @@
 // shows are read LIVE from the cloud, each scoped to the caller's OWN partner id ON THE SERVER (the browser
 // cannot ask for another partner — there is no partner id to send). They are GETs; this surface writes ONE thing only
 // (OB-362): the "Delivery update" for one of the supplier's own open orders — the existing `delivery_status` submission,
-// `POST /v1/supplier-portal/me/submissions`, checked first by the tested `readDeliveryUpdate`.
+// `POST /v1/supplier-portal/me/submissions`, checked first by the tested `readDeliveryUpdate` — and, since OB-389, ONE
+// more: a vendor-managed-inventory "Top-up proposal" for the supplier's own VMI items at one store,
+// `POST /v1/supplier-portal/me/vmi/proposals/:proposalId`, checked first by the tested `readTopUpProposal`. A proposal
+// waits for a buyer; it orders nothing (P-05, §28). Exactly these two writes, nothing else.
 //
 // ── What may cache (§31) ─────────────────────────────────────────────────────
 //
@@ -19,9 +22,10 @@
 // never treated as current from a cache — they are re-read live on load and Refresh.
 
 import {
-  createSupplierPortalSession, readDeliveryUpdate,
+  createSupplierPortalSession, readDeliveryUpdate, readTopUpProposal,
   type SupplierPortalSession, type SupplierPortalData, type SupplierPortalPorts,
   type SubmissionView, type StatementView, type SubmissionKind, type SupplierOrdersFeed, type DeliveryUpdateInput,
+  type SupplierVmiFeed, type SupplierVmiItem, type SupplierVmiProposalView, type TopUpInput,
 } from './supplier-portal-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -50,10 +54,16 @@ interface SupplierWindow {
     orders(): SupplierOrdersFeed | null;
     /** OB-362: send the Delivery update — checked first; the one write this surface makes. */
     sendDeliveryUpdate(input: DeliveryUpdateInput): Promise<DeliveryUpdateOutcome>;
+    /** OB-389: the supplier's own VMI items and proposals as last read (null until read, or when unreadable). */
+    vmi(): SupplierVmiFeed | null;
+    /** OB-389: send the Top-up proposal — checked first; the second and last write this surface makes. */
+    sendTopUpProposal(input: TopUpInput): Promise<TopUpOutcome>;
   };
 }
 
 const SELF_PERMISSION = 'supplier.portal.self';
+/** OB-389: the grant a top-up proposal needs (the server re-checks it). */
+const SUBMIT_PERMISSION = 'supplier.portal.self.submit';
 const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim', 'delivery_status'];
 
 export function supplierPortalPortsFromData(
@@ -139,6 +149,60 @@ export async function fetchSupplierOrders(): Promise<SupplierOrdersFeed | null> 
   };
 }
 
+/** OB-389: read the supplier's OWN VMI items and proposals (GET); null when unreadable. Partner scoped server-side. */
+export async function fetchSupplierVmi(mayPropose: boolean): Promise<SupplierVmiFeed | null> {
+  const body = await getPortal('/v1/supplier-portal/me/vmi');
+  if (body === null || !Array.isArray(body['items'])) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const items: SupplierVmiItem[] = (body['items'] as Record<string, unknown>[]).map((i) => ({
+    storeId: String(i['storeId']), productId: String(i['productId']), minQty: num(i['minQty']), maxQty: num(i['maxQty']),
+    uom: String(i['uom'] ?? ''), onHand: num(i['onHand']), onOrder: num(i['onOrder']), room: num(i['room']), belowMinimum: i['belowMinimum'] === true,
+  }));
+  const STATUSES = ['awaiting_buyer', 'accepted', 'rejected'] as const;
+  const proposals: SupplierVmiProposalView[] = (Array.isArray(body['proposals']) ? body['proposals'] as Record<string, unknown>[] : []).map((p) => ({
+    proposalId: String(p['proposalId']), storeId: String(p['storeId']),
+    lines: (Array.isArray(p['lines']) ? p['lines'] as Record<string, unknown>[] : []).map((l) => ({ productId: String(l['productId']), quantity: num(l['quantity']) })),
+    proposedAt: String(p['proposedAt'] ?? ''),
+    status: (STATUSES as readonly string[]).includes(String(p['status'])) ? p['status'] as SupplierVmiProposalView['status'] : 'awaiting_buyer',
+    reason: typeof p['reason'] === 'string' ? p['reason'] : null,
+  }));
+  return { items, notSet: typeof body['notSet'] === 'string' ? body['notSet'] : null, proposals, mayPropose };
+}
+
+/** OB-389: what sending a top-up proposal came to. */
+export type TopUpOutcome =
+  | { readonly result: 'sent'; readonly proposalId: string }
+  | { readonly result: 'invalid'; readonly why: string; readonly productId?: string }
+  | { readonly result: 'refused'; readonly whatHappened: string }
+  | { readonly result: 'lost_link' };
+
+/**
+ * OB-389: the SECOND and last write this surface makes — a replenishment proposal for the supplier's own VMI items at one
+ * store. Checked against the room it was shown before anything is sent; the server judges it again against the buyer's
+ * limits and the stock now, and a buyer decides.
+ */
+export async function postTopUpProposal(input: TopUpInput, feed: SupplierVmiFeed | null, newId: () => string = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`): Promise<TopUpOutcome> {
+  const read = readTopUpProposal(input, feed);
+  if (!read.ok) return { result: 'invalid', why: read.why, ...(read.productId === undefined ? {} : { productId: read.productId }) };
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const proposalId = `vmi-${read.document.storeId}-${newId()}`;
+  try {
+    const res = await fetchFn(`/v1/supplier-portal/me/vmi/proposals/${encodeURIComponent(proposalId)}`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { accept: 'application/json', 'content-type': 'application/json', 'idempotency-key': proposalId },
+      body: JSON.stringify(read.document),
+    });
+    if (res.status >= 400) {
+      const b = (await res.json().catch(() => ({}))) as { error?: { whatHappened?: string } };
+      return { result: 'refused', whatHappened: b.error?.whatHappened ?? `status ${res.status}` };
+    }
+    return { result: 'sent', proposalId };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
 /** OB-362: what sending a delivery update came to. */
 export type DeliveryUpdateOutcome =
   | { readonly result: 'sent'; readonly submissionId: string }
@@ -172,7 +236,7 @@ export async function postDeliveryUpdate(input: DeliveryUpdateInput, feed: Suppl
   }
 }
 
-/** Wire the portal onto the given window: boot the session and expose the refresh/present api (and OB-362's one write). */
+/** Wire the portal onto the given window: boot the session and expose the refresh/present api (and the two writes: OB-362, OB-389). */
 export function attachSupplierPortal(win: SupplierWindow): void {
   const data = win.supplierData;
   let current: SupplierPortalData = { submissions: [], statement: null, asAt: '' };
@@ -187,12 +251,14 @@ export function attachSupplierPortal(win: SupplierWindow): void {
   win.supplierPortal = {
     refresh: async () => {
       // The feeds read together; a feed that fails to load stays absent rather than becoming a false empty.
-      const [submissions, statement, orders] = await Promise.all([fetchSupplierSubmissions(), fetchSupplierStatement(), fetchSupplierOrders()]);
-      if (submissions === null && statement === null && orders === null) return null;
+      const mayPropose = new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION);
+      const [submissions, statement, orders, vmi] = await Promise.all([fetchSupplierSubmissions(), fetchSupplierStatement(), fetchSupplierOrders(), fetchSupplierVmi(mayPropose)]);
+      if (submissions === null && statement === null && orders === null && vmi === null) return null;
       current = {
         submissions: submissions ?? current.submissions,
         statement: statement ?? current.statement,
         orders: orders ?? current.orders ?? null,
+        vmi: vmi ?? current.vmi ?? null,
         asAt: new Date().toISOString(),
       };
       return current;
@@ -200,6 +266,8 @@ export function attachSupplierPortal(win: SupplierWindow): void {
     present,
     orders: () => current.orders ?? null,
     sendDeliveryUpdate: (input) => postDeliveryUpdate(input, current.orders ?? null),
+    vmi: () => current.vmi ?? null,
+    sendTopUpProposal: (input) => postTopUpProposal(input, current.vmi ?? null),
   };
 }
 

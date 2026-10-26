@@ -17,10 +17,13 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { proposeMarkdown, type MarkdownProposal } from '../../../packages/demand/src/markdown';
 import { salesHistory, type SoldLine } from '../../../packages/demand/src/sales-history';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface ClearanceBatch { readonly productId: string; readonly batchId: string | null; readonly onHandMinor: number; readonly expiry?: string }
 
 export interface ClearanceMarkdownDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly now: () => string;
   /** The products on clearance for a store on a day: the master's lifecycle, and the store's range. */
   readonly clearanceProducts: (tenantId: string, storeId: string, onDate: string) => Promise<readonly { readonly productId: string; readonly source: 'product_master' | 'store_range' }[]>;
@@ -45,7 +48,7 @@ export function clearanceMarkdownRoutes(deps: ClearanceMarkdownDeps): readonly R
       permission: 'price.change.propose',
       handler: async (ctx) => {
         const storeId = (ctx.query['storeId'] ?? '').trim();
-        const asOf = ctx.query['asOf'] ?? deps.now().slice(0, 10);
+        const asOf = ctx.query['asOf'] ?? await shopToday(deps, ctx.tenantId);
         if (storeId === '' || !DAY.test(asOf)) {
           throw apiError(400, { code: 'not_readable_as_a_clearance_query', whatHappened: 'Clearance suggestions need ?storeId= and optionally ?asOf=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Correct the query. Nothing was changed; this only reads.' });
         }

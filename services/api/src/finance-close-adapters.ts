@@ -19,6 +19,7 @@ import { lossSourceId } from '../../finance/src/stock-losses';
 import { stockPeriodAccounts, stockValueCheck, type ClosingStockLine, type StockValuation, type StockPeriodDeps } from '../../finance/src/stock-period';
 import type { ControlTotalCheck } from '../../finance/src/index';
 import type { BudgetAssetDeps, BudgetVersion, FixedAssetFact } from '../../finance/src/budgets-assets';
+import { shopClock, tradingMonthIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const digest = (key: string): string => createHash('sha256').update(key).digest('hex').slice(0, 16);
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -115,10 +116,18 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
   };
 }
 
+/** R1b (M01-FR-02): the month (YYYY-MM) of an instant's shop trading day, in the tenant's calendar (the shop default when none). */
+async function shopMonthReader(input: { readonly calendar?: ShopCalendarOf }, tenantId: string): Promise<(iso: string) => string> {
+  const calendar = await shopClock(input.calendar).calendar(tenantId);
+  return (iso) => tradingMonthIn(iso, calendar);
+}
+
 // ── OB-56: the month-end stock adjustment — head office's own stock ledger, valued at the average buying cost ─────
 
 /** Every product's on-hand at the month end per store, at the OB-39 average as it stood then; the month's purchases. */
-export async function stockValuationFor(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<StockValuation> {
+export async function stockValuationFor(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }, tenantId: string, period: string): Promise<StockValuation> {
+  // R1b (M01-FR-02): a movement belongs to the month of its shop trading day — never its UTC month (wrong 00:00–05:30 IST on the 1st).
+  const monthOf = await shopMonthReader(input, tenantId);
   const [{ storeOf }, avg, products] = await Promise.all([storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId, { throughPeriod: period }), productMasterAdapter(input).products(tenantId)]);
   // A line with no value carries the product's display name (the product master's), so finance reads it without
   // catalogue access; a product the master does not hold is named by its id alone.
@@ -127,7 +136,7 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
   const movements = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' }))
     .map((e) => e.event.payload as Movement)
     // The shop's own stock only (M27-FR-02): concession, consignment and customer property are not its inventory.
-    .filter((m) => ownershipOf(m) === 'own' && m.occurredAt.slice(0, 7) <= period);
+    .filter((m) => ownershipOf(m) === 'own' && monthOf(m.occurredAt) <= period);
   const uomOf = new Map<string, string>();
   for (const m of movements) if (!uomOf.has(m.productId)) uomOf.set(m.productId, m.uom);
   const onHand = new Map<string, { productId: string; storeId: string; qty: number }>();
@@ -190,8 +199,8 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
   const unvaluedPurchases: string[] = [];
   const isOpening = (m: Movement): boolean => m.movementId.startsWith('opening-');
   // OB-288 P3 (M07-FR-04): a matched bill's landed charges posted into stock this month are part of the month's purchases.
-  for (const adj of await stockCostAdjustments(input.store, tenantId)) if (adj.occurredAt.slice(0, 7) === period) receivedMinor += adj.valueMinor;
-  for (const m of movements.filter((x) => x.occurredAt.slice(0, 7) === period)) {
+  for (const adj of await stockCostAdjustments(input.store, tenantId)) if (monthOf(adj.occurredAt) === period) receivedMinor += adj.valueMinor;
+  for (const m of movements.filter((x) => monthOf(x.occurredAt) === period)) {
     const storeId = storeOf(m.locationId);
     const atAverage = (): number | undefined => { const u = avg.costOf(m.productId, storeId); return u === undefined ? undefined : valueAtCost(m.quantityMinor, m.uom, { minor: u }); };
     if (m.kind === 'received') {
@@ -217,22 +226,23 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
 }
 
 /** Valued count differences, write-offs and shortfalls of the month or earlier the books do not hold yet. */
-export async function outstandingStockPostingsFor(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<readonly string[]> {
+export async function outstandingStockPostingsFor(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }, tenantId: string, period: string): Promise<readonly string[]> {
+  const monthOf = await shopMonthReader(input, tenantId); // R1b
   const pb = periodBooksAdapter(input);
   const [counts, writeOffs, adjJournals] = await Promise.all([pb.counts(tenantId), pb.writeOffs(tenantId), pb.stockAdjustmentJournals(tenantId)]);
   const posted = new Set(adjJournals.map((j) => j.stockAdjustment.sourceId));
   const out = stockAdjustmentSources(counts, writeOffs)
-    .filter((s) => s.valueMinor !== null && s.at.slice(0, 7) <= period && !posted.has(s.sourceId)).map((s) => s.sourceId);
+    .filter((s) => s.valueMinor !== null && monthOf(s.at) <= period && !posted.has(s.sourceId)).map((s) => s.sourceId);
   const sl = stockLossAdapter(input);
   const [losses, lossJournals] = await Promise.all([sl.losses(tenantId), sl.stockLossJournals(tenantId)]);
   const lossPosted = new Set(lossJournals.map((j) => j.stockLoss.sourceId));
-  for (const l of losses) if (l.lostValueMinor > 0 && l.resolvedAt.slice(0, 7) <= period && !lossPosted.has(lossSourceId(l))) out.push(lossSourceId(l));
+  for (const l of losses) if (l.lostValueMinor > 0 && monthOf(l.resolvedAt) <= period && !lossPosted.has(lossSourceId(l))) out.push(lossSourceId(l));
   // OB-66: a damaged write-off HELD on an open count is a write-off of the month not in the books yet — the adjustment waits.
-  out.push(...await unappliedHeldWriteOffs(input.store, tenantId, period));
+  out.push(...await unappliedHeldWriteOffs(input.store, tenantId, period, await shopClock(input.calendar).calendar(tenantId)));
   return out;
 }
 
-export function stockPeriodAdapter(input: { readonly store: EventStore; readonly now: () => string }): StockPeriodDeps {
+export function stockPeriodAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }): StockPeriodDeps {
   const pb = periodBooksAdapter(input);
   return {
     periodStates: pb.periodStates, appendJournal: pb.appendJournal, now: input.now,
@@ -242,9 +252,10 @@ export function stockPeriodAdapter(input: { readonly store: EventStore; readonly
     // The months before this one in which the shop's OWN stock moved — each needs its adjustment first (months in order).
     monthsWithStockActivityBefore: async (tenantId, period) => {
       const months = new Set<string>();
+      const monthOf = await shopMonthReader(input, tenantId); // R1b
       for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
         const m = e.event.payload as Movement;
-        const month = m.occurredAt.slice(0, 7);
+        const month = monthOf(m.occurredAt);
         if (month < period && ownershipOf(m) === 'own') months.add(month);
       }
       return [...months].sort();
@@ -253,7 +264,7 @@ export function stockPeriodAdapter(input: { readonly store: EventStore; readonly
 }
 
 /** The close's stock check (WF-18 · OB-56): said in `notChecked` when the shop holds no stock and the books none. */
-export async function stockValueCheckFor(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<{ readonly check: ControlTotalCheck; readonly notChecked?: undefined } | { readonly check: null; readonly notChecked: string }> {
+export async function stockValueCheckFor(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }, tenantId: string, period: string): Promise<{ readonly check: ControlTotalCheck; readonly notChecked?: undefined } | { readonly check: null; readonly notChecked: string }> {
   const pb = periodBooksAdapter(input);
   const [map, journals, valuation] = await Promise.all([pb.postingMap(tenantId), pb.journals(tenantId), stockValuationFor(input, tenantId, period)]);
   const inventory = stockPeriodAccounts(map)?.inventory ?? 'inventory';

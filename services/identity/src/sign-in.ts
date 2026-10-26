@@ -32,6 +32,12 @@ export interface SignInSettings {
   readonly clientId: string;
   /** The screens' own public address: sign-in returns to `${origin}/login/callback`. */
   readonly origin: string;
+  /**
+   * OB-388: ask the identity server for the person's password (and second step) on EVERY sign-in, never reusing a sign-in
+   * it still remembers in this browser (`prompt=login`). The store PC is shared by several people: the next person must
+   * never land in the last one's head-office session. Absent: the identity server's own single sign-on applies.
+   */
+  readonly alwaysAskForCredentials?: boolean;
 }
 
 export interface SignInDeps {
@@ -195,6 +201,7 @@ export function createSignInHandler(deps: SignInDeps): (req: SignInRequest) => P
       auth.search = new URLSearchParams({
         client_id: settings.clientId, response_type: 'code', scope: 'openid', redirect_uri: callback,
         state, nonce, code_challenge: sha256(verifier), code_challenge_method: 'S256',
+        ...(settings.alwaysAskForCredentials === true ? { prompt: 'login' } : {}),
       }).toString();
       return redirect(auth.toString());
     }

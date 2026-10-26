@@ -18,8 +18,11 @@ import {
   type ProcessorContractEntry, type ProcessingActivity,
 } from '../../../packages/customer/src/processor-register';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface ProcessorRegisterDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Every entry ever recorded (append-only; the engine takes the latest per vendor). */
   readonly entries: (tenantId: string) => Promise<readonly ProcessorContractEntry[]> | readonly ProcessorContractEntry[];
   readonly recordEntry: (tenantId: string, entry: ProcessorContractEntry) => Promise<void> | void;
@@ -81,7 +84,7 @@ export function processorRegisterRoutes(deps: ProcessorRegisterDeps): readonly R
       // The privacy officer's authority (owner, store manager) — not every role that may read a consent.
       permission: 'privacy.request.manage',
       handler: async (ctx) => {
-        const asOf = ctx.query['date'] ?? deps.now().slice(0, 10);
+        const asOf = ctx.query['date'] ?? await shopToday(deps, ctx.tenantId);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
           throw apiError(400, { code: 'check_needs_a_date', whatHappened: '?date must be YYYY-MM-DD (default today).', wasItSaved: 'not_saved', nextSafeAction: 'Send the date or leave it out. A check reads, it never writes.' });
         }

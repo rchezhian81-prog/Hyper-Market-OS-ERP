@@ -4,6 +4,7 @@
 // listing. The products themselves must carry an MRP and a country of origin (`ONLINE_READY`), and the shop a delivery
 // fee (0 is a fee). Nothing here is a real person, a real GSTIN or a real price.
 
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 export type SellOnlineReply = { readonly status: number; readonly body: unknown };
 /** A POST as a person who holds `online.store.manage` (the owner or a store manager). */
 export type SellOnlinePost = (path: string, body: unknown) => Promise<SellOnlineReply>;
@@ -39,7 +40,7 @@ export async function sellOnline(post: SellOnlinePost, productIds: readonly stri
  * store's pack, a delivery fee of 0 (none charged) from `feeFrom`, and list it online. Each step through the routes.
  */
 export async function listableProduct(post: SellOnlinePost, p: { readonly productId: string; readonly storeId: string; readonly priceMinor: number; readonly feeFrom?: string }): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = shopDateIn(new Date().toISOString());
   const step = async (path: string, body: unknown) => {
     const r = await post(path, body);
     if (r.status >= 300) throw new Error(`${path} was refused: ${r.status} ${JSON.stringify(r.body)}`);

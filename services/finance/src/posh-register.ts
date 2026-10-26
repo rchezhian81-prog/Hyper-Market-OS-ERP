@@ -37,8 +37,11 @@ import {
   POSH_LAW, POSH_OUTCOMES, poshComplaintView, admitPoshStep, poshAnnualReport, poshReportExceptions, poshReportDueBy,
   type PoshComplaint, type PoshStep, type PoshAnnualReport, type PoshReportFiling, type PoshOutcome, type PoshStepKind,
 } from '../../../packages/workforce/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface PoshRegisterDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly complaints: (tenantId: string) => Promise<readonly PoshComplaint[]>;
   /** False when the id is already received (the first stands). */
   readonly recordComplaint: (tenantId: string, complaint: PoshComplaint) => Promise<boolean>;
@@ -245,7 +248,7 @@ export function poshRegisterRoutes(deps: PoshRegisterDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/hr/posh/annual-report-status',
       permission: 'posh.report.read',
       handler: async (ctx) => {
-        const asOf = ctx.query['asOf'] ?? deps.now().slice(0, 10);
+        const asOf = ctx.query['asOf'] ?? await shopToday(deps, ctx.tenantId);
         if (!isDate(asOf)) throw apiError(400, { code: 'status_needs_a_date', whatHappened: 'asOf must be YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Ask again with ?asOf=2027-01-15, or leave it out for today.' });
         const complaints = await deps.complaints(ctx.tenantId);
         const reports = await deps.reports(ctx.tenantId);

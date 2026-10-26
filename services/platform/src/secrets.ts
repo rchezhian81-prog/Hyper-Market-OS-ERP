@@ -24,6 +24,7 @@ import {
   type SecretRef, type SecretKind, type UsageWindow,
 } from '../../../packages/integration/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { SecretRef } from '../../../packages/integration/src/index';
 
@@ -47,6 +48,8 @@ interface RawRef { readonly adapterId: string; readonly vaultRef: string; readon
 const isRef = (v: unknown): v is RawRef => isObj(v) && isStr(v['adapterId']) && isStr(v['vaultRef']) && isEnv(v['environment']);
 
 export interface SecretsDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** The latest state of one secret reference, or undefined. */
   readonly secret: (tenantId: string, secretId: string) => Promise<SecretRef | undefined> | SecretRef | undefined;
   /** The whole inventory — latest state per secret id. */
@@ -91,7 +94,7 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
           secrets: await deps.all(ctx.tenantId),
           ...(Array.isArray(refs) ? { referencedBy: refs as RawRef[] } : {}),
           ...(isPosInt(b['warnWithinDays']) ? { warnWithinDays: b['warnWithinDays'] } : {}),
-          asAt: isStr(b['asAt']) ? (b['asAt'] as string).slice(0, 10) : deps.now().slice(0, 10),
+          asAt: isStr(b['asAt']) ? (b['asAt'] as string).slice(0, 10) : await shopToday(deps, ctx.tenantId),
         });
         return { status: 200, body: review };
       },
@@ -150,7 +153,7 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
         }
         const secret: SecretRef = {
           secretId, tenantId: ctx.tenantId, kind: b['kind'] as SecretKind, vaultRef: b['vaultRef'] as string,
-          version: isPosInt(b['version']) ? b['version'] : 1, state: 'active', createdOn: deps.now().slice(0, 10),
+          version: isPosInt(b['version']) ? b['version'] : 1, state: 'active', createdOn: await shopToday(deps, ctx.tenantId),
           owner: b['owner'] as string, protects: b['protects'] as string,
           rotateEveryDays: b['rotateEveryDays'] as number, environment: b['environment'] as 'sandbox' | 'production',
           ...(isStr(b['lastRotatedOn']) ? { lastRotatedOn: b['lastRotatedOn'] as string } : {}),

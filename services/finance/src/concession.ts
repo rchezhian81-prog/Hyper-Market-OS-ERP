@@ -28,6 +28,7 @@ import {
   type ConcessionContract, type ConcessionSale, type ConcessionChargeBasis,
   type DepositMovement, type OwnedLot, type OwnershipStatus, type ValuationResult,
 } from '../../../packages/concession/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { ConcessionContract, ConcessionSale, DepositMovement } from '../../../packages/concession/src/index';
 
@@ -50,6 +51,8 @@ const isLot = (v: unknown): v is OwnedLot =>
   && (v['ownerId'] === undefined || typeof v['ownerId'] === 'string');
 
 export interface ConcessionDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly contract: (tenantId: string, contractId: string) => Promise<ConcessionContract | undefined> | ConcessionContract | undefined;
   readonly sales: (tenantId: string, contractId: string) => Promise<readonly ConcessionSale[]> | readonly ConcessionSale[];
   readonly recordContract: (tenantId: string, contract: ConcessionContract) => Promise<void> | void;
@@ -214,7 +217,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
         const contract = await deps.contract(ctx.tenantId, contractId);
         if (contract !== undefined) assertBranchInScope(ctx, contract.branchId); // PA-01-r1: another branch's contract stays outside
         if (contract === undefined) throw notFound(`concession contract ${contractId}`);
-        const today = isDate(ctx.query['today']) ? (ctx.query['today'] as string) : deps.now().slice(0, 10);
+        const today = isDate(ctx.query['today']) ? (ctx.query['today'] as string) : await shopToday(deps, ctx.tenantId);
         const warn = Number(ctx.query['warnWithinDays']);
         const decision = mayConcessionTrade({
           contract, today,

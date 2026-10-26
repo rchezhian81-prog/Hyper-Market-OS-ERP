@@ -329,17 +329,12 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     await page.keyboard.press('Enter');
     await shows(page, 'pay', 'pay-title', 'Which item is coming back?');
     await page.click('#pay-kinds button:first-child');
-    await shows(page, 'sheet', 'sheet-title', 'How many are coming back?');
-    await page.click('#sheet-ok');
+    // OB-390: one could come back (not asked), the reason is one tap, the amount starts at what the bill charged for it.
     await shows(page, 'sheet', 'sheet-title', 'Why is it coming back?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
-    await page.click('#sheet-ok');
     await shows(page, 'pay', 'pay-title', 'What condition is the item in?');
     await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
-    await shows(page, 'sheet', 'sheet-title', 'How much to refund?');
-    for (const digit of '105') await page.click(`#keypad button:text-is("${digit}")`);
-    await page.click('#sheet-ok');
-    await shows(page, 'pay', 'pay-title', 'How is the refund given?');
+    await shows(page, 'pay', 'pay-title', 'How is the refund given? — Refunding ₹105.00');
     await page.click('#pay-kinds button:text-is("Card")');
     await shows(page, 'pay', 'pay-title', 'Do this refund of ₹105.00 on the shop\'s card machine');
     await page.locator('#pay-kinds button', { hasText: 'Done on the machine' }).click();

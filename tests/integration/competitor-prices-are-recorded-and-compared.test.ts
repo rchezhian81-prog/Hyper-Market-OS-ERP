@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **D06-FR-05 (round 8) — competitor price capture.** A sighting of a competitor's price is recorded against the shop's
@@ -40,7 +41,7 @@ describe.each(backings)('competitor prices are recorded and compared, and change
     await h.seedOwner(T, OWNER);
     await h.provisionRole(T, MGR, 'store_manager');
     await h.provisionRole(T, CASH, 'cashier');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     for (const [path, body] of [
       ['/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }],
       ['/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }],

@@ -40,6 +40,7 @@ export type RecallWithdrawRefusal =
   | 'no_open_recall'
   | 'needs_a_reason'
   | 'customers_already_contacted'
+  | 'customers_already_phoned'
   | 'stock_already_disposed';
 
 export class RecallWithdrawRefusedError extends Error {
@@ -56,6 +57,11 @@ export interface WithdrawRecallInput {
   readonly at: string;
   /** How many customers the shop has already contacted about this recall (messages sent or attempted). */
   readonly customersContacted: number;
+  /**
+   * OB-387: how many customers on the recall's call list carry a "phoned" tick (who, when — append-only). Any tick
+   * refuses the withdrawal. Absent only on a replay of a withdrawal already checked when it was made.
+   */
+  readonly customersPhoned?: number;
   /** How much of the batch has already been disposed of (written off / destroyed) since the recall started. */
   readonly stockDisposed: number;
 }
@@ -146,6 +152,10 @@ export class RecallRegistry {
     if (input.customersContacted > 0) {
       throw new RecallWithdrawRefusedError(input.batchId, 'customers_already_contacted',
         `${input.customersContacted} customer(s) have already been contacted about it, so it must be closed with evidence.`);
+    }
+    if ((input.customersPhoned ?? 0) > 0) {
+      throw new RecallWithdrawRefusedError(input.batchId, 'customers_already_phoned',
+        `${input.customersPhoned} customer(s) on the call list are ticked as phoned about it, so it must be closed with evidence.`);
     }
     if (input.stockDisposed > 0) {
       throw new RecallWithdrawRefusedError(input.batchId, 'stock_already_disposed',

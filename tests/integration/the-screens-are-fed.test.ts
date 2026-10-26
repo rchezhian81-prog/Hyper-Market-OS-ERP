@@ -471,7 +471,7 @@ describe('every screen is served, and served its own data', () => {
 
   it('refuses anything that is not a screen, and anything that climbs out', async () => {
     const base = await serve(snapshotOf());
-    expect((await fetch(`${base}/erasure-console`)).status).toBe(404); // OB-380: payroll is served now; this page is not
+    expect((await fetch(`${base}/no-such-screen`)).status).toBe(404);
     expect((await fetch(`${base}/manager/..%2f..%2f..%2fpackage.json`)).status).toBe(400);
     expect((await fetch(`${base}/manager/nothing-here.js`)).status).toBe(404);
   });
@@ -1230,7 +1230,7 @@ describe('the box sends a bare screen path to its own folder first', () => {
 
   it('still refuses a path that is not a screen at all', async () => {
     const base = await serve(snapshotOf());
-    expect((await fetch(`${base}/erasure-console`, { redirect: 'manual' })).status).toBe(404);
+    expect((await fetch(`${base}/no-such-screen`, { redirect: 'manual' })).status).toBe(404);
   });
 
   it('serves each screen’s service worker, so there is something to register', async () => {

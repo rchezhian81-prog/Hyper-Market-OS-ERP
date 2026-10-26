@@ -7,6 +7,7 @@
 // fail safe, the same "off until set" rule as the till's loyalty cap — and a channel with no cost set is not sent on.
 // Pure and deterministic.
 
+import { DEFAULT_SHOP_CALENDAR, shopMonthIn } from '../../calendar/src/shop-clock';
 export interface MessagingBudget {
   /** The most the shop spends on messages in one calendar month, in paise. */
   readonly capMinor: number;
@@ -17,9 +18,12 @@ export interface MessagingBudget {
   readonly setAt: string;
 }
 
-/** The budget period a moment falls in: its calendar month, `YYYY-MM` (UTC). */
-export function budgetPeriodOf(at: string): string {
-  return new Date(Date.parse(at)).toISOString().slice(0, 7);
+/**
+ * The budget period a moment falls in: its calendar month, `YYYY-MM`, in the shop's zone (R1b · M01-FR-02) — never the UTC
+ * month, which turns over at 05:30 IST on the 1st. The shop default zone unless the caller names the tenant's.
+ */
+export function budgetPeriodOf(at: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone): string {
+  return shopMonthIn(new Date(Date.parse(at)).toISOString(), timeZone);
 }
 
 export type BudgetDecision =

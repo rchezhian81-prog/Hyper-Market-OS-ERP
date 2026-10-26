@@ -45,6 +45,7 @@ import { OWNER_ROLE_ID, ROLE_CATALOGUE } from '../services/api/src/roles';
 import { actionDetails } from '../services/identity/src/approval-requests';
 import { planTenantBootstrap } from '../packages/migration/src/tenant-bootstrap';
 import { parseEnvText, parseFlags, demoTenantIds, tokenPolicyFromEnv, type TokenPolicy } from './lib/operator-env';
+import { shopDateIn } from '../packages/calendar/src/shop-clock';
 
 export interface SmokeCast {
   readonly owner: string; readonly buyer: string; readonly receiver: string; readonly checker: string; readonly manager: string;
@@ -210,7 +211,7 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
     }
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = shopDateIn(new Date().toISOString()); // R1c: the shop's today — the price route refuses a back-dated entry
   const unitCost = { minor: COST, currency: 'INR' };
   let salePayload: Record<string, unknown> | undefined;
   let tradingDay = today;

@@ -242,7 +242,9 @@ describe('the store computer\'s settings for the two screens', () => {
     expect(selfCheckoutWatchOf({ selfCheckoutWatch: { auditRateBps: 300, auditAboveMinor: 200_000, looseProducePatternCount: 4, voidPatternCount: 3 } })).toEqual({ auditRateBps: 300, auditAboveMinor: 200_000, looseProducePatternCount: 4, voidPatternCount: 3 });
     expect(kioskStaleAfterOf({})).toBeNull();
     expect(kioskStaleAfterOf({ kioskStaleAfterMinutes: 240 })).toBe(240);
-    expect(customerFacingGlobals('price-kiosk', undefined)).toEqual({ priceKiosk: { staleAfterMinutes: null } });
+    expect(customerFacingGlobals('price-kiosk', undefined)).toEqual({ priceKiosk: { staleAfterMinutes: null, timeZone: 'Asia/Kolkata' } });
+    // R1c: the kiosk is told the shop's zone from the pack, so a price "from today" starts at the shop's midnight.
+    expect(customerFacingGlobals('price-kiosk', { kioskStaleAfterMinutes: 5, timeZone: 'Asia/Dubai' })).toEqual({ priceKiosk: { staleAfterMinutes: 5, timeZone: 'Asia/Dubai' } });
     expect(customerFacingGlobals('self-checkout', undefined)).toEqual({});
     expect(customerFacingGlobals('pos', { kioskStaleAfterMinutes: 5 })).toEqual({});
   });

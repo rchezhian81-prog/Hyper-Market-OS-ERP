@@ -102,6 +102,8 @@ export function parseArgs(argv) {
     else if (a === '--settings') { flags.composeEnv = next(); flags.settingsNamed = true; }
     else if (a === '--lane-port') flags.lanePort = next();
     else if (a === '--screen-port') flags.screenPort = next();
+    // OB-388 · ADR-0029: where head office's sign-in is (the identity server realm's https address), for the office pages.
+    else if (a === '--head-office-sign-in') flags.headOfficeSignIn = next();
     else if (a === '--generate-key') flags.generateKey = true;
     else if (a === '--skip-build') flags.skipBuild = true;
     else if (a === '--force') flags.force = true;
@@ -161,6 +163,11 @@ export function planTillSettings(input) {
   if (!isPort(flags.lanePort)) problems.push(`--lane-port must be a port number (got "${flags.lanePort}")`);
   if (!isPort(flags.screenPort)) problems.push(`--screen-port must be a port number (got "${flags.screenPort}")`);
   if (isPort(flags.lanePort) && isPort(flags.screenPort) && flags.lanePort === flags.screenPort) problems.push('the lane port and the screen port must differ');
+  // OB-388 · ADR-0029: the office pages' head-office sign-in — named here, or kept from an earlier install; https only.
+  const headOfficeSignIn = flags.headOfficeSignIn ?? existing?.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER;
+  if (flags.headOfficeSignIn !== undefined && !/^https:\/\/[^\s/]+\/\S*realms\/[A-Za-z0-9._-]+\/?$/.test(String(flags.headOfficeSignIn))) {
+    problems.push('--head-office-sign-in must be the identity server realm\'s https address, for example https://<head-office address>/auth/realms/<shop realm>');
+  }
   if (flags.lanePort !== '8090') notes.push(`lane port ${flags.lanePort}: the till screen posts to 8090 by default — only change this if the screen is told the same port`);
 
   // Gap W-5: the store this till serves — named with --store, or kept from an earlier install. On the store computer's own
@@ -215,7 +222,10 @@ export function planTillSettings(input) {
     ...(realCopy || existing?.EDGE_MIRROR_PILOT === '1' ? { EDGE_MIRROR_PILOT: '1' } : {}),
     // OB-259: the office screens this PC serves ask for the person's own till PIN; a till-only role opens only the till.
     EDGE_OFFICE_SIGN_IN: 'pin',
+    // OB-388: the office pages head office answers send each person through their OWN head-office sign-in on this PC.
+    ...(realValue(headOfficeSignIn) ? { EDGE_HEAD_OFFICE_SIGN_IN_ISSUER: headOfficeSignIn } : {}),
   };
+  if (!realValue(headOfficeSignIn)) notes.push('no head-office sign-in named — the office pages that need head office say it cannot be reached; name it later with --head-office-sign-in (OB-388)');
   if (realCopy) notes.push('guest sales only (OB-252): the till takes no customer mobile number and no loyalty');
   if (realCopy) notes.push('mirror pilot (OB-248 · OB-256): every sale and refund is "Paid on old system", with the old bill number (OB-264); no money in this drawer');
   return { ok: problems.length === 0, settings, problems, notes };
@@ -286,6 +296,11 @@ export function renderTillEnv(settings) {
       "# OB-259: the office screens ask for the person's own till PIN; a cashier opens only the till.",
       `EDGE_OFFICE_SIGN_IN=${settings.EDGE_OFFICE_SIGN_IN}`,
     ]),
+    ...(settings.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER === undefined ? [] : [
+      "# OB-388: head office's sign-in. Each person opening an office page signs in with their OWN head-office login and",
+      '# second step; this PC carries their own session to head office (CLOUD_API_URL) — never the store token, never a PIN.',
+      `EDGE_HEAD_OFFICE_SIGN_IN_ISSUER=${settings.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER}`,
+    ]),
     '',
   ].join('\n');
 }
@@ -293,7 +308,7 @@ export function renderTillEnv(settings) {
 /** How long a store token the installer makes lasts — the same 30 days `token:store` gives by default. */
 export const STORE_TOKEN_HOURS = 720;
 /** What a connect (W-5) or a newer install may add to or change in an existing till.env — never the key, the lane or the folders. */
-export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN']);
+export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN', 'EDGE_HEAD_OFFICE_SIGN_IN_ISSUER']);
 
 /**
  * An existing till.env with the connect keys set from the plan, in place; every other line is kept exactly as it was (the

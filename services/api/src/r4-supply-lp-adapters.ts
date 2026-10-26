@@ -30,6 +30,7 @@ import { competitorDraftRoutes, type CompetitorDraftDeps, type StoredCompetitorR
 import type { ProductPriceFacts } from '../../../packages/pricing/src/competitor-rule';
 import { resolvePrice } from '../../../packages/price-list/src/price-list';
 import { toMaster } from '../../catalogue/src/catalogue-preview';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -108,7 +109,7 @@ export function competitorDraftAdapter(input: { readonly store: EventStore; read
       const productIds = [...new Set(sightings.map((o) => o.productId))].sort();
       if (productIds.length === 0) return [];
       const at = now();
-      const asOf = at.slice(0, 10);
+      const asOf = shopDateIn(at); // R1c: the shop's date
       const [costs, rules] = await Promise.all([averageBuyingCosts({ store, now }, t), storeRulesAdapter({ store }).rules(t, storeId)]);
       const master = productMasterAdapter({ store, now });
       const prices = priceListAdapter({ store, now });

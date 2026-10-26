@@ -11,6 +11,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Proposal } from '../../ai/src/index';
 import type { SignedPack } from '../../catalogue/src/index';
 import { STREAM, inventoryAdapter, productMasterAdapter } from './adapters';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 type Draft = Omit<Proposal, 'committed'>;
 const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -37,7 +38,7 @@ export async function shoppingAlternatives(store: EventStore, tenantId: string, 
       .slice(0, MAX_ALTERNATIVES);
     if (alternatives.length === 0) continue;
     out.push({
-      proposalId: `a04-alternatives-${r.productId}-${r.locationId}-${now.slice(0, 10)}`, agent: 'A04', createdAt: now,
+      proposalId: `a04-alternatives-${r.productId}-${r.locationId}-${shopDateIn(now)}`, agent: 'A04', createdAt: now,
       summary: `${wanted.name} is out of stock at ${r.locationId}. If a customer asks for it, the app may offer: ${alternatives.map((a) => `${a.name} (${rupees(a.unitPriceMinor)}, ${onHand.get(`${a.productId}@${r.locationId}`)} in stock)`).join('; ')}. The customer chooses — nothing is added to any cart`,
       wouldRequire: 'the CUSTOMER confirms any change to their cart in the app — A04 only drafts the shortlist',
       evidence: [

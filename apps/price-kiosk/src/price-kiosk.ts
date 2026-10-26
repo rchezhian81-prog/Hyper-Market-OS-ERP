@@ -15,6 +15,7 @@
 
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import { quotePrice } from '../../../packages/self-checkout/src/self-checkout';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 
 export interface Words { readonly en: string; readonly ta: string }
 
@@ -48,7 +49,11 @@ export interface PriceKiosk {
   readonly staleAfter: number | null;
 }
 
-export function createPriceKiosk(input: { readonly catalogue?: CatalogueSnapshot; readonly staleAfterMinutes: number | null; readonly now: () => string }): PriceKiosk {
+export function createPriceKiosk(input: {
+  readonly catalogue?: CatalogueSnapshot; readonly staleAfterMinutes: number | null; readonly now: () => string;
+  /** R1c (M01-FR-02): the shop's zone; absent, this device's own wall clock (it stands in the shop, as the till does). */
+  readonly timeZone?: string;
+}): PriceKiosk {
   const cache = input.catalogue === undefined ? undefined : new CatalogueCache(input.catalogue);
   return {
     staleAfter: input.staleAfterMinutes,
@@ -62,7 +67,9 @@ export function createPriceKiosk(input: { readonly catalogue?: CatalogueSnapshot
       const age = ageWords(minutesSincePack);
       let hit: ReturnType<CatalogueCache['scan']>;
       try {
-        hit = cache.scan(code.trim(), { asOf: input.now().slice(0, 10) });
+        // R1c: today on the shop's wall clock (as the till's laneToday), never the UTC date — a price starting today
+        // was quoted only after 05:30 IST.
+        hit = cache.scan(code.trim(), { asOf: wallClockIn(input.now(), input.timeZone).slice(0, 10) });
       } catch (e) {
         const name = (e as { name?: string }).name;
         if (name === 'UnknownBarcodeError') return { outcome: 'not_found', minutesSincePack, age, words: W('That item is not in this shop\'s list. A colleague can check it.', 'அந்தப் பொருள் இந்தக் கடையின் பட்டியலில் இல்லை. எங்கள் ஊழியர் சரிபார்ப்பார்.') };

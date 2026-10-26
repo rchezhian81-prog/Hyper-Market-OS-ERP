@@ -18,6 +18,7 @@ import { postJournal as mapToJournal, type PostingMap } from '../../../packages/
 import type { RebateScheme } from '../../../packages/purchasing/src/index';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
 import type { StoredPostingMap } from './day-book';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface RebateReceiptJournal extends JournalEntry {
   readonly rebateReceipt: {
@@ -31,6 +32,8 @@ export interface RebateReceiptJournal extends JournalEntry {
 }
 
 export interface RebateReceiptDeps extends Pick<FinanceDeps, 'periodStates' | 'nextOpenPeriod' | 'appendJournal' | 'now'> {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly postingMap: (tenantId: string) => Promise<StoredPostingMap | undefined> | StoredPostingMap | undefined;
   readonly schemes: (tenantId: string) => Promise<readonly RebateScheme[]> | readonly RebateScheme[];
   /** What the purchase register has accrued for the scheme (latest measurement per accrual), in paise. */
@@ -163,7 +166,7 @@ export function rebateReceiptRoutes(deps: RebateReceiptDeps): readonly Route[] {
         const [schemes, journals, map] = await Promise.all([deps.schemes(t), deps.rebateJournals(t), deps.postingMap(t)]);
         const accrued = new Map<string, number>();
         for (const s of schemes) accrued.set(s.schemeId, await deps.accruedFor(t, s.schemeId));
-        const result = reconcileRebates({ schemes, accrued, journals, incomeAccount: rebateIncomeAccount(map), today: deps.now().slice(0, 10) });
+        const result = reconcileRebates({ schemes, accrued, journals, incomeAccount: rebateIncomeAccount(map), today: await shopToday(deps, ctx.tenantId) });
         return { status: 200, body: { ...result, incomeAccount: rebateIncomeAccount(map) ?? null, needingAttention: result.lines.filter((l) => l.findings.length > 0).length, asAt: deps.now() } };
       },
     },

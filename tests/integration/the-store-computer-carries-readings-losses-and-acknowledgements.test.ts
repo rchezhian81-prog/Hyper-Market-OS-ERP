@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { useRestartableBackings } from '../support/p3-backings';
 import { aBranch } from '../support/a-branch';
 import { storeRules } from '../support/store-rules';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 // OB-288 LP/workforce package — the facilities office (M26-FR-01/02/04), the manual readings, the stock losses and the SOP
 // acknowledgements the store computer carries with the line down (M26-FR-02 "readings cache/queue offline" · M28-FR-01
@@ -13,7 +14,7 @@ const backings = useRestartableBackings();
 type Res = { status: number; body: unknown };
 const codeOf = (r: Res): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
 const ago = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 
 describe.each(backings)('the store computer carries readings, losses and acknowledgements; the office read; relabel tasks — on $name', ({ harness }) => {
   it('the facilities office read; a reading carried by the box recorded as the person, refusals by name', async () => {

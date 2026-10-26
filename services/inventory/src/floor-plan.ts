@@ -18,8 +18,12 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { firstUnknownStore, unknownStoreWords } from '../../platform/src/store-computer-identity';
 import { readFloorPlan, floorHeatMap, type FloorPlan, type ProductTakings, type HeatMeasure } from '../../../packages/merchandising/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayWindow } from '../../../packages/calendar/src/trading-day';
 
 export interface FloorPlanDeps {
+  /** R1c (M01-FR-02): the shop's calendar — a day asked for is the shop's day, from its midnight to the next. */
+  readonly calendar?: ShopCalendarOf;
   readonly registeredStores?: (tenantId: string) => Promise<ReadonlySet<string>>;
   /** The store's published shelf map's locations; undefined when none was published. */
   readonly shelfLocations: (tenantId: string, storeId: string) => Promise<ReadonlySet<string> | undefined>;
@@ -88,9 +92,11 @@ export function floorPlanRoutes(deps: FloorPlanDeps): readonly Route[] {
         }
         const plan = latestOf(await deps.plans(ctx.tenantId, storeId));
         if (plan === undefined) throw notFound(`floor plan for store ${storeId}`);
-        const toIso = new Date(Date.parse(`${to}T00:00:00Z`) + 86_400_000).toISOString();
+        const cal = await shopClock(deps.calendar).calendar(ctx.tenantId);
+        const fromIso = tradingDayWindow(from, cal).from;
+        const toIso = tradingDayWindow(to, cal).to;
         const [placements, takings] = await Promise.all([
-          deps.primaryPlacements(ctx.tenantId, storeId), deps.takings(ctx.tenantId, storeId, `${from}T00:00:00.000Z`, toIso),
+          deps.primaryPlacements(ctx.tenantId, storeId), deps.takings(ctx.tenantId, storeId, fromIso, toIso),
         ]);
         const heat = floorHeatMap({ plan, primaryLocationOf: placements, takings, measure, currency: 'INR' });
         return {

@@ -154,7 +154,7 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     if (dir === undefined) {
       await writeFile(packFile, JSON.stringify({
         version: 1,
-        policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: `${STORE}-BACK`, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+        policies: { timeZone: 'UTC', storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: `${STORE}-BACK`, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
         lossPreventionRules: [],
       }), 'utf8');
       await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }, { userId: MANAGER, displayName: 'Manager', manager: true }]);

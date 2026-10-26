@@ -124,22 +124,27 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
     const ho = newHeadOffice(pricingContext());
     const { page, errors, teardown } = await openPriceTab(ho);
     try {
-      // QG-02 (product-merchandising.md "edit a price ≤3"): measured AS BUILT — the Change-a-price tab (opened above), the
-      // item, the new price, Check, Save; the start day defaults to today. The spec's three is an owner decision (R4 report).
+      // QG-02 (product-merchandising.md "edit a price ≤3: open → new price → submit") · OB-390: from the item list, "Change
+      // price" on the item opens the form ALREADY HOLDING it; the new price is typed and checked against the MRP and the
+      // margin floor as it is typed (Save appears only once the check passes); Save. Three.
+      await page.click('#tab-items');
+      await page.waitForSelector('button.price-this[data-sku="SKU-DAL"]');
       const taps = new Tally(page);
-      taps.count = 1; // the tab openPriceTab tapped
-      await taps.type('#price-item', 'SKU-DAL');
-      await taps.type('#new-price', '150'); // below MRP 160, above the 20% floor at cost 100
+      await taps.tap('button.price-this[data-sku="SKU-DAL"]');
+      await page.waitForSelector('#view-price:not([hidden])');
+      expect(await page.inputValue('#price-item'), 'the form holds the item').toBe('SKU-DAL');
+      expect(await hidden(page, 'price-limits'), 'its MRP and floor are shown before a price is typed').toBe(false);
+      expect(await page.textContent('#mrp-value')).toBe('₹160.00');
       await page.fill('#price-from', '2026-10-07'); // the default (today) made fixed for the test — a person does not type it
-      await taps.tap('#check-price');
+      await taps.type('#new-price', '150'); // below MRP 160, above the 20% floor at cost 100
       await page.waitForSelector('#save-price:not([hidden])', { timeout: 10_000 });
       expect(await hidden(page, 'price-approval'), 'a clean price shows no approval step').toBe(true);
       expect(await page.textContent('#save-price')).toBe('Save this price');
+      expect(posts(ho, '/v1/prices/changes'), 'checking sends nothing').toHaveLength(0);
       taps.count += 1; // Save, tapped by clickFor
       const said = await clickFor(page, '#save-price', /starts on the day you gave/);
       expect(said.title).toBe('Price saved');
-      const asBuilt = taps.reset();
-      expect(asBuilt, 'as built: edit a price (a clean one)').toBe(5);
+      expect(taps.reset(), 'edit a price').toBeLessThanOrEqual(3);
 
       const change = posts(ho, '/v1/prices/changes');
       expect(change).toHaveLength(1);
@@ -147,6 +152,27 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       expect(change[0]!.headers['idempotency-key'], 'the change carries an idempotency key').toBeTruthy();
       expect(posts(ho, '/v1/approvals/requests'), 'nobody is asked for a clean price').toHaveLength(0);
       expect(await hidden(page, 'save-price')).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('OB-390: the check as you type still guards Save — a price over the MRP never shows Save, and nothing is sent', async () => {
+    const ho = newHeadOffice(pricingContext());
+    const { page, errors, teardown } = await openPriceTab(ho);
+    try {
+      await page.click('#tab-items');
+      await page.click('button.price-this[data-sku="SKU-DAL"]');
+      await page.waitForSelector('#view-price:not([hidden])');
+      await page.fill('#price-from', '2026-10-07');
+      await page.fill('#new-price', '170'); // above the ₹160 MRP
+      await page.waitForSelector('#price-verdict:not([hidden])');
+      expect(await hidden(page, 'save-price'), 'no Save for a price over the MRP').toBe(true);
+      await page.fill('#new-price', '');
+      expect(await hidden(page, 'price-verdict'), 'an empty price clears the verdict').toBe(true);
+      expect(await hidden(page, 'save-price')).toBe(true);
+      expect(posts(ho, '/v1/prices/changes')).toHaveLength(0);
       expect(errors).toEqual([]);
     } finally {
       await teardown();

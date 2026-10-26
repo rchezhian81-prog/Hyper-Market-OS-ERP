@@ -8,8 +8,11 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { ExpiryActionItem } from '../../../packages/fefo/src/index';
 import { stockReadScope, type LocationBranches } from './location-scope';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface NearExpiryDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Fold the ledger to the batches on hand now that are expired or within `nearExpiryDays` of expiry. */
   readonly nearExpiry: (
     tenantId: string,
@@ -31,7 +34,7 @@ export function nearExpiryRoutes(deps: NearExpiryDeps): readonly Route[] {
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
         const asOf = typeof ctx.query['asOf'] === 'string' && ctx.query['asOf'] !== ''
-          ? ctx.query['asOf'] : deps.now().slice(0, 10);
+          ? ctx.query['asOf'] : await shopToday(deps, ctx.tenantId);
         const withinRaw = ctx.query['withinDays'];
         const nearExpiryDays = withinRaw === undefined || withinRaw === '' ? 7 : Number(withinRaw);
         if (!isPosInt(nearExpiryDays)) {

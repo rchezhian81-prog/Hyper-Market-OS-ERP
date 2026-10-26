@@ -43,6 +43,7 @@ import { laneScalesFor } from './lane-scales';
 import { HEAD_OFFICE_PAGE_SCREENS, HEAD_OFFICE_PAGE_GLOBALS, HEAD_OFFICE_PAGE_BUILDERS } from './head-office-pages'; // OB-380
 import { laneRollout } from '../../../packages/platform/src/rollout'; // OB-288 P4 (R8-9 · OB-316)
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day'; // OB-392: a time shown in the shop's own clock
 import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { fixedPrivacySlaDays } from '../../../packages/customer/src/data-rights';
 import { assessChecklist } from '../../../packages/workforce/src/index';
@@ -64,7 +65,9 @@ import { permissionsOf } from './screen-navigation';
 import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, equipmentWork, helpWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
 import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
+import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
+import { packTimeZone } from './shop-zone';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -139,6 +142,15 @@ export interface ScreenInput {
   readonly clock?: ClockCheck;
   /** OB-327: the bills this box took while its clock was 5+ minutes out — committed, listed for the manager to check. */
   readonly clockFlaggedBills?: readonly ClockFlaggedBill[];
+  /**
+   * OB-392: the box's own link to head office for the manager's lane-by-lane health — when something from this box last
+   * reached head office (null: never). Absent on a box with no cloud drain (the lane cards then say it is not known).
+   */
+  readonly laneLink?: { readonly lastSentAt: string | null };
+  /** OB-392: the lane this box itself is (`EDGE_LANE_ID`), so a till that has not reported yet still gets its card. */
+  readonly ownLaneId?: string;
+  /** R1a (M01-FR-02 · P-08): this machine's time zone against the shop's — the box dates by the shop's either way. */
+  readonly zone?: ZoneCheck;
 }
 
 /**
@@ -589,6 +601,65 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
   return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, ...(tillDevices === undefined ? {} : { tillDevices }) };
 }
 
+/** OB-392: the devices a lane card names, in the order it names them (printer, scanner, card machine). */
+export const LANE_CARD_DEVICES = Object.freeze(['printer', 'scanner', 'card_terminal'] as const);
+
+/** One lane's health as the box knows it — each device as the till last said, or null when it never said (P-08). */
+export interface LaneHealth {
+  readonly laneId: string;
+  /** When the till last told this box about its devices; null when it never has. */
+  readonly lastReportAt: string | null;
+  /** The same moment on the shop's clock ("YYYY-MM-DDTHH:MM", the box's own time zone) — what the card shows. */
+  readonly lastReportShop: string | null;
+  readonly devices: Readonly<Record<(typeof LANE_CARD_DEVICES)[number], { readonly state: string; readonly detail?: string } | null>>;
+  /** Bills and refunds from this lane still on this box, not yet at head office. */
+  readonly unsent: number;
+  /** When anything from this box last reached head office; null never; absent when the box cannot tell. */
+  readonly boxLastSentAt?: string | null;
+  /** The same moment on the shop's clock, when there is one. */
+  readonly boxLastSentShop?: string | null;
+  /** How many of the lane's devices are failed or not working properly (of the three named, and any other it reported). */
+  readonly problems: number;
+}
+
+/**
+ * OB-392 · M12-FR-04 ("lane health (peripherals, sync, offline state) shown") · D04-FR-05: one card per lane — every lane
+ * that reported, this box's own lane, and every lane with something still unsent — from what the box already holds: the
+ * tills' last device reports (peripheral-health.ts), its own outbox, and its last send to head office. A device the till
+ * never reported is "not reported", never "working" (P-08). Undefined on a box that keeps no device reports (no till).
+ */
+const shopClock = (iso: string): string | null => { try { return wallClockIn(iso); } catch { return null; } };
+
+export function laneHealth(input: ScreenInput): readonly LaneHealth[] | undefined {
+  if (input.peripheralReports === undefined) return undefined;
+  const laneOf = (payload: unknown): string | null => {
+    const l = payload !== null && typeof payload === 'object' ? (payload as { laneId?: unknown }).laneId : undefined;
+    return typeof l === 'string' && l !== '' ? l : null;
+  };
+  const unsentBy = new Map<string, number>();
+  for (const item of input.outbox.pending()) {
+    const lane = laneOf(item.event.payload);
+    if (lane !== null) unsentBy.set(lane, (unsentBy.get(lane) ?? 0) + 1);
+  }
+  const ids = new Set<string>([...input.peripheralReports.map((r) => r.laneId), ...unsentBy.keys(), ...(input.ownLaneId === undefined ? [] : [input.ownLaneId])]);
+  return [...ids].sort().map((laneId) => {
+    const report = input.peripheralReports!.find((r) => r.laneId === laneId);
+    const said = (kind: string) => {
+      const d = report?.devices.find((x) => x.kind === kind);
+      return d === undefined ? null : { state: d.state, ...(d.detail === undefined ? {} : { detail: d.detail }) };
+    };
+    return {
+      laneId,
+      lastReportAt: report?.reportedAt ?? null,
+      lastReportShop: report === undefined ? null : shopClock(report.reportedAt),
+      devices: { printer: said('printer'), scanner: said('scanner'), card_terminal: said('card_terminal') },
+      unsent: unsentBy.get(laneId) ?? 0,
+      ...(input.laneLink === undefined ? {} : { boxLastSentAt: input.laneLink.lastSentAt, boxLastSentShop: input.laneLink.lastSentAt === null ? null : shopClock(input.laneLink.lastSentAt) }),
+      problems: report === undefined ? 0 : report.devices.filter((d) => d.state !== 'ok').length,
+    };
+  });
+}
+
 export function managerPayload(input: ScreenInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
 
@@ -612,6 +683,9 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   payload['tradingDay'] = input.tradingDay;
   // The Today page (UX-2b): every figure from the pack or this box's log, or said to be not known (P-08).
   payload['today'] = todayFigures(input);
+  // OB-392: lane-by-lane health — one card per lane, each one tap from Today. Only on a box that keeps device reports.
+  const lanes = laneHealth(input);
+  if (lanes !== undefined) payload['lanes'] = lanes;
 
   // D04-FR-02 · PF-06: card/UPI payments with no final answer — the close list names each one (P-08).
   if (input.pendingPayments !== undefined) {
@@ -731,6 +805,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   if (input.clock !== undefined) payload['clock'] = input.clock;
   // OB-327: bills still commit when the clock is 5+ minutes out (hard rule #1) — and are listed here to be checked.
   if (input.clockFlaggedBills !== undefined) payload['clockFlaggedBills'] = input.clockFlaggedBills;
+  // R1a · P-08: a store computer whose own zone is not the shop's is said here (it still dates by the shop's zone).
+  if (input.zone !== undefined) payload['timeZone'] = input.zone;
 
   return payload;
 }
@@ -2143,6 +2219,8 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     laneId: laneId ?? null,
     tradingDayCutoff: policies?.tradingDayCutoff ?? '00:00',
     tradingDayCutoffKnown: policies !== undefined,
+    // R1a (M01-FR-02): the shop's zone, so the till dates by the shop's clock as this box does — never by its own device zone.
+    timeZone: packTimeZone(input.pack),
     tradingDay: input.tradingDay,
     storeId: policies?.storeId ?? null,
     // B6: the weighing scales this lane takes weight from, with the last day each stamp is valid — or why the box does not

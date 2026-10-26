@@ -17,6 +17,7 @@ import { postJournal as postMapped, UnmappedKindError, MissingComponentError, Un
 import type { ShortfallLoss } from '../../../packages/warehouse/src/transfers';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
 import type { StoredPostingMap } from './day-book';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** A stock-loss voucher: a finance journal that also names the resolution it posts. */
 export interface StockLossJournal extends JournalEntry {
@@ -28,6 +29,8 @@ export interface StockLossDeps extends Pick<FinanceDeps, 'periodStates' | 'nextO
   /** Every resolved shortfall's valued loss, from the warehouse's indent and transfer streams. */
   readonly losses: (tenantId: string) => Promise<readonly ShortfallLoss[]> | readonly ShortfallLoss[];
   readonly stockLossJournals: (tenantId: string) => Promise<readonly StockLossJournal[]> | readonly StockLossJournal[];
+  /** R1b (M01-FR-02): the shop's calendar — a loss's journal date and period are its shop trading day's. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 /** One resolution, one source id: a floor indent's issue, or a plain transfer. */
@@ -72,11 +75,12 @@ export function stockLossRoutes(deps: StockLossDeps): readonly Route[] {
             exceptions.push({ sourceId, kind, reason, detail: err instanceof Error ? err.message : String(err) });
             continue;
           }
-          const belongsTo = loss.resolvedAt.slice(0, 7);
+          const documentDate = await shopClock(deps.calendar).tradingDayOf(t, loss.resolvedAt);
+          const belongsTo = documentDate.slice(0, 7);
           const closed = states.get(belongsTo) === 'closed';
           const period = closed ? await deps.nextOpenPeriod(t) : belongsTo;
           const journal: StockLossJournal = {
-            entryId: `stock-loss:${sourceId}`, period, documentDate: loss.resolvedAt.slice(0, 10),
+            entryId: `stock-loss:${sourceId}`, period, documentDate,
             narrative: `Stock confirmed lost — ${loss.source === 'floor_indent' ? 'floor indent' : 'transfer'} ${loss.transferId} from ${loss.fromLocationId} to ${loss.toLocationId}: `
               + `${loss.lines.map((l) => `${l.productId} ${l.lostMinor} ${l.uom}`).join(', ')} worth ${loss.lostValueMinor} minor units, resolved by ${loss.resolvedBy} (${loss.reasonCode})`
               + (closed ? ` (posted to ${period}: ${belongsTo} is closed)` : ''),

@@ -289,8 +289,9 @@ describe('a bare screen path is redirected, not served broken', () => {
 
 describe('a back-office view that registers the worker is one the worker keeps', () => {
   // Round 13: setup.js and warehouse.js registered ./sw.js but were missing from its SHELL, so offline the cached page
-  // came back without the script that draws it — an empty frame. Pages that deliberately stay online-only (payroll,
-  // the payslip, the company report, the erasure console) do not register the worker at all, and are not required here.
+  // came back without the script that draws it — an empty frame. Pages that deliberately stay online-only (payroll and
+  // the payslip) do not register the worker at all, and are not required here. OB-391: the company report is served by
+  // the store computer like every office page now, so it registers the worker and is in the SHELL (never a figure).
   const dir = 'apps/web-erp/web';
   const shell = /const SHELL = \[([^\]]*)\]/.exec(workerFor('web-erp'))![1]!;
   const views = readdirSync(dir).filter((f) => f.endsWith('.js') && f !== 'sw.js');
@@ -302,7 +303,7 @@ describe('a back-office view that registers the worker is one the worker keeps',
   });
 
   it('the online-only pages stay unregistered, so they are never cached', () => {
-    for (const f of ['payroll.js', 'payroll-payslip.js', 'company-report.js', 'erasure-console.js']) {
+    for (const f of ['payroll.js', 'payroll-payslip.js']) {
       expect(registering, `${f} now registers the worker — decide whether it may be cached offline`).not.toContain(f);
     }
   });

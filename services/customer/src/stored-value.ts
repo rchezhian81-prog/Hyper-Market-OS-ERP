@@ -16,6 +16,8 @@ import {
 } from '../../../packages/loyalty/src/stored-value';
 import { voucherTimeOfSupply, InvalidPromoTaxInput } from '../../../packages/finance/src/promo-tax';
 import type { VoucherTimeOfSupplyRecord } from '../../../packages/loyalty/src/stored-value';
+import { DEFAULT_SHOP_CALENDAR, shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
 
 export type { Instrument, ValueMovement } from '../../../packages/loyalty/src/stored-value';
 
@@ -38,9 +40,12 @@ export function giftCardTimeOfSupplyAtIssue(input: { readonly supplyIdentifiable
 }
 
 /** A12: the time of supply a gift card's redemption records — the issue date, or this redemption's date. */
-export function giftCardTimeOfSupplyAtRedemption(instrument: Instrument, redemptionDate: string): VoucherTimeOfSupplyRecord | undefined {
+export function giftCardTimeOfSupplyAtRedemption(
+  instrument: Instrument, redemptionDate: string,
+  /** R1b · A12: the issue's own trading day in the shop's calendar (the caller's); absent, the shop default — never UTC. */
+  issueDate: string = tradingDayIn(instrument.issuedAt, DEFAULT_SHOP_CALENDAR),
+): VoucherTimeOfSupplyRecord | undefined {
   if (instrument.kind !== 'gift_card') return undefined;
-  const issueDate = instrument.issuedAt.slice(0, 10);
   const identifiable = instrument.timeOfSupply?.basis === 'issue';
   const t = voucherTimeOfSupply({ supplyIdentifiableAtIssue: identifiable, issueDate, redemptionDate });
   return { timeOfSupply: t.timeOfSupply, basis: t.basis, detail: t.detail };
@@ -76,6 +81,11 @@ export interface StoredValueDeps {
    *  reconciliation and the redemption-velocity flag (M17-FR-03 / M23). */
   readonly allMovements: (tenantId: string) => Promise<readonly ValueMovement[]> | readonly ValueMovement[];
   readonly now: () => string;
+  /**
+   * R1b · A12 (M01-FR-02): the shop's calendar. A gift card's GST time of supply is the shop's trading day of the issue or
+   * the redemption — never the UTC date, which is the previous day from 00:00 to 05:30 IST.
+   */
+  readonly calendar?: ShopCalendarOf;
 }
 
 export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
@@ -120,7 +130,7 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           ...(typeof b.expiresOn === 'string' ? { expiresOn: b.expiresOn } : {}),
           ...(typeof b.providerRef === 'string' ? { providerRef: b.providerRef } : {}),
           // A12: a gift card's time of supply, decided at issue by the tested rule (store credit is a refund, not a voucher).
-          ...(b.kind === 'gift_card' ? { timeOfSupply: giftCardTimeOfSupplyAtIssue({ supplyIdentifiableAtIssue: b.supplyIdentifiableAtIssue === true, issueDate: now.slice(0, 10) }) } : {}),
+          ...(b.kind === 'gift_card' ? { timeOfSupply: giftCardTimeOfSupplyAtIssue({ supplyIdentifiableAtIssue: b.supplyIdentifiableAtIssue === true, issueDate: await shopClock(deps.calendar).tradingDayOf(ctx.tenantId, now) }) } : {}),
         };
         const opening: ValueMovement = { movementId: `${b.instrumentId}:issue`, instrumentId: b.instrumentId, kind: 'issue', deltaMinor: b.faceValueMinor as number, at: now, channel };
         await deps.recordIssue(ctx.tenantId, instrument, opening, typeof b.openingLoadId === 'string' ? b.openingLoadId.trim() : undefined);
@@ -150,7 +160,8 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
         if (instrument === undefined) throw notFound(`stored-value instrument ${instrumentId}`);
 
         const at = deps.now();
-        const timeOfSupply = giftCardTimeOfSupplyAtRedemption(instrument, at.slice(0, 10));
+        const clock = shopClock(deps.calendar);
+        const timeOfSupply = giftCardTimeOfSupplyAtRedemption(instrument, await clock.tradingDayOf(ctx.tenantId, at), await clock.tradingDayOf(ctx.tenantId, instrument.issuedAt));
         const movement: ValueMovement = {
           movementId: b.movementId, instrumentId, kind: 'redeem', deltaMinor: -(b.amountMinor as number),
           at, channel: b.channel as Channel,

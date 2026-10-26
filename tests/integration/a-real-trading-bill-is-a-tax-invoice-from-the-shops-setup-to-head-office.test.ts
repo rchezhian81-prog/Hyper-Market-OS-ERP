@@ -18,6 +18,7 @@ import { TaxInvoiceRefusedError } from '../../apps/pos/src/session';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { STREAM } from '../../services/api/src/adapters';
 import { prepareTillBox, signInTill, signInAtLane, receiptNumberAt, operatorHeader, pinOf } from '../support/till-operator';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **OB-271 (owner, 21 Oct 2026) — real trading, from the shop's setup at head office, through a real store computer and the
@@ -145,7 +146,7 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     const raw = await (await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, {
       method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeader(token) },
       body: JSON.stringify({
-        id: `S-${number}`, number, laneId: 'lane-1', cashierId: 'u-mgr', tradingDay: new Date().toISOString().slice(0, 10), committedAt: new Date().toISOString(),
+        id: `S-${number}`, number, laneId: 'lane-1', cashierId: 'u-mgr', tradingDay: shopDateIn(new Date().toISOString()), committedAt: new Date().toISOString(),
         lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500 }],
         tenders: [{ kind: 'cash', amount: { minor: 10_500, currency: 'INR' }, status: 'settled' }], total: 10_500, netMinor: 10_000, taxMinor: 500, currency: 'INR',
       }),
@@ -158,7 +159,7 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     const above = await (await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, {
       method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeader(token) },
       body: JSON.stringify({
-        id: `S-${number2}`, number: number2, laneId: 'lane-1', cashierId: 'u-mgr', tradingDay: new Date().toISOString().slice(0, 10), committedAt: new Date().toISOString(),
+        id: `S-${number2}`, number: number2, laneId: 'lane-1', cashierId: 'u-mgr', tradingDay: shopDateIn(new Date().toISOString()), committedAt: new Date().toISOString(),
         lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500, hsnCode: '071360' }],
         tenders: [{ kind: 'cash', amount: { minor: 10_600, currency: 'INR' }, status: 'settled' }], total: 10_600, roundOffMinor: 100, netMinor: 10_000, taxMinor: 500, currency: 'INR',
       }),
@@ -237,7 +238,7 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     expect(banked.find((s) => s.saleId === `S-${r1}`)).not.toHaveProperty('roundOffMinor');
     const raised = await h.store.readStream(T, STREAM.saleExceptions, { type: 'SaleExceptionRaised' });
     expect(raised.map((e) => (e.event.payload as { kind?: string }).kind)).not.toContain('lines_do_not_sum_to_total');
-    const activity = await ok(call('GET', '/v1/loss-prevention/activity', 'u-owner', undefined, { day: new Date().toISOString().slice(0, 10) }), 'activity');
+    const activity = await ok(call('GET', '/v1/loss-prevention/activity', 'u-owner', undefined, { day: shopDateIn(new Date().toISOString()) }), 'activity');
     expect(activity['cardRefundsOnMachine']).toEqual([expect.objectContaining({ kind: 'card_refund_on_machine', billRef: `RT-${rn}`, machineRef: 'R98765', refundTender: 'card', valueMinor: 10_500, approvedBy: 'u-mgr' })]);
     // Not counted as a void, a no-sale or a discount by the loss-prevention rules.
     expect((activity['voids'] as unknown[]).length + (activity['noSales'] as unknown[]).length + (activity['overrides'] as unknown[]).length).toBe(0);

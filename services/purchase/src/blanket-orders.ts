@@ -27,8 +27,11 @@ import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/cont
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { requireApprovedSupplier, requireDeliverTo, type PurchaseOrderDeps, type AuthorityOf } from './purchase-orders';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface BlanketOrderDeps extends Pick<PurchaseOrderDeps, 'supplierStatus' | 'orgLocation' | 'locationBranches' | 'productUom' | 'masterLifecycle'> {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly agreement: (tenantId: string, agreementId: string) => Promise<BlanketAgreement | undefined> | BlanketAgreement | undefined;
   readonly agreements: (tenantId: string) => Promise<readonly BlanketAgreement[]> | readonly BlanketAgreement[];
   /** Every release raised against an agreement (the purchase orders that name it), with each one's state. */
@@ -63,7 +66,7 @@ const isRawTerm = (v: unknown): v is RawTerm => isObj(v) && isStr(v['productId']
 /** The agreement as every read presents it: its drawdown and its releases beside it. */
 async function presented(deps: BlanketOrderDeps, tenantId: string, a: BlanketAgreement) {
   const releases = await deps.releases(tenantId, a.agreementId);
-  const today = deps.now().slice(0, 10);
+  const today = await shopToday(deps, tenantId); // R1c: the shop's today
   return {
     agreement: a, drawdown: blanketDrawdown(a, releases),
     validToday: a.status === 'approved' && today >= a.validFrom && today <= a.validTo,

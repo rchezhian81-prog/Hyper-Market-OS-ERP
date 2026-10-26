@@ -26,6 +26,7 @@
 //
 // Pure and deterministic: the timestamp is injected, there is no clock.
 
+import { shopDateIn } from '../../calendar/src/shop-clock';
 export type QualityStatus = 'pending' | 'sampling' | 'passed' | 'held' | 'failed' | 'released';
 
 export interface TemperatureReading {
@@ -255,7 +256,7 @@ export function releaseFromQualityHold(input: {
   if (input.coldChain?.quarantine === true) {
     return { ...base, released: false, outcome: 'cold_chain_breach', detail: input.coldChain.detail };
   }
-  if (input.expiresOn !== undefined && input.expiresOn <= input.at.slice(0, 10)) {
+  if (input.expiresOn !== undefined && input.expiresOn <= shopDateIn(input.at)) { // R1c: the shop's date
     return {
       ...base,
       released: false,

@@ -22,6 +22,7 @@ import { findB2BProbing, type B2BPortalRefusal } from '../../../packages/b2b/src
 import type { B2BCollectionsDeps } from './b2b-collections';
 import type { B2BCreditDeps } from './b2b-credit';
 import type { B2BDocumentsDeps } from './b2b-documents';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export const B2B_GRANTS: readonly B2BGrant[] = ['place_order', 'view_invoices', 'view_statement', 'make_payment'];
 
@@ -35,6 +36,8 @@ export interface B2BLoginBinding {
 }
 
 export interface B2BPortalDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** The customer this authenticated user is a portal login for — from the stored binding, never the request. */
   readonly customerForUser: (tenantId: string, userId: string) => Promise<B2BLoginBinding | undefined> | B2BLoginBinding | undefined;
   /** `ref` (round 14): the OB-76 invite this binding comes from — re-binding to an earlier customer is then a fresh fact. */
@@ -193,7 +196,7 @@ export function b2bPortalRoutes(deps: Deps): readonly Route[] {
       entitlement: 'b2b',
       handler: async (ctx) => {
         const session = await meSession(ctx.tenantId, ctx.userId);
-        const asAt = ctx.query['asOf'] ?? deps.now().slice(0, 10);
+        const asAt = ctx.query['asOf'] ?? await shopToday(deps, ctx.tenantId);
         if (!isDate(asAt)) {
           throw apiError(400, { code: 'statement_needs_a_date', whatHappened: 'A statement is aged as at a date: ?asOf=YYYY-MM-DD (today when omitted).', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date. Nothing was changed.' });
         }

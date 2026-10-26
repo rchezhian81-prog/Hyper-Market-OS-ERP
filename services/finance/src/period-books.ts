@@ -29,6 +29,8 @@ import { apiError } from '../../kernel/src/index';
 import { postJournal as postMapped, UnmappedKindError, MissingComponentError, UnbalancedJournalError } from '../../../packages/finance/src/posting';
 import { postJournal, type FinanceDeps, type JournalEntry, type ControlTotalCheck } from './index';
 import type { StoredPostingMap } from './day-book';
+import { DEFAULT_SHOP_CALENDAR, shopClock, tradingMonthIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import type { TradingCalendar } from '../../../packages/calendar/src/trading-day';
 
 // ── 1. Count differences and write-offs to the books ─────────────────────────────────────────────────────────────
 
@@ -202,8 +204,12 @@ export function profitAndLoss(period: string, journals: readonly JournalEntry[],
 // ── 2. The close's book-to-register checks ───────────────────────────────────────────────────────────────────────
 
 /** The month's stock adjustments on the registers against the journals the books hold for them. Pure. */
-export function stockAdjustmentCheck(period: string, sources: readonly StockAdjustmentSource[], journals: readonly StockAdjustmentJournal[]): { readonly check: ControlTotalCheck | null; readonly unposted: readonly string[]; readonly unvalued: readonly string[] } {
-  const mine = sources.filter((s) => s.at.slice(0, 7) === period);
+export function stockAdjustmentCheck(
+  period: string, sources: readonly StockAdjustmentSource[], journals: readonly StockAdjustmentJournal[],
+  /** R1b (M01-FR-02): the shop's calendar — a source belongs to the month of its shop trading day, never its UTC month. */
+  calendar: TradingCalendar = DEFAULT_SHOP_CALENDAR,
+): { readonly check: ControlTotalCheck | null; readonly unposted: readonly string[]; readonly unvalued: readonly string[] } {
+  const mine = sources.filter((s) => tradingMonthIn(s.at, calendar) === period);
   if (mine.length === 0) return { check: null, unposted: [], unvalued: [] };
   const posted = new Map(journals.map((j) => [j.stockAdjustment.sourceId, j.stockAdjustment.valueMinor]));
   return {
@@ -227,6 +233,8 @@ export interface PeriodBooksDeps extends Pick<FinanceDeps, 'periodStates' | 'nex
   readonly journals: (tenantId: string) => Promise<readonly JournalEntry[]>;
   readonly accountClasses: (tenantId: string) => Promise<Readonly<Record<string, AccountClass>> | undefined>;
   readonly defineAccountClasses: (tenantId: string, classes: Readonly<Record<string, AccountClass>>, by: string) => Promise<void>;
+  /** R1b (M01-FR-02): the shop's calendar — a journal's date and period are its source's shop trading day's. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -271,12 +279,13 @@ export function periodBooksRoutes(deps: PeriodBooksDeps): readonly Route[] {
             exceptions.push({ sourceId: s.sourceId, kind: s.kind, reason, detail: err instanceof Error ? err.message : String(err) });
             continue;
           }
-          const belongsTo = s.at.slice(0, 7);
+          const documentDate = await shopClock(deps.calendar).tradingDayOf(t, s.at);
+          const belongsTo = documentDate.slice(0, 7);
           const closed = states.get(belongsTo) === 'closed';
           const period = closed ? await deps.nextOpenPeriod(t) : belongsTo;
           const what = s.kind === 'stock_write_off' ? 'Stock written off' : s.kind === 'stock_count:shortage' ? 'Stock count shortage' : 'Stock count surplus';
           const journal: StockAdjustmentJournal = {
-            entryId: `stock-adjustment:${s.sourceId}`, period, documentDate: s.at.slice(0, 10),
+            entryId: `stock-adjustment:${s.sourceId}`, period, documentDate,
             narrative: `${what} — ${s.sourceId}: ${s.productId} ${s.quantityMinor} ${s.uom} at ${s.locationId}, worth ${s.valueMinor} minor units, by ${s.by}${s.approvedBy === null ? '' : `, approved by ${s.approvedBy}`} (${s.reason})`
               + (closed ? ` (posted to ${period}: ${belongsTo} is closed)` : ''),
             lines: mapped.lines.map((l) => ({ accountCode: l.account, debitMinor: l.side === 'debit' ? l.amount.minor : 0, creditMinor: l.side === 'credit' ? l.amount.minor : 0 })),

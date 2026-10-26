@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createStoreOpsSession, wordsFor, outcomeWords, slotWords, taskWords, bandWords, splitToday, startOfToday, OB163_BANDS,
+  createStoreOpsSession, wordsFor, outcomeWords, slotWords, taskWords, bandWords, splitToday, startOfToday, endOfTodayField, OB163_BANDS,
   STORE_OPS_COPY, COPY_KEYS, type FoodSafetyCheckDef, type StoreTask, type FoodSafetyBoard,
 } from '../../apps/web-erp/src/store-ops-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
@@ -117,6 +117,28 @@ describe('store tasks and my tasks', () => {
     expect(http.sent).toEqual([]);
     expect(await s.completeTask(task, { evidenceRef: 'photo-aisle4', stepsDone: ['s1'], note: 'done' })).toEqual({ result: 'ok', value: { lateByMinutes: 30 } });
     expect(http.sent[0]).toEqual({ method: 'POST', path: '/v1/hr/workforce/assigned-tasks/t1/complete', body: { stepsDone: ['s1'], evidenceRefs: ['photo-aisle4'], note: 'done' }, key: 'k-1' });
+  });
+  it('OB-390: a new task defaults to the end of TODAY (the day startOfToday gives) and the manager\'s own store from the sign-in', async () => {
+    // The deadline field holds 23:59 of the reader's own day — the same day the food-safety board calls today.
+    const now = new Date('2026-10-16T09:30:00+05:30');
+    const day = new Date(startOfToday(now));
+    const two = (n: number) => String(n).padStart(2, '0');
+    expect(endOfTodayField(now)).toBe(`${day.getFullYear()}-${two(day.getMonth() + 1)}-${two(day.getDate())}T23:59`);
+    expect(endOfTodayField(now)).toMatch(/^\d{4}-\d{2}-\d{2}T23:59$/);
+    expect(Date.parse(endOfTodayField(now))).toBeGreaterThan(Date.parse(startOfToday(now)));
+    // The branch is head office's answer about who is signed in — a GET, nothing written.
+    const named = session(ALL, fakeHttp(() => ({ status: 200, body: { userId: 'u-mgr', branchId: 'br-1', permissions: [] } })));
+    expect(await named.s.myBranch()).toEqual({ result: 'ok', value: { branchId: 'br-1' } });
+    expect(named.http.sent).toEqual([{ method: 'GET', path: '/v1/identity/me', body: undefined, key: undefined }]);
+    // A sign-in that names no store (head office over several): null — the field is left to fill, never guessed.
+    for (const body of [{ userId: 'u-owner' }, { userId: 'u-owner', branchId: '' }, { userId: 'u-owner', branchId: 7 }]) {
+      expect(await session(ALL, fakeHttp(() => ({ status: 200, body }))).s.myBranch()).toEqual({ result: 'ok', value: { branchId: null } });
+    }
+    // Refused or unreachable: said as such; nobody signed in: nothing asked.
+    expect(await session(ALL, fakeHttp(() => ({ status: 403, body: { error: { code: 'forbidden', whatHappened: 'no' } } }))).s.myBranch()).toMatchObject({ result: 'refused', status: 403 });
+    const nobody = session(ALL, fakeHttp(), null);
+    expect(await nobody.s.myBranch()).toEqual({ result: 'invalid', why: 'nobody' });
+    expect(nobody.http.sent).toEqual([]);
   });
   it('my tasks and the board are GET reads', async () => {
     const { s, http } = session();

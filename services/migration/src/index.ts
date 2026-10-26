@@ -61,6 +61,8 @@ import type { ParallelDifference, RollbackReconciliation, WindowTotals, StoreSyn
 
 export type { ParallelRunPolicy, RecordedParallelDay, RecordedRollback, ParallelRunView } from './parallel-run';
 import { assertSafeTarget, namedPeople } from './guards';
+import { DEFAULT_SHOP_CALENDAR, shopClock, tradingDayOfStamp, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import type { TradingCalendar } from '../../../packages/calendar/src/trading-day';
 
 export type { ExtractionRun, RecordedFinding, StoredSignature } from './witness';
 export type { RefusedDecision } from './decisions';
@@ -212,7 +214,7 @@ const DELTA_TENDERS: readonly string[] = ['cash', 'card', 'upi'];
  * entry ids carry the change key, and the day-book source id is the legacy bill (`legacy:<legacyId>`), so a read-back
  * names where every rupee came from and a retry is the same voucher, once.
  */
-export function deltaSaleJournals(c: DeltaChange, map: StoredPostingMap | undefined, by: string, period: string, belongsTo?: string):
+export function deltaSaleJournals(c: DeltaChange, map: StoredPostingMap | undefined, by: string, period: string, belongsTo?: string, calendar: TradingCalendar = DEFAULT_SHOP_CALENDAR):
   { readonly ok: true; readonly journals: readonly DayBookJournal[] } | { readonly ok: false; readonly why: string } {
   const total = c.deltaMinor;
   if (total === undefined || !Number.isInteger(total) || total === 0) return { ok: false, why: 'a sale change needs a whole, non-zero deltaMinor (the bill total, − for a legacy return)' };
@@ -224,7 +226,7 @@ export function deltaSaleJournals(c: DeltaChange, map: StoredPostingMap | undefi
   }
   if (typeof c.tender !== 'string' || !DELTA_TENDERS.includes(c.tender)) return { ok: false, why: `a sale change needs its tender (${DELTA_TENDERS.join('/')})` };
   if (map === undefined) return { ok: false, why: 'no ledger mapping is defined for this shop, so the money cannot post — the accountant defines it first (PUT /v1/finance/posting-map)' };
-  const tradingDay = c.changedAt.slice(0, 10);
+  const tradingDay = tradingDayOfStamp(c.changedAt, calendar);
   const back = total < 0;
   const vouchers: { kind: string; components: Record<string, number> }[] = [
     // A legacy bill carries no OB-279 round off: the sale posting's two round-off components are zero, said, never absent.
@@ -307,6 +309,11 @@ function isSealedExtract(v: unknown): v is SealedExtract {
 }
 
 export interface MigrationDeps {
+  /**
+   * R1b (M01-FR-02 · MG-09): the shop's calendar — a legacy sale change is dated to the shop's trading day. A stamp that names
+   * its zone is read in it; a local stamp with no zone is the shop's own clock already (only the cut-off applies).
+   */
+  readonly calendar?: ShopCalendarOf;
   readonly target: (tenantId: string) => Promise<LoadTarget> | LoadTarget;
   readonly findings: (tenantId: string) => Promise<readonly DomainFinding[]> | readonly DomainFinding[];
   readonly acceptances: (tenantId: string) => Promise<readonly Acceptance[]> | readonly Acceptance[];
@@ -955,10 +962,16 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
               lines.push({ changeKey: c.changeKey, outcome: 'refused_unsupported_entity', detail: 'sale changes need head office\'s ledger here, which is not wired — refused, never counted as applied' });
               continue;
             }
-            const month = c.changedAt.slice(0, 7);
+            const calendar = await shopClock(deps.calendar).calendar(ctx.tenantId);
+            let month: string;
+            try { month = tradingDayOfStamp(c.changedAt, calendar).slice(0, 7); } catch {
+              refused += 1;
+              lines.push({ changeKey: c.changeKey, outcome: 'refused_incomplete', detail: `"${c.changedAt}" is not a readable time stamp, so the trading day of this sale change is not known — refused, never guessed` });
+              continue;
+            }
             const closed = (await deps.periodStates?.(ctx.tenantId))?.get(month) === 'closed';
             const period = closed && deps.nextOpenPeriod !== undefined ? await deps.nextOpenPeriod(ctx.tenantId) : month;
-            const sale = deltaSaleJournals(c, await deps.postingMap?.(ctx.tenantId), ctx.userId, period, closed ? month : undefined);
+            const sale = deltaSaleJournals(c, await deps.postingMap?.(ctx.tenantId), ctx.userId, period, closed ? month : undefined, calendar);
             if (!sale.ok) {
               refused += 1;
               lines.push({ changeKey: c.changeKey, outcome: 'refused_incomplete', detail: sale.why });

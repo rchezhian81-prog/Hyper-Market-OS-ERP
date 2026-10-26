@@ -15,8 +15,11 @@ import {
   mayConcessionTrade, depositPosition, concessionExpiryAlerts, CONCESSION_WARN_DAYS,
   type ConcessionContract, type DepositMovement, type ConcessionExpiryAlert,
 } from '../../../packages/concession/src/index';
+import { shopClock, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface ConcessionDeskDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Every contract's latest terms. */
   readonly contracts: (tenantId: string) => Promise<readonly ConcessionContract[]>;
   readonly depositMovements: (tenantId: string, concessionaireId: string) => Promise<readonly DepositMovement[]>;
@@ -32,7 +35,7 @@ export function concessionDeskRoutes(deps: ConcessionDeskDeps): readonly Route[]
       permission: 'concession.charge.read',
       entitlement: 'dept.concession',
       handler: async (ctx) => {
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         // PA-01-r1: only the counters in the caller's own branches.
         const contracts = (await deps.contracts(ctx.tenantId)).filter((c) => branchInScope(ctx, c.branchId));
         const deposits = new Map<string, ReturnType<typeof depositPosition>>();
@@ -62,7 +65,7 @@ export function concessionDeskRoutes(deps: ConcessionDeskDeps): readonly Route[]
       entitlement: 'dept.concession',
       handler: async (ctx) => {
         const at = deps.now();
-        const alerts = concessionExpiryAlerts((await deps.contracts(ctx.tenantId)).filter((c) => branchInScope(ctx, c.branchId)), at.slice(0, 10));
+        const alerts = concessionExpiryAlerts((await deps.contracts(ctx.tenantId)).filter((c) => branchInScope(ctx, c.branchId)), await shopClock(deps.calendar).dateOf(ctx.tenantId, at));
         let raised = 0;
         for (const a of alerts) if (await deps.raiseToOwners(ctx.tenantId, a, ctx.userId, at)) raised += 1;
         return { status: 200, body: { alerts: alerts.length, raised, alreadyOpen: alerts.length - raised, asAt: at } };
@@ -74,7 +77,7 @@ export function concessionDeskRoutes(deps: ConcessionDeskDeps): readonly Route[]
 /** The worker's pass for one shop: raise today's concession alerts to the owners (only where the feature is on). */
 export async function raiseConcessionAlerts(deps: ConcessionDeskDeps, tenantId: string, at: string): Promise<number> {
   let raised = 0;
-  for (const a of concessionExpiryAlerts(await deps.contracts(tenantId), at.slice(0, 10))) {
+  for (const a of concessionExpiryAlerts(await deps.contracts(tenantId), await shopClock(deps.calendar).dateOf(tenantId, at))) {
     if (await deps.raiseToOwners(tenantId, a, 'system:concession-expiry', at)) raised += 1;
   }
   return raised;

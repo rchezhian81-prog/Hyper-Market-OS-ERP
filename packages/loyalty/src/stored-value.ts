@@ -26,6 +26,7 @@
 //
 // Pure and deterministic: movements in, balance out, clock injected.
 
+import { shopDateIn } from '../../calendar/src/shop-clock';
 export type ValueKind = 'gift_card' | 'store_credit';
 
 export type MovementKind = 'issue' | 'load' | 'redeem' | 'refund_to_credit' | 'expire' | 'adjust';
@@ -142,7 +143,7 @@ export function redeemValue(input: {
   if (m.deltaMinor >= 0 || !Number.isSafeInteger(m.deltaMinor)) {
     return { ...base, redeemed: false, outcome: 'invalid_amount', detail: 'a redemption must take a positive amount off the balance' };
   }
-  if (inst.expiresOn !== undefined && m.at.slice(0, 10) > inst.expiresOn) {
+  if (inst.expiresOn !== undefined && shopDateIn(m.at) > inst.expiresOn) { // R1c: the shop's date
     return { ...base, redeemed: false, outcome: 'expired', detail: `this ${inst.kind.replace('_', ' ')} expired on ${inst.expiresOn}` };
   }
 

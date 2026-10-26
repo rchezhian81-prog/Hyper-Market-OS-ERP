@@ -19,6 +19,9 @@
 // again (`POST /v1/store-computers/unused-numbers-received/acknowledgements`). Round 29 · verifier r28 NEW-5: an acknowledgement
 // sends the EXACT numbers the page showed (not only how many); head office refuses it (409) if the line has changed since.
 //
+// R3 · P-08: each store computer's own time-zone check, as its latest health report told head office — a store computer
+// whose machine keeps another zone than the shop's is shown here (it still dates by the shop's zone), never only on the box.
+//
 // Every rule is head office's: what this person may do comes from head office's own answer (`you` on the bindings read —
 // the same rule the acts use), never from the page; each act is re-checked there and a refusal is shown in its own words.
 // The session refuses only the cheap things before a POST (a blank field, a short reason) and never writes on open. The
@@ -49,8 +52,22 @@ export interface UnusedRow {
   readonly storeId: string; readonly prefix: string; readonly day: string; readonly count: number;
   readonly ranges: readonly (readonly [number, number])[]; readonly moreRanges: number;
 }
+/** R3 · P-08: one store computer's time zone against the shop's, from its latest health report at head office. */
+export interface ZoneRow {
+  readonly storeId: string;
+  readonly computer: string | null;
+  readonly verdict: 'in_step' | 'differs';
+  readonly machineTimeZone: string;
+  readonly shopTimeZone: string;
+  readonly shopTimeZoneFrom: 'store_pack' | 'shop_default';
+  readonly lastReportAt: string | null;
+  /** The report is older than head office's sync-lag line: old news, said so. */
+  readonly stale: boolean;
+}
 export interface Board {
   readonly bindings: readonly Binding[];
+  /** R3 · P-08: each store computer's time zone against the shop's (those that do not keep it first). */
+  readonly zones: readonly ZoneRow[];
   /** Round 27 · OB-100: numbers taken and never used, newest day first. */
   readonly unused: readonly UnusedRow[];
   readonly replacements: readonly Replacement[];
@@ -103,6 +120,11 @@ export const STORE_COMPUTERS_COPY = {
     reading: 'Reading from head office…', cannotRead: 'Your role cannot read the store computers.',
     notYours: 'You can read this. Moving bill numbers and acknowledging findings are for the owner and head office staff who cover all stores.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.',
+    zonesH: 'Time zone', zonesLead: 'Each store computer\'s own clock zone against the shop\'s. Bills, shifts and the day close are always dated by the shop\'s zone; a store computer on another zone is set right by IT.',
+    colZone: 'Its time zone', colShopZone: 'The shop\'s time zone', colZoneSays: 'What it means', colReported: 'Reported',
+    zoneDiffers: 'NOT the shop\'s zone — ask IT to set it to {shop}. Bills are still dated by the shop\'s zone.', zoneInStep: 'Keeps the shop\'s zone.',
+    zoneDefault: '(the shop default — the store pack names none)', zoneStale: 'Old news: this store computer has not reported since {at}.',
+    noZones: 'No store computer has told head office its time zone yet.', sumZones: 'Store computers on the wrong time zone',
   },
   ta: {
     title: 'கடை கணினிகள்', lang: 'English',
@@ -131,6 +153,11 @@ export const STORE_COMPUTERS_COPY = {
     reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…', cannotRead: 'உங்கள் பங்கால் கடை கணினிகளைப் படிக்க முடியாது.',
     notYours: 'நீங்கள் படிக்கலாம். பில் எண்களை நகர்த்துவதும் கண்டுபிடிப்புகளை ஒப்புக்கொள்வதும் எல்லாக் கடைகளுக்கும் பொறுப்பான உரிமையாளர், தலைமை அலுவலகப் பணியாளர்களுக்கு மட்டும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.',
+    zonesH: 'நேர மண்டலம்', zonesLead: 'ஒவ்வொரு கடை கணினியின் சொந்த நேர மண்டலமும் கடையின் மண்டலமும். பில்கள், ஷிப்ட்கள், நாள் முடிவு எப்போதும் கடையின் மண்டலப்படியே தேதியிடப்படும்; வேறு மண்டலத்தில் உள்ள கடை கணினியை IT சரிசெய்யும்.',
+    colZone: 'அதன் நேர மண்டலம்', colShopZone: 'கடையின் நேர மண்டலம்', colZoneSays: 'இதன் பொருள்', colReported: 'அறிவித்தது',
+    zoneDiffers: 'கடையின் மண்டலம் அல்ல — {shop}-க்கு அமைக்க IT-யிடம் சொல்லுங்கள். பில்கள் இன்னும் கடையின் மண்டலப்படியே தேதியிடப்படுகின்றன.', zoneInStep: 'கடையின் மண்டலத்தைப் பின்பற்றுகிறது.',
+    zoneDefault: '(கடையின் இயல்பு மண்டலம் — கடைத் தொகுப்பில் எதுவும் இல்லை)', zoneStale: 'பழைய தகவல்: இந்தக் கடை கணினி {at} முதல் அறிவிக்கவில்லை.',
+    noZones: 'எந்தக் கடை கணினியும் இன்னும் தன் நேர மண்டலத்தைத் தலைமை அலுவலகத்திடம் சொல்லவில்லை.', sumZones: 'தவறான நேர மண்டலத்தில் உள்ள கடை கணினிகள்',
   },
 } as const;
 
@@ -172,10 +199,19 @@ export function unusedNumbersWords(lang: Lang, row: UnusedRow): string {
   return row.moreRanges > 0 ? `${list} ${wordsFor(lang, 'moreRanges', { n: row.moreRanges })}` : list;
 }
 
+/** R3 · P-08: what one store computer's time zone means, in the reader's words. */
+export function zoneWords(lang: Lang, z: ZoneRow): string {
+  const said = z.verdict === 'differs' ? wordsFor(lang, 'zoneDiffers', { shop: z.shopTimeZone }) : wordsFor(lang, 'zoneInStep');
+  const stale = z.stale ? ` ${wordsFor(lang, 'zoneStale', { at: (z.lastReportAt ?? '').replace('T', ' ').slice(0, 16) })}` : '';
+  return `${said}${stale}`;
+}
+
 /** The figures at the top of the page (round 27: and how many numbers were taken and never used in the days shown). */
-export function summarise(board: Board | null): { readonly bindings: number | null; readonly replaced: number | null; readonly needs: number | null; readonly waiting: number | null; readonly unused: number | null } {
-  if (board === null) return { bindings: null, replaced: null, needs: null, waiting: null, unused: null };
+export function summarise(board: Board | null): { readonly bindings: number | null; readonly replaced: number | null; readonly needs: number | null; readonly waiting: number | null; readonly unused: number | null; readonly zones: number | null } {
+  if (board === null) return { bindings: null, replaced: null, needs: null, waiting: null, unused: null, zones: null };
   return {
+    // R3 · P-08: store computers whose own zone is not the shop's.
+    zones: board.zones.filter((z) => z.verdict === 'differs').length,
     bindings: board.bindings.length,
     replaced: board.bindings.filter((b) => b.via === 'replacement').length,
     needs: board.findings.length,
@@ -243,7 +279,7 @@ export function createStoreComputersSession(input: {
       const bound = await call<{ bindings: Binding[]; replacements: Replacement[]; you?: Board['you'] }>('GET', BINDINGS_PATH);
       if (bound.result !== 'ok') return bound;
       // The findings a person must clear, from head office's observed health (a failed read shows none, and says so by its status).
-      const observed = await call<{ observed?: { boxes?: { storeId: string; billNumberFindings?: Omit<Finding, 'storeId'>[]; unusedNumbers?: Omit<UnusedRow, 'storeId'>[] }[] } }>('GET', '/v1/platform/operational-health/observed');
+      const observed = await call<{ observed?: { boxes?: { storeId: string; billNumberFindings?: Omit<Finding, 'storeId'>[]; unusedNumbers?: Omit<UnusedRow, 'storeId'>[]; zoneCheck?: Partial<ZoneRow> | null; computer?: string | null; lastReportAt?: string | null; stale?: boolean }[] } }>('GET', '/v1/platform/operational-health/observed');
       const boxes = observed.result !== 'ok' ? [] : observed.value.observed?.boxes ?? [];
       const findings: Finding[] = boxes.flatMap((b) =>
         (b.billNumberFindings ?? []).filter((f) => isFindingKind(f.kind)).map((f) => ({ ...f, storeId: b.storeId })));
@@ -252,6 +288,15 @@ export function createStoreComputersSession(input: {
         .filter((u) => typeof u.prefix === 'string' && typeof u.day === 'string' && isWholeCount(u.count) && Array.isArray(u.ranges))
         .map((u) => ({ storeId: b.storeId, prefix: u.prefix, day: u.day, count: u.count, ranges: u.ranges, moreRanges: isWholeCount(u.moreRanges) ? u.moreRanges : 0 })))
         .sort((a, b) => b.day.localeCompare(a.day) || a.storeId.localeCompare(b.storeId) || a.prefix.localeCompare(b.prefix));
+      // R3 · P-08: each store computer's time zone against the shop's, as its latest report told head office (wrong ones first).
+      const zones: ZoneRow[] = boxes.flatMap((b) => {
+        const z = b.zoneCheck;
+        if (z === null || z === undefined || (z.verdict !== 'in_step' && z.verdict !== 'differs') || typeof z.machineTimeZone !== 'string' || typeof z.shopTimeZone !== 'string') return [];
+        return [{
+          storeId: b.storeId, computer: typeof b.computer === 'string' ? b.computer : null, verdict: z.verdict, machineTimeZone: z.machineTimeZone, shopTimeZone: z.shopTimeZone,
+          shopTimeZoneFrom: z.shopTimeZoneFrom === 'shop_default' ? 'shop_default' as const : 'store_pack' as const, lastReportAt: typeof b.lastReportAt === 'string' ? b.lastReportAt : null, stale: b.stale === true,
+        }];
+      }).sort((a, b) => (a.verdict === b.verdict ? a.storeId.localeCompare(b.storeId) : a.verdict === 'differs' ? -1 : 1));
       // This person's own requests on the approvals engine (only the store computer kind).
       const inbox = await call<{ mine?: (ReplacementRequest & { kind: string })[] }>('GET', '/v1/approvals/requests');
       const requests: ReplacementRequest[] = inbox.result !== 'ok' ? [] : (inbox.value.mine ?? []).filter((r) => r.kind === KIND)
@@ -259,7 +304,7 @@ export function createStoreComputersSession(input: {
       return {
         result: 'ok',
         value: {
-          bindings: orderedBindings(bound.value.bindings ?? []), unused, replacements: bound.value.replacements ?? [], findings, requests,
+          bindings: orderedBindings(bound.value.bindings ?? []), zones, unused, replacements: bound.value.replacements ?? [], findings, requests,
           you: { mayReplace: bound.value.you?.mayReplace === true, mayAcknowledge: bound.value.you?.mayAcknowledge === true },
         },
       };

@@ -22,6 +22,7 @@ import {
   type DemandEvent, type DemandEventKind, type EventSignal, type WeatherFeedPort, type WeatherSignal,
 } from '../../../packages/calendar/src/demand-events';
 import { backtestEventEffect, type DailyDemand, type EventEffectBacktest } from '../../../packages/demand/src/forecast';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type EffectBasis =
   | { readonly basis: 'manager_estimate'; readonly words: "manager's estimate" }
@@ -56,6 +57,8 @@ export async function calendarSignals(port: DemandCalendarPort, tenantId: string
 }
 
 export interface DemandEventsDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly now: () => string;
   readonly events: (tenantId: string) => Promise<readonly DemandEvent[]>;
   /** Append one version of an event (never an edit). */
@@ -146,7 +149,7 @@ export function demandEventRoutes(deps: DemandEventsDeps): readonly Route[] {
         const all = await deps.events(ctx.tenantId);
         const latest = new Map<string, DemandEvent>();
         for (const e of all) { const h = latest.get(e.eventId); if (h === undefined || e.version >= h.version) latest.set(e.eventId, e); }
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         const histFrom = addDays(today, -EVENT_HISTORY_DAYS);
         const inForce = eventsInForce(all).filter((e) => storeId === undefined || e.storeId === storeId);
         const totals = new Map<string, readonly DailyDemand[]>();
@@ -163,8 +166,8 @@ export function demandEventRoutes(deps: DemandEventsDeps): readonly Route[] {
     {
       api: 'API-04', method: 'GET', path: '/v1/inventory/demand-events/weather',
       permission: 'inventory.availability.read',
-      handler: async () => {
-        const today = deps.now().slice(0, 10);
+      handler: async (ctx) => {
+        const today = await shopToday(deps, ctx.tenantId);
         const w = await weatherSignals(deps.weather, 'all', today, addDays(today, 6));
         return { status: 200, body: { link: deps.weather.name, switchedOn: deps.weather.switchedOn, state: w.state, detail: w.detail, fetched: w.signals.length, asAt: deps.now() } };
       },

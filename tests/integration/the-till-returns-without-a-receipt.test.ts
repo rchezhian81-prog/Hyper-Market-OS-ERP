@@ -98,7 +98,7 @@ describeOrSkip('the till returns without a receipt — cap, item, manager at the
     const packFile = join(dataDir, 'store-pack.json');
     await writeFile(packFile, JSON.stringify({
       version: 1,
-      policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+      policies: { timeZone: 'UTC', storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: LANE_CAP, agentAuthorityMinor: 0, compensationCapMinor: 0 },
       lossPreventionRules: [],
     }), 'utf8');

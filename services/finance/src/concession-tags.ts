@@ -24,8 +24,11 @@ import {
 } from '../../../packages/concession/src/index';
 import type { ConcessionDeps } from './concession';
 import type { ConcessionContract } from '../../../packages/concession/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface ConcessionTagDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly contract: ConcessionDeps['contract'];
   /** The one standing version of each tag on the contract (every correction appends a version). */
   readonly tags: (tenantId: string, contractId: string) => Promise<readonly ConcessionTag[]> | readonly ConcessionTag[];
@@ -162,6 +165,7 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
           });
         }
         const at = isIso(b['at']) ? b['at'] : deps.now();
+        const shopDay = await shopClock(deps.calendar).dateOf(ctx.tenantId, at); // R1c: the contract in force on the shop's date
         const tagId = b['tagId'] as string;
         const concessionaireId = b['concessionaireId'] as string;
         // The contract: named by the till, or the partner's one contract in force on the day.
@@ -177,13 +181,13 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
             });
           }
         } else {
-          const found = await contractInForce(ctx.tenantId, concessionaireId, at.slice(0, 10));
+          const found = await contractInForce(ctx.tenantId, concessionaireId, shopDay);
           if (found.contract === undefined) {
             throw apiError(422, {
               code: found.candidates === 0 ? 'no_contract_in_force_for_partner' : 'contract_ambiguous_for_partner',
               whatHappened: found.candidates === 0
-                ? `${concessionaireId} has no active concession contract covering ${at.slice(0, 10)}, so this line has no contract to sit on.`
-                : `${concessionaireId} has ${found.candidates} contracts in force on ${at.slice(0, 10)}; the till must name which.`,
+                ? `${concessionaireId} has no active concession contract covering ${shopDay}, so this line has no contract to sit on.`
+                : `${concessionaireId} has ${found.candidates} contracts in force on ${shopDay}; the till must name which.`,
               wasItSaved: 'not_saved', nextSafeAction: 'A person decides: define or activate the contract, or name it from the till. The line is kept in the box\'s dead letters.',
             });
           }
@@ -211,14 +215,14 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
           return { status: 200, body: { captured: false, refusal: result.refusal, existing: result.existing, synced: true } };
         }
         await deps.appendTag(ctx.tenantId, result.tag);
-        const trading = mayConcessionTrade({ contract, today: at.slice(0, 10) });
+        const trading = mayConcessionTrade({ contract, today: shopDay });
         // PF-13: a SALE on a day the counter could not trade already happened — recorded above, and kept as a durable
         // exception for a person (never dropped, never a refusal of something that happened).
         let breach: ConcessionTradingBreach | undefined;
         if (!trading.mayTrade && kind === 'sale' && deps.recordTradingBreach !== undefined) {
           breach = {
             tagId, contractId: contract.contractId, concessionaireId: contract.concessionaireId, saleId: b['saleId'] as string,
-            grossMinor: b['grossMinor'] as number, day: at.slice(0, 10), blockedBy: trading.blockedBy, recordedAt: deps.now(),
+            grossMinor: b['grossMinor'] as number, day: shopDay, blockedBy: trading.blockedBy, recordedAt: deps.now(),
           };
           await deps.recordTradingBreach(ctx.tenantId, breach);
         }
@@ -304,6 +308,7 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
         const { contract, tags } = await load(ctx.tenantId, contractId);
         if (tags.some((t) => t.tagId === tagId)) throw usedTagId(tagId, contractId);
         const at = isIso(b['at']) ? b['at'] : deps.now();
+        const shopDay = await shopClock(deps.calendar).dateOf(ctx.tenantId, at); // R1c: the contract in force on the shop's date
         const scheme: CommissionSchemeSnapshot = {
           contractId, basis: contract.basis, commissionOn: contract.commissionOn ?? 'net',
           ...(contract.revenueShareBps === undefined ? {} : { revenueShareBps: contract.revenueShareBps }),
@@ -324,7 +329,7 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
         }
         await deps.appendTag(ctx.tenantId, result.tag);
         // FR-04 is a till-side gate; here it is a VISIBLE flag on a sale that already happened, never a hidden one.
-        const trading = mayConcessionTrade({ contract, today: at.slice(0, 10) });
+        const trading = mayConcessionTrade({ contract, today: shopDay });
         return { status: 201, body: { captured: true, tag: result.tag, trading } };
       },
     },

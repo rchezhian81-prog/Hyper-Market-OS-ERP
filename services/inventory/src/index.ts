@@ -25,6 +25,7 @@ import type { AgeingSource } from '../../../packages/stock/src/ageing-source';
 import { stockAgeing, inventoryTurns, gmroi, stockoutImpact, type Ratio, type StockoutInput } from '../../../packages/stock/src/metrics';
 import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 // --- small readers for the one stateless "what-if" on this surface --------------
 // Every other route here reads the append-only ledger; the stockout estimate is the
@@ -642,7 +643,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         const scope = await stockReadScope(ctx, deps.locationBranches);
         const { lots, unvaluedMinor } = await deps.ageing(ctx.tenantId, ctx.query['productId'], scope.everything ? undefined : scope.covers);
         const asAt = deps.now();
-        const report = stockAgeing(lots, asAt.slice(0, 10), 'INR');
+        const report = stockAgeing(lots, shopDateIn(asAt), 'INR'); // R1c: aged to the shop's today
         return {
           status: 200,
           body: { ...report, unvaluedMinor, scope: scope.scope, method: 'weighted_average', asAt },

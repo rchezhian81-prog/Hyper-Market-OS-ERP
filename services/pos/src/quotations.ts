@@ -23,6 +23,7 @@ import {
   type Quotation, type QuotationLine, type QuotationApproval,
 } from '../../../packages/suspended-sales/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -180,7 +181,7 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
       api: 'API-05', method: 'GET', path: '/v1/pos/quotations/follow-up',
       permission: 'pos.quotation.read',
       handler: async (ctx) => {
-        const today = isStr(ctx.query['today']) ? (ctx.query['today'] as string) : deps.now().slice(0, 10);
+        const today = isStr(ctx.query['today']) ? (ctx.query['today'] as string) : shopDateIn(deps.now()); // R1c: the shop's today
         const withinDays = isInt(Number(ctx.query['withinDays'])) && ctx.query['withinDays'] !== undefined ? Number(ctx.query['withinDays']) : 3;
         const list = quotationsNeedingFollowUp(await deps.quotations(ctx.tenantId), today, withinDays);
         return { status: 200, body: { today, count: list.length, quotations: list } };

@@ -178,7 +178,8 @@ const slaOf = (c: ServiceCase, now: string) => ({
 export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
   return [
     {
-      // Open a case. Body: { kind, customerRef, priority, summary, assignedTo, orderRef? }.
+      // Open a case. Body: { kind, customerRef, priority, summary, assignedTo, orderRef?, channel? } — channel (OB-390) is how
+      // the customer reached the shop (phone/in_person/email), the default way a reply goes back.
       api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId',
       permission: 'service.case.manage', idempotent: true,
       handler: async (ctx) => {
@@ -186,10 +187,11 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (caseId === '' || !KINDS.includes(b['kind'] as CaseKind) || !isStr(b['customerRef'])
           || !PRIORITIES.includes(b['priority'] as CasePriority) || !isStr(b['summary']) || !isStr(b['assignedTo'])
-          || (b['orderRef'] !== undefined && !isStr(b['orderRef']))) {
+          || (b['orderRef'] !== undefined && !isStr(b['orderRef']))
+          || (b['channel'] !== undefined && !SEND_CHANNELS.includes(b['channel'] as SendChannel))) {
           throw apiError(400, {
             code: 'not_readable_as_a_case',
-            whatHappened: 'A case needs a caseId in the path and { kind (complaint/enquiry/warranty/lost_and_found), customerRef, priority (low/normal/high/urgent), summary, assignedTo, orderRef? }.',
+            whatHappened: `A case needs a caseId in the path and { kind (complaint/enquiry/warranty/lost_and_found), customerRef, priority (low/normal/high/urgent), summary, assignedTo, orderRef?, channel? (${SEND_CHANNELS.join('/')}) }.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send who it is for, what it is about, and who owns it.',
           });
@@ -201,6 +203,7 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
           caseId, tenantId: ctx.tenantId, kind: b['kind'] as CaseKind, customerRef: b['customerRef'] as string,
           openedAt: deps.now(), assignedTo: b['assignedTo'] as string, priority: b['priority'] as CasePriority,
           state: 'open', summary: b['summary'] as string, ...(isStr(b['orderRef']) ? { orderRef: b['orderRef'] } : {}),
+          ...(b['channel'] === undefined ? {} : { channel: b['channel'] as SendChannel }),
         };
         await deps.recordCase(ctx.tenantId, caseId, c, digestOf(c));
         return { status: 201, body: { caseId, state: c.state, priority: c.priority, openedAt: c.openedAt } };
@@ -266,6 +269,7 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
         const all = (await deps.serviceCases(ctx.tenantId)).filter((c) => customerRef === '' || c.customerRef === customerRef);
         const withSla = all.map((c) => ({
           caseId: c.caseId, kind: c.kind, priority: c.priority, state: c.state, assignedTo: c.assignedTo, customerRef: c.customerRef, openedAt: c.openedAt,
+          ...(c.channel === undefined ? {} : { channel: c.channel }),
           ...(customerRef === '' ? {} : { summary: c.summary, ...(c.orderRef === undefined ? {} : { orderRef: c.orderRef }), ...(c.resolvedAt === undefined ? {} : { resolvedAt: c.resolvedAt }), ...(c.resolution === undefined ? {} : { resolution: c.resolution }) }),
           ...slaOf(c, now),
         }));

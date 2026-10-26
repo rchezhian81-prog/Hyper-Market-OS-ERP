@@ -33,7 +33,7 @@ import {
   DATE_ORDERS, OLD_ERP_FILE_MAX_BYTES, OLD_ERP_REPORTS, columnValuesOf, headerKey, headerRowOf, judgeMapping, oldErpTemplateCsv,
 } from '../../../packages/migration/src/old-erp-reports';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
-import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
+import { makeTradingDayRule, wallClockIn } from '../../../packages/calendar/src/trading-day';
 import {
   APPROVE_REASONS,
   REJECT_REASONS,
@@ -318,6 +318,7 @@ import {
   createStoreOpsSession, wordsFor as storeOpsWords, outcomeWords as storeOpsOutcomeWords, slotWords as storeOpsSlotWords, taskWords as storeOpsTaskWords,
   bandWords as storeOpsBandWords, surfaceWords as storeOpsSurfaceWords, kindWords as storeOpsKindWords, reasonWords as storeOpsReasonWords,
   splitToday as storeOpsSplitToday, rupees as storeOpsRupees, percent as storeOpsPercent, OB163_BANDS, type StoreOpsSession,
+  endOfTodayField as storeOpsEndOfTodayField,
 } from './store-ops-session';
 // R3 Lane 4 · D-9: the Staff schedule page (labour-demand forecast, draft roster a manager commits, actuals).
 import { createScheduleSession, scheduleWords, scheduleOutcomeWords, scheduleRupees, type ScheduleSession } from './schedule-session';
@@ -355,7 +356,7 @@ import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type Bay
 import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
-  unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable,
+  unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable, zoneWords as storeComputersZoneWords,
 } from './store-computers-session';
 import {
   createScalesSession, wordsFor as scalesWords, outcomeWords as scalesOutcomeWords, summarise as scalesSummary,
@@ -2179,7 +2180,8 @@ function openFacilitiesVerifyPort(): FacilitiesVerifyPort {
 export async function fetchFacilitiesBoard(): Promise<FacilitiesData | null> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return null;
-  const asOf = new Date().toISOString().slice(0, 10);
+  // R1c: the local YYYY-MM-DD this browser's wall clock reads (the shop's day), not the UTC date.
+  const asOf = wallClockIn(new Date().toISOString()).slice(0, 10);
   try {
     const res = await fetchFn(`/v1/facilities/overdue?asOf=${asOf}`, {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
@@ -5142,6 +5144,8 @@ interface ManagerWindow {
     readonly findingWords: typeof storeComputersFindingWords;
     readonly unusedWords: typeof storeComputersUnusedWords;
     readonly acknowledgeable: typeof storeComputersAcknowledgeable;
+    /** R3 · P-08: a store computer's time zone against the shop's, in words. */
+    readonly zoneWords: typeof storeComputersZoneWords;
   };
   /** OB-154 "A" (B6 · B7 · L2): the Weighing scales page — who is looking; head office re-checks every act. */
   scalesData?: ViewerIdentity;
@@ -5164,6 +5168,8 @@ interface ManagerWindow {
     readonly surfaceWords: typeof storeOpsSurfaceWords; readonly kindWords: typeof storeOpsKindWords; readonly reasonWords: typeof storeOpsReasonWords;
     readonly splitToday: typeof storeOpsSplitToday; readonly rupees: typeof storeOpsRupees; readonly percent: typeof storeOpsPercent;
     readonly bands: typeof OB163_BANDS;
+    /** OB-390: a new task's default deadline — the end of today, in the deadline field's shape. */
+    readonly endOfTodayField: typeof storeOpsEndOfTodayField;
   };
   /** R3 D-9: the Staff schedule page — who is looking; head office answers the rest. */
   scheduleData?: ViewerIdentity;
@@ -7010,7 +7016,7 @@ if (browserWindow !== undefined) {
     session: createStoreComputersSession({ viewer: browserWindow.storeComputersData }),
     words: storeComputersWords, outcomeWords: storeComputersOutcomeWords, summarise: storeComputersSummary,
     requestWords: storeComputersRequestWords, findingWords: storeComputersFindingWords,
-    unusedWords: storeComputersUnusedWords, acknowledgeable: storeComputersAcknowledgeable,
+    unusedWords: storeComputersUnusedWords, acknowledgeable: storeComputersAcknowledgeable, zoneWords: storeComputersZoneWords,
   };
   // OB-154 "A" (B6 · B7 · L2): the Weighing scales page — its session is the tested model in scales-session.ts; it offers
   // only what the person's permissions allow, head office re-checks every act, and nothing is written on open.
@@ -7028,6 +7034,7 @@ if (browserWindow !== undefined) {
     words: storeOpsWords, outcomeWords: storeOpsOutcomeWords, slotWords: storeOpsSlotWords, taskWords: storeOpsTaskWords,
     bandWords: storeOpsBandWords, surfaceWords: storeOpsSurfaceWords, kindWords: storeOpsKindWords, reasonWords: storeOpsReasonWords,
     splitToday: storeOpsSplitToday, rupees: storeOpsRupees, percent: storeOpsPercent, bands: OB163_BANDS,
+    endOfTodayField: storeOpsEndOfTodayField,
   };
   // R3 D-9: the Staff schedule page — its session is the tested model in schedule-session.ts; nothing is written on open,
   // and the draft rosters nobody until a manager commits it (P-05).

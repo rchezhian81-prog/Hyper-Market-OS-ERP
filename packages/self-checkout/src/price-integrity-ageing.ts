@@ -30,7 +30,7 @@
 //
 // Pure and deterministic: the clock is injected; no I/O.
 
-import { resolvePrice, type PriceEntry } from '../../price-list/src/price-list';
+import { resolvePrice, effectiveInstant, type PriceEntry } from '../../price-list/src/price-list';
 
 export type ObservedSurface = 'shelf_label' | 'esl' | 'app' | 'kiosk' | 'website';
 export const OBSERVED_SURFACES: readonly ObservedSurface[] = Object.freeze(['shelf_label', 'esl', 'app', 'kiosk', 'website']);
@@ -148,7 +148,7 @@ export function reconcilePriceIntegrity(input: {
     if (recordNow === null) continue; // no price of record here: nothing to reconcile against (B25's audit covers the till)
     // The moments the price of record can change: each entry's start and end, for this product.
     const recordChanges = input.entries.filter((e) => e.productId === productId)
-      .flatMap((e) => [Date.parse(e.effectiveFrom), ...(e.effectiveTo === undefined || e.effectiveTo === null ? [] : [Date.parse(e.effectiveTo) + 1])])
+      .flatMap((e) => [effectiveInstant(e.effectiveFrom), ...(e.effectiveTo === undefined || e.effectiveTo === null ? [] : [effectiveInstant(e.effectiveTo) + 1])]) // R1c: a date starts at the shop's midnight
       .filter((t) => Number.isFinite(t) && t <= asAtMs);
 
     const surfaces = new Map<ReconciledSurface, Point[]>();
@@ -169,7 +169,7 @@ export function reconcilePriceIntegrity(input: {
       if (surfaces.has(surface)) continue;
       // Never seen: open since the price of record that applies now took effect.
       const entry = resolvePrice(input.entries, { productId, storeId: input.branchId, at: input.asAt })!;
-      const since = Math.min(Date.parse(entry.effectiveFrom), asAtMs);
+      const since = Math.min(effectiveInstant(entry.effectiveFrom), asAtMs);
       const ageMinutes = Math.floor((asAtMs - since) / MINUTE_MS);
       const ageDays = Math.floor((asAtMs - since) / DAY_MS);
       exceptions.push({

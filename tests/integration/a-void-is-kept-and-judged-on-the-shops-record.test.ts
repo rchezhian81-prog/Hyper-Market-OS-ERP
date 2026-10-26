@@ -9,6 +9,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import { prepareTillBox, signInTill } from '../support/till-operator';
 import { ownerApprovedSetting } from '../support/owner-approved-setting';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **PF-07 — a void at the till is kept as evidence and judged by the store's rules on the shop's OWN record (Wave 4 ·
@@ -26,7 +27,7 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaf07';
 const KEY = TEST_PACK_KEY;
 // The box here keeps the test machine's clock (UTC), so the shop is set to UTC below — as the other journeys do —
 // and head office's trading day agrees with the box's at every hour (it read the wrong day after IST midnight).
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 
 describe('PF-07 — a void reaches head office and the rules run on it', () => {
   let h: ApiHarness;
@@ -42,7 +43,7 @@ describe('PF-07 — a void reaches head office and the rules run on it', () => {
     await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']); // the store box's sync identity
     await h.provisionRole(A, 'u-lanecash', 'cashier');
     await h.provisionRole(A, 'u-manager', 'store_manager');
-    expect((await ownerApprovedSetting(h, A, 'locale.time_zone', { value: 'UTC' })).status).toBe(200);
+    expect((await ownerApprovedSetting(h, A, 'locale.time_zone', { value: 'Asia/Kolkata' })).status).toBe(200);
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
       if (String(url).startsWith('http://127.0.0.1:')) return savedFetch(url, init);
       const hdr = (init.headers ?? {}) as Record<string, string>;

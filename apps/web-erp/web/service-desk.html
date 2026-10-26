@@ -78,6 +78,9 @@
           </label>
           <label for="new-customer"><span id="l-new-customer">Customer code</span><input id="new-customer" autocomplete="off" /></label>
           <label for="new-order"><span id="l-new-order">Order (optional)</span><input id="new-order" autocomplete="off" /></label>
+          <label for="new-channel"><span id="l-new-channel">How the customer reached us</span>
+            <select id="new-channel"><option value="" id="o-ch-none">Not said</option><option value="phone" id="o-ch-phone">Phone</option><option value="in_person" id="o-ch-in_person">In person</option><option value="email" id="o-ch-email">Email</option></select>
+          </label>
         </div>
         <label for="new-summary"><span id="l-new-summary">What the customer said</span><textarea id="new-summary"></textarea></label>
         <button id="open-case" type="button">Open the case</button>

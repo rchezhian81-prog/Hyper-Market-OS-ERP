@@ -42,9 +42,15 @@ const REFUND = `${E2E}/the-served-till-takes-a-refund.e2e.ts`;
 const OWNER = `${E2E}/the-owner-app-meets-its-interaction-budget.e2e.ts`;
 const AI = `${E2E}/the-ai-control-screen-reaches-head-office.e2e.ts`;
 const CATALOGUE = `${E2E}/catalogue-price-change-delivery.e2e.ts`;
-/** Why an action is above its spec as built, and where it is measured (`asBuilt`, never a `taps.reset()` bar). */
+const LANE_HEALTH = `${E2E}/the-manager-opens-a-lanes-health-from-today.e2e.ts`; // OB-392
+// OB-390 (owner, 26 Oct 2026: actions above the budget are shortened with defaults; the required checks stay).
+const SERVICE_DESK = `${E2E}/service-desk-and-assistant-drafts.e2e.ts`;
+const TASKS = `${E2E}/store-tasks-meet-the-interaction-budget.e2e.ts`;
+/** Why an action is still above its spec once shortened (OB-390), and where it is measured (`asBuilt`, never a
+ *  `taps.reset()` bar): the figure left is made of required checks only — accepting it as a written exception, or not, is
+ *  the owner's decision. */
 const ABOVE_SPEC = (n: number, file: string, why: string): string =>
-  `measured AS BUILT at ${n} in ${file} — above the spec's budget because ${why}; reducing it or accepting it as a written exception is an owner decision (lane 1 R4 report)`;
+  `measured AS BUILT at ${n} in ${file} — above the spec's budget because ${why}; OB-390 shortened it with defaults and every act left is a required check, so the remaining figure is the owner's to accept as a written exception or not`;
 
 const REGISTER: readonly Budgeted[] = [
   // ── The till (pos-cashier.md) ──
@@ -58,12 +64,17 @@ const REGISTER: readonly Budgeted[] = [
   { action: 'go to tender', spec: 'pos-cashier.md', specWords: 'Go to tender', budget: 1, counted: { file: TILL, label: 'go to tender' } },
   // ── The refund screen (pos-refund.md) ──
   { action: 'look up a receipt', spec: 'pos-refund.md', specWords: 'Look up a receipt', budget: 3, counted: { file: REFUND, label: 'look up a receipt' } },
-  { action: 'return one whole line', spec: 'pos-refund.md', specWords: 'Return one whole line', budget: 3, notYetCounted: ABOVE_SPEC(14, REFUND, 'the till also asks the reason (M15), the condition (M13-FR-02), the amount on the keypad, how it is given, and a manager\'s badge, PIN and reason (§28)') },
+  // OB-390: 14 → 7. The amount now starts at the line's value (shown, changeable — the METHOD is never defaulted), a reason
+  // is one tap on a chip, and a line with one unit left does not ask how many. What is left is the line plus six checks.
+  { action: 'return one whole line', spec: 'pos-refund.md', specWords: 'Return one whole line', budget: 3, notYetCounted: ABOVE_SPEC(7, REFUND, 'after the line the till must still take the reason (M15), the condition of the goods (M13-FR-02), how the refund is given (never defaulted), and a manager\'s badge, PIN and reason (§28 · ADR-0021) — one act each; the spec itself lists the manager as "+1 step by design"') },
   // ── The store manager (store-manager.md) ──
   { action: 'approve with a reason', spec: 'store-manager.md', specWords: 'approve/reject a request', budget: 3, counted: { file: TILL, label: 'approve with a reason' } },
   { action: 'start the day close', spec: 'store-manager.md', specWords: 'start day close', budget: 2, counted: { file: TILL, label: 'start the day close' } },
-  { action: 'open a lane\'s health', spec: 'store-manager.md', specWords: 'open a lane\'s health', budget: 2, notYetCounted: 'the manager\'s screen has no lane-by-lane health view to open (the sync badge and the device fleet page are not it) — which screen it belongs on is an owner decision (lane 1 R4 report)' },
-  { action: 'assign/complete a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, notYetCounted: 'assigning is on Store tasks (title, person, branch and due time typed — more than three acts) and completing on My tasks (the assignee only, OB-158), both head-office pages; not counted yet — whether assigning may be shortened is an owner decision (lane 1 R4 report)' },
+  // OB-392 (owner, 26 Oct 2026): lane health on the manager's Today screen, one tap per lane.
+  { action: 'open a lane\'s health', spec: 'store-manager.md', specWords: 'open a lane\'s health', budget: 2, counted: { file: LANE_HEALTH, label: 'open a lane’s health' } },
+  // OB-390: assigning defaults the store to the manager's own (from the sign-in) and the deadline to the end of today.
+  { action: 'assign a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, counted: { file: TASKS, label: 'assign a task' } },
+  { action: 'complete a task', spec: 'store-manager.md', specWords: 'assign/complete a task', budget: 3, counted: { file: TASKS, label: 'complete a task' } },
   // ── The warehouse handheld (inventory-warehouse.md) ──
   { action: 'put away a line', spec: 'inventory-warehouse.md', specWords: 'put away a line', budget: 3, counted: { file: HANDHELDS, label: 'put away a line' } },
   { action: 'warehouse: pick a line', spec: 'inventory-warehouse.md', specWords: 'pick a line', budget: 3, counted: { file: HANDHELDS, label: 'pick a line' } },
@@ -89,9 +100,12 @@ const REGISTER: readonly Budgeted[] = [
   { action: 'drill a KPI to its detail', spec: 'owner-command-centre.md', specWords: 'drill a KPI to its detail', budget: 3, counted: { file: OWNER, label: 'drill a KPI to its detail' } },
   { action: 'approve a pending item (owner)', spec: 'owner-command-centre.md', specWords: 'approve a pending item', budget: 3, counted: { file: OWNER, label: 'approve a pending item (owner)' } },
   { action: 'approve/reject an AI suggestion with reason', spec: 'ai-control.md', specWords: 'approve/reject an AI suggestion with reason', budget: 3, counted: { file: AI, label: 'approve/reject an AI suggestion with reason' } },
-  { action: 'pull an agent\'s kill switch', spec: 'ai-control.md', specWords: 'pull an agent\'s kill switch', budget: 2, notYetCounted: ABOVE_SPEC(5, AI, 'the Stop tab asks the scope, the agent and a written reason before Pull (AI-NFR: a stop is reviewable)') },
-  { action: 'open and reply to a case', spec: 'crm-service.md', specWords: 'open and reply to a case', budget: 3, notYetCounted: ABOVE_SPEC(6, `${E2E}/service-desk-and-assistant-drafts.e2e.ts`, 'a reply is drafted by the assistant, approved (or edited and approved) by the person, a channel chosen, then sent — 4 at the least without editing') },
-  { action: 'edit a price', spec: 'product-merchandising.md', specWords: 'edit a price', budget: 3, notYetCounted: ABOVE_SPEC(5, CATALOGUE, 'the price is typed against a typed item code and checked against MRP and the margin floor before Save') },
+  // OB-390: a Stop button per running assistant beside the written reason (still required) — reason, Stop.
+  { action: 'pull an agent\'s kill switch', spec: 'ai-control.md', specWords: 'pull an agent\'s kill switch', budget: 2, counted: { file: AI, label: 'stop one assistant with its kill switch' } },
+  // OB-390: the case carries how the customer came; one press approves the shown words and sends them that way.
+  { action: 'open and reply to a case', spec: 'crm-service.md', specWords: 'open and reply to a case', budget: 3, counted: { file: SERVICE_DESK, label: 'open and reply to a case' } },
+  // OB-390: the price form opens holding the item; the MRP / margin-floor check runs as the price is typed, before Save.
+  { action: 'edit a price', spec: 'product-merchandising.md', specWords: 'edit a price', budget: 3, counted: { file: CATALOGUE, label: 'edit a price' } },
   { action: 'set a recall block on an item', spec: 'product-merchandising.md', specWords: 'set a recall block on an item', budget: 2, counted: { file: CATALOGUE, label: 'set a recall block on an item' } },
 ];
 
@@ -158,7 +172,8 @@ describe('QG-02: every frequent action has a budget, and is counted in a real br
       const m = /^measured AS BUILT at (\d+) in (\S+) —/.exec(b.notYetCounted ?? '');
       return m === null ? [] : [{ action: b.action, n: Number(m[1]), file: m[2]! }];
     });
-    expect(measured.map((x) => x.action).sort()).toEqual(['edit a price', 'open and reply to a case', 'pull an agent\'s kill switch', 'return one whole line']);
+    // OB-390: three of the four were brought within budget; the refund is left, at the figure its required checks make.
+    expect(measured.map((x) => x.action).sort()).toEqual(['return one whole line']);
     for (const x of measured) {
       const code = readFileSync(x.file, 'utf8');
       expect(new RegExp(`expect\\(asBuilt, 'as built: [^']*'\\)\\.toBe\\(${x.n}\\)`).test(code), `${x.file} measures "${x.action}" at ${x.n}`).toBe(true);
@@ -169,7 +184,9 @@ describe('QG-02: every frequent action has a budget, and is counted in a real br
     const open = REGISTER.filter((b) => b.notYetCounted !== undefined).map((b) => b.action);
     // The number is pinned so it can only change on purpose: count one more and move it, or add one and say so.
     // QG-02 lane 1 R4 (26 Oct 2026): 8 of the 14 now counted; 4 measured above the spec as built and 2 with no screen to
-    // count on — each named above, for the owner to decide.
-    expect(open).toHaveLength(6);
+    // count on. OB-390 (26 Oct 2026): price, case reply, kill switch and assign/complete a task now counted within budget;
+    // OB-392: a lane's health is counted on the manager's Today screen (one tap). Left: returning one whole line at 7 — all
+    // required checks — which the owner accepted in writing as an exception (OB-394, 26 Oct 2026).
+    expect(open).toHaveLength(1);
   });
 });

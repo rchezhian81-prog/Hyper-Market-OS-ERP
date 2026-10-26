@@ -262,6 +262,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'campaigns', label: 'Campaigns', labelTa: 'பிரச்சாரங்கள்', path: '/campaigns', requires: 'customer.campaign.read', group: 'Customers' },
   { id: 'basket-affinity', label: 'Bought together', labelTa: 'சேர்ந்து வாங்கப்பட்டவை', path: '/basket-affinity', requires: 'reporting.report.read', group: 'Reports' },
   { id: 'demand-events', label: 'Store events', labelTa: 'கடை நிகழ்வுகள்', path: '/demand-events', requires: 'inventory.availability.read', group: 'Inventory' },
+  // OB-391 (owner, 26 Oct 2026): the company-wide report — head office's own branches and company (GET /v1/org/nodes), its
+  // roll-up and its logged export — served by the store computer like the other office pages. Gated on the report read.
+  { id: 'company-report', label: 'Company report', labelTa: 'நிறுவன அறிக்கை', path: '/company-report', requires: 'reporting.report.read', group: 'Reports' },
   { id: 'morning-brief', label: 'Morning brief', labelTa: 'காலைச் சுருக்கம்', path: '/morning-brief', requires: 'owner.kpi.read', group: 'Reports' },
   // ── OB-288 lane 4 · P2 — begin
   // M29-FR-03/04: the owner's five exception-alert thresholds (each "not set" until entered), today's exceptions, and his

@@ -37,6 +37,7 @@ import type { RecordedPointsMovement } from '../../customer/src/index';
 import type { Movement } from '../../inventory/src/index';
 import type { SupplierRecord } from './supplier-master';
 import { templateView, type RegisteredTemplate, type ApplyContext, type ImportEffectRef, type TemplateView } from './import-templates';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 type Row = Readonly<Record<string, string>>;
 const err = (line: number, column: string, message: string): RowError => ({ line, column, kind: 'target_rule', message });
@@ -154,6 +155,8 @@ export interface PriceListImportDeps {
   readonly marginFloorFor: (tenantId: string, storeId: string) => Promise<number | undefined>;
   /** Every price-list entry a product has (any scope, any status). */
   readonly entries: (tenantId: string, productId: string) => Promise<readonly PriceEntry[]>;
+  /** R1b (M01-FR-02): the shop's date of a moment — a loaded price is effective from the shop's today. Absent: the shop default. */
+  readonly shopDateOf?: (tenantId: string, isoInstant: string) => Promise<string>;
 }
 
 export function priceListTemplate(deps: PriceListImportDeps): RegisteredTemplate {
@@ -190,7 +193,7 @@ export function priceListTemplate(deps: PriceListImportDeps): RegisteredTemplate
         versions.set(k, held + 1);
         const entry: PriceEntry = {
           id: `import-${ctx.jobId}-${storeId}`, productId, scope: 'store', scopeRef: storeId, price: money(priceMinor, 'INR'),
-          effectiveFrom: ctx.at.slice(0, 10), effectiveTo: null, status: 'active', version: held + 1,
+          effectiveFrom: deps.shopDateOf === undefined ? shopDateIn(ctx.at) : await deps.shopDateOf(tenantId, ctx.at), effectiveTo: null, status: 'active', version: held + 1,
         };
         out.push({
           kind: 'price' as const, productId, storeId, entry,

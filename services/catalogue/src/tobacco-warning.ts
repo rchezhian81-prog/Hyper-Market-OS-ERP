@@ -19,8 +19,11 @@ import {
   type ProductRecord, type WarningImage, type WarningConfirmation, type TobaccoWarningRecord,
 } from '../../../packages/product/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface TobaccoWarningDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly pictures: (tenantId: string) => Promise<readonly WarningImage[]>;
   readonly recordPicture: (tenantId: string, picture: WarningImage) => Promise<void>;
   readonly product: (tenantId: string, productId: string) => Promise<ProductRecord | undefined>;
@@ -56,7 +59,7 @@ export function tobaccoWarningRoutes(deps: TobaccoWarningDeps): readonly Route[]
       handler: async (ctx) => {
         const imageId = (ctx.params['imageId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         if (!/^[A-Za-z0-9._-]{1,40}$/.test(imageId)) notReadable('The picture id must be up to 40 letters, digits, dots, dashes or underscores.');
         if (!isDate(b['effectiveFrom']) || !isDate(b['notifiedOn'])) notReadable('effectiveFrom and notifiedOn must be dates (YYYY-MM-DD).');
         const reference = text(b['reference'], 120) ?? notReadable('reference must name the notification (for example "G.S.R. 458(E)").');
@@ -109,7 +112,7 @@ export function tobaccoWarningRoutes(deps: TobaccoWarningDeps): readonly Route[]
       permission: 'catalogue.pack.read',
       handler: async (ctx) => {
         const pictures = [...(await deps.pictures(ctx.tenantId))].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1));
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         return { status: 200, body: { pictures, inForce: pictureInForce(pictures, today) ?? null, next: nextPicture(pictures, today) ?? null, today } };
       },
     },
@@ -129,7 +132,7 @@ export function tobaccoWarningRoutes(deps: TobaccoWarningDeps): readonly Route[]
           throw apiError(422, { code: 'not_a_tobacco_product', whatHappened: `${product.name} is not recorded as tobacco, so it has no health-warning picture to confirm.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the product. Nothing was saved.' });
         }
         const pictures = await deps.pictures(ctx.tenantId);
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         const picture = pictures.find((p) => p.imageId === imageId);
         if (picture === undefined) throw notFound(`warning picture ${imageId}`);
         const inForce = pictureInForce(pictures, today);
@@ -177,7 +180,7 @@ export function tobaccoWarningRoutes(deps: TobaccoWarningDeps): readonly Route[]
       api: 'API-02', method: 'GET', path: '/v1/catalogue/tobacco-warning',
       permission: 'catalogue.pack.read',
       handler: async (ctx) => {
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         const rows = (await deps.products(ctx.tenantId)).filter(isTobacco).map((p) => {
           const s = warningStanding(p.tobaccoWarning, today);
           return s.sellable

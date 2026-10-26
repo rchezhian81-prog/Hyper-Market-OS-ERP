@@ -16,9 +16,12 @@ import { proposeConstrainedOrder, InvalidConstrainedOrderError, type ForecastPoi
 // ── R4 Lane 3 · D-24: the stored festival / event calendar, read through its port ──
 import { correctedForecast } from '../../../packages/demand/src/forecast';
 import { calendarSignals, effectBasisOf, type DemandCalendarPort } from './demand-events';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 // ── end R4 Lane 3 ──
 
 export interface SalesHistoryDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** The sold lines whose `occurredAt` falls in [fromIso, toIso). The engine filters to the trading-day window. */
   readonly soldLines: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly SoldLine[]> | readonly SoldLine[];
   readonly now: () => string;
@@ -42,7 +45,7 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/inventory/sales-history',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         const to = ctx.query['to'] ?? today;
         const from = ctx.query['from'] ?? addDays(to, -27); // trailing 28 days, inclusive
         if (!DAY.test(from) || !DAY.test(to)) {
@@ -54,9 +57,9 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
           });
         }
         // Read the event window covering the trading days. A sale booked to `to` can be committed just
-        // after midnight, so the upper bound is padded; the engine filters by trading day, so an
+        // after midnight, so the upper bound is padded (and, R1c, the lower: the shop's day starts at 18:30 UTC the day before); the engine filters by trading day, so an
         // over-read is only cost, never a double count.
-        let lines = await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`);
+        let lines = await deps.soldLines(ctx.tenantId, `${addDays(from, -1)}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`);
         const productId = ctx.query['productId'];
         if (productId !== undefined && productId !== '') {
           lines = lines.filter((l) => l.productId === productId);
@@ -94,7 +97,7 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
             nextSafeAction: 'Send ?productId=… (with ?from=&to=&horizonDays= optional). Nothing was changed; this only reads.',
           });
         }
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         const to = ctx.query['to'] ?? today;
         const from = ctx.query['from'] ?? addDays(to, -55); // trailing 8 weeks — a weekly pattern plus a holdout
         if (!DAY.test(from) || !DAY.test(to)) {
@@ -137,7 +140,7 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
           });
         }
 
-        const lines = (await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`))
+        const lines = (await deps.soldLines(ctx.tenantId, `${addDays(from, -1)}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`))
           .filter((l) => l.productId === productId);
         const byDay = salesHistory({ lines, from, to }).products.find((p) => p.productId === productId)?.byDay ?? [];
         const history: DailyDemand[] = byDay.map((d) => ({ day: d.day, qty: d.qtyMinor }));
@@ -285,9 +288,9 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
             }
             windowDays = n;
           }
-          const to = deps.now().slice(0, 10);
+          const to = await shopToday(deps, ctx.tenantId);
           const from = addDays(to, -(windowDays - 1));
-          const lines = await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`);
+          const lines = await deps.soldLines(ctx.tenantId, `${addDays(from, -1)}T00:00:00.000Z`, `${addDays(to, 2)}T00:00:00.000Z`);
           rate = new Map(salesHistory({ lines, from, to }).products.map((p) => [p.productId, p.avgDailyDemandMinor]));
           demandWindow = { from, to, days: windowDays };
         }
@@ -342,7 +345,7 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
           });
         }
         const productId = b.productId;
-        const today = deps.now().slice(0, 10);
+        const today = await shopToday(deps, ctx.tenantId);
         const deliveries = ([...b.upcomingDeliveries] as string[]).filter((d) => d >= today).sort();
 
         // Forecast demand (D-1) from the store's own sales over the horizon up to the delivery-after-next.
@@ -362,7 +365,7 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
             });
           }
           const from = addDays(today, -55);
-          const lines = (await deps.soldLines(ctx.tenantId, `${from}T00:00:00.000Z`, `${addDays(today, 2)}T00:00:00.000Z`))
+          const lines = (await deps.soldLines(ctx.tenantId, `${addDays(from, -1)}T00:00:00.000Z`, `${addDays(today, 2)}T00:00:00.000Z`))
             .filter((l) => l.productId === productId);
           const byDay = salesHistory({ lines, from, to: today }).products.find((p) => p.productId === productId)?.byDay ?? [];
           const history = byDay.map((d) => ({ day: d.day, qty: d.qtyMinor }));

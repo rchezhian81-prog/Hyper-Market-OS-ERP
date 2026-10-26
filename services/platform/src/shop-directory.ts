@@ -9,6 +9,7 @@
 // This module is the commands' tested logic; it reads and writes nothing itself.
 
 import { OPTIONAL_FEATURES, isOptionalFeature } from '../../../packages/tenant/src/tenant';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 /** A shop as the `tenants` table holds it. */
 export interface TenantRow { readonly tenantId: string; readonly registeredAt: string; readonly registeredBy: string }
@@ -62,7 +63,7 @@ export function renderShopList(lines: readonly ShopLine[]): readonly string[] {
     out.push('');
     out.push(`${l.name ?? '(no name recorded)'} — ${l.tenantId}`);
     out.push(`  sign-in area: ${l.realm ?? 'not recorded'} · address: ${l.webOrigin ?? 'not recorded'}`);
-    out.push(`  created ${l.registeredAt.slice(0, 10)} by ${l.createdBy}`);
+    out.push(`  created ${shopDateIn(l.registeredAt)} by ${l.createdBy}`);
     out.push(`  plan: ${l.plan ?? 'none'} · features on: ${l.featuresOn.length === 0 ? 'none' : l.featuresOn.join(', ')}`);
   }
   return out;

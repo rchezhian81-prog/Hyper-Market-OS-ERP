@@ -35,6 +35,7 @@ import {
 } from './goods-receipt';
 import type { SyncedGoodsReceiptDeps } from './goods-receipt-synced';
 import type { ReceivingScanDeps, ReceivingScanRecord } from './warehouse-synced';
+import { shopClock } from '../../../packages/calendar/src/shop-clock';
 
 export interface AssembledGoodsReceiptDeps extends SyncedGoodsReceiptDeps {
   /** The delivery's scans as head office keeps them (the SP-3a register) — the ONLY source of the assembled lines. */
@@ -197,7 +198,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   const inForce = await policyInForce(deps, input.tenantId);
   if (inForce.defaulted) flags.push('default_policy');
 
-  const receivedOnDate = input.completedAt.slice(0, 10);
+  const receivedOnDate = await shopClock(deps.calendar).dateOf(input.tenantId, input.completedAt); // R1b: the shop's date
   const assembled = linesFromScans({ grnId: input.grnId, scans, ordered: order.ordered, receivedOnDate, unitCostMinorOf: (p) => costByProduct.get(p), flags });
   const captureLines = alignToOrder(assembled.map((a) => a.line), order.ordered, flags);
 

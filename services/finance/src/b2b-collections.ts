@@ -21,6 +21,7 @@ import {
   ageReceivables, allocatePayment, decideDunning, reconcileAr,
   type Receivable, type PaymentAllocation,
 } from '../../../packages/b2b/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { Receivable, PaymentAllocation } from '../../../packages/b2b/src/index';
 
@@ -38,6 +39,8 @@ export interface RecordedPayment {
 }
 
 export interface B2BCollectionsDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** Invoices with `settledMinor` PROJECTED from the recorded allocations — never stored (#2). */
   readonly invoices: (tenantId: string, customerId: string) => Promise<readonly Receivable[]> | readonly Receivable[];
   /** The finance AR balance for this customer, PROJECTED from the receivable-movement ledger the
@@ -113,7 +116,7 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
           invoices: await deps.invoices(ctx.tenantId, customerId), against,
         });
         const payment: RecordedPayment = { receiptId, receivedMinor: result.receivedMinor, allocations: result.allocations };
-        if (deps.recordPaymentWithMoney !== undefined) await deps.recordPaymentWithMoney(ctx.tenantId, customerId, payment, deps.now().slice(0, 10));
+        if (deps.recordPaymentWithMoney !== undefined) await deps.recordPaymentWithMoney(ctx.tenantId, customerId, payment, await shopToday(deps, ctx.tenantId));
         else await deps.recordPayment(ctx.tenantId, customerId, payment);
         return { status: 201, body: { receiptId, allocatedMinor: result.allocatedMinor, unappliedMinor: result.unappliedMinor, allocations: result.allocations } };
       },

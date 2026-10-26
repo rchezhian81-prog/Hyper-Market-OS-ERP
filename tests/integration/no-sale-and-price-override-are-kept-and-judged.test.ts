@@ -11,6 +11,7 @@ import { bootPos } from '../../apps/pos/src/browser-entry';
 import { prepareTillBox, signInTill, pinOf, type TillPerson } from '../support/till-operator';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import { ownerApprovedSetting, ownerApprovedSettingOn } from '../support/owner-approved-setting';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **PF-07 (rest) — a NO-SALE and a PRICE OVERRIDE at the till are kept as evidence, approved by a manager on the store
@@ -52,7 +53,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
   let cableCut = false;
   let testCalling = false;
   const savedFetch = globalThis.fetch;
-  const today = (): string => new Date().toISOString().slice(0, 10);
+  const today = (): string => shopDateIn(new Date().toISOString());
 
   const call = async (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown): Promise<Reply> => {
     if (cloud !== undefined) {
@@ -80,7 +81,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
       await cloud.grant(CASHIER, 'cashier');
       await cloud.grant(MANAGER, 'store_manager');
       await cloud.grant(NOT_A_MANAGER, 'cashier');
-      expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
+      expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'Asia/Kolkata' }, OWNER)).status).toBe(200);
     } else {
       h = apiHarness();
       await h.seedOwner(tenant, OWNER);

@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **D-7 (roadmap v2.1 addendum, ratified R2; pairs with B25) — "Price-of-record vs shelf vs POS vs app are reconciled into an
@@ -49,7 +50,7 @@ describe.each(backings)('D-7 — price of record, shelf, till and app are reconc
       h.request({ method, path, userId, tenantId: T, ...(body === undefined ? {} : { body, idempotencyKey: `k-${n++}` }), ...(query === undefined ? {} : { query }) });
     const now = Date.now();
     const iso = (ms: number) => new Date(ms).toISOString();
-    const today = iso(now).slice(0, 10);
+    const today = shopDateIn(iso(now)); // the shop's today (a price is never back-dated)
 
     // ── the price of record: head office's own price list for store S1 ────────────────────────────────────────
     for (const [p, price] of [['OIL', 5_500], ['SALT', 2_000], ['DAL', 1_600]] as const) {

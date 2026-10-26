@@ -27,7 +27,7 @@ describe('free-sample session (OB-386)', () => {
     expect(await createFreeSampleSession({ viewer: { userId: 'u', permissions: [] }, fetch: r.fetch }).record(ok)).toEqual({ result: 'invalid', why: 'cannotRecord' });
     expect(await createFreeSampleSession({ viewer: { permissions: ['inventory.movement.append'] }, fetch: r.fetch }).record(ok)).toEqual({ result: 'invalid', why: 'nobody' });
     // A page that carries no identity leaves every permission to head office.
-    expect(createFreeSampleSession({ fetch: r.fetch }).may).toEqual({ named: true, record: true });
+    expect(createFreeSampleSession({ fetch: r.fetch }).may).toEqual({ named: true, record: true, approve: true });
   });
 
   it('lists a month and checks with a note', async () => {

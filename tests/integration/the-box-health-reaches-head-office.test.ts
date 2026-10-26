@@ -13,6 +13,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { boxHealthAdapter } from '../../services/api/src/adapters';
 import { prepareTillBox, signInAtLane, operatorHeader } from '../support/till-operator';
+import { machineTimeZone } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **M35-FR-03 · D04-FR-05 · OB-54 · P-08 · §31 — the store computer's own health reaches head office, and head office
@@ -158,6 +159,11 @@ async function theBoxHealthReachesHeadOffice(h: ApiHarness, tenant: string, agai
     expect(s.comp(live, 'box_disk:S1')!.detail).toMatch(/can record sales: \d+ MB free/);
     expect(Number(s.comp(live, 'box_disk:S1')!.evidence!['freeBytes'])).toBe(s1.disk!.freeBytes);
     expect(s.comp(live, 'box_queue:S1')).toMatchObject({ status: 'ok' });
+    // R3 · P-08: the box's own time-zone check rides the report — head office shows it (the pack names no zone here, so the
+    // shop default), judged by whether THIS machine keeps the shop's zone.
+    const zone = s.comp(live, 'box_time_zone:S1');
+    expect(zone?.evidence).toMatchObject({ shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'shop_default', machineTimeZone: machineTimeZone() });
+    expect(zone?.status).toBe(zone?.evidence?.['verdict'] === 'differs' ? 'degraded' : 'ok');
     expect(s.comp(live, 'till_devices:S1')).toMatchObject({ status: 'degraded', detail: 'store S1: lane-1: printer has failed — paper out — the till still sells; a person should fix it' });
     expect(live.health.canTrade).toBe(true);
     expect(live.health.summary).toContain('lane-1: printer has failed');

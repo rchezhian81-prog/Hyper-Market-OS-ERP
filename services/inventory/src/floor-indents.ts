@@ -36,6 +36,7 @@ import { outsideBranchScope, type RequestContext } from '../../kernel/src/index'
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 import type { AssortmentEntry } from '../../../packages/merchandising/src/index';
 import { rangeStatusOf } from './assortment';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /**
  * PA-01-r1: an indent is the business of the branch its back store and floor sit in. Acting on, or reading, an indent
@@ -96,6 +97,8 @@ export async function binPicksFor(
 }
 
 export interface FloorIndentsDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
   readonly locationBranches?: LocationBranches;
   /**
@@ -302,7 +305,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         if (deps.rangeOf !== undefined) {
           const storeId = (await (deps.locationBranches ?? ((): ((l: string) => string) => (l) => l))(ctx.tenantId))(b['toLocationId']);
           const entries = await deps.rangeOf(ctx.tenantId, storeId);
-          const today = now.slice(0, 10);
+          const today = await shopClock(deps.calendar).today(ctx.tenantId, now); // R1c: the shop's today
           // The one range rule (`rangeStatusOf`, as the purchase order asks it); clearance stock may still come out to sell down.
           const outside = lines
             .map((l) => ({ productId: l.productId, status: rangeStatusOf(entries, storeId, l.productId, today) }))

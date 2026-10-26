@@ -30,6 +30,7 @@ import {
   dropFromRange, checkAssortmentIntegrity, Assortment, RangeDecisionError,
   type AssortmentEntry, type DropReason,
 } from '../../../packages/merchandising/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const DROP_REASONS: readonly DropReason[] = ['poor_sales', 'poor_margin', 'supplier_discontinued', 'quality_issue', 'range_rationalisation', 'seasonal_end', 'replaced_by_alternative'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -51,6 +52,8 @@ export function rangeStatusOf(entries: readonly AssortmentEntry[], storeId: stri
 }
 
 export interface AssortmentDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   /** FUL-11: every product the stock ledger has ever recorded SELLING at the store's locations. Optional on a bare stub. */
   readonly soldAtStore?: (tenantId: string, storeId: string) => Promise<readonly string[]> | readonly string[];
   /** FUL-11: head office's on-hand for a product at a store (the store and every place under it), from the stock position. */
@@ -173,7 +176,7 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
       permission: 'merchandising.range.read',
       handler: async (ctx) => {
         const storeId = (ctx.params['storeId'] ?? '').trim();
-        const onDate = isDate(ctx.query['onDate']) ? ctx.query['onDate'] as string : deps.now().slice(0, 10);
+        const onDate = isDate(ctx.query['onDate']) ? ctx.query['onDate'] as string : await shopToday(deps, ctx.tenantId);
         const assortment = new Assortment(storeId, await deps.entries(ctx.tenantId, storeId));
         const listed = assortment.listedOn(onDate);
         return { status: 200, body: { storeId, onDate, listed, count: listed.length } };

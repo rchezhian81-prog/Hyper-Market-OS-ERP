@@ -16,6 +16,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { departmentOfCategory, categoriesOwnedElsewhere, withinDepartmentScope, type DepartmentCategories } from '../../../packages/org/src/departments';
 import type { OrgNode } from '../../../packages/org/src/index';
 import { actionDetails, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export const ORG_STRUCTURE_KIND = 'org_structure_change';
 
@@ -38,6 +39,8 @@ export interface DepartmentSaleLine {
 }
 
 export interface OrgDepartmentDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly nodes: (tenantId: string) => Promise<readonly OrgNode[]>;
   /** Every link recorded, in append order (the latest per department stands). */
   readonly links: (tenantId: string) => Promise<readonly DepartmentLinkRecord[]>;
@@ -141,7 +144,7 @@ export function orgDepartmentRoutes(deps: OrgDepartmentDeps): readonly Route[] {
       permission: 'reporting.report.read',
       handler: async (ctx) => {
         const departmentId = (ctx.params['departmentId'] ?? '').trim();
-        const day = ctx.query['day'] ?? deps.now().slice(0, 10);
+        const day = ctx.query['day'] ?? await shopToday(deps, ctx.tenantId);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw apiError(400, { code: 'not_readable_as_a_day', whatHappened: `"${day}" is not a trading day (YYYY-MM-DD).`, wasItSaved: 'not_saved', nextSafeAction: 'Send ?day=YYYY-MM-DD.' });
         const node = (await departmentNodes(ctx.tenantId)).find((n) => n.nodeId === departmentId);
         if (node === undefined) throw notFound(`department ${departmentId}`);

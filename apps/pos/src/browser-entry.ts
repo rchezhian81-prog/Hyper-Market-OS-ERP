@@ -34,7 +34,7 @@ import {
   createRefundView, refundOutcomeOf, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
 } from './refund-view';
 import type { ReturnableLine } from '../../../packages/returns/src/return-register';
-import { assessExchange, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
+import { assessExchange, returnedValueAtOriginalPrices, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
 import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
 import { settle, type Tender } from '../../../packages/tender/src/tender';
 import { billReceipt, billTaxInvoice, type BillReceipt, type BillTaxInvoice } from './bill-receipt';
@@ -132,6 +132,8 @@ export interface PosLane {
   readonly laneId: string | null;
   readonly tradingDayCutoff: string;
   readonly tradingDayCutoffKnown: boolean;
+  /** R1 (M01-FR-02): the shop's time zone from the store pack — the till dates by it. Absent on a page from an older box. */
+  readonly timeZone?: string;
   readonly tradingDay: string;
   readonly storeId: string | null;
   /**
@@ -879,6 +881,13 @@ export interface RefundLookup {
   readonly sale: { readonly saleId: string; readonly number: string; readonly totalMinor: number };
   readonly returnable: readonly ReturnableLine[];
   readonly maxRefundMinor: number;
+  /**
+   * OB-390: what `quantityMinor` of a product on this bill is worth at the price the bill charged for it (the engine's own
+   * `returnedValueAtOriginalPrices`, over the bill's earlier returns), never above what is still refundable — the refund
+   * AMOUNT the screen offers by default. Only the amount: the method is always the cashier's choice, and the cashier may
+   * still change the amount (the engine judges whatever is sent, M13-FR-03).
+   */
+  readonly lineValueMinor: (productId: string, quantityMinor: number) => number;
   /** Whether a refund of this amount needs a §28 approver, so the screen asks for a manager first. */
   readonly needsApproval: (refundMinor: number, noReceipt?: boolean) => boolean;
   /** Complete the refund, resolving to exactly one plain-English screen state. Never throws. */
@@ -932,6 +941,8 @@ export function bootPos(config?: {
   tradingDay?: string;
   /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02). Absent = midnight. */
   tradingDayCutoff?: string;
+  /** R1 (M01-FR-02): the shop's IANA time zone (the box serves the pack's). Absent = this device's own wall clock. */
+  timeZone?: string;
   /** B6: the weighing scales this lane takes weight from (store pack, via the box). Absent = never told → no weighed sale. */
   laneScales?: LaneScales;
   /** B13: the HUIDs the store computer has already sold (served with the page). */
@@ -1215,6 +1226,7 @@ export function bootPos(config?: {
     ...(config?.cashierId === undefined ? {} : { cashierId: config.cashierId }),
     ...(config?.tradingDay === undefined ? {} : { tradingDay: config.tradingDay }),
     ...(config?.tradingDayCutoff === undefined ? {} : { tradingDayCutoff: config.tradingDayCutoff }),
+    ...(config?.timeZone === undefined ? {} : { timeZone: config.timeZone }),
   };
   const session = new PosSession(
     {
@@ -1364,6 +1376,10 @@ export function bootPos(config?: {
       sale: { saleId: originalSale.saleId, number: originalSale.number, totalMinor: originalSale.totalMinor },
       returnable: refundView.returnable(originalSale),
       maxRefundMinor: refundView.maxRefundMinor(originalSale),
+      lineValueMinor: (productId, quantityMinor) => Math.max(0, Math.min(
+        refundView.maxRefundMinor(originalSale),
+        returnedValueAtOriginalPrices(originalSale, [{ productId, quantityMinor }], found.returns.flatMap((r) => r.lines)),
+      )),
       needsApproval: (refundMinor, noReceipt = false) => refundView.needsApproval({
         returnId: '', number: '', originalSale, reasonCode: '', lines: [], refundMinor, refundTender: 'cash', noReceipt,
       }),
@@ -2048,6 +2064,7 @@ if (browserWindow !== undefined && (globalThis as { sreQueueTill?: unknown }).sr
     ...(lanePort === undefined ? {} : { lanePort }),
     ...(lane?.laneId === undefined || lane.laneId === null || lane.laneId === '' ? {} : { laneId: lane.laneId }),
     ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
+    ...(typeof lane?.timeZone === 'string' && lane.timeZone !== '' ? { timeZone: lane.timeZone } : {}), // R1: the shop's zone
     // B6: this lane's scales as the box's store pack names them; a page without them sells nothing by weight.
     ...(lane?.scales === undefined ? {} : { laneScales: lane.scales }),
     ...(Array.isArray(lane?.soldHuids) ? { soldHuids: lane.soldHuids } : {}),

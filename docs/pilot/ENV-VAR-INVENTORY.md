@@ -42,6 +42,9 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 | `EDGE_CAPACITY_BYTES` | — | optional | `10737418240` (10 GiB) | disk the edge may use offline | default |
 | `EDGE_LANE_PORT` | — | optional | — | loopback port the till screen posts sales to | set on a till box |
 | `EDGE_SCREEN_PORT` | — | optional | — | loopback port the screens are served from | set on a screen box |
+| `EDGE_HEAD_OFFICE_SIGN_IN_ISSUER` | — | optional | — | OB-388 · ADR-0029: head office's identity server realm (https). With `CLOUD_API_URL`, each person opening an office page signs in with their own head-office login and second step, and the box carries THEIR session to head office | the installer's `--head-office-sign-in` |
+| `EDGE_HEAD_OFFICE_SIGN_IN_CLIENT_ID` | — | optional | `sre-web` | OB-388: the product's public client at the identity server (PKCE, no secret) | leave unset |
+| `EDGE_HEAD_OFFICE_AUDIENCE` | — | optional | `sre-retail-os-api` | OB-388: head office's API name in the tokens | leave unset |
 | `EDGE_APPS_DIR` | — | optional | — | where `apps/` lives, to serve screens from disk | as installed |
 | `EDGE_SCREEN_HOST` | — | optional | default `127.0.0.1` | the address the screens bind to; a container behind the public proxy names `0.0.0.0` on the private compose network, no host port published, and the boot log says so (ADR-0018) | compose sets it; a shop PC leaves it unset |
 | `EDGE_DEVICE_PORT` | — | optional | — | the handhelds' DEVICE socket (ADR-0019): serves only the handheld screens and the device routes, to handhelds enrolled with a one-time head-office code; absent = no device socket | set on the back-office box that serves the handhelds |

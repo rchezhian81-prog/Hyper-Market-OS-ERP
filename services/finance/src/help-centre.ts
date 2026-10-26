@@ -25,6 +25,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Employee, SopAcknowledgement } from '../../../packages/workforce/src/workforce';
 import { BUILT_IN_SOPS } from '../../../packages/workforce/src/sop-library.generated';
 import type { Sop } from './sop-store';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
@@ -61,6 +62,8 @@ export interface EmergencyDrill {
 }
 
 export interface HelpCentreDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly now: () => string;
   readonly sops: (tenantId: string) => Promise<readonly Sop[]>;
   readonly putSop: (tenantId: string, sop: Sop, key: string) => Promise<void>;
@@ -318,7 +321,7 @@ export function helpCentreRoutes(deps: HelpCentreDeps): readonly Route[] {
           || !(b['participants'] as unknown[]).every(isStr) || !isStr(b['findings'])) {
           bad('not_readable_as_a_drill', 'A drill needs { sopId, branchId, heldOn (YYYY-MM-DD), participants[] (at least one), findings } and an optional evidenceRef.');
         }
-        if ((b['heldOn'] as string) > deps.now().slice(0, 10)) refuse(422, 'drill_in_the_future', 'A drill is recorded after it is held.', 'Record it on the day it happened. Nothing was saved.');
+        if ((b['heldOn'] as string) > await shopToday(deps, ctx.tenantId)) refuse(422, 'drill_in_the_future', 'A drill is recorded after it is held.', 'Record it on the day it happened. Nothing was saved.');
         const sop = helpLibrary(await deps.sops(ctx.tenantId), await deps.contents(ctx.tenantId)).find((s) => s.sopId === b['sopId']);
         if (sop === undefined || sop.category !== 'emergency') refuse(422, 'not_an_emergency_procedure', `${String(b['sopId'])} is not a published emergency procedure.`, 'Publish the emergency procedure first, then record the drill. Nothing was saved.');
         const prior = (await deps.drills(ctx.tenantId)).find((d) => d.drillId === drillId);

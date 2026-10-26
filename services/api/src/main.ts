@@ -36,7 +36,7 @@ import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } fro
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import { shoppingAlternatives } from './ai-shopping';
 import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-insights';
-import { tradingDayIn } from '../../../packages/calendar/src/index';
+import { tradingDayIn, tradingMonthIn, shopClock } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -567,7 +567,7 @@ export function buildSurface(deps: {
 
   // FUL-05: the one fulfilment command — run after every pack, dispatch, door outcome and counter hand-over, and on demand.
   const orderFulfilment = store === undefined ? undefined
-    : orderFulfilmentAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
+    : { ...orderFulfilmentAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), calendar: (t: string) => shopCalendar(t) }; // R1b
   const afterOrderFact = orderFulfilment === undefined ? undefined
     : (t: string, orderId: string, by: string) => applyOrderFulfilment(orderFulfilment, t, orderId, by)
       // OB-346: a delivered online order earns at the till rate, once (keyed on its sale) — never failing the command.
@@ -582,6 +582,9 @@ export function buildSurface(deps: {
     timeZone: await settings.value(tenantId, SETTINGS.STORE_TIME_ZONE),
     tradingDayCutoff: await settings.value(tenantId, SETTINGS.TRADING_DAY_CUTOFF),
   });
+  // R1b · R1c (M01-FR-02): every service that reads a business date is handed the SAME tenant calendar — its zone and cut-off
+  // from store setup — so "today", a trading day and a month are the shop's, never the server's UTC ones.
+  const calendared = <D extends object, R>(build: (deps: D) => R) => (deps: D): R => build({ ...deps, calendar: shopCalendar });
   const loyaltyRule = async (tenantId: string) => ({
     pointsPer100Inr: await settings.value(tenantId, SETTINGS.LOYALTY_POINTS_PER_100_INR),
     pointValuePaise: await settings.value(tenantId, SETTINGS.LOYALTY_POINT_VALUE_PAISE),
@@ -637,14 +640,14 @@ export function buildSurface(deps: {
   } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
-  } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
+  } : { ...syncedGoodsReceiptAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
     // OB-172: a checklist done at the dock, carried inside the relayed receipt and sealed with it by the store computer.
     ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
   // SP-6b: the handheld's receiving scans assembled into ONE GRN against the order — the relayed receipt's deps plus the
   // SP-3a scan register; the assembly appends no stock movement of its own (the scans did).
   const assembledGoodsReceiptDeps = store === undefined ? {
     ...syncedGoodsReceiptDeps, scansOf: empty([]),
-  } : { ...assembledGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
+  } : { ...assembledGoodsReceiptAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
     ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
   // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
   // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the
@@ -697,7 +700,7 @@ export function buildSurface(deps: {
       investigations: (t) => lpCasesAdapter({ store, now }).cases(t),
       // ...and the near-expiry stock, for the Inventory agent (A03) — the SAME tested reader the
       // /v1/inventory/near-expiry route uses, so A03 suggests markdowns/disposals over the same batches.
-      nearExpiry: (t, opts) => nearExpiryAdapter({ store, now }).nearExpiry(t, opts),
+      nearExpiry: (t, opts) => nearExpiryAdapter({ store, now, calendar: shopCalendar }).nearExpiry(t, opts),
       // ...and the stored daily tasks, for the Workforce/SOP guidance agent (A10) — the SAME tested
       // task-store fold the /v1/hr/workforce/tasks board reads, so A10 flags the same escalated/overdue
       // tasks a manager sees. A10 recommends only; a manager assigns/completes (hard rule #5).
@@ -724,7 +727,7 @@ export function buildSurface(deps: {
     }),
     // Approval delegation (M02-FR-03) — the honest alternative to the shared login: lend authority
     // time-boxed, capped, unchained, and never used to approve the granter's own request.
-    ...delegationRoutes(store === undefined
+    ...calendared(delegationRoutes)(store === undefined
       ? { delegations: empty([]), recordDelegation: () => {}, now }
       : delegationAdapter({ store, now })),
     // Emergency access (M02-FR-04 · SEC-11) — time-bound at grant, self-expiring, never extended in place, reviewed.
@@ -824,14 +827,14 @@ export function buildSurface(deps: {
     ...cataloguePreviewRoutes(store === undefined
       ? { products: empty([]), priceEntries: empty([]), barcodes: empty([]), taxSchedule: empty([]), now }
       : cataloguePreviewAdapter({ store, now, pricing: packPricingFor({ store, now }) /* D-19: the preview is the pack */ })),
-    ...pricingRoutes(store === undefined
+    ...calendared(pricingRoutes)(store === undefined
       ? { recordPriceChange: () => {}, now }
       : {
-        ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }),
+        ...pricingAdapter({ store, now, calendar: shopCalendar }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }),
         // M05: the floor a head-office price is judged by is the one the owner set in the store's rules.
         marginFloorFor: async (t: string, storeId: string) => (await storeRulesAdapter({ store }).rules(t, storeId))?.marginFloorBps,
       }),
-    ...priceListRoutes(store === undefined
+    ...calendared(priceListRoutes)(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
       : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */ }),
     // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
@@ -890,13 +893,13 @@ export function buildSurface(deps: {
     // system's own totals, posted once through the finance posting path, and read back account by account.
     ...accountOpeningsRoutes(store === undefined ? {
       records: empty([]), recordOpenings: () => {}, signOffs: empty([]), recordSignOff: () => {}, journals: empty([]),
-      periodStates: empty(new Map()), nextOpenPeriod: () => now().slice(0, 7), appendJournal: () => {}, now,
+      periodStates: empty(new Map()), nextOpenPeriod: () => tradingMonthIn(now()), appendJournal: () => {}, now,
     } : { ...accountOpeningsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // OB-44 "A": inside the real cutover window only, a named person and a second approver reverse an opening load through
     // each domain's own compensating record — kept, read back to zero against the load. Trial loads go into a fresh shop.
-    ...(store === undefined ? [] : openingReversalRoutes({ ...openingReversalAdapter({ store, now }), recordAudit: auditTrail?.recordAudit })),
+    ...(store === undefined ? [] : openingReversalRoutes({ ...openingReversalAdapter({ store, now, calendar: shopCalendar }), recordAudit: auditTrail?.recordAudit })),
     // WF-18 / M23 / D10-FR-03 (Batch 3 r8): count differences and write-offs to the books, account classes, the period P&L.
-    ...(store === undefined ? [] : periodBooksRoutes(periodBooksAdapter({ store, now }))),
+    ...(store === undefined ? [] : periodBooksRoutes({ ...periodBooksAdapter({ store, now }), calendar: (t: string) => shopCalendar(t) })), // R1b
     // OB-55 "A" (Batch 3 r9): card/UPI payments a store's day close carried forward — the finance exception list, resolved once.
     ...paymentExceptionRoutes(store === undefined
       ? { exceptions: none([]), resolutions: none([]), conflicts: none([]), lateAnswers: none([]), recordResolution: noLedger, recordConflict: noLedger, recordLateAnswer: noLedger, now }
@@ -904,7 +907,7 @@ export function buildSurface(deps: {
     // OB-56 "A" (Batch 3 r9): the month-end stock adjustment — closing stock at average buying cost, cost of goods sold.
     ...stockPeriodRoutes(store === undefined
       ? { periodStates: () => new Map(), appendJournal: noLedger, now, postingMap: empty(undefined), journals: none([]), valuation: noLedger, outstandingStockPostings: none([]) }
-      : stockPeriodAdapter({ store, now })),
+      : stockPeriodAdapter({ store, now, calendar: shopCalendar })),
     // OB-57 "A" (Batch 3 r9, D10-FR-05): monthly budgets with actual-vs-budget; the fixed-asset register and its depreciation.
     ...budgetAssetRoutes(store === undefined
       ? { periodStates: () => new Map(), appendJournal: noLedger, now, budgets: none([]), recordBudget: noLedger, assetFacts: none([]), recordAssetFact: noLedger, journals: none([]), accountClasses: none(undefined), postingMap: empty(undefined) }
@@ -916,14 +919,14 @@ export function buildSurface(deps: {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
-    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
-      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */, ...poAuthorityHooks({ store, now, settings }) /* OB-290 follow-up */ }),
+    } : { ...purchaseOrdersAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
+      openToBuy: { ...openToBuyAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */, ...poAuthorityHooks({ store, now, settings }) /* OB-290 follow-up */ }),
     // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
     ...openToBuyRoutes(store === undefined ? {
       budgets: empty([]), recordBudget: () => {}, orders: empty([]), categoryOf: empty(null), overrides: empty([]), recordOverride: () => {}, permissionsOfUser: empty(undefined), now,
-    } : { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }),
+    } : { ...openToBuyAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }),
     // Supplier scorecards + contract alerts (M06-FR-03) — objective scoring from recorded delivery facts.
-    ...supplierScorecardRoutes(store === undefined ? {
+    ...calendared(supplierScorecardRoutes)(store === undefined ? {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
       recordReceipt: () => {}, recordContract: () => {}, now,
     } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), facts: supplierFactsFor({ store, now }) /* R4 D-10 */ }),
@@ -931,14 +934,14 @@ export function buildSurface(deps: {
     ...rebateRoutes(store === undefined ? {
       scheme: empty(undefined), schemes: empty([]), accruals: empty([]),
       recordScheme: () => {}, recordAccrual: () => {}, now,
-    } : { ...rebatesAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...p3RebateHooks({ store, now }) /* OB-288 P3 */ }),
+    } : { ...rebatesAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...p3RebateHooks({ store, now, calendar: shopCalendar }) /* OB-288 P3 */ }),
     // Requisition / RFQ / quotation comparison (M06-FR-02) — like-for-like cheapest + fastest.
     ...rfqRoutes(store === undefined ? {
       requisition: empty(undefined), requisitions: empty([]), quotes: empty([]),
       recordRequisition: () => {}, recordQuote: () => {}, now,
     } : rfqAdapter({ store, now })),
     // Import job history & supplier data-quality scoring (M30-FR-04) — which supplier files cost hours a year.
-    ...importQualityRoutes(store === undefined ? {
+    ...calendared(importQualityRoutes)(store === undefined ? {
       jobs: empty([]), recordImportJob: () => {}, now,
     } : {
       ...importQualityAdapter({ store, now }),
@@ -952,7 +955,7 @@ export function buildSurface(deps: {
     ...dataImportRoutes(store === undefined
       ? { commits: () => [], recordCommit: () => {}, now }
       : {
-          ...dataImportAdapter({ store, now }), ...dataInCommitDeps({ store, now }) /* OB-315 */, approvals: approvalRequestsAdapter({ store, now }),
+          ...dataImportAdapter({ store, now }), ...dataInCommitDeps({ store, now, calendar: shopCalendar }) /* OB-315 */, approvals: approvalRequestsAdapter({ store, now }),
           permissionsOfUser: (t: string, u: string) => purchaseAdapter({ store, now }).permissionsOfUser(t, u),
           // SF-06-a (OB-23 "C"): the templates head office supports, each over head office's own registers.
           templates: [supplierInvoiceTemplate({
@@ -973,7 +976,7 @@ export function buildSurface(deps: {
             categories: async (t) => (await categoryRegisterAdapter({ store, now }).categories(t)).map(engineCategory),
             products: async (t) => productMasterAdapter({ store, now }).products(t),
             versionsOf: (t, id) => productVersionsOf(store, t, id),
-          }), ...dataInTemplates({ store, now, memberKey: loyaltyKey }) /* OB-315: suppliers, price lists, opening stock, customers, loyalty balances */],
+          }), ...dataInTemplates({ store, now, calendar: shopCalendar, memberKey: loyaltyKey }) /* OB-315: suppliers, price lists, opening stock, customers, loyalty balances */],
         }),
     // Domain data export (M30-FR-02) — your data is yours: every authorised domain exports to an open
     // CSV + JSON schema, the caller's own authority deciding allowed / branch scope / sensitive
@@ -1034,16 +1037,16 @@ export function buildSurface(deps: {
           access: tenantAccessResolver(store, ROLE_CATALOGUE),
           ...dataExportAdapter({ store, now }),
         }),
-    ...supplierPortalRoutes(store === undefined ? {
+    ...calendared(supplierPortalRoutes)(store === undefined ? {
       partner: empty(undefined), partnerForUser: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
       recordAudit: () => {}, auditEntries: empty([]), now,
-    } : withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now }), { store, now }), { store, now })), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders
+    } : withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now, calendar: shopCalendar }), { store, now }), { store, now })), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
       performance: empty({ from: '', to: '', periodDays: 0, total: { cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }, byProduct: [] }), now,
-    } : { ...inventoryAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now),
+    } : { ...inventoryAdapter({ store, now, calendar: shopCalendar }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now),
       // Verifier r18 C2-R1: once the business has registered its places (an organisation node, a store set-up, a bin),
       // stock moves only at one of them (422 unknown_location otherwise). A tenant that has registered NO place at all has
       // nothing to judge against and no store a pack could be built for (its movements stay unjudged, as before).
@@ -1057,7 +1060,7 @@ export function buildSurface(deps: {
     ...goodsReceiptRoutes(goodsReceiptDeps),
     // Deliveries booked in on the manager's screen and RELAYED through the box (SP-2b · F11 · M07-FR-01): the same GRN
     // register and atomic commit, with the receiver re-verified and the rules/cost/order read from head office's own records.
-    ...syncedGoodsReceiptRoutes(syncedGoodsReceiptDeps),
+    ...calendared(syncedGoodsReceiptRoutes)(syncedGoodsReceiptDeps),
     ...assembledGoodsReceiptRoutes(assembledGoodsReceiptDeps),
     // Back-door dock scheduling + ASN comparison (M07-FR-01) — two lorries on one door is refused, and the
     // advice note is compared against what actually arrived (a promise, not a receipt). Stateless decisions.
@@ -1086,13 +1089,13 @@ export function buildSurface(deps: {
       : { ...spacePerformanceAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), fundingReceived: displayFundingAdapter({ store, now }).fundingReceived, registeredStores: (t: string) => registeredStores({ store, now }, t) }),
     // FUL-11 (M04-FR-04 · D02-FR-06 → M23): finance records the supplier's display funding as journals and reconciles each
     // contract — agreed, received, outstanding, and what the ledger holds.
-    ...displayFundingRoutes(store === undefined ? {
-      periodStates: empty(new Map()), nextOpenPeriod: () => now().slice(0, 7), appendJournal: () => {}, now,
+    ...calendared(displayFundingRoutes)(store === undefined ? {
+      periodStates: empty(new Map()), nextOpenPeriod: () => tradingMonthIn(now()), appendJournal: () => {}, now,
       postingMap: empty(undefined), contracts: empty([]), fundingJournals: empty([]),
     } : displayFundingAdapter({ store, now })),
     // Store assortment / range management (M04-FR-01) — list/drop (stock→clearance, never a silent delete)
     // + the integrity check that stops ordering what you do not sell and selling what you do not stock.
-    ...assortmentRoutes(store === undefined
+    ...calendared(assortmentRoutes)(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
       // FUL-11: the integrity check also reads what the stock ledger recorded SELLING at the store's locations.
       : { ...assortmentAdapter({ store, now }), ...storeStockFactsAdapter({ store, now, branchOf: locationBranchesOf(store, now) }) }),
@@ -1115,16 +1118,16 @@ export function buildSurface(deps: {
     } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze, ...transferDispatchHooks({ store, now }) /* R3 A23 EWB gate */ }),
     // The floor indent chain (SP-8 · F08): request → approval → back-store issue (a transfer, dispatched) → in transit →
     // independent floor receipt → shelf availability; cancel and floor→back-store return. Rides the transfer engine.
-    ...floorIndentRoutes(floorIndentDeps),
+    ...calendared(floorIndentRoutes)(floorIndentDeps),
     // SP-8b: the floor's indent and its independent receipt RELAYED from the served Indents screen through the box.
     ...syncedFloorIndentRoutes(floorIndentDeps),
     // FUL-11: a proposal for ONE store, on head office's on-hand / on-order / in-transit / sold for it — never typed figures.
-    ...replenishmentRoutes(store === undefined ? { now } : {
-      now, ...replenishmentFactsAdapter({ store, now, branchOf: locationBranchesOf(store, now) }),
+    ...calendared(replenishmentRoutes)(store === undefined ? { now } : {
+      now, ...replenishmentFactsAdapter({ store, now, calendar: shopCalendar, branchOf: locationBranchesOf(store, now) }),
       rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
       masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
     }),
-    ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : { ...salesHistoryAdapter({ store, now }), demandCalendar: demandCalendarFor({ store, now })! /* R4 Lane 3 · D-24 */ }),
+    ...calendared(salesHistoryRoutes)(store === undefined ? { soldLines: empty([]), now } : { ...salesHistoryAdapter({ store, now }), demandCalendar: demandCalendarFor({ store, now })! /* R4 Lane 3 · D-24 */ }),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.
     ...countsRoutes(countsDeps),
@@ -1175,7 +1178,7 @@ export function buildSurface(deps: {
       queue: empty([]), record: () => {}, now,
     } : connectorDeliveryAdapter({ store, now })),
     // Managed secrets — register/rotate/revoke/review (M32-FR-03). References only, never a value.
-    ...secretsRoutes(store === undefined ? {
+    ...calendared(secretsRoutes)(store === undefined ? {
       secret: empty(undefined), all: empty([]), record: () => {}, now,
     } : { ...secretsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Org hierarchy — nodes + GST register, validate/activate/scope (M01-FR-01).
@@ -1208,6 +1211,7 @@ export function buildSurface(deps: {
         staffPurchase: staffPurchaseTillPolicyOf({ store, now }), // OB-301: the staff-purchase policy, judged by the box before its disk
         rollout: rolloutPackSection({ store }), // OB-288 P4 (R8-9 · OB-316): this store's rollout switches, read by the till offline
         floorDevices: floorDevicePackPoliciesOf({ store, now }), // OB-375 · OB-378: the kiosk's minutes and the self-checkout watch
+        calendar: shopCalendar, // R1a: the shop's zone rides the pack, so the store box dates by it
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1319,7 +1323,7 @@ export function buildSurface(deps: {
       canApproveRefund: () => Promise.resolve(false),
       catalogue: empty(new Map()), currentPackVersion: empty(1), saleHoldingReceipt: empty(undefined), isBanked: empty(false),
       recordExceptions: () => {}, bankedSale: empty(undefined), recordExchange: () => {}, now,
-    } : { ...exchangesAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...exchangesAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit }),
     ...cashRoutes(store === undefined
       ? { tillMovements: empty([]), recordCashMovement: () => {}, now }
       : { ...cashAdapter({ store, now }), tillSealKey: sealKey, recordAudit: auditTrail?.recordAudit }),
@@ -1360,19 +1364,19 @@ export function buildSurface(deps: {
     // PF-12: bank statements imported with their provenance, and the month's independent comparison behind the close.
     ...independentEvidenceRoutes(store === undefined
       ? { statements: async () => [], recordStatement: async () => {}, evidenceFor: async (_t, period) => ({ period, checks: [], unsettledTenders: [], payoutsNotInBank: [], notChecked: [] }), now }
-      : independentEvidenceAdapter({ store, now })),
+      : independentEvidenceAdapter({ store, now, calendar: shopCalendar })),
     // PF-09 step 3: the loyalty liability — what members hold against what the books carry, exactly.
     ...loyaltyLiabilityRoutes(store === undefined
       ? { outstanding: async () => ({ points: 0, pointValuePaise: 0, storeCreditMinor: 0 }), creditBalance: async () => 0, now }
       : loyaltyLiabilityAdapter({ store, now, rule: loyaltyRule })),
     // PF-09 step 3: the wallet feed the store computers pull (member codes and balances; never a phone number).
-    ...loyaltyWalletRoutes(loyaltyWallets ?? {
+    ...calendared(loyaltyWalletRoutes)(loyaltyWallets ?? {
       rule: loyaltyRule, allMembers: empty([]), pointsBalance: empty(undefined), pointsVersion: empty(0),
       storeCredit: async () => [], spendsApplied: async () => [], recordPointsSpend: async () => {}, recordCreditSpend: async () => {},
       recordSpendApplied: async () => {}, now,
     }),
     // Data-subject rights lifecycle (M20-FR-04 / DPDP) — raise/verify/fulfil/erasure-plan + overdue.
-    ...dataRightsRoutes(store === undefined
+    ...calendared(dataRightsRoutes)(store === undefined
       ? { request: empty(undefined), requests: empty([]), record: () => {}, now }
       : { ...dataRightsAdapter({ store, now }), ...privacyNomineeHooks({ store }) /* R3 C5 nominee */ }),
     // FUL-06: the signed-in customer's own privacy centre — consent and rights saved on the SAME ledgers the senders and
@@ -1420,7 +1424,7 @@ export function buildSurface(deps: {
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
-    } : storedValueAdapter({ store, now })),
+    } : { ...storedValueAdapter({ store, now }), calendar: shopCalendar }), // R1b · A12: the GST date is the shop's day
     // Coupons / personalised offers / referrals (M17-FR-02) — issue, redeem (authoritative single-use guard), read.
     ...couponRoutes(store === undefined ? {
       issue: () => {}, coupon: empty(undefined), redemptions: empty([]), recordRedemption: () => {},
@@ -1456,7 +1460,7 @@ export function buildSurface(deps: {
       ...(store === undefined ? {} : {
         unitPriceOf: async (t: string, productId: string) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.find((p) => p.productId === productId)?.unitPriceMinor,
         deliveryFeeFor: async (t: string, goodsMinor: number) => {
-          const { policy } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter({ store, now }).schedule(t), on: now().slice(0, 10) });
+          const { policy } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter({ store, now }).schedule(t), on: await shopClock(shopCalendar).today(t, now()) }); // R1c
           const fee = policy.deliveryFeeMinor ?? 0;
           return policy.freeDeliveryAboveMinor !== undefined && goodsMinor >= policy.freeDeliveryAboveMinor ? 0 : fee;
         },
@@ -1483,7 +1487,7 @@ export function buildSurface(deps: {
       : serviceabilityAdapter({ store, now })),
     ...fulfilmentRoutes(store === undefined
       ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), deliveryState: empty([]), recordDeliveryTransition: () => {}, now }
-      : { ...fulfilmentAdapter({ store, now }), ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
+      : { ...fulfilmentAdapter({ store, now, calendar: shopCalendar }), ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
     // Dispatch planning & run assignment (M19-FR-03/04) — draft today's routes (every order routed or
     // unplanned-with-a-reason, straight-line distances labelled as such), full re-plan when a driver drops
     // out, and the stored plan that finally feeds reconcileRun the order ids each run is answerable for.
@@ -1525,16 +1529,16 @@ export function buildSurface(deps: {
         permissionsOfUser: empty(undefined), stopUpdates: empty([]), recordStopUpdate: () => {}, settlement: empty(undefined), recordSettlement: () => {},
         handover: empty(undefined), recordHandover: () => {}, deliveryState: empty([]), recordDeliveryTransition: () => {}, recordAttempt: () => {}, now,
       }
-      : { ...driverRunAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, ...(afterOrderFact === undefined ? {} : { afterOrderFact }), ...fulDelDriverRunHooks({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }) }), // OB-288 fulfilment & delivery: the code and the proof location judged
+      : { ...driverRunAdapter({ store, now, calendar: shopCalendar }), recordAudit: auditTrail?.recordAudit, ...(afterOrderFact === undefined ? {} : { afterOrderFact }), ...fulDelDriverRunHooks({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }) }), // OB-288 fulfilment & delivery: the code and the proof location judged
     ...financeRoutes(store === undefined ? {
-      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
+      periodStates: empty(new Map()), nextOpenPeriod: empty(tradingMonthIn(now())),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, markReopened: () => {}, now,
-    } : { ...financeAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...finBridgeJournalHooks({ store, now }) }), // OB-288 P5: centre names checked
+    } : { ...financeAdapter({ store, now, calendar: shopCalendar }), approvals: approvalRequestsAdapter({ store, now }), ...finBridgeJournalHooks({ store, now }) }), // OB-288 P5: centre names checked
     // The day book (M23-FR-01): a trading day's synced sales + returns → balanced journals through the accountant's
     // mapping; unmapped kinds and unsplittable receipts are visible exceptions, never silently unposted (P-08).
     ...dayBookRoutes(store === undefined ? {
-      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
+      periodStates: empty(new Map()), nextOpenPeriod: empty(tradingMonthIn(now())), appendJournal: () => {}, now,
       postingMap: empty(undefined), definePostingMap: () => {}, salesOn: empty([]), returnsOn: empty([]),
       originalSales: empty(new Map()), taxRates: empty(new Map()), dayBookJournals: empty([]),
       recordException: () => {}, exceptionsOn: empty([]),
@@ -1543,13 +1547,13 @@ export function buildSurface(deps: {
     // purchase register and the finance ledger reconciled as two figures reached two different ways (QG-07).
     // The inventory-loss journal: every confirmed-lost floor-indent / transfer shortfall, posted once through the mapping.
     ...stockLossRoutes(store === undefined ? {
-      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
+      periodStates: empty(new Map()), nextOpenPeriod: empty(tradingMonthIn(now())), appendJournal: () => {}, now,
       postingMap: empty(undefined), losses: empty([]), stockLossJournals: empty([]),
-    } : stockLossAdapter({ store, now })),
+    } : { ...stockLossAdapter({ store, now }), calendar: shopCalendar }), // R1b
     ...payablesRoutes(store === undefined ? {
-      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
+      periodStates: empty(new Map()), nextOpenPeriod: empty(tradingMonthIn(now())), appendJournal: () => {}, now,
       postingMap: empty(undefined), supplierAccounts: empty([]), payablesJournals: empty([]), recordException: () => {}, exceptions: empty([]),
-    } : payablesAdapter({ store, now })),
+    } : { ...payablesAdapter({ store, now }), calendar: shopCalendar }), // R1b
     // Period-close evidence pack + control-total validation (M23-FR-04 / QG-07) — reconcile both sides of
     // every total (the ledger vs an independent second source the caller supplies) and produce the CA's
     // signable pack; a non-reconciling pack is still produced but marked not signable. Stateless reads.
@@ -1574,13 +1578,13 @@ export function buildSurface(deps: {
     // The PRODUCED domain audit trail — search / reconstruct / verify over the STORED sealed chain that
     // the running system now keeps (M34-FR-01). Reads only; gated audit.retention.read.
     ...storedAuditTrailRoutes({ records: auditTrail?.records ?? empty([]) }),
-    ...settlementRoutes(store === undefined ? {
+    ...calendared(settlementRoutes)(store === undefined ? {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),
       recordInvestigationOpened: () => {}, recordInvestigationEvidence: () => {}, recordInvestigationResolved: () => {}, now,
-    } : { ...settlementAdapter({ store, now }), ...settlementRefundsAdapter({ store }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...settlementAdapter({ store, now, calendar: shopCalendar }), ...settlementRefundsAdapter({ store, calendar: shopCalendar }), recordAudit: auditTrail?.recordAudit }),
     // C6 (v2.1): the data-processor contract register, checked against the vendors really processing personal data.
-    ...processorRegisterRoutes(store === undefined
+    ...calendared(processorRegisterRoutes)(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, activities: empty([]), now }
       : { ...processorRegisterAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // C10 (v2.1): the legacy-card-purge check — a legacy extract passes only with no card data anywhere. Reads only.
@@ -1598,7 +1602,7 @@ export function buildSurface(deps: {
     } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney }),
     // FUL-09: B2B invoices and collections reach the books, once, through the accountant's mapping.
     ...b2bPostingRoutes(store === undefined ? {
-      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
+      periodStates: empty(new Map()), nextOpenPeriod: empty(tradingMonthIn(now())), appendJournal: () => {}, now,
       postingMap: empty(undefined), postables: empty([]), b2bJournals: empty([]),
     } : b2bPostingAdapter({ store, now })),
     // FUL-10 (M16-FR-01/04): the customer's record derived from the sales and returns head office banked, every look
@@ -1659,24 +1663,24 @@ export function buildSurface(deps: {
       recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney,
       recordAudit: auditTrail?.recordAudit,
     }),
-    ...concessionRoutes(store === undefined ? {
+    ...calendared(concessionRoutes)(store === undefined ? {
       contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {},
       depositMovements: empty([]), recordDepositMovement: () => {},
       storeValuation: (_t, branchId) => ({ branchId, ownedValueMinor: 0, ownedLots: 0, excluded: [], excludedValueMinor: 0, detail: 'no store' }), now,
     } : { ...concessionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Concession docket tags (M27-FR-03): the till's line-by-line attribution lands here, append-only, and
     // reaches the period charge + settlement through the concession adapter's `sales`.
-    ...concessionTagRoutes(store === undefined ? {
+    ...calendared(concessionTagRoutes)(store === undefined ? {
       contract: empty(undefined), tags: empty([]), appendTag: () => {}, rolesOf: empty([]), contractsFor: empty([]), now,
     } : concessionTagsAdapter({ store, now })),
     // PF-13: the counters' trading feed the store computers pull, and the lines taken on a day a counter could not trade.
-    ...concessionTradingRoutes(store === undefined ? {
+    ...calendared(concessionTradingRoutes)(store === undefined ? {
       contract: empty(undefined), tags: empty([]), appendTag: () => {}, rolesOf: empty([]), contractsFor: empty([]), now,
     } : concessionTagsAdapter({ store, now })),
     ...scrapRoutes(store === undefined ? {
       scrapSales: empty([]), recordScrapSale: () => {}, recordPosted: () => {}, now,
     } : scrapAdapter({ store, now })),
-    ...facilitiesRoutes(store === undefined ? {
+    ...calendared(facilitiesRoutes)(store === undefined ? {
       schedules: empty([]), tasks: empty([]), recordSchedule: () => {}, recordTaskDue: () => {}, recordTaskCompleted: () => {}, recordTaskVerified: () => {},
       incidents: empty([]), recordIncident: () => {}, now,
     } : facilitiesAdapter({ store, now })),
@@ -1697,9 +1701,9 @@ export function buildSurface(deps: {
     // R3 lane 1 — GST returns. GSTR-3B Table 4 reads the A17 GSTR-2B / IMS reconciliation through the bridge
     // (r3-itc-bridge.ts); with no store there is nothing reconciled, so the stand-in says "not yet reconciled".
     ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), calendar: shopCalendar, ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
-    ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
-    ...r3OpsRoutes({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
-    ...r4InsightRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 3
+    ...r3TillTraceRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3OpsRoutes({ store, now, calendar: shopCalendar, numberSeries: debitNoteSeries /* R3 OB-196 */, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r4InsightRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 3
     ...r4OnlineRoutes({ store, now, signer, memberKey: loyaltyKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 2 (online store and customer app)
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
@@ -1738,7 +1742,7 @@ export function buildSurface(deps: {
     // document is issued FROM its record (PA-09): the purchase order, goods receipt, sale or account it is about is read
     // here, its number referenced (or allocated from the shop's gap-free series), its money and tax frozen with it; a
     // reprint is the same frozen bytes, numbered and audited.
-    ...documentsRoutes(store === undefined ? {
+    ...calendared(documentsRoutes)(store === undefined ? {
       versions: empty([]), recordPublish: () => {}, drafts: empty([]), recordDraft: () => {}, issued: empty(undefined), recordIssued: () => {},
       allVersions: empty([]), allIssued: empty([]), disposals: empty([]), recordDisposal: () => {}, now,
     } : {
@@ -1788,14 +1792,14 @@ export function buildSurface(deps: {
       load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, recordMismatch: () => {}, listMovementIds: () => [], now,
     } : eWayBillAdapter({ store, now })),
     // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
-    ...r3TaxPayRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3TaxPayRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
     ...lane2OfflineRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
-    ...p3ProcureRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
-    ...p2CatalogueRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
+    ...p3ProcureRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
+    ...p2CatalogueRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
     ...financeBridgeRoutes({ store, now }), // OB-288 P5
-    ...commercialDesksRoutes({ store, now }), // OB-288 commercial desks (M22 · M24 · M27)
-    ...fulfilmentDeliveryRoutes({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 fulfilment & delivery
+    ...commercialDesksRoutes({ store, now, calendar: shopCalendar }), // OB-288 commercial desks (M22 · M24 · M27)
+    ...fulfilmentDeliveryRoutes({ store, now, signer, calendar: shopCalendar, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 fulfilment & delivery
     ...customerFollowupsRoutes({ store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 customer & delivery follow-ups (OB-350 · OB-351)
     // OB-365: the till sign-in log the store computers relay — the owner's after-hours and failed-sign-in alerts read it.
     ...tillSignInLogRoutesFor({ store, now, calendar: async (t: string) => ({ timeZone: await settings.value(t, SETTINGS.STORE_TIME_ZONE), tradingDayCutoff: await settings.value(t, SETTINGS.TRADING_DAY_CUTOFF) }) }),
@@ -1825,7 +1829,7 @@ export function buildSurface(deps: {
     // HR/Workforce DURABLE certification store (M25-FR-03 follow-on) — certificates persisted alongside the
     // roster (same tenant stream), so GET …/task-gate reads a stored employee + their certificate on file and
     // runs the tested canPerformTask (the stateful counterpart to the POST what-if). Writes manage-gated.
-    ...certStoreRoutes(store === undefined ? {
+    ...calendared(certStoreRoutes)(store === undefined ? {
       putCertification: () => {}, certifications: () => [], employee: () => undefined, now,
     } : certStoreAdapter({ store, now })),
     // HR/Workforce DURABLE SOP-acknowledgement store (M25-FR-04 follow-on) — SOPs + acknowledgements persisted
@@ -1843,7 +1847,7 @@ export function buildSurface(deps: {
     // R2 addendum C18: the TN Shops and Establishments working-time pack (limits are settings; publish enforces them;
     // the attendance, leave and holiday registers). C20: the Internal Committee complaints register and annual report.
     ...(store === undefined ? [] : hrComplianceRoutes(hrComplianceAdapter({ store, now }))),
-    ...(store === undefined ? [] : poshRegisterRoutes(poshRegisterAdapter({ store, now }))),
+    ...(store === undefined ? [] : calendared(poshRegisterRoutes)(poshRegisterAdapter({ store, now }))),
     // HR/Workforce DURABLE checklist-completion store (M25-FR-02 follow-on) — a submitted opening/closing/handover
     // checklist persisted alongside the roster (same tenant stream), so GET …/checklists[/:id/status] reads the
     // STORED checklist and runs the tested assessChecklist (the stateful counterpart to the POST /checklist-assess
@@ -1901,8 +1905,8 @@ export function buildSurface(deps: {
     // One-up/one-down lot traceability export (B11 / M10-FR-03) — the reconciled supplier→store→recipient
     // trace a recall runs on. The OUTBOUND (who bought it) folds the real banked sales by batch (batch-on-sale
     // inc3a); inbound receipts stay caller-supplied for now.
-    ...lotTraceRoutes(store === undefined ? { soldOfBatch: () => [] } : lotTraceAdapter({ store })),
-    ...nearExpiryRoutes(store === undefined ? { nearExpiry: () => [], now } : { ...nearExpiryAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
+    ...lotTraceRoutes(store === undefined ? { soldOfBatch: () => [] } : lotTraceAdapter({ store, calendar: shopCalendar })),
+    ...calendared(nearExpiryRoutes)(store === undefined ? { nearExpiry: () => [], now } : { ...nearExpiryAdapter({ store, now, calendar: shopCalendar }), locationBranches: locationBranchesOf(store, now) }),
     // Recall lifecycle (M10-FR-04) — durable cloud recall record: initiate + close-with-evidence + read.
     ...recallRoutes(store === undefined
       ? { registry: () => new RecallRegistry(), records: empty([]), recordInitiated: () => {}, recordClosed: () => {}, now }
@@ -1919,11 +1923,11 @@ export function buildSurface(deps: {
       ? { blocks: empty([]), currentPack: empty(undefined) }
       : saleBlocksAdapter({ store, now })),
     // Compliance obligation register (M34-FR-03; subsumes B7 scale-cert + B10 FSSAI-licence alerts).
-    ...complianceRoutes(store === undefined ? {
+    ...calendared(complianceRoutes)(store === undefined ? {
       obligations: empty([]), recordRegister: () => {}, now,
     } : complianceAdapter({ store, now })),
     // Risk register & quality-gate blocking (M34-FR-04) — an open critical risk blocks its QG until accepted.
-    ...riskRegisterRoutes(store === undefined
+    ...calendared(riskRegisterRoutes)(store === undefined
       ? {
           risk: empty(undefined), risks: empty([]), recordRisk: () => {},
           controls: empty([]), saveControl: () => {}, incidents: empty([]), saveIncident: () => {},
@@ -2014,7 +2018,7 @@ export function buildSurface(deps: {
       cancel: async () => { throw new Error('subscription billing requires the cloud store'); },
       handleWebhook: async () => { throw new Error('subscription billing requires the cloud store'); },
       now,
-    } : billingAdapter({ store, now, provider: new SandboxRecurringBillingProvider(), plans: PROPOSED_PLANS })),
+    } : billingAdapter({ store, now, calendar: shopCalendar, provider: new SandboxRecurringBillingProvider(), plans: PROPOSED_PLANS })),
     // Config version history + rollback (M33-FR-01 / M01-FR-03) — view a setting's full audited history and
     // restore a prior version (as a new append-only version). Shares the settings store, so setup answers and
     // their rollbacks are one history.
@@ -2086,7 +2090,7 @@ export function buildSurface(deps: {
     // partner credential scoped to the tenants that engaged it, and the access-check decides a partner call
     // against the STORED credential (sandbox-in-production, out-of-scope tenant, revoked/expired, unversioned
     // all refused). Append-only; the security principal is authoritative from the ledger, never the body.
-    ...partnerRoutes(store === undefined
+    ...calendared(partnerRoutes)(store === undefined
       ? { credential: () => undefined, recordCredential: () => {}, certification: () => undefined, recordCertification: () => {}, sandbox: () => undefined, recordSandbox: () => {}, now }
       : partnerAdapter({ store, now })),
     // Durable background-job registry (M33-FR-01) — an admin schedules jobs, a runner reports each run's
@@ -2107,7 +2111,7 @@ export function buildSurface(deps: {
       : statusCentreAdapter({ store, now })),
     // Licence/entitlement expiry + alerting (M33-FR-04) — a time-bound licence has a named owner and, once it
     // is close to (or past) its expiry, keeps alerting that owner until it is renewed; also feeds the status centre.
-    ...licenceRoutes(store === undefined
+    ...calendared(licenceRoutes)(store === undefined
       ? { licences: () => [], recordLicence: () => {}, now }
       : licencesAdapter({ store, now })),
     // Platform service management (M33-FR-04) — an internal service-request tracker for the platform itself
@@ -2134,6 +2138,7 @@ export function buildSurface(deps: {
       recordExtractionRun: () => {}, recordFinding: () => {}, recordSignature: () => {}, now,
     } : {
       ...migrationAdapter({ store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID }),
+      calendar: shopCalendar, // R1b: a legacy sale change is dated to the shop's trading day
       recordAudit: auditTrail?.recordAudit,
       // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
       tillSealKey: sealKey,
@@ -2197,14 +2202,14 @@ export function buildSurface(deps: {
   ];
   lane2RecallSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(deps.notificationTransport === undefined ? {} : { messageTransport: deps.notificationTransport }) }); // Lane 2 · P1 recall and trace (M10-FR-03/04)
   recallWithdrawSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-3 · OB-383 a recall started by mistake is withdrawn (WF-09)
-  p1IdentitySurface(surface, { store, now, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
+  p1IdentitySurface(surface, { store, now, calendar: shopCalendar, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
   followupsSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 integration follow-ups (the seams between the five lanes)
   aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
   customerCommerceSurface(surface, { store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }); // OB-288 wave 3 (M16-FR-04 · M17-FR-01/02 · M18-FR-04 · M20 · M21-FR-01/02 · WF-13 · D08 · OB-295/303/311/314/322/329)
   tillBillSurface(surface, { store, now }); // Till bill and GST (audit-1 P5 · audit-2 P3)
-  lpWorkforceSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 LP, workforce, facilities and adoption (M15-FR-02/03 · M25 · M26 · M28-FR-01 · QG-09 · D11 · OB-301/317/320/323)
+  lpWorkforceSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 LP, workforce, facilities and adoption (M15-FR-02/03 · M25 · M26 · M28-FR-01 · QG-09 · D11 · OB-301/317/320/323)
   ownerReportingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 4 · P2 (M29-FR-01/03/04 · M28-FR-04 · D13)
-  saasRolloutSurface(surface, { store, now, plans: PROPOSED_PLANS, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P4 (M36-FR-01/03 · D12-FR-05/06 · R8-2 · R8-9 · C8 · C9 · OB-316/321/324)
+  saasRolloutSurface(surface, { store, now, calendar: shopCalendar, plans: PROPOSED_PLANS, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P4 (M36-FR-01/03 · D12-FR-05/06 · R8-2 · R8-9 · C8 · C9 · OB-316/321/324)
   floorDevicesSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
   fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists

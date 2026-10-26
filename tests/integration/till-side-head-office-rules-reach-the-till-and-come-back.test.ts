@@ -6,6 +6,7 @@ import { SETUP_ASKER } from '../support/owner-approved-setting';
 import { storeRules } from '../support/store-rules';
 import { STREAM, customerAdapter, ordersAdapter } from '../../services/api/src/adapters';
 import type { SignedPack } from '../../services/catalogue/src/pack';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **OB-288 till-side completion — head office's half, through the real routes, on the in-memory store and (with
@@ -24,7 +25,7 @@ import type { SignedPack } from '../../services/catalogue/src/pack';
  */
 
 const backings = useRestartableBackings();
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = shopDateIn(new Date().toISOString());
 const AT = new Date().toISOString();
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
 const SETTINGS = { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: 'S1' };

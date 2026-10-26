@@ -230,6 +230,7 @@ export function briefsDue(input: {
   const [dueHour, dueMinute] = input.schedule.dueAt;
   const nowHour = Number.parseInt(input.now.slice(11, 13), 10);
   const nowMinute = Number.parseInt(input.now.slice(14, 16), 10);
+  // `now` is the SHOP's wall clock (the callers pass it as "<shop date>T<shop hh:mm>:00Z") — its date is the shop's today.
   const today = input.now.slice(0, 10);
   const due: DueBrief[] = [];
 

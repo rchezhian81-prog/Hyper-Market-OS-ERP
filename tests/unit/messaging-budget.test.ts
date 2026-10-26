@@ -16,8 +16,10 @@ describe('the messaging budget', () => {
     expect(budgetDecision({ budget: B, spentMinor: 60, channel: 'sms' })).toEqual({ ok: true, costMinor: 40 });
     expect(budgetDecision({ budget: B, spentMinor: 61, channel: 'sms' })).toMatchObject({ ok: false, reason: 'over_budget' });
   });
-  it('the period is the calendar month', () => {
-    expect(budgetPeriodOf('2026-10-31T23:59:59.000Z')).toBe('2026-10');
-    expect(budgetPeriodOf('2026-11-01T00:00:00.000Z')).toBe('2026-11');
+  it('the period is the calendar month in the shop zone (R1b: it turns over at the shop midnight, not 05:30 IST)', () => {
+    expect(budgetPeriodOf('2026-10-31T18:29:59.000Z')).toBe('2026-10');
+    expect(budgetPeriodOf('2026-10-31T18:30:00.000Z')).toBe('2026-11'); // 00:00 IST on 1 Nov
+    expect(budgetPeriodOf('2026-10-31T23:59:59.000Z')).toBe('2026-11');
+    expect(budgetPeriodOf('2026-10-31T23:59:59.000Z', 'UTC')).toBe('2026-10');
   });
 });

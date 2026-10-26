@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { backingsFor, headOffice } from '../support/till-bill-world';
 import { giftCardTimeOfSupplyAtIssue, giftCardTimeOfSupplyAtRedemption } from '../../services/customer/src/stored-value';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **A12 (2) — a gift voucher's issue and redemption record their time of supply through the tested `voucherTimeOfSupply`
@@ -30,7 +31,7 @@ describe('A12 — the time of supply rules, as recorded', () => {
 describe.each(backings)('A12 — a gift card records its time of supply at issue and redemption — on $name', (backing) => {
   it('issue → pending (redemption basis); redeem → that day; identified → issue day; store credit → none; an accountant 403; bad flag 400; read after a cold restart', async () => {
     const ho = await headOffice(backing, [{ userId: 'u-anita', role: 'accountant' }]);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     expect((await ho.call('POST', '/v1/stored-value/instruments', 'u-anita', { instrumentId: 'GC-X', kind: 'gift_card', ownerRef: 'c1', faceValueMinor: 50_000 })).status).toBe(403);
     expect((await ho.call('POST', '/v1/stored-value/instruments', 'u-owner', { instrumentId: 'GC-BAD', kind: 'gift_card', ownerRef: 'c1', faceValueMinor: 50_000, supplyIdentifiableAtIssue: 'yes' })).status).toBe(400);
     const card = await ho.ok('POST', '/v1/stored-value/instruments', 'u-owner', { instrumentId: 'GC-1', kind: 'gift_card', ownerRef: 'c1', faceValueMinor: 50_000 });

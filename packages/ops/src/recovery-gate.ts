@@ -21,6 +21,7 @@
 // register (QG-12). Pure, no I/O: the moment it is read at is passed in.
 
 import type { RecoveryTarget, DrillResult } from './backup';
+import { shopDateIn } from '../../calendar/src/shop-clock';
 
 export type RehearsalKind = 'backup_restore' | 'store_recovery' | 'rollback' | 'incident_escalation';
 export const REHEARSAL_KINDS: readonly RehearsalKind[] = Object.freeze(['backup_restore', 'store_recovery', 'rollback', 'incident_escalation']);
@@ -102,7 +103,7 @@ export function recoveryGateReading(drills: readonly RehearsalRecord[], asAt: st
     return {
       kind, words: REHEARSAL_WORDS[kind], state: expired ? 'expired' : 'passed', passExpiresAt: expiresAt,
       drillId: d.drillId, drilledAt: d.drilledAt, drilledBy: d.drilledBy,
-      detail: expired ? `not proven — it passed on ${d.drilledAt.slice(0, 10)}, and a pass counts for one quarter (it ran out on ${expiresAt.slice(0, 10)}); rehearse it again` : d.result.detail,
+      detail: expired ? `not proven — it passed on ${shopDateIn(d.drilledAt)}, and a pass counts for one quarter (it ran out on ${shopDateIn(expiresAt)}); rehearse it again` : d.result.detail,
     };
   });
   const notPassed = rehearsals.filter((r) => r.state !== 'passed');

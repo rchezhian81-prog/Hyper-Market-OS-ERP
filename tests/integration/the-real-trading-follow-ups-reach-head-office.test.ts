@@ -20,6 +20,8 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { STREAM } from '../../services/api/src/adapters';
 import { prepareTillBox, signInTill, pinOf } from '../support/till-operator';
 import { ownerApprovedSetting } from '../support/owner-approved-setting';
+import { InMemoryConfigVersionStore, SqlConfigVersionStore } from '../../packages/persistence/src/config-store';
+import { DurableTenantSettings } from '../../packages/tenant/src/durable-settings';
 
 /**
  * **OB-271 follow-ups — real trading (switched OFF during the mirror pilot, OB-248), from head office's catalogue through a
@@ -51,10 +53,11 @@ beforeAll(async () => {
 afterAll(async () => { await pool?.end(); });
 
 const backings: { name: string; harness: () => ApiHarness; restart: (h: ApiHarness) => ApiHarness }[] = [
-  { name: 'the in-memory event store', harness: () => apiHarness(), restart: (h) => apiHarness({ store: h.store }) },
+  // The owner's settings survive a cold restart (as they do in production): the shop's time zone is one of them (R1).
+  ((settings: DurableTenantSettings) => ({ name: 'the in-memory event store', harness: () => apiHarness({ settings }), restart: (h: ApiHarness) => apiHarness({ store: h.store, settings }) }))(new DurableTenantSettings(new InMemoryConfigVersionStore())),
 ];
 if (DATABASE_URL !== undefined) {
-  const onPg = (): ApiHarness => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); };
+  const onPg = (): ApiHarness => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql), settings: new DurableTenantSettings(new SqlConfigVersionStore(sql)) }); };
   backings.push({ name: 'real PostgreSQL, head office restarted cold', harness: onPg, restart: () => onPg() });
 }
 
@@ -119,7 +122,7 @@ describe.each(backings)('OB-271 follow-ups — HSN from the pack file, the card 
     h = restart(h); // ── head office COLD ────────────────────────────────────────────────────────────────────────────
     const storePack = await h.request({ method: 'GET', path: `/v1/store-packs/${STORE}`, userId: 'u-box', tenantId: T, branchId: STORE });
     expect(storePack.status, JSON.stringify(storePack.body)).toBe(200);
-    const sections = (storePack.body as { sections: { products: Record<string, unknown>[]; policies: { taxInvoice?: unknown } } }).sections;
+    const sections = (storePack.body as { sections: { products: Record<string, unknown>[]; policies: { timeZone: 'UTC', taxInvoice?: unknown } } }).sections;
     // OB-271 · A1: the store pack's products carry the HSN head office published.
     expect(sections.products.map((p) => [p['productId'], p['hsnCode']])).toEqual(expect.arrayContaining([[DAL.productId, DAL.hsn], [SUGAR.productId, SUGAR.hsn]]));
     expect(sections.policies.taxInvoice).toEqual({ legalName: LEGAL, gstin: GSTIN, placeOfBusiness: ADDRESS });
@@ -141,7 +144,7 @@ describe.each(backings)('OB-271 follow-ups — HSN from the pack file, the card 
     const dir = await mkdtemp(join(tmpdir(), 'sre-real-trading-follow-ups-'));
     dirs.push(dir);
     const PACK = {
-      policies: { storeId: STORE, branchId: STORE, branchName: 'Main', tradingDayCutoff: '00:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1', taxInvoice: sections.policies.taxInvoice },
+      policies: { timeZone: 'UTC', storeId: STORE, branchId: STORE, branchName: 'Main', tradingDayCutoff: '00:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1', taxInvoice: sections.policies.taxInvoice },
       servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 1_000_000, noReceiptCapMinor: 0, agentAuthorityMinor: 0, compensationCapMinor: 0 },
       lossPreventionRules: [],
       products: [
@@ -247,7 +250,7 @@ describe.each(backings)('OB-271 follow-ups — HSN from the pack file, the card 
     }), 'the machine\'s slip');
     h = restart(h); // ── head office COLD again ──────────────────────────────────────────────────────────────────────
     const review = await ok(call('GET', '/v1/settlement/review', 'u-acct', undefined, { date: today, cycleDays: '0' }), 'review') as { matchedCount: number; matchedRefundCount: number; exceptions: { finding: string; ref: string; valueMinor: number }[] };
-    expect(review.matchedCount).toBe(1);
+    expect(review.matchedCount, JSON.stringify(review)).toBe(1);
     expect(review.matchedRefundCount).toBe(1);
     // The payment with no line on the slip is NOT silently matched — it is an exception by its approval number (P-08).
     expect(review.exceptions.map((e) => [e.ref, e.valueMinor])).toEqual([['Z9Y8X7', 10_500]]);

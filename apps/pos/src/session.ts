@@ -50,6 +50,11 @@ export interface PosSessionConfig {
   readonly tradingDay?: string;
   /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02), from the store pack. Absent = midnight. */
   readonly tradingDayCutoff?: string;
+  /**
+   * R1 (M01-FR-02): the shop's IANA time zone, from the store pack through the box. The till dates by it, not by the zone
+   * the device happens to be set to. Absent (a page from an older box): this device's own wall clock, as before.
+   */
+  readonly timeZone?: string;
   readonly currency: CurrencyCode;
   /** Default tax rate EXTRACTED from the inclusive price when a line doesn't carry its own (per-tenant config). */
   readonly defaultTaxRate: Rate;
@@ -934,7 +939,7 @@ export class PosSession {
    * clock cannot be read; the scan then cannot judge the date and does not guess.
    */
   laneToday(): string | undefined {
-    try { return tradingDateOf(this.nowIso(), makeTradingDayRule('00:00')); } catch { return undefined; }
+    try { return tradingDateOf(this.nowIso(), makeTradingDayRule('00:00'), this.config.timeZone); } catch { return undefined; }
   }
 
   /** The lane's own clock now, as ISO UTC (the fixed instant `setNow` gave, else the lane's clock, else the machine's). */
@@ -949,7 +954,7 @@ export class PosSession {
    */
   private gateContext(atIsoUtc: string, exceptLineId?: string): TillGateContext {
     let today: string | undefined;
-    try { today = tradingDateOf(atIsoUtc, makeTradingDayRule('00:00')); } catch { today = undefined; }
+    try { today = tradingDateOf(atIsoUtc, makeTradingDayRule('00:00'), this.config.timeZone); } catch { today = undefined; }
     const sold = new Set<string>([...(this.config.soldHuids?.() ?? []), ...this.huidsSoldHere]);
     for (const l of this.activeLines()) {
       if (l.lineId === exceptLineId) continue;
@@ -1139,7 +1144,7 @@ export class PosSession {
    * sale to the new day rather than the one the page was opened on (F09).
    */
   tradingDayFor(atIsoUtc: string): string {
-    return this.config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(this.config.tradingDayCutoff ?? '00:00'));
+    return this.config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(this.config.tradingDayCutoff ?? '00:00'), this.config.timeZone);
   }
 
   setNow(atIsoUtc: string): void {

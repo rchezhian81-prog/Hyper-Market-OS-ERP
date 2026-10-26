@@ -8,8 +8,8 @@ import { approveSupplierWith, SUPPLIER_MAKER, SUPPLIER_CHECKER } from '../suppor
 
 /**
  * FG-4 · A12 (1) · OB-386 — a free sample, in a real browser, on the PRODUCTION API over real PostgreSQL. A store manager
- * gives two rice as a tasting on the write-off capture screen; the screen shows head office's sentence (CGST ₹2.50 + SGST
- * ₹2.50 given back, in this month's return). The accountant opens the Input tax credit page for the month, sees it "not
+ * gives two rice as a tasting on the write-off capture screen; it waits (OB-393) until ANOTHER store manager approves it
+ * on the same screen, which then shows head office's sentence (CGST ₹2.50 + SGST ₹2.50 given back, in this month's return). The accountant opens the Input tax credit page for the month, sees it "not
  * checked yet", and agrees it with a note. Tamil twin; icons beside the words. Needs DATABASE_URL and Chromium; else it
  * SKIPS. Text is read only after the expected words appear.
  */
@@ -64,9 +64,24 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a free sam
       expect(await page.locator('#fs-save svg').count()).toBe(1);
       await page.fill('#fs-product', 'p-rice'); await page.fill('#fs-location', 'br-1'); await page.fill('#fs-qty', '2'); await page.fill('#fs-note', 'tasting at the counter (synthetic)');
       await page.click('#fs-save');
-      await waitText(page, '#fs-result', 'Recorded');
-      expect(await page.textContent('#fs-result')).toMatch(/CGST ₹2\.50, SGST ₹2\.50/);
+      await waitText(page, '#fs-result', 'Recorded and waiting');
     } finally { await staff.close(); }
+
+    // OB-393: another store manager approves it — only then does the stock leave and the give-back get placed.
+    const approver = await browser.newContext();
+    try {
+      await shop.signIn(approver, SUPPLIER_MAKER);
+      const page = await approver.newPage();
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(`${shop.base}/write-off-capture`, { waitUntil: 'load' });
+      await page.locator('#fsp:not([hidden])').waitFor({ timeout: 15_000 });
+      await page.click('#fsp-load');
+      await waitText(page, '#fsp-rows', 'given by u-recv');
+      await page.fill('#fsp-rows input.decision-reason', 'seen at the counter (synthetic)');
+      await page.click('#fsp-rows button[data-act="approve"]');
+      await waitText(page, '#fsp-said', 'Approved');
+      expect(await page.textContent('#fsp-said')).toMatch(/CGST ₹2\.50, SGST ₹2\.50/);
+    } finally { await approver.close(); }
 
     const acct = await browser.newContext();
     try {

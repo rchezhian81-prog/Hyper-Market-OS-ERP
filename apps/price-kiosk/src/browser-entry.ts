@@ -7,7 +7,7 @@ import { createPriceKiosk, type PriceKiosk } from './price-kiosk';
 
 interface KioskWindow {
   posCatalogue?: CatalogueSnapshot;
-  priceKiosk?: { readonly staleAfterMinutes?: unknown };
+  priceKiosk?: { readonly staleAfterMinutes?: unknown; readonly timeZone?: unknown };
   kiosk?: PriceKiosk;
 }
 
@@ -18,5 +18,7 @@ if (w !== undefined) {
     ...(w.posCatalogue === undefined ? {} : { catalogue: w.posCatalogue }),
     staleAfterMinutes: typeof set === 'number' && Number.isSafeInteger(set) && set > 0 ? set : null,
     now: () => new Date().toISOString(),
+    // R1c: the shop's zone, as the store computer serves it from its pack.
+    ...(typeof w.priceKiosk?.timeZone === 'string' && w.priceKiosk.timeZone !== '' ? { timeZone: w.priceKiosk.timeZone } : {}),
   });
 }

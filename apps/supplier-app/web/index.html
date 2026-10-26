@@ -55,7 +55,9 @@
       .du-form { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); align-items:end; }
       .du-form label { display:grid; gap:4px; font-size:14px; color:var(--muted); }
       .du-form select, .du-form input { min-height:44px; font-size:16px; border-radius:10px; border:1px solid var(--line); padding:0 10px; background:var(--bg); color:var(--ink); }
-      #du-send { display:inline-flex; align-items:center; gap:8px; justify-content:center; }
+      #du-send, #vmi-send { display:inline-flex; align-items:center; gap:8px; justify-content:center; min-height:44px; }
+      .vmi-qty { display:grid; gap:4px; font-size:14px; color:var(--muted); max-width:220px; }
+      .vmi-qty input { min-height:44px; font-size:16px; border-radius:10px; border:1px solid var(--line); padding:0 10px; background:var(--bg); color:var(--ink); }
       .status-line { margin:0; font-weight:600; font-size:15px; } .status-line.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
     </style>
@@ -101,6 +103,22 @@
           <button id="du-send" type="button"><span id="du-send-text"></span></button>
         </div>
         <p class="status-line" id="du-result" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="delivery" id="vmi" hidden aria-labelledby="vmi-h">
+        <!-- OB-389: the SECOND and last form on this screen — a top-up proposal for the supplier's own VMI items at one store. -->
+        <h3 id="vmi-h"></h3>
+        <p class="muted" id="vmi-lead"></p>
+        <p class="muted" id="vmi-said" hidden></p>
+        <div class="du-form" id="vmi-form" hidden>
+          <label for="vmi-store"><span id="vmi-store-l"></span><select id="vmi-store"></select></label>
+          <label for="vmi-note"><span id="vmi-note-l"></span><input id="vmi-note" maxlength="300" autocomplete="off" /></label>
+        </div>
+        <ul class="rows" id="vmi-items" aria-label="Your stocked items at this store"></ul>
+        <button id="vmi-send" type="button" hidden><span id="vmi-send-text"></span></button>
+        <p class="status-line" id="vmi-result" role="status" aria-live="polite"></p>
+        <h4 id="vmi-proposals-h" hidden></h4>
+        <ul class="rows" id="vmi-proposals" aria-label="Your top-up proposals"></ul>
       </section>
 
       <h3 id="statement-heading"></h3>

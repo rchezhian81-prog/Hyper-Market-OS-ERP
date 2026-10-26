@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createStoreComputersSession, STORE_COMPUTERS_COPY, wordsFor, outcomeWords, summarise, requestWords, orderedBindings, findingKindWords, unusedNumbersWords, acknowledgeable,
+  createStoreComputersSession, STORE_COMPUTERS_COPY, wordsFor, outcomeWords, summarise, requestWords, orderedBindings, findingKindWords, unusedNumbersWords, acknowledgeable, zoneWords,
   type Board, type Finding, type ReplacementRequest,
 } from '../../apps/web-erp/src/store-computers-session';
 import { APPROVAL_KINDS } from '../../services/identity/src/approval-requests';
@@ -156,13 +156,38 @@ describe('the store computers session', () => {
     expect(requestWords('ta', { ...REQ, status: 'used' })).toBe(STORE_COMPUTERS_COPY.ta.stUsed);
     expect(findingKindWords('en', { storeId: 'S1', kind: 'at_risk_not_checked', prefix: 'P', since: 'x', detail: 'd' })).toBe('Numbers not checked');
     expect(wordsFor('en', 'sent', { prefix: 'S1L1-', to: 'u-box-new' })).toBe('Moved — head office now takes S1L1-\'s bill numbers from u-box-new.');
-    expect(summarise(null)).toEqual({ bindings: null, replaced: null, needs: null, waiting: null, unused: null });
+    expect(summarise(null)).toEqual({ bindings: null, replaced: null, needs: null, waiting: null, unused: null, zones: null });
     expect(summarise({
       bindings: orderedBindings([{ storeId: 'S1', prefix: 'A', computer: 'x', since: 's', via: 'replacement' }, { storeId: 'S1', prefix: 'B', computer: 'y', since: 's', via: 'first_report' }]),
       unused: [{ storeId: 'S1', prefix: 'A', day: '2026-10-13', count: 3, ranges: [[1, 3]], moreRanges: 0 }],
+      zones: [
+        { storeId: 'S1', computer: 'u-box', verdict: 'differs', machineTimeZone: 'UTC', shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'store_pack', lastReportAt: 'x', stale: false },
+        { storeId: 'S2', computer: 'u-b2', verdict: 'in_step', machineTimeZone: 'Asia/Kolkata', shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'store_pack', lastReportAt: 'x', stale: false },
+      ],
       replacements: [], findings: [{ storeId: 'S1', kind: 'report_refused', prefix: 'A', since: 's', detail: 'd' }],
       requests: [REQ, { ...REQ, status: 'waiting' }, { ...REQ, status: 'used' }], you: { mayReplace: true, mayAcknowledge: true },
-    })).toEqual({ bindings: 2, replaced: 1, needs: 1, waiting: 2, unused: 3 });
+    })).toEqual({ bindings: 2, replaced: 1, needs: 1, waiting: 2, unused: 3, zones: 1 });
+  });
+
+  it('R3 · P-08: each store computer\'s time zone is read from head office\'s health, wrong ones first, and said in words', async () => {
+    const ho = fakeHeadOffice((s) => ({
+      status: 200,
+      body: s.path === BINDINGS_PATH ? { bindings: [], replacements: [], you: { mayReplace: false, mayAcknowledge: false } }
+        : s.path === '/v1/platform/operational-health/observed'
+        ? { observed: { boxes: [
+          { storeId: 'S2', computer: 'u-b2', lastReportAt: '2026-10-26T05:00:00.000Z', stale: false, zoneCheck: { verdict: 'in_step', shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'store_pack', machineTimeZone: 'Asia/Kolkata' } },
+          { storeId: 'S1', computer: 'u-box', lastReportAt: '2026-10-26T05:00:00.000Z', stale: true, zoneCheck: { verdict: 'differs', shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'shop_default', machineTimeZone: 'UTC' } },
+          { storeId: 'S3', zoneCheck: null }, { storeId: 'S4' }, { storeId: 'S5', zoneCheck: { verdict: 'maybe' } },
+        ] } }
+        : { mine: [] },
+    }));
+    const out = await createStoreComputersSession({ viewer: HO, fetch: ho.fetch, ...keys }).load();
+    const zones = (out as { value: Board }).value.zones;
+    expect(zones.map((z) => [z.storeId, z.verdict, z.machineTimeZone, z.shopTimeZoneFrom, z.stale])).toEqual([['S1', 'differs', 'UTC', 'shop_default', true], ['S2', 'in_step', 'Asia/Kolkata', 'store_pack', false]]);
+    expect(zoneWords('en', zones[0]!)).toBe('NOT the shop\'s zone — ask IT to set it to Asia/Kolkata. Bills are still dated by the shop\'s zone. Old news: this store computer has not reported since 2026-10-26 05:00.');
+    expect(zoneWords('en', zones[1]!)).toBe('Keeps the shop\'s zone.');
+    expect(zoneWords('ta', zones[0]!)).toMatch(/[஀-௿]/);
+    expect(ho.sent.every((x) => x.method === 'GET')).toBe(true);
   });
 
   it('every English word has a Tamil twin in Tamil script; the page\'s paths and kind are head office\'s own', () => {

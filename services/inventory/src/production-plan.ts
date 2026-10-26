@@ -17,6 +17,7 @@ import type { Recipe } from '../../../packages/production/src/recipe';
 import type { OutboundLotRecord } from '../../../packages/quality/src/lot-trace';
 import { assertLocationInScope } from './location-scope';
 import type { RunInputBatch } from './production';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface ProductionTraceRun {
   readonly runId: string;
@@ -32,6 +33,8 @@ export interface ProductionTraceRun {
 }
 
 export interface ProductionPlanDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly now: () => string;
   readonly recipes: (tenantId: string) => Promise<readonly Recipe[]>;
   readonly enabledDepartments: (tenantId: string) => Promise<readonly string[]>;
@@ -61,7 +64,7 @@ export function productionPlanRoutes(deps: ProductionPlanDeps): readonly Route[]
       permission: 'production.read',
       handler: async (ctx) => {
         const locationId = (ctx.query['locationId'] ?? '').trim();
-        const forDay = ctx.query['forDay'] ?? addDays(deps.now().slice(0, 10), 1);
+        const forDay = ctx.query['forDay'] ?? addDays(await shopToday(deps, ctx.tenantId), 1);
         if (locationId === '' || !DAY.test(forDay)) {
           throw apiError(400, { code: 'not_readable_as_a_plan_query', whatHappened: 'A production plan needs ?locationId= (the kitchen or bakery) and optionally ?forDay=YYYY-MM-DD (default tomorrow).', wasItSaved: 'not_saved', nextSafeAction: 'Correct the query. Nothing was changed; this only reads.' });
         }

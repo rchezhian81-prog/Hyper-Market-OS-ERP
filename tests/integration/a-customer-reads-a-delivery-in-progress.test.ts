@@ -11,6 +11,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { testModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { trackDelivery } from '../../packages/storefront/src/checkout';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **WF-15 (delivery: assign → hand-over → TRACK → proof → settlement) · M19-FR-03 · M20-FR-03 — the customer reads their
@@ -62,7 +63,7 @@ describe.each(backings)('WF-15 — the customer reads their delivery in progress
     const call = (method: 'GET' | 'POST' | 'PUT', path: string, user: string, body?: unknown, query?: Record<string, string>) =>
       h.request({ method, path, userId: user, tenantId: T, ...(method === 'GET' ? {} : { idempotencyKey: `${user}-${path}-${JSON.stringify(body ?? {})}`, body: body ?? {} }), ...(query === undefined ? {} : { query }) });
     const ok = async (p: Promise<{ status: number; body: unknown }>, label: string) => { const r = await p; expect(r.status, `${label}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: new Date().toISOString(), enteredBy: 'u-owner', unitCostMinor: 40_00 }), 'stock');
     await ok(call('POST', '/v1/catalogue/tax-classes/0401/rates/2017-07-01', 'u-owner', { rateBps: 0 }), 'tax');
     await ok(call('POST', '/v1/catalogue/products/MILK/publish', 'u-owner', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', handling: 'ambient', ...onlineReady(70_00) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }), 'publish');

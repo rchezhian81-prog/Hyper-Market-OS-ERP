@@ -14,6 +14,7 @@ import {
   type MaintenanceSchedule, type ScheduledTask, type ScheduleCategory, type ScheduleFrequency,
   type SafetyIncident, type IncidentKind, type IncidentSeverity,
 } from '../../../packages/facilities/src/index';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../../packages/facilities/src/index';
 
@@ -26,6 +27,8 @@ const isDateTime = (s: unknown): s is string => typeof s === 'string' && s.trim(
 const isStr = (s: unknown): s is string => typeof s === 'string' && s.trim() !== '';
 
 export interface FacilitiesDeps {
+  /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
+  readonly calendar?: ShopCalendarOf;
   readonly schedules: (tenantId: string) => Promise<readonly MaintenanceSchedule[]> | readonly MaintenanceSchedule[];
   readonly tasks: (tenantId: string) => Promise<readonly ScheduledTask[]> | readonly ScheduledTask[];
   readonly recordSchedule: (tenantId: string, schedule: MaintenanceSchedule) => Promise<void> | void;
@@ -116,7 +119,7 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         const task: ScheduledTask = {
           taskId, scheduleId: due.scheduleId, dueOn: due.dueOn,
           completedBy: ctx.userId,
-          completedOn: isDate((b['completedOn'] as string ?? '').slice(0, 10)) ? (b['completedOn'] as string).slice(0, 10) : deps.now().slice(0, 10),
+          completedOn: isDate((b['completedOn'] as string ?? '').slice(0, 10)) ? (b['completedOn'] as string).slice(0, 10) : await shopToday(deps, ctx.tenantId),
           ...(Array.isArray(b['evidenceRefs']) ? { evidenceRefs: (b['evidenceRefs'] as unknown[]).filter((r): r is string => typeof r === 'string') } : {}),
           ...(typeof b['note'] === 'string' ? { note: b['note'] } : {}),
         };

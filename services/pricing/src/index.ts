@@ -16,6 +16,7 @@ import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/cont
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface PriceChangeRecord {
   readonly id: string;
@@ -30,6 +31,8 @@ export interface PriceChangeRecord {
 }
 
 export interface PricingDeps {
+  /** R1b (M01-FR-02): the shop's calendar — a price change is effective from the shop's today, never the UTC date. */
+  readonly calendar?: ShopCalendarOf;
   /**
    * Persist an allowed price change as an append-only event — and (SF-01) make it the OPERATIVE price: a store-scope
    * price-list entry, effective from today, for each of `storeIds`, in the SAME append. The catalogue pack each store's
@@ -198,7 +201,7 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
         return {
           status: 201,
           body: {
-            productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy, operativeAt: storeIds, effectiveFrom: record.at.slice(0, 10),
+            productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy, operativeAt: storeIds, effectiveFrom: await shopClock(deps.calendar).dateOf(ctx.tenantId, record.at),
             // Which floor it was judged by — the store's, said, with the figure the request sent beside it when it sent one.
             marginFloor: deps.marginFloorFor === undefined
               ? { appliedBps: marginFloorBps, source: 'request' }

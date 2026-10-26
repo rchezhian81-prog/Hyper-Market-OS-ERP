@@ -28,6 +28,7 @@ import { demandEventRoutes, type DemandEventsDeps, type DemandCalendarPort } fro
 import { WEATHER_FEED_SWITCHED_OFF, type DemandEvent, type WeatherFeedPort } from '../../../packages/calendar/src/demand-events';
 import type { OfferMember, MemberPurchaseLine, OfferPricing } from '../../../packages/loyalty/src/next-best-offer';
 import type { DailyDemand } from '../../../packages/demand/src/forecast';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** EA-07 · OB-222: the brief's sending link type, for main.ts (production never sets one). */
 export type { BriefSendingLink } from '../../reporting/src/scheduled-brief';
@@ -239,13 +240,14 @@ export function demandCalendarFor(input: { readonly store: EventStore | undefine
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 3 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
-export function r4InsightRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): readonly Route[] {
+export function r4InsightRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }): readonly Route[] {
   const base: Base = { store: input.store ?? new InMemoryEventStore(), now: input.now, ...audited(input.recordAudit) };
+  const calendar = input.calendar === undefined ? {} : { calendar: input.calendar }; // R1b · R1c: the shop's clock
   return [
     ...customerOverviewRoutes(customerOverviewAdapter(base)),
-    ...referralLiabilityRoutes(referralLiabilityAdapter(base)),
+    ...referralLiabilityRoutes({ ...referralLiabilityAdapter(base), ...calendar }),
     ...basketAffinityRoutes(basketAffinityAdapter(base)),
-    ...offerProposalRoutes(offerProposalAdapter(base)),
-    ...demandEventRoutes(demandEventsAdapter(base)),
+    ...offerProposalRoutes({ ...offerProposalAdapter(base), ...calendar }),
+    ...demandEventRoutes({ ...demandEventsAdapter(base), ...calendar }),
   ];
 }

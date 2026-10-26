@@ -20,6 +20,7 @@ import { apiError } from '../../kernel/src/index';
 import { aggregateWaste, type WasteEvent, type WasteRecord } from '../../../packages/waste/src/index';
 import { stockReadScope, type LocationBranches } from './location-scope';
 import type { StoredWriteOff } from './write-off';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
 export interface WasteAnalyticsDeps {
   readonly writeOffs: (tenantId: string) => Promise<readonly StoredWriteOff[]> | readonly StoredWriteOff[];
@@ -31,7 +32,7 @@ export interface WasteAnalyticsDeps {
 }
 
 const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00.000Z`));
-const inWindow = (at: string, from: string, to: string): boolean => at.slice(0, 10) >= from && at.slice(0, 10) <= to;
+const inWindow = (at: string, from: string, to: string): boolean => shopDateIn(at) >= from && shopDateIn(at) <= to; // R1c: the shop's days
 
 export function wasteAnalyticsRoutes(deps: WasteAnalyticsDeps): readonly Route[] {
   return [

@@ -34,6 +34,7 @@ import {
   onShelfAvailabilityRoutes, type OnShelfAvailabilityDeps, type OsaCountTask, type OsaMinimumSetting,
 } from '../../inventory/src/on-shelf-availability';
 import type { OsaSoldLine } from '../../../packages/replenishment/src/on-shelf-availability';
+import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
   (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
@@ -360,18 +361,19 @@ export function scheduleAdapter(input: { readonly store: EventStore; readonly no
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
-export function r3OpsRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder; readonly numberSeries?: NumberSeriesStore }): readonly Route[] {
+export function r3OpsRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder; readonly numberSeries?: NumberSeriesStore; readonly calendar?: ShopCalendarOf }): readonly Route[] {
   const store = input.store ?? new InMemoryEventStore();
   const now = input.now;
   const locationBranches: LocationBranches = async (t) => branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(t));
   const base = { store, now, locationBranches, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
+  const calendar = input.calendar === undefined ? {} : { calendar: input.calendar }; // R1b · R1c: the shop's clock
   return [
     ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter(base)),
-    ...clearanceMarkdownRoutes(clearanceMarkdownAdapter(base)),
+    ...clearanceMarkdownRoutes({ ...clearanceMarkdownAdapter(base), ...calendar }),
     ...dsdCheckInRoutes(dsdCheckInAdapter({ ...base, ...(input.numberSeries === undefined ? {} : { numberSeries: input.numberSeries }) })), // OB-196
-    ...productionPlanRoutes(productionPlanAdapter(base)),
+    ...productionPlanRoutes({ ...productionPlanAdapter(base), ...calendar }),
     ...channelPricingRoutes(channelPricingAdapter(base)),
-    ...biometricConsentRoutes(biometricConsentAdapter(base)),
+    ...biometricConsentRoutes({ ...biometricConsentAdapter(base), ...calendar }),
     ...scheduleRoutes(scheduleAdapter(base)),
   ];
 }

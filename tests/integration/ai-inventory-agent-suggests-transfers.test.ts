@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **A03's transfer-suggestion leg (round 8 · M09-FR-03 · A03 "transfer suggestion — manager approval" · hard rule #5 · P-05).**
@@ -36,7 +37,7 @@ describe.each(backings)('A03 suggests transfers from where the company holds sto
   it('back store first, then head office, never a quantity, never a transfer; nobody holds it → no transfer suggestion', async () => {
     const h = harness();
     const T = randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString());
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-till', 'cashier');
     await h.provisionRole(T, 'u-mgr', 'store_manager');

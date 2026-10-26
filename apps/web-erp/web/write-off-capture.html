@@ -189,6 +189,15 @@
         </form>
         <p class="result" id="fs-result" role="status" aria-live="polite"></p>
       </section>
+
+      <!-- OB-393: the free samples waiting for a store manager other than the giver; approve (the stock leaves) or reject. -->
+      <section class="losses" id="fsp" hidden aria-labelledby="fsp-title">
+        <h3 id="fsp-title"></h3>
+        <p class="lead" id="fsp-lead"></p>
+        <button id="fsp-load" class="act" type="button"><span id="fsp-load-text"></span></button>
+        <p class="result" id="fsp-said" role="status" aria-live="polite"></p>
+        <ul class="rows" id="fsp-rows" aria-labelledby="fsp-title"></ul>
+      </section>
     </main>
 
     <!--SCREEN-DATA-->

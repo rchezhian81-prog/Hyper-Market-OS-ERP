@@ -55,6 +55,19 @@ export interface BoxHealthReport {
   }[];
   /** Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness, and any held restore. */
   readonly billNumbering?: BillNumberingReport;
+  /**
+   * R3 · P-08: this machine's time zone against the shop's (edge/store-edge/src/shop-zone.ts `zoneCheck`) — told to head
+   * office so a difference is shown there too, not only on the box's own screens. Zone names only; no person's data.
+   */
+  readonly zoneCheck?: BoxZoneReport;
+}
+
+/** R3 · P-08: the box's time-zone check as it rides the health report (its sentences stay on the box). */
+export interface BoxZoneReport {
+  readonly verdict: 'in_step' | 'differs';
+  readonly shopTimeZone: string;
+  readonly shopTimeZoneFrom: 'store_pack' | 'shop_default';
+  readonly machineTimeZone: string;
 }
 
 /**
@@ -127,6 +140,8 @@ export interface BoxHealthSources {
   readonly issued?: () => readonly IssuedPrefix[];
   readonly pending?: () => Iterable<{ readonly payload: unknown; readonly occurredAt?: string }>;
   readonly deadLetters?: () => Iterable<{ readonly payload: unknown; readonly occurredAt?: string }>;
+  /** R3 · P-08: the box's own time-zone check, read when the report is made. */
+  readonly zone?: () => BoxZoneReport;
   readonly now: () => string;
 }
 
@@ -144,7 +159,13 @@ export async function boxHealthReportOf(s: BoxHealthSources): Promise<BoxHealthR
     tills: s.tills(),
     ...(issued === undefined ? {} : { receiptNumbersIssued: issued }),
     ...(billNumbering === undefined ? {} : { billNumbering }),
+    ...(s.zone === undefined ? {} : { zoneCheck: zoneReport(s.zone()) }),
   };
+}
+
+/** R3 · P-08: only the four facts head office needs — the box's staff sentences stay on the box. */
+export function zoneReport(z: BoxZoneReport): BoxZoneReport {
+  return { verdict: z.verdict, shopTimeZone: z.shopTimeZone.slice(0, 64), shopTimeZoneFrom: z.shopTimeZoneFrom, machineTimeZone: z.machineTimeZone.slice(0, 64) };
 }
 
 /** Verifier r19 OB87-1/OB87-2: what the box says about its bill-number witness (no person's data; a short box id only). */

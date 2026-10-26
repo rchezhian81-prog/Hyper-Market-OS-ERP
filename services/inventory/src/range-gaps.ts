@@ -17,8 +17,12 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { rangeGaps, privateLabelMargins, priceBands, type GapFact, type SearchMiss, type SoldProduct } from '../../../packages/merchandising/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayWindow } from '../../../packages/calendar/src/trading-day';
 
 export interface RangeGapDeps {
+  /** R1c (M01-FR-02): the shop's calendar — a day asked for is the shop's day, from its midnight to the next. */
+  readonly calendar?: ShopCalendarOf;
   readonly gapFacts: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly GapFact[]>;
   readonly searchMisses: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly SearchMiss[]>;
   readonly categoryOf: (tenantId: string) => Promise<(productId: string) => string | null>;
@@ -46,8 +50,9 @@ export function rangeGapRoutes(deps: RangeGapDeps): readonly Route[] {
             nextSafeAction: 'Send the window (and the bands you want). Nothing was changed; this only reads.',
           });
         }
-        const fromIso = `${from}T00:00:00.000Z`;
-        const toIso = new Date(Date.parse(`${to}T00:00:00Z`) + 86_400_000).toISOString();
+        const cal = await shopClock(deps.calendar).calendar(ctx.tenantId);
+        const fromIso = tradingDayWindow(from, cal).from;
+        const toIso = tradingDayWindow(to, cal).to;
         const [facts, misses, categoryOf, sold, own] = await Promise.all([
           deps.gapFacts(ctx.tenantId, fromIso, toIso), deps.searchMisses(ctx.tenantId, fromIso, toIso), deps.categoryOf(ctx.tenantId),
           deps.sold(ctx.tenantId, fromIso, toIso), deps.privateLabel(ctx.tenantId),
