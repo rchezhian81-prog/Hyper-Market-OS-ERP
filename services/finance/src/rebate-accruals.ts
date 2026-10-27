@@ -43,8 +43,8 @@ export interface RebateAccrualDeps extends Pick<FinanceDeps, 'periodStates' | 'n
   readonly accruedFor: (tenantId: string, schemeId: string) => Promise<number> | number;
   readonly accrualJournals: (tenantId: string) => Promise<readonly RebateAccrualJournal[]> | readonly RebateAccrualJournal[];
   readonly receiptJournals: (tenantId: string) => Promise<readonly RebateReceiptJournal[]> | readonly RebateReceiptJournal[];
-  /** The shop's calendar day of an instant — the date an accrual journal carries. */
-  readonly shopDayOf: (iso: string) => string;
+  /** The shop's trading day of an instant (its zone and cut-off) — the date an accrual journal carries. */
+  readonly shopDayOf: (iso: string, tenantId: string) => string | Promise<string>;
 }
 
 /** The accounts the accrual rule debits (the receivable) and credits (the income); undefined when unmapped. */
@@ -127,7 +127,7 @@ export function rebateAccrualRoutes(deps: RebateAccrualDeps): readonly Route[] {
           });
         }
         const states = await deps.periodStates(t);
-        const day = deps.shopDayOf(deps.now());
+        const day = await deps.shopDayOf(deps.now(), t);
         const posted: RebateAccrualJournal[] = [];
         const notPosted: { schemeId: string; reason: string }[] = [];
         for (const line of p.lines) {

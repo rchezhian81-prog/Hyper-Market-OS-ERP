@@ -13,7 +13,8 @@ import { republishWithExpired } from '../../catalogue/src/recall-republish';
 import { catalogueAdapter, saleBlocksAdapter, qualityHoldAdapter, permissionsHeldBy } from './adapters';
 import { syncedQualityHoldRoutes } from '../../inventory/src/quality-hold';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { lane2ExpirySweep, shopDayOf } from './lane2-offline-adapters';
+import { lane2ExpirySweep, shopDateOf } from './lane2-offline-adapters';
+import type { ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /**
  * OB-290 · M02-FR-02 — procure-to-pay's purchase-order limit IS identity's server-held rule: the raiser's limit decides
@@ -56,12 +57,13 @@ export async function publishExpiredPack(input: { readonly store: EventStore; re
  * in the expired state — and once per shop day in any case, so a restart catches up — the tills' pack is re-signed with
  * the expired batches on it. Answers how many batches moved.
  */
-export function expirySweepThatPublishes(input: { readonly store: EventStore; readonly now: () => string; readonly signer: PackSigner }): (tenantId: string, at: string) => Promise<number> {
+export function expirySweepThatPublishes(input: { readonly store: EventStore; readonly now: () => string; readonly signer: PackSigner; readonly calendar?: ShopCalendarOf }): (tenantId: string, at: string) => Promise<number> {
   const sweep = lane2ExpirySweep(input);
+  const dateOf = shopDateOf(input.calendar);
   const checkedOn = new Map<string, string>();
   return async (tenantId, at) => {
     const moved = await sweep(tenantId, at);
-    const day = shopDayOf(at);
+    const day = await dateOf(at, tenantId);
     if (moved > 0 || checkedOn.get(tenantId) !== day) {
       await publishExpiredPack(input, tenantId);
       checkedOn.set(tenantId, day);

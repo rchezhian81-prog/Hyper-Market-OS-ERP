@@ -51,8 +51,9 @@ describe('every menu item the store computer may offer is answered by its server
   });
   afterAll(async () => { await server?.stop(); });
 
-  it('there is something to check: every item but the named unbuilt ones is the box\'s, the office pages among them', () => {
-    expect(boxItems.length).toBe(ERP_NAVIGATION.length - 2);
+  it('there is something to check: every item is the box\'s (none unbuilt since OB-401), the office pages among them', () => {
+    expect(boxItems.length).toBe(ERP_NAVIGATION.length);
+    expect(ERP_NAVIGATION.filter((i) => i.served === 'unbuilt')).toEqual([]);
     expect(ERP_NAVIGATION.filter((i) => i.served === 'unserved')).toEqual([]);
     for (const p of HEAD_OFFICE_PAGES) expect(boxItems.map((i) => screenOfPath(i.path)), `${p.screen} has a menu door`).toContain(p.screen);
   });

@@ -129,28 +129,23 @@ describe.each(backings)('a sale or a return after the shop\'s midnight is booked
     expect(next.journals.every((j) => j.documentDate === D1)).toBe(true);
   });
 
-  it('a cut-off of 02:00: a refund at 01:30 IST still belongs to the day before; one at 03:00 IST belongs to the new day', async () => {
+  it('OB-402: the day end is held at midnight — a 02:00 cut-off is refused by name, and a refund at 01:30 IST is on the new day', async () => {
     const h = harness();
     const T = randomUUID();
     await shop(h, T);
-    expect((await ownerApprovedSetting(h, T, 'trading_day.cutoff', { value: '02:00' }, OWNER)).status).toBe(200);
-    const calendar = { timeZone: 'Asia/Kolkata', tradingDayCutoff: '02:00' };
+    // The owner's decision (27 Oct 2026, in writing): the bill date, bill-number year and GST month must always agree.
+    const refused = await ownerApprovedSetting(h, T, 'trading_day.cutoff', { value: '02:00' }, OWNER);
+    expect(refused.status).toBe(422);
+    expect(JSON.stringify(refused.body)).toContain('OB-402');
+    const calendar = { timeZone: 'Asia/Kolkata', tradingDayCutoff: '00:00' };
     const sold = ist(`${D}T21:00`);
-    const beforeCutoff = ist(`${D1}T01:30`); // 20:00Z on the 5th: trading day the 5th
-    const afterCutoff = ist(`${D1}T03:00`);  // 21:30Z on the 5th: trading day the 6th — the UTC date says the 5th
-    expect([tradingDayIn(sold, calendar), tradingDayIn(beforeCutoff, calendar), tradingDayIn(afterCutoff, calendar)]).toEqual([D, D, D1]);
+    const afterMidnight = ist(`${D1}T01:30`); // 20:00Z on the 5th: the UTC date says the 5th, the shop's day is the 6th
+    expect([tradingDayIn(sold, calendar), tradingDayIn(afterMidnight, calendar)]).toEqual([D, D1]);
 
     await sell(h, T, 'S-1', RICE, 2, sold, D);
-    await sell(h, T, 'S-2', SOAP, 2, sold, D);
-    await giveBack(h, T, 'S-1', 'R-BEFORE', RICE, beforeCutoff);
-    await giveBack(h, T, 'S-2', 'R-AFTER', SOAP, afterCutoff);
-
-    const day = await postedDay(h, T, D);
-    const next = await postedDay(h, T, D1);
-    expect([sourcesOf(day, 'sale'), sourcesOf(day, 'refund:cash')]).toEqual([2, 1]);
-    expect(balance(day, 'cash_in_hand')).toBe(2 * RICE.price + 2 * SOAP.price - RICE.price);
-    expect(sourcesOf(next, 'refund:cash')).toBe(1);
-    expect(balance(next, 'cash_in_hand')).toBe(-SOAP.price);
+    await giveBack(h, T, 'S-1', 'R-AFTER', RICE, afterMidnight);
+    expect(sourcesOf(await postedDay(h, T, D), 'refund:cash')).toBe(0);
+    expect(sourcesOf(await postedDay(h, T, D1), 'refund:cash')).toBe(1);
   });
 
   it('GSTR-1 from sales: a bill and a refund rung at 00:30 IST on the 1st are on that month\'s return, not lost between two months', async () => {

@@ -38,11 +38,11 @@ describe('DurableTenantSettings', () => {
 
   it('survives a restart: a fresh instance over the same store still sees the answer', async () => {
     const store = new InMemoryConfigVersionStore();
-    await new DurableTenantSettings(store).apply('acme', item('trading_day.cutoff'), '22:00', 'owner-1', AT);
+    await new DurableTenantSettings(store).apply('acme', item('locale.time_zone'), 'Asia/Dubai', 'owner-1', AT);
     // A brand-new DurableTenantSettings — as after a process restart — reads the persisted value.
     const afterRestart = await new DurableTenantSettings(store).status('acme');
-    const cutoff = afterRestart.items.find((i) => i.key === 'trading_day.cutoff');
-    expect(cutoff?.value).toBe('22:00');
+    const cutoff = afterRestart.items.find((i) => i.key === 'locale.time_zone');
+    expect(cutoff?.value).toBe('Asia/Dubai');
     expect(cutoff?.version).toBe(1);
     expect(cutoff?.isDefault).toBe(false);
   });

@@ -87,8 +87,11 @@ export interface TallyOutboxDeps {
   readonly storeFile: (tenantId: string, file: TallyDayFile) => Promise<void> | void;
   /** P-08: a day that reached the dead letter is raised to the people who answer for the books. */
   readonly raiseDeadLetter?: (tenantId: string, posting: TallyDayPosting, at: string) => Promise<void> | void;
-  /** The shop's calendar day of an instant (the store's time zone). */
-  readonly shopDayOf: (iso: string) => string;
+  /**
+   * The shop's TRADING day of an instant — the tenant's zone and its trading-day cut-off (packages/calendar/src/shop-clock.ts).
+   * A day is "ended" only once its trading day has, so a sale after midnight but before a later cut-off is in its file.
+   */
+  readonly shopDayOf: (iso: string, tenantId: string) => string | Promise<string>;
   readonly policy?: ConnectorPolicy;
   readonly now: () => string;
 }
@@ -176,7 +179,7 @@ export interface OutboxPass {
 /** ONE PASS of the outbox — queue the ended days, then attempt every due posting. What the worker runs on its timer. */
 export async function runTallyOutbox(deps: TallyOutboxDeps, tenantId: string, by: string): Promise<OutboxPass> {
   const at = deps.now();
-  const today = deps.shopDayOf(at);
+  const today = await deps.shopDayOf(at, tenantId);
   const journals = await deps.journals(tenantId);
   const before = foldOutbox(await deps.facts(tenantId));
   const fresh = postingsToQueue({ journals, existing: before, today, at });

@@ -88,6 +88,7 @@ import { join, relative, resolve, isAbsolute } from 'node:path';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import { RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX, readPublishedSeries, storeComputerDefaultPrefix, financialYearOf } from '../../../packages/contracts/src/receipt-number';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 
 // A2 (roadmap v2.1 addendum · CGST Rule 46(b)) — THE SERIES RESETS ON THE FINANCIAL-YEAR BOUNDARY. When head office issues a
 // till its prefix FOR a financial year (the pack's series line carries `financialYear`), this register numbers each bill
@@ -357,6 +358,8 @@ export class ReceiptNumbers {
       readonly now: () => string;
       /** A2 · §31.1: the clock the financial year is judged by (the clock guard's seam); absent → `now`, trusted. */
       readonly seriesClock?: () => SeriesClock;
+      /** M01-FR-02 (T1): the shop's time zone, from the CURRENT signed pack; absent → the shop default (Asia/Kolkata). */
+      readonly timeZone?: () => string;
     },
     /** OB-85: this box's own identity, from the first line of its log — the fallback prefix is never another box's. */
     readonly boxIdentity: string,
@@ -400,6 +403,12 @@ export class ReceiptNumbers {
      * year-scoped lane keeps the year it last numbered in. Absent → the box's own clock (`now`), trusted.
      */
     readonly seriesClock?: () => SeriesClock;
+    /**
+     * M01-FR-02 (re-audit T1): the shop's time zone (`policies.timeZone` in the signed pack — shop-zone.ts `packTimeZone`),
+     * read at each bill so the year a bill is numbered in is its date in the SHOP, never the machine's zone or a fixed
+     * +05:30. Absent → the shop default (Asia/Kolkata). The cut-off does not move a bill's year (receipt-number.ts).
+     */
+    readonly timeZone?: () => string;
   }): Promise<ReceiptNumbers> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'receipt-numbers.log' });
     const now = input.now ?? (() => new Date().toISOString());
@@ -444,7 +453,7 @@ export class ReceiptNumbers {
         diskIdentity: diskIdentity ?? identity, lineage, freshDisk, now,
       });
     if (witness?.restore !== undefined) { identity = witness.restore.identity; hold = { because: witness.restore.because, at: witness.restore.at }; }
-    return new ReceiptNumbers(log, { published: input.published, numbering: input.numbering ?? (() => ({ storeId: null, storesInBusiness: null })), now, ...(input.seriesClock === undefined ? {} : { seriesClock: input.seriesClock }) }, identity, restored, input.committed ?? [], unreadable, hold, witness);
+    return new ReceiptNumbers(log, { published: input.published, numbering: input.numbering ?? (() => ({ storeId: null, storesInBusiness: null })), now, ...(input.seriesClock === undefined ? {} : { seriesClock: input.seriesClock }), ...(input.timeZone === undefined ? {} : { timeZone: input.timeZone }) }, identity, restored, input.committed ?? [], unreadable, hold, witness);
   }
 
   /**
@@ -741,6 +750,15 @@ export class ReceiptNumbers {
     return { laneId, prefix: own, padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'this_box', floor: bankedOwn ?? 0, words: NOT_PUBLISHED };
   }
 
+  /** T1: the shop's zone the year is dated in — the pack's, else the shop default; a zone this runtime cannot read is the default. */
+  private shopZone(): string {
+    try {
+      const z = this.deps.timeZone?.();
+      if (typeof z === 'string' && z !== '') { new Intl.DateTimeFormat('en-CA', { timeZone: z }); return z; }
+    } catch { /* an unreadable zone falls back to the shop default below */ }
+    return DEFAULT_SHOP_CALENDAR.timeZone;
+  }
+
   /** A2: the clock this register judges the year by (the clock guard's, else the box's own — trusted). */
   private clockNow(): SeriesClock {
     try { return this.deps.seriesClock?.() ?? { nowIso: this.deps.now(), trusted: true }; } catch { return { nowIso: this.deps.now(), trusted: false }; }
@@ -752,7 +770,8 @@ export class ReceiptNumbers {
    */
   private yearFor(laneId: string): string {
     const clock = this.clockNow();
-    const byClock = financialYearOf(clock.nowIso) ?? financialYearOf(this.deps.now()) ?? '';
+    const zone = this.shopZone();
+    const byClock = financialYearOf(clock.nowIso, zone) ?? financialYearOf(this.deps.now(), zone) ?? '';
     if (clock.trusted) return byClock;
     const last = [...this.issued.values()].filter((i) => i.laneId === laneId && typeof i.financialYear === 'string').sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).at(-1);
     return last?.financialYear ?? byClock;

@@ -59,8 +59,16 @@ const numberRule = (range: SetupRange, message: string): { readonly range: Setup
 const isStringArray = (v: unknown): v is readonly string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string');
 
+/**
+ * OB-402 (owner, 27 Oct 2026, in writing): the trading day ends at midnight. A later cut-off would let a bill's printed
+ * date, its bill-number year and its GST month disagree (a bill at 00:30 on 1 April would belong to 31 March), so the
+ * setting is held at 00:00 and any other time is refused by name. The engine still reads the value it is given.
+ */
 const validateCutoff: SetupValidator = (v) =>
-  isString(v) && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? null : 'Use a 24-hour time like 22:00.';
+  v === '00:00' ? null
+    : isString(v) && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)
+      ? 'The trading day ends at midnight (00:00) by the owner\'s decision (OB-402): the bill date, bill-number year and GST month must always agree.'
+      : 'Use 00:00 — the trading day ends at midnight (OB-402).';
 const validateTimeZone: SetupValidator = (v) => {
   if (!isString(v) || v.trim() === '') return 'Name the time zone the way the world does, like Asia/Kolkata.';
   try {

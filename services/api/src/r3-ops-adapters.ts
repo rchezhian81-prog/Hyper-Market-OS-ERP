@@ -34,7 +34,7 @@ import {
   onShelfAvailabilityRoutes, type OnShelfAvailabilityDeps, type OsaCountTask, type OsaMinimumSetting,
 } from '../../inventory/src/on-shelf-availability';
 import type { OsaSoldLine } from '../../../packages/replenishment/src/on-shelf-availability';
-import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { shopClock, shopDateIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
   (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
@@ -45,8 +45,6 @@ type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void
 // ── D-14 on-shelf availability ───────────────────────────────────────────────────────────────────────────────────
 
 const OSA = streamName(STREAM.inventory, 'on-shelf-availability');
-/** OB-198: the shop's day for a ledger time (India Standard Time, UTC+05:30). */
-const IST_OFFSET_MS = 330 * 60_000;
 
 /** The banked sales' lines with their stock place, for trading days in [fromDay, toDay]. */
 export async function soldLinesWithPlace(store: EventStore, tenantId: string, fromDay: string, toDay: string): Promise<OsaSoldLine[]> {
@@ -62,8 +60,9 @@ export async function soldLinesWithPlace(store: EventStore, tenantId: string, fr
   return out;
 }
 
-export function onShelfAvailabilityAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly locationBranches?: LocationBranches }): OnShelfAvailabilityDeps {
+export function onShelfAvailabilityAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly locationBranches?: LocationBranches; readonly calendar?: ShopCalendarOf }): OnShelfAvailabilityDeps {
   const { store, now } = input;
+  const clock = shopClock(input.calendar); // M01-FR-02 (re-audit T1): the tenant's own calendar, never a fixed +05:30
   const adj = adjustmentRequestAdapter({ store, now });
   const inv = inventoryAdapter({ store, now });
   return {
@@ -75,15 +74,16 @@ export function onShelfAvailabilityAdapter(input: { readonly store: EventStore; 
     stock: async (t) => (await inv.availability(t)).map((a) => ({ productId: a.productId, locationId: a.locationId, onHandMinor: a.onHandMinor })),
     soldLines: (t, from, to) => soldLinesWithPlace(store, t, from, to),
     // OB-198: the first day stock of each product came IN at each place — received from a supplier or transferred in —
-    // from the stock ledger itself (append-only, so the earliest is never rewritten). The day is the shop's own (IST).
+    // from the stock ledger itself (append-only, so the earliest is never rewritten). The day is the shop's own calendar
+    // date — a received-on date, in the tenant's zone (shop-clock.ts: the cut-off does not move a received-on date).
     firstReceipts: async (t) => {
+      const zone = (await clock.calendar(t)).timeZone;
       const first = new Map<string, { productId: string; locationId: string; firstReceiptDay: string }>();
       for (const e of await store.readStream(t, STREAM.inventory, { type: 'InventoryMoved' })) {
         const m = e.event.payload as { productId: string; locationId: string; kind: string; occurredAt: string };
         if (m.kind !== 'received' && m.kind !== 'transferred_in') continue;
-        const ms = Date.parse(m.occurredAt);
-        if (Number.isNaN(ms)) continue;
-        const day = new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
+        if (Number.isNaN(Date.parse(m.occurredAt))) continue;
+        const day = shopDateIn(m.occurredAt, zone);
         const k = `${m.productId}\u001f${m.locationId}`;
         const held = first.get(k);
         if (held === undefined || day < held.firstReceiptDay) first.set(k, { productId: m.productId, locationId: m.locationId, firstReceiptDay: day });
@@ -368,7 +368,7 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
   const base = { store, now, locationBranches, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
   const calendar = input.calendar === undefined ? {} : { calendar: input.calendar }; // R1b · R1c: the shop's clock
   return [
-    ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter(base)),
+    ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter({ ...base, ...calendar })),
     ...clearanceMarkdownRoutes({ ...clearanceMarkdownAdapter(base), ...calendar }),
     ...dsdCheckInRoutes(dsdCheckInAdapter({ ...base, ...(input.numberSeries === undefined ? {} : { numberSeries: input.numberSeries }) })), // OB-196
     ...productionPlanRoutes({ ...productionPlanAdapter(base), ...calendar }),

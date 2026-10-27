@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1813,
+  "testFiles": 1816,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -32,7 +32,7 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 26,
+        "unit": 27,
         "integration": 25,
         "realDb": 12,
         "browser": 8,
@@ -63,6 +63,7 @@
           "tests/unit/reporting-kpis-run-on-the-engine.test.ts",
           "tests/unit/tenant-setup.test.ts",
           "tests/unit/the-box-says-when-its-zone-is-not-the-shops.test.ts",
+          "tests/unit/the-last-fixed-offset-sites-read-the-shops-day.test.ts",
           "tests/unit/the-owner-setup-commands-refuse-before-they-call.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/the-rules-read-the-shops-day-after-midnight.test.ts",
@@ -4136,8 +4137,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 9,
-        "realDb": 2,
+        "integration": 10,
+        "realDb": 3,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -4154,11 +4155,13 @@
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
           "tests/integration/product-content-and-synonyms-reach-the-customer-app.test.ts",
           "tests/integration/product-master.test.ts",
-          "tests/integration/store-acceptance-journey.test.ts"
+          "tests/integration/store-acceptance-journey.test.ts",
+          "tests/integration/the-first-five-workflows-survive-a-lost-reply.test.ts"
         ],
         "realDb": [
           "tests/integration/product-content-and-synonyms-reach-the-customer-app.test.ts",
-          "tests/integration/store-acceptance-journey.test.ts"
+          "tests/integration/store-acceptance-journey.test.ts",
+          "tests/integration/the-first-five-workflows-survive-a-lost-reply.test.ts"
         ],
         "browser": [
           "tests/e2e/product-publish-delivery.e2e.ts",
@@ -4178,8 +4181,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 0,
-        "integration": 8,
-        "realDb": 4,
+        "integration": 9,
+        "realDb": 5,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -4195,13 +4198,15 @@
           "tests/integration/supplier-master.test.ts",
           "tests/integration/supplier-onboarding-on-postgresql.test.ts",
           "tests/integration/supplier-portal-compliance.test.ts",
-          "tests/integration/supplier-portal-feeds-purchasing.test.ts"
+          "tests/integration/supplier-portal-feeds-purchasing.test.ts",
+          "tests/integration/the-first-five-workflows-survive-a-lost-reply.test.ts"
         ],
         "realDb": [
           "tests/integration/rebates.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-onboarding-on-postgresql.test.ts",
-          "tests/integration/supplier-portal-feeds-purchasing.test.ts"
+          "tests/integration/supplier-portal-feeds-purchasing.test.ts",
+          "tests/integration/the-first-five-workflows-survive-a-lost-reply.test.ts"
         ],
         "browser": [
           "tests/e2e/supplier-portal-delivery.e2e.ts",
@@ -4222,8 +4227,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 2,
-        "integration": 12,
-        "realDb": 6,
+        "integration": 13,
+        "realDb": 7,
         "browser": 3,
         "connected": 2,
         "device": 0,
@@ -4245,6 +4250,7 @@
           "tests/integration/rfq.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/the-first-five-workflows-survive-a-lost-reply.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
@@ -4254,6 +4260,7 @@
           "tests/integration/replenishment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/the-first-five-workflows-survive-a-lost-reply.test.ts",
           "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "browser": [

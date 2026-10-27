@@ -24,7 +24,8 @@ describe('parseDraft', () => {
   });
 
   it('validates a time and a paper-format choice', () => {
-    expect(parseDraft('trading_day.cutoff', '22:00')).toEqual({ ok: true, value: '22:00' });
+    expect(parseDraft('trading_day.cutoff', '00:00')).toEqual({ ok: true, value: '00:00' });
+    expect(parseDraft('trading_day.cutoff', '22:00').ok).toBe(false); // OB-402: the trading day ends at midnight
     expect(parseDraft('trading_day.cutoff', '25:00').ok).toBe(false);
     expect(parseDraft('receipt.paper_format', 'thermal-80')).toEqual({ ok: true, value: 'thermal-80' });
     expect(parseDraft('receipt.paper_format', 'thermal-999').ok).toBe(false);

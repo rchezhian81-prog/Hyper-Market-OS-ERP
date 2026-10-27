@@ -14,9 +14,10 @@ import { capacityRoutes, type CapacityPlan, type CapacityMeasure, type MeasuredV
 import type { IncidentFact } from '../../platform/src/ops-incidents';
 import { STREAM, streamName, SUPPRESSIONS_STREAM, effectiveGrants } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
-import { shopDayOf } from './lane2-offline-adapters';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 
-interface Base { readonly store: EventStore; readonly now: () => string }
+interface Base { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }
 
 const CERT_IN = (): string => streamName(STREAM.platform, 'cert-in');
 const CAPACITY = (): string => streamName(STREAM.platform, 'capacity-plan');
@@ -47,15 +48,17 @@ async function measure(input: Base, tenantId: string, windowDays: number): Promi
   const perDay = new Map<string, number>();
   const perHour = new Map<string, number>();
   const lanes = new Set<string>();
+  // M01-FR-02 (re-audit T1): the hour and the day are the shop's own, read in the tenant's zone — never a fixed +05:30.
+  const zone = (await shopClock(input.calendar).calendar(tenantId)).timeZone;
   for (const s of sales) {
     perDay.set(s.tradingDay, (perDay.get(s.tradingDay) ?? 0) + 1);
-    const hour = `${shopDayOf(s.committedAt)}T${new Date(Date.parse(s.committedAt) + 5.5 * 3_600_000).toISOString().slice(11, 13)}`;
+    const hour = wallClockIn(s.committedAt, zone).slice(0, 13); // "YYYY-MM-DDTHH" on the store's clock
     perHour.set(hour, (perHour.get(hour) ?? 0) + 1);
     lanes.add(s.laneId);
   }
   const orders = (await payloads<{ placedAt?: string }>(store, tenantId, streamName(STREAM.orders, 'index'), 'OrderPlaced')).filter((o) => typeof o.placedAt === 'string' && o.placedAt >= from);
   const ordersPerDay = new Map<string, number>();
-  for (const o of orders) { const d = shopDayOf(o.placedAt!); ordersPerDay.set(d, (ordersPerDay.get(d) ?? 0) + 1); }
+  for (const o of orders) { const d = wallClockIn(o.placedAt!, zone).slice(0, 10); ordersPerDay.set(d, (ordersPerDay.get(d) ?? 0) + 1); }
   const pack = (await store.latestOfType(tenantId, STREAM.catalogue, 'CataloguePublished'))?.event.payload as { snapshot?: { products?: readonly unknown[] } } | undefined;
   const people = new Set((await effectiveGrants(store, tenantId)).map((g) => g.userId));
   const peak = (m: Map<string, number>): number | null => (m.size === 0 ? null : Math.max(...m.values()));
@@ -71,7 +74,7 @@ async function measure(input: Base, tenantId: string, windowDays: number): Promi
 }
 
 /** Every route of this package. With no store, an in-memory one (the bare surface the guardrails build). */
-export function opsMessagingRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string }): readonly Route[] {
+export function opsMessagingRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly calendar?: ShopCalendarOf }): readonly Route[] {
   const store = input.store ?? new InMemoryEventStore();
   const { now } = input;
   return [
@@ -88,7 +91,7 @@ export function opsMessagingRoutes(input: { readonly store: EventStore | undefin
     }),
     ...capacityRoutes({
       now,
-      measure: (t, days) => measure({ store, now }, t, days),
+      measure: (t, days) => measure({ store, now, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }, t, days),
       plan: async (t) => (await payloads<CapacityPlan>(store, t, CAPACITY(), 'CapacityPlanSet')).at(-1),
       recordPlan: (t, p) => put(store, t, CAPACITY(), 'CapacityPlanSet', `v${p.version}`, p.setAt, p, 'api/platform'),
     }),

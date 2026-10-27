@@ -980,6 +980,9 @@ let chosen = null;
 // are gone the moment the panel closes (ADR-0020 — never shown, never stored).
 let entryValue = '0';
 let entryMasked = false;
+/** A code (the handheld's 4 digits, the phone's 6): every digit counts, a leading 0 included — never read as a number. */
+let entryIsCode = false;
+const CODE_DIGITS = 8;
 const PIN_DIGITS = 6;
 function paintEntry() {
   el('entry').textContent = entryMasked ? '•'.repeat(entryValue.length) : entryValue;
@@ -989,10 +992,12 @@ function typeIntoEntry(key) {
   const current = entryValue;
   const next = entryMasked
     ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < PIN_DIGITS ? current + key : current))
+    : entryIsCode
+      ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < CODE_DIGITS ? current + key : current))
     : (key === 'C' ? '0' : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0') : (current === '0' ? key : current + key));
   entryValue = next;
   paintEntry();
-  if (!entryMasked && onEntryChange) el('entry-hint').textContent = onEntryChange(Number(next));
+  if (!entryMasked && !entryIsCode && onEntryChange) el('entry-hint').textContent = onEntryChange(Number(next));
 }
 // A till with a keyboard: a masked PIN may be keyed there too. Captured while the PIN panel is open, and only then.
 function onPinKey(event) {
@@ -1009,10 +1014,11 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
-  entryValue = initial;
+  entryIsCode = code === true;
+  entryValue = entryIsCode ? '' : initial;
   entryMasked = mask === true;
   paintEntry();
   el('entry').hidden = mode !== 'number';
@@ -1071,6 +1077,7 @@ function closeSheet(answer) {
   onEntryChange = null;
   // A PIN leaves this screen with the answer and nowhere else.
   entryMasked = false;
+  entryIsCode = false;
   entryValue = '0';
   el('entry').textContent = '';
   const resolve = sheetResolve;
@@ -1458,7 +1465,7 @@ async function giveUpHeldBasket() {
  * it cannot ring is listed for the cashier. Payment and the bag check are as for any bill. Offline it says so — scan the items.
  */
 async function recallPhoneBasket() {
-  const code = await ask({ title: t('phoneBasketCode'), mode: 'number', hint: t('phoneBasketHint'), initial: '' });
+  const code = await ask({ title: t('phoneBasketCode'), mode: 'number', hint: t('phoneBasketHint'), initial: '', code: true });
   if (code === null || code === undefined) return;
   const r = await session.recallPhoneBasketAtTill(String(code));
   selectedLineId = null;
@@ -1473,7 +1480,7 @@ async function recallPhoneBasket() {
  * asks ITS store computer (no head office, so it works offline) — once — and rings every line through THIS till's pack.
  */
 async function recallQueueBasket() {
-  const code = await ask({ title: t('queueBasketCode'), mode: 'number', hint: t('queueBasketHint'), initial: '' });
+  const code = await ask({ title: t('queueBasketCode'), mode: 'number', hint: t('queueBasketHint'), initial: '', code: true });
   if (code === null || code === undefined) return;
   const r = await session.recallQueueBasketAtTill(String(code));
   selectedLineId = null;

@@ -11,7 +11,7 @@ import { join } from 'node:path';
  * COVERED / PARTIAL with the test that proves it — a real file holding a test with that title — or MISSING with the
  * reason. A list that points at a test that was renamed or deleted fails here, so the list cannot quietly go stale.
  *
- * FG-3 (26 Oct 2026, re-audits 2/3/4): the lists for WF-06 to WF-20 are all required, and the labels are kept honest in
+ * FG-3 (26 Oct 2026, re-audits 2/3/4) and re-audit final T3 (27 Oct 2026): the lists for WF-01 to WF-20 are all required, and the labels are kept honest in
  * the other direction too — a list that is stale in the PESSIMISTIC direction (code ahead of the paperwork) fails here:
  *   • a MISSING row names the test that WILL prove it (`Planned test: \`tests/…\``), and once that file exists the row
  *     must be brought up to COVERED or PARTIAL — a MISSING label next to a test that exists is refused;
@@ -22,8 +22,8 @@ import { join } from 'node:path';
 const DIR = 'docs/requirements/workflows';
 const SCENARIOS = ['happy-path', 'alternate', 'cancellation', 'permission-denied', 'offline', 'timeout', 'duplicate', 'recovery', 'audit', 'stock and money reconcile'];
 const STATUSES = ['COVERED', 'PARTIAL', 'MISSING'];
-/** The workflows this list must cover: WF-06 to WF-20 (audit-2 P6; re-audits 2/3/4, FG-3). */
-const REQUIRED = Array.from({ length: 15 }, (_, i) => `WF-${String(i + 6).padStart(2, '0')}`);
+/** The workflows this list must cover: WF-01 to WF-20 (audit-2 P6; re-audits 2/3/4, FG-3; re-audit final T3 added WF-01..05). */
+const REQUIRED = Array.from({ length: 20 }, (_, i) => `WF-${String(i + 1).padStart(2, '0')}`);
 
 interface Row { readonly scenario: string; readonly status: string; readonly proof: string; readonly why: string }
 
@@ -43,7 +43,8 @@ const plannedOf = (why: string): string | undefined => /Planned test:\s*`([^`]+\
 const docs = existsSync(DIR) ? readdirSync(DIR).filter((f) => /^WF-\d{2}\.md$/.test(f)).sort() : [];
 
 describe('every workflow scenario list names its nine scenarios, each pointing at a real test or honestly MISSING (§26)', () => {
-  it('the lists for WF-06 to WF-20 exist', () => {
+  it('the lists for WF-01 to WF-20 exist — every workflow of §26', () => {
+    expect(REQUIRED).toEqual(Array.from({ length: 20 }, (_, i) => `WF-${String(i + 1).padStart(2, '0')}`));
     expect(docs.map((d) => d.replace('.md', ''))).toEqual(expect.arrayContaining(REQUIRED));
   });
 

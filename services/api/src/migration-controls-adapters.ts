@@ -20,11 +20,12 @@ import type { CutoverGo } from '../../migration/src/opening-reversal';
 import type { RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { StoredPostingMap } from '../../finance/src/day-book';
 import { STREAM, streamName, liveSupplierInvoices, payablesAdapter, averageBuyingCosts, storeOfLocationResolver, dayBookAdapter } from './adapters';
-import { shopDayOf } from './lane2-offline-adapters';
+import { shopDateOf } from './lane2-offline-adapters';
+import type { ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
 import { appliedForSupplier, type SupplierAdvanceJournal } from '../../finance/src/supplier-advances';
 
-interface Base { readonly store: EventStore; readonly now: () => string }
+interface Base { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }
 
 const LIMITS = (): string => streamName(STREAM.migration, 'rollback-limits');
 const TRIGGERS = (): string => streamName(STREAM.migration, 'rollback-triggers');
@@ -46,8 +47,12 @@ async function headOfficeBooks(input: Base, tenantId: string, day: string): Prom
   const { store } = input;
   const dayEnd = `${day}T23:59:59.999Z`;
   // Purchases: the supplier bills captured for the day (the paper's date, else the day it was captured), with tax.
-  const purchases = (await liveSupplierInvoices(store, tenantId))
-    .filter((r) => (r.supplierInvoiceDate ?? shopDayOf(r.capturedAt)) === day)
+  // M01-FR-02 (re-audit T1): the day it was captured is the shop's own calendar date, in the tenant's zone.
+  const dateOf = shopDateOf(input.calendar);
+  const invoices = await liveSupplierInvoices(store, tenantId);
+  const capturedOn = await Promise.all(invoices.map((r) => r.supplierInvoiceDate ?? dateOf(r.capturedAt, tenantId)));
+  const purchases = invoices
+    .filter((_r, i) => capturedOn[i] === day)
     .map((r) => ({ supplierId: r.supplierId, billNumber: r.supplierInvoiceNo ?? r.invoiceId, valueMinor: r.declaredTotalMinor }));
   // Supplier balances: the purchase register's owed, less what supplier advances have settled (D10-FR-01).
   const advances = (await payloads<{ supplierAdvance?: SupplierAdvanceJournal['supplierAdvance'] }>(store, tenantId, STREAM.finance, 'JournalPosted'))

@@ -5,9 +5,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Re-audit after batch 9 (27 October 2026): 340 done, 5 partial, 3 owner decisions
+## Re-audit after batch 9 (27 October 2026): four software gaps the batch-10 re-audit counted as done, and owner decisions OB-403 to OB-405
 
 **What changed**
+- **Read this beside batch 10 below.** Both re-audits ran on 27 Oct, in parallel.
+  - Batch 10 found 0 rows partly done.
+  - This one was checked again on `main` after batch 10 merged. It finds four software gaps still open, shown in the code and tests:
+    - the §31.1 hold on new prices and offers while the clock is out;
+    - a supplier rebate claim document (D03-FR-03; §28 "Finance approves rebate claims");
+    - a web-ERP rebates page (QG-02/M06);
+    - a WF-18 test that gives the receivables close check figures.
+  - Batch 10 closed QG-02's tap-register item (OB-394).
 - A read-only re-audit at `e7eb5fd` of the 185 rows not DONE on 23 Oct. The report is `docs/audit/REAUDIT-2026-10-27.md`; the lane tables are in `docs/audit/reaudit-2026-10-27/`. The 25 Oct tables were never committed, so this one is.
 - Whole roadmap (391 rows): Done 340, Partial 5, Missing 0, Decision 0, External 39, Deferred 7.
   - External is higher than on 25 Oct (22) because this audit counts a finished row that still names an outside piece as EXTERNAL.
@@ -20,17 +28,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - Browser and PostgreSQL halves were not run here; they run in CI.
 
 **Owner decisions (27 Oct 2026, in writing)**
-- OB-401 = D-1 A: hold new prices and offers at the 5-minute clock flag, and alert head office and the owner.
-- OB-402 = D-2 A: a supplier rebate claim document.
-- OB-403 = D-3 B: Mr Sivakumar is the interim named security reviewer.
+- OB-403 = D-1 A: hold new prices and offers at the 5-minute clock flag, and alert head office and the owner.
+- OB-404 = D-2 A: a supplier rebate claim document.
+- OB-405 = D-3 B: Mr Sivakumar is the interim named security reviewer.
 
 **What is next (one final batch, after this PR merges)**
-- **QG-02:** move "return one whole line" to a recorded exception (OB-394), and add a web-ERP rebates page.
-- **§31.1 / OB-401:** the clock-drift hold on new prices, offers and bill-year changes, with its alert to head office and the owner.
-- **D03-FR-03 / OB-402:** the rebate claim document.
+- **QG-02 / M06:** a web-ERP rebates page (the OB-394 tap exception was closed in batch 10).
+- **§31.1 / OB-403:** the clock-drift hold on new prices, offers and bill-year changes, with its alert to head office and the owner.
+- **D03-FR-03 / OB-404:** the rebate claim document.
 - **WF-18:** a test that gives the receivables close check real figures.
 - **B15:** put the tobacco warning board on the go-live checklist.
-- **OB-403:** record Mr Sivakumar as the reviewer where the D14-FR-05 and R8-7 release checks look for one.
+- **OB-405:** record Mr Sivakumar as the reviewer where the D14-FR-05 and R8-7 release checks look for one.
 
 **Blocked / external**
 - As before:
@@ -39,6 +47,61 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - the CA and legacy data;
   - staff UAT and rehearsals;
   - the pen test.
+
+**Needs an owner decision**
+- None open.
+
+---
+
+## OB-288 final gaps, batch 10 (27 October 2026): the final re-audit closed; last tidy-ups
+
+**The final re-audit (27 Oct, all 391 roadmap rows, checked in code and tests on main after PR #814)**
+
+| Status | 23 Oct | 25 Oct | 27 Oct |
+|---|---|---|---|
+| Done in software, proven by tests | 206 | 348 | 368 |
+| Partly done | 148 | 20 | 0 |
+| Missing | 7 | 0 | 0 |
+| Waiting for an owner decision | 15 | 0 | 0 |
+| External | 15 | 22 | 18 |
+| Deferred in writing to a named release | 0 | 1 | 5 |
+
+- **External** means it needs an outside party, real hardware or staff:
+  - live payment, GST, SMS, courier and Tally connections;
+  - real shelf labels, RFID, sensors and cameras;
+  - the certified store PC, tills and handhelds;
+  - staff UAT, the pen test and the named security reviewer.
+- **Deferred in writing:** EDI (OB-312, R8), the live Tally link (OB-381, R8) and the live-model AI items (OB-382, R8).
+
+**What changed in this batch**
+- **The last fixed India-time sites** now read the shop's own calendar (M01-FR-02):
+  - the Tally day file;
+  - rebate accruals;
+  - loss-prevention days;
+  - the expiry sweep;
+  - receipts, the scorecard and capacity;
+  - the bill-number year.
+  Bill numbers already issued are never changed.
+- **OB-402:** the trading day ends at midnight. Store setup refuses any other cut-off by name, before any approval is asked, so a bill's printed date, its bill-number year and its GST month always agree.
+- **QG-02:** the whole-line refund is counted at 7 taps as the written exception OB-394. No frequent action is left uncounted.
+- **§26:** scenario lists for WF-01 to WF-05. The guardrail now requires all twenty workflows.
+- **OB-401:** "Reconciliation" opens Month-end, and "Settings" opens Store setup. No menu item is left unbuilt.
+- Owner decisions OB-401 and OB-402 are recorded.
+- **A real till bug found by CI:** a handheld or phone basket code starting with 0 (for example 0369) was read as a number and refused. About one code in ten failed this way. The till's keypad now keeps every digit of a code, and a browser test types 0 then 1 and expects "01".
+- **A false alarm fixed:** the guard that refuses any reply carrying a card number once refused an audit-trail reply. The trail's integrity fingerprint had, by chance, come out as 16 digits shaped like a card. The guard now skips those fingerprint fields only; a card number in any other field is still refused (unit test).
+
+**Tests run (exactly)**
+- The builder ran:
+  - the full unit suite, 8,950 tests;
+  - the full in-memory integration suite, 3,048 tests;
+  - the guardrails, 1,830 tests;
+  - the touched browser tests.
+- After OB-402: the affected setup unit and integration tests, and the store-setup browser test on real PostgreSQL.
+- On this merge: the guardrails and the type check, with results in the PR.
+
+**What is next**
+- The software side of the roadmap is complete.
+- What remains is outside the software: certified hardware and staff UAT in the store, live providers, the pen test and the named security reviewer, and the release-signing key set by its custodian.
 
 **Needs an owner decision**
 - None open.
