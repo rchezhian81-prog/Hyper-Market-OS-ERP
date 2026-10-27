@@ -10,7 +10,9 @@ import { readFileSync, existsSync } from 'node:fs';
 const [file, label = 'suite'] = process.argv.slice(2);
 if (!file || !existsSync(file)) { console.log(`::error title=${label}::no test report was written — the suite did not start`); process.exit(0); }
 const report = JSON.parse(readFileSync(file, 'utf8'));
-const clean = (text) => String(text ?? '').replace(/\x1b\[[0-9;]*m/g, '').split('\n').find((l) => l.trim() !== '')?.trim().slice(0, 300) ?? '';
+/** The terminal's colour codes (ESC [ … m), built from the character code so no control character sits in the source. */
+const COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+const clean = (text) => String(text ?? '').replace(COLOUR, '').split('\n').find((l) => l.trim() !== '')?.trim().slice(0, 300) ?? '';
 for (const fileResult of report.testResults ?? []) {
   if (fileResult.status === 'failed' && (fileResult.assertionResults ?? []).length === 0) {
     console.log(`::error title=${label}::the file failed before any test ran — ${clean(fileResult.message)}`);
