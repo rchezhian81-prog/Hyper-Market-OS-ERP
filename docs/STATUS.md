@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Follow-ups (27 October 2026): customer GSTIN (OB-416) and reviewer-only review requests (OB-420)
+
+**What changed**
+- **OB-416:** a credit customer's GSTIN can be recorded on their account.
+  - It is checked (shape, check character, State) and refused by name if wrong.
+  - Every change is kept with who, when and why.
+  - Their tax invoices print the GSTIN and file invoice by invoice in GSTR-1's B2B section, so the customer can claim input credit.
+  - Customers without a GSTIN file B2C as before, and issued invoices never change.
+- **OB-420:** only the named security reviewer sees and may sign a floor-device review request. Anyone else is refused by name, and nobody named means nobody can sign (the asker is told).
+
+**Tests run**
+- See the pull request: the whole default suite, lint and type check on the combined branch.
+- The touched browser tests ran in real Chromium.
+
+**What is next**
+- The owner's answers to the three questions below.
+
+**Owner decisions (27 Oct 2026, in writing)**
+- OB-426: pre-fill the delivery State from the customer's GSTIN, still editable.
+- OB-427: remove a GSTIN with a reason.
+- OB-428: put the place of supply and the reverse-charge flag in the GSTN file before the first live filing.
+
+**What is next (after this PR merges)**
+- Build OB-426, OB-427 and OB-428 in one small PR.
+- A separate fix for the intermittent real-Keycloak lockout test, which also fails on main.
+
+**Needs an owner decision**
+- None open.
+
+---
+
 ## Round 5 (27 October 2026): the handheld door is encrypted, the seal is on the store PC's screen, and release reports reach head office (OB-422 to OB-425)
 
 **What changed**

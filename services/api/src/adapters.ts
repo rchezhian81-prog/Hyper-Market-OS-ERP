@@ -89,6 +89,7 @@ import type { PlacementTrigger } from '../../pos/src/till-store';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
 import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/src/day-close';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
+import type { B2BCustomerGstinDeps, CustomerGstinRecord } from '../../finance/src/b2b-customer-gstin';
 import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
@@ -4040,6 +4041,57 @@ export function b2bCreditAdapter(input: {
   };
 }
 
+/**
+ * OB-416: a credit customer's GSTIN facts, on the customer's own stream — append-only, the latest in force. Each change is
+ * written in ONE batch with its M34 audit record (both or neither), under the customer's GSTIN guard and the audit chain's:
+ * another change in between refuses the batch by name, the GSTIN it supersedes is read again, and the change is recorded
+ * naming it — never a silent overwrite.
+ */
+export function b2bCustomerGstinAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<B2BCustomerGstinDeps, 'account'> {
+  const gstins = (tenantId: string, customerId: string): Promise<readonly CustomerGstinRecord[]> =>
+    allOf<CustomerGstinRecord>(input.store, tenantId, forB2BCustomer(customerId), 'B2BCustomerGstinRecorded');
+  return {
+    now: input.now,
+    gstins,
+    recordGstin: async (tenantId, r) => {
+      const guardKey = `b2b-customer-gstin-${createHash('sha256').update(r.customerId).digest('hex').slice(0, 24)}`;
+      for (let attempt = 0; ; attempt += 1) {
+        const expectedVersion = await input.store.guardVersion(tenantId, guardKey);
+        const before = (await gstins(tenantId, r.customerId)).at(-1);
+        const at = input.now();
+        const record: CustomerGstinRecord = {
+          customerId: r.customerId, gstin: r.gstin, legalName: r.legalName, stateCode: r.stateCode, stateName: r.stateName,
+          reason: r.reason, recordedBy: r.by, recordedAt: at, previousGstin: before?.gstin ?? null,
+        };
+        const audit = await sealedAuditEntry(input.store, tenantId, {
+          actorId: r.by, action: before === undefined ? 'b2b.customer_gstin.record' : 'b2b.customer_gstin.change',
+          objectType: 'b2b_customer', objectId: r.customerId, at, origin: { tenantId, branchId: r.branchId },
+          before: before === undefined ? null : { gstin: before.gstin, legalName: before.legalName, stateCode: before.stateCode },
+          after: { gstin: r.gstin, legalName: r.legalName, stateCode: r.stateCode },
+          reason: r.reason, correlationId: r.customerId,
+        });
+        const seq = (await gstins(tenantId, r.customerId)).length + 1;
+        try {
+          await input.store.appendBatch(tenantId, [{ stream: forB2BCustomer(r.customerId), event: makeEvent({
+            id: `b2b-gstin-${r.customerId}-${seq}`, type: 'B2BCustomerGstinRecorded', occurredAt: at,
+            // Keyed on what it supersedes and what it sets: a re-sent change collapses; a later change (even back to an
+            // earlier GSTIN) is a new fact.
+            idempotencyKey: `b2b-gstin-${tenantId}-${r.customerId}-${before?.gstin ?? 'none'}-${before?.legalName ?? ''}-${r.gstin}-${r.legalName}`,
+            source: 'api/finance', payload: record,
+          }) }, audit.entry], { guard: { key: guardKey, expectedVersion }, alsoGuards: [audit.guard] });
+        } catch (e) {
+          if (e instanceof ConcurrencyConflictError && attempt < 32) {
+            await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
+            continue;
+          }
+          throw e;
+        }
+        return (await gstins(tenantId, r.customerId)).at(-1) ?? record;
+      }
+    },
+  };
+}
+
 export function concessionAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -5607,10 +5659,11 @@ const HSN_SHAPE = /^(\d{4}|\d{6}|\d{8})$/;
 /**
  * OB-408: the outward-supply document a B2B tax invoice files under — its number, its shop date, each line at the rate
  * and with the CGST / SGST / IGST split the invoice charged (what the books post), and the HSN the published catalogue
- * holds for the product. No recipient GSTIN is on record for a credit customer, so it is filed as GSTR-1 files a supply
- * with none (B2C, rate-wise); the tax is the same either way. Anything it cannot carry is said, never guessed.
+ * holds for the product. OB-416: when the invoice names the buyer's GSTIN (the one on the credit account the moment it was
+ * issued) it files as a B2B supply under that GSTIN, invoice-by-invoice; with none it files as GSTR-1 files a supply with no
+ * recipient GSTIN (B2C, rate-wise). The tax is the same either way. Anything it cannot carry is said, never guessed.
  */
-function b2bOutwardSupplyOf(doc: StoredB2BDocument, customerId: string, documentDate: string, taxTable: readonly ProductTaxEntry[]): { readonly doc: StoredOutwardDoc } | { readonly held: B2BInvoiceNotOnReturn } {
+export function b2bOutwardSupplyOf(doc: StoredB2BDocument, customerId: string, documentDate: string, taxTable: readonly ProductTaxEntry[]): { readonly doc: StoredOutwardDoc } | { readonly held: B2BInvoiceNotOnReturn } {
   const hsnOf = new Map(taxTable.map((e) => [e.productId, e.hsnCode]));
   const reasons: string[] = [];
   if (doc.gst === undefined) reasons.push('the invoice carries no CGST / SGST / IGST split (the store\'s GSTIN is not on record)');
@@ -5625,7 +5678,7 @@ function b2bOutwardSupplyOf(doc: StoredB2BDocument, customerId: string, document
   if (reasons.length > 0 || lines.length === 0) {
     return { held: { invoiceNumber: doc.number, invoiceDocumentId: doc.documentId, customerId, documentDate, taxMinor: doc.taxMinor, reasons: reasons.length > 0 ? reasons : ['the invoice has no line to file'] } };
   }
-  return { doc: { documentId: doc.number, documentDate, supplyType: 'b2c', lines, fedFrom: { kind: 'b2b_tax_invoice', customerId, invoiceDocumentId: doc.documentId } } };
+  return { doc: { documentId: doc.number, documentDate, ...(doc.buyer === undefined ? { supplyType: 'b2c' as const } : { supplyType: 'b2b' as const, recipientGstin: doc.buyer.gstin }), lines, fedFrom: { kind: 'b2b_tax_invoice', customerId, invoiceDocumentId: doc.documentId } } };
 }
 
 export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; readonly now: () => string }): {

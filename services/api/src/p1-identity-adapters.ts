@@ -35,7 +35,8 @@ import type { IncomingSale } from '../../pos/src/index';
 import type { PersonSignIn } from '../../identity/src/people';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
-import { approvalRequestRoutes, type ApprovalEscalationView } from '../../identity/src/approval-requests';
+import { approvalRequestRoutes, type ApprovalEscalationView, type NamedDecider, type NamedPerson } from '../../identity/src/approval-requests';
+import { twoSignatureAdapter } from './gates-adapters'; // OB-420: the OB-330 security-reviewer register
 import { authorityRulesRoutes, authorityOfPort, escalationWaitsOf, priceCheckOf, RULE_CONFIG_KEYS, type AuthorityRulesStore, type AuthorityOf } from '../../identity/src/authority-limits';
 import { approvalEscalationRoutes, sweepAgedApprovals, type ApprovalEscalation, type ApprovalEscalationDeps, type PendingApproval } from '../../identity/src/approval-escalation';
 import { accessReviewRoutes } from '../../identity/src/access-review';
@@ -247,7 +248,15 @@ export function p1IdentitySurface(surface: Route[], input: {
     ...(input.applyDecision === undefined ? {} : { applyDecision: input.applyDecision }),
     ...(input.tillSealKey === undefined ? {} : { tillSealKey: input.tillSealKey }),
   }));
-  swapIn(surface, approvalRequestRoutes({ ...approvals, authorityOf, escalations: escalationView }));
+  // OB-420: a floor-device review is decided by the security reviewer named NOW — the same OB-330 register the risk
+  // acceptance and the rollout read.
+  const reviewerRegister = twoSignatureAdapter({ store, now }).twoSignature;
+  const namedDeciderOf = async (tenantId: string, role: NamedDecider): Promise<NamedPerson | undefined> => {
+    if (role !== 'security_reviewer') return undefined;
+    const r = await reviewerRegister.reviewer(tenantId);
+    return r === undefined ? undefined : { userId: r.userId, displayName: r.displayName };
+  };
+  swapIn(surface, approvalRequestRoutes({ ...approvals, authorityOf, escalations: escalationView, namedDeciderOf }));
   // M01-FR-01: the org structure, with the owner's approval on every structural change.
   swapIn(surface, orgStructureRoutes({ ...orgStructureAdapter({ store, now }), approvals }));
 

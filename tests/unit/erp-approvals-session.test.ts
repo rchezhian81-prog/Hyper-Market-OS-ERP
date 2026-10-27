@@ -509,3 +509,35 @@ describe('the import screen no longer takes a typed approver anywhere', () => {
     expect(commit).not.toMatch(/decidedBy|uploadedBy|status: 'approved'/);
   });
 });
+
+describe('OB-420 — a floor-device review says who alone decides it (the named security reviewer), or that nobody can yet', () => {
+  const review = (over: Partial<ApprovalRequestView> = {}): ApprovalRequestView => row({
+    requestId: 'areq-fdr', kind: 'floor_device_review', label: APPROVAL_KINDS['floor_device_review']!.label, subjectRef: 'rollout:cctv:B1',
+    details: { branchId: 'B1', enabled: true, key: 'cctv' }, summary: 'cctv on in B1', requestedBy: 'u-owner', ...over,
+  });
+  it('names the reviewer on the asker\'s own waiting request, in English and Tamil', () => {
+    const r = review({ decider: { role: 'security_reviewer', named: true, userId: 'u-siva', displayName: 'Mr Sivakumar' } });
+    const s = session({ inbox: () => ({ waitingForMe: [], mine: [r], asAt: null }) });
+    const en = s.view('en').mine[0]!.whoDecides!;
+    expect(en.label).toBe('Only the named security reviewer, Mr Sivakumar, can decide this.');
+    expect(en.needsAttention).toBe(false);
+    const ta = s.view('ta').mine[0]!.whoDecides!;
+    expect(ta.label).toContain('Mr Sivakumar');
+    expect(ta.label).toMatch(/[஀-௿]/);
+  });
+  it('with nobody named, the asker is told nobody can decide it yet — a warning with an icon and words, never silent (P-08)', () => {
+    const r = review({ decider: { role: 'security_reviewer', named: false, whatToDo: 'server words' } });
+    const s = session({ inbox: () => ({ waitingForMe: [], mine: [r], asAt: null }) });
+    const en = s.view('en').mine[0]!.whoDecides!;
+    expect(en).toMatchObject({ tone: 'degraded', icon: '⚠', needsAttention: true });
+    expect(en.label).toBe(APPROVALS_COPY.en.deciderNoReviewer);
+    expect(s.view('ta').mine[0]!.whoDecides!.label).toBe(APPROVALS_COPY.ta.deciderNoReviewer);
+  });
+  it('says nothing extra once decided, or for a kind anyone with the authority decides', () => {
+    expect(presentRequest('en', review({ status: 'approved', decidedBy: 'u-siva', decider: { role: 'security_reviewer', named: true, userId: 'u-siva', displayName: 'Mr Sivakumar' } })).whoDecides).toBeNull();
+    expect(presentRequest('en', row()).whoDecides).toBeNull();
+  });
+  it('the page draws it under the request', () => {
+    expect(readFileSync('apps/web-erp/web/approvals.js', 'utf8')).toContain('r.whoDecides');
+  });
+});

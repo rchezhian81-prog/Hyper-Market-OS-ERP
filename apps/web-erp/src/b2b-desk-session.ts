@@ -33,6 +33,8 @@ export const B2B_DESK_COPY = {
     ordersH: 'Orders — ordered, delivered, billed', ordered: 'ordered', delivered: 'delivered', billed: 'billed', notBilled: 'delivered but not billed',
     collectH: 'Money owed', ageingNone: 'No invoice is owed yet.', overdue: 'overdue', disputed: 'disputed', chaseable: 'to chase', receivedL: 'Payment received (₹)', recordPayment: 'Record the payment',
     requestsH: 'Quote requests from the portal', requestsNone: 'No quote request is waiting.', useRequest: 'Quote this',
+    gstinH: 'Customer GSTIN (for tax invoices)', gstinFig: 'GSTIN', gstinNone: 'No GSTIN on record — tax invoices file as B2C', gstinL: 'Customer GSTIN (15 characters)', gstinNameL: 'Legal name on the GST registration', gstinReasonL: 'Reason', gstinSave: 'Record the GSTIN',
+    gstinNote: 'Tax invoices issued after this carry the GSTIN and file invoice-by-invoice in GSTR-1\'s B2B section. Invoices already issued do not change.', billTo: 'Bill to', billToNone: 'no GSTIN (filed as B2C)', needGstin: 'Type the customer\'s 15-character GSTIN, the legal name under it and the reason.',
     read: 'Read', saved: 'Saved.', nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot open the business desk.',
     needCustomer: 'Type the customer id first.', needStore: 'Name the store it is supplied from.', needLines: 'Add at least one line: product, description, a whole quantity and a GST %.', needDates: 'Give both dates (from, to) — the end on or after the start.', needPrices: 'Write the price list: one "product id = rupees" per line.', needMoney: 'Write the amount in rupees, like 1250 or 1250.50.', needDispatched: 'Type how many of each line left the building.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.', offFeature: 'The business-customer feature is switched off for this shop.',
@@ -51,6 +53,8 @@ export const B2B_DESK_COPY = {
     ordersH: 'ஆர்டர்கள் — ஆர்டர், டெலிவரி, பில்', ordered: 'ஆர்டர்', delivered: 'டெலிவரி', billed: 'பில்', notBilled: 'டெலிவரி ஆனது, பில் இல்லை',
     collectH: 'நிலுவைப் பணம்', ageingNone: 'இன்னும் எந்த விலைப்பட்டியலும் நிலுவையில் இல்லை.', overdue: 'தாமதம்', disputed: 'தகராறு', chaseable: 'வசூலிக்க', receivedL: 'பெற்ற தொகை (₹)', recordPayment: 'தொகையைப் பதிவு செய்',
     requestsH: 'போர்ட்டலில் வந்த விலைக்குறிப்பு கோரிக்கைகள்', requestsNone: 'எந்தக் கோரிக்கையும் காத்திருக்கவில்லை.', useRequest: 'இதற்கு விலைக்குறிப்பு',
+    gstinH: 'வாடிக்கையாளர் GSTIN (வரி விலைப்பட்டியலுக்கு)', gstinFig: 'GSTIN', gstinNone: 'GSTIN பதிவில் இல்லை — வரி விலைப்பட்டியல்கள் B2C ஆகப் பதிவாகும்', gstinL: 'வாடிக்கையாளர் GSTIN (15 எழுத்துகள்)', gstinNameL: 'GST பதிவில் உள்ள சட்டப் பெயர்', gstinReasonL: 'காரணம்', gstinSave: 'GSTIN-ஐப் பதிவு செய்',
+    gstinNote: 'இதன் பின் வெளியிடப்படும் வரி விலைப்பட்டியல்களில் GSTIN இருக்கும்; அவை GSTR-1 இன் B2B பிரிவில் ஒவ்வொன்றாகப் பதிவாகும். ஏற்கனவே வெளியிட்டவை மாறாது.', billTo: 'பெறுநர்', billToNone: 'GSTIN இல்லை (B2C ஆகப் பதிவு)', needGstin: 'வாடிக்கையாளரின் 15 எழுத்து GSTIN, அதன் சட்டப் பெயர், காரணம் ஆகியவற்றைத் தட்டச்சு செய்யவும்.',
     read: 'படி', saved: 'சேமிக்கப்பட்டது.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு வணிக மேசையைத் திறக்க முடியாது.',
     needCustomer: 'முதலில் வாடிக்கையாளர் எண்ணைத் தட்டச்சு செய்யவும்.', needStore: 'வழங்கும் கடையைக் குறிப்பிடவும்.', needLines: 'குறைந்தது ஒரு வரி சேர்க்கவும்: பொருள், விவரம், முழு அளவு, GST %.', needDates: 'இரு தேதிகளையும் தரவும் — முடிவு தொடக்கத்திற்குப் பின் அல்லது அதே நாள்.', needPrices: 'விலைப்பட்டியலை எழுதவும்: ஒவ்வொரு வரியிலும் "பொருள் எண் = ரூபாய்".', needMoney: 'தொகையை ரூபாயில் எழுதவும், உதா. 1250 அல்லது 1250.50.', needDispatched: 'ஒவ்வொரு வரியிலும் எத்தனை அனுப்பப்பட்டது என்று தட்டச்சு செய்யவும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.', offFeature: 'இந்தக் கடைக்கு வணிக வாடிக்கையாளர் வசதி அணைக்கப்பட்டுள்ளது.',
@@ -102,7 +106,7 @@ export interface ContractInput {
 export interface ContractBody { readonly customerId: string; readonly contractId: string; readonly body: Record<string, unknown> }
 export interface AskedRequest { readonly requestId: string; readonly kind: string; readonly status: string; readonly subjectRef: string; readonly details: Record<string, unknown>; readonly decidedBy?: string; readonly decisionReason?: string }
 
-export type Invalid = 'nobody' | 'needCustomer' | 'needStore' | 'needLines' | 'needDates' | 'needPrices' | 'needMoney' | 'needDispatched';
+export type Invalid = 'nobody' | 'needCustomer' | 'needStore' | 'needLines' | 'needDates' | 'needPrices' | 'needMoney' | 'needDispatched' | 'needGstin';
 
 /** Read the contract form into the exact body head office takes. */
 export function contractBodyOf(input: ContractInput, makeId: () => string = () => newId('K')): ContractBody | Invalid {
@@ -139,7 +143,7 @@ export function quoteLinesOf(lines: readonly QuoteLineInput[]): { lineId: string
 }
 
 export interface B2BDeskSession {
-  readonly may: { readonly named: boolean; readonly open: boolean; readonly issue: boolean; readonly readContracts: boolean; readonly manageContracts: boolean; readonly collect: boolean; readonly readAccount: boolean };
+  readonly may: { readonly named: boolean; readonly open: boolean; readonly issue: boolean; readonly readContracts: boolean; readonly manageContracts: boolean; readonly collect: boolean; readonly readAccount: boolean; readonly manageAccount: boolean };
   readDesk(): Promise<Outcome<{ readonly customers: readonly { readonly customerId: string; readonly contract: { readonly inForce: string | null; readonly lapsed: string | null; readonly blocked: boolean } }[] }>>;
   readCustomer(customerId: string): Promise<Outcome<Record<string, unknown>, 'needCustomer'>>;
   readAgeing(customerId: string): Promise<Outcome<Record<string, unknown>, 'needCustomer'>>;
@@ -158,6 +162,8 @@ export interface B2BDeskSession {
   askContractApproval(input: ContractInput, reason: string): Promise<Outcome<unknown, Invalid>>;
   putContractInForce(request: AskedRequest): Promise<Outcome<unknown, Invalid>>;
   recordPayment(customerId: string, rupeesReceived: string): Promise<Outcome<unknown, Invalid>>;
+  /** OB-416: record (or change) the customer's GSTIN on the credit account — head office checks it and refuses a bad one by name. */
+  recordGstin(input: { readonly customerId: string; readonly gstin: string; readonly legalName: string; readonly reason: string }): Promise<Outcome<unknown, Invalid>>;
 }
 
 export function createB2BDeskSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly makeId?: (prefix: string) => string }): B2BDeskSession {
@@ -167,6 +173,7 @@ export function createB2BDeskSession(input: { readonly viewer: { readonly userId
     named, open: named && held.has('b2b.document.read'), issue: named && held.has('b2b.document.issue'),
     readContracts: named && held.has('b2b.contract.read'), manageContracts: named && held.has('b2b.contract.manage'),
     collect: named && held.has('b2b.receivable.record'), readAccount: named && held.has('b2b.account.read'),
+    manageAccount: named && held.has('b2b.account.manage'),
   };
   const call = makeCaller({ keyPrefix: 'b2b-desk', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const id = input.makeId ?? newId;
@@ -258,6 +265,14 @@ export function createB2BDeskSession(input: { readonly viewer: { readonly userId
       const paise = paiseOfRupees(rupeesReceived);
       if (paise === undefined || paise === 0) return { result: 'invalid', why: 'needMoney' };
       return call('POST', `/v1/b2b/collections/${enc(customerId.trim())}/payments/${enc(id('RCPT'))}`, { receivedMinor: paise });
+    },
+    recordGstin: async ({ customerId, gstin, legalName, reason }) => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (customerId.trim() === '') return { result: 'invalid', why: 'needCustomer' };
+      const g = gstin.replace(/\s/g, '').toUpperCase();
+      // The shape only; head office checks the check character and the State code, and refuses a bad one by name.
+      if (!/^[0-9A-Z]{15}$/.test(g) || legalName.trim() === '' || reason.trim() === '') return { result: 'invalid', why: 'needGstin' };
+      return call('POST', `/v1/b2b/accounts/${enc(customerId.trim())}/gstin`, { gstin: g, legalName: legalName.trim(), reason: reason.trim() });
     },
   };
 }

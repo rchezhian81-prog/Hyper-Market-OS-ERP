@@ -96,10 +96,11 @@ describe.each(backings)('the security reviewer signs, and a floor device is swit
     expect((await decide(h, T, 'u-owner', ownerAsk)).status).toBe(201);
     // Without the reviewer's signature.
     expect(codeOf(await call('PUT', '/v1/platform/rollout/cctv', 'u-it', { ...on, approvalId: ownerAsk }))).toBe('floor_device_switch_needs_security_reviewer');
-    // A manager who may read the risk register signs — but is not the named reviewer, so it does not count.
+    // A manager who may read the risk register cannot sign: since OB-420 only the named reviewer decides it — refused by
+    // name, nothing recorded, so the signature is still missing at switch-on.
     const mgrSigns = await ask('u-it', 'floor_device_review');
-    expect((await decide(h, T, 'u-mgr', mgrSigns)).status).toBe(201);
-    expect(codeOf(await call('PUT', '/v1/platform/rollout/cctv', 'u-it', { ...on, approvalId: ownerAsk, reviewApprovalId: mgrSigns }))).toBe('not_the_named_security_reviewer');
+    expect(codeOf(await decide(h, T, 'u-mgr', mgrSigns))).toBe('only_the_named_security_reviewer_decides');
+    expect(codeOf(await call('PUT', '/v1/platform/rollout/cctv', 'u-it', { ...on, approvalId: ownerAsk, reviewApprovalId: mgrSigns }))).toBe('approval_still_waiting');
     // The person switching can never be the approver: the owner switching asks, and cannot decide his own request.
     const selfAsk = await ask('u-owner', 'flag_change');
     expect(codeOf(await decide(h, T, 'u-owner', selfAsk))).toBe('self_approval');

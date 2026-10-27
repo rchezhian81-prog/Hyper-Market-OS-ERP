@@ -7,7 +7,7 @@
 const $ = (id) => document.getElementById(id);
 const api = window.b2bDesk ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, open: false, issue: false, readContracts: false, manageContracts: false, collect: false, readAccount: false };
+const may = session?.may ?? { named: false, open: false, issue: false, readContracts: false, manageContracts: false, collect: false, readAccount: false, manageAccount: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const money = (minor) => (api === null ? String(minor) : api.rupees(minor));
@@ -61,7 +61,14 @@ function paintCustomer() {
   if (customer === null) return;
   const a = customer.account;
   if (a === null) acct.append(text('p', t('noAccount'), 'meta'));
-  else acct.append(fig(t('limit'), money(a.creditLimitMinor)), fig(t('owed'), money(a.outstandingMinor)), fig(t('available'), money(a.availableCreditMinor)), fig(t('terms'), a.paymentTermsDays === null ? t('notSet') : String(a.paymentTermsDays)));
+  else {
+    acct.append(fig(t('limit'), money(a.creditLimitMinor)), fig(t('owed'), money(a.outstandingMinor)), fig(t('available'), money(a.availableCreditMinor)), fig(t('terms'), a.paymentTermsDays === null ? t('notSet') : String(a.paymentTermsDays)));
+    // OB-416: the GSTIN the next tax invoice is made out to — or, said, that there is none (its invoices file as B2C).
+    const g = a.gstin ?? null;
+    const gf = fig(t('gstinFig'), g === null ? t('gstinNone') : `${g.gstin} — ${g.legalName} (${g.stateName}, ${g.stateCode})`);
+    gf.id = 'acct-gstin'; acct.append(gf);
+  }
+  $('gstin-form').hidden = !(may.manageAccount && a !== null);
   if (customer.contracts.length === 0) k.append(text('li', t('contractNone')));
   for (const c of customer.contracts) {
     const li = document.createElement('li'); li.dataset.contract = c.contractId;
@@ -101,6 +108,12 @@ function paintDocs() {
   for (const d of docs) {
     const li = document.createElement('li'); li.dataset.doc = d.documentId; li.dataset.kind = d.kind;
     li.append(text('strong', `${t(`kind_${d.kind}`)} ${d.number} — ${money(d.grossMinor)}${d.converted ? ` (${t('converted')})` : ''}`));
+    // OB-416: a tax invoice names who it is made out to — the buyer's GSTIN, legal name and State as on the day it was issued.
+    if (d.kind === 'tax_invoice') {
+      const b = d.buyer ?? null;
+      const bill = text('span', `${t('billTo')}: ${b === null ? t('billToNone') : `${b.legalName} · GSTIN ${b.gstin} · ${b.stateName} (${b.stateCode})`}`, 'meta');
+      bill.dataset.billTo = b === null ? '' : b.gstin; li.append(bill);
+    }
     const src = new Map((d.pricedFrom ?? []).map((p) => [p.lineId, p.priceSource]));
     li.append(text('span', d.lines.map((l) => `${l.description} × ${l.qty} @ ${money(l.unitPriceMinor)}${src.has(l.lineId) ? ` (${t(`src_${src.get(l.lineId)}`)})` : ''}`).join(' · '), 'meta'));
     if (d.kind === 'quotation' && !d.converted && may.issue) {
@@ -168,7 +181,8 @@ function paint() {
   for (const [id, key] of [['customers-h', 'customersH'], ['c-id-l', 'customerId'], ['c-open-text', 'open'], ['r-h', 'requestsH'], ['acct-h', 'accountH'], ['k-h', 'contractsH'],
     ['propose-h', 'proposeH'], ['k-id-l', 'contractIdL'], ['k-from-l', 'validFrom'], ['k-to-l', 'validTo'], ['k-expiry-l', 'onExpiryL'], ['k-expiry-block', 'block'], ['k-expiry-fallback', 'fallback'], ['k-limit-l', 'limitL'], ['k-terms-l', 'termsL'], ['k-prices-l', 'pricesL'], ['k-note-l', 'noteL'], ['k-save-text', 'propose'], ['k-ask-text', 'askApproval'],
     ['quote-h', 'quoteH'], ['q-note', 'priceNote'], ['q-store-l', 'storeL'], ['q-days-l', 'validDays'], ['q-add-text', 'addLine'], ['q-issue-text', 'issueQuote'],
-    ['docs-h', 'docsH'], ['o-h', 'ordersH'], ['collect-h', 'collectH'], ['pay-amount-l', 'receivedL'], ['pay-save-text', 'recordPayment']]) $(id).textContent = t(key);
+    ['docs-h', 'docsH'], ['o-h', 'ordersH'], ['collect-h', 'collectH'], ['pay-amount-l', 'receivedL'], ['pay-save-text', 'recordPayment'],
+    ['gstin-h', 'gstinH'], ['gstin-note', 'gstinNote'], ['g-gstin-l', 'gstinL'], ['g-name-l', 'gstinNameL'], ['g-reason-l', 'gstinReasonL'], ['g-save-text', 'gstinSave']]) $(id).textContent = t(key);
   paintDesk(); paintRequests(); paintCustomer(); paintQuoteLines();
 }
 
@@ -191,7 +205,7 @@ async function openCustomer(id) {
 }
 const contractInput = () => ({ customerId: customerId ?? $('c-id').value, contractId: $('k-id').value, validFrom: $('k-from').value, validTo: $('k-to').value, onExpiry: $('k-expiry').value, prices: $('k-prices').value, limitRupees: $('k-limit').value, termsDays: $('k-terms').value, note: $('k-note').value });
 
-for (const [id, name] of [['c-open', 'search'], ['k-save', 'file-text'], ['k-ask', 'hand'], ['q-add', 'list-plus'], ['q-issue', 'send'], ['pay-save', 'banknote']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+for (const [id, name] of [['c-open', 'search'], ['k-save', 'file-text'], ['k-ask', 'hand'], ['q-add', 'list-plus'], ['q-issue', 'send'], ['pay-save', 'banknote'], ['g-save', 'shield-check']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (!may.named) { $('page-status').textContent = t('nobody'); }
@@ -211,6 +225,11 @@ else {
     const c = contractInput();
     if (c.contractId.trim() === '') { const saved = await session.proposeContract(c); say('k-status', saved); if (saved.result !== 'ok') return; $('k-id').value = saved.value.contract.contractId; c.contractId = saved.value.contract.contractId; }
     const out = await session.askContractApproval(c, $('k-note').value); say('k-status', out); if (out.result === 'ok') await loadAsked();
+  });
+  $('g-save').addEventListener('click', async () => {
+    const out = await session.recordGstin({ customerId: customerId ?? '', gstin: $('g-gstin').value, legalName: $('g-name').value, reason: $('g-reason').value });
+    say('g-status', out);
+    if (out.result === 'ok') { $('g-gstin').value = ''; $('g-name').value = ''; $('g-reason').value = ''; await openCustomer(customerId); }
   });
   $('pay-save').addEventListener('click', async () => { const out = await session.recordPayment(customerId ?? '', $('pay-amount').value); say('pay-status', out); if (out.result === 'ok') await openCustomer(customerId); });
 }
