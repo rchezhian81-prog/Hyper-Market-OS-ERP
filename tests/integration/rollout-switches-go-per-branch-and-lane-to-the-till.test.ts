@@ -48,28 +48,28 @@ describe.each(backings)('rollout switches per branch and per lane reach the till
     // Preview first: it changes lane 7 only, needs nobody else.
     const preview = await ho.ok('POST', '/v1/platform/rollout/self_checkout/preview', 'u-it', { branchId: 'B1', laneId: 'lane-7', enabled: true });
     expect(preview).toMatchObject({ current: null, currentVersion: 0, lanesReached: ['lane-7'], lanesThatChange: ['lane-7'], highImpact: false, needsSecondPerson: false });
-    const branchPreview = await ho.ok('POST', '/v1/platform/rollout/esl/preview', 'u-it', { branchId: 'B1', enabled: true });
+    const branchPreview = await ho.ok('POST', '/v1/platform/rollout/digital_receipts/preview', 'u-it', { branchId: 'B1', enabled: true });
     expect(branchPreview).toMatchObject({ lanesReached: ['lane-1', 'lane-7'], lanesThatChange: ['lane-1', 'lane-7'] });
 
-    // Self-checkout on lane 7 only (a lane switch, the branch never set); ESL on for the branch, off on lane 1.
+    // Self-checkout on lane 7 only (a lane switch, the branch never set); digital receipts on for the branch, off on lane 1.
     const on = await ho.ok('PUT', '/v1/platform/rollout/self_checkout', 'u-it', { branchId: 'B1', laneId: 'lane-7', enabled: true, reason: 'self-checkout trial on lane 7 (wave 1)' });
     expect(on).toMatchObject({ change: { version: 1, changedBy: 'u-it', laneId: 'lane-7' }, before: { on: false, source: 'never_set' }, now: { on: true, source: 'lane' } });
-    await ho.ok('PUT', '/v1/platform/rollout/esl', 'u-it', { branchId: 'B1', enabled: true, reason: 'shelf labels trial in B1' });
-    await ho.ok('PUT', '/v1/platform/rollout/esl', 'u-it', { branchId: 'B1', laneId: 'lane-1', enabled: false, reason: 'lane 1 has no labels yet' });
-    await ho.ok('PUT', '/v1/platform/rollout/esl', 'u-it', { branchId: 'B1', enabled: false, reason: 'labels flicker — stop' });
+    await ho.ok('PUT', '/v1/platform/rollout/digital_receipts', 'u-it', { branchId: 'B1', enabled: true, reason: 'digital receipts trial in B1' });
+    await ho.ok('PUT', '/v1/platform/rollout/digital_receipts', 'u-it', { branchId: 'B1', laneId: 'lane-1', enabled: false, reason: 'lane 1 has no receipt link yet' });
+    await ho.ok('PUT', '/v1/platform/rollout/digital_receipts', 'u-it', { branchId: 'B1', enabled: false, reason: 'receipts slow — stop' });
 
     ho.restartCold(); // ── head office COLD ──
     // Rollback in one step: version 1's state restored as version 3, shown in the history as its own event.
-    const back = await ho.ok('POST', '/v1/platform/rollout/esl/rollback', 'u-it', { branchId: 'B1', toVersion: 1, reason: 'firmware fixed — back on' });
+    const back = await ho.ok('POST', '/v1/platform/rollout/digital_receipts/rollback', 'u-it', { branchId: 'B1', toVersion: 1, reason: 'firmware fixed — back on' });
     expect(back).toMatchObject({ change: { version: 3, enabled: true, rolledBackFrom: 1 } });
-    expect(codeOf(await ho.call('POST', '/v1/platform/rollout/esl/rollback', 'u-it', { branchId: 'B1', toVersion: 9, reason: 'x' }))).toBe('not_found');
-    const hist = await ho.ok('GET', '/v1/platform/rollout/esl/history', 'u-it', undefined, { branchId: 'B1' }) as { versions: { version: number; enabled: boolean; reason: string; rolledBackFrom?: number }[] };
+    expect(codeOf(await ho.call('POST', '/v1/platform/rollout/digital_receipts/rollback', 'u-it', { branchId: 'B1', toVersion: 9, reason: 'x' }))).toBe('not_found');
+    const hist = await ho.ok('GET', '/v1/platform/rollout/digital_receipts/history', 'u-it', undefined, { branchId: 'B1' }) as { versions: { version: number; enabled: boolean; reason: string; rolledBackFrom?: number }[] };
     expect(hist.versions.map((v) => [v.version, v.enabled, v.rolledBackFrom ?? null])).toEqual([[1, true, null], [2, false, null], [3, true, 1]]);
-    expect(await ho.ok('GET', '/v1/platform/rollout/esl/decision', 'u-it', undefined, { branchId: 'B1', laneId: 'lane-7' })).toMatchObject({ on: true, source: 'branch', version: 3 });
-    expect(await ho.ok('GET', '/v1/platform/rollout/esl/decision', 'u-it', undefined, { branchId: 'B1', laneId: 'lane-1' })).toMatchObject({ on: false, source: 'lane' });
-    expect(await ho.ok('GET', '/v1/platform/rollout/esl/decision', 'u-it', undefined, { branchId: 'B2' })).toMatchObject({ on: false, source: 'never_set' });
+    expect(await ho.ok('GET', '/v1/platform/rollout/digital_receipts/decision', 'u-it', undefined, { branchId: 'B1', laneId: 'lane-7' })).toMatchObject({ on: true, source: 'branch', version: 3 });
+    expect(await ho.ok('GET', '/v1/platform/rollout/digital_receipts/decision', 'u-it', undefined, { branchId: 'B1', laneId: 'lane-1' })).toMatchObject({ on: false, source: 'lane' });
+    expect(await ho.ok('GET', '/v1/platform/rollout/digital_receipts/decision', 'u-it', undefined, { branchId: 'B2' })).toMatchObject({ on: false, source: 'never_set' });
     const board = await ho.ok('GET', '/v1/platform/rollout', 'u-owner') as { switches: { key: string; laneId: string | null; enabled: boolean; version: number }[] };
-    expect(board.switches.map((s) => [s.key, s.laneId, s.enabled, s.version])).toEqual([['esl', null, true, 3], ['esl', 'lane-1', false, 1], ['self_checkout', 'lane-7', true, 1]]);
+    expect(board.switches.map((s) => [s.key, s.laneId, s.enabled, s.version])).toEqual([['digital_receipts', null, true, 3], ['digital_receipts', 'lane-1', false, 1], ['self_checkout', 'lane-7', true, 1]]);
 
     // A HIGH-IMPACT switch (offline limits): refused without the owner's approval; the maker cannot approve their own;
     // the owner's approval of exactly this change lets it through, named on the version.
@@ -90,7 +90,7 @@ describe.each(backings)('rollout switches per branch and per lane reach the till
     expect(pack.status, JSON.stringify(pack.body)).toBe(200);
     const rollout = (pack.body as { sections: { rollout: { format: string; branchId: string; switches: { key: string }[] } } }).sections.rollout;
     expect(rollout).toMatchObject({ format: 'sre-rollout/1', branchId: 'B1' });
-    expect(rollout.switches.map((s) => s.key)).toEqual(['esl', 'offline.card_limit_trial', 'self_checkout']);
+    expect(rollout.switches.map((s) => s.key)).toEqual(['digital_receipts', 'offline.card_limit_trial', 'self_checkout']);
 
     // ── The store computer serves the till its lane's switches, with NO head office anywhere, across its cold restart ──
     const laneOf = async (box: Box): Promise<Record<string, unknown>> => {
@@ -101,11 +101,11 @@ describe.each(backings)('rollout switches per branch and per lane reach the till
     boxes.push(lane7);
     await lane7.restartCold();
     const at7 = posRolloutOf((await laneOf(lane7))['rollout']);
-    expect([at7.known, at7.on, at7.isOn('self_checkout'), at7.isOn('esl'), at7.isOn('rfid')]).toEqual([true, ['esl', 'offline.card_limit_trial', 'self_checkout'], true, true, false]);
+    expect([at7.known, at7.on, at7.isOn('self_checkout'), at7.isOn('digital_receipts'), at7.isOn('rfid')]).toEqual([true, ['digital_receipts', 'offline.card_limit_trial', 'self_checkout'], true, true, false]);
     const lane1 = await startBox({ tenantId: ho.tenantId, people: [], pack: { ...storePack('B1'), rollout }, env: { EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_LANE_ID: 'lane-1' } });
     boxes.push(lane1);
     const at1 = posRolloutOf((await laneOf(lane1))['rollout']);
-    expect([at1.isOn('self_checkout'), at1.isOn('esl')]).toEqual([false, false]);
+    expect([at1.isOn('self_checkout'), at1.isOn('digital_receipts')]).toEqual([false, false]);
     // A pack built before rollout: the till is "not told" — every trial feature off, and the reason said.
     const old = await startBox({ tenantId: ho.tenantId, people: [], pack: storePack('B1'), env: { EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_LANE_ID: 'lane-7' } });
     boxes.push(old);

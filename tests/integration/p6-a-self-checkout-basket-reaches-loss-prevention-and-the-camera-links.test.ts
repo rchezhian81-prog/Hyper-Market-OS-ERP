@@ -5,6 +5,7 @@ import { backingsFor, headOffice, linkBoxTo, startBox, storePack, type Box } fro
 import { signInAtLane, operatorHeader } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { deviceBatchMessage } from '../../packages/integration/src/floor-devices';
+import { nameSecurityReviewer, switchFloorDeviceOn } from '../support/floor-device-switch';
 
 /**
  * **R8-3 · R8-7 (M15) — a paid self-checkout basket's evidence goes from the lane to the store computer's disk, survives
@@ -38,6 +39,7 @@ describe.each(backings)('a self-checkout basket reaches loss prevention and the 
     const ho = await headOffice(backing, [
       { userId: 'u-it', role: 'platform_admin' }, { userId: 'u-box', role: 'store_computer', stores: ['B1'] },
       { userId: 'u-gw', role: 'floor_device_gateway', stores: ['B1'] }, { userId: 'u-attend', role: 'cashier', stores: ['B1'] },
+      { userId: 'u-rev', role: 'security_reviewer' }, // OB-406: the named security reviewer
     ]);
     await ho.ok('POST', '/v1/org/nodes/SRE', 'u-owner', { kind: 'company', name: 'SRE Hyper Market Private Limited' });
     await ho.ok('POST', '/v1/org/nodes/B1', 'u-owner', { kind: 'branch', name: 'Store B1', parentId: 'SRE', companyId: 'SRE' });
@@ -88,7 +90,10 @@ describe.each(backings)('a self-checkout basket reaches loss prevention and the 
       // R8-7: a camera over lane 1 whose event covers the basket links it — a place to look, never an accusation.
       const { publicKey, privateKey } = generateKeyPairSync('ed25519');
       await ho.ok('POST', '/v1/devices/floor/cam-1', 'u-it', { kind: 'cctv_source', branchId: 'B1', label: 'Self-checkout camera', vendor: 'stand-in', publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(), cameraId: 'CAM-SCO', laneIds: ['lane-1'] });
-      await ho.ok('PUT', '/v1/platform/rollout/cctv', 'u-it', { branchId: 'B1', enabled: true, reason: 'camera events trial' });
+      // OB-407: a camera is switched on with the owner's approval and the named security reviewer's signature.
+      await nameSecurityReviewer(ho.h, ho.tenantId, 'u-owner', 'u-rev');
+      const camOn = await switchFloorDeviceOn(ho.h, ho.tenantId, { switcher: 'u-it', owner: 'u-owner', reviewer: 'u-rev' }, 'cctv', { branchId: 'B1', reason: 'camera events trial' });
+      expect(camOn.status, JSON.stringify(camOn.body)).toBe(200);
       const basketAt = kept[0]!.payload['at'] as string;
       const events = [{ eventId: 'c1', type: 'cctv.event', at: new Date().toISOString(), from: new Date(Date.parse(basketAt) - 60_000).toISOString(), to: new Date(Date.parse(basketAt) + 1_000).toISOString(), eventKind: 'lane_activity' }];
       const signature = sign(null, Buffer.from(deviceBatchMessage('cam-1', events)), privateKey).toString('base64');

@@ -61,6 +61,12 @@ export const FLOOR_DEVICE_GATEWAY_ROLE_ID = 'floor_device_gateway';
 // ── OB-288 P6 — end
 /** R2 C20: the POSH Act Internal Committee — the only role that may read the confidential complaints register. */
 export const INTERNAL_COMMITTEE_ROLE_ID = 'internal_committee';
+/**
+ * OB-406 (owner, 27 Oct 2026, in writing — option B): the least-privilege "Security reviewer" role. It lets the person the
+ * owner names as security reviewer (OB-330 / OB-405) open the Risk acceptance screen and sign there, and nothing else. It is
+ * granted through the normal maker-checker role grant, never by default, and never to a machine identity.
+ */
+export const SECURITY_REVIEWER_ROLE_ID = 'security_reviewer';
 
 /**
  * §28 / M33-FR-01 / SEC-11: the platform-administration (IT) function, held apart from running the shop, and the rule that
@@ -604,6 +610,23 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'posh.complaint.record', 'posh.complaint.read', 'posh.report.generate', 'posh.report.read',
+    ],
+  },
+  {
+    id: SECURITY_REVIEWER_ROLE_ID,
+    name: 'Security reviewer',
+    // OB-406 (option B): the narrowest staff role — exactly what the named security reviewer needs to SIGN, and nothing else.
+    //   • `compliance.risk.read` — the Risk acceptance screen and its reads (the blocked gates, the acceptances, who the
+    //     reviewer is), the reviewer's own signature (`POST /v1/compliance/risks/:riskId/acceptance/review`, whose authority
+    //     is the owner's naming, checked there), and the reviewer's signature on switching on a floor device (OB-407, an
+    //     approval of kind `floor_device_review` that only the NAMED reviewer's counts);
+    //   • `identity.self.read` — the person's own sign-in, and the approvals inbox where that floor-device signature is given.
+    // No business action: no price, refund, purchase, stock, cash or till code, no `compliance.risk.manage` (register or
+    // accept a risk alone), no `compliance.reviewer.name` (the owner names the reviewer), and no grant or platform code. Under
+    // OB-95 it counts as a business role (it is not platform administration), so it is never held with the IT role.
+    permissions: [
+      'identity.self.read',
+      'compliance.risk.read',
     ],
   },
   {

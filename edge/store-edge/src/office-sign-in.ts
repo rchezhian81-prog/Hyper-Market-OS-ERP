@@ -10,8 +10,9 @@
 //     their OWN till PIN, checked by THIS box, offline, by the very register the till signs people in with
 //     (`TillOperators.verifyPerson` — the same verifiers, the same five-wrong-PINs lock, the same refusals log);
 //   • the person must hold an OFFICE role at this store in the store setup the box holds (owner, store manager,
-//     accountant, chartered accountant). A cashier's PIN opens the till and nothing else (OB-259: "a cashier can then use
-//     only the till"); a role that is not on this list is refused, never guessed into an office;
+//     accountant, chartered accountant — and, OB-406, the security reviewer). A cashier's PIN opens the till and nothing
+//     else (OB-259: "a cashier can then use only the till"); a role that is not on this list is refused, never guessed into
+//     an office;
 //   • a sign-in lasts 30 minutes from the moment the PIN was typed, or until Sign out; the box keeps only the HASH of
 //     the session's random token, in an fsync'd log folded at start, so a restart neither signs anybody out early nor
 //     lets an ended session back in. Neither a PIN nor a token is ever written;
@@ -32,8 +33,12 @@ export const OFFICE_COOKIE = 'sre_office';
 export const OFFICE_SESSION_MINUTES = 30;
 /** The "lane" office sign-ins are judged on in the till's register: its own lock, never a till's. */
 export const OFFICE_LANE = 'office-screens';
-/** The roles that open office screens. A cashier, the store computer and every outside party do not (OB-259). */
-export const OFFICE_ROLE_IDS: readonly string[] = Object.freeze(['owner', 'store_manager', 'accountant', 'chartered_accountant']);
+/**
+ * The roles that open office screens. A cashier, the store computer and every outside party do not (OB-259). OB-406 (owner,
+ * 27 Oct 2026): the named security reviewer's own role opens them too — only so they can reach the Risk acceptance screen
+ * and sign; every screen still checks its own permission, so that role opens that screen (and the approvals inbox) only.
+ */
+export const OFFICE_ROLE_IDS: readonly string[] = Object.freeze(['owner', 'store_manager', 'accountant', 'chartered_accountant', 'security_reviewer']);
 /** Every person holds this; the PIN check needs a permission to ask for, and the office rule is the role list above. */
 const ANY_PERSON = 'identity.self.read';
 

@@ -2,6 +2,9 @@
 // DOM-free session over head office's routes:
 //   • TRIAL SWITCHES per branch and per till lane: the board; a change previewed first, then saved with its reason (a
 //     high-impact switch names the owner's approval); each place's history, and "go back to this version" in one step.
+//     OB-407: switching ON a floor device (cameras, shelf labels, RFID, sensors) needs the owner's approval AND the named
+//     security reviewer's signature — "Ask for approval" sends exactly the two asks head office's preview hands over, and
+//     "Save" then uses the asker's own approved requests for this switch and place (found, never typed).
 //   • THE USAGE METER (information only): stores, lanes, people and AI spend this month; the price "not set" (OB-321).
 //   • THE CUSTOMER-DATA WATCH (C9): the CA's threshold, or "not set" — it never alerts until set.
 //   • THE CONSENT RECORD (C8): download it in the consent-manager layout; bring in a consent manager's file.
@@ -19,8 +22,10 @@ export const ROLLOUT_COPY = {
     title: 'Trial switches and shop account', lead: 'Turn a trial feature on for one branch or one till lane, see what the shop uses, and keep the customer-data records.',
     boardH: 'Trial switches', boardNone: 'No trial switch has been set. A switch nobody set is off everywhere.', rule: 'A lane\'s own setting beats its branch\'s. A switch nobody set is off.',
     colSwitch: 'Switch', colPlace: 'Where', colState: 'State', colVersion: 'Version', colWhy: 'Why', colWho: 'Who', on: 'On', off: 'Off', wholeBranch: 'whole branch', lane: 'lane',
-    changeH: 'Change a switch', key: 'Switch name', branch: 'Branch', laneOpt: 'Till lane (leave empty for the whole branch)', state: 'Turn it', reason: 'Why (required)', approvalId: 'Owner\'s approval number (high-impact switches only)',
+    changeH: 'Change a switch', key: 'Switch name', branch: 'Branch', laneOpt: 'Till lane (leave empty for the whole branch)', state: 'Turn it', reason: 'Why (required)', approvalId: 'Owner\'s approval number (high-impact switches only — leave empty to use the one you asked for)',
     preview: 'Preview', save: 'Save the change', previewSays: 'Now:', becomes: 'becomes', lanesChange: 'Lanes that change:', none: 'none', needsOwner: 'High-impact: the owner must approve this exact change first.', noOwner: 'No second person needed.',
+    needsReviewer: 'Cameras, shelf labels, RFID and sensors: switching on also needs the security reviewer\'s signature —', noReviewer: 'No security reviewer is named, so this cannot be switched on. The owner names one on the Risk acceptance screen first.',
+    ask: 'Ask for approval', asked: 'Asked. When the owner (and, for a floor device, the security reviewer) approve, press Save the change.', noAskNeeded: 'This change needs nobody else\'s approval — just save it.', needReason: 'Write the reason first: the approval is for exactly this change.',
     history: 'History', back: 'Go back to this version', backWhy: 'Why go back?', restored: 'restored version',
     meterH: 'What the shop uses (for information)', stores: 'Stores', lanes: 'Till lanes', people: 'People', aiSpend: 'AI spend this month', price: 'Price', notSet: 'not set', monthNotRecorded: 'This month is not recorded yet.', peaks: 'This month\'s highest:', infoOnly: 'For information only. Nothing is ever switched off because of these figures.',
     watchH: 'Customer-data watch (DPDP)', threshold: 'Threshold set by the CA', volume: 'Customers whose details the shop holds', crossed: 'Reached — ask the CA and lawyer about a data protection impact assessment.', below: 'Below the threshold.', neverAlerts: 'Not set — the watch never alerts until the CA enters a number.',
@@ -34,8 +39,10 @@ export const ROLLOUT_COPY = {
     title: 'சோதனை சுவிட்சுகள் மற்றும் கடை கணக்கு', lead: 'ஒரு கிளைக்கோ ஒரு பில்லிங் வரிசைக்கோ சோதனை வசதியை இயக்கவும், கடை பயன்படுத்துவதைப் பார்க்கவும், வாடிக்கையாளர் தரவு பதிவுகளை வைத்திருக்கவும்.',
     boardH: 'சோதனை சுவிட்சுகள்', boardNone: 'எந்த சோதனை சுவிட்சும் அமைக்கப்படவில்லை. யாரும் அமைக்காத சுவிட்ச் எங்கும் அணைந்தே இருக்கும்.', rule: 'வரிசையின் சொந்த அமைப்பு கிளையின் அமைப்பை விட மேலானது. யாரும் அமைக்காத சுவிட்ச் அணைந்திருக்கும்.',
     colSwitch: 'சுவிட்ச்', colPlace: 'எங்கே', colState: 'நிலை', colVersion: 'பதிப்பு', colWhy: 'ஏன்', colWho: 'யார்', on: 'இயக்கம்', off: 'அணைப்பு', wholeBranch: 'முழு கிளை', lane: 'வரிசை',
-    changeH: 'சுவிட்சை மாற்று', key: 'சுவிட்ச் பெயர்', branch: 'கிளை', laneOpt: 'பில்லிங் வரிசை (முழு கிளைக்கு காலியாக விடவும்)', state: 'நிலை', reason: 'ஏன் (தேவை)', approvalId: 'உரிமையாளர் ஒப்புதல் எண் (அதிக தாக்க சுவிட்சுகளுக்கு மட்டும்)',
+    changeH: 'சுவிட்சை மாற்று', key: 'சுவிட்ச் பெயர்', branch: 'கிளை', laneOpt: 'பில்லிங் வரிசை (முழு கிளைக்கு காலியாக விடவும்)', state: 'நிலை', reason: 'ஏன் (தேவை)', approvalId: 'உரிமையாளர் ஒப்புதல் எண் (அதிக தாக்க சுவிட்சுகளுக்கு மட்டும் — நீங்கள் கேட்டதைப் பயன்படுத்த காலியாக விடவும்)',
     preview: 'முன்னோட்டம்', save: 'மாற்றத்தைச் சேமி', previewSays: 'இப்போது:', becomes: 'ஆகிறது', lanesChange: 'மாறும் வரிசைகள்:', none: 'இல்லை', needsOwner: 'அதிக தாக்கம்: இந்த மாற்றத்தை முதலில் உரிமையாளர் ஒப்புக்கொள்ள வேண்டும்.', noOwner: 'இரண்டாவது நபர் தேவையில்லை.',
+    needsReviewer: 'கேமரா, அலமாரி விலைச் சீட்டு, RFID, உணரிகள்: இயக்க பாதுகாப்புச் சரிபார்ப்பாளரின் கையொப்பமும் தேவை —', noReviewer: 'பாதுகாப்புச் சரிபார்ப்பாளர் யாரும் பெயரிடப்படவில்லை, எனவே இதை இயக்க முடியாது. முதலில் உரிமையாளர் இடர் ஏற்புத் திரையில் ஒருவரைப் பெயரிட வேண்டும்.',
+    ask: 'ஒப்புதல் கேள்', asked: 'கேட்கப்பட்டது. உரிமையாளரும் (தள சாதனத்துக்கு பாதுகாப்புச் சரிபார்ப்பாளரும்) ஒப்புக்கொண்டதும், மாற்றத்தைச் சேமி அழுத்தவும்.', noAskNeeded: 'இந்த மாற்றத்துக்கு வேறு யாருடைய ஒப்புதலும் தேவையில்லை — சேமித்தால் போதும்.', needReason: 'முதலில் காரணத்தை எழுதவும்: ஒப்புதல் சரியாக இந்த மாற்றத்துக்கே.',
     history: 'வரலாறு', back: 'இந்தப் பதிப்புக்குத் திரும்பு', backWhy: 'ஏன் திரும்புகிறீர்கள்?', restored: 'மீட்டெடுத்த பதிப்பு',
     meterH: 'கடை பயன்படுத்துவது (தகவலுக்கு மட்டும்)', stores: 'கடைகள்', lanes: 'பில்லிங் வரிசைகள்', people: 'நபர்கள்', aiSpend: 'இந்த மாத AI செலவு', price: 'விலை', notSet: 'அமைக்கப்படவில்லை', monthNotRecorded: 'இந்த மாதம் இன்னும் பதிவாகவில்லை.', peaks: 'இந்த மாத உச்சம்:', infoOnly: 'தகவலுக்கு மட்டும். இந்த எண்களால் எதுவும் ஒருபோதும் நிறுத்தப்படாது.',
     watchH: 'வாடிக்கையாளர் தரவு கண்காணிப்பு (DPDP)', threshold: 'CA அமைத்த வரம்பு', volume: 'கடையிடம் விவரங்கள் உள்ள வாடிக்கையாளர்கள்', crossed: 'எட்டப்பட்டது — தரவு பாதுகாப்பு தாக்க மதிப்பீடு பற்றி CA மற்றும் வழக்கறிஞரிடம் கேளுங்கள்.', below: 'வரம்புக்குக் கீழே.', neverAlerts: 'அமைக்கப்படவில்லை — CA ஒரு எண்ணை உள்ளிடும் வரை கண்காணிப்பு எச்சரிக்காது.',
@@ -53,7 +60,15 @@ export const rolloutOutcomeWords = (lang: Lang, out: Outcome<unknown>): string =
 /** Paise as rupees, for the AI spend line. */
 export const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
 
-export interface BoardRow { readonly key: string; readonly branchId: string; readonly laneId: string | null; readonly enabled: boolean; readonly version: number; readonly reason: string; readonly changedBy: string; readonly changedAt: string; readonly approvedBy: string | null }
+export interface BoardRow { readonly key: string; readonly branchId: string; readonly laneId: string | null; readonly enabled: boolean; readonly version: number; readonly reason: string; readonly changedBy: string; readonly changedAt: string; readonly approvedBy: string | null; readonly reviewedBy?: string | null }
+/** What head office's preview says (POST /v1/platform/rollout/:key/preview) — and, once a reason is written, the asks. */
+export interface Preview {
+  readonly current: boolean | null; readonly proposed: boolean; readonly lanesThatChange: readonly string[]; readonly highImpact: boolean;
+  readonly needsSecondPerson?: boolean;
+  /** OB-407: switching a floor device on also needs the named security reviewer — who they are, or null when nobody is. */
+  readonly needsSecurityReviewer?: boolean; readonly securityReviewer?: { readonly userId: string; readonly displayName: string } | null;
+  readonly asks?: readonly Record<string, unknown>[];
+}
 export interface Place { readonly branchId: string; readonly laneId?: string }
 /** OB-367: the closure readiness head office answers (GET /v1/platform/tenant/closure). */
 export interface ClosureView {
@@ -70,7 +85,9 @@ export interface RolloutSession {
   /** OB-367: the closure readiness — export, blockers, what the law wants kept, and that everything is sealed until the schedule. */
   closure(): Promise<Outcome<ClosureView>>;
   board(): Promise<Outcome<{ readonly switches: readonly BoardRow[] }>>;
-  preview(c: Change): Promise<Outcome<{ readonly current: boolean | null; readonly proposed: boolean; readonly lanesThatChange: readonly string[]; readonly highImpact: boolean }, 'needFields'>>;
+  preview(c: Change): Promise<Outcome<Preview, 'needFields'>>;
+  /** OB-407 · ADR-0024: ask for exactly the approvals head office's preview names for this change (none → said so). */
+  askApprovals(c: Change): Promise<Outcome<{ readonly asked: readonly string[] }, 'needFields' | 'needReason' | 'noAskNeeded' | 'noReviewer'>>;
   save(c: Change): Promise<Outcome<unknown, 'needFields'>>;
   history(key: string, place: Place): Promise<Outcome<{ readonly versions: readonly (BoardRow & { readonly rolledBackFrom?: number })[] }>>;
   rollback(key: string, place: Place, toVersion: number, reason: string, approvalId?: string): Promise<Outcome<unknown, 'needFields'>>;
@@ -79,6 +96,11 @@ export interface RolloutSession {
   exportConsent(): Promise<Outcome<{ readonly counts: { readonly records: number; readonly dataPrincipals: number } }>>;
   importConsent(text: string | null): Promise<Outcome<{ readonly applied: number; readonly alreadyImported: number; readonly alreadyReflected: number; readonly exceptions: readonly unknown[] }, 'pickFile' | 'notJson'>>;
 }
+
+/** Head office's refusals that mean "this change needs its approvals" — then the asker's own approved requests are used. */
+const APPROVAL_NEEDED: ReadonlySet<string> = new Set(['high_impact_change_needs_owner_approval', 'floor_device_switch_needs_security_reviewer']);
+/** The approval subject head office names for one place's switch (services/platform/src/rollout.ts `rolloutSubject`). */
+const subjectOf = (c: Change): string => `rollout:${c.key.trim()}:${c.branchId.trim()}${c.laneId.trim() === '' ? '' : `:${c.laneId.trim()}`}`;
 
 const placeQuery = (key: string, p: Place, what: string): string =>
   `/v1/platform/rollout/${encodeURIComponent(key)}/${what}?branchId=${encodeURIComponent(p.branchId)}${p.laneId === undefined ? '' : `&laneId=${encodeURIComponent(p.laneId)}`}`;
@@ -99,10 +121,41 @@ export function createRolloutSession(input: { readonly viewer: { readonly userId
     },
     closure: () => call('GET', '/v1/platform/tenant/closure'),
     board: () => call('GET', '/v1/platform/rollout'),
-    preview: async (c) => (filled(c) ? call('POST', `/v1/platform/rollout/${encodeURIComponent(c.key.trim())}/preview`, bodyOf(c)) : { result: 'invalid', why: 'needFields' }),
+    preview: async (c) => (filled(c) ? call('POST', `/v1/platform/rollout/${encodeURIComponent(c.key.trim())}/preview`, { ...bodyOf(c), ...(c.reason.trim() === '' ? {} : { reason: c.reason.trim() }) }) : { result: 'invalid', why: 'needFields' }),
+    // The asks are exactly what head office's preview hands over for this change — never rebuilt here.
+    askApprovals: async (c) => {
+      if (!filled(c)) return { result: 'invalid', why: 'needFields' };
+      if (c.reason.trim() === '') return { result: 'invalid', why: 'needReason' };
+      const p = await call<Preview>('POST', `/v1/platform/rollout/${encodeURIComponent(c.key.trim())}/preview`, { ...bodyOf(c), reason: c.reason.trim() });
+      if (p.result !== 'ok') return p;
+      if (p.value.needsSecurityReviewer === true && (p.value.securityReviewer ?? null) === null) return { result: 'invalid', why: 'noReviewer' };
+      if (p.value.needsSecondPerson !== true || p.value.asks === undefined || p.value.asks.length === 0) return { result: 'invalid', why: 'noAskNeeded' };
+      const asked: string[] = [];
+      for (const ask of p.value.asks) {
+        const r = await call<{ requestId: string }>('POST', '/v1/approvals/requests', ask);
+        if (r.result !== 'ok') return r;
+        asked.push(r.value.requestId);
+      }
+      return { result: 'ok', value: { asked } };
+    },
+    // Saved as typed first. When head office says the change needs approvals, they are the asker's own APPROVED requests for
+    // this switch at this place — found, never typed (a typed owner's approval number still wins) — and it is sent once more.
+    // Head office checks they are for exactly this change, decided by the right people, and unused.
     save: async (c) => {
       if (!filled(c) || c.reason.trim() === '') return { result: 'invalid', why: 'needFields' };
-      return call('PUT', `/v1/platform/rollout/${encodeURIComponent(c.key.trim())}`, { ...bodyOf(c), reason: c.reason.trim(), ...(c.approvalId.trim() === '' ? {} : { approvalId: c.approvalId.trim() }) });
+      const path = `/v1/platform/rollout/${encodeURIComponent(c.key.trim())}`;
+      const typed = c.approvalId.trim();
+      const first = await call('PUT', path, { ...bodyOf(c), reason: c.reason.trim(), ...(typed === '' ? {} : { approvalId: typed }) });
+      if (first.result !== 'refused' || !APPROVAL_NEEDED.has(first.code)) return first;
+      const mine = await call<{ mine?: readonly { requestId: string; kind: string; subjectRef: string; status: string; requestedAt?: string }[] }>('GET', '/v1/approvals/requests');
+      if (mine.result !== 'ok') return first;
+      const approved = (kind: string): string | undefined => [...(mine.value.mine ?? [])]
+        .filter((q) => q.kind === kind && q.subjectRef === subjectOf(c) && q.status === 'approved')
+        .sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''))[0]?.requestId;
+      const approvalId = typed !== '' ? typed : approved('flag_change');
+      const reviewApprovalId = approved('floor_device_review');
+      if (approvalId === undefined || (first.code === 'floor_device_switch_needs_security_reviewer' && reviewApprovalId === undefined)) return first;
+      return call('PUT', path, { ...bodyOf(c), reason: c.reason.trim(), approvalId, ...(reviewApprovalId === undefined ? {} : { reviewApprovalId }) });
     },
     history: (key, place) => call('GET', placeQuery(key, place, 'history')),
     rollback: async (key, place, toVersion, reason, approvalId) => {

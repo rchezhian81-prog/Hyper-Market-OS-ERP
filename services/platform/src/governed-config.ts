@@ -21,6 +21,7 @@ import type { Route, RequestContext, HandlerResult } from '../../kernel/src/inde
 import { apiError, notFound } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
+import { FLOOR_DEVICE_SWITCH } from '../../../packages/integration/src/floor-devices';
 
 /**
  * Settings whose change needs the owner's approval. M01-FR-02 names "owner approval for currency/precision and trading-day
@@ -41,6 +42,19 @@ export const HIGH_IMPACT_SETTINGS: Readonly<Record<string, string>> = Object.fre
 /** Switches whose name begins with one of these are high-impact (M01-FR-03: payments, pricing, offline limits). */
 export const HIGH_IMPACT_FLAG_PREFIXES: readonly string[] = Object.freeze(['payments.', 'payment.', 'pricing.', 'price.', 'offline.']);
 export const isHighImpactFlag = (key: string): boolean => HIGH_IMPACT_FLAG_PREFIXES.some((p) => key.startsWith(p));
+
+/**
+ * OB-407 (owner, 27 Oct 2026, in writing — option B · D14-FR-05 · R8-7 · §8.2): the four FLOOR-DEVICE rollout switches —
+ * shelf labels (`esl`), RFID readers (`rfid`), sensors (`iot`) and cameras (`cctv`), the switch each kind of floor device
+ * sits behind (`FLOOR_DEVICE_SWITCH`) — are high-impact. Switching one ON for a place needs the owner's approval (kind
+ * `flag_change`) AND the named security reviewer's signature (kind `floor_device_review`, OB-330 / OB-405), each in their own
+ * session, never the person switching. Switching one OFF stays one person with a reason: turning a camera off must never be
+ * harder than turning it on. These are ROLLOUT keys (services/platform/src/rollout.ts), not the shop's feature flags.
+ */
+export const FLOOR_DEVICE_ROLLOUT_KEYS: readonly string[] = Object.freeze([...new Set(Object.values(FLOOR_DEVICE_SWITCH))].sort());
+export const isFloorDeviceSwitch = (key: string): boolean => FLOOR_DEVICE_ROLLOUT_KEYS.includes(key);
+/** Is this rollout switch high-impact — the shop's high-impact list (payments, pricing, offline limits) or a floor device? */
+export const isHighImpactRolloutKey = (key: string): boolean => isHighImpactFlag(key) || isFloorDeviceSwitch(key);
 
 /** One switch change as recorded — the same `FeatureFlagSet` fact the switch board folds, with its version and reason. */
 export interface GovernedFlagChange {

@@ -3587,7 +3587,7 @@
       "id": "D14",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 12,
         "realDb": 5,
         "browser": 1,
@@ -3597,6 +3597,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-floor-device-is-switched-on-only-by-the-owner-and-the-named-reviewer.test.ts",
           "tests/unit/api-bodies-are-derived-from-the-handlers.test.ts",
           "tests/unit/approval-requests.test.ts",
           "tests/unit/erp-approvals-session.test.ts",
@@ -5286,8 +5287,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 6,
-        "integration": 3,
-        "realDb": 1,
+        "integration": 4,
+        "realDb": 2,
         "browser": 1,
         "connected": 1,
         "device": 0,
@@ -5305,10 +5306,12 @@
         "integration": [
           "tests/integration/a-critical-risk-is-accepted-only-by-the-owner-and-the-named-reviewer.test.ts",
           "tests/integration/risk-register.test.ts",
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/the-security-reviewer-signs-and-floor-devices-need-owner-and-reviewer.test.ts"
         ],
         "realDb": [
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/the-security-reviewer-signs-and-floor-devices-need-owner-and-reviewer.test.ts"
         ],
         "browser": [
           "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"

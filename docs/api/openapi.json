@@ -140179,6 +140179,12 @@
                 "approvalId": {
                   "type": "string"
                 },
+                "reviewedBy": {
+                  "type": "string"
+                },
+                "reviewApprovalId": {
+                  "type": "string"
+                },
                 "rolledBackFrom": {
                   "type": "number"
                 }
@@ -140231,6 +140237,12 @@
                     "type": "string"
                   },
                   "approvalId": {
+                    "type": "string"
+                  },
+                  "reviewedBy": {
+                    "type": "string"
+                  },
+                  "reviewApprovalId": {
                     "type": "string"
                   },
                   "rolledBackFrom": {
@@ -212557,9 +212569,70 @@
           "lanesWithTheirOwnSetting",
           "highImpact",
           "needsSecondPerson",
-          "approvedBy"
+          "approvedBy",
+          "floorDevice",
+          "needsSecurityReviewer"
         ],
         "properties": {
+          "asks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "subjectRef",
+                "valueMinor",
+                "details",
+                "summary",
+                "reason"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "subjectRef": {
+                  "type": "string"
+                },
+                "valueMinor": {
+                  "type": "null"
+                },
+                "details": {
+                  "type": "object",
+                  "required": [
+                    "enabled",
+                    "reason",
+                    "key",
+                    "branchId"
+                  ],
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "laneId": {
+                      "type": "string"
+                    },
+                    "branchId": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "askWith": {
             "type": "object",
             "required": [
@@ -212589,10 +212662,10 @@
                   "reason": {
                     "type": "string"
                   },
-                  "laneId": {
+                  "key": {
                     "type": "string"
                   },
-                  "key": {
+                  "laneId": {
                     "type": "string"
                   },
                   "branchId": {
@@ -212603,6 +212676,35 @@
               }
             },
             "additionalProperties": true
+          },
+          "refusedBecause": {
+            "type": "string"
+          },
+          "securityReviewer": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "userId",
+                  "displayName"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "rule": {
+            "type": "string"
           },
           "key": {
             "type": "string"
@@ -212679,6 +212781,12 @@
                 "type": "string"
               }
             ]
+          },
+          "floorDevice": {
+            "type": "boolean"
+          },
+          "needsSecurityReviewer": {
+            "type": "boolean"
           }
         },
         "additionalProperties": true,
@@ -212707,6 +212815,9 @@
                 "type": "string"
               }
             ]
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -212762,6 +212873,12 @@
                 "type": "string"
               },
               "approvalId": {
+                "type": "string"
+              },
+              "reviewedBy": {
+                "type": "string"
+              },
+              "reviewApprovalId": {
                 "type": "string"
               },
               "rolledBackFrom": {
@@ -212827,6 +212944,9 @@
             ]
           },
           "reason": {
+            "type": "string"
+          },
+          "reviewApprovalId": {
             "type": "string"
           },
           "toVersion": {
@@ -237219,6 +237339,12 @@
               "approvalId": {
                 "type": "string"
               },
+              "reviewedBy": {
+                "type": "string"
+              },
+              "reviewApprovalId": {
+                "type": "string"
+              },
               "rolledBackFrom": {
                 "type": "number"
               }
@@ -237285,6 +237411,9 @@
             ]
           },
           "reason": {
+            "type": "string"
+          },
+          "reviewApprovalId": {
             "type": "string"
           }
         },
@@ -280958,7 +281087,8 @@
           "reason",
           "changedBy",
           "changedAt",
-          "approvedBy"
+          "approvedBy",
+          "reviewedBy"
         ],
         "properties": {
           "key": {
@@ -280993,6 +281123,16 @@
             "type": "string"
           },
           "approvedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "reviewedBy": {
             "anyOf": [
               {
                 "type": "null"

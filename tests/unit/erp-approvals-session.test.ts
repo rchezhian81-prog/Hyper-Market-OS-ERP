@@ -199,6 +199,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       b2b_credit_limit: { en: APPROVALS_COPY.en.kindB2BCreditLimit, ta: APPROVALS_COPY.ta.kindB2BCreditLimit },
       // OB-288 P4 (M36-FR-03): closing the shop's account.
       tenant_closure: { en: APPROVALS_COPY.en.kindTenantClosure, ta: APPROVALS_COPY.ta.kindTenantClosure },
+      // OB-407: the named security reviewer's signature on switching on a floor device.
+      floor_device_review: { en: APPROVALS_COPY.en.kindFloorDeviceReview, ta: APPROVALS_COPY.ta.kindFloorDeviceReview },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());
