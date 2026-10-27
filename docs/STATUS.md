@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Re-audit after batch 9 (27 October 2026): 340 done, 5 partial, 3 owner decisions
+
+**What changed**
+- A read-only re-audit at `e7eb5fd` of the 185 rows not DONE on 23 Oct. The report is `docs/audit/REAUDIT-2026-10-27.md`; the lane tables are in `docs/audit/reaudit-2026-10-27/`. The 25 Oct tables were never committed, so this one is.
+- Whole roadmap (391 rows): Done 340, Partial 5, Missing 0, Decision 0, External 39, Deferred 7.
+  - External is higher than on 25 Oct (22) because this audit counts a finished row that still names an outside piece as EXTERNAL.
+  - All 7 deferrals are in writing to R8.
+- No code changed.
+- Closed PR #813: it duplicated the journal-body fix that batch 9 (#814) already merged.
+
+**Tests run**
+- The cited unit, integration, guardrail and performance files in each lane, all passing: 268 files and 1,489 tests, 27 skipped (PostgreSQL legs).
+- Browser and PostgreSQL halves were not run here; they run in CI.
+
+**What is next (once the owner has decided D-1 to D-3)**
+- **QG-02:** move "return one whole line" to a recorded exception (OB-394), and add a web-ERP rebates page.
+- **§31.1:** the clock-drift hold and its alert, as decided in D-1.
+- **D03-FR-03:** as decided in D-2.
+- **WF-18:** a test that gives the receivables close check real figures.
+- **B15:** put the tobacco warning board on the go-live checklist.
+
+**Blocked / external**
+- As before:
+  - real hardware;
+  - live providers;
+  - the CA and legacy data;
+  - staff UAT and rehearsals;
+  - the pen test.
+
+**Needs an owner decision**
+- **D-1:** a wrong store-computer clock and new prices or offers.
+- **D-2:** supplier rebate claims.
+- **D-3:** name the privacy and security reviewer (OB-330).
+- Options for each are in the re-audit report.
+
+---
+
 ## OB-288 final gaps, batch 9 (26 October 2026): the shop clock, head-office sign-in on the store PC, shorter everyday actions, declared API bodies
 
 **What changed**
