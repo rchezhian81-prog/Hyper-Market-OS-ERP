@@ -86,7 +86,7 @@ import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
 import { pendingTenderRoutes } from '../../finance/src/pending-tender';
 import { b2bCreditRoutes } from '../../finance/src/b2b-credit';
-import { b2bCustomerGstinRoutes, buyerOf } from '../../finance/src/b2b-customer-gstin';
+import { b2bCustomerGstinRoutes, buyerOf, gstinInForce } from '../../finance/src/b2b-customer-gstin';
 import { b2bCollectionsRoutes } from '../../finance/src/b2b-collections';
 import { b2bCommissionRoutes, commissionRuleRoutes, accrueFromInvoice } from '../../finance/src/b2b-commission';
 import { b2bOrderingRoutes } from '../../finance/src/b2b-ordering';
@@ -542,7 +542,7 @@ export function buildSurface(deps: {
     afterTaxInvoice: b2bMoneyEffectsAdapter({ store: st, now }).afterTaxInvoice,
     stock: b2bStockAdapter({ store: st, now }),
     supplierStateCode: supplierStateCodeOf({ store: st, now }), // Till bill and GST (A8): CGST + SGST or IGST by place of supply
-    customerGstin: async (tenantId, customerId) => buyerOf((await b2bCustomerGstinAdapter({ store: st, now }).gstins(tenantId, customerId)).at(-1)), // OB-416
+    customerGstin: async (tenantId, customerId) => buyerOf(gstinInForce(await b2bCustomerGstinAdapter({ store: st, now }).gstins(tenantId, customerId))), // OB-416 · OB-427 a removed GSTIN is not in force
     commissionOnInvoice: (tenantId, i) => accrueFromInvoice(commissionRuleAdapter({ store: st, now }), tenantId, {
       salespersonId: i.salespersonId, invoiceId: i.invoice.documentId, invoiceNumber: i.invoice.number, netMinor: i.invoice.netMinor,
     }),

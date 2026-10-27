@@ -139,6 +139,11 @@ export interface OutwardDocument {
   readonly documentDate: string;
   readonly supplyType: SupplyKind;
   readonly recipientGstin?: string;
+  /**
+   * OB-428: the place of supply — the 2-digit GST State code the document's CGST + SGST or IGST split was judged on (for a
+   * B2B tax invoice, the delivery State it records). Absent on a document recorded before it was carried.
+   */
+  readonly placeOfSupplyStateCode?: string;
   readonly lines: readonly OutwardSupplyLine[];
 }
 
@@ -155,6 +160,8 @@ export interface B2bInvoice {
   readonly invoiceNumber: string;
   readonly invoiceDate: string;
   readonly invoiceValueMinor: number;
+  /** OB-428: the State code the invoice records as its place of supply, when it records one. */
+  readonly placeOfSupplyStateCode?: string;
   readonly rateLines: readonly RateSummary[];
 }
 
@@ -194,7 +201,7 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
     if (isB2b(doc)) {
       const rateLines = summariseByRate(doc.lines);
       const invoiceValueMinor = rateLines.reduce((s, r) => s + r.taxableMinor + r.cgstMinor + r.sgstMinor + r.igstMinor, 0);
-      b2b.push({ recipientGstin: doc.recipientGstin as string, invoiceNumber: doc.documentId, invoiceDate: doc.documentDate, invoiceValueMinor, rateLines });
+      b2b.push({ recipientGstin: doc.recipientGstin as string, invoiceNumber: doc.documentId, invoiceDate: doc.documentDate, invoiceValueMinor, ...(doc.placeOfSupplyStateCode === undefined ? {} : { placeOfSupplyStateCode: doc.placeOfSupplyStateCode }), rateLines });
     } else {
       b2cLines.push(...doc.lines);
     }
@@ -215,10 +222,19 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
 //
 // This is faithful to the documented schema, but the portal's offline validation tool is the authority —
 // a first live filing should round-trip through it before submission (recorded as an owner check).
+//
+// OB-428 (owner, option A, 27 Oct 2026, in writing): each B2B invoice carries, at the invoice level as the GSTN schema
+// puts them, its place of supply `pos` (the 2-digit State code), the reverse-charge flag `rchrg` and the invoice type
+// `inv_typ`. `rchrg` is always "N": this system has no outward supply under reverse charge (reverse charge here is only
+// on what the shop BUYS — GSTR-3B Table 3.1(d), A14 — and the till's tax invoice prints "reverse charge: No"). `inv_typ` is
+// always "R" (regular): no export, SEZ or deemed-export invoice is made here. The `pos` is the State the invoice records;
+// an invoice recorded without one that charged only CGST + SGST is, by that split, a supply inside the filer's own State
+// (the first two digits of the filer's GSTIN). One that charged IGST with no State recorded, or whose State disagrees with
+// its split, is NOT guessed: the file is refused, naming each invoice (`Gstr1ExportRefused`).
 
 export interface GstnItemDetail { readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
 export interface GstnInvoiceItem { readonly num: number; readonly itm_det: GstnItemDetail; }
-export interface GstnB2bInvoice { readonly inum: string; readonly idt: string; readonly val: number; readonly itms: readonly GstnInvoiceItem[]; }
+export interface GstnB2bInvoice { readonly inum: string; readonly idt: string; readonly val: number; readonly pos: string; readonly rchrg: 'Y' | 'N'; readonly inv_typ: 'R'; readonly itms: readonly GstnInvoiceItem[]; }
 export interface GstnB2b { readonly ctin: string; readonly inv: readonly GstnB2bInvoice[]; }
 export interface GstnB2cs { readonly sply_ty: 'INTRA' | 'INTER'; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
 export interface GstnHsnRow { readonly num: number; readonly hsn_sc: string; readonly rt: number; readonly qty: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
@@ -237,21 +253,53 @@ const gstnDate = (iso: string): string => `${iso.slice(8, 10)}-${iso.slice(5, 7)
 /** basis points → a percentage rate (500 bps → 5). */
 const pct = (bps: number): number => bps / 100;
 
+/** OB-428: the GSTN file cannot be made as it stands — each named B2B invoice's place of supply is missing or disagrees. */
+export class Gstr1ExportRefused extends Error {
+  constructor(readonly problems: readonly { readonly invoiceNumber: string; readonly recipientGstin: string; readonly why: string }[]) {
+    super(`the GSTR-1 file cannot be made: ${problems.map((p) => `${p.invoiceNumber} (${p.recipientGstin}) — ${p.why}`).join('; ')}`);
+    this.name = 'Gstr1ExportRefused';
+  }
+}
+
+/**
+ * OB-428: the place of supply a B2B invoice files under in the GSTN file, or why it cannot be said. The State it records is
+ * used; with none, an invoice with only CGST + SGST is inside the filer's own State. The split must agree with the State:
+ * CGST + SGST only inside the filer's State, IGST only outside it. Pure.
+ */
+export function gstnPlaceOfSupply(inv: B2bInvoice, filerGstin: string): { readonly pos: string } | { readonly why: string } {
+  const own = filerGstin.slice(0, 2);
+  const igst = inv.rateLines.some((r) => r.igstMinor !== 0);
+  const local = inv.rateLines.some((r) => r.cgstMinor !== 0 || r.sgstMinor !== 0);
+  const pos = inv.placeOfSupplyStateCode ?? (igst ? undefined : own);
+  if (pos === undefined) return { why: 'it charged IGST (a supply to another State) but no place of supply is recorded on it' };
+  if (!/^\d{2}$/.test(pos)) return { why: `its place of supply "${pos}" is not a 2-digit State code` };
+  if (pos === own && igst) return { why: `it charged IGST but its place of supply (${pos}) is the filer's own State` };
+  if (pos !== own && local) return { why: `it charged CGST + SGST but its place of supply (${pos}) is not the filer's own State (${own})` };
+  return { pos };
+}
+
 /**
  * Serialise a GSTR-1 return into the GSTN portal JSON. `gstin` is the supplier's own GSTIN and `fp` is the
  * filing period `MMYYYY` — both supplied per export rather than stored, so the same period can be re-run.
  */
 export function toGstnGstr1(ret: Gstr1Return, meta: { readonly gstin: string; readonly fp: string }): GstnGstr1 {
   const byCtin = new Map<string, GstnB2bInvoice[]>();
+  const problems: { invoiceNumber: string; recipientGstin: string; why: string }[] = [];
   for (const inv of ret.b2b) {
+    const where = gstnPlaceOfSupply(inv, meta.gstin);
+    if ('why' in where) { problems.push({ invoiceNumber: inv.invoiceNumber, recipientGstin: inv.recipientGstin, why: where.why }); continue; }
     const invoice: GstnB2bInvoice = {
       inum: inv.invoiceNumber,
       idt: gstnDate(inv.invoiceDate),
       val: rupees(inv.invoiceValueMinor),
+      pos: where.pos,
+      rchrg: 'N',
+      inv_typ: 'R',
       itms: inv.rateLines.map((r, i) => ({ num: i + 1, itm_det: { rt: pct(r.rateBps), txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor) } })),
     };
     byCtin.set(inv.recipientGstin, [...(byCtin.get(inv.recipientGstin) ?? []), invoice]);
   }
+  if (problems.length > 0) throw new Gstr1ExportRefused(problems);
   const b2b: GstnB2b[] = [...byCtin.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([ctin, inv]) => ({ ctin, inv }));
   const b2cs: GstnB2cs[] = ret.b2c.map((r) => ({ sply_ty: r.igstMinor > 0 ? 'INTER' : 'INTRA', typ: 'OE', rt: pct(r.rateBps), txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor) }));
   const data: GstnHsnRow[] = ret.hsn.rows.map((r, i) => ({ num: i + 1, hsn_sc: r.hsnCode, rt: pct(r.rateBps), qty: r.quantityMinor / 1000, txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor) }));

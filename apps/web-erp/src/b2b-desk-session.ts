@@ -29,12 +29,15 @@ export const B2B_DESK_COPY = {
     quoteH: 'New quotation', storeL: 'Store it is supplied from', product: 'Product id', description: 'Description', qty: 'Quantity', tax: 'GST %', addLine: 'Add a line', removeLine: 'Remove', validDays: 'Price holds for (days)', issueQuote: 'Issue the quotation', priceNote: 'The price is taken from the contract or the price list.',
     docsH: 'Documents', docsNone: 'No documents yet.', kind_quotation: 'Quotation', kind_sales_order: 'Sales order', kind_proforma: 'Proforma', kind_challan: 'Delivery challan', kind_tax_invoice: 'Tax invoice', converted: 'became an order',
     src_contract: 'contract price', src_price_list: 'price list', src_typed: 'typed (no price on record)',
-    toOrder: 'Make the order', askOverride: 'Ask the owner to allow it', withApproval: 'Make the order with the owner\'s approval', proforma: 'Proforma', challan: 'Challan for what left', invoice: 'Tax invoice', dispatchedL: 'Sent now', deliveryState: 'Delivery State code (blank = this State)',
+    toOrder: 'Make the order', askOverride: 'Ask the owner to allow it', withApproval: 'Make the order with the owner\'s approval', proforma: 'Proforma', challan: 'Challan for what left', invoice: 'Tax invoice', dispatchedL: 'Sent now', deliveryState: 'Delivery State code',
     ordersH: 'Orders — ordered, delivered, billed', ordered: 'ordered', delivered: 'delivered', billed: 'billed', notBilled: 'delivered but not billed',
     collectH: 'Money owed', ageingNone: 'No invoice is owed yet.', overdue: 'overdue', disputed: 'disputed', chaseable: 'to chase', receivedL: 'Payment received (₹)', recordPayment: 'Record the payment',
     requestsH: 'Quote requests from the portal', requestsNone: 'No quote request is waiting.', useRequest: 'Quote this',
     gstinH: 'Customer GSTIN (for tax invoices)', gstinFig: 'GSTIN', gstinNone: 'No GSTIN on record — tax invoices file as B2C', gstinL: 'Customer GSTIN (15 characters)', gstinNameL: 'Legal name on the GST registration', gstinReasonL: 'Reason', gstinSave: 'Record the GSTIN',
     gstinNote: 'Tax invoices issued after this carry the GSTIN and file invoice-by-invoice in GSTR-1\'s B2B section. Invoices already issued do not change.', billTo: 'Bill to', billToNone: 'no GSTIN (filed as B2C)', needGstin: 'Type the customer\'s 15-character GSTIN, the legal name under it and the reason.',
+    // OB-426 · OB-427
+    deliveryFromGstin: 'Filled in from the State of the customer\'s GSTIN — change it if the goods are delivered to another State. CGST + SGST or IGST follows the State used.', deliveryBlank: 'Leave it blank for a delivery in this store\'s State.',
+    removeGstin: 'Remove the GSTIN', removeGstinNote: 'Remove it only when the customer\'s GST registration is cancelled, and type the reason above. Tax invoices issued after this file as B2C; those already issued do not change.', needRemoveReason: 'Type the reason the GSTIN is removed (for example, the registration was cancelled).',
     read: 'Read', saved: 'Saved.', nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot open the business desk.',
     needCustomer: 'Type the customer id first.', needStore: 'Name the store it is supplied from.', needLines: 'Add at least one line: product, description, a whole quantity and a GST %.', needDates: 'Give both dates (from, to) — the end on or after the start.', needPrices: 'Write the price list: one "product id = rupees" per line.', needMoney: 'Write the amount in rupees, like 1250 or 1250.50.', needDispatched: 'Type how many of each line left the building.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.', offFeature: 'The business-customer feature is switched off for this shop.',
@@ -49,12 +52,14 @@ export const B2B_DESK_COPY = {
     quoteH: 'புதிய விலைக்குறிப்பு', storeL: 'வழங்கும் கடை', product: 'பொருள் எண்', description: 'விவரம்', qty: 'அளவு', tax: 'GST %', addLine: 'வரியைச் சேர்', removeLine: 'நீக்கு', validDays: 'விலை செல்லுபடி (நாட்கள்)', issueQuote: 'விலைக்குறிப்பை வெளியிடு', priceNote: 'விலை ஒப்பந்தம் அல்லது விலைப்பட்டியலிலிருந்து எடுக்கப்படும்.',
     docsH: 'ஆவணங்கள்', docsNone: 'இன்னும் ஆவணங்கள் இல்லை.', kind_quotation: 'விலைக்குறிப்பு', kind_sales_order: 'விற்பனை ஆர்டர்', kind_proforma: 'முன்விலைப்பட்டியல்', kind_challan: 'அனுப்புச்சீட்டு', kind_tax_invoice: 'வரி விலைப்பட்டியல்', converted: 'ஆர்டராக மாறியது',
     src_contract: 'ஒப்பந்த விலை', src_price_list: 'விலைப்பட்டியல்', src_typed: 'தட்டச்சு (பதிவில் விலை இல்லை)',
-    toOrder: 'ஆர்டர் செய்', askOverride: 'உரிமையாளரிடம் அனுமதி கேள்', withApproval: 'உரிமையாளரின் அனுமதியுடன் ஆர்டர் செய்', proforma: 'முன்விலைப்பட்டியல்', challan: 'அனுப்பியதற்கான சீட்டு', invoice: 'வரி விலைப்பட்டியல்', dispatchedL: 'இப்போது அனுப்பியது', deliveryState: 'டெலிவரி மாநிலக் குறியீடு (காலி = இந்த மாநிலம்)',
+    toOrder: 'ஆர்டர் செய்', askOverride: 'உரிமையாளரிடம் அனுமதி கேள்', withApproval: 'உரிமையாளரின் அனுமதியுடன் ஆர்டர் செய்', proforma: 'முன்விலைப்பட்டியல்', challan: 'அனுப்பியதற்கான சீட்டு', invoice: 'வரி விலைப்பட்டியல்', dispatchedL: 'இப்போது அனுப்பியது', deliveryState: 'டெலிவரி மாநிலக் குறியீடு',
     ordersH: 'ஆர்டர்கள் — ஆர்டர், டெலிவரி, பில்', ordered: 'ஆர்டர்', delivered: 'டெலிவரி', billed: 'பில்', notBilled: 'டெலிவரி ஆனது, பில் இல்லை',
     collectH: 'நிலுவைப் பணம்', ageingNone: 'இன்னும் எந்த விலைப்பட்டியலும் நிலுவையில் இல்லை.', overdue: 'தாமதம்', disputed: 'தகராறு', chaseable: 'வசூலிக்க', receivedL: 'பெற்ற தொகை (₹)', recordPayment: 'தொகையைப் பதிவு செய்',
     requestsH: 'போர்ட்டலில் வந்த விலைக்குறிப்பு கோரிக்கைகள்', requestsNone: 'எந்தக் கோரிக்கையும் காத்திருக்கவில்லை.', useRequest: 'இதற்கு விலைக்குறிப்பு',
     gstinH: 'வாடிக்கையாளர் GSTIN (வரி விலைப்பட்டியலுக்கு)', gstinFig: 'GSTIN', gstinNone: 'GSTIN பதிவில் இல்லை — வரி விலைப்பட்டியல்கள் B2C ஆகப் பதிவாகும்', gstinL: 'வாடிக்கையாளர் GSTIN (15 எழுத்துகள்)', gstinNameL: 'GST பதிவில் உள்ள சட்டப் பெயர்', gstinReasonL: 'காரணம்', gstinSave: 'GSTIN-ஐப் பதிவு செய்',
     gstinNote: 'இதன் பின் வெளியிடப்படும் வரி விலைப்பட்டியல்களில் GSTIN இருக்கும்; அவை GSTR-1 இன் B2B பிரிவில் ஒவ்வொன்றாகப் பதிவாகும். ஏற்கனவே வெளியிட்டவை மாறாது.', billTo: 'பெறுநர்', billToNone: 'GSTIN இல்லை (B2C ஆகப் பதிவு)', needGstin: 'வாடிக்கையாளரின் 15 எழுத்து GSTIN, அதன் சட்டப் பெயர், காரணம் ஆகியவற்றைத் தட்டச்சு செய்யவும்.',
+    deliveryFromGstin: 'வாடிக்கையாளரின் GSTIN மாநிலத்திலிருந்து நிரப்பப்பட்டது — பொருள் வேறு மாநிலத்துக்குச் சென்றால் மாற்றவும். CGST + SGST அல்லது IGST பயன்படுத்திய மாநிலத்தைப் பொறுத்தது.', deliveryBlank: 'இந்தக் கடையின் மாநிலத்துக்குள் டெலிவரி என்றால் காலியாக விடவும்.',
+    removeGstin: 'GSTIN-ஐ நீக்கு', removeGstinNote: 'வாடிக்கையாளரின் GST பதிவு ரத்து செய்யப்பட்டால் மட்டும் நீக்கவும்; மேலே காரணத்தைத் தட்டச்சு செய்யவும். இதன் பின் வெளியிடப்படும் வரி விலைப்பட்டியல்கள் B2C ஆகப் பதிவாகும்; ஏற்கனவே வெளியிட்டவை மாறாது.', needRemoveReason: 'GSTIN நீக்கப்படும் காரணத்தைத் தட்டச்சு செய்யவும் (எ.கா. பதிவு ரத்து செய்யப்பட்டது).',
     read: 'படி', saved: 'சேமிக்கப்பட்டது.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு வணிக மேசையைத் திறக்க முடியாது.',
     needCustomer: 'முதலில் வாடிக்கையாளர் எண்ணைத் தட்டச்சு செய்யவும்.', needStore: 'வழங்கும் கடையைக் குறிப்பிடவும்.', needLines: 'குறைந்தது ஒரு வரி சேர்க்கவும்: பொருள், விவரம், முழு அளவு, GST %.', needDates: 'இரு தேதிகளையும் தரவும் — முடிவு தொடக்கத்திற்குப் பின் அல்லது அதே நாள்.', needPrices: 'விலைப்பட்டியலை எழுதவும்: ஒவ்வொரு வரியிலும் "பொருள் எண் = ரூபாய்".', needMoney: 'தொகையை ரூபாயில் எழுதவும், உதா. 1250 அல்லது 1250.50.', needDispatched: 'ஒவ்வொரு வரியிலும் எத்தனை அனுப்பப்பட்டது என்று தட்டச்சு செய்யவும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.', offFeature: 'இந்தக் கடைக்கு வணிக வாடிக்கையாளர் வசதி அணைக்கப்பட்டுள்ளது.',
@@ -97,6 +102,16 @@ export function pricesOf(raw: string): { productId: string; priceMinor: number }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * OB-426 (owner, option B, 27 Oct 2026): what the tax invoice's delivery State starts as — the State of the customer's
+ * GSTIN on the credit account, when one is on record; else blank (a delivery in the store's own State). The person
+ * invoicing may change it before the invoice is made.
+ */
+export function deliveryStatePrefillOf(account: { readonly gstin?: { readonly stateCode: string; readonly stateName: string } | null } | null | undefined): { readonly stateCode: string; readonly stateName: string } | null {
+  const g = account?.gstin ?? null;
+  return g === null ? null : { stateCode: g.stateCode, stateName: g.stateName };
+}
+
 export interface QuoteLineInput { readonly productId: string; readonly description: string; readonly qty: string; readonly taxPercent: string }
 export interface ContractInput {
   readonly customerId: string; readonly contractId: string; readonly validFrom: string; readonly validTo: string; readonly onExpiry: 'block' | 'fallback';
@@ -106,7 +121,7 @@ export interface ContractInput {
 export interface ContractBody { readonly customerId: string; readonly contractId: string; readonly body: Record<string, unknown> }
 export interface AskedRequest { readonly requestId: string; readonly kind: string; readonly status: string; readonly subjectRef: string; readonly details: Record<string, unknown>; readonly decidedBy?: string; readonly decisionReason?: string }
 
-export type Invalid = 'nobody' | 'needCustomer' | 'needStore' | 'needLines' | 'needDates' | 'needPrices' | 'needMoney' | 'needDispatched' | 'needGstin';
+export type Invalid = 'nobody' | 'needCustomer' | 'needStore' | 'needLines' | 'needDates' | 'needPrices' | 'needMoney' | 'needDispatched' | 'needGstin' | 'needRemoveReason';
 
 /** Read the contract form into the exact body head office takes. */
 export function contractBodyOf(input: ContractInput, makeId: () => string = () => newId('K')): ContractBody | Invalid {
@@ -164,6 +179,8 @@ export interface B2BDeskSession {
   recordPayment(customerId: string, rupeesReceived: string): Promise<Outcome<unknown, Invalid>>;
   /** OB-416: record (or change) the customer's GSTIN on the credit account — head office checks it and refuses a bad one by name. */
   recordGstin(input: { readonly customerId: string; readonly gstin: string; readonly legalName: string; readonly reason: string }): Promise<Outcome<unknown, Invalid>>;
+  /** OB-427: remove the GSTIN in force, with a reason — head office refuses by name when none is on record. */
+  removeGstin(input: { readonly customerId: string; readonly reason: string }): Promise<Outcome<unknown, Invalid>>;
 }
 
 export function createB2BDeskSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly makeId?: (prefix: string) => string }): B2BDeskSession {
@@ -273,6 +290,12 @@ export function createB2BDeskSession(input: { readonly viewer: { readonly userId
       // The shape only; head office checks the check character and the State code, and refuses a bad one by name.
       if (!/^[0-9A-Z]{15}$/.test(g) || legalName.trim() === '' || reason.trim() === '') return { result: 'invalid', why: 'needGstin' };
       return call('POST', `/v1/b2b/accounts/${enc(customerId.trim())}/gstin`, { gstin: g, legalName: legalName.trim(), reason: reason.trim() });
+    },
+    removeGstin: async ({ customerId, reason }) => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (customerId.trim() === '') return { result: 'invalid', why: 'needCustomer' };
+      if (reason.trim() === '') return { result: 'invalid', why: 'needRemoveReason' };
+      return call('POST', `/v1/b2b/accounts/${enc(customerId.trim())}/gstin/removal`, { reason: reason.trim() });
     },
   };
 }

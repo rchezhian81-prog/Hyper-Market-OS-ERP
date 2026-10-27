@@ -182,12 +182,12 @@ describe.each(backings)('OB-416 — a credit customer\'s GSTIN files their tax i
 
     const range = { from: `${PERIOD}-01`, to: `${PERIOD}-31` };
     const ret = (await s.call('GET', '/v1/finance/gstr1/return', 'u-acct', undefined, range)).body as Gstr1;
-    expect(ret.b2b).toEqual([{ recipientGstin: GSTIN_TN, invoiceNumber: inv1.number, invoiceDate: expect.any(String), invoiceValueMinor: 52_500, rateLines: [{ rateBps: 500, taxableMinor: 50_000, cgstMinor: 1_250, sgstMinor: 1_250, igstMinor: 0 }] }]);
+    expect(ret.b2b).toEqual([{ recipientGstin: GSTIN_TN, invoiceNumber: inv1.number, invoiceDate: expect.any(String), invoiceValueMinor: 52_500, placeOfSupplyStateCode: '33', rateLines: [{ rateBps: 500, taxableMinor: 50_000, cgstMinor: 1_250, sgstMinor: 1_250, igstMinor: 0 }] }]);
     // The customer with no GSTIN files B2C, rate-wise, exactly as before.
     expect(ret.b2c).toEqual([expect.objectContaining({ rateBps: 500, taxableMinor: 100_000, cgstMinor: 2_500, sgstMinor: 2_500 })]);
     expect(ret).toMatchObject({ documentCount: 2, totalTaxMinor: 7_500 });
     const file = (await s.call('GET', '/v1/finance/gstr1/export', 'u-acct', undefined, { ...range, gstin: STORE_GSTIN, fp: `${PERIOD.slice(5, 7)}${PERIOD.slice(0, 4)}` })).body as { b2b: { ctin: string; inv: { inum: string; val: number }[] }[] };
-    expect(file.b2b).toEqual([{ ctin: GSTIN_TN, inv: [expect.objectContaining({ inum: inv1.number, val: 525 })] }]);
+    expect(file.b2b).toEqual([{ ctin: GSTIN_TN, inv: [expect.objectContaining({ inum: inv1.number, val: 525, pos: '33', rchrg: 'N' })] }]); // OB-428
 
     // The customer's GSTIN changes; head office restarts.
     await s.ok(s.call('POST', '/v1/b2b/accounts/CUSTG/gstin', 'u-acct', { gstin: GSTIN_TN_NEW, legalName: 'Synthetic School Trust', reason: 'the trust re-registered' }), 'change');

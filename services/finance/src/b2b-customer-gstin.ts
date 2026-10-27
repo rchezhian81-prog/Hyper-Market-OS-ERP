@@ -10,6 +10,11 @@
 //     (`b2b.account.manage`) — the authority already on the account, no new one.
 //   • `GET /v1/b2b/accounts/:customerId/gstin` — the GSTIN in force and every change, oldest first.
 //
+//   • `POST /v1/b2b/accounts/:customerId/gstin/removal` — OB-427 (owner, option A, 27 Oct 2026, in writing): remove the GSTIN
+//     in force (the customer's registration was cancelled), with a reason. An append-only fact naming who, when, why and
+//     the GSTIN removed, written in ONE batch with its audit record, by the same authority (`b2b.account.manage`). After
+//     it the customer's new tax invoices file B2C; invoices already issued never change. With none in force: refused by name.
+//
 // A tax invoice takes the GSTIN in force AT THE MOMENT IT IS ISSUED onto the document (`buyer`), and files B2B under it;
 // with none, it files B2C as before. An invoice already issued is never changed (OB-415): a later GSTIN applies to later
 // invoices only.
@@ -38,6 +43,30 @@ export interface CustomerGstinRecord extends B2BInvoiceBuyer {
   readonly previousGstin: string | null;
 }
 
+/** OB-427: one removal fact — the GSTIN in force was taken off the account (append-only; nothing earlier is changed). */
+export interface CustomerGstinRemoval {
+  readonly customerId: string;
+  readonly removed: true;
+  /** The GSTIN that was in force and was removed, and the legal name and State it carried. */
+  readonly removedGstin: string;
+  readonly legalName: string;
+  readonly stateCode: string;
+  readonly reason: string;
+  readonly removedBy: string;
+  readonly removedAt: string;
+}
+
+/** A customer's GSTIN history, oldest first: each recording (or change) and each removal. */
+export type CustomerGstinFact = CustomerGstinRecord | CustomerGstinRemoval;
+
+export const isGstinRemoval = (f: CustomerGstinFact): f is CustomerGstinRemoval => 'removed' in f && f.removed === true;
+
+/** The GSTIN in force after these facts: the latest recording, unless a removal came after it. Pure. */
+export function gstinInForce(facts: readonly CustomerGstinFact[]): CustomerGstinRecord | undefined {
+  const last = facts.at(-1);
+  return last === undefined || isGstinRemoval(last) ? undefined : last;
+}
+
 export type CustomerGstinReading =
   | { readonly ok: true; readonly gstin: string; readonly stateCode: string; readonly stateName: string }
   | { readonly ok: false; readonly code: 'customer_gstin_not_valid' | 'customer_gstin_state_unknown'; readonly why: string };
@@ -64,13 +93,19 @@ export function readCustomerGstin(raw: string): CustomerGstinReading {
 export interface B2BCustomerGstinDeps {
   /** The customer's credit account — a GSTIN is recorded on an account that exists. */
   readonly account: (tenantId: string, customerId: string) => Promise<B2BAccount | undefined> | B2BAccount | undefined;
-  /** Every GSTIN fact for the customer, oldest first. */
-  readonly gstins: (tenantId: string, customerId: string) => Promise<readonly CustomerGstinRecord[]>;
+  /** Every GSTIN fact for the customer (recordings and removals), oldest first. */
+  readonly gstins: (tenantId: string, customerId: string) => Promise<readonly CustomerGstinFact[]>;
   /**
    * Append the fact and its audit record in ONE batch (both or neither). Resolves the record that stands — `superseded` is
    * the GSTIN fact this one replaced as read inside the write (another person's change in between is named, never lost).
    */
   readonly recordGstin: (tenantId: string, input: { readonly customerId: string; readonly gstin: string; readonly legalName: string; readonly stateCode: string; readonly stateName: string; readonly reason: string; readonly by: string; readonly branchId: string | null }) => Promise<CustomerGstinRecord>;
+  /**
+   * OB-427: append the removal of the GSTIN in force and its audit record in ONE batch (both or neither). The GSTIN in force
+   * is read again inside the write; with none then (another person removed it first), nothing is written and it resolves
+   * undefined.
+   */
+  readonly removeGstin?: (tenantId: string, input: { readonly customerId: string; readonly reason: string; readonly by: string; readonly branchId: string | null }) => Promise<CustomerGstinRemoval | undefined>;
   readonly now: () => string;
 }
 
@@ -109,8 +144,7 @@ export function b2bCustomerGstinRoutes(deps: B2BCustomerGstinDeps): readonly Rou
           throw notFound(`B2B credit account for ${customerId} (open the credit account first; a GSTIN is recorded on it)`);
         }
         const legalName = b.legalName.trim();
-        const history = await deps.gstins(ctx.tenantId, customerId);
-        const current = history.at(-1);
+        const current = gstinInForce(await deps.gstins(ctx.tenantId, customerId));
         if (current !== undefined && current.gstin === read.gstin && current.legalName === legalName) {
           return { status: 200, body: { ...current, alreadySet: true } };
         }
@@ -122,13 +156,44 @@ export function b2bCustomerGstinRoutes(deps: B2BCustomerGstinDeps): readonly Rou
       },
     },
     {
+      // OB-427: remove the GSTIN in force, with a reason — later tax invoices file B2C; issued ones never change.
+      api: 'API-09', method: 'POST', path: '/v1/b2b/accounts/:customerId/gstin/removal',
+      permission: 'b2b.account.manage', idempotent: true,
+      entitlement: 'b2b',
+      handler: async (ctx) => {
+        const customerId = (ctx.params['customerId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as { reason?: unknown };
+        if (!isStr(b.reason) || b.reason.trim().length > 500) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_gstin_removal',
+            whatHappened: 'Removing a customer\'s GSTIN needs the reason (up to 500 characters) — for example, that their GST registration was cancelled.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "reason": … }. Nothing was removed; the GSTIN on record still stands.',
+          });
+        }
+        if (await deps.account(ctx.tenantId, customerId) === undefined) {
+          throw notFound(`B2B credit account for ${customerId}`);
+        }
+        const refuseNone = () => apiError(409, {
+          code: 'no_customer_gstin_to_remove',
+          whatHappened: `No GSTIN is on record for ${customerId}, so there is nothing to remove. Its tax invoices already file in GSTR-1's B2C section.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Nothing to do. Open the account to see its GSTIN history.',
+        });
+        if (gstinInForce(await deps.gstins(ctx.tenantId, customerId)) === undefined || deps.removeGstin === undefined) throw refuseNone();
+        const removal = await deps.removeGstin(ctx.tenantId, { customerId, reason: b.reason.trim(), by: ctx.userId, branchId: ctx.branchId ?? null });
+        if (removal === undefined) throw refuseNone();
+        return { status: 201, body: { ...removal, files: 'b2c', detail: `GSTIN ${removal.removedGstin} is no longer on record for ${customerId}: its tax invoices from now on file in GSTR-1's B2C section. Invoices already issued keep the GSTIN they were made out to.` } };
+      },
+    },
+    {
       api: 'API-09', method: 'GET', path: '/v1/b2b/accounts/:customerId/gstin',
       permission: 'b2b.account.read',
       entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = (ctx.params['customerId'] ?? '').trim();
         const history = await deps.gstins(ctx.tenantId, customerId);
-        const current = history.at(-1);
+        const current = gstinInForce(history);
         return {
           status: 200,
           body: {

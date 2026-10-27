@@ -89,7 +89,8 @@ import type { PlacementTrigger } from '../../pos/src/till-store';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
 import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/src/day-close';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
-import type { B2BCustomerGstinDeps, CustomerGstinRecord } from '../../finance/src/b2b-customer-gstin';
+import type { B2BCustomerGstinDeps, CustomerGstinRecord, CustomerGstinRemoval, CustomerGstinFact } from '../../finance/src/b2b-customer-gstin';
+import { gstinInForce } from '../../finance/src/b2b-customer-gstin';
 import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
@@ -4048,16 +4049,27 @@ export function b2bCreditAdapter(input: {
  * naming it — never a silent overwrite.
  */
 export function b2bCustomerGstinAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<B2BCustomerGstinDeps, 'account'> {
-  const gstins = (tenantId: string, customerId: string): Promise<readonly CustomerGstinRecord[]> =>
-    allOf<CustomerGstinRecord>(input.store, tenantId, forB2BCustomer(customerId), 'B2BCustomerGstinRecorded');
+  // OB-427: the recordings and the removals, merged in append order (each read narrowed to its own type at the store).
+  const gstins = async (tenantId: string, customerId: string): Promise<readonly CustomerGstinFact[]> => {
+    const stream = forB2BCustomer(customerId);
+    const [recorded, removed] = await Promise.all([
+      input.store.readStream(tenantId, stream, { type: 'B2BCustomerGstinRecorded' }),
+      input.store.readStream(tenantId, stream, { type: 'B2BCustomerGstinRemoved' }),
+    ]);
+    return [...recorded, ...removed].sort((a, b) => a.seq - b.seq).map((e) => payloadOf<CustomerGstinFact>(e));
+  };
+  const guardKeyOf = (customerId: string): string => `b2b-customer-gstin-${createHash('sha256').update(customerId).digest('hex').slice(0, 24)}`;
   return {
     now: input.now,
     gstins,
     recordGstin: async (tenantId, r) => {
-      const guardKey = `b2b-customer-gstin-${createHash('sha256').update(r.customerId).digest('hex').slice(0, 24)}`;
+      const guardKey = guardKeyOf(r.customerId);
       for (let attempt = 0; ; attempt += 1) {
         const expectedVersion = await input.store.guardVersion(tenantId, guardKey);
-        const before = (await gstins(tenantId, r.customerId)).at(-1);
+        const facts = await gstins(tenantId, r.customerId);
+        const before = gstinInForce(facts);
+        // OB-427: after a removal nothing is in force; a recording then is a new fact, never the first one replayed.
+        const removals = facts.filter((f) => 'removed' in f).length;
         const at = input.now();
         const record: CustomerGstinRecord = {
           customerId: r.customerId, gstin: r.gstin, legalName: r.legalName, stateCode: r.stateCode, stateName: r.stateName,
@@ -4070,13 +4082,13 @@ export function b2bCustomerGstinAdapter(input: { readonly store: EventStore; rea
           after: { gstin: r.gstin, legalName: r.legalName, stateCode: r.stateCode },
           reason: r.reason, correlationId: r.customerId,
         });
-        const seq = (await gstins(tenantId, r.customerId)).length + 1;
+        const seq = facts.length + 1;
         try {
           await input.store.appendBatch(tenantId, [{ stream: forB2BCustomer(r.customerId), event: makeEvent({
             id: `b2b-gstin-${r.customerId}-${seq}`, type: 'B2BCustomerGstinRecorded', occurredAt: at,
             // Keyed on what it supersedes and what it sets: a re-sent change collapses; a later change (even back to an
-            // earlier GSTIN) is a new fact.
-            idempotencyKey: `b2b-gstin-${tenantId}-${r.customerId}-${before?.gstin ?? 'none'}-${before?.legalName ?? ''}-${r.gstin}-${r.legalName}`,
+            // earlier GSTIN, or after a removal) is a new fact.
+            idempotencyKey: `b2b-gstin-${tenantId}-${r.customerId}-${before?.gstin ?? (removals === 0 ? 'none' : `removed${removals}`)}-${before?.legalName ?? ''}-${r.gstin}-${r.legalName}`,
             source: 'api/finance', payload: record,
           }) }, audit.entry], { guard: { key: guardKey, expectedVersion }, alsoGuards: [audit.guard] });
         } catch (e) {
@@ -4086,7 +4098,45 @@ export function b2bCustomerGstinAdapter(input: { readonly store: EventStore; rea
           }
           throw e;
         }
-        return (await gstins(tenantId, r.customerId)).at(-1) ?? record;
+        const stands = gstinInForce(await gstins(tenantId, r.customerId));
+        return stands ?? record;
+      }
+    },
+    // OB-427: the removal and its audit record in ONE batch, under the same GSTIN guard and the audit chain's.
+    removeGstin: async (tenantId, r) => {
+      const guardKey = guardKeyOf(r.customerId);
+      for (let attempt = 0; ; attempt += 1) {
+        const expectedVersion = await input.store.guardVersion(tenantId, guardKey);
+        const facts = await gstins(tenantId, r.customerId);
+        const before = gstinInForce(facts);
+        if (before === undefined) return undefined;
+        const at = input.now();
+        const removal: CustomerGstinRemoval = {
+          customerId: r.customerId, removed: true, removedGstin: before.gstin, legalName: before.legalName, stateCode: before.stateCode,
+          reason: r.reason, removedBy: r.by, removedAt: at,
+        };
+        const audit = await sealedAuditEntry(input.store, tenantId, {
+          actorId: r.by, action: 'b2b.customer_gstin.remove',
+          objectType: 'b2b_customer', objectId: r.customerId, at, origin: { tenantId, branchId: r.branchId },
+          before: { gstin: before.gstin, legalName: before.legalName, stateCode: before.stateCode }, after: null,
+          reason: r.reason, correlationId: r.customerId,
+        });
+        const seq = facts.length + 1;
+        try {
+          await input.store.appendBatch(tenantId, [{ stream: forB2BCustomer(r.customerId), event: makeEvent({
+            id: `b2b-gstin-removed-${r.customerId}-${seq}`, type: 'B2BCustomerGstinRemoved', occurredAt: at,
+            // Keyed on the fact it ends: a re-sent removal collapses; a removal of a later recording is a new fact.
+            idempotencyKey: `b2b-gstin-removed-${tenantId}-${r.customerId}-${facts.length}-${before.gstin}`,
+            source: 'api/finance', payload: removal,
+          }) }, audit.entry], { guard: { key: guardKey, expectedVersion }, alsoGuards: [audit.guard] });
+        } catch (e) {
+          if (e instanceof ConcurrencyConflictError && attempt < 32) {
+            await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
+            continue;
+          }
+          throw e;
+        }
+        return removal;
       }
     },
   };
@@ -5678,7 +5728,8 @@ export function b2bOutwardSupplyOf(doc: StoredB2BDocument, customerId: string, d
   if (reasons.length > 0 || lines.length === 0) {
     return { held: { invoiceNumber: doc.number, invoiceDocumentId: doc.documentId, customerId, documentDate, taxMinor: doc.taxMinor, reasons: reasons.length > 0 ? reasons : ['the invoice has no line to file'] } };
   }
-  return { doc: { documentId: doc.number, documentDate, ...(doc.buyer === undefined ? { supplyType: 'b2c' as const } : { supplyType: 'b2b' as const, recipientGstin: doc.buyer.gstin }), lines, fedFrom: { kind: 'b2b_tax_invoice', customerId, invoiceDocumentId: doc.documentId } } };
+  // OB-428: the place of supply is the delivery State the invoice's own split records — the single source; never re-judged.
+  return { doc: { documentId: doc.number, documentDate, ...(doc.buyer === undefined ? { supplyType: 'b2c' as const } : { supplyType: 'b2b' as const, recipientGstin: doc.buyer.gstin }), ...(doc.gst === undefined ? {} : { placeOfSupplyStateCode: doc.gst.deliveryStateCode }), lines, fedFrom: { kind: 'b2b_tax_invoice', customerId, invoiceDocumentId: doc.documentId } } };
 }
 
 export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; readonly now: () => string }): {

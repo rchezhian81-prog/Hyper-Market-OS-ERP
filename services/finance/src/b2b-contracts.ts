@@ -34,7 +34,7 @@ import {
 import { actionDetails, approvalNamedIn, openApproval, NO_APPROVALS, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { StoredB2BDocument, B2BCreditGate } from './b2b-documents';
 import type { B2BAccount } from './b2b-credit';
-import type { CustomerGstinRecord } from './b2b-customer-gstin';
+import { gstinInForce, type CustomerGstinFact } from './b2b-customer-gstin';
 import { shopClock, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { StoredB2BContract } from '../../../packages/b2b/src/index';
@@ -71,7 +71,7 @@ export interface B2BDeskDeps {
   /** Customers the desk has met: a contract, a quotation, a quote request. */
   readonly knownCustomers: (tenantId: string) => Promise<readonly string[]>;
   /** OB-416: the customer's GSTIN facts on the credit account, oldest first (the latest in force). */
-  readonly customerGstins?: (tenantId: string, customerId: string) => Promise<readonly CustomerGstinRecord[]>;
+  readonly customerGstins?: (tenantId: string, customerId: string) => Promise<readonly CustomerGstinFact[]>;
   readonly now: () => string;
   readonly calendar?: ShopCalendarOf;
 }
@@ -310,7 +310,7 @@ export function b2bDeskRoutes(deps: B2BDeskDeps): readonly Route[] {
           deps.account(ctx.tenantId, customerId), deps.outstandingMinor(ctx.tenantId, customerId), deps.documents(ctx.tenantId, customerId), deps.contracts(ctx.tenantId),
           deps.customerGstins?.(ctx.tenantId, customerId) ?? Promise.resolve([]),
         ]);
-        const gstin = gstins.at(-1);
+        const gstin = gstinInForce(gstins); // OB-427: a removed GSTIN is not in force
         const mine = contracts.filter((c) => c.customerId === customerId);
         const ordered = [...documents].sort((a, b) => (a.issuedAt < b.issuedAt ? 1 : a.issuedAt > b.issuedAt ? -1 : 0));
         const converted = new Set(documents.filter((d) => d.kind === 'sales_order' && d.derivedFrom !== undefined).map((d) => d.derivedFrom as string));
