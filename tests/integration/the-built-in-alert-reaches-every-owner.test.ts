@@ -10,7 +10,7 @@ import { STREAM, observedHealthAdapter, alertLifecycleAdapter } from '../../serv
 import { OWNER_ROLE_ID, PLATFORM_ADMIN_ROLE_ID, STORE_MANAGER_ROLE_ID } from '../../services/api/src/roles';
 import { deliverAlerts, OPS_ALERT_WORKER } from '../../services/platform/src/ops-alert-worker';
 import {
-  raiseObservedAlerts, observedHealthRoutes, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_RULE_CHANGED_NOTICE, type ObservedHealthDeps, type BuiltInRuleState,
+  raiseObservedAlerts, observedHealthRoutes, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID as CLOCK_ID, BUILT_IN_RULE_CHANGED_NOTICE, type ObservedHealthDeps, type BuiltInRuleState,
 } from '../../services/platform/src/observed-health';
 import { alertLifecycleRoutes, type LiveAlert } from '../../services/platform/src/alert-lifecycle';
 
@@ -68,7 +68,9 @@ async function everyOwnerIsTold(store: EventStore): Promise<void> {
 
   // GET alert-rules names both owners (owner-only: nobody else).
   const rules = (await route(routes, 'GET', '/v1/platform/alert-rules').handler(ctx(T, ALICE))).body as { builtIn: BuiltInRuleState[] };
-  expect(rules.builtIn).toEqual([expect.objectContaining({ alertId: ID, state: 'on', rule: expect.objectContaining({ ownerUserId: ALICE, alsoToUserIds: [BALA] }) })]);
+  expect(rules.builtIn).toEqual([expect.objectContaining({ alertId: ID, state: 'on', rule: expect.objectContaining({ ownerUserId: ALICE, alsoToUserIds: [BALA] }) }),
+    // §31.1 · OB-409: the store computer clock rule reaches both owners too.
+    expect.objectContaining({ alertId: CLOCK_ID, state: 'on', rule: expect.objectContaining({ ownerUserId: ALICE, alsoToUserIds: [BALA] }) })]);
   expect(rules.builtIn[0]!.description).toContain(`all 2: ${ALICE}, ${BALA}`);
 
   // The alert worker raises it and delivers it — to EACH owner, inbox and phone.

@@ -2006,6 +2006,17 @@ export function durationInWords(ms: number): string {
  */
 export const STORE_COMPUTER_CHECKS_STUCK_MINUTES = 60;
 export const STORE_COMPUTER_CHECKS_STUCK_COMPONENT = 'store_computer_checks_stuck';
+/**
+ * §31.1 · OB-409 "C" (owner, 27 Oct 2026, in writing; extends OB-403) — THE CLOCK-HOLD LINE (stated). One component for the
+ * whole shop, `box_clock_held`, present only while at least one store computer's latest report says it is at the 5-minute
+ * flag (verdict `flag_bills`, or its hold on new prices and offers is on): `degraded`, naming each such store, how many
+ * minutes its clock is out, since when, and what it is holding. The 2-minute warning alone never puts it here (it stays on
+ * `box_clock:<store>`). A store whose last report said "held" and that has not reported since stays here, said STALE —
+ * never cleared on no news; it goes when that store's computer reports its clock back in step. The built-in alert rule
+ * `BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID` (observed-health.ts) raises it to every owner. Its name starts `box_`, so while the
+ * store computer checks are being prepared an open alert on it is kept, not cleared (OB-106).
+ */
+export const STORE_COMPUTER_CLOCK_HELD_COMPONENT = 'box_clock_held';
 /** Round 29 · OB-105: above this, the saved history's size is an alarm on the health read (an honest busy store stays under 2 MB). */
 export const BOX_HISTORY_SIZE_WARN_BYTES = 4 * 1_048_576;
 /** Round 29 · OB-106 (verifier r28 NEW-8): saving held back by an open database transaction this long is shown. */
@@ -3728,6 +3739,8 @@ export function judgeBoxes(input: {
   const components: ComponentHealth[] = [];
   let anyFreshCannot = false;
   let allFreshCan = latest.size > 0;
+  // §31.1 · OB-409: the stores whose computer holds new prices and offers (its clock 5+ minutes out), for `box_clock_held`.
+  const clockHeld: { storeId: string; computer: string; says: string; offsetSeconds: number | null; heldPromotions: readonly string[]; heldPrices: readonly string[]; stale: boolean }[] = [];
   for (const storeId of ids) {
     const r = latest.get(storeId);
     const unusedDays = unusedNumbersByDay(unusedOf.get(storeId) ?? []);
@@ -3838,6 +3851,16 @@ export function judgeBoxes(input: {
           computer: r.reportedBy, reportedAt: r.observedAt, ageSeconds,
         },
       });
+      if (c.verdict === 'flag_bills' || c.hold.held) {
+        const minutes = c.offsetSeconds === null ? null : Math.max(1, Math.round(Math.abs(c.offsetSeconds) / 60));
+        const outBy = minutes === null || c.offsetSeconds === null ? 'out (by how much was not measured)'
+          : `${minutes} minute${minutes === 1 ? '' : 's'}${minutes >= 60 ? ` (${durationInWords(minutes * 60_000)})` : ''} ${c.offsetSeconds < 0 ? 'AHEAD of' : 'BEHIND'} head office`;
+        const held = [...c.hold.heldPromotions.map((id) => `offer ${id}`), ...c.hold.heldPrices.map((id) => `price ${id}`)];
+        clockHeld.push({
+          storeId, computer: r.reportedBy, offsetSeconds: c.offsetSeconds, heldPromotions: c.hold.heldPromotions, heldPrices: c.hold.heldPrices, stale,
+          says: `store ${storeId} (computer ${r.reportedBy}): its clock is ${outBy}, since ${c.hold.since ?? c.lastCheckedAt ?? '?'}; new prices and offers are HELD there — ${held.length === 0 ? 'nothing new has been due yet' : `held now: ${held.join(', ')}`}${stale ? ` (STALE — it last reported ${ago(ageSeconds)} ago, ${r.observedAt}; not heard from since, so this is its last word, not known to be the state now)` : ''}`,
+        });
+      }
     }
     // Verifier r19 OB87-1 / BOX-1 / lost sales: the store computer's bill numbering, as the owner must see it (P-08, P-03).
     // `degraded` when the witness is unavailable (every start a possible restore, a new prefix each boot), when it shares a
@@ -3994,6 +4017,21 @@ export function judgeBoxes(input: {
         },
       });
     }
+  }
+  // §31.1 · OB-409 "C": one line for the shop while any store computer holds new prices and offers (raised to every owner).
+  if (clockHeld.length > 0) {
+    const one = clockHeld.length === 1;
+    components.push({
+      name: STORE_COMPUTER_CLOCK_HELD_COMPONENT, status: 'degraded',
+      detail: `price change held — ${one ? "a store computer's clock is" : `${clockHeld.length} store computers' clocks are`} 5 minutes or more out: ${clockHeld.map((x) => x.says).join('; ')}. Prices and offers already running stay, selling goes on, and every bill taken meanwhile is marked for checking. Ask IT to correct ${one ? "that computer's clock" : "those computers' clocks"}; this clears by itself when ${one ? 'it reports its clock' : 'each reports its clock'} back in step, and the held changes then start (owner decisions OB-403, OB-409)`,
+      evidence: {
+        stores: clockHeld.map((x) => x.storeId).join(','), computers: clockHeld.map((x) => x.computer).join(','),
+        offsetSeconds: clockHeld.map((x) => `${x.storeId}:${x.offsetSeconds ?? 'not measured'}`).join(','),
+        heldPromotions: clockHeld.map((x) => `${x.storeId}:${x.heldPromotions.join('|')}`).join(','),
+        heldPrices: clockHeld.map((x) => `${x.storeId}:${x.heldPrices.join('|')}`).join(','),
+        staleStores: clockHeld.filter((x) => x.stale).map((x) => x.storeId).join(','),
+      },
+    });
   }
   return { boxes, components, localStoreWritable: anyFreshCannot ? false : allFreshCan ? true : undefined };
 }

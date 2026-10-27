@@ -7,7 +7,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { recordingTransport } from '../../packages/notifications/src/index';
 import { STREAM, observedHealthAdapter, alertLifecycleAdapter } from '../../services/api/src/adapters';
 import { deliverAlerts } from '../../services/platform/src/ops-alert-worker';
-import { BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_RULE_CHANGED_NOTICE } from '../../services/platform/src/observed-health';
+import { BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID as CLOCK_ID, BUILT_IN_RULE_CHANGED_NOTICE } from '../../services/platform/src/observed-health';
 import { STORE_COMPUTER_CHECKS_STUCK_COMPONENT } from '../../services/platform/src/box-health';
 import { apiHarness, TEST_PACK_KEY } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
@@ -43,7 +43,9 @@ const edit = (ownerUserId: string, more: Record<string, unknown> = {}) => ({ ale
 /** The whole story, through `send` (the real pipeline). Returns the idempotency keys of the IT administrator's refused saves. */
 async function onlyTheOwner(send: Send, inbox: () => Promise<{ alertId: string; detail: string }[]>): Promise<string[]> {
   const get = async (): Promise<Rules> => (await send(OWNER, 'GET')).body as Rules;
-  expect((await get()).builtIn).toEqual([expect.objectContaining({ alertId: ID, state: 'on', rule: expect.objectContaining({ ownerUserId: OWNER }) })]);
+  // §31.1 · OB-409: the second built-in rule (the store computer's clock) is on beside it, and stays on through this story.
+  const clockOn = expect.objectContaining({ alertId: CLOCK_ID, state: 'on' });
+  expect((await get()).builtIn).toEqual([expect.objectContaining({ alertId: ID, state: 'on', rule: expect.objectContaining({ ownerUserId: OWNER }) }), clockOn]);
   const refusedKeys: string[] = [];
 
   // The IT administrator: turn it off, re-point it to himself — refused by name, nothing changes.
@@ -62,7 +64,7 @@ async function onlyTheOwner(send: Send, inbox: () => Promise<{ alertId: string; 
   expect([ho.status, err(ho)]).toEqual([403, 'built_in_alert_rule_owner_only']);
   const hoOwn = await send(HO, 'PUT', { rules: [BACKUP_RULE] });
   expect(hoOwn.status, JSON.stringify(hoOwn.body)).toBe(200);
-  expect(hoOwn.body).toMatchObject({ version: 1, builtInChanged: [], builtIn: [expect.objectContaining({ state: 'on' })] });
+  expect(hoOwn.body).toMatchObject({ version: 1, builtInChanged: [], builtIn: [expect.objectContaining({ state: 'on' }), clockOn] });
   expect(hoOwn.body).not.toHaveProperty('ownerNotified');
 
   // Even the owner cannot make it an edit that can never fire.
@@ -74,7 +76,7 @@ async function onlyTheOwner(send: Send, inbox: () => Promise<{ alertId: string; 
   // The owner turns it off: kept, named, and sent to him (his inbox at once).
   const off = await send(OWNER, 'PUT', { rules: [BACKUP_RULE], builtInOff: [ID] });
   expect(off.status, JSON.stringify(off.body)).toBe(200);
-  expect(off.body).toMatchObject({ version: 2, builtInOff: [ID], builtInChanged: [`turned ${ID} OFF`], ownerNotified: OWNER, builtIn: [expect.objectContaining({ state: 'off', lastChangedBy: OWNER })] });
+  expect(off.body).toMatchObject({ version: 2, builtInOff: [ID], builtInChanged: [`turned ${ID} OFF`], ownerNotified: OWNER, builtIn: [expect.objectContaining({ state: 'off', lastChangedBy: OWNER }), clockOn] });
   const v2 = await get();
   expect(v2.builtIn[0]).toMatchObject({ state: 'off', lastChangedBy: OWNER });
   const notices = (await inbox()).filter((a) => a.alertId.startsWith(BUILT_IN_RULE_CHANGED_NOTICE));

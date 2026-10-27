@@ -52,7 +52,7 @@ import { readRules, readThresholds } from './operational-health';
 import { raiseKey, isReservedAlertId, reservedAlertIdRefusal, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
-  judgeBoxes, boxHistoryComponents, doorRefusalComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES, type DoorRefusalLine,
+  judgeBoxes, boxHistoryComponents, doorRefusalComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES, STORE_COMPUTER_CLOCK_HELD_COMPONENT, type DoorRefusalLine,
   type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers, type BoxReportsView,
   type BoxHistoryState, type UnusedCheckCapped,
 } from './box-health';
@@ -117,18 +117,33 @@ export interface StoredAlertRules {
  * PUT /v1/platform/alert-rules, so each change is a new rules version with who changed it and when (kept, never deleted).
  */
 export const BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID = 'built-in:store-computer-checks-stuck';
-export const BUILT_IN_ALERT_RULE_IDS: readonly string[] = [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID];
+/**
+ * §31.1 · OB-409 "C" (owner, 27 Oct 2026, in writing; extends OB-403) — THE SECOND BUILT-IN RULE (stated). When any store
+ * computer's clock is 5 minutes or more out — the flag, when it holds new prices, offers and the bill-number year (OB-403) —
+ * the alert goes to EVERY owner (the people holding the owner role at the moment of the check), across every store, with no
+ * rule of his own (`box_clock_held` degraded, box-health.ts). The 2-minute warning alone does not raise it (it is shown on
+ * `box_clock:<store>` only). It is raised once for the episode (later reports while it lasts add nothing), cleared when every
+ * store computer reports its clock back in step (kept, never deleted), and raised again as a new occurrence if one goes out
+ * again. Exactly as the first built-in rule: only the owner turns it off, edits or re-points it, and only the owner ticks it.
+ */
+export const BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID = 'built-in:store-computer-clock-out';
+export const BUILT_IN_ALERT_RULE_IDS: readonly string[] = [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID];
 /**
  * Round 32 · OB-115: the component each built-in rule watches — an edited built-in rule must keep it (an edit naming another
  * component, a misspelt one, could never fire for its purpose while still looking "edited, to the owner").
  */
-export const BUILT_IN_RULE_COMPONENTS: Readonly<Record<string, string>> = { [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID]: STORE_COMPUTER_CHECKS_STUCK_COMPONENT };
+export const BUILT_IN_RULE_COMPONENTS: Readonly<Record<string, string>> = {
+  [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID]: STORE_COMPUTER_CHECKS_STUCK_COMPONENT,
+  [BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID]: STORE_COMPUTER_CLOCK_HELD_COMPONENT,
+};
 /** Round 32 · OB-115: the alert id prefix of the notice the owner gets for every change to a built-in rule. */
 export const BUILT_IN_RULE_CHANGED_NOTICE = 'notice:built-in-alert-rule-changed';
 /** How soon the owner is asked to acknowledge that notice (a day: it is a "for your information", not an emergency). */
 export const BUILT_IN_RULE_CHANGED_NOTICE_ACK_MINUTES = 24 * 60;
 /** How soon the owner is asked to acknowledge the built-in alert (he can change it by editing the rule). */
 export const BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES = 60;
+/** §31.1 · OB-409: how soon the owner is asked to acknowledge the clock alert (he can change it by editing the rule). */
+export const BUILT_IN_STORE_COMPUTER_CLOCK_ACK_MINUTES = 60;
 
 /** The shop's owner, as the built-in rules address him (resolved when the rules are read). */
 export interface ShopOwner { readonly userId: string; readonly name: string }
@@ -169,6 +184,14 @@ function builtInRules(owners: ShopOwners): readonly { readonly alertId: string; 
     ...(all.length === 0 ? {} : { rule: toEveryOwner({
       alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down' as const,
       ownerUserId: EVERY_OWNER, ownerName: 'every owner', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
+    }, all) }),
+  }, {
+    // §31.1 · OB-409 "C": every store, at the 5-minute flag only (never the 2-minute warning).
+    alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID,
+    description: `tells ${ownersInWords(all)} when any store computer's clock is 5 minutes or more out, so new prices and offers are held there — which store, by how many minutes, and what is held; not at the 2-minute warning; cleared when its clock is back in step (owner decisions OB-403, OB-409)`,
+    ...(all.length === 0 ? {} : { rule: toEveryOwner({
+      alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, component: STORE_COMPUTER_CLOCK_HELD_COMPONENT, firesAt: 'degraded' as const,
+      ownerUserId: EVERY_OWNER, ownerName: 'every owner', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CLOCK_ACK_MINUTES,
     }, all) }),
   }];
 }
