@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Follow-ups (27 October 2026): customer GSTIN (OB-416) and reviewer-only review requests (OB-420)
+
+**What changed**
+- **OB-416:** a credit customer's GSTIN can be recorded on their account.
+  - It is checked (shape, check character, State) and refused by name if wrong.
+  - Every change is kept with who, when and why.
+  - Their tax invoices print the GSTIN and file invoice by invoice in GSTR-1's B2B section, so the customer can claim input credit.
+  - Customers without a GSTIN file B2C as before, and issued invoices never change.
+- **OB-420:** only the named security reviewer sees and may sign a floor-device review request. Anyone else is refused by name, and nobody named means nobody can sign (the asker is told).
+
+**Tests run**
+- See the pull request: the whole default suite, lint and type check on the combined branch.
+- The touched browser tests ran in real Chromium.
+
+**What is next**
+- The owner's answers to the three questions below.
+
+**Needs an owner decision**
+- **Place of supply:** should a credit invoice's delivery State be pre-filled from the customer's GSTIN State?
+- **Removing a GSTIN:** should a customer's GSTIN be removable, with a reason, when their registration is cancelled?
+- **GSTN portal file:** B2B invoices carry no place of supply or reverse-charge flag. Fix it before the first live filing.
+
+---
+
 ## Final batch (27 October 2026): the four software gaps closed, and the owner decisions OB-406 to OB-414
 
 **What changed**
