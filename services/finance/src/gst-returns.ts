@@ -30,6 +30,12 @@ export interface StoredOutwardDoc {
   readonly supplyType: SupplyKind;
   readonly recipientGstin?: string;
   readonly lines: readonly OutwardSupplyLine[];
+  /**
+   * OB-408: present when the system put this document on the return itself, from a B2B tax invoice as it was issued — the
+   * customer and the invoice's own document id. `documentId` is then the invoice's number (the gap-free series), the
+   * identity GSTR-1 files it under, so a hand entry under that number is the same document and is not counted twice.
+   */
+  readonly fedFrom?: { readonly kind: 'b2b_tax_invoice'; readonly customerId: string; readonly invoiceDocumentId: string };
 }
 
 /** A tax-relevant sold line from a banked sale, tagged with its supply date, for the GSTR-1-from-sales fold. */
@@ -97,9 +103,21 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         if (problems.length > 0) {
           throw apiError(422, { code: 'invalid_outward_lines', whatHappened: `outward-supply lines rejected: ${problems.join('; ')}`, wasItSaved: 'not_saved', nextSafeAction: 'Fix the named lines — a free-text or malformed HSN is never stored.' });
         }
-        const existing = (await deps.documents(ctx.tenantId)).find((d) => d.documentId === documentId);
+        const all = await deps.documents(ctx.tenantId);
+        const existing = all.find((d) => d.documentId === documentId);
         if (existing !== undefined) {
-          return { status: 200, body: { documentId, alreadyRecorded: true, lineCount: existing.lines.length } };
+          return { status: 200, body: { documentId, alreadyRecorded: true, lineCount: existing.lines.length, ...(existing.fedFrom === undefined ? {} : { fedFrom: existing.fedFrom }) } };
+        }
+        // OB-408: a B2B tax invoice is put on the return by the system as it is issued, under its invoice NUMBER. A hand
+        // entry naming the same invoice by its document id would count its tax twice — refused by name, never double-counted.
+        const fed = all.find((d) => d.fedFrom?.invoiceDocumentId === documentId);
+        if (fed !== undefined) {
+          throw apiError(409, {
+            code: 'b2b_invoice_already_on_the_return',
+            whatHappened: `B2B tax invoice ${documentId} (customer ${fed.fedFrom!.customerId}) is already on the GST return as invoice ${fed.documentId}, put there when it was issued. Recording it again would count its GST twice.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Nothing to do — GET /v1/finance/gstr1/return shows invoice ${fed.documentId}. A correction to a B2B invoice is a credit note, never a second entry.`,
+          });
         }
         await deps.record(ctx.tenantId, {
           documentId, documentDate: b['documentDate'], supplyType,

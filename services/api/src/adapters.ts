@@ -245,7 +245,7 @@ import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platfo
 import { adapterHealth } from '../../../packages/integration/src/index';
 import type { DayBookSale, DayBookLoyalty } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
-import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
+import type { CreditNote, ProductTaxEntry, OutwardSupplyLine } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { SegmentDeps } from '../../customer/src/segments';
 import { collapseConsent } from '../../customer/src/segments';
@@ -4022,16 +4022,20 @@ export function b2bCreditAdapter(input: {
     },
 
     recordReceivable: async (tenantId, customerId, m) => {
-      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
-        id: `b2b-ar-${m.movementId}`,
-        type: 'B2BReceivableMovement',
-        occurredAt: m.at,
-        // The movement's own id, no timestamp — a re-sent invoice or payment collapses, so the balance
-        // moves once however many times it is sent.
-        idempotencyKey: `b2b-ar-${tenantId}-${m.movementId}`,
-        source: 'api/finance',
-        payload: m,
-      }));
+      await input.store.appendBatch(tenantId, [
+        { stream: forB2BCustomer(customerId), event: makeEvent({
+          id: `b2b-ar-${m.movementId}`,
+          type: 'B2BReceivableMovement',
+          occurredAt: m.at,
+          // The movement's own id, no timestamp — a re-sent invoice or payment collapses, so the balance
+          // moves once however many times it is sent.
+          idempotencyKey: `b2b-ar-${tenantId}-${m.movementId}`,
+          source: 'api/finance',
+          payload: m,
+        }) },
+        // OB-408: the customer is now one the month-end receivables check compares, even with no B2B posting fact.
+        receivableCustomerIndexEntry(tenantId, customerId, m.at),
+      ]);
     },
   };
 }
@@ -5564,6 +5568,66 @@ export function b2bCollectionsAdapter(input: {
  * books read (`b2bPostingAdapter`). Keys are the existing ones per record, so a re-issued / re-sent fact collapses.
  */
 const B2B_POSTABLES = streamName(STREAM.finance, 'b2b-postables');
+
+/**
+ * OB-408: every credit customer with a movement on their receivables ledger — one `B2BReceivableCustomerIndexed` per
+ * customer (keyed by the customer, so it is written once), appended in the SAME batch as the movement that makes them
+ * one. The month-end receivables check reads this, not only the B2B posting facts, so a customer whose movements were
+ * keyed by hand is compared too.
+ */
+const B2B_RECEIVABLE_CUSTOMERS = streamName(STREAM.finance, 'b2b-receivable-customers');
+function receivableCustomerIndexEntry(tenantId: string, customerId: string, at: string): { readonly stream: string; readonly event: DomainEvent } {
+  const d = createHash('sha256').update(customerId).digest('hex').slice(0, 24);
+  return { stream: B2B_RECEIVABLE_CUSTOMERS, event: makeEvent({ id: `b2b-ar-customer-${d}`, type: 'B2BReceivableCustomerIndexed', occurredAt: at, idempotencyKey: `b2b-ar-customer-${tenantId}-${d}`, source: 'api/finance', payload: { customerId } }) };
+}
+/** OB-408: the credit customers with any receivable movement — the index, and (for movements before it) the posting facts. */
+export async function b2bReceivableCustomers(store: EventStore, tenantId: string): Promise<readonly string[]> {
+  const [indexed, postables] = await Promise.all([
+    allOf<{ customerId: string }>(store, tenantId, B2B_RECEIVABLE_CUSTOMERS, 'B2BReceivableCustomerIndexed'),
+    allOf<B2BPostable>(store, tenantId, B2B_POSTABLES, 'B2BPostable'),
+  ]);
+  return [...new Set([...indexed.map((i) => i.customerId), ...postables.map((p) => p.customerId)])].sort();
+}
+
+/**
+ * OB-408: a B2B tax invoice the system could NOT put on the GST return as it was issued — a line whose product has no
+ * HSN in the published catalogue, or no CGST / SGST / IGST split (the store's GSTIN is not on record). Kept (hard rule
+ * #6) and said by the close's output-GST check until a hand entry under the invoice's number puts it on the return.
+ */
+export const B2B_OUTWARD_HELD = streamName(STREAM.gstreturns, 'b2b-outward-held');
+export interface B2BInvoiceNotOnReturn {
+  readonly invoiceNumber: string;
+  readonly invoiceDocumentId: string;
+  readonly customerId: string;
+  readonly documentDate: string;
+  readonly taxMinor: number;
+  readonly reasons: readonly string[];
+}
+const HSN_SHAPE = /^(\d{4}|\d{6}|\d{8})$/;
+/**
+ * OB-408: the outward-supply document a B2B tax invoice files under — its number, its shop date, each line at the rate
+ * and with the CGST / SGST / IGST split the invoice charged (what the books post), and the HSN the published catalogue
+ * holds for the product. No recipient GSTIN is on record for a credit customer, so it is filed as GSTR-1 files a supply
+ * with none (B2C, rate-wise); the tax is the same either way. Anything it cannot carry is said, never guessed.
+ */
+function b2bOutwardSupplyOf(doc: StoredB2BDocument, customerId: string, documentDate: string, taxTable: readonly ProductTaxEntry[]): { readonly doc: StoredOutwardDoc } | { readonly held: B2BInvoiceNotOnReturn } {
+  const hsnOf = new Map(taxTable.map((e) => [e.productId, e.hsnCode]));
+  const reasons: string[] = [];
+  if (doc.gst === undefined) reasons.push('the invoice carries no CGST / SGST / IGST split (the store\'s GSTIN is not on record)');
+  const lines: OutwardSupplyLine[] = [];
+  for (const line of doc.lines) {
+    const hsnCode = hsnOf.get(line.productId);
+    if (hsnCode === undefined || !HSN_SHAPE.test(hsnCode)) { reasons.push(`"${line.description}" (${line.productId}) has no HSN in the published catalogue`); continue; }
+    const split = doc.gst?.lines.find((l) => l.lineId === line.lineId);
+    if (split === undefined) continue;
+    lines.push({ hsnCode, description: line.description, quantityMinor: line.qty, uom: 'ea', taxableMinor: split.taxableMinor, rateBps: split.rateBps, cgstMinor: split.cgstMinor, sgstMinor: split.sgstMinor, igstMinor: split.igstMinor });
+  }
+  if (reasons.length > 0 || lines.length === 0) {
+    return { held: { invoiceNumber: doc.number, invoiceDocumentId: doc.documentId, customerId, documentDate, taxMinor: doc.taxMinor, reasons: reasons.length > 0 ? reasons : ['the invoice has no line to file'] } };
+  }
+  return { doc: { documentId: doc.number, documentDate, supplyType: 'b2c', lines, fedFrom: { kind: 'b2b_tax_invoice', customerId, invoiceDocumentId: doc.documentId } } };
+}
+
 export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; readonly now: () => string }): {
   afterTaxInvoice: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<{ readonly dueOn: string }>;
   recordPaymentWithMoney: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string) => Promise<void>;
@@ -5575,23 +5639,31 @@ export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; read
       const terms = (await credit.account(tenantId, customerId))?.paymentTermsDays ?? 0;
       const dueOn = new Date(Date.parse(`${issuedOn}T00:00:00.000Z`) + terms * 86_400_000).toISOString().slice(0, 10);
       const invoice: CollectionsReceivable = { invoiceId: doc.documentId, number: doc.number, customerId, tenantId, issuedOn, dueOn, grossMinor: doc.grossMinor, settledMinor: 0 };
-      const ar: RecordedReceivable = { movementId: `inv-${doc.documentId}`, customerId, kind: 'invoice', deltaMinor: doc.grossMinor, at: doc.issuedAt, ref: doc.number };
+      const ar: RecordedReceivable = { movementId: `inv-${doc.documentId}`, customerId, kind: 'invoice', deltaMinor: doc.grossMinor, at: doc.issuedAt, ref: doc.number, on: issuedOn };
       const postable: B2BPostable = { sourceId: `invoice:${customerId}:${doc.documentId}`, kind: 'invoice', customerId, documentDate: issuedOn, components: { total: doc.grossMinor, net: doc.netMinor, tax: doc.taxMinor }, ref: doc.number };
+      // OB-408: the invoice's output GST reaches the GST return in the same write that posts it — once, under the invoice's
+      // number (the id and key a hand entry under that number uses too, so the two can never both count).
+      const outward = b2bOutwardSupplyOf(doc, customerId, issuedOn, await gstReturnsAdapter(input).productTaxTable(tenantId));
       await input.store.appendBatch(tenantId, [
         { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-inv-${customerId}-${invoice.invoiceId}`, type: 'B2BInvoiceRecorded', occurredAt: doc.issuedAt, idempotencyKey: `b2b-inv-${tenantId}-${customerId}-${invoice.invoiceId}-${invoice.grossMinor}-${invoice.dueOn}-false`, source: 'api/finance', payload: invoice }) },
         { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: ar.at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
         { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: doc.issuedAt, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+        receivableCustomerIndexEntry(tenantId, customerId, doc.issuedAt),
+        'doc' in outward
+          ? { stream: STREAM.gstreturns, event: makeEvent({ id: `outward-${outward.doc.documentId}`, type: 'OutwardSupplyRecorded', occurredAt: doc.issuedAt, idempotencyKey: `outward-${tenantId}-${outward.doc.documentId}`, source: 'api/finance', payload: outward.doc }) }
+          : { stream: B2B_OUTWARD_HELD, event: makeEvent({ id: `b2b-outward-held-${createHash('sha256').update(doc.number).digest('hex').slice(0, 24)}`, type: 'B2BInvoiceNotOnReturn', occurredAt: doc.issuedAt, idempotencyKey: `b2b-outward-held-${tenantId}-${doc.number}`, source: 'api/finance', payload: outward.held }) },
       ]);
       return { dueOn };
     },
     recordPaymentWithMoney: async (tenantId, customerId, payment, receivedOn) => {
       const at = input.now();
-      const ar: RecordedReceivable = { movementId: `rcpt-${payment.receiptId}`, customerId, kind: 'payment', deltaMinor: -payment.receivedMinor, at, ref: payment.receiptId };
+      const ar: RecordedReceivable = { movementId: `rcpt-${payment.receiptId}`, customerId, kind: 'payment', deltaMinor: -payment.receivedMinor, at, ref: payment.receiptId, on: receivedOn };
       const postable: B2BPostable = { sourceId: `receipt:${customerId}:${payment.receiptId}`, kind: 'receipt', customerId, documentDate: receivedOn, components: { amount: payment.receivedMinor }, ref: payment.receiptId };
       await input.store.appendBatch(tenantId, [
         { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-pay-${customerId}-${payment.receiptId}`, type: 'B2BPaymentAllocated', occurredAt: at, idempotencyKey: `b2b-pay-${tenantId}-${customerId}-${payment.receiptId}`, source: 'api/finance', payload: payment }) },
         { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
         { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+        receivableCustomerIndexEntry(tenantId, customerId, at),
       ]);
     },
   };
@@ -13870,25 +13942,34 @@ async function bookChecksFor(input: { readonly store: EventStore; readonly now: 
       rightDerivation: rec.controlAccount === null ? 'finance ledger: no payables control account is named by the mapping in force' : PAYABLES_RIGHT_DERIVATION,
     });
   } else notChecked.push('Supplier payables: no matched bill, debit note, payment or signed opening balance is on the purchase register.');
-  // Receivables (credit customers).
-  const postables = await allOf<B2BPostable>(input.store, tenantId, B2B_POSTABLES, 'B2BPostable');
-  const customers = [...new Set(postables.map((p) => p.customerId))].sort();
+  // Receivables (credit customers). OB-408: every customer with any movement on their ledger (keyed by hand too), and
+  // both sides cut off at the month's end on the shop's own calendar — a movement by its business date (else the shop's
+  // trading day it was recorded on), a journal by its document date — so "as at the close" holds nothing after it.
+  const customers = await b2bReceivableCustomers(input.store, tenantId);
+  const calendar = await shopCalendarOf(input.calendar)(tenantId);
+  const byPeriodEnd = (day: string): boolean => day.slice(0, 7) <= period;
   let receivablesLedgerMinor = 0;
-  let receivablesBooksMinor = 0;
-  if (customers.length > 0) {
-    for (const c of customers) {
-      receivablesLedgerMinor += (await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(c), 'B2BReceivableMovement')).reduce((b, m) => b + m.deltaMinor, 0);
+  let movementsByEnd = 0;
+  for (const c of customers) {
+    for (const m of await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(c), 'B2BReceivableMovement')) {
+      if (!byPeriodEnd(m.on ?? tradingDayIn(m.at, calendar))) continue;
+      movementsByEnd += 1;
+      receivablesLedgerMinor += m.deltaMinor;
     }
-    const control = map?.rules.find((r) => r.kind === 'b2b:invoice')?.legs.find((l) => l.side === 'debit' && l.component === 'total')?.account;
-    const b2bJournals = (await allOf<JournalEntry | B2BJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted')).filter((j): j is B2BJournal => 'b2b' in j);
-    receivablesBooksMinor = control === undefined ? 0 : b2bJournals.flatMap((j) => j.lines).filter((l) => l.accountCode === control).reduce((n, l) => n + l.debitMinor - l.creditMinor, 0);
+  }
+  const control = map?.rules.find((r) => r.kind === 'b2b:invoice')?.legs.find((l) => l.side === 'debit' && l.component === 'total')?.account;
+  const b2bJournals = (await allOf<JournalEntry | B2BJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
+    .filter((j): j is B2BJournal => 'b2b' in j).filter((j) => byPeriodEnd(j.documentDate));
+  const receivablesBooksMinor = control === undefined ? 0 : b2bJournals.flatMap((j) => j.lines).filter((l) => l.accountCode === control).reduce((n, l) => n + l.debitMinor - l.creditMinor, 0);
+  if (movementsByEnd > 0 || b2bJournals.length > 0) {
     checks.push({
       name: `Credit-customer receivables as at the close of ${period}`,
       leftMinor: receivablesLedgerMinor, rightMinor: receivablesBooksMinor,
-      leftDerivation: 'the credit-customer ledger: every invoice and collection movement on each customer\'s account',
-      rightDerivation: control === undefined ? 'finance ledger: no receivables control account is named by the mapping in force' : `finance ledger: debits less credits on ${control} across the posted B2B journals`,
+      leftDerivation: `the credit-customer ledger: every invoice, collection and hand-keyed movement on each customer's account dated on or before the last day of ${period} (the shop's calendar)`,
+      rightDerivation: control === undefined ? 'finance ledger: no receivables control account is named by the mapping in force' : `finance ledger: debits less credits on ${control} across the posted B2B journals dated on or before the last day of ${period}`,
     });
-  } else notChecked.push('Credit-customer receivables: no credit customer has an invoice or a collection.');
+  } else if (customers.length > 0) notChecked.push(`Credit-customer receivables: no credit customer has an invoice, a collection or any other movement dated by the close of ${period}.`);
+  else notChecked.push('Credit-customer receivables: no credit customer has an invoice or a collection.');
   const bridge = await (await import('./finance-bridge-adapters')).finBridgeCloseChecks(input, tenantId, period); // OB-288 P5 · WF-18: output GST, advances, rebate accruals, Tally
   checks.push(...bridge.checks); notChecked.push(...bridge.notChecked);
   return {

@@ -17,7 +17,7 @@ import type { PostingMap } from '../../../packages/finance/src/posting';
 import type { GlJournal } from '../../../packages/tally-export/src/index';
 import { gstAccountsOf } from '../../../packages/tally-export/src/index';
 import type { CentreAttribution, LedgerJournal } from '../../../packages/finance/src/trial-balance';
-import { STREAM, streamName, financeAdapter, orgStructureAdapter, storeOfLocationResolver, alertLifecycleAdapter, effectiveGrants, rebatesAdapter, payablesAdapter, supplierMasterAdapter, approvalRequestsAdapter, periodBooksAdapter, categoryRegisterAdapter, productMasterAdapter, averageBuyingCosts } from './adapters';
+import { STREAM, streamName, financeAdapter, orgStructureAdapter, storeOfLocationResolver, alertLifecycleAdapter, effectiveGrants, rebatesAdapter, payablesAdapter, supplierMasterAdapter, approvalRequestsAdapter, periodBooksAdapter, categoryRegisterAdapter, productMasterAdapter, averageBuyingCosts, gstReturnsAdapter, B2B_OUTWARD_HELD, type B2BInvoiceNotOnReturn } from './adapters';
 import { DEPARTMENT_LINKS_STREAM } from './p1-identity-adapters';
 import { currentLinks, type DepartmentLinkRecord } from '../../platform/src/org-departments';
 import { departmentOfCategory } from '../../../packages/org/src/departments';
@@ -332,6 +332,12 @@ export async function finBridgeCloseChecks(input: Base, tenantId: string, period
     const books = inMonth.flatMap((j) => j.lines).filter((l) => outputAccounts.includes(l.accountCode)).reduce((s, l) => s + l.creditMinor - l.debitMinor, 0);
     let returned: number | undefined;
     let notOnReturn = 0;
+    // OB-408: a B2B tax invoice of the month the system could not put on the return as it was issued (a product with no
+    // HSN, or no GST split) — until a hand entry under its number puts it there, the two figures are not comparable.
+    const onReturn = new Set((await gstReturnsAdapter({ store, now: input.now }).documents(tenantId)).map((d) => d.documentId));
+    const b2bHeld = (await payloads<B2BInvoiceNotOnReturn>(store, tenantId, B2B_OUTWARD_HELD, 'B2BInvoiceNotOnReturn'))
+      .filter((h) => h.documentDate.slice(0, 7) === period && !onReturn.has(h.invoiceNumber))
+      .filter((h, i, all) => all.findIndex((g) => g.invoiceNumber === h.invoiceNumber) === i);
     try {
       const month = await r3GstLedger({ store, now: input.now }).month(tenantId, mmyyyy(period), 0);
       const h = month.current.figures.total.heads;
@@ -341,13 +347,14 @@ export async function finBridgeCloseChecks(input: Base, tenantId: string, period
     if (returned === undefined) notChecked.push(`Output GST: the GST return for ${period} could not be worked out.`);
     // A sold line the return cannot carry (no HSN or rate in the catalogue) makes the two figures incomparable — said by
     // name with the count, and listed line by line on the GSTR-3B page; never compared as if the return were whole.
+    else if (b2bHeld.length > 0) notChecked.push(`Output GST: ${b2bHeld.length} B2B tax invoice(s) of ${period} could not be put on the GST return when issued (${b2bHeld.map((h) => `${h.invoiceNumber}: ${h.reasons.join('; ')}`).join(' | ')}), so the books' output tax (${books} paise) cannot be compared with the return until each is recorded on it under its invoice number (POST /v1/finance/outward-supplies/<invoice number>).`);
     else if (notOnReturn > 0) notChecked.push(`Output GST: ${notOnReturn} sold or returned line(s) of ${period} cannot be put on the GST return (no HSN or rate in the catalogue), so the books' output tax (${books} paise) cannot be compared with the return until each has one — the GSTR-3B page lists them.`);
     else if (books === 0 && returned === 0) notChecked.push(`Output GST: neither the books nor the GST return hold output tax for ${period}.`);
     else {
       checks.push({
         name: `Output GST for ${period}`, leftMinor: books, rightMinor: returned,
         leftDerivation: `finance ledger: credits less debits on the output-tax accounts (${outputAccounts.join(', ')}) for supplies dated in the month`,
-        rightDerivation: 'the GST return: GSTR-1\'s CGST, SGST and IGST for the month, folded from the tills\' banked sales less returns and the outward documents',
+        rightDerivation: 'the GST return: GSTR-1\'s CGST, SGST and IGST for the month, folded from the tills\' banked sales less returns and the outward documents (B2B tax invoices among them, put there as each was issued)',
       });
     }
   }

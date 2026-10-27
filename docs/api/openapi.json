@@ -172214,6 +172214,27 @@
           "lineCount"
         ],
         "properties": {
+          "fedFrom": {
+            "type": "object",
+            "required": [
+              "kind",
+              "customerId",
+              "invoiceDocumentId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "b2b_tax_invoice"
+              },
+              "customerId": {
+                "type": "string"
+              },
+              "invoiceDocumentId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
           "documentId": {
             "type": "string"
           },
