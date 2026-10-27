@@ -19,8 +19,8 @@ const PEOPLE: Record<string, readonly string[]> = {
   'u-it': ['platform.flag.write'],
   'u-owner': ['compliance.risk.read', 'platform.config.approve', 'platform.flag.write'],
   'u-mgr': ['compliance.risk.read'],
-  'u-siva': ['identity.self.read', 'compliance.risk.read'],
-  'u-kala': ['identity.self.read', 'compliance.risk.read'],
+  'u-reviewer-a': ['identity.self.read', 'compliance.risk.read'],
+  'u-reviewer-b': ['identity.self.read', 'compliance.risk.read'],
   'u-norole': ['identity.self.read'],
 };
 
@@ -68,8 +68,8 @@ const inbox = async (routes: readonly Route[], userId: string) =>
   (await route(routes, 'GET', '/v1/approvals/requests').handler(ctx({ userId }))).body as { waitingForMe: { requestId: string }[]; mine: { requestId: string; decider?: unknown; status: string }[] };
 const waitingFor = async (routes: readonly Route[], userId: string) => (await inbox(routes, userId)).waitingForMe.map((r) => r.requestId);
 
-const SIVA = { userId: 'u-siva', displayName: 'Mr Sivakumar' };
-const KALA = { userId: 'u-kala', displayName: 'Mrs Kala' };
+const REVIEWER_A = { userId: 'u-reviewer-a', displayName: 'Reviewer A' };
+const REVIEWER_B = { userId: 'u-reviewer-b', displayName: 'Reviewer B' };
 
 describe('the kind says who alone decides it', () => {
   it('floor_device_review is decided only by the named security reviewer; no other kind is', () => {
@@ -80,18 +80,18 @@ describe('the kind says who alone decides it', () => {
 
 describe('who sees a floor-device review as theirs to decide (GET /v1/approvals/requests)', () => {
   it('only the reviewer named now — never the owner or a manager who may read the risk register', async () => {
-    const s = stub(); s.name(SIVA);
+    const s = stub(); s.name(REVIEWER_A);
     const { requestId } = await ask(s.routes);
-    expect(await waitingFor(s.routes, 'u-siva')).toEqual([requestId]);
-    for (const who of ['u-owner', 'u-mgr', 'u-kala', 'u-it']) expect(await waitingFor(s.routes, who), who).toEqual([]);
+    expect(await waitingFor(s.routes, 'u-reviewer-a')).toEqual([requestId]);
+    for (const who of ['u-owner', 'u-mgr', 'u-reviewer-b', 'u-it']) expect(await waitingFor(s.routes, who), who).toEqual([]);
   });
 
   it('follows the register: re-named → the new reviewer sees it, the old one no longer does', async () => {
-    const s = stub(); s.name(SIVA);
+    const s = stub(); s.name(REVIEWER_A);
     const { requestId } = await ask(s.routes);
-    s.name(KALA);
-    expect(await waitingFor(s.routes, 'u-siva')).toEqual([]);
-    expect(await waitingFor(s.routes, 'u-kala')).toEqual([requestId]);
+    s.name(REVIEWER_B);
+    expect(await waitingFor(s.routes, 'u-reviewer-a')).toEqual([]);
+    expect(await waitingFor(s.routes, 'u-reviewer-b')).toEqual([requestId]);
   });
 
   it('the named reviewer still needs the kind\'s checker permission (least privilege)', async () => {
@@ -105,12 +105,12 @@ describe('who sees a floor-device review as theirs to decide (GET /v1/approvals/
     const s = stub();
     const asked = await ask(s.routes);
     expect(asked.decider).toMatchObject({ role: 'security_reviewer', named: false, whatToDo: expect.stringContaining('No security reviewer is named') });
-    for (const who of ['u-owner', 'u-mgr', 'u-siva', 'u-kala']) expect(await waitingFor(s.routes, who), who).toEqual([]);
+    for (const who of ['u-owner', 'u-mgr', 'u-reviewer-a', 'u-reviewer-b']) expect(await waitingFor(s.routes, who), who).toEqual([]);
     const mine = (await inbox(s.routes, 'u-it')).mine;
     expect(mine).toEqual([expect.objectContaining({ requestId: asked.requestId, status: 'waiting', decider: expect.objectContaining({ named: false }) })]);
-    s.name(SIVA);
-    expect((await inbox(s.routes, 'u-it')).mine[0]?.decider).toEqual({ role: 'security_reviewer', named: true, userId: 'u-siva', displayName: 'Mr Sivakumar' });
-    expect((await ask(s.routes)).decider).toMatchObject({ named: true, userId: 'u-siva' });
+    s.name(REVIEWER_A);
+    expect((await inbox(s.routes, 'u-it')).mine[0]?.decider).toEqual({ role: 'security_reviewer', named: true, userId: 'u-reviewer-a', displayName: 'Reviewer A' });
+    expect((await ask(s.routes)).decider).toMatchObject({ named: true, userId: 'u-reviewer-a' });
   });
 
   it('a bare engine with no register wired decides it for nobody (fails closed, never open to all)', async () => {
@@ -121,7 +121,7 @@ describe('who sees a floor-device review as theirs to decide (GET /v1/approvals/
   });
 
   it('other kinds are untouched: a flag_change is decided by any holder of its permission, and reads the register never', async () => {
-    const s = stub(); s.name(SIVA);
+    const s = stub(); s.name(REVIEWER_A);
     const asked = await ask(s.routes, { ...reviewAsk, kind: 'flag_change' });
     expect(asked.decider).toBeUndefined();
     expect(await waitingFor(s.routes, 'u-owner')).toEqual([asked.requestId]);
@@ -133,37 +133,37 @@ describe('who sees a floor-device review as theirs to decide (GET /v1/approvals/
 
 describe('who may decide a floor-device review (POST …/decide) — judged at decision time', () => {
   it('anyone but the named reviewer is refused by name, nothing recorded; the reviewer decides', async () => {
-    const s = stub(); s.name(SIVA);
+    const s = stub(); s.name(REVIEWER_A);
     const { requestId } = await ask(s.routes);
-    for (const who of ['u-mgr', 'u-owner', 'u-kala']) {
+    for (const who of ['u-mgr', 'u-owner', 'u-reviewer-b']) {
       for (const d of ['approved', 'rejected']) {
         const e = await thrown(() => decideAs(s.routes, requestId, who, d));
         expect([e.status, e.body.code, e.body.wasItSaved], who).toEqual([403, 'only_the_named_security_reviewer_decides', 'not_saved']);
-        expect(e.body.whatHappened).toContain('Mr Sivakumar');
+        expect(e.body.whatHappened).toContain('Reviewer A');
       }
     }
     expect(s.decisions.size).toBe(0);
-    const ok = await decideAs(s.routes, requestId, 'u-siva');
+    const ok = await decideAs(s.routes, requestId, 'u-reviewer-a');
     expect(ok.status).toBe(201);
-    expect(ok.body).toMatchObject({ decision: 'approved', decidedBy: 'u-siva' });
+    expect(ok.body).toMatchObject({ decision: 'approved', decidedBy: 'u-reviewer-a' });
     // The reviewer resending the same decision is answered as before.
-    expect((await decideAs(s.routes, requestId, 'u-siva')).body).toMatchObject({ alreadyDecided: true });
+    expect((await decideAs(s.routes, requestId, 'u-reviewer-a')).body).toMatchObject({ alreadyDecided: true });
     // Someone else trying it after it was decided is still refused by name, never told who-decided-what first.
     expect((await thrown(() => decideAs(s.routes, requestId, 'u-mgr'))).body.code).toBe('only_the_named_security_reviewer_decides');
   });
 
   it('re-named before the decision → the new reviewer decides, the old one is refused', async () => {
-    const s = stub(); s.name(SIVA);
+    const s = stub(); s.name(REVIEWER_A);
     const { requestId } = await ask(s.routes);
-    s.name(KALA);
-    expect((await thrown(() => decideAs(s.routes, requestId, 'u-siva'))).body.code).toBe('only_the_named_security_reviewer_decides');
-    expect((await decideAs(s.routes, requestId, 'u-kala')).body).toMatchObject({ decidedBy: 'u-kala' });
+    s.name(REVIEWER_B);
+    expect((await thrown(() => decideAs(s.routes, requestId, 'u-reviewer-a'))).body.code).toBe('only_the_named_security_reviewer_decides');
+    expect((await decideAs(s.routes, requestId, 'u-reviewer-b')).body).toMatchObject({ decidedBy: 'u-reviewer-b' });
   });
 
   it('with nobody named, nobody may decide it — refused by name (422), nothing recorded', async () => {
     const s = stub();
     const { requestId } = await ask(s.routes);
-    for (const who of ['u-siva', 'u-owner', 'u-mgr']) {
+    for (const who of ['u-reviewer-a', 'u-owner', 'u-mgr']) {
       const e = await thrown(() => decideAs(s.routes, requestId, who));
       expect([e.status, e.body.code, e.body.wasItSaved]).toEqual([422, 'name_the_security_reviewer_first', 'not_saved']);
     }

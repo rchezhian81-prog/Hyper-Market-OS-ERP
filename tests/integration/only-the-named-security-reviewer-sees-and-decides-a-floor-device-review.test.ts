@@ -28,8 +28,8 @@ describe.each(backings)('only the named security reviewer sees and decides a flo
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-mgr', 'store_manager');
     await h.provisionRole(T, 'u-it', 'platform_admin');
-    await h.provisionRole(T, 'u-siva', 'security_reviewer');
-    await h.provisionRole(T, 'u-kala', 'security_reviewer');
+    await h.provisionRole(T, 'u-reviewer-a', 'security_reviewer');
+    await h.provisionRole(T, 'u-reviewer-b', 'security_reviewer');
     let n = 0;
     const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'GET' ? {} : { idempotencyKey: `k-${n++}-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
@@ -52,17 +52,17 @@ describe.each(backings)('only the named security reviewer sees and decides a flo
     expect(early.decider).toMatchObject({ role: 'security_reviewer', named: false });
     expect(early.decider?.whatToDo).toContain('No security reviewer is named');
     expect((await inbox('u-it')).mine.find((r) => r.requestId === early.requestId)).toMatchObject({ status: 'waiting', decider: { role: 'security_reviewer', named: false } });
-    for (const who of ['u-owner', 'u-mgr', 'u-siva', 'u-kala']) {
+    for (const who of ['u-owner', 'u-mgr', 'u-reviewer-a', 'u-reviewer-b']) {
       expect(await waitingIds(who), who).not.toContain(early.requestId);
       expect(codeOf(await decide(h, T, who, early.requestId)), who).toBe('name_the_security_reviewer_first');
     }
 
-    // ── The owner names u-siva: the waiting request is now theirs alone ──
-    await nameSecurityReviewer(h, T, 'u-owner', 'u-siva', 'Mr Sivakumar');
+    // ── The owner names u-reviewer-a: the waiting request is now theirs alone ──
+    await nameSecurityReviewer(h, T, 'u-owner', 'u-reviewer-a', 'Reviewer A');
     h = harness(h); // ── cold restart ──
-    expect((await inbox('u-it')).mine.find((r) => r.requestId === early.requestId)?.decider).toMatchObject({ named: true, userId: 'u-siva', displayName: 'Mr Sivakumar' });
-    expect(await waitingIds('u-siva')).toContain(early.requestId);
-    for (const who of ['u-owner', 'u-mgr', 'u-kala']) expect(await waitingIds(who), who).not.toContain(early.requestId);
+    expect((await inbox('u-it')).mine.find((r) => r.requestId === early.requestId)?.decider).toMatchObject({ named: true, userId: 'u-reviewer-a', displayName: 'Reviewer A' });
+    expect(await waitingIds('u-reviewer-a')).toContain(early.requestId);
+    for (const who of ['u-owner', 'u-mgr', 'u-reviewer-b']) expect(await waitingIds(who), who).not.toContain(early.requestId);
     // The store manager tries it by id: refused by name, nothing recorded.
     const mgrTry = await decide(h, T, 'u-mgr', early.requestId);
     expect(mgrTry.status).toBe(403);
@@ -70,33 +70,33 @@ describe.each(backings)('only the named security reviewer sees and decides a flo
     expect(codeOf(await decide(h, T, 'u-owner', early.requestId, 'rejected'))).toBe('only_the_named_security_reviewer_decides');
     expect((await inbox('u-it')).mine.find((r) => r.requestId === early.requestId)?.status).toBe('waiting');
     // The named reviewer decides it; the asker sees it approved.
-    expect((await decide(h, T, 'u-siva', early.requestId)).status).toBe(201);
-    expect((await inbox('u-it')).mine.find((r) => r.requestId === early.requestId)).toMatchObject({ status: 'approved', decidedBy: 'u-siva' });
+    expect((await decide(h, T, 'u-reviewer-a', early.requestId)).status).toBe(201);
+    expect((await inbox('u-it')).mine.find((r) => r.requestId === early.requestId)).toMatchObject({ status: 'approved', decidedBy: 'u-reviewer-a' });
 
-    // ── The owner names u-kala instead: the new reviewer decides, the old one is refused ──
+    // ── The owner names u-reviewer-b instead: the new reviewer decides, the old one is refused ──
     const pending = await ask();
-    expect(pending.decider).toMatchObject({ named: true, userId: 'u-siva' });
-    await nameSecurityReviewer(h, T, 'u-owner', 'u-kala', 'Mrs Kala');
+    expect(pending.decider).toMatchObject({ named: true, userId: 'u-reviewer-a' });
+    await nameSecurityReviewer(h, T, 'u-owner', 'u-reviewer-b', 'Reviewer B');
     h = harness(h); // ── cold restart ──
-    expect(await waitingIds('u-siva')).not.toContain(pending.requestId);
-    expect(await waitingIds('u-kala')).toContain(pending.requestId);
-    expect(codeOf(await decide(h, T, 'u-siva', pending.requestId))).toBe('only_the_named_security_reviewer_decides');
-    expect((await decide(h, T, 'u-kala', pending.requestId)).status).toBe(201);
+    expect(await waitingIds('u-reviewer-a')).not.toContain(pending.requestId);
+    expect(await waitingIds('u-reviewer-b')).toContain(pending.requestId);
+    expect(codeOf(await decide(h, T, 'u-reviewer-a', pending.requestId))).toBe('only_the_named_security_reviewer_decides');
+    expect((await decide(h, T, 'u-reviewer-b', pending.requestId)).status).toBe(201);
 
-    // The rollout still judges at switch-on: u-siva's earlier signature no longer counts once u-kala is named.
+    // The rollout still judges at switch-on: u-reviewer-a's earlier signature no longer counts once u-reviewer-b is named.
     const ownerAsk = await askForApproval(h, T, 'u-it', { kind: 'flag_change', subjectRef, details });
     const ownerId = (ownerAsk.body as { requestId: string }).requestId;
     expect((await decide(h, T, 'u-owner', ownerId)).status).toBe(201);
     expect(codeOf(await call('PUT', '/v1/platform/rollout/cctv', 'u-it', { ...on, approvalId: ownerId, reviewApprovalId: early.requestId }))).toBe('not_the_named_security_reviewer');
-    // …while u-kala's signature does: the full camera switch-on, end to end.
+    // …while u-reviewer-b's signature does: the full camera switch-on, end to end.
     const switched = await call('PUT', '/v1/platform/rollout/cctv', 'u-it', { ...on, approvalId: ownerId, reviewApprovalId: pending.requestId });
     expect(switched.status, JSON.stringify(switched.body)).toBe(200);
-    expect(switched.body).toMatchObject({ change: { enabled: true, approvedBy: 'u-owner', reviewedBy: 'u-kala' }, now: { on: true } });
+    expect(switched.body).toMatchObject({ change: { enabled: true, approvedBy: 'u-owner', reviewedBy: 'u-reviewer-b' }, now: { on: true } });
 
     // And the helper the other suites use (ask both, owner + named reviewer approve, switch) still goes through.
     expect((await call('PUT', '/v1/platform/rollout/cctv', 'u-it', { branchId: 'B1', enabled: false, reason: 'notice not up yet' })).status).toBe(200);
-    const again = await switchFloorDeviceOn(h, T, { switcher: 'u-it', owner: 'u-owner', reviewer: 'u-kala' }, 'cctv', { branchId: 'B1', reason: 'notice is up' });
+    const again = await switchFloorDeviceOn(h, T, { switcher: 'u-it', owner: 'u-owner', reviewer: 'u-reviewer-b' }, 'cctv', { branchId: 'B1', reason: 'notice is up' });
     expect(again.status, JSON.stringify(again.body)).toBe(200);
-    expect(again.body).toMatchObject({ change: { enabled: true, reviewedBy: 'u-kala' } });
+    expect(again.body).toMatchObject({ change: { enabled: true, reviewedBy: 'u-reviewer-b' } });
   }, 120_000);
 });
