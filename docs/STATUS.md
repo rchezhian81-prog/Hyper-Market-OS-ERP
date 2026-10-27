@@ -5,6 +5,57 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Final batch (27 October 2026): the four software gaps closed, and the owner decisions OB-406 to OB-414
+
+**What changed**
+- **§31.1 / OB-403:** a store computer whose clock is 5 or more minutes out keeps the prices and offers already in force. It starts no new price, offer or bill-number year until its clock is right. The manager screen names what is held, in English and Tamil. Head office sees it, and selling never stops.
+- **OB-409 / OB-414:** a built-in alert reaches every owner, but only at the 5-minute level. If another store joins or leaves, the same alert is updated and sent again. It clears by itself.
+- **D03-FR-03 / OB-404:** supplier rebate claims. A claim is raised, Finance approves it (never the raiser), it is printed and shown on the supplier portal, matched to the money received, and marked overdue after the owner's answer days.
+- **QG-02 / M06:** a new web-ERP **Supplier rebates** page.
+- **WF-18 / OB-408:** the month-end receivables check now:
+  - is tested with real figures;
+  - includes customers whose balances were keyed by hand;
+  - cuts off at the period end.
+
+  B2B output GST also now reaches the GST return by itself, exactly once.
+- **B15:** the tobacco warning board is on the store go-live checklist, and a guardrail pins it there.
+- **OB-406 / OB-407:**
+  - a least-privilege **Security reviewer** role;
+  - switching on cameras, shelf labels, RFID or sensors now needs the owner's approval plus the named reviewer's signature;
+  - switching them off is still one person with a reason.
+- **Owner actions:** OA-17 (name Mr Sivakumar as reviewer) and OA-18 (enter 30 days as the rebate answer period).
+
+**Tests run (exactly)**
+- The whole default suite on the combined branch: 1,691 files passed and 59 skipped; 13,996 tests passed, 577 skipped (PostgreSQL legs), 0 failed.
+- Lint and type check clean.
+- The builders ran the touched browser tests in real Chromium (rebates page, supplier portal, clock hold, camera switch-on). All passed.
+- The PostgreSQL halves run in CI on the pull request.
+
+**What is next**
+- The owner's answers to the open questions below. Each is a small follow-up once answered.
+
+**Blocked / external**
+- As before:
+  - real hardware;
+  - live providers;
+  - the CA and legacy data;
+  - staff UAT and rehearsals;
+  - the pen test.
+
+**Needs an owner decision**
+- Q13: credit-customer bills from before OB-408 (recommended: leave, nothing live yet).
+- Q14: the customer GSTIN on credit accounts (recommended: add it and file invoice by invoice).
+- Q15: hand-keyed balances from before OB-408 (recommended: accept, nothing live yet).
+- Confirm the two alert-update rules:
+  - an update asks for a fresh tick;
+  - a store leaving counts as a change.
+- OB-413: name the release for Tamil alert text (recommended: R4).
+- Q16: whether Mr Sivakumar holds the IT role (OB-95 conflict).
+- Q17: only the named reviewer sees the floor-device signature requests (recommended).
+- Q18: the "go back to an older version" button for floor devices (recommended: accept for now).
+
+---
+
 ## Re-audit after batch 9 (27 October 2026): four software gaps the batch-10 re-audit counted as done, and owner decisions OB-403 to OB-405
 
 **What changed**
