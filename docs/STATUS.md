@@ -39,6 +39,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **§26:** scenario lists for WF-01 to WF-05. The guardrail now requires all twenty workflows.
 - **OB-401:** "Reconciliation" opens Month-end, and "Settings" opens Store setup. No menu item is left unbuilt.
 - Owner decisions OB-401 and OB-402 are recorded.
+- **A real till bug found by CI:** a handheld or phone basket code starting with 0 (for example 0369) was read as a number and refused. About one code in ten failed this way. The till's keypad now keeps every digit of a code, and a browser test types 0 then 1 and expects "01".
 
 **Tests run (exactly)**
 - The builder ran:
