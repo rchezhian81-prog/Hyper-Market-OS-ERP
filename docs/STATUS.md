@@ -5,6 +5,25 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Fix (27 October 2026): the intermittent red "Identity server suites (real Keycloak)" check
+
+**What changed**
+- Only the test `tests/integration/keycloak-store-computer.test.ts` changed. No product code changed and the sign-in lockout is unchanged.
+- **Cause:** in this test the store computer's own head-office login was one head office did not accept. The earlier fix in #820 used the wrong audience, so it was still refused. About 15 seconds after the box started, its background refresh failed sign-in five times from 127.0.0.1. The lockout (FND-03 / SEC-04) then correctly locked that address for 5 seconds. The person's own session arrives from the same address, so it was refused when it happened to land inside those 5 seconds.
+- **Fix:** the test now signs the box's login for head office's audience. It also checks that head office accepts it before the box starts, so this cannot quietly come back.
+
+**Tests that ran (this box, real Keycloak 26.0.7 with the repository realm, PostgreSQL 16)**
+- Old test with the timing forced into the lock window: failed 3 of 3, with the exact CI error.
+- The #820 version under the same forced timing: failed 2 of 3.
+- The new version under the same forced timing: passed 5 of 5, with zero failed sign-ins logged at head office.
+- Clean runs: the full CI identity job (`scripts/identity-proof.sh`, all 5 suites) passed 3 of 3, and the store-computer suite alone passed 10 of 10.
+- Type check and lint were clean.
+
+**What is next / blocked / owner decision**
+- Nothing blocked and no owner decision needed. Watch the next few CI runs on main for this check.
+
+---
+
 ## Round 5 (27 October 2026): the handheld door is encrypted, the seal is on the store PC's screen, and release reports reach head office (OB-422 to OB-425)
 
 **What changed**
