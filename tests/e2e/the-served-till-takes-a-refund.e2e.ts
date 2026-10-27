@@ -477,7 +477,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     expect(offers).not.toContain('Return without receipt');
   });
 
-  it('QG-02 (pos-refund.md): looking up a receipt takes 3 (More → Refund → key the number); returning one whole line is measured at 7 (OB-390)', async () => {
+  it('QG-02 (pos-refund.md): looking up a receipt takes 3 (More → Refund → key the number); returning one whole line is counted at 7, the owner\'s written exception (OB-390 · OB-394)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-served-refund-taps-'));
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
@@ -533,8 +533,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await taps.tap('#reasons button:text-is("Damaged / faulty")');
     await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
     expect(await page.textContent('#refusal-title')).toBe('Refund recorded');
-    const asBuilt = taps.reset();
-    expect(asBuilt, 'as built: return one whole line, from the bill found to the refund recorded').toBe(7);
+    // QG-02 · OB-394 (owner, 26 Oct 2026, in writing): accepted at 7 as a written exception — from the bill found to the
+    // refund recorded. Never looser than that.
+    expect(taps.reset(), 'return one whole line').toBeLessThanOrEqual(7);
     // The default is the amount only, and it is the line's own value on the bill.
     const refunds = await readLog(edge.returnsLog.path);
     expect(refunds).toHaveLength(1);

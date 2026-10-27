@@ -16,7 +16,7 @@ const freshStatus = (): SetupStatus => setupStatus(new TenantSettings(new Config
 function answeredStatus(): SetupStatus {
   const s = new TenantSettings(new ConfigStore());
   applyAnswer(s, 'acme', setupItem('tax.default_bps')!, 1800, 'owner', AT);
-  applyAnswer(s, 'acme', setupItem('trading_day.cutoff')!, '22:00', 'owner', AT);
+  applyAnswer(s, 'acme', setupItem('locale.time_zone')!, 'Asia/Dubai', 'owner', AT);
   return setupStatus(s, 'acme');
 }
 
@@ -56,8 +56,8 @@ describe('store-setup screen', () => {
   it('shows the value in force and whether it is a default', () => {
     const session = createSetupSession({ tenantId: 'acme', userId: 'owner-1' }, { status: () => answeredStatus() });
     const items = session.groups().flatMap((g) => g.items);
-    const cutoff = items.find((i) => i.key === 'trading_day.cutoff');
-    expect(cutoff?.value).toBe('22:00');
+    const cutoff = items.find((i) => i.key === 'locale.time_zone');
+    expect(cutoff?.value).toBe('Asia/Dubai');
     expect(cutoff?.isDefault).toBe(false);
     const currency = items.find((i) => i.key === 'locale.currency');
     expect(currency?.isDefault).toBe(true); // untouched → default

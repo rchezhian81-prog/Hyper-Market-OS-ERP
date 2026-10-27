@@ -211,6 +211,14 @@ export function looksLikeACardNumber(value: string): boolean {
 
 const TENANT_KEYS = new Set(['tenantId', 'tenant_id', 'tenantid']);
 
+/**
+ * Fields that hold an audit chain's integrity digest. The in-memory chain's default digest is FNV-1a 64-bit as 16 hex
+ * characters, so about one digest in two thousand is 16 decimal digits — and a few of those pass the issuer and Luhn
+ * checks. A digest is never card data (it is computed, not entered), so these keys are not read as card numbers; every
+ * other field still is. CI found it on 27 Oct 2026 (`$.matches[3].hash` on the audit trail).
+ */
+const DIGEST_KEYS = new Set(['hash', 'prevHash', 'previousHash']);
+
 export interface OutboundFinding {
   readonly kind: 'card_data' | 'another_tenant';
   readonly at: string;
@@ -239,6 +247,7 @@ export function scanOutbound(body: unknown, tenantId: string): readonly Outbound
             detail: `${at}.${key} is ${value} and this request belongs to ${tenantId}. Every query is meant to be scoped; this is the backstop for the one that was not (OB-01)`,
           });
         }
+        if (DIGEST_KEYS.has(key) && typeof value === 'string' && /^[0-9a-f]{16,64}$/.test(value)) continue; // an integrity digest
         walk(value, `${at}.${key}`);
       }
     }

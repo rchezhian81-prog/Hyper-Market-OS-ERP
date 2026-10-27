@@ -41,7 +41,7 @@ import {
   readReceiptPrefix, receiptNumberFor, GST_INVOICE_NUMBER_MAX, RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX,
   isFinancialYear, financialYearOf, nextFinancialYear,
 } from '../../../packages/contracts/src/receipt-number';
-import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { shopClock, shopDateIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** One issue of a prefix to a (store, till) — append-only. */
 export interface ReceiptPrefixIssue {
@@ -106,6 +106,8 @@ export interface ReceiptPrefixDeps {
   /** OB-376: the handhelds head office registered (device registry `handheld`, not retired): which store each is at. */
   readonly registeredHandhelds?: (tenantId: string) => Promise<readonly { readonly storeId: string; readonly deviceId: string; readonly label?: string }[]>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** M01-FR-02 (re-audit T1): the tenant's calendar — "this year" and "is it March" are the shop's own date. Absent → shop default. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 const TILL_ID = /^[A-Za-z0-9._-]{1,40}$/;
@@ -277,9 +279,10 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
         // A2: every year-scoped till with no prefix for the current year, or (from 1 March) for the coming one — the store
         // computer would otherwise number under a fallback on 1 April. Said, by name, ahead of the day.
         const now = deps.now();
-        const thisYear = financialYearOf(now) ?? '';
+        const zone = (await shopClock(deps.calendar).calendar(ctx.tenantId)).timeZone;
+        const thisYear = financialYearOf(now, zone) ?? '';
         const comingYear = thisYear === '' ? '' : nextFinancialYear(thisYear);
-        const march = now.slice(5, 7) === '03';
+        const march = shopDateIn(now, zone).slice(5, 7) === '03';
         const yearScoped = new Map<string, Set<string>>();
         for (const t of tills) {
           if (t.financialYear === undefined) continue;

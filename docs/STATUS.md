@@ -5,6 +5,61 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 final gaps, batch 10 (27 October 2026): the final re-audit closed; last tidy-ups
+
+**The final re-audit (27 Oct, all 391 roadmap rows, checked in code and tests on main after PR #814)**
+
+| Status | 23 Oct | 25 Oct | 27 Oct |
+|---|---|---|---|
+| Done in software, proven by tests | 206 | 348 | 368 |
+| Partly done | 148 | 20 | 0 |
+| Missing | 7 | 0 | 0 |
+| Waiting for an owner decision | 15 | 0 | 0 |
+| External | 15 | 22 | 18 |
+| Deferred in writing to a named release | 0 | 1 | 5 |
+
+- **External** means it needs an outside party, real hardware or staff:
+  - live payment, GST, SMS, courier and Tally connections;
+  - real shelf labels, RFID, sensors and cameras;
+  - the certified store PC, tills and handhelds;
+  - staff UAT, the pen test and the named security reviewer.
+- **Deferred in writing:** EDI (OB-312, R8), the live Tally link (OB-381, R8) and the live-model AI items (OB-382, R8).
+
+**What changed in this batch**
+- **The last fixed India-time sites** now read the shop's own calendar (M01-FR-02):
+  - the Tally day file;
+  - rebate accruals;
+  - loss-prevention days;
+  - the expiry sweep;
+  - receipts, the scorecard and capacity;
+  - the bill-number year.
+  Bill numbers already issued are never changed.
+- **OB-402:** the trading day ends at midnight. Store setup refuses any other cut-off by name, before any approval is asked, so a bill's printed date, its bill-number year and its GST month always agree.
+- **QG-02:** the whole-line refund is counted at 7 taps as the written exception OB-394. No frequent action is left uncounted.
+- **§26:** scenario lists for WF-01 to WF-05. The guardrail now requires all twenty workflows.
+- **OB-401:** "Reconciliation" opens Month-end, and "Settings" opens Store setup. No menu item is left unbuilt.
+- Owner decisions OB-401 and OB-402 are recorded.
+- **A real till bug found by CI:** a handheld or phone basket code starting with 0 (for example 0369) was read as a number and refused. About one code in ten failed this way. The till's keypad now keeps every digit of a code, and a browser test types 0 then 1 and expects "01".
+- **A false alarm fixed:** the guard that refuses any reply carrying a card number once refused an audit-trail reply. The trail's integrity fingerprint had, by chance, come out as 16 digits shaped like a card. The guard now skips those fingerprint fields only; a card number in any other field is still refused (unit test).
+
+**Tests run (exactly)**
+- The builder ran:
+  - the full unit suite, 8,950 tests;
+  - the full in-memory integration suite, 3,048 tests;
+  - the guardrails, 1,830 tests;
+  - the touched browser tests.
+- After OB-402: the affected setup unit and integration tests, and the store-setup browser test on real PostgreSQL.
+- On this merge: the guardrails and the type check, with results in the PR.
+
+**What is next**
+- The software side of the roadmap is complete.
+- What remains is outside the software: certified hardware and staff UAT in the store, live providers, the pen test and the named security reviewer, and the release-signing key set by its custodian.
+
+**Needs an owner decision**
+- None open.
+
+---
+
 ## OB-288 final gaps, batch 9 (26 October 2026): the shop clock, head-office sign-in on the store PC, shorter everyday actions, declared API bodies
 
 **What changed**

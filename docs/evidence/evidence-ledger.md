@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1813. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1816. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 97 · Integration (in-process) 104 · Real PostgreSQL 102 · Browser (stub cloud) 90 · Browser (connected) 70 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 42 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 39 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -27,7 +27,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 | ID | Label | Unit | Integration (in-process) | Real PostgreSQL | Browser (stub cloud) | Browser (connected) | Device | Staff UAT | Label holds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| M01 | E2E_VERIFIED | 26 | 25 | 12 | 8 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M01 | E2E_VERIFIED | 27 | 25 | 12 | 8 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M02 | E2E_VERIFIED | 30 | 28 | 12 | 8 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M03 | INTEGRATION_TESTED | 17 | 16 | 2 | 3 | 1 | · | · | ✓ an integration test cites it |
 | M04 | E2E_VERIFIED | 9 | 10 | 3 | 3 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
@@ -87,9 +87,9 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | A08 | E2E_VERIFIED | 8 | 8 | 4 | 5 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A09 | E2E_VERIFIED | 4 | 4 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A10 | E2E_VERIFIED | 13 | 7 | 3 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| WF-01 | PARTIALLY_WIRED | · | 9 | 2 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-02 | INTEGRATION_TESTED | · | 8 | 4 | 3 | 1 | · | · | ✓ an integration test cites it |
-| WF-03 | PARTIALLY_WIRED | 2 | 12 | 6 | 3 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-01 | PARTIALLY_WIRED | · | 10 | 3 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-02 | INTEGRATION_TESTED | · | 9 | 5 | 3 | 1 | · | · | ✓ an integration test cites it |
+| WF-03 | PARTIALLY_WIRED | 2 | 13 | 7 | 3 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-04 | E2E_VERIFIED | · | 9 | 3 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-05 | INTEGRATION_TESTED | 2 | 9 | 4 | 2 | 1 | · | · | ✓ an integration test cites it |
 | WF-06 | E2E_VERIFIED | 4 | 7 | 4 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -193,9 +193,9 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **A08** — browser: `data-quality-dismiss-delivery.e2e.ts`, `data-quality-inbox-on-the-production-api.e2e.ts`, `lib/ai-inbox-shop.ts`, `screens-open-offline.e2e.ts`, `the-ai-control-screen-reaches-head-office.e2e.ts` · connected: `data-quality-inbox-on-the-production-api.e2e.ts`, `the-ai-control-screen-reaches-head-office.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`, `ai-proposes-people-decide.test.ts`, `the-other-sixteen-reports-reconcile-buying-fulfilment-customer-ai.test.ts`
 - **A09** — browser: `service-desk-and-assistant-drafts.e2e.ts` · connected: `service-desk-and-assistant-drafts.e2e.ts` · real PostgreSQL: `ai-model-calls-are-governed.test.ts`, `ai-proposes-people-decide.test.ts`, `the-assistant-drafts-and-a-person-decides.test.ts`
 - **A10** — browser: `lib/ai-inbox-shop.ts`, `workforce-dismiss-delivery.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · connected: `workforce-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`, `ai-proposes-people-decide.test.ts`
-- **WF-01** — browser: `product-publish-delivery.e2e.ts`, `product-publish-on-the-production-api.e2e.ts` · connected: `product-publish-on-the-production-api.e2e.ts` · real PostgreSQL: `product-content-and-synonyms-reach-the-customer-app.test.ts`, `store-acceptance-journey.test.ts`
-- **WF-02** — browser: `supplier-portal-delivery.e2e.ts`, `suppliers-delivery.e2e.ts`, `suppliers-on-the-production-api.e2e.ts` · connected: `suppliers-on-the-production-api.e2e.ts` · real PostgreSQL: `rebates.test.ts`, `store-acceptance-journey.test.ts`, `supplier-onboarding-on-postgresql.test.ts`, `supplier-portal-feeds-purchasing.test.ts`
-- **WF-03** — browser: `buying-po-delivery.e2e.ts`, `open-to-buy-on-the-production-api.e2e.ts`, `the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts` · connected: `open-to-buy-on-the-production-api.e2e.ts`, `the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts` · real PostgreSQL: `a-purchase-order-is-checked-against-open-to-buy.test.ts`, `an-amendment-is-judged-on-the-order-as-it-stands.test.ts`, `replenishment.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`, `wf03-from-below-reorder-to-an-issued-order.test.ts`
+- **WF-01** — browser: `product-publish-delivery.e2e.ts`, `product-publish-on-the-production-api.e2e.ts` · connected: `product-publish-on-the-production-api.e2e.ts` · real PostgreSQL: `product-content-and-synonyms-reach-the-customer-app.test.ts`, `store-acceptance-journey.test.ts`, `the-first-five-workflows-survive-a-lost-reply.test.ts`
+- **WF-02** — browser: `supplier-portal-delivery.e2e.ts`, `suppliers-delivery.e2e.ts`, `suppliers-on-the-production-api.e2e.ts` · connected: `suppliers-on-the-production-api.e2e.ts` · real PostgreSQL: `rebates.test.ts`, `store-acceptance-journey.test.ts`, `supplier-onboarding-on-postgresql.test.ts`, `supplier-portal-feeds-purchasing.test.ts`, `the-first-five-workflows-survive-a-lost-reply.test.ts`
+- **WF-03** — browser: `buying-po-delivery.e2e.ts`, `open-to-buy-on-the-production-api.e2e.ts`, `the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts` · connected: `open-to-buy-on-the-production-api.e2e.ts`, `the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts` · real PostgreSQL: `a-purchase-order-is-checked-against-open-to-buy.test.ts`, `an-amendment-is-judged-on-the-order-as-it-stands.test.ts`, `replenishment.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-first-five-workflows-survive-a-lost-reply.test.ts`, `wf03-from-below-reorder-to-an-issued-order.test.ts`
 - **WF-04** — browser: `goods-receipt-delivery.e2e.ts`, `warehouse-handheld-delivery.e2e.ts` · real PostgreSQL: `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts`
 - **WF-05** — browser: `buying-po-delivery.e2e.ts`, `supplier-bills-on-the-production-api.e2e.ts` · connected: `supplier-bills-on-the-production-api.e2e.ts` · real PostgreSQL: `a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts`, `payables-reach-tally-as-an-importable-voucher-file.test.ts`, `purchase-to-payment.test.ts`, `store-acceptance-journey.test.ts`
 - **WF-06** — browser: `indents-delivery.e2e.ts`, `merchandising-count-and-refill.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`, `replenishment.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`

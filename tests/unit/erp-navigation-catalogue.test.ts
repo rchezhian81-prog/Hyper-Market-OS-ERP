@@ -87,7 +87,23 @@ describe('every screen the store computer serves has a door, and every door open
     expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id)).toEqual([]);
     // `recall-trace` left this list with the integration follow-ups (23 Oct 2026): the box serves the Recalls and trace page.
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
-    expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);
+    // OB-401 (owner, 27 Oct 2026): `reconciliation` and `settings` left this list — they open Month-end and Store setup.
+    expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual([]);
+    expect(notBox).toEqual([]);
+  });
+});
+
+describe('OB-401: the two old placeholders open the pages that already do their work', () => {
+  it('Reconciliation opens the month-end checks (its card and UPI section); Settings opens Store setup — each gated as its page is', () => {
+    const byId = (id: string) => ERP_NAVIGATION.find((i) => i.id === id)!;
+    expect(byId('reconciliation')).toMatchObject({ path: '/finance-close?tab=payments', requires: byId('finance-close').requires, group: 'Finance' });
+    expect(byId('settings')).toMatchObject({ path: '/setup?tab=settings', requires: byId('store-setup').requires, group: 'Administration' });
+    expect(screenOfPath(byId('reconciliation').path)).toBe('finance-close');
+    expect(screenOfPath(byId('settings').path)).toBe(screenOfPath(byId('store-setup').path));
+    expect(screenOfPath(byId('settings').path)).not.toBeNull();
+    for (const id of ['reconciliation', 'settings']) expect(byId(id).served ?? 'box').toBe('box');
+    // The finance-close page has the tab the link names, so the link opens that section.
+    expect(readFileSync('apps/web-erp/web/finance-close.html', 'utf8')).toContain('id="tab-payments"');
   });
 });
 

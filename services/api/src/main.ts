@@ -929,7 +929,7 @@ export function buildSurface(deps: {
     ...calendared(supplierScorecardRoutes)(store === undefined ? {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
       recordReceipt: () => {}, recordContract: () => {}, now,
-    } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), facts: supplierFactsFor({ store, now }) /* R4 D-10 */ }),
+    } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), facts: supplierFactsFor({ store, now, calendar: shopCalendar }) /* R4 D-10 */ }),
     // Supplier rebates + schemes (M06-FR-03 · M23) — the money earned and not yet claimed.
     ...rebateRoutes(store === undefined ? {
       scheme: empty(undefined), schemes: empty([]), accruals: empty([]),
@@ -1223,6 +1223,7 @@ export function buildSurface(deps: {
       stores: async (t) => new Map((await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const)),
       ...receiptPrefixAdapter({ store, now }),
       registeredHandhelds: queueTillHandhelds({ store, now }), // OB-376: a handheld queue till's lane gets its own prefix
+      calendar: shopCalendar, // M01-FR-02 (T1): this year and March are the shop's own dates
       ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }),
     }),
     // EA-01 (round 4): each store computer reports how far each of its queues has synced (its own store only); the
@@ -1793,11 +1794,11 @@ export function buildSurface(deps: {
     } : eWayBillAdapter({ store, now })),
     // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
     ...r3TaxPayRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
-    ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
-    ...lane2OfflineRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
+    ...r4SupplyLpRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
+    ...lane2OfflineRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
     ...p3ProcureRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
     ...p2CatalogueRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
-    ...financeBridgeRoutes({ store, now }), // OB-288 P5
+    ...financeBridgeRoutes({ store, now, calendar: shopCalendar }), // OB-288 P5
     ...commercialDesksRoutes({ store, now, calendar: shopCalendar }), // OB-288 commercial desks (M22 · M24 · M27)
     ...fulfilmentDeliveryRoutes({ store, now, signer, calendar: shopCalendar, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 fulfilment & delivery
     ...customerFollowupsRoutes({ store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 customer & delivery follow-ups (OB-350 · OB-351)
@@ -1806,7 +1807,7 @@ export function buildSurface(deps: {
     ...floorDeviceSettingRoutesFor({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-375 · OB-378: the owner's kiosk minutes and self-checkout watch
     ...billCopyRoutesFor({ store, now }), // OB-373: copies of a bill printed by its number, relayed by the store computer
     ...tillDeliveryJobsRoutes({ store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-352
-    ...opsMessagingRoutes({ store, now }), // OB-288 P5
+    ...opsMessagingRoutes({ store, now, calendar: shopCalendar }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.
@@ -2142,7 +2143,7 @@ export function buildSurface(deps: {
       recordAudit: auditTrail?.recordAudit,
       // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
       tillSealKey: sealKey,
-      controls: migrationControlsAdapter({ store, now }), // OB-288 P5 — MG-09 / MG-10 / MG-11
+      controls: migrationControlsAdapter({ store, now, calendar: shopCalendar }), // OB-288 P5 — MG-09 / MG-10 / MG-11
     }),
     // GT-05 (MG-07): the old system's history and document files — kept under their legacy ids, read-only, hash-checked.
     ...legacyHistoryRoutes(store === undefined ? {
@@ -2646,6 +2647,9 @@ export async function startApi(
   // stopped or whose queue holds refused items is raised to the owner the rules name, escalated when nobody answers,
   // and delivered into that person's inbox (and to their phone once a message provider is configured). Always on:
   // the inbox needs no provider.
+  // M01-FR-02 (re-audit T1): the worker's sweeps date by each shop's own calendar (its zone and cut-off from store setup).
+  const workerSettings = new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db)));
+  const shopCalendar = async (t: string) => ({ timeZone: await workerSettings.value(t, SETTINGS.STORE_TIME_ZONE), tradingDayCutoff: await workerSettings.value(t, SETTINGS.TRADING_DAY_CUTOFF) });
   const opsAlertWorker = startOpsAlertWorker({
     tenants: async () => workerTenants,
     // OB-78: the worker raises the early disk warning on the same owner's line as the read.
@@ -2682,9 +2686,9 @@ export async function startApi(
       gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
       // R4 · C15: a payslip not issued by its pay date is raised to every owner on the same timer.
       payslipLate: payslipLateSweep({ store, now }),
-      expiryMove: expirySweepThatPublishes({ store, now, signer: hmacSigner(settings['PACK_SIGNING_KEY']!) }), // OB-288 lane 2 · M10-FR-01, and the expired batches onto the tills' pack
+      expiryMove: expirySweepThatPublishes({ store, now, calendar: shopCalendar, signer: hmacSigner(settings['PACK_SIGNING_KEY']!) }), // OB-288 lane 2 · M10-FR-01, and the expired batches onto the tills' pack
       approvalAge: approvalAgeSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // OB-288 lane 1 · P1 — OB-292 escalation by age
-      financeBridge: async (t: string, at: string) => (await finBridgeSweep({ store, now })(t, at)) + (await opsMessagingSweep({ store, now })(t, at)), // OB-288 P5 — the daily Tally file outbox; an overdue CERT-In report
+      financeBridge: async (t: string, at: string) => (await finBridgeSweep({ store, now, calendar: shopCalendar })(t, at)) + (await opsMessagingSweep({ store, now, calendar: shopCalendar })(t, at)), // OB-288 P5 — the daily Tally file outbox; an overdue CERT-In report
       seasonEnd: p2SeasonSweep({ store, now }), // OB-288 P2 · D02-FR-02 — a season whose last day has passed ends into clearance
       customerCommerce: customerCommerceSweep({ store, now }), // OB-288 wave 3 — points expiry (OB-295), repeat orders (OB-303), order notices, journeys
       commercialDesks: commercialDesksSweep({ store, now }), // OB-288 commercial desks — concession expiry (M27-FR-04), B2B contracts ending

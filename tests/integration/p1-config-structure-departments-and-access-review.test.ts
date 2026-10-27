@@ -98,12 +98,12 @@ describe.each(backings)('configuration, structure, departments and access on $na
 
   it('the trading-day cut-off and a branch activation wait for the owner\'s approval', async () => {
     const { T, h, req, ok } = await shop();
-    const cut = { value: '03:00', ifVersion: 0 };
-    expect(codeOf(await req('PUT', '/v1/platform/setup/trading_day.cutoff', 'u-it', cut))).toBe('high_impact_change_needs_owner_approval');
-    expect(codeOf(await req('PUT', '/v1/platform/setup/trading_day.cutoff', 'u-it', { value: 'midnight-ish' }))).toBe('setup_answer_refused'); // an invalid value spends nothing
-    const approvalId = await approvedRequestId(h(), T, 'u-it', 'u-owner', { kind: 'config_change', subjectRef: 'setting:trading_day.cutoff', details: actionDetails(cut, { key: 'trading_day.cutoff' }) });
-    await ok(req('PUT', '/v1/platform/setup/trading_day.cutoff', 'u-it', { ...cut, approvalId }), 'cut-off');
-    expect(((await req('GET', '/v1/platform/config/trading_day.cutoff', 'u-owner')).body as { current: { value: string } }).current.value).toBe('03:00');
+    const cut = { value: 'Asia/Dubai', ifVersion: 0 }; // OB-402 holds the day end at midnight, so the time zone (OB-336, also high-impact) stands in
+    expect(codeOf(await req('PUT', '/v1/platform/setup/locale.time_zone', 'u-it', cut))).toBe('high_impact_change_needs_owner_approval');
+    expect(codeOf(await req('PUT', '/v1/platform/setup/locale.time_zone', 'u-it', { value: 'midnight-ish' }))).toBe('setup_answer_refused'); // an invalid value spends nothing
+    const approvalId = await approvedRequestId(h(), T, 'u-it', 'u-owner', { kind: 'config_change', subjectRef: 'setting:locale.time_zone', details: actionDetails(cut, { key: 'locale.time_zone' }) });
+    await ok(req('PUT', '/v1/platform/setup/locale.time_zone', 'u-it', { ...cut, approvalId }), 'time zone');
+    expect(((await req('GET', '/v1/platform/config/locale.time_zone', 'u-owner')).body as { current: { value: string } }).current.value).toBe('Asia/Dubai');
     // A low-impact setting still saves with one person.
     await ok(req('PUT', '/v1/platform/setup/delivery.radius_km', 'u-it', { value: 5, ifVersion: 0 }), 'radius');
 

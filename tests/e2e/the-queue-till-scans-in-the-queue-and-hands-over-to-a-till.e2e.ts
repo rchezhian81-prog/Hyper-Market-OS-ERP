@@ -185,7 +185,14 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     expect(await till.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''))).toContain('Handheld basket (queue)');
     await till.click('#pay-kinds button:text-is("Handheld basket (queue)")');
     await till.waitForSelector('#sheet:not([hidden])');
+    // A code keeps every digit — a leading 0 too (it was read as a number once, so 0369 became 369 and was refused).
+    await till.click('#keypad button:text-is("0")');
+    await till.click('#keypad button:text-is("1")');
+    expect(await till.textContent('#entry')).toBe('01');
+    await till.click('#keypad button:text-is("C")');
+    expect(await till.textContent('#entry')).toBe('');
     for (const digit of code) await till.click(`#keypad button:text-is("${digit}")`);
+    expect(await till.textContent('#entry')).toBe(code);
     await till.click('#sheet-ok');
     // The same line first shows the keypad's prompt; wait for the till's answer to replace it, do not read it in the same tick.
     await till.locator('#refusal-text', { hasText: `Handheld basket ${code}:` }).waitFor({ timeout: 15_000 });

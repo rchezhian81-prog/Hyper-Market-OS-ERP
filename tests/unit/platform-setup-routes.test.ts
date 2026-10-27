@@ -104,16 +104,16 @@ describe('PUT /v1/platform/setup/:key', () => {
     const routes = platformRoutes(deps());
     const put = routeFor(routes, 'PUT', '/v1/platform/setup/:key');
     // First save takes the version to 1.
-    await put.handler(ctx({ params: { key: 'trading_day.cutoff' }, body: { value: '22:00' } }));
+    await put.handler(ctx({ params: { key: 'locale.time_zone' }, body: { value: 'Asia/Dubai' } }));
     // A save that still thinks the version is 0 is refused, not applied.
     const err = await statusOfThrow(() => Promise.resolve(
-      put.handler(ctx({ params: { key: 'trading_day.cutoff' }, body: { value: '23:00', ifVersion: 0 } })),
+      put.handler(ctx({ params: { key: 'locale.time_zone' }, body: { value: 'Asia/Tokyo', ifVersion: 0 } })),
     ));
     expect(err.status).toBe(409);
     expect(err.body.code).toBe('setup_version_conflict');
     const get = routeFor(routes, 'GET', '/v1/platform/setup');
     const after = (await get.handler(ctx({}))).body as SetupStatus;
-    expect(after.items.find((i) => i.key === 'trading_day.cutoff')?.value).toBe('22:00'); // unchanged
+    expect(after.items.find((i) => i.key === 'locale.time_zone')?.value).toBe('Asia/Dubai'); // unchanged
   });
 
   it('exposes each item version in the status, and bumps it on save', async () => {
@@ -121,8 +121,8 @@ describe('PUT /v1/platform/setup/:key', () => {
     const get = routeFor(routes, 'GET', '/v1/platform/setup');
     expect(((await get.handler(ctx({}))).body as SetupStatus).items.every((i) => i.version === 0)).toBe(true);
     const put = routeFor(routes, 'PUT', '/v1/platform/setup/:key');
-    await put.handler(ctx({ params: { key: 'trading_day.cutoff' }, body: { value: '22:00' } }));
+    await put.handler(ctx({ params: { key: 'locale.time_zone' }, body: { value: 'Asia/Dubai' } }));
     const after = (await get.handler(ctx({}))).body as SetupStatus;
-    expect(after.items.find((i) => i.key === 'trading_day.cutoff')?.version).toBe(1);
+    expect(after.items.find((i) => i.key === 'locale.time_zone')?.version).toBe(1);
   });
 });
