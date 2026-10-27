@@ -25,6 +25,7 @@ import type { NumberFormat } from '../../../packages/numbering/src/numbering';
 import { GST_STATE_NAMES } from '../../../packages/finance/src/gst-states';
 import type { LineToPrice, PricingResult, PriceSource } from '../../../packages/b2b/src/contracts';
 import { actionDetails } from '../../identity/src/approval-requests';
+import type { B2BInvoiceBuyer } from './b2b-customer-gstin';
 
 /**
  * A stored document. A quotation also carries the window its price holds for (`convertQuotation` needs
@@ -43,6 +44,12 @@ export type StoredB2BDocument = B2BDocument & {
   readonly gstNotJudged?: string;
   /** M22-FR-01 (OB-288 commercial desks): where each quoted line's price came from — the contract, the price list, or typed. */
   readonly pricedFrom?: readonly { readonly lineId: string; readonly priceSource: PriceSource; readonly contractId?: string }[];
+  /**
+   * OB-416: on a tax invoice, the buyer it is made out to — the customer's GSTIN, the legal name registered under it and its
+   * State — as on the credit account at the moment it was issued (printed on the invoice; it files B2B under the GSTIN).
+   * Absent → no GSTIN was on record then, and the invoice files B2C. Never changed once issued (OB-415).
+   */
+  readonly buyer?: B2BInvoiceBuyer;
 };
 
 /**
@@ -133,6 +140,8 @@ export interface B2BDocumentsDeps {
   readonly pricing?: (tenantId: string, input: { readonly customerId: string; readonly locationId?: string; readonly at: string; readonly lines: readonly LineToPrice[] }) => Promise<PricingResult>;
   /** M22-FR-01: the contract-aware credit gate with a second person's override. Present → used instead of `creditAllowed`. */
   readonly creditGate?: B2BCreditGate;
+  /** OB-416: the customer's GSTIN in force now (the credit account's latest), or undefined when none is on record. */
+  readonly customerGstin?: (tenantId: string, customerId: string) => Promise<B2BInvoiceBuyer | undefined>;
   readonly now: () => string;
 }
 
@@ -314,6 +323,9 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
           ? 'The State this business is registered for GST in is not on record for this order\'s store, so this invoice carries no CGST / SGST / IGST split. Record the store\'s GSTIN in the store setup.'
           : undefined;
 
+        // OB-416: the buyer's GSTIN in force at this moment goes onto the invoice (printed, and filed B2B under it).
+        const buyer = await deps.customerGstin?.(ctx.tenantId, customerId);
+
         const probe = issueTaxInvoice({ documentId, order, challans, alreadyInvoiced, format: FORMAT.tax_invoice, seq: 0, at, ...(placeOfSupply === undefined ? {} : { placeOfSupply }) });
         if (!probe.issued) {
           throw apiError(422, {
@@ -327,13 +339,14 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
         const result = issueTaxInvoice({ documentId, order, challans, alreadyInvoiced, format: FORMAT.tax_invoice, seq, at, ...(placeOfSupply === undefined ? {} : { placeOfSupply }) });
         const doc = result.document;
         if (doc === undefined) throw notFound(`invoice ${documentId}`); // unreachable — the probe issued
-        await deps.recordDocument(ctx.tenantId, customerId, { ...doc, orderId: order.documentId, ...(gstNotJudged === undefined ? {} : { gstNotJudged }) });
+        const stored: StoredB2BDocument = { ...doc, orderId: order.documentId, ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(buyer === undefined ? {} : { buyer }) };
+        await deps.recordDocument(ctx.tenantId, customerId, stored);
         // FUL-09: the invoice is now money owed — a receivable on the customer's terms, on the AR ledger, and for the books.
-        const owed = await deps.afterTaxInvoice?.(ctx.tenantId, customerId, { ...doc, orderId: order.documentId });
+        const owed = await deps.afterTaxInvoice?.(ctx.tenantId, customerId, stored);
         // FUL-09 · M22-FR-03: the attributed salesperson's commission, derived from this invoice by the approved rule.
         const commission = order.salespersonId === undefined || deps.commissionOnInvoice === undefined ? undefined
           : await deps.commissionOnInvoice(ctx.tenantId, { salespersonId: order.salespersonId, invoice: { ...doc, orderId: order.documentId } });
-        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail, ...(doc.gst === undefined ? {} : { gst: doc.gst }), ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(owed === undefined ? {} : { dueOn: owed.dueOn }), ...(commission === undefined ? {} : { commission }) } };
+        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail, ...(doc.gst === undefined ? {} : { gst: doc.gst }), ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(buyer === undefined ? {} : { buyer }), ...(owed === undefined ? {} : { dueOn: owed.dueOn }), ...(commission === undefined ? {} : { commission }) } };
       },
     },
     {

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1832,
+  "testFiles": 1834,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1774,9 +1774,9 @@
       "id": "M22",
       "label": "WIRED",
       "counts": {
-        "unit": 12,
-        "integration": 14,
-        "realDb": 7,
+        "unit": 13,
+        "integration": 15,
+        "realDb": 8,
         "browser": 4,
         "connected": 2,
         "device": 0,
@@ -1784,6 +1784,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-credit-customers-gstin-is-checked-and-decides-the-supply-type.test.ts",
           "tests/unit/b2b-collections.test.ts",
           "tests/unit/b2b-contracts.test.ts",
           "tests/unit/b2b-documents.test.ts",
@@ -1802,6 +1803,7 @@
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
           "tests/integration/a-b2b-order-is-priced-from-its-approved-contract.test.ts",
           "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
+          "tests/integration/a-credit-customers-gstin-files-their-invoices-in-gstr1-b2b.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/b2b-collections.test.ts",
           "tests/integration/b2b-commission.test.ts",
@@ -1818,6 +1820,7 @@
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
           "tests/integration/a-b2b-order-is-priced-from-its-approved-contract.test.ts",
           "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
+          "tests/integration/a-credit-customers-gstin-files-their-invoices-in-gstr1-b2b.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/the-close-checks-credit-customer-receivables.test.ts"
@@ -2609,8 +2612,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 13,
-        "realDb": 4,
+        "integration": 14,
+        "realDb": 5,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -2629,6 +2632,7 @@
           "tests/unit/legal-holds.test.ts"
         ],
         "integration": [
+          "tests/integration/a-credit-customers-gstin-files-their-invoices-in-gstr1-b2b.test.ts",
           "tests/integration/audit-search.test.ts",
           "tests/integration/audit-trail-store.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
@@ -2644,6 +2648,7 @@
           "tests/security/personal-data-safeguards.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-credit-customers-gstin-files-their-invoices-in-gstr1-b2b.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/old-till-cash-is-placed-once-and-head-office-records-decide.test.ts",
