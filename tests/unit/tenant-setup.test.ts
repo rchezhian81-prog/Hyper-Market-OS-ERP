@@ -71,16 +71,19 @@ describe('answering setup items', () => {
   it('records an answer through the versioned engine (audited, reversible)', () => {
     const store = new ConfigStore<unknown>();
     const s = new TenantSettings(store);
-    applyAnswer(s, 'acme', item('trading_day.cutoff'), '22:00', 'owner', AT);
-    expect(s.get('acme', SETTINGS.TRADING_DAY_CUTOFF)).toBe('22:00');
+    applyAnswer(s, 'acme', item('locale.time_zone'), 'Asia/Dubai', 'owner', AT);
+    expect(s.get('acme', SETTINGS.STORE_TIME_ZONE)).toBe('Asia/Dubai');
     // A second tenant is untouched.
-    expect(s.isSet('other', SETTINGS.TRADING_DAY_CUTOFF)).toBe(false);
+    expect(s.isSet('other', SETTINGS.STORE_TIME_ZONE)).toBe(false);
   });
 
   it('refuses an invalid answer by name and stores nothing', () => {
     const s = newSettings();
     expect(() => applyAnswer(s, 'acme', item('trading_day.cutoff'), '25:99', 'owner', AT))
       .toThrow(InvalidSetupAnswerError);
+    // OB-402 (owner, 27 Oct 2026): the trading day ends at midnight — any other valid time is refused by name too.
+    expect(() => applyAnswer(s, 'acme', item('trading_day.cutoff'), '02:00', 'owner', AT))
+      .toThrow(/midnight \(00:00\)/);
     expect(() => applyAnswer(s, 'acme', item('tax.default_bps'), 999_999, 'owner', AT))
       .toThrow(/basis points/);
     expect(() => applyAnswer(s, 'acme', item('locale.languages'), [], 'owner', AT))

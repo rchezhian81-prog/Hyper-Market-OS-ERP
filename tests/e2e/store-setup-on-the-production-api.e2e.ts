@@ -179,7 +179,7 @@ interface Row {
 }
 const TABLE: Readonly<Record<string, Row>> = {
   'tax.default_bps': { enter: '1800', stored: 1800, bad: { enter: '10001', value: 10001 } },
-  'trading_day.cutoff': { enter: '22:30', stored: '22:30', control: 'time', bad: { enter: '', value: '' } },
+  'trading_day.cutoff': { enter: '00:00', stored: '00:00', control: 'time', bad: { enter: '22:30', value: '22:30' } }, // OB-402: the day ends at midnight; any other time is refused in the engine's words
   'locale.time_zone': { enter: 'Asia/Dubai', stored: 'Asia/Dubai', control: 'text', bad: { enter: 'Mars/Olympus', value: 'Mars/Olympus' } },
   'receipt.paper_format': { enter: 'thermal-58', stored: 'thermal-58', control: 'select' },
   'locale.languages': { enter: 'en\nta\nhi', stored: ['en', 'ta', 'hi'], bad: { enter: '', value: [] } },

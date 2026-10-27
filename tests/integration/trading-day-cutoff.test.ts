@@ -31,34 +31,33 @@ describe('the tenant’s configured trading-day cut-off drives trading-day datin
     expect(dateAsEdgeWould('2026-08-07T00:30', cutoff)).toBe('2026-08-07');
   });
 
-  it('once the owner sets a 02:00 cut-off, a 00:30 sale dates to the PRIOR trading day', async () => {
+  it('OB-402: the day end is held at midnight — a 02:00 cut-off is refused even with the owner\'s approval; the engine still dates by any cut-off it is given', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-it', 'platform_admin');
 
-    // OB-288 P1 (M01-FR-02 "owner approval for … trading-day changes"): one person alone is refused; with the owner's
-    // approval of exactly this answer, it lands.
+    // The answer is read before any approval is asked: a 02:00 day end is refused by name and spends nothing (OB-402).
     const alone = await h.request({
       method: 'PUT', path: '/v1/platform/setup/trading_day.cutoff', userId: 'u-owner', tenantId: A,
       idempotencyKey: 'set-cutoff-alone', body: { value: '02:00', ifVersion: 0 },
     });
-    expect((alone.body as { error: { code: string } }).error.code).toBe('high_impact_change_needs_owner_approval');
+    expect((alone.body as { error: { code: string } }).error.code).toBe('setup_answer_refused');
+    // OB-402 (owner, 27 Oct 2026, in writing): with the owner's approval it is STILL refused — the bill date, bill-number
+    // year and GST month must always agree, so the trading day ends at midnight.
     const put = await h.request({
       method: 'PUT', path: '/v1/platform/setup/trading_day.cutoff', userId: 'u-it', tenantId: A,
       idempotencyKey: 'set-cutoff', body: await approvedSettingBody(h, A, 'u-it', 'u-owner', 'trading_day.cutoff', { value: '02:00', ifVersion: 0 }),
     });
-    expect(put.status).toBe(200);
+    expect(put.status).toBe(422);
+    expect(JSON.stringify(put.body)).toContain('OB-402');
 
     const served = (await h.request({ method: 'GET', path: POLICIES, userId: 'u-owner', tenantId: A }))
       .body as { tradingDayCutoff: string };
-    expect(served.tradingDayCutoff).toBe('02:00');
-
-    // The roadmap's own acceptance case: 00:30 is before the 02:00 cut-off → previous trading day.
-    expect(dateAsEdgeWould('2026-08-07T00:30', served.tradingDayCutoff)).toBe('2026-08-06');
-    // A daytime sale still dates to today; the boundary is at the cut-off, not midnight.
-    expect(dateAsEdgeWould('2026-08-07T09:00', served.tradingDayCutoff)).toBe('2026-08-07');
-    // And a sale exactly at the cut-off belongs to the new day.
-    expect(dateAsEdgeWould('2026-08-07T02:00', served.tradingDayCutoff)).toBe('2026-08-07');
+    expect(served.tradingDayCutoff).toBe('00:00');
+    expect(dateAsEdgeWould('2026-08-07T00:30', served.tradingDayCutoff)).toBe('2026-08-07');
+    // The engine itself still honours whatever cut-off it is handed (the roadmap's acceptance case), should the rule change.
+    expect(dateAsEdgeWould('2026-08-07T00:30', '02:00')).toBe('2026-08-06');
+    expect(dateAsEdgeWould('2026-08-07T02:00', '02:00')).toBe('2026-08-07');
   });
 
   it('is per-tenant and authorized: another tenant is unaffected, and a cashier cannot read the policy (403)', async () => {
