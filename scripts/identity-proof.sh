@@ -38,8 +38,12 @@ for entry in "${suites[@]}"; do
   echo "== ${suite}: fresh database ${db}"
   psql "${pg}/postgres" -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS ${db} WITH (FORCE)" -c "CREATE DATABASE ${db}"
   DATABASE_URL="${pg}/${db}" pnpm db:migrate > /dev/null
+  # Every suite runs even after one fails, and each failing test is named as a CI annotation (the job's log is not
+  # always readable where the failure is diagnosed). The run still fails at the end if any suite did.
   KEYCLOAK_PROOF_DATABASE_URL="${pg}/${db}" pnpm exec vitest run "tests/integration/${suite}.test.ts" \
-    --reporter=default --reporter=json --outputFile="${out}/${suite}.json"
-  node scripts/assert-suite-ran.mjs "${out}/${suite}.json" --min-files 1 --min-tests "${min}"
+    --reporter=default --reporter=json --outputFile="${out}/${suite}.json" || true
+  node scripts/name-failed-tests.mjs "${out}/${suite}.json" "${suite}" || true
+  node scripts/assert-suite-ran.mjs "${out}/${suite}.json" --min-files 1 --min-tests "${min}" || failed=1
 done
+if [ "${failed:-0}" = 1 ]; then echo "::error::At least one identity-server suite did not run and pass against a real Keycloak (named above)."; exit 1; fi
 echo "All identity-server suites ran against a real Keycloak and passed; nothing skipped."
