@@ -539,6 +539,8 @@ export class PosSession {
   private state: PosState = 'idle';
   private connection: ConnectionState = 'online';
   private promotions: readonly Promotion[] = [];
+  /** OB-403 "A" · §31.1: while the store computer's clock is 5+ minutes out, no offer starting after this instant applies. */
+  private offerHoldCutoff: string | null = null;
   private refusedOfferList: readonly RefusedOffer[] = [];
   /** The cashier who signed in at this till (SP-4b) — over the configured one, when both exist. */
   private operatorId: string | undefined;
@@ -1074,9 +1076,29 @@ export class PosSession {
     };
   }
 
+  /**
+   * OB-403 "A" · §31.1: the store computer says its clock is 5+ minutes out — apply no offer that starts after `cutoffAt`
+   * (null: nothing held). The offers stay loaded, so the moment the hold lifts they apply again (nothing is lost).
+   */
+  holdOffersStartingAfter(cutoffAt: string | null): void {
+    this.offerHoldCutoff = typeof cutoffAt === 'string' && !Number.isNaN(Date.parse(cutoffAt)) ? cutoffAt : null;
+  }
+
+  /** OB-403: the loaded offers this till is not applying now because the store computer's clock is out. */
+  heldOffers(): readonly string[] {
+    return this.promotions.filter((p) => !this.offerInForce(p)).map((p) => p.id);
+  }
+
+  private offerInForce(p: Promotion): boolean {
+    if (this.offerHoldCutoff === null) return true;
+    const starts = Date.parse(p.startsAt);
+    return !Number.isNaN(starts) && starts <= Date.parse(this.offerHoldCutoff);
+  }
+
   /** The deterministic best-price result for the current basket, or null when no promotion is loaded. */
   private promotionResult(): PromotionResult | null {
-    if (this.promotions.length === 0) return null;
+    const offers = this.promotions.filter((p) => this.offerInForce(p));
+    if (offers.length === 0) return null;
     const basket: BasketLine[] = this.activeLines().map((l) => ({
       lineId: l.lineId,
       productId: l.productId,
@@ -1097,7 +1119,7 @@ export class PosSession {
     const at = this.nowRef ?? this.config.clock?.() ?? '1970-01-01T00:00:00Z';
     // OB-305 · OB-349: bank-card offers stay OFF until R4 (certified integrated card terminals) — the till never passes
     // `bankOffersOn` or a card issuer, so a bank offer computes nothing here (`BANK_OFFERS_RELEASE`).
-    return bestPrice(basket, this.promotions, { at, currency: this.config.currency });
+    return bestPrice(basket, offers, { at, currency: this.config.currency });
   }
 
   /** Deterministic promotion discount for the basket (M05-FR-03), or zero. */

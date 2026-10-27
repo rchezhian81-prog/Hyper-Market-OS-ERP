@@ -226879,6 +226879,65 @@
             },
             "additionalProperties": true
           },
+          "clockCheck": {
+            "type": "object",
+            "properties": {
+              "flagSeconds": {
+                "type": "integer"
+              },
+              "hold": {
+                "type": "object",
+                "properties": {
+                  "held": {
+                    "type": "boolean"
+                  },
+                  "heldPrices": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "heldPromotions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "since": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "lastCheckedAt": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "offsetSeconds": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "verdict": {
+                "type": "string"
+              },
+              "warnSeconds": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          },
           "disk": {
             "type": "object",
             "properties": {
@@ -241482,6 +241541,84 @@
         },
         "additionalProperties": true
       },
+      "BoxClockCheck": {
+        "type": "object",
+        "required": [
+          "verdict",
+          "offsetSeconds",
+          "lastCheckedAt",
+          "warnSeconds",
+          "flagSeconds",
+          "hold"
+        ],
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "flag_bills",
+              "in_step",
+              "not_checked",
+              "warning"
+            ]
+          },
+          "offsetSeconds": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "lastCheckedAt": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "warnSeconds": {
+            "type": "number"
+          },
+          "flagSeconds": {
+            "type": "number"
+          },
+          "hold": {
+            "type": "object",
+            "required": [
+              "held",
+              "heldPromotions",
+              "heldPrices"
+            ],
+            "properties": {
+              "held": {
+                "type": "boolean"
+              },
+              "since": {
+                "type": "string"
+              },
+              "heldPromotions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "heldPrices": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
       "BoxDisk": {
         "type": "object",
         "required": [
@@ -241599,6 +241736,9 @@
           },
           "zoneCheck": {
             "$ref": "#/components/schemas/BoxZoneCheck"
+          },
+          "clockCheck": {
+            "$ref": "#/components/schemas/BoxClockCheck"
           },
           "queueContradiction": {
             "type": "string"
@@ -241738,6 +241878,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/BoxZoneCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clockCheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoxClockCheck"
               },
               {
                 "type": "null"

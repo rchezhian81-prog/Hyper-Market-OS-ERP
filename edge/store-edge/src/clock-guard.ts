@@ -91,6 +91,14 @@ export interface ClockLogEntry { readonly at: string; readonly verdict: Exclude<
 /** A bill taken while this box's clock was 5+ minutes (OB-327) away from head office's — committed, flagged for checking. */
 export interface ClockFlaggedBill { readonly saleId: string; readonly number?: string; readonly laneId?: string; readonly committedAt: string; readonly offsetSeconds: number }
 
+/**
+ * OB-403: whether this box is holding new prices, offers and a bill-number year (its clock 5+ minutes out), and from when.
+ * `cutoffAt`: anything that starts AFTER this instant waits until the clock is back in step.
+ */
+export type ActivationHold =
+  | { readonly held: false }
+  | { readonly held: true; readonly since: string; readonly cutoffAt: string; readonly offsetSeconds: number; readonly flagSeconds: number };
+
 const LOG_FILE = 'clock-checks.log';
 
 export class ClockGuard {
@@ -157,6 +165,22 @@ export class ClockGuard {
     let found: ClockLogEntry | undefined;
     for (const e of this.history) { if (Date.parse(e.at) <= at) found = e; else break; }
     return found;
+  }
+
+  /**
+   * OB-403 "A" (owner, 27 Oct 2026, in writing · §31.1 "blocks time-sensitive local activation"): while the clock log's latest
+   * verdict is `flag_bills`, nothing NEW starts on this box — no new price, offer or bill-number year — that was not already
+   * in force when the clock was found that far out. "Already in force" is judged by BOTH clocks at that moment (this box's,
+   * and head office's as measured): the cut-off is the earlier of the two, so a box running ahead never starts tomorrow's
+   * offer today, and a box running behind never starts one head office has not reached yet. From the fsync'd clock log, so
+   * a cold restart holds exactly as before; lifted by the first measurement back in step (or at the warning level).
+   */
+  activationHold(): ActivationHold {
+    const last = this.history.at(-1);
+    if (last?.verdict !== 'flag_bills') return { held: false };
+    const boxAt = Date.parse(last.at);
+    const cutoff = Math.min(boxAt, boxAt + last.offsetSeconds * 1000);
+    return { held: true, since: last.at, cutoffAt: new Date(cutoff).toISOString(), offsetSeconds: last.offsetSeconds, flagSeconds: this.thresholds.flagSeconds };
   }
 
   /** The bills taken while the clock was 5+ minutes out (OB-327): committed, and listed for a person to check. */

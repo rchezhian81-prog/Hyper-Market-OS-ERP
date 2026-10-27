@@ -27,6 +27,17 @@ export interface BoxZoneCheck {
   readonly staffMessage: string;
   readonly staffMessageTa: string;
 }
+/**
+ * OB-403 "A" · §31.1: what the box is holding while its clock is 5+ minutes out (`ActivationHoldReport`, read loosely) —
+ * new prices, offers and a new bill-number year wait until the clock is back in step; selling goes on.
+ */
+export interface BoxActivationHold {
+  readonly held: boolean;
+  readonly heldPromotions?: readonly { readonly id: string; readonly startsAt: string }[];
+  readonly heldPrices?: readonly { readonly id: string; readonly productId: string; readonly effectiveFrom: string }[];
+  readonly staffMessage: string;
+  readonly staffMessageTa: string;
+}
 export interface BoxClockFlaggedBill { readonly saleId: string; readonly number?: string; readonly laneId?: string; readonly committedAt: string; readonly offsetSeconds: number }
 
 export interface BoxClockView {
@@ -37,6 +48,8 @@ export interface BoxClockView {
   readonly words: string;
   /** R1a: the words about the machine's time zone when it is not the shop's; empty otherwise. */
   readonly zoneWords: string;
+  /** OB-403: "Price change held: store clock is X min out" and what is held, while the hold is on; empty otherwise. */
+  readonly holdWords: string;
   readonly billsHeading: string;
   readonly bills: readonly { readonly saleId: string; readonly label: string }[];
 }
@@ -51,7 +64,7 @@ const seconds = (s: number): string => {
   return a >= 60 ? `${Math.floor(a / 60)} min ${a % 60} s` : `${a} s`;
 };
 
-export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null, bills: readonly BoxClockFlaggedBill[] | undefined | null, zone?: BoxZoneCheck | null): BoxClockView {
+export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null, bills: readonly BoxClockFlaggedBill[] | undefined | null, zone?: BoxZoneCheck | null, hold?: BoxActivationHold | null): BoxClockView {
   const w = WORDS[lang];
   const list = Array.isArray(bills) ? bills : [];
   const flagMinutes = Math.round((clock?.thresholds?.flagSeconds ?? 300) / 60);
@@ -61,9 +74,11 @@ export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null
   }));
   const attention = clock !== undefined && clock !== null && clock.needsAttention === true;
   const zoneAttention = zone !== undefined && zone !== null && zone.needsAttention === true;
-  const show = attention || rows.length > 0 || zoneAttention;
-  const tone: BoxClockView['tone'] = clock?.verdict === 'flag_bills' || (rows.length > 0 && clock?.verdict !== 'in_step') ? 'error' : attention || zoneAttention ? 'warn' : rows.length > 0 ? 'warn' : 'ok';
+  const held = hold !== undefined && hold !== null && hold.held === true;
+  const show = attention || rows.length > 0 || zoneAttention || held;
+  const tone: BoxClockView['tone'] = clock?.verdict === 'flag_bills' || held || (rows.length > 0 && clock?.verdict !== 'in_step') ? 'error' : attention || zoneAttention ? 'warn' : rows.length > 0 ? 'warn' : 'ok';
   const words = clock === undefined || clock === null ? '' : lang === 'ta' ? clock.staffMessageTa : clock.staffMessage;
   const zoneWords = !zoneAttention ? '' : lang === 'ta' ? zone.staffMessageTa : zone.staffMessage;
-  return { show, tone, icon: tone === 'error' ? 'circle-alert' : 'clock', words, zoneWords, billsHeading: w.billsHeading(flagMinutes), bills: rows };
+  const holdWords = !held ? '' : lang === 'ta' ? hold.staffMessageTa : hold.staffMessage;
+  return { show, tone, icon: tone === 'error' ? 'circle-alert' : 'clock', words, zoneWords, holdWords, billsHeading: w.billsHeading(flagMinutes), bills: rows };
 }

@@ -60,6 +60,24 @@ export interface BoxHealthReport {
    * office so a difference is shown there too, not only on the box's own screens. Zone names only; no person's data.
    */
   readonly zoneCheck?: BoxZoneReport;
+  /**
+   * §31.1 · OB-327 · OB-403 "A": this box's clock against head office's (edge/store-edge/src/clock-guard.ts), and what it is
+   * HOLDING while 5+ minutes out (new offers, prices and a bill-number year) — told to head office and the owner's alerts,
+   * not only on the box's own screens. Facts and ids only; no person's data.
+   */
+  readonly clockCheck?: BoxClockReport;
+}
+
+/** §31.1 · OB-403: the box's clock check and its hold as they ride the health report (its sentences stay on the box). */
+export interface BoxClockReport {
+  readonly verdict: 'not_checked' | 'in_step' | 'warning' | 'flag_bills';
+  /** Head office's clock minus the box's, whole seconds (positive: the box is behind); null before the first measurement. */
+  readonly offsetSeconds: number | null;
+  readonly lastCheckedAt: string | null;
+  readonly warnSeconds: number;
+  readonly flagSeconds: number;
+  /** OB-403: new prices, offers and a bill-number year held since `since`; the ids of those whose start has come (at most 50 each). */
+  readonly hold: { readonly held: boolean; readonly since?: string; readonly heldPromotions: readonly string[]; readonly heldPrices: readonly string[] };
 }
 
 /** R3 · P-08: the box's time-zone check as it rides the health report (its sentences stay on the box). */
@@ -142,6 +160,8 @@ export interface BoxHealthSources {
   readonly deadLetters?: () => Iterable<{ readonly payload: unknown; readonly occurredAt?: string }>;
   /** R3 · P-08: the box's own time-zone check, read when the report is made. */
   readonly zone?: () => BoxZoneReport;
+  /** §31.1 · OB-403: the box's clock check and its hold on new prices and offers, read when the report is made. */
+  readonly clock?: () => BoxClockSource;
   readonly now: () => string;
 }
 
@@ -160,6 +180,26 @@ export async function boxHealthReportOf(s: BoxHealthSources): Promise<BoxHealthR
     ...(issued === undefined ? {} : { receiptNumbersIssued: issued }),
     ...(billNumbering === undefined ? {} : { billNumbering }),
     ...(s.zone === undefined ? {} : { zoneCheck: zoneReport(s.zone()) }),
+    ...(s.clock === undefined ? {} : { clockCheck: clockReport(s.clock()) }),
+  };
+}
+
+/** What the box's clock guard and hold say (`ClockCheck`, `ActivationHoldReport`), before they are cut to the report. */
+export interface BoxClockSource {
+  readonly check: { readonly verdict: BoxClockReport['verdict']; readonly offsetSeconds: number | null; readonly lastCheckedAt: string | null; readonly thresholds: { readonly warnSeconds: number; readonly flagSeconds: number } };
+  readonly hold: { readonly held: boolean; readonly since: string | null; readonly heldPromotions: readonly { readonly id: string }[]; readonly heldPrices: readonly { readonly id: string }[] };
+}
+
+/** §31.1 · OB-403: only the facts head office needs — the staff sentences stay on the box; at most 50 ids of each kind. */
+export function clockReport(c: BoxClockSource): BoxClockReport {
+  return {
+    verdict: c.check.verdict, offsetSeconds: c.check.offsetSeconds, lastCheckedAt: c.check.lastCheckedAt,
+    warnSeconds: c.check.thresholds.warnSeconds, flagSeconds: c.check.thresholds.flagSeconds,
+    hold: {
+      held: c.hold.held, ...(c.hold.held && c.hold.since !== null ? { since: c.hold.since } : {}),
+      heldPromotions: c.hold.heldPromotions.slice(0, 50).map((p) => p.id.slice(0, 80)),
+      heldPrices: c.hold.heldPrices.slice(0, 50).map((p) => p.id.slice(0, 80)),
+    },
   };
 }
 

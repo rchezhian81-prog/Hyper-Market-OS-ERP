@@ -178,6 +178,8 @@ export interface PosLane {
   readonly tillDeliveryFeeProductId?: string | null;
   /** OB-288 P4 (R8-9 · OB-316): this lane's rollout switches, resolved by the box from the signed pack (read by lane-rollout.ts). */
   readonly rollout?: unknown;
+  /** OB-403 "A" · §31.1: the store computer's clock is 5+ minutes out — no offer starting after `cutoffAt` applies. */
+  readonly offerHold?: { readonly held: boolean; readonly cutoffAt: string | null };
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -950,6 +952,8 @@ export function bootPos(config?: {
   taxPercent?: number;
   /** The lane's cached catalogue snapshot; without it, barcode scanning is off. */
   catalogue?: CatalogueSnapshot;
+  /** OB-403 "A" · §31.1: offers starting after this instant do not apply (the store computer's clock is out). Absent: none held. */
+  offerHoldCutoff?: string | null;
   /** Where this till's edge listens. Only ever loopback. */
   lanePort?: number;
   /** Overridable for tests. Production always goes to this till's own edge. */
@@ -1203,6 +1207,10 @@ export function bootPos(config?: {
   readonly lane: () => { readonly laneId: string | null; readonly tradingDayCutoff: string; readonly tradingDayAt: (atIsoUtc: string) => string };
   /** NEW-1 (B19): offers in the pack this till refused to apply because they target a carry bag — for the lane to say. */
   readonly refusedOffers: () => readonly RefusedOffer[];
+  /** OB-403 "A" · §31.1: the store computer's hold on new offers (its clock 5+ minutes out) — null lifts it. */
+  readonly holdOffersStartingAfter: (cutoffAt: string | null) => void;
+  /** OB-403: the loaded offers this till is not applying now, held while the store computer's clock is out. */
+  readonly heldOffers: () => readonly string[];
 } {
   const outbox = new SyncOutbox();
   // The lane's catalogue, once indexed below — the session reads each product's pack flags from it (B14 · B19).
@@ -1268,6 +1276,8 @@ export function bootPos(config?: {
   catalogueRef.cache = catalogue;
   // SF-01: the switched-on offers the signed pack carried — applied at checkout from the lane's own copy (P-01).
   session.loadPromotions(config?.catalogue?.promotions ?? []);
+  // OB-403 "A": a till opened while the store computer's clock is 5+ minutes out starts with the box's hold on new offers.
+  session.holdOffersStartingAfter(config?.offerHoldCutoff ?? null);
   const view = createPosView(session, 'INR', catalogue);
 
   // The till itself — money in and out of the drawer, refunds, closing the shift. A separate
@@ -2045,7 +2055,7 @@ export function bootPos(config?: {
   const realTrading = (): boolean => config?.realTrading === true;
   const readMachineRef = (typed: string): MachineRefReading => readMachineReference(typed);
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -2067,6 +2077,8 @@ if (browserWindow !== undefined && (globalThis as { sreQueueTill?: unknown }).sr
     ...(typeof lane?.timeZone === 'string' && lane.timeZone !== '' ? { timeZone: lane.timeZone } : {}), // R1: the shop's zone
     // B6: this lane's scales as the box's store pack names them; a page without them sells nothing by weight.
     ...(lane?.scales === undefined ? {} : { laneScales: lane.scales }),
+    // OB-403 "A" · §31.1: the box's hold on new offers while its clock is 5+ minutes out (re-read with the badge every 10 s).
+    ...(lane?.offerHold?.held === true && typeof lane.offerHold.cutoffAt === 'string' ? { offerHoldCutoff: lane.offerHold.cutoffAt } : {}),
     ...(Array.isArray(lane?.soldHuids) ? { soldHuids: lane.soldHuids } : {}),
     // OB-252: guest sales only, when the box says so (store pack or the box's own setting).
     ...(lane?.guestSalesOnly?.on === true ? { guestSalesOnly: true } : {}),

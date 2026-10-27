@@ -138,6 +138,7 @@ import { join } from 'node:path';
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
 import { readHeldWorkFeeds, writeHeldWorkFeeds, type HeldWorkFeeds } from './work-feeds-file';
 import { ClockGuard, clockObservingFetch, readClockThresholds, type ClockCheck } from './clock-guard';
+import { activationHoldReport, type ActivationHoldReport } from './activation-hold';
 import type { BoxCapturedRun } from './store-work';
 
 /** The returns pipeline's own cursor file, so the sale and refund logs advance independently. */
@@ -532,6 +533,8 @@ export interface EdgeProcess {
   readonly refreshWorkFeeds: (() => Promise<readonly WorkFeedPullOutcome[]>) | null;
   /** OB-288 lane 2 · §31.1 · OB-327: this box's clock against head office's, as last measured. */
   readonly clockCheck: () => ClockCheck;
+  /** OB-403 "A" · §31.1: what this box holds (new prices, offers, bill-number year) while its clock is 5+ minutes out. */
+  readonly activationHold: () => ActivationHoldReport;
   /** R1a (M01-FR-02 · P-08): this machine's time zone against the shop's, as the signed pack names it. */
   readonly zoneCheck: () => ZoneCheck;
   /**
@@ -1392,7 +1395,10 @@ export async function startEdge(
   const syncStatus = (): LaneSyncStatus => {
     const s = syncStatusRelay.current?.()
       ?? laneSyncStatus({ configured: 'starting', queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
-    return storeComputer === undefined ? s : { ...s, storeComputer: storeComputer.current() };
+    // OB-403 "A" · §31.1: the till reads this every 10 s and applies no offer starting after the cut-off while it is held.
+    const hold = seriesClockRef.guard?.activationHold();
+    const withHold = hold === undefined ? s : { ...s, offerHold: { held: hold.held, cutoffAt: hold.held ? hold.cutoffAt : null } };
+    return storeComputer === undefined ? withHold : { ...withHold, storeComputer: storeComputer.current() };
   };
 
   // ── The till's cash, on the box (SP-4c · F10 · M14-FR-01 · M14-FR-02) ──────────────────────────────────────────
@@ -1581,7 +1587,8 @@ export async function startEdge(
   // moves to the new year's prefix once the clock is back in step. Never blocks a sale (hard rule #1).
   const seriesClockRef: { guard?: ClockGuard } = {};
   const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
-    seriesClock: () => ({ nowIso: new Date().toISOString(), trusted: seriesClockRef.guard?.check().verdict !== 'flag_bills' }),
+    // OB-403 "A": the same hold as new prices and offers (the clock guard's `activationHold`, from its fsync'd log).
+    seriesClock: () => ({ nowIso: new Date().toISOString(), trusted: seriesClockRef.guard?.activationHold().held !== true }),
     // M01-FR-02 (T1): the year a bill is in is its date in the SHOP's zone, from the current signed pack (shop-zone.ts).
     timeZone: () => packTimeZone(pack),
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
@@ -2003,6 +2010,12 @@ export async function startEdge(
   if (clockSetting.problem !== undefined) say(clockSetting.problem);
   const clockGuard = await ClockGuard.open(clockSetting.thresholds, settings['EDGE_DATA_DIR']!);
   seriesClockRef.guard = clockGuard; // A2: the bill series' year switch now follows the clock check
+  /** OB-403 "A" · §31.1: what this box holds while its clock is 5+ minutes out — the offers and prices due, by name. */
+  const activationHoldNow = (now: string): ActivationHoldReport => activationHoldReport({
+    hold: clockGuard.activationHold(), pack, now, tradingDay: packTradingDay(pack, now),
+    promotions: node.pack()?.snapshot.promotions ?? [],
+    priceEntries: pack.priceEntries.known ? pack.priceEntries.value : [],
+  });
   /** OB-333: the quality-hold releases this box's facilities screen took and still holds (the device-events queue). */
   const boxQualityReleases = (): readonly { batchId: string; releasedBy: string; at: string; state: string; reason: string | null }[] => deviceEventsOutbox.all()
     .filter((i) => i.event.type === 'QualityHoldReleaseDecided')
@@ -2132,6 +2145,7 @@ export async function startEdge(
       clock: clockGuard.check(),
       clockFlaggedBills: clockGuard.flaggedBills(recordsNow.sales),
       zone: zoneNow(), // R1a · P-08: the machine's zone against the shop's
+      activationHold: activationHoldNow(now), // OB-403 "A" · §31.1: what the 5-minute clock flag is holding
     };
   };
 
@@ -2495,7 +2509,7 @@ export async function startEdge(
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
       agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, refreshLoyaltyWallets: null, loyaltyWallets, refreshConcessionTrading: null, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
-      refreshWorkFeeds: null, clockCheck: () => clockGuard.check(), zoneCheck: zoneNow,
+      refreshWorkFeeds: null, clockCheck: () => clockGuard.check(), activationHold: () => activationHoldNow(new Date().toISOString()), zoneCheck: zoneNow,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -2910,6 +2924,8 @@ export async function startEdge(
       now: () => new Date().toISOString(),
       // R3 · P-08: this machine's zone against the shop's — told to head office as well as said on the box's screens.
       zone: zoneNow,
+      // §31.1 · OB-403 "A": this box's clock against head office's, and what it is holding while 5+ minutes out.
+      clock: () => ({ check: clockGuard.check(), hold: activationHoldNow(new Date().toISOString()) }),
       disk: async () => {
         const fsInfo = await statfs(settings['EDGE_DATA_DIR']!);
         return {
@@ -3164,6 +3180,7 @@ export async function startEdge(
     refreshIndentsFeed,
     refreshWorkFeeds,
     clockCheck: () => clockGuard.check(),
+    activationHold: () => activationHoldNow(new Date().toISOString()),
     zoneCheck: zoneNow,
     refreshAssignmentsFeed,
     refreshLoyaltyWallets,

@@ -1310,6 +1310,8 @@ function publishToDisplay() {
 // Read at each poll, not once: the box names its socket in the served page, and a box that vanishes must be noticed.
 const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : 'http://127.0.0.1:8090');
 let box = { asked: false, reachable: false, status: null };
+/** OB-403: the store computer's hold on new offers as the till last applied it (the page booted with the box's). */
+let offerHoldCutoff = (window.posLane && window.posLane.offerHold && window.posLane.offerHold.held === true && typeof window.posLane.offerHold.cutoffAt === 'string') ? window.posLane.offerHold.cutoffAt : null;
 
 /** The local clock face for a box time — the person reading it is standing in the shop. */
 function clock(iso) {
@@ -1385,6 +1387,13 @@ async function refreshBadge() {
     clearTimeout(timer);
   }
   if (typeof session.setConnection === 'function') session.setConnection(connectionFor(box));
+  // OB-403 "A" · §31.1: the store computer's hold on new offers while its clock is 5+ minutes out. Only an answer from the
+  // box changes it — an unreachable box leaves the hold as it last said (never lifted by silence).
+  if (box.reachable && box.status && box.status.offerHold && typeof session.holdOffersStartingAfter === 'function') {
+    const h = box.status.offerHold;
+    const cutoff = h.held === true && typeof h.cutoffAt === 'string' ? h.cutoffAt : null;
+    if (cutoff !== offerHoldCutoff) { offerHoldCutoff = cutoff; session.holdOffersStartingAfter(cutoff); render(); }
+  }
   paintBadge();
 }
 void refreshBadge();
