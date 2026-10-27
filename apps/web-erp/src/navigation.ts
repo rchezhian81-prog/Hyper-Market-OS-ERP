@@ -31,8 +31,8 @@ export interface NavItem {
    * it, so the menu the box draws may offer it. `unserved` — the page exists in `apps/web-erp/web` but no product
    * component serves it yet, so the box omits it rather than offer a dead link (none since OB-380, 26 Oct 2026: the
    * store computer serves every office page head office answers). `unbuilt` — no page exists; the
-   * item stays in the catalogue so the gap is named, not forgotten. Both non-box states are listed in the unit
-   * test and in docs/STATUS.md, and shrink as screens are built and served.
+   * item stays in the catalogue so the gap is named, not forgotten (none since OB-401, 27 Oct 2026: Reconciliation and
+   * Settings open existing pages). Both non-box states are listed in the unit test and in docs/STATUS.md.
    */
   readonly served?: 'box' | 'unserved' | 'unbuilt';
 }
@@ -184,7 +184,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // settlement and the dates that stop a counter trading. Gated on the read its routes check (`concession.charge.read`).
   { id: 'concessions', label: 'Concessions', labelTa: 'சலுகைக் கவுண்டர்கள்', path: '/concessions', requires: 'concession.charge.read', group: 'Finance' },
   // ── OB-288 commercial desks — end
-  { id: 'reconciliation', label: 'Reconciliation', labelTa: 'சரிக்கட்டல்', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance', served: 'unbuilt' },
+  // OB-401 (owner, 27 Oct 2026): "Reconciliation" opens the month-end checks page that already exists — its first section is
+  // the card and UPI payments with no answer, raised by the store or carried by a day close. Gated as that page is.
+  { id: 'reconciliation', label: 'Reconciliation', labelTa: 'சரிக்கட்டல்', path: '/finance-close?tab=payments', requires: 'finance.period.read', group: 'Finance' },
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
   { id: 'gst-reconciliation', label: 'GST reconciliation', labelTa: 'GST சரிக்கட்டல்', path: '/gst-reconciliation', requires: 'finance.einvoice.read', group: 'Finance' },
@@ -285,7 +287,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // permission the register route checks (`platform.setup.read`), so the menu never offers a screen the server
   // would refuse; the writes need `platform.setup.write` and the screen withholds them without it.
   { id: 'document-templates', label: 'Document templates', labelTa: 'ஆவண வார்ப்புருக்கள்', path: '/document-templates', requires: 'platform.setup.read', group: 'Administration' },
-  { id: 'settings', label: 'Settings', labelTa: 'அமைப்புகள்', path: '/admin/settings', requires: 'admin.settings.manage', group: 'Administration', served: 'unbuilt' },
+  // OB-401 (owner, 27 Oct 2026): "Settings" opens Store setup, where the shop's settings are kept. Gated as that page is.
+  // (`?tab=settings` names no section; it only lets the rail mark this item, not Store setup, when it was the one used.)
+  { id: 'settings', label: 'Settings', labelTa: 'அமைப்புகள்', path: '/setup?tab=settings', requires: 'platform.setup.read', group: 'Administration' },
   { id: 'audit', label: 'Audit log', labelTa: 'தணிக்கைப் பதிவு', path: '/admin/?tab=records', requires: 'audit.retention.read', group: 'Administration' },
   // Operations — the A06 incident inbox (a stuck sync queue, a growing dead-letter pile, an unwell
   // connection, each with its runbook). Gated on the SAME permission the worklist route checks
