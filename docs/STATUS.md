@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Re-audit after batch 9 (27 October 2026): four software gaps the batch-10 re-audit counted as done, and owner decisions OB-403 to OB-405
+
+**What changed**
+- **Read this beside batch 10 below.** Both re-audits ran on 27 Oct, in parallel.
+  - Batch 10 found 0 rows partly done.
+  - This one was checked again on `main` after batch 10 merged. It finds four software gaps still open, shown in the code and tests:
+    - the §31.1 hold on new prices and offers while the clock is out;
+    - a supplier rebate claim document (D03-FR-03; §28 "Finance approves rebate claims");
+    - a web-ERP rebates page (QG-02/M06);
+    - a WF-18 test that gives the receivables close check figures.
+  - Batch 10 closed QG-02's tap-register item (OB-394).
+- A read-only re-audit at `e7eb5fd` of the 185 rows not DONE on 23 Oct. The report is `docs/audit/REAUDIT-2026-10-27.md`; the lane tables are in `docs/audit/reaudit-2026-10-27/`. The 25 Oct tables were never committed, so this one is.
+- Whole roadmap (391 rows): Done 340, Partial 5, Missing 0, Decision 0, External 39, Deferred 7.
+  - External is higher than on 25 Oct (22) because this audit counts a finished row that still names an outside piece as EXTERNAL.
+  - All 7 deferrals are in writing to R8.
+- No code changed.
+- Closed PR #813: it duplicated the journal-body fix that batch 9 (#814) already merged.
+
+**Tests run**
+- The cited unit, integration, guardrail and performance files in each lane, all passing: 268 files and 1,489 tests, 27 skipped (PostgreSQL legs).
+- Browser and PostgreSQL halves were not run here; they run in CI.
+
+**Owner decisions (27 Oct 2026, in writing)**
+- OB-403 = D-1 A: hold new prices and offers at the 5-minute clock flag, and alert head office and the owner.
+- OB-404 = D-2 A: a supplier rebate claim document.
+- OB-405 = D-3 B: Mr Sivakumar is the interim named security reviewer.
+
+**What is next (one final batch, after this PR merges)**
+- **QG-02 / M06:** a web-ERP rebates page (the OB-394 tap exception was closed in batch 10).
+- **§31.1 / OB-403:** the clock-drift hold on new prices, offers and bill-year changes, with its alert to head office and the owner.
+- **D03-FR-03 / OB-404:** the rebate claim document.
+- **WF-18:** a test that gives the receivables close check real figures.
+- **B15:** put the tobacco warning board on the go-live checklist.
+- **OB-405:** record Mr Sivakumar as the reviewer where the D14-FR-05 and R8-7 release checks look for one.
+
+**Blocked / external**
+- As before:
+  - real hardware;
+  - live providers;
+  - the CA and legacy data;
+  - staff UAT and rehearsals;
+  - the pen test.
+
+**Needs an owner decision**
+- None open.
+
+---
+
 ## OB-288 final gaps, batch 10 (27 October 2026): the final re-audit closed; last tidy-ups
 
 **The final re-audit (27 Oct, all 391 roadmap rows, checked in code and tests on main after PR #814)**
