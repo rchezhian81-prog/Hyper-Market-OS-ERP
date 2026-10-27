@@ -6,6 +6,10 @@ import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '.
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { FORGET_KEPT_PAGES_SCRIPT, SIGN_IN_CLOCK_MESSAGE, SIGN_IN_ENDED_MESSAGE, DRIVER_SIGN_IN_ENDED_MESSAGE, signInEndedMessageFor } from '../../edge/store-edge/src/handheld-sign-in';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
+
+// OB-422: the handheld door is https; this suite trusts the box's authority as an enrolled phone does.
+const fetch = trustTheBoxes(globalThis.fetch);
 
 /**
  * **OB-186 "A" (owner, 17 Oct 2026, "Lock the screen") on the REAL store computer (`startEdge`), no head office.**
@@ -43,7 +47,7 @@ describe('OB-186: each handheld screen carries the sign-in page it locks to', ()
       EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
-    const device = `http://127.0.0.1:${edge.devices!.port}`;
+    const device = boxDoor(edge);
     const enrol = await fetch(`${device}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: 'hh-01', code: CODE }) });
     expect(enrol.status).toBe(200);
     const phone = enrol.headers.get('set-cookie')!.split(';')[0]!;

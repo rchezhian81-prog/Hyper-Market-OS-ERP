@@ -49,8 +49,9 @@ function filesUnder(fs, p, dir) {
 }
 
 /** The till's settings with its folders pointed at the data folder, and the status file named. Values otherwise kept. */
-export function rewriteTillEnv(text, { edgeData, witness, statusFile }) {
-  const set = { EDGE_DATA_DIR: edgeData, EDGE_WITNESS_DIR: witness, EDGE_STORE_COMPUTER_STATUS_FILE: statusFile };
+export function rewriteTillEnv(text, { edgeData, witness, statusFile, deviceTls }) {
+  // OB-422: the handheld door's lock moves with the till's folders (on this computer only) and is named, so it is never lost.
+  const set = { EDGE_DATA_DIR: edgeData, EDGE_WITNESS_DIR: witness, EDGE_STORE_COMPUTER_STATUS_FILE: statusFile, ...(deviceTls === undefined ? {} : { EDGE_DEVICE_TLS_DIR: deviceTls }) };
   const done = new Set();
   const out = String(text).split(/\r?\n/).map((raw) => {
     const line = raw.trim();
@@ -112,6 +113,7 @@ export async function migrateDataFolder(given, opts = {}) {
   const stamp = stampOf(deps.now());
   const edgeDataNew = p.join(data.tillDir, 'edge-data');
   const witnessNew = p.join(data.tillDir, 'edge-witness');
+  const deviceTlsNew = p.join(data.tillDir, 'edge-data-device-tls');
   // What moves: folders inside the release folder only. A till folder already outside it is left exactly where it is.
   const moves = [];
   const folder = (from, to, what) => { if (fs.existsSync(from) && inside(p, deps.repoRoot, from)) moves.push({ from, to, what }); };
@@ -119,6 +121,7 @@ export async function migrateDataFolder(given, opts = {}) {
   if (oldTill.installed) {
     folder(oldTill.edgeData, edgeDataNew, "the till's data (sales, queue, dead letters, PIN checks)");
     folder(oldTill.witness, witnessNew, "the till's bill-number witness");
+    folder(oldTill.deviceTls, deviceTlsNew, "the handheld door's lock (it stays on this computer)");
   }
   const made = [];
   const copied = [];
@@ -137,8 +140,9 @@ export async function migrateDataFolder(given, opts = {}) {
     if (oldTill.installed) {
       const edgeData = moves.some((m) => m.from === oldTill.edgeData) ? edgeDataNew : oldTill.edgeData;
       const witness = moves.some((m) => m.from === oldTill.witness) ? witnessNew : oldTill.witness;
+      const deviceTls = moves.some((m) => m.from === oldTill.deviceTls) ? deviceTlsNew : oldTill.deviceTls;
       fs.mkdirSync(data.tillDir, { recursive: true });
-      fs.writeFileSync(data.tillEnv, rewriteTillEnv(fs.readFileSync(legacy.tillEnv, 'utf8'), { edgeData, witness, statusFile: data.statusFile }), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+      fs.writeFileSync(data.tillEnv, rewriteTillEnv(fs.readFileSync(legacy.tillEnv, 'utf8'), { edgeData, witness, statusFile: data.statusFile, deviceTls }), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
       made.push(data.tillEnv);
     }
     // The settings file LAST: until it is in the data folder, every command still uses the old place.
@@ -227,7 +231,7 @@ export async function moveDataFolder(deps, from, toRoot) {
     }
     if (till.installed) {
       fs.mkdirSync(to.tillDir, { recursive: true });
-      fs.writeFileSync(to.tillEnv, rewriteTillEnv(fs.readFileSync(from.tillEnv, 'utf8'), { edgeData: mapped(till.edgeData), witness: mapped(till.witness), statusFile: to.statusFile }), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+      fs.writeFileSync(to.tillEnv, rewriteTillEnv(fs.readFileSync(from.tillEnv, 'utf8'), { edgeData: mapped(till.edgeData), witness: mapped(till.witness), statusFile: to.statusFile, deviceTls: mapped(till.deviceTls) }), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
       made.push(to.tillEnv);
     }
     // The settings file LAST, then the record of the new place: until both are there, every command uses the old folder.

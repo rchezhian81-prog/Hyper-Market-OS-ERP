@@ -54,11 +54,10 @@
 
 ## What this decision does NOT do
 
-- **No TLS on the shop-network leg yet.** The device socket speaks plain HTTP on the LAN, so the cookie and the
-  assignment are readable by a device that can already read the shop's wifi traffic. Until TLS is added at the device
-  socket (Stage E follow-up), the handhelds must be on a staff-only WPA2/WPA3 network, separate from any guest wifi — an
-  operator control recorded in the owner action register. The lane socket's and the screens server's loopback binds do
-  not depend on this.
+- ~~No TLS on the shop-network leg yet.~~ **Superseded by ADR-0030 (OB-422, 27 Oct 2026):** the device socket now
+  speaks TLS only, under a signing authority the store computer makes for itself and each device trusts once, at
+  enrolment; plain http on the port is refused in words; the cookies are `Secure`. The staff-only WPA2/WPA3 wifi (OA-16)
+  stays as defence in depth. The lane socket's and the screens server's loopback binds do not depend on this.
 - **The pack's `devices` register is file-fed today** (as `approvals` and `warehouse` are). The cloud registry holds the
   hashes; the cloud → pack section feed is the SP-9 pack work. Until then the operator carries the fleet register into
   the pack file — never a code, only its hash.
@@ -92,7 +91,7 @@ Not a §19 substitution: the same Node process, the same containers, the same fi
 
 ## Reconsider-when
 
-- TLS is added at the box (per-box certificate the handhelds trust at enrolment) — the plaintext caveat above falls away.
+- ~~TLS is added at the box~~ — done: ADR-0030 (OB-422).
 - The cloud delivers the pack's `devices` section itself (SP-9) — enrolment codes then reach the box with no operator
   step.
 - A second store shares handhelds between boxes — a device would need a credential per box, or a cloud-issued one.

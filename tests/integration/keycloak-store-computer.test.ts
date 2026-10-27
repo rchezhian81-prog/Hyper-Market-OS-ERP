@@ -134,7 +134,9 @@ describe.skipIf(!READY).sequential('a real Keycloak: the store computer carries 
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT!, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_PACK_FILE: packFile,
       EDGE_SCREEN_PORT: String(BOX_PORT), EDGE_APPS_DIR: 'apps',
-      CLOUD_API_URL: `http://127.0.0.1:${api!.port}`, CLOUD_API_TOKEN: randomBytes(24).toString('hex'), EDGE_HEAD_OFFICE_SIGN_IN_ISSUER: ISSUER,
+      CLOUD_API_URL: `http://127.0.0.1:${api!.port}`, // A box token head office believes: a made-up one fails sign-in on every background pass, and five failures from
+      // 127.0.0.1 lock that address — the same one the person's carried session arrives from (the intermittent 429).
+      CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: TENANT!, branchId: 'store-1' }), EDGE_HEAD_OFFICE_SIGN_IN_ISSUER: ISSUER,
     }, () => {}))!;
   }, 120_000);
 

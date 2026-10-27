@@ -343,7 +343,9 @@ export function tillFolders(deps, L) {
   const env = deps.fs.existsSync(L.tillEnv) ? parseEnvText(deps.fs.readFileSync(L.tillEnv, 'utf8')) : undefined;
   const edgeData = typeof env?.EDGE_DATA_DIR === 'string' && env.EDGE_DATA_DIR.trim() !== '' ? p.resolve(env.EDGE_DATA_DIR.trim()) : p.join(L.tillDir, 'edge-data');
   const witness = typeof env?.EDGE_WITNESS_DIR === 'string' && env.EDGE_WITNESS_DIR.trim() !== '' ? p.resolve(env.EDGE_WITNESS_DIR.trim()) : `${edgeData.replace(/[\\/]+$/, '')}-witness`;
-  return { installed: env !== undefined, env, edgeData, witness, lanePort: Number(env?.EDGE_LANE_PORT || 8090) };
+  // OB-422: the handheld door's lock (the store computer's own signing authority's private key) — never in a backup.
+  const deviceTls = typeof env?.EDGE_DEVICE_TLS_DIR === 'string' && env.EDGE_DEVICE_TLS_DIR.trim() !== '' ? p.resolve(env.EDGE_DEVICE_TLS_DIR.trim()) : `${edgeData.replace(/[\\/]+$/, '')}-device-tls`;
+  return { installed: env !== undefined, env, edgeData, witness, deviceTls, lanePort: Number(env?.EDGE_LANE_PORT || 8090) };
 }
 
 /**
@@ -363,6 +365,7 @@ export function takeStoreBackup(deps, ctx, dir, key) {
   const till = tillFolders(deps, L);
   const inside = (root, x) => { const r = p.relative(root, x); return r === '' || (!r.startsWith('..') && !p.isAbsolute(r)); };
   if (inside(till.edgeData, till.witness)) return { ok: false, problem: `the till's bill-number witness (${till.witness}) is inside its data folder, so a backup would carry it (OB-87). Send me a photo of this screen.` };
+  if (inside(till.edgeData, till.deviceTls)) return { ok: false, problem: `the handheld door's lock (${till.deviceTls}) is inside the till's data folder, so a backup would carry its private key off this computer (OB-422). Send me a photo of this screen.` };
 
   const at = deps.now();
   const manifestPath = freshName(deps, dir, `${PROJECT}-backup-${stampOf(at)}`, '.manifest.json');

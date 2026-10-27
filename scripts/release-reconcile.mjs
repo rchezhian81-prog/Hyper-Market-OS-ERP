@@ -15,18 +15,24 @@
 //       Print the last ledger sequence a snapshot saw (exit 1 when it is not a snapshot).
 //   node scripts/release-reconcile.mjs compare <before.json> <after.json> [--max-backlog-growth N] [--max-dead-letter-growth N] [--json <out>]
 //       RECONCILED (exit 0) or every DIFFERENCE in words (exit 1). An unreadable snapshot is a difference, never a pass.
-//   node scripts/release-reconcile.mjs qg10 --sha S --previous P --by A --run R --box B --outcome O
+//   node scripts/release-reconcile.mjs qg10 --sha S --previous P --by A --run R --attempt N --box B --outcome O
 //         --health X --smoke X --reconciliation X --monitoring X --rollback X [--differences <compare --json file>]
 //       Print the QG-10 evidence line for this release (JSON). It is evidence for the owner's decision, never a GO.
+//   node scripts/release-reconcile.mjs post-qg10 --line <qg10 line file> --url <head office> [--token-file <key file>]
+//       OB-423: post that line to head office's gate register under the release script's own machine identity. The key is
+//       READ FROM THE FILE the custodian put on the box (SRE_QG10_PUSH_TOKEN_FILE) — never an argument, never printed.
+//       Prints one sentence: posted, already there, or NOT POSTED and why (no key, unreachable, refused). Exit 0 when the
+//       note is on the register, 3 when it is not — release.sh says it and carries on either way (P-08).
 //
 // Exit codes: 0 ok / reconciled · 1 a difference, or a snapshot that cannot be read · 64 usage.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { compareSnapshots, parseSnapshot, qg10Record } from './lib/release-reconcile.mjs';
+import { createHash } from 'node:crypto';
+import { compareSnapshots, parseSnapshot, qg10Record, postQg10Note } from './lib/release-reconcile.mjs';
 
 const [, , verb, ...rest] = process.argv;
 const usage = () => {
-  process.stderr.write('usage: release-reconcile.mjs snapshot [--upto <seq>] | max-seq <before.json> | compare <before.json> <after.json> [--max-backlog-growth N] [--max-dead-letter-growth N] [--json <out>] | qg10 --sha … \n');
+  process.stderr.write('usage: release-reconcile.mjs snapshot [--upto <seq>] | max-seq <before.json> | compare <before.json> <after.json> [--max-backlog-growth N] [--max-dead-letter-growth N] [--json <out>] | qg10 --sha … | post-qg10 --line <file> --url <head office> [--token-file <key file>]\n');
   process.exit(64);
 };
 const flag = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
@@ -102,12 +108,38 @@ function qg10() {
   const from = flag('--differences');
   if (from !== undefined) { try { differences = JSON.parse(readFileSync(from, 'utf8')).differences ?? []; } catch { differences = ['the reconcile result could not be read back']; } }
   const record = qg10Record({
-    sha: need('sha'), previous: need('previous'), by: need('by'), run: need('run'), box: need('box'), outcome: need('outcome'),
+    sha: need('sha'), previous: need('previous'), by: need('by'), run: need('run'), attempt: need('attempt'), box: need('box'), outcome: need('outcome'),
     at: new Date().toISOString(),
     checks: { health: need('health'), smoke: need('smoke'), reconciliation: need('reconciliation'), monitoring: need('monitoring'), rollback: need('rollback') },
     differences,
   });
   process.stdout.write(`${JSON.stringify(record)}\n`);
+}
+
+async function postQg10() {
+  const linePath = flag('--line');
+  if (linePath === undefined) usage();
+  let line = '';
+  try { line = readFileSync(linePath, 'utf8').trim(); } catch { line = ''; }
+  // The key: only from the file the custodian placed on the box. Its text is never printed, logged or passed on a command line.
+  const keyFile = (flag('--token-file') ?? '').trim();
+  let token = ''; let noKeyBecause;
+  if (keyFile === '') noKeyBecause = 'no key is configured on this box (SRE_QG10_PUSH_TOKEN_FILE is not set)';
+  else {
+    try { token = readFileSync(keyFile, 'utf8').trim(); } catch (e) {
+      noKeyBecause = e && typeof e === 'object' && e.code === 'ENOENT'
+        ? 'the key file named by SRE_QG10_PUSH_TOKEN_FILE is not on this box'
+        : 'the key file named by SRE_QG10_PUSH_TOKEN_FILE cannot be read by the release script';
+    }
+    if (noKeyBecause === undefined && token === '') noKeyBecause = 'the key file named by SRE_QG10_PUSH_TOKEN_FILE is empty';
+  }
+  const out = await postQg10Note({
+    line, url: flag('--url') ?? '', token, ...(noKeyBecause === undefined ? {} : { noKeyBecause }),
+    idempotencyKey: `qg10-note-${createHash('sha256').update(line).digest('hex').slice(0, 40)}`,
+    fetch: (url, init) => globalThis.fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
+  });
+  process.stdout.write(`${out.words}\n`);
+  process.exitCode = out.posted ? 0 : 3;
 }
 
 if (verb === 'snapshot') await snapshot();
@@ -117,4 +149,5 @@ else if (verb === 'max-seq') {
   process.stdout.write(`${s.ledger.maxSeq}\n`);
 } else if (verb === 'compare') compare();
 else if (verb === 'qg10') qg10();
+else if (verb === 'post-qg10') await postQg10();
 else usage();

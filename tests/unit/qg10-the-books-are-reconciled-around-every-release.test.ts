@@ -53,7 +53,7 @@ describe('compareSnapshots — the books before and after a release', () => {
 });
 
 describe('qg10Record — one evidence line per release', () => {
-  const base = { sha: 'a'.repeat(40), previous: 'b'.repeat(40), at: 't', by: 'octocat', run: '1', box: 'demo', outcome: 'deployed' };
+  const base = { sha: 'a'.repeat(40), previous: 'b'.repeat(40), at: 't', by: 'octocat', run: '1', attempt: '1', box: 'demo', outcome: 'deployed' };
   it('verified only when health, smoke, reconciliation and monitoring are verified and rollback is ready (or was exercised and came back)', () => {
     const all = qg10Record({ ...base, checks: { health: 'verified', smoke: 'verified', reconciliation: 'verified', monitoring: 'verified', rollback: 'ready' } });
     expect(all).toMatchObject({ gate: 'QG-10', verified: true, notVerified: [], passCondition: 'Health, smoke, reconciliation, monitoring and rollback verified after every release.' });
@@ -83,11 +83,11 @@ describe('the release-reconcile command line', () => {
       expect(bad.stdout).toContain('DIFFERENCE — 1 new dead letter(s) in the outbox since the release');
       expect(run('max-seq', join(dir, 'b.json')).stdout.trim()).toBe('10');
       expect(run('max-seq', join(dir, 'nothing.json')).status).toBe(1);
-      const line = run('qg10', '--sha', 'a'.repeat(40), '--previous', 'b'.repeat(40), '--by', 'octocat', '--run', '9', '--box', 'demo', '--outcome', 'rolled_back_on_reconcile',
+      const line = run('qg10', '--sha', 'a'.repeat(40), '--previous', 'b'.repeat(40), '--by', 'octocat', '--run', '9', '--attempt', '2', '--box', 'demo', '--outcome', 'rolled_back_on_reconcile',
         '--health', 'verified', '--smoke', 'verified', '--reconciliation', 'failed', '--monitoring', 'verified', '--rollback', 'exercised_ok', '--differences', join(dir, 'r.json'));
       expect(line.status).toBe(0);
-      const rec = JSON.parse(line.stdout) as { verified: boolean; differences: string[]; outcome: string };
-      expect(rec).toMatchObject({ verified: false, outcome: 'rolled_back_on_reconcile' });
+      const rec = JSON.parse(line.stdout) as { verified: boolean; differences: string[]; outcome: string; run: string; attempt: string };
+      expect(rec).toMatchObject({ verified: false, outcome: 'rolled_back_on_reconcile', run: '9', attempt: '2' }); // OB-423 (a): the run and the attempt are in the line
       expect(rec.differences[0]).toMatch(/new dead letter/);
       expect(JSON.parse(readFileSync(join(dir, 'r.json'), 'utf8'))).toMatchObject({ ok: false });
       const snap = run('snapshot');

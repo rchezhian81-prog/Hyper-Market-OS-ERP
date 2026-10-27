@@ -213,7 +213,7 @@ export function apiHarness(opts: {
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
     provisionRole: async (tenantId, userId, roleId, branchScope) => {
       if (roleId === 'store_computer' && branchScope !== undefined && branchScope !== 'all' && branchScope.length === 1) boxStores.set(`${tenantId}\u0000${userId}`, branchScope[0]!);
-      if (roleId === 'backup_job' || roleId === 'findings_push' || roleId === 'floor_device_gateway') machines.add(`${tenantId}\u0000${userId}`);
+      if (roleId === 'backup_job' || roleId === 'findings_push' || roleId === 'floor_device_gateway' || roleId === 'qg10_release_evidence') machines.add(`${tenantId}\u0000${userId}`);
       await appendGrant(store, tenantId, userId, roleId, branchScope);
     },
     enableFeature: (tenantId, feature) => appendEntitlement(store, tenantId, feature, true),

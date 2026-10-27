@@ -16,6 +16,11 @@ import { phoneStamper, readPhoneSignIn } from '../../packages/sync/src/sign-in-s
 import { tillPinKey } from '../../packages/identity/src/till-pin';
 import { peopleFrom, permissionsOf } from '../../edge/store-edge/src/screen-navigation';
 import { withTillPeople, issueTillPins, pinOf } from '../support/till-operator';
+import { ensureDeviceTls } from '../../edge/store-edge/src/device-tls';
+import { deviceBase, trustTheBoxes } from '../support/box-tls';
+
+// OB-422: the door speaks https only; this suite talks to it as an enrolled device does — trusting the box's authority.
+const fetch = trustTheBoxes(globalThis.fetch);
 
 /**
  * **The store box's DEVICE socket serves the handheld screens and the device routes to ENROLLED handhelds, and nothing
@@ -77,7 +82,11 @@ describe('the device socket', () => {
     const snapshot = (): ScreenInput => ({ pack, sales: [], unreadableRecords: 0, outbox: new SyncOutbox(), now: NOW, tradingDay: '2026-09-30' });
     const relayed: Started['relayed'] = [];
     const devices = { current: 'devices' in opts ? opts.devices : (PACK.devices as PackDevice[]) };
+    const tlsDir = join(dir, 'device-tls');
+    const made = ensureDeviceTls({ dir: tlsDir, addresses: ['127.0.0.1'], now: new Date() });
+    if (!made.ok) throw new Error(made.problem);
     const server = await startDeviceServer({
+      tls: { dir: tlsDir, addresses: ['127.0.0.1'], material: made.tls },
       port: 0, ...(opts.host === undefined ? {} : { host: opts.host }), appsDir: 'apps', snapshot, enrolments,
       devices: () => devices.current,
       relayDeviceEvents: async (batch): Promise<RelayReply> => {
@@ -90,7 +99,7 @@ describe('the device socket', () => {
       now: () => NOW,
     });
     servers.push(server);
-    return { base: `http://127.0.0.1:${server.port}`, relayed, devices, server };
+    return { base: deviceBase({ devices: server }), relayed, devices, server };
   }
 
   const enrol = async (base: string, deviceId: string, code: string): Promise<{ status: number; body: Record<string, unknown>; cookie: string | undefined }> => {
@@ -153,7 +162,7 @@ describe('the device socket', () => {
     const ok = await enrol(base, 'hh-01', CODE);
     expect(ok.status).toBe(200);
     expect(ok.body).toEqual({ enrolled: true, deviceId: 'hh-01', next: '/warehouse/' });
-    expect(ok.cookie).toMatch(new RegExp(`^${DEVICE_COOKIE}=hh-01\\.[0-9a-f]{64}; Path=/; HttpOnly; SameSite=Strict; Max-Age=\\d+$`));
+    expect(ok.cookie).toMatch(new RegExp(`^${DEVICE_COOKIE}=hh-01\\.[0-9a-f]{64}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=\\d+$`));
     const deviceCookie = cookieHeader(ok.cookie!);
     expect(cookieValue(deviceCookie, DEVICE_COOKIE)).toMatch(/^hh-01\.[0-9a-f]{64}$/);
     // DF-3-c: an enrolled phone with nobody signed in gets the sign-in page, not the work.
@@ -321,7 +330,7 @@ describe('the device socket', () => {
     const form = await fetch(`${base}/device/sign-in?screen=warehouse`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: deviceCookie }, body: new URLSearchParams({ staffId: 'u-worker', pin: pinOf('u-worker') }).toString(), redirect: 'manual' });
     expect(form.status).toBe(303);
     expect(form.headers.get('location')).toBe('/warehouse/');
-    expect(form.headers.get('set-cookie')).toMatch(/^sre_operator=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=14400$/);
+    expect(form.headers.get('set-cookie')).toMatch(/^sre_operator=[^;]+; Path=\/; HttpOnly; Secure; SameSite=Strict; Max-Age=14400$/);
     const cookie = `${deviceCookie}; ${cookieHeader(form.headers.get('set-cookie')!)}`;
     // The screen names the signed-in person and shows who is holding the phone.
     const html = await (await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie } })).text();

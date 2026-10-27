@@ -11,6 +11,7 @@ import { DeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outb
 import { WarehouseSession } from '../../apps/warehouse-app/src/warehouse-session';
 import { fromHex, hmacSha256Hex, phoneStamper, readPhoneSignIn, stampMessage, type PhoneSignIn, type SignInStamp } from '../../packages/sync/src/sign-in-stamp';
 import type { DeviceAck } from '../../packages/sync/src/device-relay';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **OB-184 "A" (owner, 17 Oct 2026, "Sign out + 4-hour limit") on the REAL store computer (`startEdge`), no head office.**
@@ -42,7 +43,7 @@ const PEOPLE: readonly TillPerson[] = [
 ];
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
@@ -85,7 +86,7 @@ describe('OB-184: a phone sign-in ends after four hours on the real box; a till\
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_LANE_ID: 'lane-1',
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
-    const device = `http://127.0.0.1:${edge.devices!.port}`;
+    const device = `${boxDoor(edge)}`;
     const tillWho = async (token: string) => (await savedFetch(`http://127.0.0.1:${edge.lane!.port}/lane/operator`, { headers: operatorHeader(token) })).json() as Promise<{ signedIn: boolean; expiresAt?: string }>;
     const post = async (cookie: string, items: { key: string; event: DomainEvent; stamp?: SignInStamp }[]): Promise<{ status: number; acks: DeviceAck[]; reason?: string }> => {
       const res = await savedFetch(`${device}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items }) });

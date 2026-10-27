@@ -10,6 +10,9 @@ import { DRIVER_SIGN_IN_ENDED_MESSAGE, SIGN_IN_CLOCK_MESSAGE } from '../../edge/
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import { withTillPeople, issueTillPins } from '../support/till-operator';
 import { signInOnPhonePage } from '../support/phone-sign-in-page';
+import { deviceBase as boxDoor, sharedDeviceTls, trustingBrowserArgs } from '../support/box-tls';
+
+let deviceTls: Awaited<ReturnType<typeof sharedDeviceTls>>;
 
 /**
  * **Follow-up F11 in a real browser, against a REAL store computer with no cloud: the handheld verifier's NEW-1, L2, L3
@@ -59,7 +62,8 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'warehouse-app'], { stdio: 'ignore' });
     execFileSync('node', ['scripts/build-app.mjs', 'delivery-app'], { stdio: 'ignore' });
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    deviceTls = await sharedDeviceTls(); // OB-422: the store computer's authority, trusted as an enrolled handheld trusts it
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: trustingBrowserArgs(deviceTls.keyPin) });
   }, 240_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
@@ -90,11 +94,12 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     }, PEOPLE)), 'utf8');
     await issueTillPins(dir, KEY, PEOPLE.map((p) => p.userId));
     const edge: EdgeProcess = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_LANE_ID: 'lane-1',
     }, () => {}))!;
     stops.push(() => edge.stop());
-    const base = `http://127.0.0.1:${edge.devices!.port}`;
+    const base = `${boxDoor(edge)}`;
     const context = await browser.newContext(HANDHELD);
     stops.push(() => context.close());
     const page = await context.newPage();

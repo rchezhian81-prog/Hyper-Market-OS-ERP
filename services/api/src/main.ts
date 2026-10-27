@@ -368,6 +368,7 @@ import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 —
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
 import { gatesRoutes, gateBlockersBeyondRisks, twoSignatureAdapter } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
+import { qg10EvidenceRoutes } from './qg10-evidence-adapters'; // OB-423 — the release script's QG-10 evidence on the gate register
 
 const now = (): string => new Date().toISOString();
 
@@ -1939,6 +1940,8 @@ export function buildSurface(deps: {
       : { ...riskRegisterAdapter({ store, now }), otherBlockers: (t: string) => gateBlockersBeyondRisks(store, now, t), ...twoSignatureAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }) /* OB-330 */ }),
     // OB-288 gates lane: the security findings register (QG-03/QG-06) and the gate-decision register (QG-12).
     ...gatesRoutes({ store, now }),
+    // OB-423: the release script's QG-10 evidence note, posted by its own machine identity; read on the Quality gates page.
+    ...qg10EvidenceRoutes({ store, now }),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
       : reportingAdapter({

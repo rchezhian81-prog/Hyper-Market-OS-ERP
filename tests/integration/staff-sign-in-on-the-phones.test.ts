@@ -9,6 +9,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import type { DeviceAck } from '../../packages/sync/src/device-relay';
 import { withTillPeople, issueTillPins, signInOnPhone, pinOf, type TillPerson } from '../support/till-operator';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **Each person signs in on the warehouse, picker or driver phone with the SAME personal PIN as the till, and the work they
@@ -55,13 +56,13 @@ const scanned = (id: string, receivedBy: string) => makeEvent({
 const item = (e: ReturnType<typeof scanned>) => ({ key: e.idempotencyKey, event: e });
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-const base = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
+const base = (edge: EdgeProcess): string => `${boxDoor(edge)}`;
 const enrolPhone = async (edge: EdgeProcess): Promise<string> => {
   const res = await savedFetch(`${base(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: 'hh-01', code: CODE }) });
   expect(res.status).toBe(200);

@@ -198,6 +198,68 @@ release script now does the reconciliation itself:
   watched. `SRE_RECONCILE=off` switches the reconcile off; the script says so on every run and the record says
   "not run". Leave it on.
 
+### The QG-10 note on head office's gate register (OB-423)
+
+After writing that line, the release script **posts the same line to head office's gate register**, and it appears on the
+**Quality gates** page, under QG-10, as "Release evidence from the release script" — **every attempt of every release,
+newest first** (owner's answer, 27 Oct 2026: show all reports), each with its outcome, box, run and attempt, ✓ (all five
+verified) or ⚠ (naming what was not), and every difference in words. Nothing is hidden or collapsed into "latest". It is
+still evidence, never a decision: QG-10 reads "Not decided" until the owner decides it.
+
+- **Every attempt is its own note** (owner's answer, 27 Oct 2026: keep every attempt). A note is known by four things:
+  the **box**, the **release commit**, the **pipeline run** and the **attempt**. The pipeline hands the box its run id
+  (`GITHUB_RUN_ID`) and, after the optional signature, the word `attempt=<GITHUB_RUN_ATTEMPT>` — so "Re-run jobs" in
+  GitHub is attempt 2, 3, … of the same run and each gets its own note. Run on a CI runner itself with no words, the
+  script reads `GITHUB_RUN_ID` / `GITHUB_RUN_ATTEMPT` from its environment. Run **by hand** on the box, the run is
+  `manual` and the attempt is the box's own UTC time of that attempt (`local-20261027T101500Z`; shown on the page as
+  "by hand on this box, 2026-10-27 10:15:00 UTC") — one deployment runs at a time, so two attempts never share it.
+- **Who may post it:** only a computer's own **QG-10 machine login**, role `qg10_release_evidence` — **one machine login
+  per computer** (owner's answer, 27 Oct 2026). The login's user id names its computer: `qg10-release-<host name>`, where
+  the host name is exactly what `hostname` prints on that box (it is the `box` in the line). That role can do exactly one
+  thing — add a QG-10 release note. It cannot read the register, decide a gate or touch any other record. Head office
+  refuses (403) a note from anyone else (the owner and the managers included), a note from **another computer's login**
+  (`qg10_note_names_another_computer` — box A's login can never post box B's note), and a login that names no computer
+  (`qg10_login_names_no_computer`); a note that is not exactly the script's QG-10 line (400, every problem named); and a
+  **different** note claiming an attempt already recorded (409 — the first stands; nothing is overwritten or deleted).
+  The same attempt's note sent again is "already recorded" (idempotent).
+- **Settings** (in `/opt/sre/deploy.conf`, none of them secret): `SRE_QG10_REGISTER_URL` — head office's address (default
+  `SRE_API_URL`, because on the pilot box head office is the box itself; https, or this box's own loopback only);
+  `SRE_QG10_PUSH_TOKEN_FILE` — the **path** of the key file (default `/etc/sre-pilot/qg10-push.token`).
+- **The key** — each computer's QG-10 machine login secret — is set by the custodian, **Mr Sivakumar** (the named IT
+  custodian who also holds `RELEASE_SIGNING_KEY` and sets `FINDINGS_PUSH_TOKEN`; owner's answer, 27 Oct 2026, OB-423), at
+  deploy time, and lives **only** in that file on that box: owned by the
+  deploy user, `chmod 600`. Never in `deploy.conf`, the repository, an image, a chat, an e-mail or a log. The release
+  script hands the tool only the file's path; the key travels only in the request's Authorization header and is never
+  printed. Nothing about it goes into the CI pipeline: GitHub never sees this key.
+- **What you will see in the release log**, one line, every release:
+  - `release: QG-10 note posted to head office's gate register (release <sha>, box <name>, run <run>, attempt <n>).`
+  - `release: QG-10 note already on head office's gate register …` — the same note was there already.
+  - `release: QG-10 note NOT POSTED to head office's gate register … — <why>` — no key file, an empty one, head office
+    not reachable, the key refused, the login belonging to another computer, or a different note already there for this
+    release attempt. **The release still runs**; the line is still in `SRE_QG10_LOG` on the box (P-08: said, never
+    silent).
+
+#### The custodian's steps (Mr Sivakumar) — once per computer that runs releases
+
+Every computer that runs `release.sh` (the canary box, the demo box, each real box) gets **its own** login and its own key.
+Never copy one computer's key to another: head office would refuse that computer's notes by name.
+
+1. **Read the computer's name** on that box: `hostname`. Call it `<box>`.
+2. **Ask for that computer's grant** (an administrator, not the owner): on head office, `POST /v1/identity/grants` with
+   `{ grantId, userId: "qg10-release-<box>", roleId: "qg10_release_evidence", branchScope: "all", reason: "OB-423 QG-10
+   machine login for <box>" }`. The **owner approves** it (`POST /v1/identity/grants/<grantId>/approve`). The user id is
+   a machine's, never a person's: head office refuses to give this role to anyone with a sign-in, or to give that user
+   any other role.
+3. **Issue the key out of band** on the administrator's own computer:
+   `node scripts/issue-store-token.mjs --user qg10-release-<box> --tenant <shop id> --no-store`. It is shown once.
+4. **Put it on that box** at deploy time: `sudo install -m 600 -o <deploy user> /dev/stdin /etc/sre-pilot/qg10-push.token`
+   and paste it, then end with Ctrl-D. Nothing else holds a copy — not the repository, not GitHub, not a chat.
+5. **Check the next release says posted** (with its run and attempt), and that the Quality gates page shows the note
+   under QG-10 with this computer's name.
+6. **If the key is lost or leaked**, the box is rebuilt or renamed, or before it expires: remove that computer's grant (its
+   old key stops working at once), issue a new one (steps 1–4), and record a leak as an incident (below). Other
+   computers' logins are not affected.
+
 ## Signed releases (WF-20, AID-08 "sign releases")
 
 - **What is signed:** three lines that pin a merged commit exactly — `sre-release-v1`, `commit=<sha>`, `tree=<tree id>`

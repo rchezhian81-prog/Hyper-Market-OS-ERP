@@ -11,6 +11,9 @@ import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enro
 import { withTillPeople, issueTillPins } from '../support/till-operator';
 import { signInOnPhonePage } from '../support/phone-sign-in-page';
 import { auditPage } from './lib/a11y-audit';
+import { deviceBase as boxDoor, sharedDeviceTls, trustingBrowserArgs } from '../support/box-tls';
+
+let deviceTls: Awaited<ReturnType<typeof sharedDeviceTls>>;
 
 /**
  * **OB-172 "A" (owner, 17 Oct 2026, "Checklist on handheld") in a real browser, against a REAL store computer with NO cloud.**
@@ -71,7 +74,8 @@ describe.skipIf(!HAVE_BROWSER)('OB-172: the receiving checklist on the store scr
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     execFileSync('node', ['scripts/build-app.mjs', 'warehouse-app'], { stdio: 'ignore' });
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    deviceTls = await sharedDeviceTls(); // OB-422: the store computer's authority, trusted as an enrolled handheld trusts it
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: trustingBrowserArgs(deviceTls.keyPin) });
   }, 240_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
@@ -87,6 +91,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-172: the receiving checklist on the store scr
     await issueTillPins(dir, KEY, ['u-worker']);
     // No CLOUD_API_URL: the store is offline from head office the whole time (P-01).
     const edge = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_SCREEN_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
       // The hosted copy (ADR-0020 §6 · OB-16): the front's sign-in names the person on every request; the box seals for them.
@@ -183,7 +188,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-172: the receiving checklist on the store scr
     const context = await browser.newContext(HANDHELD);
     stops.push(() => context.close());
     const page = await context.newPage();
-    await page.goto(`http://127.0.0.1:${edge.devices!.port}/warehouse/`, { waitUntil: 'load' });
+    await page.goto(`${boxDoor(edge)}/warehouse/`, { waitUntil: 'load' });
     await page.fill('#deviceId', 'hh-01');
     await page.fill('#code', CODE);
     await page.click('button[type="submit"]');

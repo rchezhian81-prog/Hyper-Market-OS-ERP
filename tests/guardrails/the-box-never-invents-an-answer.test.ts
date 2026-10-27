@@ -103,17 +103,22 @@ describe('the screens socket is loopback, and reads only', () => {
     const DEVICE_SERVER = readFileSync('edge/store-edge/src/device-server.ts', 'utf8');
     expect(code(DEVICE_SERVER)).toMatch(/DEVICE_HOST = '127\.0\.0\.1'/);
     expect(code(DEVICE_SERVER)).toMatch(/HANDHELD_SCREENS: readonly ScreenName\[\] = \['warehouse', 'picker', 'driver'\]/);
-    expect(code(DEVICE_SERVER)).toMatch(/server\.listen\(input\.port, input\.host \?\? DEVICE_HOST/);
+    expect(code(DEVICE_SERVER)).toMatch(/front\.listen\(input\.port, input\.host \?\? DEVICE_HOST/);
+    // OB-422: the door speaks TLS only — an https server behind the front, and no plain http server anywhere in it.
+    expect(code(DEVICE_SERVER)).toMatch(/createTlsServer\(\{ \.\.\.secure\(material\), minVersion: 'TLSv1\.2' \}/);
+    expect(code(DEVICE_SERVER)).not.toMatch(/import \{[^}]*\bcreateServer\b[^}]*\} from 'node:http'/);
+    expect(code(DEVICE_SERVER)).toMatch(/if \(first\[0\] === 0x16\)/);
     // Every request past the enrolment route is authenticated before anything else is decided.
     expect(code(DEVICE_SERVER)).toMatch(/const auth = input\.enrolments\.authenticate\(cookieValue\(req\.headers\.cookie, DEVICE_COOKIE\), input\.devices\(\)\);/);
     expect(code(DEVICE_SERVER)).toMatch(/if \(!isHandheldSource\(batch\.source\)\)/);
     // The credential rides HttpOnly and SameSite=Strict; the socket answers no CORS at all.
-    expect(code(DEVICE_SERVER)).toMatch(/HttpOnly; SameSite=Strict/);
+    expect(code(DEVICE_SERVER)).toMatch(/HttpOnly; Secure; SameSite=Strict/);
+    expect(code(DEVICE_SERVER)).not.toMatch(/HttpOnly; SameSite=Strict/);
     expect(code(DEVICE_SERVER)).not.toMatch(/access-control-allow-origin/);
     // The box only opens it when told a port, and the lane and screen sockets keep their loopback binds.
     const MAIN = readFileSync('edge/store-edge/src/main.ts', 'utf8');
     expect(code(MAIN)).toMatch(/const devicePort = settings\['EDGE_DEVICE_PORT'\];/);
-    expect(code(MAIN)).toMatch(/devicePort === undefined \|\| enrolments === null \? null : await startDeviceServer\(/);
+    expect(code(MAIN)).toMatch(/devicePort === undefined \|\| enrolments === null \|\| deviceTls === null \? null : await startDeviceServer\(/);
   });
 
   it('binds to 127.0.0.1 unless a deployment names another address explicitly — and never widens by itself', () => {

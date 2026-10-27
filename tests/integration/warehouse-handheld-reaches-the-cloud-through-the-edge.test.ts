@@ -11,6 +11,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
 import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '../support/till-operator';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **A warehouse handheld's scans reach head office through the store box's DEVICE socket — enrolled once, durable at
@@ -55,7 +56,7 @@ const packJson = (deviceStatus = 'registered'): string => JSON.stringify(withTil
 }, PHONE_PEOPLE));
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
@@ -81,7 +82,7 @@ const scanned = (id: string) => makeEvent({
   payload: { grnId: 'grn-1', commandId: id, productId: 'p-rice', batchId: null, quantityMinor: 1, uom: 'EA', source: 'po', poId: null, state: 'on_hand', expiry: null, receivedBy: 'u-worker', storeId: 'store-1', at: AT },
 });
 
-const deviceBase = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
+const deviceBase = (edge: EdgeProcess): string => `${boxDoor(edge)}`;
 const enrol = async (edge: EdgeProcess, code = CODE, deviceId = 'hh-01'): Promise<{ status: number; cookie: string | undefined; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId, code }) });
   const device = res.headers.get('set-cookie')?.split(';')[0];

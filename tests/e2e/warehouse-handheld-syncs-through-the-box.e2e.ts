@@ -10,6 +10,9 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import { withTillPeople, issueTillPins } from '../support/till-operator';
 import { signInOnPhonePage } from '../support/phone-sign-in-page';
+import { deviceBase as boxDoor, sharedDeviceTls, trustingBrowserArgs } from '../support/box-tls';
+
+let deviceTls: Awaited<ReturnType<typeof sharedDeviceTls>>;
 
 /**
  * **A warehouse handheld, in a real browser, enrols on the store box's device socket and its scans reach the box
@@ -77,7 +80,8 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
 
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'warehouse-app'], { stdio: 'ignore' });
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    deviceTls = await sharedDeviceTls(); // OB-422: the store computer's authority, trusted as an enrolled handheld trusts it
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: trustingBrowserArgs(deviceTls.keyPin) });
   }, 180_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
@@ -92,11 +96,12 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await writeFile(packFile, packJson, 'utf8');
     await issueTillPins(dir, KEY, [PHONE_PERSON]);
     const edge = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     stops.push(() => edge.stop());
-    return { edge, base: `http://127.0.0.1:${edge.devices!.port}` };
+    return { edge, base: `${boxDoor(edge)}` };
   }
 
   async function openHandheld(base: string): Promise<Page> {
