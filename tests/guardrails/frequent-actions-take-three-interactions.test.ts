@@ -15,6 +15,7 @@ import { join } from 'node:path';
  *   • an action marked NOT YET COUNTED is in fact counted (the register is stale) — or one is quietly dropped;
  *   • the screen spec no longer names the action (the register and the spec must say the same thing).
  * Actions not yet counted are listed with the reason, never hidden: QG-02 is not "done" while that list is non-empty.
+ * Re-audit T2 (27 Oct 2026): the list is empty — the whole-line refund is counted at 7 as the written exception OB-394.
  */
 
 interface Budgeted {
@@ -46,11 +47,9 @@ const LANE_HEALTH = `${E2E}/the-manager-opens-a-lanes-health-from-today.e2e.ts`;
 // OB-390 (owner, 26 Oct 2026: actions above the budget are shortened with defaults; the required checks stay).
 const SERVICE_DESK = `${E2E}/service-desk-and-assistant-drafts.e2e.ts`;
 const TASKS = `${E2E}/store-tasks-meet-the-interaction-budget.e2e.ts`;
-/** Why an action is still above its spec once shortened (OB-390), and where it is measured (`asBuilt`, never a
- *  `taps.reset()` bar): the figure left is made of required checks only — accepting it as a written exception, or not, is
- *  the owner's decision. */
-const ABOVE_SPEC = (n: number, file: string, why: string): string =>
-  `measured AS BUILT at ${n} in ${file} — above the spec's budget because ${why}; OB-390 shortened it with defaults and every act left is a required check, so the remaining figure is the owner's to accept as a written exception or not`;
+/** OB-394 (owner, 26 Oct 2026, in writing): the whole-line refund's 7, accepted as a written QG-02 exception — measured
+ *  in the browser at 7, and every act after the line is a required check (OB-390 shortened the rest with defaults). */
+const OB394 = 'OB-394 (owner, 26 Oct 2026, in writing): accepted at 7, measured in a real browser — after the line the till must still take the reason (M15), the condition of the goods (M13-FR-02), how the refund is given (never defaulted, OB-390), and a manager\'s badge, PIN and reason (§28 · ADR-0021), one act each; the spec itself lists the manager as "+1 step by design"';
 
 const REGISTER: readonly Budgeted[] = [
   // ── The till (pos-cashier.md) ──
@@ -66,7 +65,7 @@ const REGISTER: readonly Budgeted[] = [
   { action: 'look up a receipt', spec: 'pos-refund.md', specWords: 'Look up a receipt', budget: 3, counted: { file: REFUND, label: 'look up a receipt' } },
   // OB-390: 14 → 7. The amount now starts at the line's value (shown, changeable — the METHOD is never defaulted), a reason
   // is one tap on a chip, and a line with one unit left does not ask how many. What is left is the line plus six checks.
-  { action: 'return one whole line', spec: 'pos-refund.md', specWords: 'Return one whole line', budget: 3, notYetCounted: ABOVE_SPEC(7, REFUND, 'after the line the till must still take the reason (M15), the condition of the goods (M13-FR-02), how the refund is given (never defaulted), and a manager\'s badge, PIN and reason (§28 · ADR-0021) — one act each; the spec itself lists the manager as "+1 step by design"') },
+  { action: 'return one whole line', spec: 'pos-refund.md', specWords: 'Return one whole line', budget: 7, counted: { file: REFUND, label: 'return one whole line' }, exception: OB394 },
   // ── The store manager (store-manager.md) ──
   { action: 'approve with a reason', spec: 'store-manager.md', specWords: 'approve/reject a request', budget: 3, counted: { file: TILL, label: 'approve with a reason' } },
   { action: 'start the day close', spec: 'store-manager.md', specWords: 'start day close', budget: 2, counted: { file: TILL, label: 'start the day close' } },
@@ -167,26 +166,27 @@ describe('QG-02: every frequent action has a budget, and is counted in a real br
     }
   });
 
-  it('an action measured above its spec says the number its browser test actually measures (no stale "as built" figure)', () => {
-    const measured = REGISTER.flatMap((b) => {
-      const m = /^measured AS BUILT at (\d+) in (\S+) —/.exec(b.notYetCounted ?? '');
-      return m === null ? [] : [{ action: b.action, n: Number(m[1]), file: m[2]! }];
-    });
-    // OB-390: three of the four were brought within budget; the refund is left, at the figure its required checks make.
-    expect(measured.map((x) => x.action).sort()).toEqual(['return one whole line']);
-    for (const x of measured) {
-      const code = readFileSync(x.file, 'utf8');
-      expect(new RegExp(`expect\\(asBuilt, 'as built: [^']*'\\)\\.toBe\\(${x.n}\\)`).test(code), `${x.file} measures "${x.action}" at ${x.n}`).toBe(true);
-    }
+  it('an action left above its spec is never parked as "not yet counted" — it is counted, at the figure the owner accepted', () => {
+    // OB-390 brought three of the four within budget; OB-394 accepted the fourth, the whole-line refund, at 7 in writing.
+    expect(REGISTER.filter((b) => /^measured AS BUILT/.test(b.notYetCounted ?? '')).map((b) => b.action)).toEqual([]);
+    const refund = REGISTER.find((b) => b.action === 'return one whole line')!;
+    expect(refund).toMatchObject({ budget: 7, counted: { file: REFUND, label: 'return one whole line' } });
+    expect(refund.exception).toMatch(/^OB-394 \(owner, 26 Oct 2026, in writing\)/);
+    // The browser test bars it at exactly the accepted figure, not a looser one.
+    expect(readFileSync(REFUND, 'utf8')).toMatch(/taps\.reset\(\), 'return one whole line'\)\.toBeLessThanOrEqual\(7\)/);
   });
 
-  it('says out loud how many frequent actions are still not counted (QG-02 is not done while this is above zero)', () => {
+  it('every exception above 3 is justified in words, and one above the spec\'s own figure cites the owner\'s written decision', () => {
+    for (const b of REGISTER.filter((x) => x.budget > 4)) expect(b.exception, `${b.action} (≤${b.budget})`).toMatch(/^OB-\d+ \(owner, [^)]*in writing\)/);
+  });
+
+  it('says out loud how many frequent actions are still not counted — none: QG-02 is done in software', () => {
     const open = REGISTER.filter((b) => b.notYetCounted !== undefined).map((b) => b.action);
-    // The number is pinned so it can only change on purpose: count one more and move it, or add one and say so.
-    // QG-02 lane 1 R4 (26 Oct 2026): 8 of the 14 now counted; 4 measured above the spec as built and 2 with no screen to
-    // count on. OB-390 (26 Oct 2026): price, case reply, kill switch and assign/complete a task now counted within budget;
-    // OB-392: a lane's health is counted on the manager's Today screen (one tap). Left: returning one whole line at 7 — all
-    // required checks — which the owner accepted in writing as an exception (OB-394, 26 Oct 2026).
-    expect(open).toHaveLength(1);
+    // The number is pinned so it can only change on purpose: add an action not yet counted and say so here.
+    // QG-02 lane 1 R4 (26 Oct 2026): 8 of the 14 counted. OB-390 (26 Oct 2026): price, case reply, kill switch and
+    // assign/complete a task counted within budget; OB-392: a lane's health on the manager's Today screen (one tap).
+    // Re-audit T2 (27 Oct 2026): the whole-line refund is counted at 7, the owner's written exception (OB-394). None left.
+    expect(open).toEqual([]);
+    expect(REGISTER.every((b) => b.counted !== undefined)).toBe(true);
   });
 });
