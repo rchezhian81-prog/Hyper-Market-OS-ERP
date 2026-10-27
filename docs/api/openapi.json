@@ -111382,6 +111382,58 @@
                 "requestedAt"
               ],
               "properties": {
+                "decider": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "userId",
+                        "displayName"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "whatToDo"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": false
+                        },
+                        "whatToDo": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
                 "escalation": {
                   "$ref": "#/components/schemas/ApprovalEscalationView"
                 },
@@ -111483,6 +111535,58 @@
                 "requestedAt"
               ],
               "properties": {
+                "decider": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "userId",
+                        "displayName"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "whatToDo"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": false
+                        },
+                        "whatToDo": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
                 "escalation": {
                   "$ref": "#/components/schemas/ApprovalEscalationView"
                 },
@@ -154872,66 +154976,136 @@
         "x-derived-from": "services/identity/src/approval-requests.ts"
       },
       "PostApprovalsRequestsReply": {
-        "type": "object",
-        "required": [
-          "status",
-          "requestId",
-          "kind",
-          "subjectRef",
-          "valueMinor",
-          "fingerprint",
-          "details",
-          "summary",
-          "reason",
-          "requestedBy",
-          "requestedAt"
-        ],
-        "properties": {
-          "status": {
-            "type": "string"
-          },
-          "requestId": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "subjectRef": {
-            "type": "string"
-          },
-          "valueMinor": {
-            "anyOf": [
-              {
-                "type": "null"
-              },
-              {
-                "type": "number"
-              }
-            ]
-          },
-          "fingerprint": {
-            "type": "string"
-          },
-          "details": {
+        "anyOf": [
+          {
             "type": "object",
-            "additionalProperties": {
-              "x-untyped": "unknown"
-            }
+            "required": [
+              "decider",
+              "status",
+              "requestId",
+              "kind",
+              "subjectRef",
+              "valueMinor",
+              "fingerprint",
+              "details",
+              "summary",
+              "reason",
+              "requestedBy",
+              "requestedAt"
+            ],
+            "properties": {
+              "decider": {
+                "$ref": "#/components/schemas/DeciderView"
+              },
+              "status": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "subjectRef": {
+                "type": "string"
+              },
+              "valueMinor": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              },
+              "summary": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "requestedBy": {
+                "type": "string"
+              },
+              "requestedAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           },
-          "summary": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "requestedBy": {
-            "type": "string"
-          },
-          "requestedAt": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "requestId",
+              "kind",
+              "subjectRef",
+              "valueMinor",
+              "fingerprint",
+              "details",
+              "summary",
+              "reason",
+              "requestedBy",
+              "requestedAt"
+            ],
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "subjectRef": {
+                "type": "string"
+              },
+              "valueMinor": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              },
+              "summary": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "requestedBy": {
+                "type": "string"
+              },
+              "requestedAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/approval-requests.ts"
       },
@@ -251656,6 +251830,58 @@
           }
         },
         "additionalProperties": true
+      },
+      "DeciderView": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "role",
+              "named",
+              "userId",
+              "displayName"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "const": "security_reviewer"
+              },
+              "named": {
+                "type": "boolean",
+                "const": true
+              },
+              "userId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "role",
+              "named",
+              "whatToDo"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "const": "security_reviewer"
+              },
+              "named": {
+                "type": "boolean",
+                "const": false
+              },
+              "whatToDo": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
       },
       "DelegatedDecision": {
         "type": "object",

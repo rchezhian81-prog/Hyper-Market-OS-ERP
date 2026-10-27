@@ -46,7 +46,14 @@ export interface ApprovalRequestView {
   readonly decidedAt?: string;
   readonly expiresAt?: string | null;
   readonly usedBy?: string;
+  /** OB-420: for a kind one named person alone decides (a floor-device review), who that is now — or that nobody is. */
+  readonly decider?: DeciderView;
 }
+
+/** OB-420: who alone decides a request, as the server hands it over (only on a waiting request of such a kind). */
+export type DeciderView =
+  | { readonly role: string; readonly named: true; readonly userId: string; readonly displayName: string }
+  | { readonly role: string; readonly named: false; readonly whatToDo?: string };
 
 /** The inbox: what waits for the caller to decide (never their own), and what they asked for. */
 export interface ApprovalInboxView {
@@ -126,6 +133,7 @@ export type CopyKey =
   | 'statusExpired' | 'statusUsed'
   | 'decidedApproved' | 'decidedRejected' | 'decideNeedsReason' | 'decideNobody' | 'decideNotPermitted'
   | 'decideNotWaiting' | 'decideOwnRequest' | 'decideAlreadyDecided' | 'decideRefused' | 'decideRefusedNoWords' | 'decideLostLink'
+  | 'deciderNamedReviewer' | 'deciderNoReviewer'
   | 'yesWord' | 'noWord'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
@@ -203,6 +211,9 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     decideAlreadyDecided: 'Someone already decided this:', decideRefused: 'Not recorded:',
     decideRefusedNoWords: 'Not recorded — head office refused the decision.',
     decideLostLink: 'No connection — nothing was decided. Try again.',
+    // OB-420: a floor-device review is decided by the named security reviewer alone.
+    deciderNamedReviewer: 'Only the named security reviewer, {who}, can decide this.',
+    deciderNoReviewer: 'No security reviewer is named, so nobody can decide this yet. The owner names one on the Risk acceptance screen first.',
     yesWord: 'yes', noWord: 'no',
     scrReady: 'Showing your approvals', scrEmpty: 'Nothing is waiting for you to approve.',
     stateNotPermitted: 'You do not have permission to use approvals.',
@@ -280,6 +291,8 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     decideAlreadyDecided: 'இதை ஏற்கனவே ஒருவர் முடிவு செய்துவிட்டார்:', decideRefused: 'பதிவு செய்யப்படவில்லை:',
     decideRefusedNoWords: 'பதிவு செய்யப்படவில்லை — தலைமை அலுவலகம் முடிவை ஏற்கவில்லை.',
     decideLostLink: 'இணைப்பு இல்லை — எதுவும் முடிவு செய்யப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    deciderNamedReviewer: 'பெயரிடப்பட்ட பாதுகாப்புச் சரிபார்ப்பாளர் {who} மட்டுமே இதை முடிவு செய்ய முடியும்.',
+    deciderNoReviewer: 'பாதுகாப்புச் சரிபார்ப்பாளர் யாரும் பெயரிடப்படவில்லை, எனவே இதை இப்போது யாரும் முடிவு செய்ய முடியாது. முதலில் உரிமையாளர் இடர் ஏற்புத் திரையில் ஒருவரைப் பெயரிட வேண்டும்.',
     yesWord: 'ஆம்', noWord: 'இல்லை',
     scrReady: 'உங்கள் அனுமதிகளைக் காட்டுகிறது', scrEmpty: 'நீங்கள் அனுமதிக்க எதுவும் காத்திருக்கவில்லை.',
     stateNotPermitted: 'அனுமதிகளைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.',
@@ -444,6 +457,8 @@ export interface PresentedRequest {
   /** Where it stands — tone + icon + WORDS, never colour alone. */
   readonly status: StatusPresentation;
   readonly approvalStatus: ApprovalStatus;
+  /** OB-420: who alone may decide it, in words — or that nobody can yet (never a request silently waiting on nobody). */
+  readonly whoDecides: StatusPresentation | null;
 }
 
 export interface ApprovalsView {
@@ -501,6 +516,15 @@ export function presentRequestStatus(lang: Lang, r: ApprovalRequestView, waiting
   }
 }
 
+/** OB-420: who alone decides a waiting request, in words — a warning when nobody is named (P-08). */
+export function presentDecider(lang: Lang, r: ApprovalRequestView): StatusPresentation | null {
+  if (r.status !== 'waiting' || r.decider === undefined) return null;
+  const t = translator(APPROVALS_COPY, lang);
+  return r.decider.named
+    ? presentStatus({ tone: 'idle', icon: 'ℹ', label: fill(t('deciderNamedReviewer'), { who: r.decider.displayName }), needsAttention: false })
+    : presentStatus({ tone: 'degraded', icon: '⚠', label: t('deciderNoReviewer'), needsAttention: true });
+}
+
 /** One request presented for reading — label, amount, details as key: value lines, and its status chip. */
 export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForReader = false): PresentedRequest {
   const t = translator(APPROVALS_COPY, lang);
@@ -523,6 +547,7 @@ export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForRea
     details,
     status: presentRequestStatus(lang, r, waitingForReader),
     approvalStatus: r.status,
+    whoDecides: presentDecider(lang, r),
   };
 }
 
