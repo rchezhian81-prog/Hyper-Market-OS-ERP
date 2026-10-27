@@ -249,7 +249,7 @@ export function queuePosDoor(deps: QueuePosDoorDeps): QueuePosDoor {
         if (req.method !== 'POST') { send(res, 405, 'text/plain; charset=utf-8', 'sign-out is a POST'); return; }
         req.resume();
         if (deps.operators !== null) await deps.operators.signOut(token);
-        redirect(res, QUEUE_POS_SIGN_IN, { 'set-cookie': `${OPERATOR_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0` });
+        redirect(res, QUEUE_POS_SIGN_IN, { 'set-cookie': `${OPERATOR_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0` });
         return;
       }
 
@@ -279,7 +279,7 @@ export function queuePosDoor(deps: QueuePosDoorDeps): QueuePosDoor {
         if (deps.operators === null) { answer(503, { en: 'This store computer cannot sign anybody in on a handheld. Tell the manager.', ta: 'இந்தக் கடை கணினியால் கருவியில் உள்நுழைய முடியாது. மேலாளரிடம் சொல்லவும்.' }, 'no_sign_in_here'); return; }
         const outcome = await deps.operators.signIn({ staffId: fields['staffId'] ?? '', pin: fields['pin'] ?? '', deviceId, authority: TILL_AUTHORITY });
         if (!outcome.signedIn) { answer(outcome.refusedBecause === 'locked' || outcome.refusedBecause === 'lane_locked' ? 429 : 401, { en: outcome.laneMessage, ta: 'உள்நுழைவு மறுக்கப்பட்டது — பணியாளர் எண் மற்றும் PIN-ஐச் சரிபார்க்கவும்.' }, outcome.refusedBecause); return; }
-        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}`;
+        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_SECONDS}`;
         if (wantsJson(req)) { sendJson(res, 200, { signedIn: true, userId: outcome.userId, displayName: outcome.displayName, expiresAt: outcome.expiresAt, next: `${QUEUE_POS_PATH}/` }, { 'set-cookie': cookie }); return; }
         redirect(res, `${QUEUE_POS_PATH}/`, { 'set-cookie': cookie });
         return;

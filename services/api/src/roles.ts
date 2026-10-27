@@ -50,6 +50,15 @@ export const BACKUP_JOB_ROLE_ID = 'backup_job';
  * band by the administrator (scripts/issue-store-token.mjs --no-store) and kept only in the GitHub secret store.
  */
 export const FINDINGS_PUSH_ROLE_ID = 'findings_push';
+// ── OB-423 (QG-10 release evidence) — begin
+/**
+ * OB-423 (owner, 27 Oct 2026): the release script's OWN machine identity — infra/deploy/release.sh posts each release's
+ * QG-10 evidence line to head office's gate register and does nothing else (it cannot decide a gate, read the register or
+ * touch any other record). Machine-only (never also a person); its key is issued out of band by the administrator
+ * (scripts/issue-store-token.mjs --no-store) and given to the box by the custodian at deploy time, never committed.
+ */
+export const QG10_EVIDENCE_PUSH_ROLE_ID = 'qg10_release_evidence';
+// ── OB-423 — end
 // ── OB-288 P6 (store floor devices and self-checkout) — begin
 /**
  * R8-4 to R8-7 (D14-FR-05): the store's FLOOR-DEVICE GATEWAY's own machine identity — it carries signed event batches
@@ -250,6 +259,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // the synced route re-checks the PERSON named from their own grants, so this releases nothing by itself.
       'quality.hold.release.sync',
       // ── OB-288 integration follow-ups — end
+      // ── OB-423 (QG-10 release evidence) — begin
+      // Held ONLY so the owner can approve granting the release script's machine identity its role (no-escalation rule); the
+      // route believes a QG-10 note only from that machine identity itself, never a person — the owner included.
+      'compliance.qg10.evidence.push',
+      // ── OB-423 — end
       // ── OB-288 customer & delivery follow-ups — begin
       // OB-350: held ONLY so the owner can approve granting a store computer its role (no-escalation rule) — the recall
       // itself is the box's: it names the till and the cashier the box verified.
@@ -942,6 +956,15 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: ['compliance.finding.push'],
   },
   // ── OB-288 integration follow-ups — end
+  // ── OB-423 (QG-10 release evidence) — begin
+  {
+    // OB-423: the release script's OWN machine identity — adds a release's QG-10 evidence line to the gate register, and
+    // nothing else (least privilege: not even a read of the register).
+    id: QG10_EVIDENCE_PUSH_ROLE_ID,
+    name: 'Release QG-10 evidence (machine)',
+    permissions: ['compliance.qg10.evidence.push'],
+  },
+  // ── OB-423 — end
   {
     id: STORE_COMPUTER_ROLE_ID,
     name: 'Store computer',

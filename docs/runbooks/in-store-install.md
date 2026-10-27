@@ -237,16 +237,32 @@ The warehouse handheld does not use a login. It is **enrolled once** with a code
 and from then on the store computer knows it by a credential it holds itself (ADR-0019). Nothing on the handheld's
 screen is served to a device that has not enrolled.
 
-1. **Open the handheld door on the store computer.** In the till's environment file add
+1. **Open the handheld door on the store computer.** Run the till install again with the door's port and the store
+   computer's address on the STAFF wifi (never the guest wifi):
 
    ```
-   EDGE_DEVICE_PORT=8092
-   EDGE_DEVICE_HOST=<the store computer's address on the STAFF wifi, e.g. 192.168.10.5>
+   pnpm run till:install -- --lane <this till's lane> --device-port 8092 --device-host <e.g. 192.168.10.5>
    ```
 
-   and restart the till (Step 2). The boot log says `handhelds: enrolled handhelds on the shop network can reach
-   this box at http://<address>:8092/`. Leave `EDGE_DEVICE_HOST` out and the door opens on the computer itself only
-   (nothing on the network can reach it) — useful for a rehearsal, useless for a phone.
+   It writes `EDGE_DEVICE_PORT` and `EDGE_DEVICE_HOST` into `till.env` and **makes the store computer's own lock for
+   the door** (OB-422 · ADR-0030): a signing authority that belongs to THIS computer and the door's certificate, in
+   `till/edge-data-device-tls/`. It prints:
+
+   ```
+   handheld door: this store computer made its own signing authority (fingerprint AB:12:…, until …)
+     The authority each handheld trusts (public — safe to copy): …/edge-data-device-tls/authority.crt
+     Its fingerprint (check it on the handheld when you install it): AB:12:…
+   ```
+
+   **Write the fingerprint down** (or photograph that line) — you compare it on each handheld in step 4. Then restart
+   the till (Step 2). Its window says `device socket on https://<address>:8092/ — reachable on the shop network` and
+   `locked (OB-422): https only, plain http refused`. Leave `--device-host` out and the door opens on the computer itself
+   only — useful for a rehearsal, useless for a phone. The address must be a private shop address (10.x, 172.16–31.x or
+   192.168.x); any other is refused, and the till still sells.
+   **The lock folder `edge-data-device-tls` never leaves this computer.** Never copy it, e-mail it, or put it on a USB
+   stick; the backup leaves it out on purpose (its private key must never leave the box). Only the one file
+   `authority.crt` inside it is public. If the folder is ever lost (a new PC, a dead disk), the computer makes a new lock
+   at its next start and **every handheld must be set up again** (steps 4–4a).
 2. **Register the device at head office** (the fleet register, `POST /v1/platform/devices/<deviceId>/register`,
    kind `handheld` or `mobile`) — the same step every till goes through. The store setup the box pulls from head office carries
    the store's phones (`devices`) from the fleet register — with a code's fingerprint and expiry only, never the code —
@@ -254,7 +270,25 @@ screen is served to a device that has not enrolled.
 3. **Issue the code** — `POST /v1/platform/devices/<deviceId>/enrolment` by a person holding
    `platform.device.manage`. The answer holds the code ONCE (twenty letters and digits in four groups); head office
    keeps only its fingerprint and the expiry (a day by default). The box has it after its next pull of the store setup.
-4. **On the handheld**, open `http://<address>:8092/` in the browser. It shows **Enrol this handheld**: type the
+4. **On the handheld, trust the store computer once (OB-422 · OB-424).** On the **store computer itself**, open
+   **http://127.0.0.1:8091/handheld-seal/** (the store PC's own screen — signed in with your office PIN if the
+   office PIN is on). The **Handheld seal · கைக்கருவி முத்திரை** page shows three things: a **QR code**, the **code to
+   compare** (`AB:12:CD:34 … 9F:00:11:22` — the start and end of the fingerprint) and **Download authority.crt**. This page
+   is only on the store PC's own screen; a phone on the wifi cannot open it, and the handheld door does not serve it.
+   - **By QR (the way the owner chose, OB-424):** scan the QR code with a QR app on the handheld that saves what it reads
+     as a file named `authority.crt`. The QR holds the whole certificate — no wifi is needed. (Android's own camera only
+     shows it as text; that is not enough to install it.)
+   - **By cable (the fallback):** press **Download authority.crt** on the store PC and copy that one file to the handheld
+     by its USB cable or the shop's own file share.
+
+   Then on Android: **Settings → Security → Encryption & credentials → Install a certificate → CA certificate**, choose
+   `authority.crt`, open the installed certificate's details and check its **SHA-256 fingerprint starts and ends with the
+   code on the store PC's screen** (it is also the one you wrote down in step 1). **If it differs, stop — remove it —**
+   and tell the manager. If the page says there is no seal (no handheld door on this computer, or the door is shut), do
+   not set up a handheld: run the doctor (`pnpm run store-computer -- doctor`) and fix what it says; the tills keep selling.
+   Never press "proceed anyway" on a certificate warning in the browser: a handheld that trusts the
+   store computer never sees one. Then, in the handheld's browser, open `https://<address>:8092/` (**https**, not http —
+   plain http is refused: the page says *"It speaks https only (OB-422)"*). It shows **Enrol this handheld**: type the
    device id and the code, press Enrol. A wrong code says so and counts (five wrong per device per fifteen minutes,
    then a wait); an expired code says so — issue a new one; a code already used says so — it never works twice.
    On success the phone asks **who is holding it** (next step).
@@ -308,7 +342,8 @@ screen is served to a device that has not enrolled.
 
 ### Step 6b — A handheld used as a queue till (D04-FR-05 · ADR-0028 · owner decisions OB-372 to OB-377)
 
-A queue till is a handheld enrolled exactly as in Step 6, then opened at `http://<address>:8092/queue-pos/`.
+A queue till is a handheld enrolled exactly as in Step 6 (it trusts the store computer once, step 4), then opened at
+`https://<address>:8092/queue-pos/`.
 
 1. **Enrol it to the PC of the till it serves (OB-377).** Each till PC is its own store computer (ADR-0004). A handheld
    hands its baskets to, and keeps its bills on, the ONE PC it is enrolled to. Use the enrolment page of the till PC whose
@@ -323,9 +358,24 @@ A queue till is a handheld enrolled exactly as in Step 6, then opened at `http:/
    (DUPLICATE), is recorded on the store computer first, and reaches head office (`GET /v1/bill-copies`). A service desk
    prints it the same way from a till on that PC.
 
-> **The shop-network leg is plain HTTP for now.** Until TLS is added at the device socket (a Stage E follow-up),
-> the handhelds must be on a **staff-only WPA2/WPA3 wifi, separate from any guest wifi** (owner action register
-> OA-16). The till's and manager's screens are not on this door at all — it serves the handheld screens only.
+> **The shop-network leg is encrypted (OB-422 · ADR-0030).** The handheld door speaks https only, under the store
+> computer's own authority, which each handheld trusted once in Step 6 step 4; plain http on the shop network is
+> refused. Keep the handhelds on a **staff-only WPA2/WPA3 wifi, separate from any guest wifi** (OA-16) as well — defence
+> in depth. The till's and manager's screens are not on this door at all; they stay on the PC's own loopback.
+>
+> **The handheld door's lock renews itself.** Its certificate lasts 90 days and the store computer renews it, by
+> itself, in its last 30 days — the handhelds keep working with nothing done to them, because they trust the authority,
+> not the certificate. Its window says `certificate renewed … signed by the same authority, so enrolled handhelds keep
+> working`. The authority lasts ten years; a year before its end the window and the doctor warn, and a new one is made
+> on purpose, with every handheld set up again. The store computer **never** replaces a broken lock by itself: if its
+> window says `handheld door NOT opened: … It was kept, not repaired`, the handhelds keep their work on the phone, the
+> till keeps selling, and you send a photo of that window (never of the folder).
+>
+> *To check in the store:* on a phone that has NOT trusted the store computer, open `https://<address>:8092/` — the
+> browser refuses it (a certificate error); press nothing. Open `http://<address>:8092/` — the page says it speaks
+> https only. On an enrolled handheld, open `https://<address>:8092/` — no warning, the padlock shows, the screen opens.
+> On the store computer, run `pnpm run store-computer -- doctor`: the **Handheld door** line says OK with the date the
+> certificate runs to.
 
 ---
 
@@ -420,8 +470,10 @@ Being straight about the boundaries:
   checklist. Until a pack is published and pulled, the till has no price list and says so.
 - **A receipt printer** — receipt building is built and tested; attaching a physical printer is a
   device step (EX-09).
-- **TLS on the handheld door** — the device socket (Step 6) speaks plain HTTP on the staff wifi until the Stage E
-  follow-up; the picker's and the driver's phones reach head office through the door since SP-3c (1 Oct 2026).
+- **The seal by QR on a real handheld** — the store PC's own *Handheld seal* page shows the certificate as a QR code, its
+  code to compare and a download (OB-424, Step 6 step 4). A stock Android camera reads the QR only as text: installing it
+  needs a QR app that saves it as `authority.crt`, or the cable copy. Neither has yet been tried on the shop's own
+  handheld model. The door itself has spoken https only since OB-422 (27 Oct 2026).
 - **A Windows service** — on Windows the till runs in a window you leave open (or a Task Scheduler
   entry you create for `start-till.cmd`); the Linux start-at-login unit is provided.
 

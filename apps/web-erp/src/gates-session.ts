@@ -5,6 +5,9 @@
 // owner's decision on one gate (POST /v1/compliance/gate-decisions/:gate/:release). A gate nobody decided reads "Not
 // decided — silence is not approval", never GO. A decision needs evidence and a written reason, here AND at head
 // office; GO over a blocker is head office's refusal, shown in its own words. Nothing is written on open or on a timer.
+// OB-423: the QG-10 row also shows the release script's own QG-10 notes (GET /v1/compliance/gate-register/qg10-evidence) —
+// owner's answer (c): EVERY attempt of every release, newest first, each with its outcome, box, run and attempt; nothing
+// hidden or collapsed into "latest".
 
 import type { ViewerIdentity } from './browser-entry';
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
@@ -46,6 +49,20 @@ export const GATES_COPY = {
     cannotDecide: 'Your role cannot decide a gate.', noRelease: 'Choose a release first.', noGate: 'Choose the gate.', noDecision: 'Choose GO, HOLD or REWORK.',
     noEvidence: 'A decision needs evidence: say what it is and where to find it.', noReason: 'Say, in writing, why.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
+    // OB-423: the release script's QG-10 notes, on the QG-10 row.
+    qg10H: 'Release evidence from the release script (every attempt of every release, newest first)',
+    qg10Lead: 'What the release script saw on each release — evidence for the QG-10 decision, never a decision.',
+    qg10None: 'No release has left a QG-10 note on the register yet.',
+    qg10Unread: 'The release evidence could not be read — this is not the same as "none".',
+    qg10AllVerified: 'all five verified', qg10NotVerifiedK: 'not verified',
+    qg10BoxK: 'box', qg10ByK: 'merged by', qg10RunK: 'run', qg10AtK: 'at', qg10DiffK: 'Difference',
+    qg10AttemptK: 'attempt', qg10ByHand: 'by hand on this box,',
+    c_health: 'health', c_smoke: 'smoke', c_reconciliation: 'reconciliation', c_monitoring: 'monitoring', c_rollback: 'rollback',
+    o_deployed: 'deployed', o_rolled_back: 'rolled back', o_rolled_back_on_reconcile: 'rolled back — the books did not reconcile',
+    o_rolled_back_in_canary_bake: 'rolled back — failed its canary watch', o_rollback_failed: 'rollback failed — a person was needed',
+    o_refused_books_unreadable: 'refused — the books could not be read before it',
+    s_verified: 'verified', s_failed: 'failed', s_not_run: 'not run', s_not_run_on_this_box: 'not run on this box', s_ready: 'ready, not used',
+    s_exercised_ok: 'used, and it worked', s_exercised_failed: 'used, and it failed',
   },
   ta: {
     lang: 'English', title: 'தர வாயில்கள்',
@@ -62,6 +79,19 @@ export const GATES_COPY = {
     cannotDecide: 'உங்கள் பங்கு வாயிலை முடிவு செய்ய முடியாது.', noRelease: 'முதலில் ஒரு வெளியீட்டைத் தேர்ந்தெடுக்கவும்.', noGate: 'வாயிலைத் தேர்ந்தெடுக்கவும்.', noDecision: 'GO, HOLD அல்லது REWORK தேர்ந்தெடுக்கவும்.',
     noEvidence: 'முடிவுக்குச் சான்று தேவை: அது என்ன, எங்கே காணலாம் என்று சொல்லவும்.', noReason: 'ஏன் என்று எழுத்தில் சொல்லவும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
+    qg10H: 'வெளியீட்டு நிரலின் சான்று (ஒவ்வொரு வெளியீட்டின் ஒவ்வொரு முயற்சியும், புதியது முதலில்)',
+    qg10Lead: 'ஒவ்வொரு வெளியீட்டிலும் வெளியீட்டு நிரல் கண்டது — QG-10 முடிவுக்கான சான்று, முடிவு அல்ல.',
+    qg10None: 'இதுவரை எந்த வெளியீடும் பதிவேட்டில் QG-10 குறிப்பை விடவில்லை.',
+    qg10Unread: 'வெளியீட்டுச் சான்றைப் படிக்க முடியவில்லை — இது "எதுவும் இல்லை" என்பதற்குச் சமம் அல்ல.',
+    qg10AllVerified: 'ஐந்தும் சரிபார்க்கப்பட்டன', qg10NotVerifiedK: 'சரிபார்க்கப்படாதவை',
+    qg10BoxK: 'கணினி', qg10ByK: 'இணைத்தவர்', qg10RunK: 'ஓட்டம்', qg10AtK: 'நேரம்', qg10DiffK: 'வேறுபாடு',
+    qg10AttemptK: 'முயற்சி', qg10ByHand: 'இந்தக் கணினியில் கையால்,',
+    c_health: 'நலம்', c_smoke: 'புகைச் சோதனை', c_reconciliation: 'கணக்குச் சரிபார்ப்பு', c_monitoring: 'கண்காணிப்பு', c_rollback: 'பின்வாங்கல்',
+    o_deployed: 'நிறுவப்பட்டது', o_rolled_back: 'பின்வாங்கப்பட்டது', o_rolled_back_on_reconcile: 'பின்வாங்கப்பட்டது — கணக்குகள் பொருந்தவில்லை',
+    o_rolled_back_in_canary_bake: 'பின்வாங்கப்பட்டது — முன்னோட்டக் கண்காணிப்பில் தோற்றது', o_rollback_failed: 'பின்வாங்கல் தோற்றது — ஒருவர் தேவைப்பட்டார்',
+    o_refused_books_unreadable: 'மறுக்கப்பட்டது — முன்பே கணக்குகளைப் படிக்க முடியவில்லை',
+    s_verified: 'சரிபார்க்கப்பட்டது', s_failed: 'தோற்றது', s_not_run: 'செய்யப்படவில்லை', s_not_run_on_this_box: 'இந்தக் கணினியில் செய்யப்படவில்லை', s_ready: 'தயார், பயன்படுத்தப்படவில்லை',
+    s_exercised_ok: 'பயன்படுத்தப்பட்டது, வேலை செய்தது', s_exercised_failed: 'பயன்படுத்தப்பட்டது, தோற்றது',
   },
 } as const;
 export type GatesCopyKey = keyof typeof GATES_COPY.en;
@@ -83,9 +113,47 @@ export function stateView(lang: Lang, state: GateState): { readonly icon: string
   return { icon, words: gatesWords(lang, `st_${state}`), tone };
 }
 
+/** OB-423: one release's QG-10 note as head office keeps it (GET /v1/compliance/gate-register/qg10-evidence). */
+export interface Qg10NoteRead {
+  readonly release: string; readonly previous: string; readonly at: string; readonly by: string; readonly run: string; readonly attempt: string; readonly box: string;
+  readonly outcome: string; readonly checks: Readonly<Record<string, string>>; readonly verified: boolean;
+  readonly notVerified: readonly string[]; readonly differences: readonly string[]; readonly recordedAt: string;
+}
+export interface Qg10EvidenceRead { readonly notes: readonly Qg10NoteRead[]; readonly count: number }
+
+/** The five things QG-10 names, in the release script's order (packages/compliance QG10_CHECKS). */
+const QG10_CHECK_ORDER = Object.freeze(['health', 'smoke', 'reconciliation', 'monitoring', 'rollback'] as const);
+
+/** OB-423 (a): an attempt as words — the pipeline's number as it is, a box-local one as "by hand on this box, <UTC time>". */
+function attemptWords(lang: Lang, attempt: string): string {
+  const m = /^local-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(attempt);
+  return m === null ? attempt : `${gatesWords(lang, 'qg10ByHand')} ${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]} UTC`;
+}
+
+/**
+ * One note as the QG-10 row shows it: an icon AND words (never a colour alone) — ✓ when all five checks verified, ⚠ naming
+ * each one that was not; the release, the box, the run and the attempt, who merged it, when, and every difference in words.
+ */
+export function qg10NoteView(lang: Lang, n: Qg10NoteRead): { readonly icon: string; readonly tone: 'ok' | 'error'; readonly headline: string; readonly lines: readonly string[] } {
+  const w = (k: string) => gatesWords(lang, k);
+  const verdict = n.verified ? w('qg10AllVerified') : `${w('qg10NotVerifiedK')}: ${n.notVerified.map((c) => w(`c_${c}`)).join(', ')}`;
+  return {
+    icon: n.verified ? '✓' : '⚠', tone: n.verified ? 'ok' : 'error',
+    headline: `${n.release.slice(0, 12)} · ${w(`o_${n.outcome}`)} · ${verdict}`,
+    lines: [
+      `${w('qg10BoxK')}: ${n.box} · ${w('qg10RunK')}: ${n.run} · ${w('qg10AttemptK')}: ${attemptWords(lang, n.attempt)} · ${w('qg10ByK')}: ${n.by} · ${w('qg10AtK')}: ${n.at}`,
+      // Always QG-10's own order (a stored line's keys may come back in any order — PostgreSQL's jsonb sorts them).
+      QG10_CHECK_ORDER.filter((c) => c in n.checks).map((c) => `${w(`c_${c}`)}: ${w(`s_${n.checks[c]!}`)}`).join(' · '),
+      ...n.differences.map((d) => `${w('qg10DiffK')}: ${d}`),
+    ],
+  };
+}
+
 export interface GatesSession {
   readonly may: { readonly named: boolean; readonly read: boolean; readonly decide: boolean };
   read(release: string): Promise<Outcome<GateRegisterRead>>;
+  /** OB-423: every attempt's QG-10 note, newest first (a GET — the same read right as the register). */
+  readEvidence(): Promise<Outcome<Qg10EvidenceRead>>;
   decide(input: {
     readonly gate: string; readonly release: string; readonly decision: string;
     readonly evidenceLabel: string; readonly evidenceRef: string; readonly rationale: string;
@@ -104,6 +172,11 @@ export function createGatesSession(input: { readonly viewer: ViewerIdentity | un
       if (!may.read) return { result: 'invalid', why: 'cannotRead' };
       if (!RELEASES.includes(release)) return { result: 'invalid', why: 'noRelease' };
       return call('GET', `/v1/compliance/gate-register?release=${encodeURIComponent(release)}`);
+    },
+    readEvidence: async () => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (!may.read) return { result: 'invalid', why: 'cannotRead' };
+      return call('GET', '/v1/compliance/gate-register/qg10-evidence');
     },
     decide: async (d) => {
       if (!named) return { result: 'invalid', why: 'nobody' };

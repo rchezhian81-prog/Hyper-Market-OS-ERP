@@ -18,8 +18,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1830. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
-- Requirements with at least one proof of each kind: Unit 97 · Integration (in-process) 104 · Real PostgreSQL 102 · Browser (stub cloud) 90 · Browser (connected) 70 · Device 0 · Staff UAT 0.
+- Evidence test files scanned: 1839. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Requirements with at least one proof of each kind: Unit 97 · Integration (in-process) 104 · Real PostgreSQL 102 · Browser (stub cloud) 91 · Browser (connected) 71 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 42 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 39 · WIRED 5.
 - Labels that do NOT hold: none.
 
@@ -112,11 +112,11 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | QG-03 | PARTIALLY_WIRED | 3 | 2 | 1 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-04 | INTEGRATION_TESTED | 1 | 1 | 1 | 1 | · | · | · | ✓ an integration test cites it |
 | QG-05 | PARTIALLY_WIRED | 2 | 1 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| QG-06 | PARTIALLY_WIRED | 6 | 4 | 2 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| QG-06 | PARTIALLY_WIRED | 7 | 4 | 2 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-07 | PARTIALLY_WIRED | 12 | 16 | 8 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-08 | PARTIALLY_WIRED | 3 | 7 | 4 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-09 | PARTIALLY_WIRED | 2 | 1 | 1 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| QG-10 | PARTIALLY_WIRED | 1 | 2 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| QG-10 | PARTIALLY_WIRED | 2 | 3 | 1 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-11 | PARTIALLY_WIRED | 1 | 2 | 2 | 3 | 3 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-12 | PARTIALLY_WIRED | 2 | 2 | 2 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | MG-01 | INTEGRATION_TESTED | 7 | 3 | 1 | · | · | · | · | ✓ an integration test cites it |
@@ -220,6 +220,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **QG-06** — browser: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · connected: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · real PostgreSQL: `scanner-findings-and-gate-decisions-are-recorded.test.ts`, `the-security-reviewer-signs-and-floor-devices-need-owner-and-reviewer.test.ts`
 - **QG-07** — browser: `finance-month-close-delivery.e2e.ts` · real PostgreSQL: `a-delta-lands-once.test.ts`, `a-sale-delta-lands-once.test.ts`, `history-and-open-orders-load.test.ts`, `offline-sync-slice.test.ts`, `opening-state-loads.test.ts`, `the-books-open-from-the-old-trial-balance.test.ts`, `the-old-shop-arrives-whole.test.ts`, `we-get-it-out-ourselves.test.ts`
 - **QG-09** — browser: `the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts` · connected: `the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts` · real PostgreSQL: `the-adoption-gate-names-who-is-not-ready.test.ts`
+- **QG-10** — browser: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · connected: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · real PostgreSQL: `qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts`
 - **QG-11** — browser: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · connected: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`
 - **QG-12** — browser: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · connected: `the-quality-gates-page-records-the-owners-decision.e2e.ts` · real PostgreSQL: `a-rehearsed-rollback-reconciles.test.ts`, `scanner-findings-and-gate-decisions-are-recorded.test.ts`
 - **MG-04** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `the-legacy-card-purge-check-reads-an-extract.test.ts`, `the-old-shop-arrives-whole.test.ts`, `schema-migrations.test.ts`

@@ -85,6 +85,8 @@ import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-st
 import { watchStoreComputerStatus } from './store-computer-status-file';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
+import { ensureDeviceTls, sayDeviceTlsEvent, socketAddressesFor, type DeviceTlsMaterial } from './device-tls'; // OB-422
+import type { HandheldSealSource } from './handheld-seal'; // OB-424
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { TillOperators, loadTillCredentials, deviceLaneOf, TILL_AUTHORITY, type SignInLogEntry } from './till-operators';
 import { phoneOperatorsOf, personNamedBy } from './handheld-sign-in';
@@ -2158,7 +2160,13 @@ export async function startEdge(
   const headOfficeLinkSetting = headOfficeLinkSettingsFrom(settings);
   if (headOfficeLinkSetting.on) say('office pages: each person signs in to head office with their own login and second step on this PC; their own session is carried to head office (OB-388).');
   else if (headOfficeLinkSetting.why !== null) say(`office pages: the head-office sign-in is NOT on — ${headOfficeLinkSetting.why}. The pages say head office cannot be reached.`);
+  // OB-424 · ADR-0030: the "Handheld seal" panel on these loopback screens reads the RUNNING door's authority — set once
+  // the door below is opened, or shut with the box's own words why. Never a seal the door is not using.
+  const sealRelay: { current: () => HandheldSealSource } = {
+    current: settings['EDGE_DEVICE_PORT'] === undefined ? () => ({ kind: 'no_door' }) : () => ({ kind: 'starting' }),
+  };
   const screens = screenPort === undefined ? null : await startScreenServer({
+    handheldSeal: () => sealRelay.current(),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
     ...(headOfficeLinkSetting.on ? {
       headOffice: (origin: string) => createHeadOfficeLink({
@@ -2204,7 +2212,22 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
   });
   const deviceHost = settings['EDGE_DEVICE_HOST'];
-  const devices = devicePort === undefined || enrolments === null ? null : await startDeviceServer({
+  // OB-422 · ADR-0030: the door speaks TLS only. Its lock — the store computer's own signing authority and the door's
+  // certificate — lives OUTSIDE the data folder (a backup never carries a private key off the box). Made at install,
+  // checked and renewed here. A lock that cannot be made or read keeps the door SHUT and says why; the till sells on.
+  const deviceTlsDir = settings['EDGE_DEVICE_TLS_DIR'] ?? `${settings['EDGE_DATA_DIR']!.replace(/[\\/]+$/, '')}-device-tls`;
+  const deviceTls = ((): { readonly dir: string; readonly addresses: readonly string[]; readonly material: DeviceTlsMaterial } | null => {
+    if (devicePort === undefined) return null;
+    const where = socketAddressesFor(deviceHost ?? DEVICE_HOST);
+    if (!where.ok) { say(`handheld door NOT opened: ${where.problem}. The till keeps selling; the handhelds cannot reach this box until this is fixed.`); sealRelay.current = () => ({ kind: 'shut', problem: where.problem }); return null; }
+    const made = ensureDeviceTls({ dir: deviceTlsDir, addresses: where.addresses, now: new Date() });
+    if (!made.ok) { say(`handheld door NOT opened: ${made.problem}. The till keeps selling; the handhelds cannot reach this box until this is fixed.`); sealRelay.current = () => ({ kind: 'shut', problem: made.problem }); return null; }
+    for (const e of made.events) say(sayDeviceTlsEvent(e));
+    return { dir: deviceTlsDir, addresses: where.addresses, material: made.tls };
+  })();
+  const devices = devicePort === undefined || enrolments === null || deviceTls === null ? null : await startDeviceServer({
+    tls: deviceTls,
+    onTls: say,
     port: Number(devicePort),
     ...(deviceHost === undefined ? {} : { host: deviceHost }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
@@ -2243,10 +2266,12 @@ export async function startEdge(
       now: () => new Date().toISOString(),
     }),
   });
+  if (devices !== null) sealRelay.current = () => ({ kind: 'door', authority: devices.authority() }); // OB-424
   if (devices !== null && enrolments !== null) {
     say(devices.host === DEVICE_HOST || devices.host === 'localhost'
-      ? `device socket on ${devices.host}:${devices.port} — loopback only; name EDGE_DEVICE_HOST with the shop's address for the handhelds on the wifi to reach it`
-      : `device socket on ${devices.host}:${devices.port} — reachable on the shop network; only handhelds enrolled with a head-office code may use it, and it serves the handheld screens only (ADR-0019)`);
+      ? `device socket on https://${devices.host}:${devices.port} — loopback only; name EDGE_DEVICE_HOST with the shop's address for the handhelds on the wifi to reach it`
+      : `device socket on https://${devices.host}:${devices.port} — reachable on the shop network; only handhelds enrolled with a head-office code may use it, and it serves the handheld screens only (ADR-0019)`);
+    say(`  locked (OB-422): https only, plain http refused; a handheld trusts this store computer's authority once, at enrolment — fingerprint ${devices.authority().fingerprint}; the door's certificate runs to ${devices.certificate().notAfter} and is renewed by this box`);
     const live = enrolments.enrolled().filter((e) => e.revokedAt === null).length;
     if (live > 0) say(`  ${live} handheld(s) enrolled on this box`);
     say('  phone sign-in: each person signs in on the phone with their staff ID and the same PIN as the till; their work is recorded as theirs (OB-30)');

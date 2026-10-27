@@ -11,6 +11,9 @@ import { writeHeldWorkFeeds } from '../../edge/store-edge/src/work-feeds-file';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import { withTillPeople, issueTillPins } from '../support/till-operator';
 import { signInOnPhonePage } from '../support/phone-sign-in-page';
+import { deviceBase as boxDoor, sharedDeviceTls, trustingBrowserArgs } from '../support/box-tls';
+
+let deviceTls: Awaited<ReturnType<typeof sharedDeviceTls>>;
 
 /**
  * **Transfers are SENT and COUNTED IN on the warehouse handheld with the line down, in a real browser on the REAL store box
@@ -61,7 +64,8 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld sends and counts in trans
   const stops: (() => Promise<void>)[] = [];
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'warehouse-app'], { stdio: 'ignore' });
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    deviceTls = await sharedDeviceTls(); // OB-422: the store computer's authority, trusted as an enrolled handheld trusts it
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: trustingBrowserArgs(deviceTls.keyPin) });
   }, 180_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
@@ -97,11 +101,12 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld sends and counts in trans
       },
     });
     const edge: EdgeProcess = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     stops.push(() => edge.stop());
-    const base = `http://127.0.0.1:${edge.devices!.port}`;
+    const base = `${boxDoor(edge)}`;
 
     const context = await browser.newContext(HANDHELD);
     stops.push(() => context.close());

@@ -89,6 +89,23 @@ describe('migrate-data-folder', () => {
     expect(said(w)).toMatch(/Nothing to move — this copy already uses the shop's data folder/);
   });
 
+  it('OB-422: the handheld door\'s lock moves with the till on this computer, checked, and the till\'s settings name its new place', async () => {
+    const w = await firstLayout();
+    const lock = join(w.root, 'till', 'edge-data-device-tls');
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(join(lock, 'authority.crt'), 'public certificate\n');
+    writeFileSync(join(lock, 'authority-key.pem'), 'stands in for the private key\n');
+    const before = sha(join(lock, 'authority-key.pem'));
+    expect(await migrateDataFolder(w.deps)).toBe(0);
+    const moved = join(w.data, 'till', 'edge-data-device-tls');
+    expect(sha(join(moved, 'authority-key.pem'))).toBe(before);
+    expect(readFileSync(join(w.data, 'till', 'till.env'), 'utf8')).toContain(`EDGE_DEVICE_TLS_DIR=${moved}`);
+    expect(said(w)).toContain("the handheld door's lock (it stays on this computer)");
+    expect(said(w)).not.toContain('stands in for the private key');
+    expect(existsSync(lock)).toBe(false); // renamed beside, never deleted
+    expect(readdirSync(join(w.root, 'till')).filter((n) => n.startsWith('edge-data-device-tls.moved-to-data-folder-')).length).toBe(1);
+  });
+
   it('refuses while the till runs (its files are open), with two settings files, or with nothing to move — changing nothing', async () => {
     const w = await firstLayout();
     w.ports.add(8090);

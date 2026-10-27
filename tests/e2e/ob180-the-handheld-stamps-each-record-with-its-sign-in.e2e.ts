@@ -10,6 +10,9 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import { withTillPeople, issueTillPins, pinOf } from '../support/till-operator';
 import { signInOnPhonePage } from '../support/phone-sign-in-page';
+import { deviceBase as boxDoor, sharedDeviceTls, trustingBrowserArgs } from '../support/box-tls';
+
+let deviceTls: Awaited<ReturnType<typeof sharedDeviceTls>>;
 
 /**
  * **OB-180 "A" (owner, 17 Oct 2026, "Stamp each record") in a real browser, against a REAL store computer with no cloud.**
@@ -59,7 +62,8 @@ describe.skipIf(!HAVE_BROWSER)('OB-180: the handheld stamps each record with the
 
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'warehouse-app'], { stdio: 'ignore' });
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    deviceTls = await sharedDeviceTls(); // OB-422: the store computer's authority, trusted as an enrolled handheld trusts it
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: trustingBrowserArgs(deviceTls.keyPin) });
   }, 240_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
@@ -92,12 +96,13 @@ describe.skipIf(!HAVE_BROWSER)('OB-180: the handheld stamps each record with the
     }, PEOPLE)), 'utf8');
     await issueTillPins(dir, KEY, PEOPLE.map((p) => p.userId));
     const edge: EdgeProcess = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_LANE_ID: 'lane-1',
     }, () => {}))!;
     stops.push(() => edge.stop());
     const logged = async (): Promise<Logged[]> => (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as Logged);
-    const base = `http://127.0.0.1:${edge.devices!.port}`;
+    const base = `${boxDoor(edge)}`;
 
     const context = await browser.newContext(HANDHELD);
     stops.push(() => context.close());

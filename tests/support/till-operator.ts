@@ -7,6 +7,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { issueTillCredential, tillPinKey } from '../../packages/identity/src/till-pin';
+import { trustTheBoxes } from './box-tls';
 
 /** The lane every prepared box is told it is, unless a test names another. */
 export const TEST_LANE = 'lane-1';
@@ -208,7 +209,8 @@ export async function approvalFromLane(
  * posts. Resolves the cookie header the phone then carries: its device credential and the person's session together.
  */
 export async function signInOnPhone(base: string, deviceCookie: string, staffId: string, screen: 'warehouse' | 'picker' | 'driver' = 'warehouse'): Promise<string> {
-  const res = await fetch(`${base}/device/sign-in?screen=${screen}`, {
+  // OB-422: the handheld door is https; trusted by its box's authority (a door `deviceBase` named), never unchecked.
+  const res = await trustTheBoxes()(`${base}/device/sign-in?screen=${screen}`, {
     method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', cookie: deviceCookie },
     body: JSON.stringify({ staffId, pin: pinOf(staffId) }),
   });

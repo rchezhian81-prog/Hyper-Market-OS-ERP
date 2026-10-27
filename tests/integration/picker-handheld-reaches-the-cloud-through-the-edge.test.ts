@@ -11,6 +11,7 @@ import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enro
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
 import { STREAM_FOR } from '../../services/api/src/adapters';
 import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '../support/till-operator';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **A picker handheld's outcomes and pack reach head office through the store box's DEVICE socket — enrolled once, durable at
@@ -62,7 +63,7 @@ const packJson = (deviceStatus = 'registered', withWave = true): string => JSON.
 }, PHONE_PEOPLE));
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
@@ -86,7 +87,7 @@ const packedWave = (over: Record<string, unknown> = {}, waveId = 'W-1') => makeE
 });
 const item = (e: ReturnType<typeof makeEvent>) => ({ key: e.idempotencyKey, event: e });
 
-const deviceBase = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
+const deviceBase = (edge: EdgeProcess): string => `${boxDoor(edge)}`;
 const enrol = async (edge: EdgeProcess, code = CODE, deviceId = 'hh-02', next?: string): Promise<{ status: number; cookie: string | undefined; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId, code, ...(next === undefined ? {} : { next }) }) });
   const device = res.headers.get('set-cookie')?.split(';')[0];

@@ -96,7 +96,9 @@ const STATES = new Set(['verified', 'failed', 'not_run', 'not_run_on_this_box', 
 /**
  * The per-release QG-10 evidence line. `checks` holds one state per thing QG-10 names; `verified` is true only when
  * health, smoke, reconciliation and monitoring are `verified` and rollback is `ready` or `exercised_ok`.
- * @param {{ sha: string, previous: string, at: string, by: string, run: string, box: string, outcome: string,
+ * OB-423 (a): `run` and `attempt` name the release ATTEMPT — the pipeline's run id and attempt number, or, by hand on the
+ * box, run "manual" and attempt "local-<UTC yyyymmddThhmmssZ>". Every attempt is its own line and its own note.
+ * @param {{ sha: string, previous: string, at: string, by: string, run: string, attempt: string, box: string, outcome: string,
  *           checks: Record<string, string>, differences?: readonly string[] }} input
  */
 export function qg10Record(input) {
@@ -106,10 +108,83 @@ export function qg10Record(input) {
   return {
     gate: 'QG-10',
     passCondition: 'Health, smoke, reconciliation, monitoring and rollback verified after every release.',
-    release: input.sha, previous: input.previous, at: input.at, by: input.by, run: input.run, box: input.box,
+    release: input.sha, previous: input.previous, at: input.at, by: input.by, run: input.run, attempt: input.attempt, box: input.box,
     outcome: input.outcome, checks, verified,
     notVerified: CHECKS.filter((c) => !(checks[c] === 'verified' || (c === 'rollback' && (checks[c] === 'ready' || checks[c] === 'exercised_ok')))),
     differences: [...(input.differences ?? [])],
     decision: 'not decided here — this is evidence for the owner\'s QG-10 decision in the gate register (QG-12: silence is not approval)',
   };
+}
+
+// ── OB-423 (owner, 27 Oct 2026): the QG-10 line goes to head office's gate register ──────────────────────────────────────
+// The release script posts its QG-10 line under its OWN limited machine identity (role `qg10_release_evidence`: it may only
+// add QG-10 release evidence). The key is supplied by the custodian at deploy time, in a root-only file on the box named by
+// SRE_QG10_PUSH_TOKEN_FILE (docs/runbooks/automatic-deployment.md, docs/runbooks/environments-and-secrets.md) — never in the
+// repository, never in deploy.conf, never on a command line, never printed. Whatever happens, the release goes on and the
+// box's own QG-10 log keeps the line: a note that was not posted is SAID, in words, every time (P-08).
+
+/** Head office's route for the release script's note (services/compliance/src/qg10-evidence.ts). */
+export const QG10_NOTE_PATH = '/v1/compliance/gate-register/qg10-evidence';
+
+const NOT_POSTED = 'QG-10 note NOT POSTED to head office\'s gate register';
+
+/** Where a note may go: https, or this box's own loopback (the pilot box is head office). Never an address with a sign-in in it. */
+export function registerAddressProblem(url) {
+  const base = String(url ?? '').trim();
+  if (base === '') return 'no register address is set (SRE_QG10_REGISTER_URL)';
+  let u;
+  try { u = new URL(base); } catch { return 'the register address (SRE_QG10_REGISTER_URL) is not an address'; }
+  if (u.username !== '' || u.password !== '') return 'the register address (SRE_QG10_REGISTER_URL) carries a sign-in — refused, it would be a secret in a setting';
+  if (u.protocol === 'https:') return undefined;
+  if (u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost')) return undefined;
+  return 'the register address (SRE_QG10_REGISTER_URL) is neither https nor this box\'s own loopback';
+}
+
+/**
+ * Post one QG-10 line. Never throws: answers { posted, outcome, words } — `words` is the one sentence release.sh prints.
+ * `token` is the key's text ('' = none configured); `fetch` is injected; the token never appears in `words`.
+ * @param {{ line: string, url: string, token: string, idempotencyKey: string, noKeyBecause?: string,
+ *           fetch: (url: string, init: object) => Promise<{ status: number, text: () => Promise<string>, headers?: { get: (n: string) => string | null } }> }} input
+ */
+export async function postQg10Note(input) {
+  const { line, url, token, idempotencyKey, fetch } = input;
+  let note;
+  try { note = JSON.parse(line); } catch { note = undefined; }
+  if (note === null || typeof note !== 'object' || note.gate !== 'QG-10') {
+    return { posted: false, outcome: 'no_line', words: `${NOT_POSTED} — there is no readable QG-10 line for this attempt.` };
+  }
+  const which = `release ${note.release}, box ${note.box}, run ${note.run}, attempt ${note.attempt}`;
+  if (String(token ?? '').trim() === '') {
+    return { posted: false, outcome: 'no_key', words: `${NOT_POSTED} (${which}) — ${input.noKeyBecause ?? 'no key is configured on this box (SRE_QG10_PUSH_TOKEN_FILE)'}. The line is kept in this box's QG-10 log only; the custodian supplies the key (docs/runbooks/automatic-deployment.md).` };
+  }
+  const problem = registerAddressProblem(url);
+  if (problem !== undefined) return { posted: false, outcome: 'no_address', words: `${NOT_POSTED} (${which}) — ${problem}. The line is kept in this box's QG-10 log only.` };
+  let status; let body = ''; let replayed = false;
+  try {
+    const res = await fetch(`${String(url).trim().replace(/\/+$/, '')}${QG10_NOTE_PATH}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${String(token).trim()}`, 'content-type': 'application/json', 'idempotency-key': idempotencyKey },
+      body: JSON.stringify({ note }),
+    });
+    status = res.status;
+    // The same note under the same key again: head office replays its first answer and says so.
+    try { replayed = typeof res.headers?.get === 'function' && res.headers.get('idempotent-replay') === 'true'; } catch { replayed = false; }
+    try { body = await res.text(); } catch { body = ''; }
+  } catch {
+    return { posted: false, outcome: 'unreachable', words: `${NOT_POSTED} (${which}) — head office could not be reached at SRE_QG10_REGISTER_URL. The line is kept in this box's QG-10 log only.` };
+  }
+  let code = '';
+  let already = false;
+  try { const j = JSON.parse(body); code = typeof j?.error?.code === 'string' ? j.error.code : ''; already = j?.alreadyRecorded === true; } catch { /* not JSON: the status says it */ }
+  const why = `HTTP ${status}${code === '' ? '' : ` ${code}`}`;
+  if (status === 201 && !already && !replayed) return { posted: true, outcome: 'posted', words: `QG-10 note posted to head office's gate register (${which}).` };
+  if (status === 200 || status === 201) return { posted: true, outcome: 'already_recorded', words: `QG-10 note already on head office's gate register (${which}) — nothing new posted.` };
+  if (status === 409) return { posted: false, outcome: 'refused_second_note', words: `${NOT_POSTED} (${which}) — head office already holds a different note from this box for this release attempt and keeps the first (${why}). This attempt is in this box's QG-10 log.` };
+  // OB-423 (b): one machine login per computer — this box's login is another computer's, or names none.
+  if (status === 403 && (code === 'qg10_note_names_another_computer' || code === 'qg10_login_names_no_computer')) {
+    return { posted: false, outcome: 'refused_other_computer', words: `${NOT_POSTED} (${which}) — this box's QG-10 machine login belongs to another computer (${why}); each computer has its own. Tell the custodian.` };
+  }
+  if (status === 401 || status === 403) return { posted: false, outcome: 'refused_key', words: `${NOT_POSTED} (${which}) — head office refused this box's key (${why}). Tell the custodian.` };
+  if (status === 400) return { posted: false, outcome: 'refused_note', words: `${NOT_POSTED} (${which}) — head office could not read the note (${why}).` };
+  return { posted: false, outcome: 'refused', words: `${NOT_POSTED} (${which}) — head office answered ${why}. The line is kept in this box's QG-10 log only.` };
 }

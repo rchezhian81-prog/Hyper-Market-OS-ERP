@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1830,
+  "testFiles": 1839,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,8 +21,8 @@
     "unit": 97,
     "integration": 104,
     "realDb": 102,
-    "browser": 90,
-    "connected": 70,
+    "browser": 91,
+    "connected": 71,
     "device": 0,
     "uat": 0
   },
@@ -5286,7 +5286,7 @@
       "id": "QG-06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 6,
+        "unit": 7,
         "integration": 4,
         "realDb": 2,
         "browser": 1,
@@ -5301,6 +5301,7 @@
           "tests/unit/compliance-risk.test.ts",
           "tests/unit/erp-gates-session.test.ts",
           "tests/unit/erp-risk-acceptance-session.test.ts",
+          "tests/unit/qg10-release-evidence.test.ts",
           "tests/unit/two-signatures-accept-a-critical-risk.test.ts"
         ],
         "integration": [
@@ -5470,27 +5471,33 @@
       "id": "QG-10",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 2,
+        "unit": 2,
+        "integration": 3,
         "realDb": 1,
-        "browser": 0,
-        "connected": 0,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/qg10-release-evidence.test.ts",
           "tests/unit/qg10-the-books-are-reconciled-around-every-release.test.ts"
         ],
         "integration": [
           "tests/integration/qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts",
-          "tests/integration/the-release-script-deploys-and-rolls-back.test.ts"
+          "tests/integration/the-release-script-deploys-and-rolls-back.test.ts",
+          "tests/integration/the-release-script-posts-its-qg10-note-to-the-gate-register.test.ts"
         ],
         "realDb": [
           "tests/integration/qg10-the-release-snapshot-reads-the-real-books-on-postgresql.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },

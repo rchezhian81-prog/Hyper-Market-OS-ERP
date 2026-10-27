@@ -2,6 +2,9 @@
 // (apps/web-erp/src/gates-session.ts, in the bundle as window.gates) asks head office; this page shows every gate's
 // standing for the release the person chooses, each with an icon AND words, and records the owner's decision on an
 // explicit click. A gate nobody decided says "Not decided — silence is not approval". Every word has a Tamil twin.
+// OB-423: the QG-10 row also lists the release script's own QG-10 notes — evidence for the decision, never a decision; a
+// read that fails says so ("not the same as none"), never an empty list. Owner's answer (c): EVERY attempt of every release
+// is listed, newest first, each with its outcome, box, run and attempt — nothing hidden or collapsed into "latest".
 
 const $ = (id) => document.getElementById(id);
 const api = window.gates ?? null;
@@ -11,6 +14,7 @@ const may = session?.may ?? { named: false, read: false, decide: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 let register = null;
+let evidence = null; // OB-423: the last read of the release script's QG-10 notes (an Outcome)
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show', 'search'], ['record', 'badge-check']]) { const i = icon(name); if (i !== null) $(id).prepend(i, ' '); }
@@ -59,7 +63,42 @@ function gateRow(g) {
     for (const b of g.blockers) { const item = text('li', `⚠ ${t(`k_${b.kind}`)} — ${b.reason}`); item.dataset.kind = b.kind; ul.append(item); }
     li.append(ul);
   }
+  if (g.gate === 'QG-10') li.append(qg10Notes());
   return li;
+}
+
+// OB-423: the release script's QG-10 notes — every attempt, newest first, as head office sent them — each an icon AND words.
+function qg10Notes() {
+  const box = document.createElement('div');
+  box.className = 'qg10';
+  box.id = 'qg10-evidence';
+  box.append(text('h4', t('qg10H')), text('p', t('qg10Lead'), 'facts'));
+  if (evidence === null || evidence.result !== 'ok') {
+    const p = text('p', evidence === null ? t('qg10Unread') : `${t('qg10Unread')} ${api.outcomeWords(lang, evidence)}`, 'status err');
+    p.dataset.qg10 = 'unread';
+    box.append(p);
+    return box;
+  }
+  if (evidence.value.notes.length === 0) { const p = text('p', t('qg10None'), 'facts'); p.dataset.qg10 = 'none'; box.append(p); return box; }
+  const ul = document.createElement('ul');
+  ul.className = 'qg10-notes';
+  for (const n of evidence.value.notes) {
+    const v = api.noteView(lang, n);
+    const item = document.createElement('li');
+    item.className = `tone-${v.tone}`;
+    item.dataset.release = n.release;
+    item.dataset.box = n.box;
+    item.dataset.run = n.run;
+    item.dataset.attempt = n.attempt;
+    item.dataset.outcome = n.outcome;
+    item.dataset.verified = String(n.verified);
+    const head = document.createElement('div');
+    head.append(text('span', v.icon, 'icon'), ' ', text('span', v.headline, 'words'));
+    item.append(head, ...v.lines.map((l) => text('div', l, 'facts')));
+    ul.append(item);
+  }
+  box.append(ul);
+  return box;
 }
 
 function paint() {
@@ -90,7 +129,10 @@ function paint() {
 async function show() {
   const release = $('release').value;
   const out = await session.read(release);
-  if (out.result === 'ok') { register = out.value; $('page-status').className = 'status'; $('page-status').textContent = ''; } else { say('page-status', out); }
+  if (out.result === 'ok') {
+    register = out.value; $('page-status').className = 'status'; $('page-status').textContent = '';
+    evidence = await session.readEvidence(); // OB-423: the QG-10 notes, read with the register (never on a timer)
+  } else { say('page-status', out); }
   paint();
 }
 

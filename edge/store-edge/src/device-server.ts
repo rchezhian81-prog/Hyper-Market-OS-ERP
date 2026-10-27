@@ -20,13 +20,20 @@
 //   • constrains the batch's `source` to a handheld surface: a warehouse device cannot speak as `manager` and slip an
 //     approval decision or a whole receipt through under its own credential;
 //   • binds to loopback unless a deployment names the shop's address (`EDGE_DEVICE_HOST`) — "never widens by itself",
-//     and the boot log says in words when it has.
+//     and the boot log says in words when it has;
+//   • speaks TLS ONLY (OB-422 · ADR-0030): its certificate is signed by the store computer's own authority
+//     (`device-tls.ts`), which each device trusts once, at enrolment. A plain-http request on the port is answered with a
+//     refusal in words (426) and closed — nothing in it is read. Its cookies are `Secure`, so a browser never sends them
+//     in the clear. The lane socket and the screens server stay plain on the PC's own loopback (hard rule #1: the till's
+//     sale path is untouched).
 //
 // The socket carries; the box decides (`relayDeviceEvents`, the allow-list, the dedupe set, the fsync'd log live in
 // main.ts). Same origin means no CORS at all: a cross-site page cannot send the cookie (SameSite=Strict) and cannot
 // read a reply.
 
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer as createTlsServer, type Server } from 'node:https';
+import { createServer as createFrontServer, type Socket } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { APP_SHELL, routeOf, redirectFor, safeFile, injectPayload } from './screen-server';
@@ -44,6 +51,7 @@ import {
   HANDHELD_AUTHORITY, signInEndedMessageFor, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
 } from './handheld-sign-in';
 import type { QueuePosDoor } from './queue-pos-door'; // D04-FR-05 queue-busting (OB-288 Pkg 6b): the queue till's door
+import { ensureDeviceTls, sayDeviceTlsEvent, RENEW_CHECK_MS, type DeviceTlsEvent, type DeviceTlsMaterial } from './device-tls'; // OB-422: TLS only
 
 /** Loopback unless a deployment names the shop's address explicitly — the device socket never widens by itself. */
 export const DEVICE_HOST = '127.0.0.1';
@@ -108,8 +116,27 @@ export type DeviceStatusHandler = (keys: readonly string[]) => readonly BoxItemS
 export interface DeviceServer {
   readonly port: number;
   readonly host: string;
+  /** OB-422: always `https` — the door speaks TLS only; a plain-http request is refused in words. */
+  readonly scheme: 'https';
+  /** The authority enrolled devices trust (public): its certificate, its fingerprint, its key pin. Never a private key. */
+  authority(): { readonly pem: string; readonly fingerprint: string; readonly keyPin: string; readonly notAfter: string };
+  /** The door's certificate right now: its fingerprint, its end, the addresses it covers. */
+  certificate(): { readonly fingerprint: string; readonly notAfter: string; readonly addresses: readonly string[] };
+  /**
+   * Check the door's certificate against `at` and renew it when due (`ensureDeviceTls`); a renewed one is put in place for
+   * the next connection without closing the door. Returns what changed, or the problem in words (the old one stays).
+   */
+  renew(at: Date): { readonly ok: true; readonly events: readonly DeviceTlsEvent[] } | { readonly ok: false; readonly problem: string };
   stop(): Promise<void>;
 }
+
+/** The words a plain-http request to the door gets, before it is closed. Nothing is read from it and nothing is served. */
+export const PLAIN_HTTP_REFUSAL = [
+  'This is the store computer\'s handheld door. It speaks https only (OB-422): plain http on the shop network is refused.',
+  'Open it as https://<the store computer\'s address>:<port>/ on a handheld that trusts this store computer (in-store install runbook, Step 6).',
+  'இது கடை கணினியின் கைக்கருவி வாசல். https மட்டுமே — சாதாரண http மறுக்கப்படுகிறது.',
+  '',
+].join('\n');
 
 const TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.html': 'text/html; charset=utf-8',
@@ -277,10 +304,21 @@ export function startDeviceServer(input: {
   readonly maxBytes?: number;
   /** D04-FR-05 (OB-288 Pkg 6b): the queue till's door — `/queue-pos/…`, for an enrolled device only. Absent → 404 as before. */
   readonly queuePos?: QueuePosDoor;
+  /**
+   * OB-422: the door's lock — the folder holding the store computer's authority and the door's certificate, the addresses
+   * the certificate covers, and what `ensureDeviceTls` gave at start. Required: there is no plain-http device socket.
+   */
+  readonly tls: { readonly dir: string; readonly addresses: readonly string[]; readonly material: DeviceTlsMaterial };
+  /** How often the door checks whether its certificate is due for renewal (default `RENEW_CHECK_MS`); 0 = never by itself. */
+  readonly renewEveryMs?: number;
+  /** Told, in words, of every renewal or problem the timer finds — the boot log. Never a key. */
+  readonly onTls?: (line: string) => void;
 }): Promise<DeviceServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
+  let material = input.tls.material;
+  const secure = (m: DeviceTlsMaterial) => ({ key: m.socketKeyPem, cert: m.socketChainPem });
 
-  const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const server: Server = createTlsServer({ ...secure(material), minVersion: 'TLSv1.2' }, (req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       const raw = req.url ?? '/';
       const url = ((): URL => { try { return new URL(raw, 'http://device'); } catch { return new URL('/', 'http://device'); } })();
@@ -307,7 +345,7 @@ export function startDeviceServer(input: {
         }
         // The credential rides in an HttpOnly, SameSite=Strict cookie: the page's scripts never see it, a cross-site
         // page never sends it. A year, because revocation is head office's and this register's — never the clock's.
-        const cookie = `${DEVICE_COOKIE}=${encodeURIComponent(`${outcome.deviceId}.${outcome.token}`)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`;
+        const cookie = `${DEVICE_COOKIE}=${encodeURIComponent(`${outcome.deviceId}.${outcome.token}`)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=31536000`;
         // SP-3c: back to the screen the device asked for (the picker's, the driver's), never to a page that is not a handheld's.
         sendJson(res, 200, { enrolled: true, deviceId: outcome.deviceId, next: homeAfterEnrol(b['next']) }, { 'set-cookie': cookie });
         return;
@@ -354,7 +392,7 @@ export function startDeviceServer(input: {
         if (input.operators === null) { answer(503, 'This store computer cannot sign anybody in on a phone. Tell the manager.', 'no_sign_in_here'); return; }
         const outcome = await input.operators.signIn({ staffId: fields['staffId'] ?? '', pin: fields['pin'] ?? '', deviceId: auth.deviceId, authority: HANDHELD_AUTHORITY[screen] });
         if (!outcome.signedIn) { answer(outcome.refusedBecause === 'locked' || outcome.refusedBecause === 'lane_locked' ? 429 : 401, outcome.laneMessage, outcome.refusedBecause); return; }
-        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${operatorCookieSeconds(auth.deviceId, screen)}`;
+        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${operatorCookieSeconds(auth.deviceId, screen)}`;
         if (wantsJson) { sendJson(res, 200, { signedIn: true, userId: outcome.userId, displayName: outcome.displayName, expiresAt: outcome.expiresAt, next: `/${screen}/` }, { 'set-cookie': cookie }); return; }
         res.writeHead(303, { location: `/${screen}/`, 'set-cookie': cookie, ...SECURITY_HEADERS });
         res.end();
@@ -365,7 +403,7 @@ export function startDeviceServer(input: {
         req.resume();
         if (input.operators !== null) await input.operators.signOut(operatorToken);
         const screen = phoneScreenOf(url.searchParams.get('screen'));
-        res.writeHead(303, { location: `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`, 'set-cookie': `${OPERATOR_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`, ...SECURITY_HEADERS });
+        res.writeHead(303, { location: `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`, 'set-cookie': `${OPERATOR_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`, ...SECURITY_HEADERS });
         res.end();
         return;
       }
@@ -483,14 +521,68 @@ export function startDeviceServer(input: {
     })();
   });
 
+  // A failed handshake (a device that does not trust this store computer yet, a scanner probing the port) is the
+  // client's refusal; the door just closes that connection.
+  server.on('tlsClientError', (_e: Error, socket: Socket) => { socket.destroy(); });
+
+  // ── The front: one port, TLS only. The first byte of a TLS connection is a handshake record (0x16); anything else
+  // is plain text — answered with the refusal in words (426) and closed, never read, never served (OB-422).
+  const sockets = new Set<Socket>();
+  const front = createFrontServer((socket: Socket) => {
+    sockets.add(socket);
+    socket.on('close', () => { sockets.delete(socket); });
+    socket.on('error', () => { socket.destroy(); });
+    socket.setTimeout(15_000, () => { socket.destroy(); });
+    socket.once('data', (first: Buffer) => {
+      socket.setTimeout(0);
+      if (first[0] === 0x16) {
+        socket.pause();
+        socket.unshift(first);
+        server.emit('connection', socket);
+        process.nextTick(() => { socket.resume(); });
+        return;
+      }
+      const body = Buffer.from(PLAIN_HTTP_REFUSAL, 'utf8');
+      socket.end(Buffer.concat([
+        Buffer.from(`HTTP/1.1 426 Upgrade Required\r\nupgrade: TLS/1.2\r\nconnection: close\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: ${body.length}\r\ncache-control: no-store\r\n\r\n`, 'latin1'),
+        body,
+      ]));
+    });
+  });
+
+  const renew = (at: Date): { readonly ok: true; readonly events: readonly DeviceTlsEvent[] } | { readonly ok: false; readonly problem: string } => {
+    const out = ensureDeviceTls({ dir: input.tls.dir, addresses: input.tls.addresses, now: at });
+    if (!out.ok) return out;
+    // The next handshake gets the renewed certificate; connections already open finish on the old one.
+    if (out.tls.socketFingerprint !== material.socketFingerprint) server.setSecureContext({ ...secure(out.tls), minVersion: 'TLSv1.2' });
+    material = out.tls;
+    return { ok: true, events: out.events };
+  };
+  const every = input.renewEveryMs ?? RENEW_CHECK_MS;
+  const timer = every > 0 ? setInterval(() => {
+    const out = renew(new Date());
+    if (!out.ok) input.onTls?.(`handheld door: the certificate could not be renewed — ${out.problem}. The current one stays until ${material.socketNotAfter}.`);
+    else for (const e of out.events) if (e.kind !== 'authority_ends_soon') input.onTls?.(sayDeviceTlsEvent(e));
+  }, every) : null;
+  timer?.unref();
+
   return new Promise((resolve, reject) => {
-    server.on('error', reject);
-    server.listen(input.port, input.host ?? DEVICE_HOST, () => {
-      const address = server.address();
+    front.on('error', (e) => { if (timer !== null) clearInterval(timer); reject(e); });
+    front.listen(input.port, input.host ?? DEVICE_HOST, () => {
+      const address = front.address();
       resolve({
         port: typeof address === 'object' && address !== null ? address.port : input.port,
         host: input.host ?? DEVICE_HOST,
-        stop: () => new Promise<void>((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
+        scheme: 'https',
+        authority: () => ({ pem: material.authorityPem, fingerprint: material.authorityFingerprint, keyPin: material.authorityKeyPin, notAfter: material.authorityNotAfter }),
+        certificate: () => ({ fingerprint: material.socketFingerprint, notAfter: material.socketNotAfter, addresses: material.addresses }),
+        renew,
+        stop: () => new Promise<void>((done) => {
+          if (timer !== null) clearInterval(timer);
+          front.close(() => { done(); });
+          server.closeAllConnections();
+          for (const s of sockets) s.destroy();
+        }),
       });
     });
   });

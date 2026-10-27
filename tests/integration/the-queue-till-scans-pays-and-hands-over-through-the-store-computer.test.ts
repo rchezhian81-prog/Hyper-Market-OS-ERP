@@ -16,6 +16,7 @@ import { withTillPeople, issueTillPins, signInTill, pinOf, signInOnPhone, type T
 import type { QueueTillSession, QueueWindow } from '../../apps/queue-pos/src/browser-entry';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **D04-FR-05 mobile POS and queue-busting (OB-288 Pkg 6b) — a staff handheld scans in the queue, takes a card payment where
@@ -125,7 +126,8 @@ const globalsOf = (html: string, name: string): unknown => {
 async function queueBustOfflineAndSync(cloud: Cloud): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), 'sre-queue-till-'));
   const packFile = join(dir, 'store-pack.json');
-  const saved = globalThis.fetch;
+  const original = globalThis.fetch;
+  const saved = trustTheBoxes(original); // OB-422: the handheld door is https, trusted by its box's authority
   let cut = false;
   const cloudFetch = cloud.fetchFor(saved, () => cut);
   // The handheld's own calls carry its cookies, as a browser on the shop wifi does (same origin, HttpOnly).
@@ -148,7 +150,7 @@ async function queueBustOfflineAndSync(cloud: Cloud): Promise<void> {
     return edge;
   };
   const stopAll = async (): Promise<void> => { for (const e of edges.splice(0)) await e.stop(); };
-  const dev = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
+  const dev = (edge: EdgeProcess): string => boxDoor(edge);
   const onDisk = async (e: EdgeProcess) => (await readLog(e.log.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as Record<string, unknown>] : []));
   const queueLog = async () => (await readLog(join(dir, 'queue-baskets.log'))).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { code: string; state: string; recalledOnLane?: string; giveUpReason?: string }] : []));
   // A fresh copy of the till's module for the handheld: one page holds one till, as in the shop.
@@ -378,7 +380,7 @@ async function queueBustOfflineAndSync(cloud: Cloud): Promise<void> {
     expect(await onHand('p-dal')).toBe(20 - 2 - 1);
   } finally {
     await stopAll();
-    globalThis.fetch = saved;
+    globalThis.fetch = original;
     vi.resetModules();
     await rm(dir, { recursive: true, force: true });
   }

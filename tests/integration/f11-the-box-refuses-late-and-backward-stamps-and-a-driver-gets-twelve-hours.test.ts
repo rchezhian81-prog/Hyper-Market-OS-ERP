@@ -11,6 +11,7 @@ import { DeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outb
 import { drainToBox, type FetchLike } from '../../packages/sync/src/device-drain';
 import { fromHex, hmacSha256Hex, phoneStamping, readPhoneSignIn, stampMessage, type PhoneSignIn, type SignInStamp } from '../../packages/sync/src/sign-in-stamp';
 import type { DeviceAck } from '../../packages/sync/src/device-relay';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **Follow-up F11 on the REAL store computer (`startEdge`), no head office: the handheld verifier's findings, closed.**
@@ -42,7 +43,7 @@ const PEOPLE: readonly TillPerson[] = [
 const OB185 = (who: string, endedAt: string): string => `the record was made under ${who}'s sign-in on this phone, which ended at ${endedAt}, and it reached this store computer more than 12 hours later (OB-185) — too late to be taken; a person must look at it`;
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
@@ -87,7 +88,7 @@ describe('F11: the box refuses late and backward stamps, and a driver\'s sign-in
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_LANE_ID: 'lane-1',
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
-    const device = `http://127.0.0.1:${edge.devices!.port}`;
+    const device = `${boxDoor(edge)}`;
     const enrol = await savedFetch(`${device}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: 'hh-01', code: CODE }) });
     expect(enrol.status).toBe(200);
     const phone = enrol.headers.get('set-cookie')!.split(';')[0]!;
