@@ -170,6 +170,106 @@ async function theOwnerIsToldAtTheFlagOnly(c: Ctx): Promise<void> {
   }
 }
 
+/**
+ * §31.1 · OB-414 "C" (owner, in writing): while the clock alert is open, a store joining or leaving UPDATES the same alert —
+ * its words name the stores out now, it is sent again once and asks to be ticked again — and a report with the same stores
+ * changes nothing (nor does a second head-office instance or a restart). It clears only when every store is back in step.
+ */
+async function theOpenAlertFollowsTheStores(c: Ctx): Promise<void> {
+  const T = c.T;
+  let h: ApiHarness = apiHarness({ store: c.store, idempotency: c.idempotency });
+  await h.seedOwner(T, OWNER);
+  await h.provisionRole(T, BOX1, 'store_computer', ['S1']);
+  await h.provisionRole(T, BOX2, 'store_computer', ['S2']);
+  const report = async (box: string, store: string, check: ReturnType<typeof clockCheck>): Promise<void> => {
+    const r = await h.request({ method: 'POST', path: '/v1/store-computers/health-reports', userId: box, tenantId: T, branchId: store, idempotencyKey: `rep-${randomUUID()}`, body: {
+      observedAt: new Date().toISOString(), disk: { freeBytes: 5e9, totalBytes: 1e10, salesLogUsedBytes: 1000, salesLogCapacityBytes: 1e7, reserveBytes: 1e6 },
+      queue: { unsent: 0, deadLettered: 0 }, tills: [], clockCheck: check,
+    } });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+  };
+  const inboxClock = async (): Promise<Live[]> =>
+    ((await h.request({ method: 'GET', path: INBOX, userId: OWNER, tenantId: T })).body as { alerts: { alert: Live }[] }).alerts.map((a) => a.alert).filter((a) => a.alertId === CLOCK_ID);
+  const now = (): string => new Date().toISOString();
+  const workerOf = (transport: ReturnType<typeof recordingTransport>): OpsAlertWorker => startOpsAlertWorker({
+    tenants: async () => [T], intervalMs: 3_600_000, now, say: () => undefined, transport,
+    deps: { ...alertLifecycleAdapter({ store: c.store, now }), ...observedHealthAdapter({ store: c.store, now, boxHistorySealKey: boxHistorySealKey(TEST_BOX_HISTORY_SEAL_SECRET), boxHistoryWaitMs: 5_000 }) },
+  });
+  const life = alertLifecycleAdapter({ store: c.store, now });
+  const clockLive = async () => (await life.alerts(T)).filter((a) => a.alert.alertId === CLOCK_ID);
+  const phone = recordingTransport();
+  const phone2 = recordingTransport();
+  const workers: OpsAlertWorker[] = [];
+  const start = (t: ReturnType<typeof recordingTransport>): OpsAlertWorker => { const w = workerOf(t); workers.push(w); return w; };
+  try {
+    const worker = start(phone);
+    // S1 out past the flag: the alert, naming S1.
+    await report(BOX1, 'S1', clockCheck('flag_bills', -400, { promotions: ['oil-10-new'], prices: [] }));
+    expect((await worker.runOnce()).raised).toBe(1);
+    expect((await inboxClock()).map((a) => a.detail)).toEqual([expect.stringMatching(/^price change held — a store computer's clock is 5 minutes or more out: store S1 /)]);
+    expect(phone.sent).toHaveLength(1);
+    const tick = await h.request({ method: 'POST', path: `/v1/platform/alerts/${encodeURIComponent(CLOCK_ID)}/acknowledge`, userId: OWNER, tenantId: T, idempotencyKey: `k-${randomUUID()}`, body: {} });
+    expect(tick.status).toBe(200);
+    expect(await inboxClock()).toEqual([]); // ticked: it leaves his inbox
+
+    // S2 out too: the SAME alert, updated to name both, sent again ONCE — and back in his inbox to tick.
+    await report(BOX2, 'S2', clockCheck('flag_bills', 420, { promotions: [], prices: ['pe-s2'] }));
+    const both = await worker.runOnce();
+    expect([both.raised, both.updated, both.cleared]).toEqual([0, 1, 0]);
+    // A second head-office instance at the same time: nothing more (no second update, no second message).
+    h = apiHarness({ store: c.store, idempotency: c.idempotency });
+    const second = start(phone2);
+    const again = await second.runOnce();
+    expect([again.raised, again.updated ?? 0]).toEqual([0, 0]);
+    const [shown, ...more] = await inboxClock();
+    expect(more).toEqual([]);
+    expect(shown!.detail).toMatch(/2 store computers' clocks are 5 minutes or more out: store S1 .*held now: offer oil-10-new; store S2 .*held now: price pe-s2/);
+    expect(phone.sent).toHaveLength(2);
+    expect(phone.sent[1]!.text).toMatch(/^UPDATED: box_clock_held is degraded — .*store S1.*store S2/);
+    expect(phone2.sent).toEqual([]);
+    expect((await clockLive()).map((a) => [a.state, a.occurrence, a.revision])).toEqual([['open', 1, 1]]);
+
+    // Another report with the same stores out, and a RESTART (a fresh worker): no update, no message.
+    await report(BOX1, 'S1', clockCheck('flag_bills', -460, { promotions: ['oil-10-new'], prices: [] }));
+    await worker.stop();
+    const restarted = start(phone);
+    const same = await restarted.runOnce();
+    expect([same.raised, same.updated ?? 0, same.cleared]).toEqual([0, 0, 0]);
+    expect((await second.runOnce()).updated ?? 0).toBe(0);
+    expect(phone.sent).toHaveLength(2);
+
+    // S1 back in step, S2 still out: updated again, naming only S2, sent once more — not cleared.
+    await report(BOX1, 'S1', clockCheck('in_step', 2, null));
+    const one = await restarted.runOnce();
+    expect([one.raised, one.updated, one.cleared]).toEqual([0, 1, 0]);
+    expect((await second.runOnce()).updated ?? 0).toBe(0);
+    const [only] = await inboxClock();
+    expect(only!.detail).toMatch(/^price change held — a store computer's clock is 5 minutes or more out: store S2 /);
+    expect(only!.detail).not.toContain('store S1');
+    expect(phone.sent).toHaveLength(3);
+    expect(phone2.sent).toEqual([]);
+    expect((await clockLive()).map((a) => [a.state, a.occurrence, a.revision])).toEqual([['open', 1, 2]]);
+
+    // S2 back in step: cleared (kept, never deleted); nothing more sent.
+    await report(BOX2, 'S2', clockCheck('in_step', 1, null));
+    const done = await restarted.runOnce();
+    expect([done.updated ?? 0, done.cleared]).toEqual([0, 1]);
+    expect((await clockLive()).map((a) => [a.state, a.occurrence, a.revision])).toEqual([['cleared', 1, 2]]);
+    expect(await inboxClock()).toEqual([]);
+    expect(phone.sent).toHaveLength(3);
+  } finally {
+    for (const w of workers) await w.stop();
+  }
+}
+
+const FOLLOWS = 'OB-414: S1 out → alert; S2 too → the same alert updated naming both, sent once; same again → nothing; S1 back → naming only S2; S2 back → cleared';
+describe('§31.1 · OB-414 — the open clock alert follows the stores that are out (memory)', () => {
+  it(FOLLOWS, async () => { await onMemory(theOpenAlertFollowsTheStores); }, 120_000);
+});
+describe.skipIf(DATABASE_URL === undefined)('§31.1 · OB-414 — the open clock alert follows the stores that are out (PostgreSQL)', () => {
+  it(FOLLOWS, async () => { await onPg(theOpenAlertFollowsTheStores); }, 300_000);
+});
+
 const NAME = 'no rule needed; not at the warning; at the flag once (two instances, a restart); owner-only to turn off or tick; cleared in step';
 describe('§31.1 · OB-409 — the built-in alert tells every owner when a store computer\'s clock holds new prices and offers (memory)', () => {
   it(NAME, async () => { await onMemory(theOwnerIsToldAtTheFlagOnly); }, 120_000);

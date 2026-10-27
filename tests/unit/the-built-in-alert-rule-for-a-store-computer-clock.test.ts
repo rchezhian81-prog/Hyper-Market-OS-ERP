@@ -6,6 +6,8 @@ import {
 } from '../../services/platform/src/observed-health';
 import { projectAlerts, type AlertLifecycleEvent } from '../../services/platform/src/alert-lifecycle';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
+import { recordingTransport } from '../../packages/notifications/src/index';
+import { deliverAlerts, OPS_ALERT_WORKER } from '../../services/platform/src/ops-alert-worker';
 
 /**
  * **§31.1 · owner decision OB-409 "C" (27 Oct 2026, in writing; extends OB-403) — the built-in alert rule for a store
@@ -136,5 +138,105 @@ describe('§31.1 · OB-409: one alert per episode; cleared back in step; again a
     records = [...records, report('S1', 9, clock('flag_bills', 330, true))];
     expect((await pass(9))!.newlyOpened).toBe(1);
     expect((await mine())[0]).toMatchObject({ state: 'open', occurrence: 2 });
+  });
+});
+
+/**
+ * **§31.1 · owner decision OB-414 "C" — when the stores in the open clock alert change, the SAME alert is updated and sent
+ * again (to tick again); the same stores again change nothing; it clears only when every store is back in step.**
+ */
+describe('§31.1 · OB-414: the open clock alert follows the stores it is about', () => {
+  function shop() {
+    const events: (AlertLifecycleEvent & { key: string })[] = [];
+    let records: BoxHealthRecord[] = [];
+    const d: ObservedHealthDeps = {
+      now: () => at(0),
+      alerts: () => projectAlerts(events),
+      recordAlertEvent: (_t, e, key) => { if (!events.some((x) => x.key === key)) events.push({ ...e, key }); },
+      lastSaleSyncedAt: () => undefined, catalogueBuiltAt: () => undefined, connectorQueues: () => [], integrationHealth: () => ({}),
+      backups: () => [], recordBackup: () => undefined,
+      alertRules: () => undefined, defineAlertRules: () => undefined,
+      shopOwner: () => OWNER,
+      storeComputers: async () => ({ records, knownStores: [] }),
+    };
+    const transport = recordingTransport();
+    return {
+      events, transport,
+      say: (r: BoxHealthRecord): void => { records = [...records, r]; },
+      pass: async (minutes: number) => {
+        const r = (await raiseObservedAlerts(d, 't', OPS_ALERT_WORKER, at(minutes), { clear: true }))!;
+        const delivered = await deliverAlerts(d as never, 't', OPS_ALERT_WORKER, at(minutes), transport);
+        return { ...r, delivered };
+      },
+      live: async () => (await d.alerts('t')).filter((a) => a.alert.alertId === BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID),
+      ack: async (minutes: number, key: string): Promise<void> => { await d.recordAlertEvent('t', { alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, change: 'acknowledged', by: 'u-owner', at: at(minutes) }, key); },
+    };
+  }
+
+  it('S1 out → raised; S2 too → updated naming both, sent once; same again → nothing; S1 back → updated naming only S2; S2 back → cleared', async () => {
+    const s = shop();
+    s.say(report('S1', 0, clock('flag_bills', -400, true, { promotions: ['oil-10-new'] })));
+    const first = await s.pass(1);
+    expect([first.newlyOpened, first.updated, first.delivered]).toEqual([1, 0, 2]);
+    expect((await s.live())[0]).toMatchObject({ state: 'open', occurrence: 1, alert: { members: ['S1'] } });
+    expect((await s.live())[0]!.revision).toBeUndefined();
+    // The owner ticks it.
+    await s.ack(2, 'ack-clock');
+    expect((await s.live())[0]!.state).toBe('acknowledged');
+
+    // S2 goes out too: the SAME alert (occurrence 1), its words naming both, asked to be ticked again, sent again once.
+    s.say(report('S2', 3, clock('flag_bills', 420, true, { prices: ['pe-s2'] })));
+    const both = await s.pass(3);
+    expect([both.newlyOpened, both.updated, both.cleared, both.delivered]).toEqual([0, 1, 0, 2]);
+    const updated = (await s.live())[0]!;
+    expect(updated).toMatchObject({ state: 'open', occurrence: 1, revision: 1, updatedAt: at(3), alert: { members: ['S1', 'S2'], raisedAt: at(1) } });
+    expect(updated.alert.detail).toMatch(/2 store computers' clocks are 5 minutes or more out: store S1 .*held now: offer oil-10-new; store S2 .*7 minutes BEHIND head office.*held now: price pe-s2/);
+    expect(s.transport.sent.map((m) => m.text.startsWith('UPDATED: '))).toEqual([false, true]);
+    expect(s.transport.sent[1]!.text).toContain('store S2');
+
+    // Another report with the same stores out (the minutes drift): nothing updated, nothing sent.
+    s.say(report('S1', 4, clock('flag_bills', -460, true, { promotions: ['oil-10-new'] })));
+    const same = await s.pass(4);
+    expect([same.newlyOpened, same.updated, same.delivered]).toEqual([0, 0, 0]);
+    // A second pass at the same moment (a second head-office instance) writes nothing more either.
+    expect((await s.pass(4)).updated).toBe(0);
+
+    // S1 back in step, S2 still out: updated again, naming only S2, sent once more — still not cleared.
+    s.say(report('S1', 5, clock('in_step', 2, false)));
+    const one = await s.pass(5);
+    expect([one.newlyOpened, one.updated, one.cleared, one.delivered]).toEqual([0, 1, 0, 2]);
+    const now = (await s.live())[0]!;
+    expect(now).toMatchObject({ state: 'open', occurrence: 1, revision: 2, alert: { members: ['S2'] } });
+    expect(now.alert.detail).toMatch(/^price change held — a store computer's clock is 5 minutes or more out: store S2 /);
+    expect(now.alert.detail).not.toContain('store S1');
+    expect(s.transport.sent).toHaveLength(3);
+    expect(s.transport.sent[2]!.text).toMatch(/^UPDATED: box_clock_held is degraded — .*store S2/);
+
+    // S2 back in step: cleared (kept); nothing more sent.
+    s.say(report('S2', 6, clock('in_step', 1, false)));
+    const done = await s.pass(6);
+    expect([done.updated, done.cleared, done.delivered]).toEqual([0, 1, 0]);
+    expect((await s.live())[0]).toMatchObject({ state: 'cleared', occurrence: 1, revision: 2 });
+    expect(s.events.filter((e) => e.change === 'raised')).toHaveLength(1);
+    expect(s.events.filter((e) => e.change === 'updated')).toHaveLength(2);
+  });
+
+  it('an update is head office\'s own and only for an open occurrence — a stray or late one changes nothing', () => {
+    const raised = { alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, component: STORE_COMPUTER_CLOCK_HELD_COMPONENT, status: 'degraded' as const, ownerUserId: 'u-owner', ownerName: 'o', detail: 'S1', raisedAt: at(0), ackDueBy: at(60), members: ['S1'] };
+    const base: AlertLifecycleEvent[] = [{ alertId: raised.alertId, change: 'raised', by: OPS_ALERT_WORKER, at: at(0), alert: raised, origin: 'built-in-rule' }];
+    const upd: AlertLifecycleEvent = { alertId: raised.alertId, change: 'updated', by: OPS_ALERT_WORKER, at: at(2), alert: { ...raised, detail: 'S1, S2', members: ['S1', 'S2'] }, origin: 'built-in-rule' };
+    const cleared: AlertLifecycleEvent = { alertId: raised.alertId, change: 'cleared', by: OPS_ALERT_WORKER, at: at(1) };
+    // Head office's own update of the open alert: applied.
+    expect(projectAlerts([...base, upd])[0]).toMatchObject({ revision: 1, alert: { detail: 'S1, S2' } });
+    // Not head office's own rule (no origin): ignored.
+    const { origin: _o, ...stray } = upd;
+    void _o;
+    expect(projectAlerts([...base, stray])[0]).toMatchObject({ alert: { detail: 'S1' } });
+    // After it cleared: ignored (no reopening on an update).
+    const late = projectAlerts([...base, cleared, upd])[0]!;
+    expect(late).toMatchObject({ state: 'cleared', alert: { detail: 'S1' } });
+    expect(late.revision).toBeUndefined();
+    // For an alert never raised: no phantom.
+    expect(projectAlerts([upd])).toEqual([]);
   });
 });

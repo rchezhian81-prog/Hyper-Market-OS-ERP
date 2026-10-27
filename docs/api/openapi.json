@@ -138361,6 +138361,12 @@
                 "foreign": {
                   "type": "boolean",
                   "const": true
+                },
+                "revision": {
+                  "type": "number"
+                },
+                "updatedAt": {
+                  "type": "string"
                 }
               },
               "additionalProperties": true
@@ -266343,6 +266349,12 @@
           "foreign": {
             "type": "boolean",
             "const": true
+          },
+          "revision": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -275938,6 +275950,12 @@
             "type": "string"
           },
           "alsoToUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "members": {
             "type": "array",
             "items": {
               "type": "string"
