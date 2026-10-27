@@ -26,7 +26,7 @@ import type { DepartmentCost } from '../../../packages/finance/src/trial-balance
 import { stockAdjustmentSources } from '../../finance/src/period-books';
 import { OWNER_ROLE_ID } from './roles';
 import { tallyExportAdapter } from './p3-procure-adapters';
-import { shopDayOf } from './lane2-offline-adapters';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { r3GstLedger } from './r3-gst-adapters';
 import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
 import type { JournalEntry, ControlTotalCheck } from '../../finance/src/index';
@@ -38,7 +38,9 @@ import { rebateAccrualRoutes, rebateAccrualPosition, accrualAccounts, type Rebat
 import type { RebateReceiptJournal } from '../../finance/src/rebate-receipts';
 import type { AccountClass } from '../../finance/src/period-books';
 
-interface Base { readonly store: EventStore; readonly now: () => string }
+interface Base { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }
+/** M01-FR-02 (re-audit T1): the shop's trading day — the tenant's own zone and cut-off — for the Tally day and journal dates. */
+const tradingDayFor = (input: Base) => { const clock = shopClock(input.calendar); return (iso: string, tenantId: string): Promise<string> => clock.tradingDayOf(tenantId, iso); };
 
 export const TALLY_OUTBOX_STREAM = streamName(STREAM.finance, 'tally-outbox');
 export const TALLY_FILES_STREAM = streamName(STREAM.finance, 'tally-files');
@@ -82,7 +84,7 @@ export function tallyOutboxAdapter(input: Base): TallyOutboxDeps {
   const { store, now } = input;
   const names = tallyExportAdapter(input);
   return {
-    now, shopDayOf,
+    now, shopDayOf: tradingDayFor(input),
     journals: (t) => allJournals<GlJournal>(store, t),
     ledgerNames: (t) => names.ledgerNames(t),
     postingMap: (t) => postingMapOf(store, t),
@@ -295,7 +297,7 @@ export function rebateAccrualAdapter(input: Base): RebateAccrualDeps {
   const fin = financeAdapter(input);
   const rebates = rebatesAdapter(input);
   return {
-    now, shopDayOf, periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal,
+    now, shopDayOf: tradingDayFor(input), periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal,
     postingMap: (t) => postingMapOf(store, t),
     schemes: (t) => rebates.schemes(t),
     accruedFor: async (t, schemeId) => (await rebates.accruals(t, schemeId)).reduce((s, a) => s + a.accrued.minor, 0),
@@ -423,8 +425,8 @@ export async function advanceApplicationsAgainstPayables(input: Base, tenantId: 
 // ── the entry point ───────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every route of this package on head office's surface. With no store, an in-memory one (the bare surface the guardrails build). */
-export function financeBridgeRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string }): readonly Route[] {
-  const base: Base = { store: input.store ?? new InMemoryEventStore(), now: input.now };
+export function financeBridgeRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly calendar?: ShopCalendarOf }): readonly Route[] {
+  const base: Base = { store: input.store ?? new InMemoryEventStore(), now: input.now, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) };
   return [
     ...tallyOutboxRoutes(tallyOutboxAdapter(base)),
     ...ledgerReportRoutes(ledgerReportAdapter(base)),

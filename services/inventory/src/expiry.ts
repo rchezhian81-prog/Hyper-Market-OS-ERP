@@ -174,8 +174,8 @@ export interface ExpiryStateDeps {
   /** The write-offs (M28) — the dispose action the register links to each moved batch. Absent → none shown. */
   readonly writeOffs?: (tenantId: string) => Promise<readonly BatchWriteOff[]> | readonly BatchWriteOff[];
   readonly locationBranches?: LocationBranches;
-  /** The shop's day for a moment (India Standard Time for this store). */
-  readonly shopDayOf: (at: string) => string;
+  /** The shop's calendar date for a moment, in the tenant's own zone (packages/calendar/src/shop-clock.ts). */
+  readonly shopDayOf: (at: string, tenantId: string) => string | Promise<string>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
@@ -183,7 +183,7 @@ export interface ExpiryStateDeps {
 /** Run the sweep for one shop: append today's moves; answer how many batches moved. */
 export async function sweepExpiredBatches(deps: ExpiryStateDeps, tenantId: string, at: string): Promise<readonly ExpiredBatchMove[]> {
   const already = new Set((await deps.moves(tenantId)).map(expiryMoveKey));
-  const moves = expiredBatchesToMove({ batches: await deps.batches(tenantId), alreadyMoved: already, shopDay: deps.shopDayOf(at), at });
+  const moves = expiredBatchesToMove({ batches: await deps.batches(tenantId), alreadyMoved: already, shopDay: await deps.shopDayOf(at, tenantId), at });
   if (moves.length > 0) await deps.recordMoves(tenantId, moves);
   return moves;
 }
@@ -220,12 +220,13 @@ export function expiryStateRoutes(deps: ExpiryStateDeps): readonly Route[] {
       handler: async (ctx) => {
         const at = deps.now();
         const moved = await sweepExpiredBatches(deps, ctx.tenantId, at);
+        const shopDay = await deps.shopDayOf(at, ctx.tenantId);
         await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: 'inventory.expiry_sweep.run', objectType: 'expiry_sweep', objectId: deps.shopDayOf(at), at,
+          actorId: ctx.userId, action: 'inventory.expiry_sweep.run', objectType: 'expiry_sweep', objectId: shopDay, at,
           origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-          before: null, after: { moved: String(moved.length) }, correlationId: deps.shopDayOf(at),
+          before: null, after: { moved: String(moved.length) }, correlationId: shopDay,
         });
-        return { status: 200, body: { moved, count: moved.length, shopDay: deps.shopDayOf(at) } };
+        return { status: 200, body: { moved, count: moved.length, shopDay } };
       },
     },
   ];

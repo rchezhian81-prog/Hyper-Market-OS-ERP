@@ -30,13 +30,15 @@ import { competitorDraftRoutes, type CompetitorDraftDeps, type StoredCompetitorR
 import type { ProductPriceFacts } from '../../../packages/pricing/src/competitor-rule';
 import { resolvePrice } from '../../../packages/price-list/src/price-list';
 import { toMaster } from '../../catalogue/src/catalogue-preview';
-import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayIn, wallClockIn } from '../../../packages/calendar/src/trading-day';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 
-/** OB-198: the shop's day for a ledger time (India Standard Time, UTC+05:30). */
-const IST_OFFSET_MS = 330 * 60_000;
-const shopDay = (iso: string): string => new Date(Date.parse(iso) + IST_OFFSET_MS).toISOString().slice(0, 10);
+// OB-198 · M01-FR-02 (re-audit T1): every day here is read from the tenant's own calendar (packages/calendar/src/shop-clock.ts)
+// — never a fixed +05:30. An order's issued-on, a receipt's received-on and "today" for the scorecard are CALENDAR dates in
+// the shop's zone; the loss-prevention days line up with the sales' TRADING days, so they take the shop's cut-off as well.
+type Calendared = { readonly calendar?: ShopCalendarOf };
 
 // ── D-10 supplier scorecard: the facts, from the registers ───────────────────────────────────────────────────────────
 
@@ -45,8 +47,11 @@ const shopDay = (iso: string): string => new Date(Date.parse(iso) + IST_OFFSET_M
  * their latest state (one per receipt id; a later line disposition replaces the dock's first figure), and the invoices
  * the three-way match checked — read straight from head office's registers. Nothing here is a typed figure.
  */
-export function supplierFactsFor(input: { readonly store: EventStore; readonly now: () => string }) {
+export function supplierFactsFor(input: { readonly store: EventStore; readonly now: () => string } & Calendared) {
+  const clock = shopClock(input.calendar);
   return async (tenantId: string, supplierId: string): Promise<SupplierFacts> => {
+    const zone = (await clock.calendar(tenantId)).timeZone;
+    const shopDay = (iso: string): string => wallClockIn(iso, zone).slice(0, 10);
     const pos = [...(await foldPurchaseOrders(input.store, tenantId)).values()].filter((p) => p.supplierId === supplierId && p.status === 'issued' && p.issuedAt !== null);
     const orders: ScorecardOrder[] = pos.map((p) => ({
       poId: p.poId, supplierId: p.supplierId, issuedOn: shopDay(p.issuedAt as string), cancelledByProduct: p.cancelledByProduct,
@@ -93,8 +98,9 @@ const COMPETITOR_RULE = streamName(STREAM.pricing, 'competitor-rule');
  * is built), the MRP in force on the product master, the store's average buying cost (OB-39) and the margin floor in the
  * store's rules. Every read only; the drafts are computed by the tested engine and recorded nowhere.
  */
-export function competitorDraftAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): CompetitorDraftDeps {
+export function competitorDraftAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder } & Calendared): CompetitorDraftDeps {
   const { store, now } = input;
+  const clock = shopClock(input.calendar);
   return {
     now,
     rules: async (t) => (await store.readStream(t, COMPETITOR_RULE, { type: 'CompetitorRuleSet' })).map((e) => e.event.payload as StoredCompetitorRule),
@@ -109,7 +115,7 @@ export function competitorDraftAdapter(input: { readonly store: EventStore; read
       const productIds = [...new Set(sightings.map((o) => o.productId))].sort();
       if (productIds.length === 0) return [];
       const at = now();
-      const asOf = shopDateIn(at); // R1c: the shop's date
+      const asOf = await clock.dateOf(t, at); // R1c · T1: the shop's date, in the tenant's zone
       const [costs, rules] = await Promise.all([averageBuyingCosts({ store, now }, t), storeRulesAdapter({ store }).rules(t, storeId)]);
       const master = productMasterAdapter({ store, now });
       const prices = priceListAdapter({ store, now });
@@ -152,12 +158,19 @@ const padTo = (day: string): string => new Date(Date.parse(`${day}T00:00:00.000Z
  *   • count differences: each count's latest state (reconciled, then decided), latest per count id.
  * CCTV references are sealed onto the case's existing evidence stream (the LP cases adapter), never a video.
  */
-export function lpCorrelationAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): LpCorrelationDeps {
+export function lpCorrelationAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder } & Calendared): LpCorrelationDeps {
   const { store, now } = input;
+  const clock = shopClock(input.calendar);
+  /** The tenant's trading-day reader (zone + cut-off), read once per request — the day a sale of that moment is booked to. */
+  const tradingDays = async (t: string): Promise<(iso: string) => string> => {
+    const cal = await clock.calendar(t);
+    return (iso) => tradingDayIn(iso, cal);
+  };
   const cases = lpCasesAdapter({ store, now });
   return {
     now,
     tillExceptions: async (t, from, to) => {
+      const shopDay = await tradingDays(t);
       const out: TillExceptionFact[] = [];
       for (const e of await store.readStream(t, LP_ACTIVITY, { type: 'TillActivityRecorded' })) {
         const a = e.event.payload as TillActivity;
@@ -175,12 +188,16 @@ export function lpCorrelationAdapter(input: { readonly store: EventStore; readon
       }
       return out;
     },
-    shrink: async (t, from, to) => (await store.readStream(t, WRITE_OFFS, { type: WRITE_OFF_READ }))
+    shrink: async (t, from, to) => {
+      const shopDay = await tradingDays(t);
+      return (await store.readStream(t, WRITE_OFFS, { type: WRITE_OFF_READ }))
       .map((e) => e.event.payload as StoredWriteOff)
       .map((w) => ({ w, day: shopDay(w.at) }))
       .filter((x) => x.day >= from && x.day <= to)
-      .map(({ w, day }) => ({ ref: `write-off:${w.id}`, productId: w.productId, lossType: w.lossType, reasonCode: w.reasonCode, quantityMinor: w.qtyRemoved, valueMinor: w.valueMinor, day })),
+      .map(({ w, day }) => ({ ref: `write-off:${w.id}`, productId: w.productId, lossType: w.lossType, reasonCode: w.reasonCode, quantityMinor: w.qtyRemoved, valueMinor: w.valueMinor, day }));
+    },
     countDifferences: async (t, from, to) => {
+      const shopDay = await tradingDays(t);
       const byId = new Map<string, StoredReconciliation>();
       for (const e of await store.readStream(t, COUNTS)) {
         if (e.event.type === 'CountReconciled' || e.event.type === 'CountDecided') {
@@ -240,9 +257,9 @@ export function shelfBayComplianceAdapter(input: { readonly store: EventStore; r
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
-export function r4SupplyLpRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): readonly Route[] {
+export function r4SupplyLpRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder } & Calendared): readonly Route[] {
   const store = input.store ?? new InMemoryEventStore();
-  const base = { store, now: input.now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
+  const base = { store, now: input.now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }), ...(input.calendar === undefined ? {} : { calendar: input.calendar }) };
   return [
     ...competitorDraftRoutes(competitorDraftAdapter(base)),
     ...lpCorrelationRoutes(lpCorrelationAdapter(base)),

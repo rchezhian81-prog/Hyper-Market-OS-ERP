@@ -32,9 +32,10 @@ import { syncedFoodSafetyRoutes, type SyncedFoodSafetyDeps } from '../../platfor
 import { expiryStateRoutes, sweepExpiredBatches, type ExpiryStateDeps, type ExpiredBatchMove } from '../../inventory/src/expiry';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import { frozenBy as countPlanFreezing } from '../../inventory/src/count-plans';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
-interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }
+interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }
 
 /** PA-01-r1: which branch a stock location belongs to — the org hierarchy, read once per request (as main.ts reads it). */
 const locationBranchesOf = (input: Base): LocationBranches =>
@@ -47,9 +48,16 @@ const TRANSFERS_STREAM = streamName(STREAM.warehouse, 'transfers');
 /** OB-288 lane 2: the expired-state register (M10-FR-01) — one `BatchExpired` per batch, ever. */
 const EXPIRY_STATES_STREAM = streamName(STREAM.inventory, 'expiry-states');
 
-/** OB-198: the shop's day for a moment (India Standard Time, UTC+05:30 — the store is in Tamil Nadu). */
-const IST_OFFSET_MS = 330 * 60_000;
-export const shopDayOf = (iso: string): string => new Date(Date.parse(iso) + IST_OFFSET_MS).toISOString().slice(0, 10);
+/**
+ * OB-198 · M01-FR-02 (re-audit T1): the shop's CALENDAR date for a moment, read from the tenant's own calendar (its time zone
+ * from store setup — packages/calendar/src/shop-clock.ts), never a fixed +05:30 and never UTC. A best-before date, a
+ * received-on date and "has this batch expired today" are calendar dates, so the trading-day cut-off does not move them;
+ * a shop in another zone is dated by its own. With no calendar reader, the shop default (Asia/Kolkata).
+ */
+export const shopDateOf = (calendar?: ShopCalendarOf): ((iso: string, tenantId: string) => Promise<string>) => {
+  const clock = shopClock(calendar);
+  return (iso, tenantId) => clock.dateOf(tenantId, iso);
+};
 
 // ── WF-07: cancellation before dispatch, and the relayed dispatch / receipt ───────────────────────────────────────────
 
@@ -128,7 +136,7 @@ export function expiryStateAdapter(input: Base): ExpiryStateDeps {
   const writeOffs = writeOffAdapter({ store: input.store, now: input.now });
   return {
     now: input.now,
-    shopDayOf,
+    shopDayOf: shopDateOf(input.calendar),
     locationBranches: locationBranchesOf(input),
     moves: async (tenantId) => (await input.store.readStream(tenantId, EXPIRY_STATES_STREAM, { type: 'BatchExpired' }))
       .map((e: PersistedEvent) => e.event.payload as ExpiredBatchMove),
@@ -153,11 +161,11 @@ export function expiryStateAdapter(input: Base): ExpiryStateDeps {
  * The ops-alert worker's daily expiry move (M10-FR-01): once per shop day per shop, appends the day's `BatchExpired` facts.
  * Answers how many batches moved. A restart runs it once more that day, which moves nothing new (every move is keyed).
  */
-export function lane2ExpirySweep(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string, at: string) => Promise<number> {
+export function lane2ExpirySweep(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }): (tenantId: string, at: string) => Promise<number> {
   const deps = expiryStateAdapter(input);
   const sweptOn = new Map<string, string>();
   return async (tenantId, at) => {
-    const day = shopDayOf(at);
+    const day = await deps.shopDayOf(at, tenantId);
     if (sweptOn.get(tenantId) === day) return 0;
     const moved = await sweepExpiredBatches(deps, tenantId, at);
     sweptOn.set(tenantId, day);
@@ -166,9 +174,9 @@ export function lane2ExpirySweep(input: { readonly store: EventStore; readonly n
 }
 
 /** The routes this package adds to head office — one registration line in main.ts. */
-export function lane2OfflineRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): readonly Route[] {
+export function lane2OfflineRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }): readonly Route[] {
   const store = input.store ?? new InMemoryEventStore();
-  const base: Base = { store, now: input.now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
+  const base: Base = { store, now: input.now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }), ...(input.calendar === undefined ? {} : { calendar: input.calendar }) };
   return [
     ...transferLifecycleRoutes(transferLifecycleAdapter(base)),
     ...syncedProductionRoutes(syncedProductionAdapter(base)),

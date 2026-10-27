@@ -20,6 +20,8 @@
 //     the store and the till + `-` (9 characters, so its numbers are 15). Deterministic: the same box after a restart
 //     keeps the same prefix and carries on its count. Head office flags every sale numbered this way for the owner.
 
+import { DEFAULT_SHOP_CALENDAR, shopDateIn } from '../../calendar/src/shop-clock';
+
 /** GST: an invoice's serial number is at most 16 characters. */
 export const GST_INVOICE_NUMBER_MAX = 16;
 /** The counter is always exactly this many digits. */
@@ -107,19 +109,20 @@ export function isFinancialYear(v: unknown): v is string {
   return m !== null && (Number(m[1]) + 1) % 100 === Number(m[2]);
 }
 
-/** India time is UTC+05:30 all year. */
-const IST_OFFSET_MS = 330 * 60_000;
-
 /**
- * The financial year an instant falls in, by its date in India time (the date the tax invoice carries): 31 March 23:59 IST
- * is still the old year, 1 April 00:00 IST the new one. Undefined when the instant cannot be read.
+ * The financial year an instant falls in, by its CALENDAR date in the shop's own time zone — the date the tax invoice
+ * prints (packages/receipt/src/tax-invoice.ts) and the one CGST Rule 46(b)'s year is counted by: 31 March 23:59 in the shop
+ * is still the old year, 1 April 00:00 the new one. M01-FR-02 (re-audit T1): the zone is the shop's calendar
+ * (`locale.time_zone`, carried to the store computer in its signed pack), never a fixed +05:30; with none named, the shop
+ * default (Asia/Kolkata — identical to the old fixed offset, so no number already issued in India is dated differently).
+ * The trading-day cut-off does NOT move a bill's year: a bill printed at 00:30 on 1 April is dated 1 April and is numbered
+ * in the year that date is in. Undefined when the instant cannot be read.
  */
-export function financialYearOf(isoUtc: string): string | undefined {
-  const ms = Date.parse(isoUtc);
-  if (Number.isNaN(ms)) return undefined;
-  const local = new Date(ms + IST_OFFSET_MS);
-  const y = local.getUTCFullYear();
-  const start = local.getUTCMonth() >= 3 ? y : y - 1; // April is month 3
+export function financialYearOf(isoUtc: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone): string | undefined {
+  if (typeof isoUtc !== 'string' || Number.isNaN(Date.parse(isoUtc))) return undefined;
+  const date = shopDateIn(isoUtc, timeZone);
+  const y = Number(date.slice(0, 4));
+  const start = Number(date.slice(5, 7)) >= 4 ? y : y - 1; // April onwards is the year that starts in April
   return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
 }
 

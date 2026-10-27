@@ -131,7 +131,7 @@ import {
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/earn-rule';
 import { type TradingDayRule } from '../../../packages/calendar/src/trading-day';
-import { packRule, packTradingDay, packCalendarDate, packWallClock, zoneCheck, type ZoneCheck } from './shop-zone';
+import { packRule, packTimeZone, packTradingDay, packCalendarDate, packWallClock, zoneCheck, type ZoneCheck } from './shop-zone';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
@@ -1582,6 +1582,8 @@ export async function startEdge(
   const seriesClockRef: { guard?: ClockGuard } = {};
   const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
     seriesClock: () => ({ nowIso: new Date().toISOString(), trusted: seriesClockRef.guard?.check().verdict !== 'flag_bills' }),
+    // M01-FR-02 (T1): the year a bill is in is its date in the SHOP's zone, from the current signed pack (shop-zone.ts).
+    timeZone: () => packTimeZone(pack),
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     // OB-87 "A": the witness log lives OUTSIDE the data folder, so a backup of the data folder never carries it and a
     // restored (older) folder is told apart from an ordinary restart (receipt-numbers.ts header).
