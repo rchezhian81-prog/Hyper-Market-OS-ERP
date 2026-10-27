@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1816,
+  "testFiles": 1817,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1773,8 +1773,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 12,
-        "integration": 13,
-        "realDb": 6,
+        "integration": 14,
+        "realDb": 7,
         "browser": 4,
         "connected": 2,
         "device": 0,
@@ -1808,7 +1808,8 @@
           "tests/integration/b2b-documents-chain.test.ts",
           "tests/integration/b2b-portal.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
-          "tests/integration/quotations.test.ts"
+          "tests/integration/quotations.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts"
         ],
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -1816,7 +1817,8 @@
           "tests/integration/a-b2b-order-is-priced-from-its-approved-contract.test.ts",
           "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
-          "tests/integration/b2b-reconcile-ar.test.ts"
+          "tests/integration/b2b-reconcile-ar.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts"
         ],
         "browser": [
           "tests/e2e/b2b-portal-delivery.e2e.ts",
@@ -1839,8 +1841,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 27,
-        "integration": 36,
-        "realDb": 22,
+        "integration": 37,
+        "realDb": 23,
         "browser": 6,
         "connected": 2,
         "device": 0,
@@ -1904,6 +1906,7 @@
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
@@ -1932,6 +1935,7 @@
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
@@ -4922,8 +4926,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 15,
-        "realDb": 10,
+        "integration": 16,
+        "realDb": 11,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -4944,6 +4948,7 @@
           "tests/integration/period-reopen.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
@@ -4957,6 +4962,7 @@
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
