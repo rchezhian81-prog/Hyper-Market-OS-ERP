@@ -42,17 +42,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - staff UAT and rehearsals;
   - the pen test.
 
+**Owner decisions (27 Oct 2026, in writing)**
+- OB-415: leave B2B invoices from before OB-408.
+- OB-416: record the customer's GSTIN and file invoice by invoice.
+- OB-417: accept older hand-keyed balances.
+- OB-418: alert-update rules confirmed.
+- OB-413: Tamil alert text deferred to R4.
+- OB-419: Mr Sivakumar has no IT role.
+- OB-420: only the named reviewer sees floor-device review requests.
+- OB-421: rollback-button limit accepted.
+
+**What is next (after this PR merges)**
+- OB-416: customer GSTIN on credit accounts.
+- OB-420: review requests for the named reviewer only.
+
 **Needs an owner decision**
-- Q13: credit-customer bills from before OB-408 (recommended: leave, nothing live yet).
-- Q14: the customer GSTIN on credit accounts (recommended: add it and file invoice by invoice).
-- Q15: hand-keyed balances from before OB-408 (recommended: accept, nothing live yet).
-- Confirm the two alert-update rules:
-  - an update asks for a fresh tick;
-  - a store leaving counts as a change.
-- OB-413: name the release for Tamil alert text (recommended: R4).
-- Q16: whether Mr Sivakumar holds the IT role (OB-95 conflict).
-- Q17: only the named reviewer sees the floor-device signature requests (recommended).
-- Q18: the "go back to an older version" button for floor devices (recommended: accept for now).
+- None open.
 
 ---
 
