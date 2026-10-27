@@ -355,6 +355,17 @@ describe('two things never leave the process', () => {
     expect(scanOutbound({ tenantId: 't-sre', items: [] }, 't-sre')).toEqual([]);
   });
 
+  it('does not read an audit chain\'s digest as a card number — but a card number in any other field is still refused', () => {
+    // 4111111111111111 is the standard Visa test number: 16 digits, an issuer prefix, passes Luhn. As a 16-hex FNV digest
+    // it can occur by chance (CI, 27 Oct 2026: $.matches[3].hash on the audit trail).
+    const card = '4111111111111111';
+    expect(looksLikeACardNumber(card)).toBe(true);
+    expect(scanOutbound({ matches: [{ hash: card, prevHash: card }] }, 't-sre')).toEqual([]);
+    expect(scanOutbound({ matches: [{ note: card }] }, 't-sre')).toHaveLength(1);
+    // A "hash" field that is not a digest (spaces or dashes, as a card is typed) is still read.
+    expect(scanOutbound({ hash: '4111 1111 1111 1111' }, 't-sre')).toHaveLength(1);
+  });
+
   it('refuses rather than redacts', async () => {
     // Redacting sends a successful reply for a request that did something wrong, and the
     // wrongness is then invisible to everyone.
