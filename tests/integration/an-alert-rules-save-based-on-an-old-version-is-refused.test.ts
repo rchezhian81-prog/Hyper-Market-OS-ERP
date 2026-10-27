@@ -5,7 +5,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { InMemoryEventStore, SqlEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM, streamName, observedHealthAdapter, alertLifecycleAdapter } from '../../services/api/src/adapters';
-import { observedHealthRoutes, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_RULE_CHANGED_NOTICE, type ObservedHealthDeps } from '../../services/platform/src/observed-health';
+import { observedHealthRoutes, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID as CLOCK_ID, BUILT_IN_RULE_CHANGED_NOTICE, type ObservedHealthDeps } from '../../services/platform/src/observed-health';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import { apiHarness, TEST_PACK_KEY } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
@@ -124,7 +124,7 @@ async function heldRace(store: EventStore, T: string): Promise<{ statuses: numbe
   const notice = alerts.find((a) => a.alert.alertId === `${BUILT_IN_RULE_CHANGED_NOTICE}:v${stored.version}`);
   if (winner === OWNER) {
     expect(stored.builtInOff ?? []).toEqual([]);
-    expect(own.body).toMatchObject({ builtIn: [expect.objectContaining({ alertId: ID, state: 'on' })], ownerNotified: OWNER });
+    expect(own.body).toMatchObject({ builtIn: [expect.objectContaining({ alertId: ID, state: 'on' }), expect.objectContaining({ alertId: CLOCK_ID, state: 'on' })], ownerNotified: OWNER });
     expect(notice?.alert.detail).toMatch(new RegExp(`Now: ${ID} is on`));
   } else {
     expect(stored.builtInOff).toEqual([ID]);

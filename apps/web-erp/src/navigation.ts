@@ -106,6 +106,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // QG-02 lane 1 R4 (M06-FR-02): standing (blanket) purchase agreements with their drawdown — proposed by a buyer, approved
   // by a second person. Gated on the read the agreement routes check (`purchase.commitment.read`); served by the box (OB-380).
   { id: 'blanket-orders', label: 'Standing orders', labelTa: 'நிலையான ஆணைகள்', path: '/blanket-orders', requires: 'purchase.commitment.read', group: 'Purchase' },
+  // QG-02 · M06-FR-03 · D03-FR-03 · OB-404: supplier rebates — what each scheme earned, received and is still owed, and the claims
+  // sent for it (raise → Finance approves → sent → matched; overdue after the owner's answer days). Gated on the register's
+  // read (`purchase.commitment.read`); raising and sending need `purchase.contract.manage`, money `finance.journal.post`.
+  { id: 'rebates', label: 'Supplier rebates', labelTa: 'விநியோகஸ்தர் தள்ளுபடிகள்', path: '/rebates', requires: 'purchase.commitment.read', group: 'Purchase' },
   // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (served by the store computer since OB-380). Gated on the
   // permission those routes check (`purchase.invoice.capture`).

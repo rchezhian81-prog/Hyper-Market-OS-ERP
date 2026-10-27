@@ -28,6 +28,8 @@ export interface OpsAlertPass {
   readonly at: string;
   readonly tenants: number;
   readonly raised: number;
+  /** §31.1 · OB-414: open alerts of head office's own rules whose subject changed — updated and sent again this pass. */
+  readonly updated?: number;
   readonly cleared: number;
   readonly escalated: number;
   readonly delivered: number;
@@ -63,7 +65,8 @@ export async function deliverAlerts(deps: AlertLifecycleDeps, tenantId: string, 
   for (const a of await deps.alerts(tenantId)) {
     for (const { to, stage } of recipientsOf(a)) {
       const had = (via: string): boolean => a.deliveries.some((d) => d.to === to && d.stage === stage && d.via === via);
-      const base = `notify-${a.alert.alertId}-o${a.occurrence}-${stage}-${to}`;
+      // §31.1 · OB-414: an UPDATED alert is delivered again — each revision its own delivery (never twice the same one).
+      const base = `notify-${a.alert.alertId}-o${a.occurrence}${a.revision === undefined ? '' : `-r${a.revision}`}-${stage}-${to}`;
       if (!had('inbox')) {
         await deps.recordAlertEvent(tenantId, { alertId: a.alert.alertId, change: 'notified', by, at, notifiedTo: to, via: 'inbox', stage }, `${base}-inbox`);
         delivered += 1;
@@ -71,7 +74,7 @@ export async function deliverAlerts(deps: AlertLifecycleDeps, tenantId: string, 
       if (transport !== undefined && !had(transport.name)) {
         const text = stage === 'escalated'
           ? `ESCALATED to you: ${a.alert.component} is ${a.alert.status} — ${a.alert.detail}. ${a.alert.ownerName} has not acknowledged it.`
-          : `${a.alert.component} is ${a.alert.status} — ${a.alert.detail}. Please acknowledge by ${a.alert.ackDueBy}.`;
+          : `${a.revision === undefined ? '' : 'UPDATED: '}${a.alert.component} is ${a.alert.status} — ${a.alert.detail}. Please acknowledge by ${a.alert.ackDueBy}.`;
         const sent = await transport.send({ messageId: `alert-${tenantId}-${base}`, channel: 'sms', customerId: to, text });
         if (sent.ok) {
           await deps.recordAlertEvent(tenantId, { alertId: a.alert.alertId, change: 'notified', by, at, notifiedTo: to, via: transport.name, stage, detail: sent.providerRef }, `${base}-${transport.name}`);
@@ -109,13 +112,13 @@ export function startOpsAlertWorker(input: {
     const at = input.now();
     const failed: { tenantId: string; error: string }[] = [];
     const skipped: { tenantId: string; why: string }[] = [];
-    let raised = 0; let cleared = 0; let escalated = 0; let delivered = 0;
+    let raised = 0; let updated = 0; let cleared = 0; let escalated = 0; let delivered = 0;
     let tenants: readonly string[] = [];
     try { tenants = await input.tenants(); } catch (e) { failed.push({ tenantId: '*', error: e instanceof Error ? e.message : String(e) }); }
     for (const tenantId of tenants) {
       try {
         const r = await raiseObservedAlerts(input.deps, tenantId, OPS_ALERT_WORKER, at, { clear: true });
-        if (r !== undefined) { raised += r.newlyOpened; cleared += r.cleared; }
+        if (r !== undefined) { raised += r.newlyOpened; updated += r.updated; cleared += r.cleared; }
         // Round 29 · OB-106 (P-08): the store computer checks are being prepared — not frozen, not silent: said, and skipped.
         const preparing = r?.observed.storeComputersPreparing ?? null;
         if (preparing !== null) skipped.push({ tenantId, why: `the store computer checks are being prepared (since ${preparing.since}: ${preparing.why}); this pass skipped them and kept their open alerts as they were` });
@@ -129,11 +132,11 @@ export function startOpsAlertWorker(input: {
         failed.push({ tenantId, error: e instanceof Error ? e.message : String(e) });
       }
     }
-    const done: OpsAlertPass = { at, tenants: tenants.length, raised, cleared, escalated, delivered, failed, skipped };
+    const done: OpsAlertPass = { at, tenants: tenants.length, raised, ...(updated === 0 ? {} : { updated }), cleared, escalated, delivered, failed, skipped };
     passes.push(done);
     total += 1;
     if (passes.length > 50) passes.shift();
-    if (raised + cleared + escalated + delivered > 0) input.say(`alerts: ${raised} raised, ${escalated} escalated, ${delivered} delivered, ${cleared} cleared`);
+    if (raised + updated + cleared + escalated + delivered > 0) input.say(`alerts: ${raised} raised, ${updated === 0 ? '' : `${updated} updated, `}${escalated} escalated, ${delivered} delivered, ${cleared} cleared`);
     for (const f of failed) input.say(`alerts: the alert pass failed for shop ${f.tenantId}: ${f.error}. The next pass tries again.`);
     for (const k of skipped) input.say(`alerts: shop ${k.tenantId}: ${k.why}. The next pass tries again.`);
     return done;

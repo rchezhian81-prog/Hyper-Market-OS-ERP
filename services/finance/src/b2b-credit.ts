@@ -40,6 +40,12 @@ export interface RecordedReceivable {
   readonly deltaMinor: number;
   readonly at: string;
   readonly ref: string | null;
+  /**
+   * OB-408: the business date (YYYY-MM-DD, the shop's calendar) the movement belongs to when it is not the day it was
+   * recorded — a tax invoice's issue date, the day a collection's money was received. The month-end receivables check
+   * cuts off on it; absent (a hand-keyed movement), the shop's trading day of `at` is the movement's date.
+   */
+  readonly on?: string;
 }
 
 export interface B2BCreditDeps {

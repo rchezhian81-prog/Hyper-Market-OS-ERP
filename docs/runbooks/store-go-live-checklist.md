@@ -79,6 +79,18 @@ answer, and a wrong answer is a setting to fix now, not a surprise on a busy Sat
 - [ ] **Budget exhaustion (UAT-48).** Ask what happens when an AI budget runs out. → *"The
   assistant stops and the shop carries on." Never "it keeps going and we get a bill".* **Owner.**
 
+### Put up the notice the law requires in the shop
+
+This one is not a software check and has no UAT number: it is a physical board, required by law
+(B15, COTPA 2003 sections 5 and 6), that no test on a laptop can put on a wall. The software side of
+B15 is already built and tested — tobacco is never promoted on any screen, offer or online listing.
+
+- [ ] **Tobacco warning board (B15).** Before the first day the shop sells tobacco on the new system,
+  put up the statutory tobacco warning board, **at least 60 × 30 cm**, where tobacco is sold, with the
+  warning wording the COTPA rules require. → *Measure it with a tape: 60 cm or more across and 30 cm or
+  more high. Take a dated photo of it on the wall and keep it with the licence papers* (owner decision
+  D3, 11 Aug 2026: the board is required for R2). **Owner.**
+
 ### Get the safety net in place
 
 - [ ] **Incident drill (UAT-56).** Walk the first ninety seconds of the incident runbook

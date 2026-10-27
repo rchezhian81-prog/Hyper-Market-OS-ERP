@@ -41,6 +41,7 @@ import {
   alertLifecycleAdapter, legalHoldsAdapter, customerAdapter, segmentDataAdapter, billingAdapter,
 } from './adapters';
 import { OWNER_ROLE_ID } from './roles';
+import { twoSignatureAdapter } from './gates-adapters'; // OB-407: the OB-330 security-reviewer register
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
@@ -84,6 +85,7 @@ export function rolloutPackSection(input: { readonly store: EventStore }): (tena
 
 function rolloutAdapter(input: Base) {
   const { store, now } = input;
+  const reviewerRegister = twoSignatureAdapter({ store, now }).twoSignature;
   return {
     changes: (tenantId: string) => rolloutChanges(store, tenantId),
     recordChange: async (tenantId: string, change: RolloutChange & { readonly version: number }) => {
@@ -98,6 +100,10 @@ function rolloutAdapter(input: Base) {
     lanes: async (tenantId: string) => (await deviceRegistryAdapter({ store, now }).fleet(tenantId))
       .filter((d) => d.kind === 'pos_lane' && d.status !== 'retired' && d.branchId !== '').map((d) => ({ branchId: d.branchId, laneId: d.deviceId })),
     approvals: approvalRequestsAdapter({ store, now }),
+    // OB-407: the security reviewer named under OB-330 — read from the very register the risk acceptance reads — and whether
+    // the person who approved holds the owner's role, from their own grants (never the request).
+    securityReviewer: (tenantId: string) => reviewerRegister.reviewer(tenantId),
+    isOwner: (tenantId: string, userId: string) => reviewerRegister.isOwner(tenantId, userId),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
     now,
   };

@@ -494,6 +494,7 @@
     'blanket-orders': 'files',
     'dock-diary': 'truck',
     'promotion-funding': 'banknote',
+    'rebates': 'percent', // QG-02 · OB-404 — an icon already in the set
     'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set

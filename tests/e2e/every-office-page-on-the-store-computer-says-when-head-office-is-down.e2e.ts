@@ -50,7 +50,7 @@ describe.skipIf(!HAVE_BROWSER)('every head-office page on the store computer, wi
   afterAll(async () => { await browser?.close(); await edge?.stop(); if (dir !== undefined) await rm(dir, { recursive: true, force: true }); });
 
   it(`all ${HEAD_OFFICE_PAGES.length} open, run cleanly, carry the menu, show no stand-in, and say head office cannot be reached`, async () => {
-    expect(HEAD_OFFICE_PAGES.length).toBe(52); // the 47 of OB-380, the four QG-02 pages and the company report (OB-391)
+    expect(HEAD_OFFICE_PAGES.length).toBe(53); // the 47 of OB-380, the four QG-02 pages, the company report (OB-391) and Supplier rebates (OB-404)
     const base = `http://127.0.0.1:${edge.screens!.port}`;
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
     const page = await context.newPage();

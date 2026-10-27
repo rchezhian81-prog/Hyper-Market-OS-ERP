@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1816,
+  "testFiles": 1830,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -451,10 +451,10 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 17,
+        "unit": 18,
         "integration": 24,
         "realDb": 14,
-        "browser": 7,
+        "browser": 8,
         "connected": 4,
         "device": 0,
         "uat": 0
@@ -477,7 +477,8 @@
           "tests/unit/requisitions-session.test.ts",
           "tests/unit/rfq.test.ts",
           "tests/unit/supplier-performance.test.ts",
-          "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts"
+          "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
+          "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-blanket-po-releases-only-what-its-agreement-allows.test.ts",
@@ -528,6 +529,7 @@
           "tests/e2e/suppliers-on-the-production-api.e2e.ts",
           "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
+          "tests/e2e/the-rebates-screen-works-through-the-store-computer.e2e.ts",
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "connected": [
@@ -1773,8 +1775,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 12,
-        "integration": 13,
-        "realDb": 6,
+        "integration": 14,
+        "realDb": 7,
         "browser": 4,
         "connected": 2,
         "device": 0,
@@ -1808,7 +1810,8 @@
           "tests/integration/b2b-documents-chain.test.ts",
           "tests/integration/b2b-portal.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
-          "tests/integration/quotations.test.ts"
+          "tests/integration/quotations.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts"
         ],
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -1816,7 +1819,8 @@
           "tests/integration/a-b2b-order-is-priced-from-its-approved-contract.test.ts",
           "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
-          "tests/integration/b2b-reconcile-ar.test.ts"
+          "tests/integration/b2b-reconcile-ar.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts"
         ],
         "browser": [
           "tests/e2e/b2b-portal-delivery.e2e.ts",
@@ -1839,8 +1843,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 27,
-        "integration": 36,
-        "realDb": 22,
+        "integration": 37,
+        "realDb": 23,
         "browser": 6,
         "connected": 2,
         "device": 0,
@@ -1904,6 +1908,7 @@
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
@@ -1932,6 +1937,7 @@
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
@@ -2952,27 +2958,32 @@
       "id": "D03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 8,
-        "integration": 16,
-        "realDb": 8,
-        "browser": 6,
+        "unit": 12,
+        "integration": 17,
+        "realDb": 9,
+        "browser": 8,
         "connected": 4,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/approval-requests.test.ts",
+          "tests/unit/erp-approvals-session.test.ts",
           "tests/unit/erp-buying-session.test.ts",
           "tests/unit/erp-supplier-price-variance-session.test.ts",
           "tests/unit/erp-vmi-desk-session.test.ts",
           "tests/unit/goods-in.test.ts",
           "tests/unit/landed-cost.test.ts",
           "tests/unit/purchase-price-variance.test.ts",
+          "tests/unit/rebate-claims.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
+          "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts",
           "tests/unit/vmi.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
+          "tests/integration/a-rebate-claim-is-approved-by-finance-sent-and-matched.test.ts",
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/a-supplier-proposes-replenishment-within-the-buyers-limits.test.ts",
           "tests/integration/a-typed-scan-is-linked-to-its-invoice.test.ts",
@@ -2991,6 +3002,7 @@
         ],
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
+          "tests/integration/a-rebate-claim-is-approved-by-finance-sent-and-matched.test.ts",
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/a-typed-scan-is-linked-to-its-invoice.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
@@ -3003,8 +3015,10 @@
           "tests/e2e/buying-po-delivery.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
+          "tests/e2e/supplier-portal-delivery.e2e.ts",
           "tests/e2e/supplier-portal-vmi-top-up.e2e.ts",
           "tests/e2e/the-buyer-decides-a-supplier-managed-top-up.e2e.ts",
+          "tests/e2e/the-rebates-screen-works-through-the-store-computer.e2e.ts",
           "tests/e2e/the-supplier-page-shows-purchase-price-variance.e2e.ts"
         ],
         "connected": [
@@ -3573,7 +3587,7 @@
       "id": "D14",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 12,
         "realDb": 5,
         "browser": 1,
@@ -3583,6 +3597,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-floor-device-is-switched-on-only-by-the-owner-and-the-named-reviewer.test.ts",
           "tests/unit/api-bodies-are-derived-from-the-handlers.test.ts",
           "tests/unit/approval-requests.test.ts",
           "tests/unit/erp-approvals-session.test.ts",
@@ -4922,8 +4937,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 15,
-        "realDb": 10,
+        "integration": 16,
+        "realDb": 11,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -4944,6 +4959,7 @@
           "tests/integration/period-reopen.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
@@ -4957,6 +4973,7 @@
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
@@ -5117,10 +5134,10 @@
       "id": "QG-02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 5,
+        "unit": 6,
         "integration": 1,
         "realDb": 0,
-        "browser": 14,
+        "browser": 15,
         "connected": 4,
         "device": 0,
         "uat": 0
@@ -5131,6 +5148,7 @@
           "tests/unit/customer-app-boot.test.ts",
           "tests/unit/owner-session.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
+          "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts",
           "tests/unit/ui-foundation.test.ts"
         ],
         "integration": [
@@ -5150,6 +5168,7 @@
           "tests/e2e/the-manager-opens-a-lanes-health-from-today.e2e.ts",
           "tests/e2e/the-owner-app-meets-its-interaction-budget.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
+          "tests/e2e/the-rebates-screen-works-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
           "tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts"
         ],
@@ -5268,8 +5287,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 6,
-        "integration": 3,
-        "realDb": 1,
+        "integration": 4,
+        "realDb": 2,
         "browser": 1,
         "connected": 1,
         "device": 0,
@@ -5287,10 +5306,12 @@
         "integration": [
           "tests/integration/a-critical-risk-is-accepted-only-by-the-owner-and-the-named-reviewer.test.ts",
           "tests/integration/risk-register.test.ts",
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/the-security-reviewer-signs-and-floor-devices-need-owner-and-reviewer.test.ts"
         ],
         "realDb": [
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/the-security-reviewer-signs-and-floor-devices-need-owner-and-reviewer.test.ts"
         ],
         "browser": [
           "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"

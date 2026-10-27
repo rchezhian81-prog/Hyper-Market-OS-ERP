@@ -52,7 +52,7 @@ import { readRules, readThresholds } from './operational-health';
 import { raiseKey, isReservedAlertId, reservedAlertIdRefusal, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
-  judgeBoxes, boxHistoryComponents, doorRefusalComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES, type DoorRefusalLine,
+  judgeBoxes, boxHistoryComponents, doorRefusalComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES, STORE_COMPUTER_CLOCK_HELD_COMPONENT, type DoorRefusalLine,
   type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers, type BoxReportsView,
   type BoxHistoryState, type UnusedCheckCapped,
 } from './box-health';
@@ -117,18 +117,33 @@ export interface StoredAlertRules {
  * PUT /v1/platform/alert-rules, so each change is a new rules version with who changed it and when (kept, never deleted).
  */
 export const BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID = 'built-in:store-computer-checks-stuck';
-export const BUILT_IN_ALERT_RULE_IDS: readonly string[] = [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID];
+/**
+ * §31.1 · OB-409 "C" (owner, 27 Oct 2026, in writing; extends OB-403) — THE SECOND BUILT-IN RULE (stated). When any store
+ * computer's clock is 5 minutes or more out — the flag, when it holds new prices, offers and the bill-number year (OB-403) —
+ * the alert goes to EVERY owner (the people holding the owner role at the moment of the check), across every store, with no
+ * rule of his own (`box_clock_held` degraded, box-health.ts). The 2-minute warning alone does not raise it (it is shown on
+ * `box_clock:<store>` only). It is raised once for the episode (later reports while it lasts add nothing), cleared when every
+ * store computer reports its clock back in step (kept, never deleted), and raised again as a new occurrence if one goes out
+ * again. Exactly as the first built-in rule: only the owner turns it off, edits or re-points it, and only the owner ticks it.
+ */
+export const BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID = 'built-in:store-computer-clock-out';
+export const BUILT_IN_ALERT_RULE_IDS: readonly string[] = [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID];
 /**
  * Round 32 · OB-115: the component each built-in rule watches — an edited built-in rule must keep it (an edit naming another
  * component, a misspelt one, could never fire for its purpose while still looking "edited, to the owner").
  */
-export const BUILT_IN_RULE_COMPONENTS: Readonly<Record<string, string>> = { [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID]: STORE_COMPUTER_CHECKS_STUCK_COMPONENT };
+export const BUILT_IN_RULE_COMPONENTS: Readonly<Record<string, string>> = {
+  [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID]: STORE_COMPUTER_CHECKS_STUCK_COMPONENT,
+  [BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID]: STORE_COMPUTER_CLOCK_HELD_COMPONENT,
+};
 /** Round 32 · OB-115: the alert id prefix of the notice the owner gets for every change to a built-in rule. */
 export const BUILT_IN_RULE_CHANGED_NOTICE = 'notice:built-in-alert-rule-changed';
 /** How soon the owner is asked to acknowledge that notice (a day: it is a "for your information", not an emergency). */
 export const BUILT_IN_RULE_CHANGED_NOTICE_ACK_MINUTES = 24 * 60;
 /** How soon the owner is asked to acknowledge the built-in alert (he can change it by editing the rule). */
 export const BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES = 60;
+/** §31.1 · OB-409: how soon the owner is asked to acknowledge the clock alert (he can change it by editing the rule). */
+export const BUILT_IN_STORE_COMPUTER_CLOCK_ACK_MINUTES = 60;
 
 /** The shop's owner, as the built-in rules address him (resolved when the rules are read). */
 export interface ShopOwner { readonly userId: string; readonly name: string }
@@ -169,6 +184,14 @@ function builtInRules(owners: ShopOwners): readonly { readonly alertId: string; 
     ...(all.length === 0 ? {} : { rule: toEveryOwner({
       alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down' as const,
       ownerUserId: EVERY_OWNER, ownerName: 'every owner', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
+    }, all) }),
+  }, {
+    // §31.1 · OB-409 "C": every store, at the 5-minute flag only (never the 2-minute warning).
+    alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID,
+    description: `tells ${ownersInWords(all)} when any store computer's clock is 5 minutes or more out, so new prices and offers are held there — which store, by how many minutes, and what is held; not at the 2-minute warning; cleared when its clock is back in step (owner decisions OB-403, OB-409)`,
+    ...(all.length === 0 ? {} : { rule: toEveryOwner({
+      alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, component: STORE_COMPUTER_CLOCK_HELD_COMPONENT, firesAt: 'degraded' as const,
+      ownerUserId: EVERY_OWNER, ownerName: 'every owner', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CLOCK_ACK_MINUTES,
     }, all) }),
   }];
 }
@@ -706,6 +729,22 @@ async function ownersNow(deps: Pick<ObservedHealthDeps, 'shopOwner' | 'shopOwner
   return shopOwnersSorted(deps.shopOwner === undefined ? undefined : await deps.shopOwner(tenantId));
 }
 
+/**
+ * §31.1 · OB-414 "C" (owner, 27 Oct 2026, in writing) — WHAT THE SHOP-WIDE CLOCK ALERT COVERS (stated). An alert on
+ * `box_clock_held` carries the stores it is about (`members`, from the line's evidence, sorted). While it is open and that list
+ * changes — a store joins, or one comes back in step while others stay out — the ops-alert worker UPDATES it (one `updated`
+ * fact, keyed by the alert, its occurrence and the next revision, so a second head-office instance or a restart writes it
+ * once) and it is sent again to every owner: the same alert to tick, no new occurrence. A report with the same list changes
+ * nothing. It clears only when no store is held, as before.
+ */
+function withMembers(a: RaisedAlert, health: SystemHealth): RaisedAlert {
+  if (a.component !== STORE_COMPUTER_CLOCK_HELD_COMPONENT) return a;
+  const stores = health.components.find((c) => c.name === STORE_COMPUTER_CLOCK_HELD_COMPONENT)?.evidence?.['stores'];
+  const members = typeof stores === 'string' ? [...new Set(stores.split(',').filter((x) => x !== ''))].sort() : [];
+  return { ...a, members };
+}
+const sameMembers = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+
 /** Judge a shop's observed health with its stored rules (the read and the raise share it). */
 export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, at: string) {
   const stored = await deps.alertRules(tenantId);
@@ -716,7 +755,7 @@ export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, 
     await deps.backups(tenantId), stored, at), observed.boxComponents);
   // Round 31 · OB-114: the owner's rules and the built-in ones in force (addressed to whoever holds the owner role now).
   const { rules, builtIn } = rulesInForce(stored, await ownersNow(deps, tenantId), await redirectReceivers(deps, tenantId, stored));
-  const alerts: readonly RaisedAlert[] = raiseAlerts(health, rules);
+  const alerts: readonly RaisedAlert[] = raiseAlerts(health, rules).map((a) => withMembers(a, health));
   return { stored, rules, builtIn, observed, health, alerts };
 }
 
@@ -732,6 +771,7 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
   const before = await deps.alerts(tenantId);
   const known = new Set(before.map((a) => a.alert.alertId));
   let newlyOpened = 0;
+  let updated = 0;
   // Round 33 · OB-119: only the ops-alert worker raises a built-in rule's alert (`builtIn`, the default for it); a person's
   // raise leaves them to the worker, and says so.
   const builtIn = opts.builtIn ?? true;
@@ -747,6 +787,17 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
       ...(reserved ? { origin: 'built-in-rule' as const } : {}),
     };
     const live = before.find((a) => a.alert.alertId === alert.alertId);
+    // §31.1 · OB-414: what an open alert of head office's own rule covers has changed — updated and sent again, not re-raised.
+    if (reserved && live !== undefined && live.state !== 'cleared' && live.foreign !== true
+      && live.alert.members !== undefined && alert.members !== undefined && !sameMembers(live.alert.members, alert.members)) {
+      const revision = (live.revision ?? 0) + 1;
+      await deps.recordAlertEvent(tenantId, {
+        alertId: alert.alertId, change: 'updated', by, at, alert, origin: 'built-in-rule',
+        detail: `now about ${alert.members.length === 0 ? 'nothing' : alert.members.join(', ')} (was ${live.alert.members.join(', ')})`,
+      }, `update-${alert.alertId}-o${live.occurrence}-r${revision}`);
+      updated += 1;
+      continue;
+    }
     await deps.recordAlertEvent(tenantId, event, raiseKey(alert.alertId, live, reserved));
     if (!known.has(alert.alertId) || live?.state === 'cleared' || (reserved && live?.foreign === true)) newlyOpened += 1;
   }
@@ -768,7 +819,7 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
       cleared += 1;
     }
   }
-  return { ...judged, newlyOpened, cleared, keptWhilePreparing, builtInLeftToWorker };
+  return { ...judged, newlyOpened, updated, cleared, keptWhilePreparing, builtInLeftToWorker };
 }
 
 /** Round 29 · OB-106: the components the store computers' reports give (kept, never cleared, while their checks are being prepared). */

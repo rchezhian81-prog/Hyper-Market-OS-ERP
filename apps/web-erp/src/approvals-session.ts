@@ -104,10 +104,10 @@ export type CopyKey =
   | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
-  | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
+  | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -147,7 +147,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindStockWriteOff: 'Write off stock (a material loss)', kindStockAdjustmentUp: 'Correct stock upward',
     kindOrderRefund: 'Refund an online order', kindServiceCompensation: 'Give a customer compensation above the desk\'s own limit',
     kindSupplierInvoiceCheck: 'Check a supplier bill', kindSupplierPayment: 'Pay a supplier',
-    kindDisplayContract: 'Approve a supplier\'s display-space funding', kindRebateScheme: 'Approve a supplier rebate scheme',
+    kindDisplayContract: 'Approve a supplier\'s display-space funding', kindRebateScheme: 'Approve a supplier rebate scheme', kindRebateClaim: 'Approve a supplier rebate claim before it is sent',
     kindPurchaseContract: 'Approve a supplier contract',
     kindEmergencyAccess: 'Give someone emergency access for a short time', kindAccessChange: 'Change a person\'s access (joining, moving or leaving)',
     kindSubstitutionAboveCap: 'Charge a dearer substitute above the original price',
@@ -168,6 +168,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindB2BCreditOverride: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
     kindB2BCreditLimit: 'Set or change a business customer\'s credit limit (and payment terms)',
     kindTenantClosure: 'Close this shop\'s account (access ends; the law\'s records and the audit are kept)', // OB-288 P4
+    kindFloorDeviceReview: 'Sign as the security reviewer: switch on cameras, shelf labels, RFID or sensors', // OB-407
     detailPrefix: 'Till bill-number prefix', detailFromComputer: 'Old store computer (sign-in)', detailToComputer: 'New store computer (sign-in)',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
@@ -224,7 +225,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindStockWriteOff: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)', kindStockAdjustmentUp: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்',
     kindOrderRefund: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்', kindServiceCompensation: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்',
     kindSupplierInvoiceCheck: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்', kindSupplierPayment: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்',
-    kindDisplayContract: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்', kindRebateScheme: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்',
+    kindDisplayContract: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்', kindRebateScheme: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்', kindRebateClaim: 'அனுப்பும் முன் விநியோகஸ்தர் தள்ளுபடிக் கோரிக்கையை அனுமதித்தல்',
     kindPurchaseContract: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்',
     kindEmergencyAccess: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்', kindAccessChange: 'ஒருவரின் அணுகலை மாற்றுதல் (சேர்தல், இடமாற்றம் அல்லது விலகல்)',
     kindSubstitutionAboveCap: 'விலை கூடிய மாற்றுப் பொருளுக்கு அசல் விலைக்கு மேல் கட்டணம் வசூலித்தல்',
@@ -244,6 +245,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindB2BCreditOverride: 'வாடிக்கையாளரின் கடன் வரம்பை (அல்லது முடிந்த ஒப்பந்தத்தை) மீறி வணிக ஆர்டரை அனுமதித்தல்',
     kindB2BCreditLimit: 'வணிக வாடிக்கையாளரின் கடன் வரம்பை (மற்றும் கட்டண நிபந்தனைகளை) அமைத்தல் அல்லது மாற்றுதல்',
     kindTenantClosure: 'இந்தக் கடையின் கணக்கை மூடுதல் (அணுகல் முடியும்; சட்டம் கேட்கும் பதிவுகளும் தணிக்கையும் வைக்கப்படும்)', // OB-288 P4
+    kindFloorDeviceReview: 'பாதுகாப்புச் சரிபார்ப்பாளராகக் கையொப்பமிடுதல்: கேமரா, அலமாரி விலைச் சீட்டு, RFID அல்லது உணரிகளை இயக்குதல்', // OB-407
     detailPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', detailFromComputer: 'பழைய கடை கணினி (உள்நுழைவு)', detailToComputer: 'புதிய கடை கணினி (உள்நுழைவு)',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
@@ -310,6 +312,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   supplier_payment: 'kindSupplierPayment',
   display_contract: 'kindDisplayContract',
   rebate_scheme: 'kindRebateScheme',
+  rebate_claim: 'kindRebateClaim',
   purchase_contract: 'kindPurchaseContract',
   emergency_access: 'kindEmergencyAccess',
   access_change: 'kindAccessChange',
@@ -332,6 +335,8 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride', b2b_credit_limit: 'kindB2BCreditLimit',
   // OB-288 P4 (M36-FR-03): closing the shop's account — IT asks, the owner approves.
   tenant_closure: 'kindTenantClosure',
+  // OB-407: the named security reviewer's signature on switching on a floor device (cameras, shelf labels, RFID, sensors).
+  floor_device_review: 'kindFloorDeviceReview',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {

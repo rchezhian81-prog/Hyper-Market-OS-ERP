@@ -11,7 +11,7 @@ import { STREAM, streamName, storeComputerHistory, observedHealthAdapter, boxHis
 import { seedGenesisOwner } from '../../services/api/src/access';
 import { OWNER_ROLE_ID } from '../../services/api/src/roles';
 import {
-  observedHealthRoutes, judgeObserved, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
+  observedHealthRoutes, judgeObserved, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID,
   type ObservedHealthDeps, type StoredAlertRules, type BuiltInRuleState,
 } from '../../services/platform/src/observed-health';
 import { startOpsAlertWorker, type OpsAlertWorker, type OpsAlertPass } from '../../services/platform/src/ops-alert-worker';
@@ -83,6 +83,8 @@ async function passAt(worker: OpsAlertWorker, at: string): Promise<OpsAlertPass>
  * pass is head office switched off. So the clock walks in 5-minute steps, a pass at each, as a running worker's would.
  */
 const everyFiveMinutes = (from: number, to: number): number[] => [...Array.from({ length: Math.floor((to - from) / 5) + 1 }, (_, k) => from + k * 5), ...((to - from) % 5 === 0 ? [] : [to])];
+/** §31.1 · OB-409: the second built-in rule (a store computer's clock), beside this one — untouched by this story. */
+const clockRule = (state: string): unknown => expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, state });
 const builtIn = (alerts: readonly LiveAlert[]): LiveAlert | undefined => alerts.find((a) => a.alert.alertId === BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID);
 
 const ctx = (T: string, userId: string, body?: unknown): RequestContext =>
@@ -113,7 +115,7 @@ async function beingPreparedForMoreThanAnHour(c: Ctx): Promise<void> {
     }
     const health = await judgeObserved(deps, c.T, t.now());
     expect(health.health.components.find((x) => x.name === STORE_COMPUTER_CHECKS_STUCK_COMPONENT)).toMatchObject({ status: 'ok' });
-    expect(health.builtIn).toEqual([expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, state: 'on', rule: expect.objectContaining({ ownerUserId: OWNER }) })]);
+    expect(health.builtIn).toEqual([expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, state: 'on', rule: expect.objectContaining({ ownerUserId: OWNER }) }), clockRule('on')]);
 
     // 61 minutes: still being prepared — the pass skips the store computers' other checks AND raises this alert to the owner.
     t.to(STORE_COMPUTER_CHECKS_STUCK_MINUTES + 1);
@@ -198,7 +200,7 @@ async function theOwnerTurnsItOffAndEditsIt(c: Ctx): Promise<void> {
   const routes = observedHealthRoutes(deps);
   const rulesNow = async (): Promise<{ rules: StoredAlertRules | null; builtIn: BuiltInRuleState[] }> =>
     (await route(routes, 'GET', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER))).body as never;
-  expect((await rulesNow()).builtIn).toEqual([expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, state: 'on' })]);
+  expect((await rulesNow()).builtIn).toEqual([expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, state: 'on' }), clockRule('on')]);
   // Not a built-in rule: refused, nothing changed.
   await expect(route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { rules: [], builtInOff: ['built-in:nothing'] }))).rejects.toMatchObject({ status: 400 });
   // An empty set that turns nothing off is refused as before (every rule set needs an owner's rule or a built-in turned off).
@@ -208,7 +210,7 @@ async function theOwnerTurnsItOffAndEditsIt(c: Ctx): Promise<void> {
   expect(off.body).toMatchObject({ version: 1, builtInOff: [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID] });
   const v1 = await rulesNow();
   expect(v1.rules).toMatchObject({ version: 1, definedBy: OWNER, builtInOff: [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID] });
-  expect(v1.builtIn).toEqual([expect.objectContaining({ state: 'off' })]);
+  expect(v1.builtIn).toEqual([expect.objectContaining({ state: 'off' }), clockRule('on')]);
   const worker = startOpsAlertWorker({ tenants: async () => [c.T], deps, intervalMs: 20, now: t.now, say: () => undefined });
   try {
     let p: OpsAlertPass | undefined;
@@ -219,11 +221,11 @@ async function theOwnerTurnsItOffAndEditsIt(c: Ctx): Promise<void> {
     // it off, so he names the list (empty) to turn it back on, with his own version of the rule.
     const edited = { alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down', ownerUserId: MANAGER, ownerName: 'Store manager', ackWithinMinutes: 15 };
     await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { basedOnVersion: 1, rules: [edited] }));
-    expect((await rulesNow()).builtIn).toEqual([expect.objectContaining({ state: 'off' })]);
+    expect((await rulesNow()).builtIn).toEqual([expect.objectContaining({ state: 'off' }), clockRule('on')]);
     await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { basedOnVersion: 2, rules: [edited], builtInOff: [] }));
     const v3 = await rulesNow();
     expect(v3.rules).toMatchObject({ version: 3, definedBy: OWNER, builtInOff: [] });
-    expect(v3.builtIn).toEqual([expect.objectContaining({ state: 'edited', rule: expect.objectContaining({ ownerUserId: MANAGER }) })]);
+    expect(v3.builtIn).toEqual([expect.objectContaining({ state: 'edited', rule: expect.objectContaining({ ownerUserId: MANAGER }) }), clockRule('on')]);
     // (A pass still at 90 minutes after the change may be the one that raises it — so the alert itself is what is checked.)
     t.to(91);
     await passAt(worker, t.now());
@@ -236,7 +238,7 @@ async function noOwnerNoRule(c: Ctx): Promise<void> {
   const deps = smallStore(c, t, () => false);
   const routes = observedHealthRoutes(deps);
   const read = (await route(routes, 'GET', '/v1/platform/alert-rules').handler(ctx(c.T, 'u-it'))).body as { builtIn: BuiltInRuleState[] };
-  expect(read.builtIn).toEqual([expect.objectContaining({ state: 'no_owner', description: expect.stringMatching(/NOT in force: nobody holds the owner role/) })]);
+  expect(read.builtIn).toEqual([expect.objectContaining({ state: 'no_owner', description: expect.stringMatching(/NOT in force: nobody holds the owner role/) }), clockRule('no_owner')]);
   const worker = startOpsAlertWorker({ tenants: async () => [c.T], deps, intervalMs: 20, now: t.now, say: () => undefined });
   try {
     t.to(0); await passAt(worker, t.now());

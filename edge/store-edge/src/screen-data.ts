@@ -65,6 +65,7 @@ import { permissionsOf } from './screen-navigation';
 import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, equipmentWork, helpWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
 import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
+import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
 import { packTimeZone } from './shop-zone';
@@ -151,6 +152,11 @@ export interface ScreenInput {
   readonly ownLaneId?: string;
   /** R1a (M01-FR-02 · P-08): this machine's time zone against the shop's — the box dates by the shop's either way. */
   readonly zone?: ZoneCheck;
+  /**
+   * OB-403 "A" · §31.1: what this box is holding while its clock is 5+ minutes out — new offers, new prices and a new
+   * bill-number year wait for the clock to be back in step (`activation-hold.ts`). Absent: the box has no clock check.
+   */
+  readonly activationHold?: ActivationHoldReport;
 }
 
 /**
@@ -807,6 +813,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   if (input.clockFlaggedBills !== undefined) payload['clockFlaggedBills'] = input.clockFlaggedBills;
   // R1a · P-08: a store computer whose own zone is not the shop's is said here (it still dates by the shop's zone).
   if (input.zone !== undefined) payload['timeZone'] = input.zone;
+  // OB-403 "A" · §31.1: while the clock is 5+ minutes out, the new prices, offers and bill-number year held, said by name.
+  if (input.activationHold !== undefined) payload['activationHold'] = input.activationHold;
 
   return payload;
 }
@@ -1466,8 +1474,10 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
     userId: policy.userId,
     storeId: input.pack.policies.known ? input.pack.policies.value.storeId : 'store-1',
     // The shop's own trading day, not the browser's clock. A device whose date is a day out would
-    // otherwise activate tomorrow's price today.
-    today: input.tradingDay,
+    // otherwise activate tomorrow's price today. OB-403 "A": while this box's clock is 5+ minutes out, the day stays the
+    // one the clock was last trusted on, so a price dated later is held (listed in `activationHold`), never made today's.
+    today: input.activationHold?.priceDay ?? input.tradingDay,
+    ...(input.activationHold?.held === true ? { activationHold: input.activationHold } : {}),
     marginFloorBps: policy.marginFloorBps,
     // The setter is removed here rather than trusted to leave themselves alone (§28). The session
     // model refuses a self-approval as well; this stops it ever being offered.
@@ -2240,6 +2250,9 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     // OB-288 P4 (R8-9 · OB-316): this lane's rollout switches, resolved from the signed pack with no network — "not told"
     // (every trial feature off) when the pack carries none or the box does not know its lane.
     rollout: laneRollout(input.pack.rollout?.known === true ? input.pack.rollout.value : undefined, laneId),
+    // OB-403 "A" · §31.1: while this box's clock is 5+ minutes out, the till applies no offer that starts after the cut-off
+    // (the offers stay in its signed catalogue, so they apply the moment the hold lifts — the till re-reads it every 10 s).
+    offerHold: { held: input.activationHold?.held === true, cutoffAt: input.activationHold?.cutoffAt ?? null },
   };
 }
 

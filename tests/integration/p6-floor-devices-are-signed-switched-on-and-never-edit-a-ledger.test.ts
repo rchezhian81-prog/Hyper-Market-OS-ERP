@@ -3,6 +3,7 @@ import { randomUUID, generateKeyPairSync, sign, type KeyObject } from 'node:cryp
 import { useRestartableBackings } from '../support/p3-backings';
 import { storeRules } from '../support/store-rules';
 import { deviceBatchMessage } from '../../packages/integration/src/floor-devices';
+import { nameSecurityReviewer, switchFloorDeviceOn } from '../support/floor-device-switch';
 
 /**
  * **R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV events (D14-FR-05 · OB-217 · OB-316)** — through the real API, on the
@@ -37,6 +38,7 @@ describe.each(backings)('floor devices: registered, signed, switched on, never a
     await h.provisionRole(T, 'u-cash', 'cashier', ['B1']);
     await h.provisionRole(T, 'u-gw', 'floor_device_gateway', ['B1']);
     await h.provisionRole(T, 'u-box', 'store_computer', ['B1']);
+    await h.provisionRole(T, 'u-rev', 'security_reviewer'); // OB-406: the named security reviewer's own role
     const scoped = new Set(['u-cash', 'u-gw', 'u-box']);
     const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown, query?: Record<string, string>): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(scoped.has(userId) ? { branchId: 'B1' } : {}), ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
@@ -82,7 +84,10 @@ describe.each(backings)('floor devices: registered, signed, switched on, never a
     // Only the gateway's machine identity carries events — the owner holds the permission (to approve the grant) but is refused.
     expect(codeOf(await send(esl1, [echo], 'u-owner'))).toBe('not_the_device_gateway');
     expect((await send(esl1, [echo], 'u-cash')).status).toBe(403);
-    for (const key of ['esl', 'rfid', 'iot', 'cctv']) await ok(call('PUT', `/v1/platform/rollout/${key}`, 'u-it', { branchId: 'B1', enabled: true, reason: `${key} trial in B1` }), `switch ${key}`);
+    // OB-407: switching a floor device ON takes the owner's approval and the named security reviewer's signature.
+    expect(codeOf(await call('PUT', '/v1/platform/rollout/esl', 'u-it', { branchId: 'B1', enabled: true, reason: 'esl trial in B1' }))).toBe('name_the_security_reviewer_first');
+    await nameSecurityReviewer(h, T, 'u-owner', 'u-rev');
+    for (const key of ['esl', 'rfid', 'iot', 'cctv']) await ok(switchFloorDeviceOn(h, T, { switcher: 'u-it', owner: 'u-owner', reviewer: 'u-rev' }, key, { branchId: 'B1', reason: `${key} trial in B1` }), `switch ${key}`);
 
     // ── A batch is believed only when THAT device signed exactly these bytes ──
     const forged = signed(esl2, [echo]);

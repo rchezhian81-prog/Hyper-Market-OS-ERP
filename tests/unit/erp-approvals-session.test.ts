@@ -161,6 +161,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       // A supplier's commercial terms (2b-vi-c-1).
       display_contract: { en: 'Approve a supplier\'s display-space funding', ta: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்' },
       rebate_scheme: { en: 'Approve a supplier rebate scheme', ta: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்' },
+      // D03-FR-03 · OB-404: Finance approves a rebate claim before it is sent.
+      rebate_claim: { en: 'Approve a supplier rebate claim before it is sent', ta: 'அனுப்பும் முன் விநியோகஸ்தர் தள்ளுபடிக் கோரிக்கையை அனுமதித்தல்' },
       purchase_contract: { en: 'Approve a supplier contract', ta: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்' },
       // Access (2b-vi-c-2).
       emergency_access: { en: 'Give someone emergency access for a short time', ta: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்' },
@@ -197,6 +199,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       b2b_credit_limit: { en: APPROVALS_COPY.en.kindB2BCreditLimit, ta: APPROVALS_COPY.ta.kindB2BCreditLimit },
       // OB-288 P4 (M36-FR-03): closing the shop's account.
       tenant_closure: { en: APPROVALS_COPY.en.kindTenantClosure, ta: APPROVALS_COPY.ta.kindTenantClosure },
+      // OB-407: the named security reviewer's signature on switching on a floor device.
+      floor_device_review: { en: APPROVALS_COPY.en.kindFloorDeviceReview, ta: APPROVALS_COPY.ta.kindFloorDeviceReview },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

@@ -50,11 +50,16 @@ import { readSignals, readThresholds, readRules } from './operational-health';
 /** One append-only fact about an alert. `change` says which; the extra fields carry its detail. */
 export interface AlertLifecycleEvent {
   readonly alertId: string;
-  readonly change: 'raised' | 'acknowledged' | 'escalated' | 'notified' | 'cleared';
+  /**
+   * §31.1 · OB-414: `updated` — head office's own rule changed what an OPEN alert covers (`alert.members`, e.g. the stores
+   * whose clocks hold new prices): the alert's words are replaced, it asks to be ticked again, and it is sent again. The
+   * same alert and occurrence; the earlier words and any earlier tick stay on the log (append-only).
+   */
+  readonly change: 'raised' | 'acknowledged' | 'escalated' | 'notified' | 'cleared' | 'updated';
   /** Who caused it — the raiser, the acknowledger, or the sweeper (P-04). */
   readonly by: string;
   readonly at: string;
-  /** `raised` only — the owned alert with its owner and deadline. */
+  /** `raised` / `updated` — the owned alert with its owner and deadline. */
   readonly alert?: RaisedAlert;
   /** `raised` only — where this alert escalates to if it goes unacknowledged. */
   readonly escalatesToUserId?: string;
@@ -110,10 +115,17 @@ export interface LiveAlert {
    * name was reserved). The rule's own raise opens a new occurrence over it rather than collapsing into it.
    */
   readonly foreign?: true;
+  /**
+   * §31.1 · OB-414: how many times this occurrence was UPDATED (what it covers changed while open) — each is sent again.
+   * Absent: never updated.
+   */
+  readonly revision?: number;
+  /** §31.1 · OB-414: when it was last updated (absent: never). */
+  readonly updatedAt?: string;
 }
 
 interface MutableAlert {
-  alert: RaisedAlert; escalatesToUserId?: string; foreign?: true;
+  alert: RaisedAlert; escalatesToUserId?: string; foreign?: true; revision?: number; updatedAt?: string;
   acknowledgedBy?: string; acknowledgedAt?: string;
   escalatedTo?: string; escalatedAt?: string; escalationDetail?: string;
   deliveries: AlertDelivery[]; clearedAt?: string; occurrence: number;
@@ -153,6 +165,17 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
     }
     const a = byId.get(e.alertId);
     if (a === undefined) continue; // no phantom alert
+    if (e.change === 'updated') {
+      // §31.1 · OB-414: only head office's own rule updates, only an occurrence still open, and only one it raised itself.
+      if (e.alert === undefined || e.origin !== 'built-in-rule' || a.clearedAt !== undefined || a.foreign === true) continue;
+      // The new words and deadline (the first raise time kept); asked to be ticked again; delivered again to everyone.
+      a.alert = { ...e.alert, raisedAt: a.alert.raisedAt };
+      delete a.acknowledgedBy; delete a.acknowledgedAt;
+      a.deliveries = [];
+      a.revision = (a.revision ?? 0) + 1;
+      a.updatedAt = e.at;
+      continue;
+    }
     if (e.change === 'acknowledged') {
       a.acknowledgedBy = e.by;
       a.acknowledgedAt = e.at;
@@ -172,6 +195,8 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
     state: a.clearedAt !== undefined ? 'cleared' as const : a.acknowledgedAt !== undefined ? 'acknowledged' as const : a.escalatedAt !== undefined ? 'escalated' as const : 'open' as const,
     deliveries: a.deliveries, occurrence: a.occurrence,
     ...(a.foreign === true ? { foreign: true as const } : {}),
+    ...(a.revision !== undefined ? { revision: a.revision } : {}),
+    ...(a.updatedAt !== undefined ? { updatedAt: a.updatedAt } : {}),
     ...(a.clearedAt !== undefined ? { clearedAt: a.clearedAt } : {}),
     ...(a.escalatesToUserId !== undefined ? { escalatesToUserId: a.escalatesToUserId } : {}),
     ...(a.acknowledgedBy !== undefined ? { acknowledgedBy: a.acknowledgedBy } : {}),
@@ -281,8 +306,10 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
           }
         }
         const at = deps.now();
-        // Key on the alertId and occurrence (no time): a re-acknowledge of the same alert collapses to one.
-        await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'acknowledged', by: ctx.userId, at }, live.occurrence > 1 ? `ack-${alertId}-o${live.occurrence}` : `ack-${alertId}`);
+        // Key on the alertId and occurrence (no time): a re-acknowledge of the same alert collapses to one. §31.1 · OB-414: and on
+        // its revision — an UPDATED alert asks to be ticked again, so that tick is its own.
+        const ackKey = live.occurrence > 1 ? `ack-${alertId}-o${live.occurrence}` : `ack-${alertId}`;
+        await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'acknowledged', by: ctx.userId, at }, live.revision === undefined ? ackKey : `${ackKey}-r${live.revision}`);
         return { status: 200, body: { alertId, acknowledgedBy: ctx.userId, at } };
       },
     },

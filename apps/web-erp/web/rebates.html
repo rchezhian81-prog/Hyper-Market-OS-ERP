@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Supplier rebates</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Supplier rebates (M06-FR-03 · D03-FR-03 · §28 "Finance approves rebate claims" · OB-404 · QG-02). A THIN CLIENT over head
+      office's own rebate record: per scheme what it earned, what was received, what is outstanding and may still be claimed;
+      every claim with its state, due day and whether it is overdue; raise → ask Finance → record sent → print; money received
+      matched to a claim; the owner's answer days. Its session is apps/web-erp/src/rebates-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .acts input { flex: 1 1 160px; }
+      #doc { border: 2px solid var(--ink); }
+      .draft { font-weight: 700; }
+      [hidden] { display: none !important; }
+      @media print { header, #page-intro, #register, #raise, #receipt, #period, .no-print { display: none !important; } #doc { border: 0; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Supplier rebates</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Supplier rebates</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="register" hidden aria-labelledby="register-h">
+        <h3 id="register-h"></h3>
+        <button id="r-show" type="button"><span id="r-show-text"></span></button>
+        <p class="status" id="r-status" role="status" aria-live="polite"></p>
+        <p class="meta" id="r-period"></p>
+        <ul class="rows" id="scheme-rows"></ul>
+        <h4 id="claims-h"></h4>
+        <ul class="rows" id="claim-rows"></ul>
+        <h4 id="unmatched-h"></h4>
+        <ul class="rows" id="unmatched-rows"></ul>
+      </section>
+      <section id="doc" hidden aria-labelledby="doc-h">
+        <h3 id="doc-h"></h3>
+        <p class="draft" id="doc-draft" hidden></p>
+        <div id="doc-body"></div>
+        <button id="doc-print" class="no-print" type="button"><span id="doc-print-text"></span></button>
+      </section>
+      <section id="raise" hidden aria-labelledby="raise-h">
+        <h3 id="raise-h"></h3>
+        <div class="row-form">
+          <label for="c-scheme"><span id="c-scheme-l"></span><input id="c-scheme" autocomplete="off" /></label>
+          <label for="c-amount"><span id="c-amount-l"></span><input id="c-amount" inputmode="decimal" autocomplete="off" /></label>
+          <label for="c-note"><span id="c-note-l"></span><input id="c-note" autocomplete="off" maxlength="300" /></label>
+        </div>
+        <button id="c-raise" type="button"><span id="c-raise-text"></span></button>
+        <p class="status" id="c-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="receipt" hidden aria-labelledby="receipt-h">
+        <h3 id="receipt-h"></h3>
+        <div class="row-form">
+          <label for="m-scheme"><span id="m-scheme-l"></span><input id="m-scheme" autocomplete="off" /></label>
+          <label for="m-amount"><span id="m-amount-l"></span><input id="m-amount" inputmode="decimal" autocomplete="off" /></label>
+          <label for="m-on"><span id="m-on-l"></span><input id="m-on" inputmode="numeric" autocomplete="off" placeholder="2026-10-27" /></label>
+          <label for="m-ref"><span id="m-ref-l"></span><input id="m-ref" autocomplete="off" /></label>
+          <label for="m-claim"><span id="m-claim-l"></span><input id="m-claim" autocomplete="off" /></label>
+        </div>
+        <button id="m-record" type="button"><span id="m-record-text"></span></button>
+        <p class="status" id="m-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="period" hidden aria-labelledby="period-h">
+        <h3 id="period-h"></h3>
+        <div class="row-form">
+          <label for="p-days"><span id="p-days-l"></span><input id="p-days" inputmode="numeric" autocomplete="off" /></label>
+          <label for="p-why"><span id="p-why-l"></span><input id="p-why" autocomplete="off" /></label>
+        </div>
+        <div class="acts">
+          <button id="p-set" type="button"><span id="p-set-text"></span></button>
+          <button id="p-clear" class="quiet" type="button"><span id="p-clear-text"></span></button>
+        </div>
+        <p class="status" id="p-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./rebates.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

@@ -148,6 +148,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'rebate_scheme', label: 'Approve a supplier rebate scheme',
     makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
   },
+  // D03-FR-03 · §28 "Finance approves rebate claims" (OB-404, owner, 27 Oct 2026, option A): the person who keeps the
+  // supplier schemes raises a claim; Finance (`purchase.supplier.approve` — the accountant and the owner, the same Finance
+  // authority that approves a rebate scheme) approves exactly that claim — supplier, scheme and amount — before it is sent.
+  rebate_claim: {
+    kind: 'rebate_claim', label: 'Approve a supplier rebate claim before it is sent',
+    makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
+  },
   purchase_contract: {
     kind: 'purchase_contract', label: 'Approve a supplier contract',
     makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
@@ -216,6 +223,15 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   flag_change: {
     kind: 'flag_change', label: 'Turn a high-impact switch on or off',
     makerPermission: 'platform.flag.write', checkerPermission: 'platform.config.approve', validForMinutes: 24 * 60,
+  },
+  // OB-407 (owner, 27 Oct 2026, in writing — option B · D14-FR-05 · R8-7 · §8.2): switching ON a floor device (cameras, shelf
+  // labels, RFID readers, sensors) needs, besides the owner's `flag_change`, the NAMED security reviewer's signature (OB-330 /
+  // OB-405), given in the reviewer's own session. The engine lets anyone who may read the risk register decide it; the
+  // rollout route counts it only when the decider is the reviewer named NOW, and never the person switching or the owner
+  // who approved (services/platform/src/rollout.ts).
+  floor_device_review: {
+    kind: 'floor_device_review', label: 'Sign as the security reviewer: switch on cameras, shelf labels, RFID or sensors',
+    makerPermission: 'platform.flag.write', checkerPermission: 'compliance.risk.read', validForMinutes: 24 * 60,
   },
   // M02-FR-02 · §28 "Department Manager — assigned departments": limiting a person's role to some departments.
   department_scope_change: {
@@ -583,8 +599,8 @@ export const NO_APPROVALS: ApprovalPort = Object.freeze({
   approvalState: () => undefined, approvalVersion: () => 0, spendApproval: () => {}, permissionsOfUser: () => undefined,
 });
 
-/** Fields that are never part of the action itself: the approval's id, and the typed second-person fields it replaced. */
-const CONTROL_FIELDS: ReadonlySet<string> = new Set(['approvalId', 'approval', 'approvedBy', 'rationale']);
+/** Fields that are never part of the action itself: the approval's id (and, OB-407, the reviewer's), and the typed second-person fields it replaced. */
+const CONTROL_FIELDS: ReadonlySet<string> = new Set(['approvalId', 'approval', 'approvedBy', 'rationale', 'reviewApprovalId']);
 
 /**
  * What a maker asks approval FOR: the action's own body without its control fields, plus the route's path ids. The

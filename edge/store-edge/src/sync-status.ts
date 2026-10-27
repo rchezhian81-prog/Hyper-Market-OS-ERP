@@ -60,6 +60,11 @@ export interface LaneSyncStatus {
    * containers — read from its status file. Absent on a box that is not the shop's store computer (no file configured).
    */
   readonly storeComputer?: StoreComputerStatus;
+  /**
+   * OB-403 "A" · §31.1: while this box's clock is 5+ minutes out, the till applies no offer that starts after `cutoffAt`
+   * (the till reads this with the badge, every 10 seconds). Absent on a box with no clock check yet.
+   */
+  readonly offerHold?: { readonly held: boolean; readonly cutoffAt: string | null };
   /** Verifier r19 OB87-1: the box's own check of its bill-number witness (absent on a box with no till). */
   readonly billNumbering?: {
     readonly witness: 'kept' | 'unavailable' | 'none'; readonly fault?: string; readonly restoreHeld: boolean; readonly restoreBecause?: string;

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  boxHistoryComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES,
+  boxHistoryComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES, STORE_COMPUTER_CLOCK_HELD_COMPONENT,
 } from '../../services/platform/src/box-health';
 import {
   rulesInForce, raiseObservedAlerts, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, BUILT_IN_ALERT_RULE_IDS, BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
+  BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, BUILT_IN_STORE_COMPUTER_CLOCK_ACK_MINUTES,
   type StoredAlertRules, type ObservedHealthDeps,
 } from '../../services/platform/src/observed-health';
 import { projectAlerts, type AlertLifecycleEvent } from '../../services/platform/src/alert-lifecycle';
@@ -55,25 +56,33 @@ describe('round 31 · OB-114: the built-in rule in force', () => {
     expect(r.rules).toEqual([DISK_RULE, {
       alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down',
       ownerUserId: 'u-owner', ownerName: 'the owner (u-owner)', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
+    }, {
+      // §31.1 · OB-409: the second built-in rule — every store computer's clock, at the 5-minute flag.
+      alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, component: STORE_COMPUTER_CLOCK_HELD_COMPONENT, firesAt: 'degraded',
+      ownerUserId: 'u-owner', ownerName: 'the owner (u-owner)', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CLOCK_ACK_MINUTES,
     }]);
-    expect(r.builtIn).toEqual([expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, state: 'on' })]);
-    // With no rules of his own at all, it is still in force.
-    expect(rulesInForce(undefined, OWNER).rules.map((x) => x.alertId)).toEqual([BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID]);
-    expect(BUILT_IN_ALERT_RULE_IDS).toEqual([BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID]);
+    expect(r.builtIn).toEqual([expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, state: 'on' }), expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, state: 'on' })]);
+    // With no rules of his own at all, they are still in force.
+    expect(rulesInForce(undefined, OWNER).rules.map((x) => x.alertId)).toEqual([BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID]);
+    expect(BUILT_IN_ALERT_RULE_IDS).toEqual([BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID]);
   });
 
   it('his own version replaces it; turned off it is not in force (nor his version); nobody holding the owner role: not in force, said', () => {
     // Round 36 · verifier r35 NEW-1: a redirect is saved with its marker (only head office sets it); without one, see below.
     const mine: AlertRule = { alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down', ownerUserId: 'u-mgr', ownerName: 'Manager', ackWithinMinutes: 10, builtInRedirect: true };
+    // §31.1 · OB-409: the clock rule beside it is untouched by an edit or turning off of THIS one.
+    const clock = (state: string): unknown => expect.objectContaining({ alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, state });
+    const clockId = (r: { rules: readonly AlertRule[] }): string[] => r.rules.map((x) => x.alertId).filter((id) => id === BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID);
     const edited = rulesInForce(stored({ rules: [mine] }), OWNER);
-    expect(edited.rules).toEqual([mine]);
-    expect(edited.builtIn).toEqual([expect.objectContaining({ state: 'edited', rule: mine })]);
+    expect(edited.rules.filter((x) => x.alertId !== BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID)).toEqual([mine]);
+    expect(edited.builtIn).toEqual([expect.objectContaining({ state: 'edited', rule: mine }), clock('on')]);
     const off = rulesInForce(stored({ rules: [DISK_RULE, mine], builtInOff: [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID] }), OWNER);
-    expect(off.rules).toEqual([DISK_RULE]);
-    expect(off.builtIn).toEqual([expect.objectContaining({ state: 'off' })]);
+    expect(off.rules.filter((x) => x.alertId !== BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID)).toEqual([DISK_RULE]);
+    expect(clockId(off)).toEqual([BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID]);
+    expect(off.builtIn).toEqual([expect.objectContaining({ state: 'off' }), clock('on')]);
     const none = rulesInForce(stored({ rules: [DISK_RULE] }), undefined);
     expect(none.rules).toEqual([DISK_RULE]);
-    expect(none.builtIn).toEqual([expect.objectContaining({ state: 'no_owner' })]);
+    expect(none.builtIn).toEqual([expect.objectContaining({ state: 'no_owner' }), clock('no_owner')]);
     expect(rulesInForce(stored({ builtInOff: [] }), OWNER).builtIn[0]!.state).toBe('on');
   });
 });

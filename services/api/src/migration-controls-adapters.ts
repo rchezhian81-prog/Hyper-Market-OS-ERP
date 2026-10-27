@@ -19,7 +19,7 @@ import type { HeadOfficeBooksDay } from '../../../packages/migration/src/books-c
 import type { CutoverGo } from '../../migration/src/opening-reversal';
 import type { RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { StoredPostingMap } from '../../finance/src/day-book';
-import { STREAM, streamName, liveSupplierInvoices, payablesAdapter, averageBuyingCosts, storeOfLocationResolver, dayBookAdapter } from './adapters';
+import { STREAM, streamName, b2bReceivableCustomers, liveSupplierInvoices, payablesAdapter, averageBuyingCosts, storeOfLocationResolver, dayBookAdapter } from './adapters';
 import { shopDateOf } from './lane2-offline-adapters';
 import type { ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
@@ -64,7 +64,8 @@ async function headOfficeBooks(input: Base, tenantId: string, day: string): Prom
       - appliedForSupplier(advances, a.supplierId),
   }));
   // Customer balances: the credit-customer ledger's movements up to the end of the day.
-  const customers = [...new Set((await payloads<{ customerId: string }>(store, tenantId, streamName(STREAM.finance, 'b2b-postables'), 'B2BPostable')).map((p) => p.customerId))].sort();
+  // OB-408: every customer with a movement on their ledger — keyed by hand too, not only those with a B2B posting fact.
+  const customers = await b2bReceivableCustomers(store, tenantId);
   const customerBalances: { customerId: string; owedMinor: number }[] = [];
   for (const c of customers) {
     const moves = await payloads<RecordedReceivable>(store, tenantId, streamName(STREAM.b2b, c), 'B2BReceivableMovement');

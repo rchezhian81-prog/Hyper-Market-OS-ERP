@@ -23,7 +23,7 @@ const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('every page carries the one chrome', () => {
   it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; R2 C20: Committee annual report; R3 A17: Input tax credit; R3 D-9: Staff schedule; R4 B20–B22: EPR registers; R4 Lane 3: Customers, Bought together, Store events, Morning brief; R4 Lane 2: Online store, App content; R4 D-10: Supplier scorecard; R4 D-13: Shelf compliance by bay; OB-288 gates lane: Quality gates; Lane 2 P1: Recalls and trace; P3: Requisitions and quotes; OB-288 lane 1 · P1: Approval rules, Access review; OB-288 fulfilment & delivery: Dispatch; wave 3: Loyalty, Order refunds, Campaigns)', () => {
-    expect(PAGES.length).toBe(102); // OB-391: − the retired erasure page; QG-02 lane 1 R4: + Dock diary, Standing orders, Supplier offer funding, Feature switches; OB-288 P5: + Tally files; P2: + Floor heat map; fulfilment & delivery: + Dispatch; wave 3: + Loyalty, Order refunds, Campaigns; LP/workforce: + Help, Training and adoption, Appointment letters, Related parties; commercial desks: + Business customers, Supplier submissions, Concessions; owner reporting: + Owner alerts; SaaS and rollout: + Trial switches
+    expect(PAGES.length).toBe(103); // QG-02 · OB-404: + Supplier rebates; OB-391: − the retired erasure page; QG-02 lane 1 R4: + Dock diary, Standing orders, Supplier offer funding, Feature switches; OB-288 P5: + Tally files; P2: + Floor heat map; fulfilment & delivery: + Dispatch; wave 3: + Loyalty, Order refunds, Campaigns; LP/workforce: + Help, Training and adoption, Appointment letters, Related parties; commercial desks: + Business customers, Supplier submissions, Concessions; owner reporting: + Owner alerts; SaaS and rollout: + Trial switches
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
@@ -269,6 +269,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'blanket-orders.js': 'apps/web-erp/src/blanket-orders-session.ts',
     'promotion-funding.js': 'apps/web-erp/src/promotion-funding-session.ts',
     'switches.js': 'apps/web-erp/src/switches-session.ts',
+    // QG-02 · OB-404: the Supplier rebates page's words are in its tested session model.
+    'rebates.js': 'apps/web-erp/src/rebates-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

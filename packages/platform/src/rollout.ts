@@ -34,6 +34,12 @@ export interface RolloutChange {
   /** The owner who approved a high-impact change, and the approval spent on it. */
   readonly approvedBy?: string;
   readonly approvalId?: string;
+  /**
+   * OB-407: switching a floor device ON — the named security reviewer who signed it (in their own session), and the
+   * signature (an approval of kind `floor_device_review`) spent on it.
+   */
+  readonly reviewedBy?: string;
+  readonly reviewApprovalId?: string;
   /** Set on a rollback: the version whose state this change restored. */
   readonly rolledBackFrom?: number;
 }
@@ -97,6 +103,8 @@ export interface RolloutBoardRow {
   readonly changedBy: string;
   readonly changedAt: string;
   readonly approvedBy: string | null;
+  /** OB-407: the security reviewer who signed a floor device's switching on, or null. */
+  readonly reviewedBy: string | null;
 }
 
 export function rolloutBoard(changes: readonly RolloutChange[]): readonly RolloutBoardRow[] {
@@ -106,7 +114,7 @@ export function rolloutBoard(changes: readonly RolloutChange[]): readonly Rollou
     const last = rolloutHistory(changes, key, place).at(-1)!;
     return {
       key, branchId: place.branchId, laneId: place.laneId ?? null, enabled: last.enabled, version: last.version,
-      reason: last.reason, changedBy: last.changedBy, changedAt: last.changedAt, approvedBy: last.approvedBy ?? null,
+      reason: last.reason, changedBy: last.changedBy, changedAt: last.changedAt, approvedBy: last.approvedBy ?? null, reviewedBy: last.reviewedBy ?? null,
     };
   }).sort((a, b) => a.key.localeCompare(b.key) || a.branchId.localeCompare(b.branchId) || (a.laneId ?? '').localeCompare(b.laneId ?? ''));
 }

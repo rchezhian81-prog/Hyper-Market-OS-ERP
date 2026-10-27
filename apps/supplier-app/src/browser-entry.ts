@@ -24,7 +24,7 @@
 import {
   createSupplierPortalSession, readDeliveryUpdate, readTopUpProposal,
   type SupplierPortalSession, type SupplierPortalData, type SupplierPortalPorts,
-  type SubmissionView, type StatementView, type SubmissionKind, type SupplierOrdersFeed, type DeliveryUpdateInput,
+  type SubmissionView, type StatementView, type SubmissionKind, type SupplierOrdersFeed, type DeliveryUpdateInput, type SupplierRebateClaimsFeed,
   type SupplierVmiFeed, type SupplierVmiItem, type SupplierVmiProposalView, type TopUpInput,
 } from './supplier-portal-session';
 
@@ -56,6 +56,8 @@ interface SupplierWindow {
     sendDeliveryUpdate(input: DeliveryUpdateInput): Promise<DeliveryUpdateOutcome>;
     /** OB-389: the supplier's own VMI items and proposals as last read (null until read, or when unreadable). */
     vmi(): SupplierVmiFeed | null;
+    /** D03-FR-03 · OB-404: the rebate claims the shop sent this supplier, as last read (null until read, or when unreadable). */
+    rebateClaims(): SupplierRebateClaimsFeed | null;
     /** OB-389: send the Top-up proposal — checked first; the second and last write this surface makes. */
     sendTopUpProposal(input: TopUpInput): Promise<TopUpOutcome>;
   };
@@ -145,6 +147,22 @@ export async function fetchSupplierOrders(): Promise<SupplierOrdersFeed | null> 
       poId: String(o['poId']), number: String(o['number'] ?? o['poId']),
       issuedAt: typeof o['issuedAt'] === 'string' ? o['issuedAt'] : null,
       deliverToLocationId: typeof o['deliverToLocationId'] === 'string' ? o['deliverToLocationId'] : null,
+    })),
+  };
+}
+
+/** D03-FR-03 · OB-404: read the rebate claims the shop sent this supplier (GET); null when unreadable. Partner scoped server-side. */
+export async function fetchSupplierRebateClaims(): Promise<SupplierRebateClaimsFeed | null> {
+  const body = await getPortal('/v1/supplier-portal/me/rebate-claims');
+  if (body === null || !Array.isArray(body['claims'])) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const STATES = ['sent', 'partly_answered', 'answered', 'withdrawn'] as const;
+  return {
+    claimsKnown: body['claimsKnown'] === true,
+    claims: (body['claims'] as Record<string, unknown>[]).map((c) => ({
+      claimId: String(c['claimId']), schemeId: String(c['schemeId'] ?? ''), amountMinor: num(c['amountMinor']), sentOn: String(c['sentOn'] ?? ''),
+      answerDueOn: typeof c['answerDueOn'] === 'string' ? c['answerDueOn'] : null, paidMinor: num(c['paidMinor']), leftToPayMinor: num(c['leftToPayMinor']),
+      state: (STATES as readonly string[]).includes(String(c['state'])) ? c['state'] as (typeof STATES)[number] : 'sent',
     })),
   };
 }
@@ -252,13 +270,14 @@ export function attachSupplierPortal(win: SupplierWindow): void {
     refresh: async () => {
       // The feeds read together; a feed that fails to load stays absent rather than becoming a false empty.
       const mayPropose = new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION);
-      const [submissions, statement, orders, vmi] = await Promise.all([fetchSupplierSubmissions(), fetchSupplierStatement(), fetchSupplierOrders(), fetchSupplierVmi(mayPropose)]);
-      if (submissions === null && statement === null && orders === null && vmi === null) return null;
+      const [submissions, statement, orders, vmi, rebateClaims] = await Promise.all([fetchSupplierSubmissions(), fetchSupplierStatement(), fetchSupplierOrders(), fetchSupplierVmi(mayPropose), fetchSupplierRebateClaims()]);
+      if (submissions === null && statement === null && orders === null && vmi === null && rebateClaims === null) return null;
       current = {
         submissions: submissions ?? current.submissions,
         statement: statement ?? current.statement,
         orders: orders ?? current.orders ?? null,
         vmi: vmi ?? current.vmi ?? null,
+        rebateClaims: rebateClaims ?? current.rebateClaims ?? null,
         asAt: new Date().toISOString(),
       };
       return current;
@@ -267,6 +286,7 @@ export function attachSupplierPortal(win: SupplierWindow): void {
     orders: () => current.orders ?? null,
     sendDeliveryUpdate: (input) => postDeliveryUpdate(input, current.orders ?? null),
     vmi: () => current.vmi ?? null,
+    rebateClaims: () => current.rebateClaims ?? null,
     sendTopUpProposal: (input) => postTopUpProposal(input, current.vmi ?? null),
   };
 }

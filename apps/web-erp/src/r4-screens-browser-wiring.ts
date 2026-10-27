@@ -7,6 +7,7 @@ import { createDockDiarySession, dockDiaryWords, dockDiaryOutcomeWords, NEXT_STA
 import { createBlanketOrdersSession, blanketWords, blanketOutcomeWords, rupees as blanketRupees } from './blanket-orders-session';
 import { createPromotionFundingSession, fundingWords, fundingOutcomeWords, rupees as fundingRupees } from './promotion-funding-session';
 import { createSwitchesSession, switchesWords, switchesOutcomeWords, previewWords } from './switches-session';
+import { createRebatesSession, rebatesWords, rebatesOutcomeWords, rupees as rebateRupees } from './rebates-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
@@ -22,5 +23,9 @@ export function wireR4Screens(win: Record<string, unknown>, viewerIdentity: (raw
   }
   if (win['switchesData'] !== undefined) {
     win['switches'] = { session: createSwitchesSession({ viewer: viewerIdentity(win['switchesData']) }), words: switchesWords, outcomeWords: switchesOutcomeWords, previewWords };
+  }
+  // QG-02 · OB-404: the Supplier rebates page.
+  if (win['rebatesData'] !== undefined) {
+    win['rebates'] = { session: createRebatesSession({ viewer: viewerIdentity(win['rebatesData']) }), words: rebatesWords, outcomeWords: rebatesOutcomeWords, rupees: rebateRupees };
   }
 }

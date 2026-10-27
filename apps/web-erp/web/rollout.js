@@ -24,7 +24,7 @@ function paintBoard() {
   for (const r of board.switches) {
     const tr = document.createElement('tr'); tr.dataset.key = r.key; tr.dataset.place = placeWords(r);
     const state = text('td', r.enabled ? t('on') : t('off')); state.dataset.state = String(r.enabled);
-    tr.append(text('td', r.key), text('td', placeWords(r)), state, text('td', `v${r.version}`), text('td', r.reason), text('td', r.approvedBy === null ? r.changedBy : `${r.changedBy} · ${r.approvedBy}`));
+    tr.append(text('td', r.key), text('td', placeWords(r)), state, text('td', `v${r.version}`), text('td', r.reason), text('td', [r.changedBy, r.approvedBy, r.reviewedBy].filter((x) => typeof x === 'string' && x !== '').join(' · ')));
     const cell = document.createElement('td');
     const h = button(t('history'), 'history', 'quiet'); h.dataset.act = 'history';
     h.addEventListener('click', async () => { const o = await session.history(r.key, placeOf(r)); if (o.result === 'ok') { history = { key: r.key, place: placeOf(r), versions: o.value.versions }; paintHistory(); } else say('b-status', o); });
@@ -88,7 +88,7 @@ function paint() {
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['board-h', 'boardH'], ['rule', 'rule'], ['c-switch', 'colSwitch'], ['c-place', 'colPlace'], ['c-state', 'colState'], ['c-version', 'colVersion'], ['c-why', 'colWhy'], ['c-who', 'colWho'],
     ['change-h', 'changeH'], ['ch-key-l', 'key'], ['ch-branch-l', 'branch'], ['ch-lane-l', 'laneOpt'], ['ch-state-l', 'state'], ['ch-on', 'on'], ['ch-off', 'off'], ['ch-reason-l', 'reason'], ['ch-approval-l', 'approvalId'],
-    ['ch-preview-text', 'preview'], ['ch-save-text', 'save'], ['meter-h', 'meterH'], ['watch-h', 'watchH'], ['consent-h', 'consentH'], ['cs-download-text', 'download'], ['cs-file-l', 'importFile'], ['cs-import-text', 'bringIn'], ['closure-h', 'closureH'], ['closure-sealed-h', 'sealedH'], ['closure-law-h', 'lawKeeps']]) $(id).textContent = t(key);
+    ['ch-preview-text', 'preview'], ['ch-ask-text', 'ask'], ['ch-save-text', 'save'], ['meter-h', 'meterH'], ['watch-h', 'watchH'], ['consent-h', 'consentH'], ['cs-download-text', 'download'], ['cs-file-l', 'importFile'], ['cs-import-text', 'bringIn'], ['closure-h', 'closureH'], ['closure-sealed-h', 'sealedH'], ['closure-law-h', 'lawKeeps']]) $(id).textContent = t(key);
   paintBoard(); paintHistory(); paintMeter(); paintWatch(); paintClosure();
 }
 const change = () => ({ key: $('ch-key').value, branchId: $('ch-branch').value, laneId: $('ch-lane').value, enabled: $('ch-state').value === 'on', reason: $('ch-reason').value, approvalId: $('ch-approval').value });
@@ -97,7 +97,7 @@ async function loadMeter() { const o = await session.meter(); if (o.result === '
 async function loadWatch() { const o = await session.watch(); if (o.result === 'ok') watch = o.value; else say('w-status', o); paintWatch(); }
 async function loadClosure() { const o = await session.closure(); if (o.result === 'ok') closure = o.value; else say('cl-status', o); paintClosure(); }
 
-for (const [id, name] of [['ch-preview', 'search'], ['ch-save', 'check'], ['cs-download', 'files'], ['cs-import', 'upload']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+for (const [id, name] of [['ch-preview', 'search'], ['ch-ask', 'send'], ['ch-save', 'check'], ['cs-download', 'files'], ['cs-import', 'upload']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (!may.named) $('page-status').textContent = t('nobody');
@@ -110,10 +110,15 @@ else {
       const out = await session.preview(change());
       if (out.result !== 'ok') { say('ch-status', out); return; }
       const p = out.value;
-      $('ch-said').textContent = `${t('previewSays')} ${p.current === null ? t('notSet') : p.current ? t('on') : t('off')} ${t('becomes')} ${p.proposed ? t('on') : t('off')}. ${t('lanesChange')} ${p.lanesThatChange.length === 0 ? t('none') : p.lanesThatChange.join(', ')}. ${p.highImpact ? t('needsOwner') : t('noOwner')}`;
+      // OB-407: a floor device switched ON also needs the named security reviewer — or, with nobody named, cannot go on.
+      const reviewer = p.needsSecurityReviewer !== true ? '' : p.securityReviewer ? ` ${t('needsReviewer')} ${p.securityReviewer.displayName}.` : ` ${t('noReviewer')}`;
+      $('ch-said').textContent = `${t('previewSays')} ${p.current === null ? t('notSet') : p.current ? t('on') : t('off')} ${t('becomes')} ${p.proposed ? t('on') : t('off')}. ${t('lanesChange')} ${p.lanesThatChange.length === 0 ? t('none') : p.lanesThatChange.join(', ')}. ${(p.needsSecondPerson ?? p.highImpact) ? t('needsOwner') : t('noOwner')}${reviewer}`;
       $('ch-said').dataset.highImpact = String(p.highImpact);
+      $('ch-said').dataset.needsReviewer = String(p.needsSecurityReviewer === true);
       $('ch-status').textContent = '';
     });
+    // Ask for exactly the approvals head office names (the owner's; for a floor device switched on, the reviewer's too).
+    $('ch-ask').addEventListener('click', async () => { const out = await session.askApprovals(change()); $('ch-status').textContent = out.result === 'ok' ? t('asked') : api.outcomeWords(lang, out); });
     $('ch-save').addEventListener('click', async () => { const out = await session.save(change()); say('ch-status', out); if (out.result === 'ok') await loadBoard(); });
   }
   if (may.meter) { $('meter').hidden = false; void loadMeter(); }

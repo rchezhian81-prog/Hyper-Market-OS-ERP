@@ -323,6 +323,12 @@ export interface RaisedAlert {
   readonly branchId?: string;
   /** Round 34 · OB-124 (2): further people it is also delivered to (a built-in rule's other owners). Absent: its owner only. */
   readonly alsoToUserIds?: readonly string[];
+  /**
+   * §31.1 · OB-414: what one shop-wide alert is about, when it covers several things at once (the stores whose computers hold
+   * new prices and offers, sorted). Set only by head office for such an alert; when the list changes while the alert is
+   * open, the alert is UPDATED and sent again (the same alert to tick, no new occurrence). Absent: an ordinary alert.
+   */
+  readonly members?: readonly string[];
 }
 
 /** Turn a health check into owned, actionable alerts. */

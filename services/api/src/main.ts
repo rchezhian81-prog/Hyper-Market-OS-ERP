@@ -356,7 +356,8 @@ import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlin
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
-import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters'; // OB-288 wave-5 follow-ups (OB-362 · OB-365)
+import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters';
+import { rebateClaimRoutesFor, withSupplierRebateClaims } from './rebate-claims-adapters'; // D03-FR-03 · OB-404 supplier rebate claims // OB-288 wave-5 follow-ups (OB-362 · OB-365)
 import { queueTillHandhelds, floorDeviceSettingRoutesFor, floorDevicePackPoliciesOf, billCopyRoutesFor } from './floor-followups-adapters'; // OB-288 floor-device follow-ups (OB-373 · OB-375 · OB-376 · OB-378)
 import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
 import { ownerReportingSurface, ownerReportingSweep } from './owner-reporting-adapters'; // OB-288 lane 4 · P2 owner reporting
@@ -1041,7 +1042,7 @@ export function buildSurface(deps: {
       partner: empty(undefined), partnerForUser: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
       recordAudit: () => {}, auditEntries: empty([]), now,
-    } : withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now, calendar: shopCalendar }), { store, now }), { store, now })), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders
+    } : withSupplierRebateClaims(withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now, calendar: shopCalendar }), { store, now }), { store, now }), { store, now, calendar: shopCalendar })), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders · OB-404 the rebate claims sent to it
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
@@ -1797,6 +1798,7 @@ export function buildSurface(deps: {
     ...r4SupplyLpRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
     ...lane2OfflineRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
     ...p3ProcureRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
+    ...rebateClaimRoutesFor({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // D03-FR-03 · OB-404 supplier rebate claims
     ...p2CatalogueRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
     ...financeBridgeRoutes({ store, now, calendar: shopCalendar }), // OB-288 P5
     ...commercialDesksRoutes({ store, now, calendar: shopCalendar }), // OB-288 commercial desks (M22 · M24 · M27)

@@ -149,7 +149,7 @@ describe('alert rules — every alert needs a named owner (§32)', () => {
     expect(s.w.rules).toEqual([]);
     const ok = await putRules(s.routes, { rules: [RULE, DEAD], backupMaxAgeSeconds: 100_000 }, 'u-owner');
     // Round 32 · OB-115: every reply also states the built-in rules' states after the save, and what it changed of them.
-    expect(ok.body).toEqual({ version: 1, rules: 2, components: ['sync', 'dead_letter'], builtInChanged: [], builtIn: [expect.objectContaining({ alertId: 'built-in:store-computer-checks-stuck', state: 'no_owner' })] });
+    expect(ok.body).toEqual({ version: 1, rules: 2, components: ['sync', 'dead_letter'], builtInChanged: [], builtIn: [expect.objectContaining({ alertId: 'built-in:store-computer-checks-stuck', state: 'no_owner' }), expect.objectContaining({ alertId: 'built-in:store-computer-clock-out', state: 'no_owner' })] });
     expect(s.w.rules[0]).toMatchObject({ version: 1, definedBy: 'u-owner', definedAt: NOW, thresholds: DEFAULT_THRESHOLDS, backupMaxAgeSeconds: 100_000 });
     await putRules(s.routes, { rules: [RULE] });
     const read = (await routeFor(s.routes, 'GET', RULES_PATH).handler(ctx())).body as { rules: StoredAlertRules; defaults: { backupMaxAgeSeconds: number } };
