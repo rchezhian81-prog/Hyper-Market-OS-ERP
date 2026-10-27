@@ -274,6 +274,30 @@ describe('restore-check --from <backup> — a NEW scratch database, reconciled, 
     expect(readdirSync(join(w.data, 'scratch'))).toEqual([]);
     expectNoSecret(w, textsIn(drive));
   });
+  it('OB-422: the handheld door\'s lock never travels in a backup — beside the data it is left out; named inside the data, the backup is refused', async () => {
+    const w = await prepared();
+    const till = join(w.data, 'till');
+    mkdirSync(join(till, 'edge-data'), { recursive: true });
+    mkdirSync(join(till, 'edge-data-device-tls'), { recursive: true });
+    writeFileSync(join(till, 'till.env'), `EDGE_DATA_DIR=${join(till, 'edge-data')}\nEDGE_LANE_PORT=8090\nPACK_SIGNING_KEY=${'k'.repeat(48)}\n`);
+    writeFileSync(join(till, 'edge-data', 'sync-cursor'), '1\n');
+    const filesIn = (): string => /The till's data: (\d+) file\(s\)/.exec(said(w))?.[1] ?? 'none';
+    expect(await backup(w.deps, { to: driveOf() })).toBe(0);
+    const without = filesIn();
+    writeFileSync(join(till, 'edge-data-device-tls', 'authority-key.pem'), 'the lock key stand-in\n');
+    w.said.length = 0;
+    const drive = driveOf();
+    expect(await backup(w.deps, { to: drive })).toBe(0);
+    expect(filesIn()).toBe(without); // the lock beside the data is not in the backup
+    w.said.length = 0;
+    expect(await restoreCheck(w.deps, { from: join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.manifest.json') })).toBe(0);
+    expect(said(w)).not.toMatch(/authority-key/);
+    // A till.env that puts the lock INSIDE the data folder would carry the key off the computer: refused, said.
+    writeFileSync(join(till, 'till.env'), `EDGE_DATA_DIR=${join(till, 'edge-data')}\nEDGE_DEVICE_TLS_DIR=${join(till, 'edge-data', 'lock')}\nEDGE_LANE_PORT=8090\nPACK_SIGNING_KEY=${'k'.repeat(48)}\n`);
+    w.said.length = 0;
+    expect(await backup(w.deps, { to: driveOf() })).not.toBe(0);
+    expect(said(w)).toMatch(/the handheld door's lock \(.*\) is inside the till's data folder, so a backup would carry its private key off this computer \(OB-422\)/);
+  });
   it('a restore that does not reconcile is NOT ACCEPTED with each exact difference — and the scratch database is still dropped', async () => {
     const { w, manifest } = await backedUp();
     w.docker.restoreLoses = 1;

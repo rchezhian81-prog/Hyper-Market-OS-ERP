@@ -12,6 +12,9 @@ import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enro
 import { withTillPeople, issueTillPins } from '../support/till-operator';
 import { signInOnPhonePage } from '../support/phone-sign-in-page';
 import { auditPage } from './lib/a11y-audit';
+import { deviceBase as boxDoor, sharedDeviceTls, trustingBrowserArgs } from '../support/box-tls';
+
+let deviceTls: Awaited<ReturnType<typeof sharedDeviceTls>>;
 
 /**
  * **R4 · WF-16 (signed, OB-227) — an online return after delivery is COLLECTED BY THE DRIVER on his phone, at a phone's
@@ -84,7 +87,8 @@ describe.skipIf(!HAVE_BROWSER)('WF-16 — the driver collects an online return o
 
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'delivery-app'], { stdio: 'ignore' });
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    deviceTls = await sharedDeviceTls(); // OB-422: the store computer's authority, trusted as an enrolled handheld trusts it
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: trustingBrowserArgs(deviceTls.keyPin) });
     mkdirSync(SHOTS, { recursive: true });
   }, 180_000);
   afterAll(async () => { await browser?.close(); });
@@ -101,11 +105,12 @@ describe.skipIf(!HAVE_BROWSER)('WF-16 — the driver collects an online return o
     await issueTillPins(dir, KEY, [PHONE_PERSON]);
     await writeHeldAssignmentsFeed(dir, { tenantId: TENANT, feed: FEED, receivedAt: '2026-10-19T06:00:05.000Z' });
     const edge = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     stops.push(() => edge.stop());
-    return { edge, base: `http://127.0.0.1:${edge.devices!.port}` };
+    return { edge, base: `${boxDoor(edge)}` };
   }
 
   async function phone(base: string): Promise<Page> {

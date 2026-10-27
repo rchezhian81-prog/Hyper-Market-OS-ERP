@@ -17,6 +17,7 @@ import { bootManager } from '../../apps/web-erp/src/browser-entry';
 import { ReceivingChecklistRefusedError } from '../../apps/web-erp/src/manager-session';
 import { WarehouseSession } from '../../apps/warehouse-app/src/warehouse-session';
 import type { DeviceAck } from '../../packages/sync/src/device-relay';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **OB-172 "A" on the REAL store computer: the dock checklist is captured with no cloud, sealed with its receipt, and booked
@@ -47,7 +48,7 @@ const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 const PHONE_PEOPLE: readonly TillPerson[] = [{ userId: 'u-worker', displayName: 'Worker One', permissions: ['inventory.movement.append'] }];
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
@@ -116,7 +117,7 @@ describe('OB-172 on the real store computer — captured with no cloud, sealed w
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
     const lane = `http://127.0.0.1:${edge.lane!.port}`;
-    const device = `http://127.0.0.1:${edge.devices!.port}`;
+    const device = `${boxDoor(edge)}`;
     const post = async (base: string, source: string, items: { key: string; event: DomainEvent }[], headers: Record<string, string>): Promise<DeviceAck[]> => {
       const res = await savedFetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:8091', ...headers }, body: JSON.stringify({ source, items }) });
       expect(res.status).toBe(200);

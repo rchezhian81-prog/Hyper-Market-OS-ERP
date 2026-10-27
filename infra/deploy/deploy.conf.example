@@ -54,3 +54,10 @@ SRE_RECONCILE=on
 SRE_RECONCILE_MAX_BACKLOG_GROWTH=0
 # The append-only file of per-release QG-10 evidence lines (also printed for the pipeline's summary).
 SRE_QG10_LOG=/opt/sre/qg10-evidence.jsonl
+# OB-423: each QG-10 line is also posted to head office's gate register (the Quality gates page) under the release script's
+# own machine identity (role qg10_release_evidence) — THIS computer's own QG-10 machine login, qg10-release-<its hostname>; never
+# another computer's. Every release attempt is its own note. Head office's address — https, or this box's own loopback:
+SRE_QG10_REGISTER_URL=http://127.0.0.1:8081
+# The PATH of the root-only (chmod 600) file the custodian (Mr Sivakumar) puts this computer's key in at deploy time. ONLY the path goes here —
+# the key itself never goes in this file, the repository or a log. No file: the release runs and says "QG-10 note NOT POSTED".
+SRE_QG10_PUSH_TOKEN_FILE=/etc/sre-pilot/qg10-push.token

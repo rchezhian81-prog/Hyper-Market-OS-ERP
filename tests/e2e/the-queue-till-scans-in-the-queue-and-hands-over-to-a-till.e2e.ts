@@ -13,6 +13,9 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import { prepareTillBox, signInThroughScreen, pinOf } from '../support/till-operator';
 import { auditPage } from './lib/a11y-audit';
+import { deviceBase as boxDoor, sharedDeviceTls, trustingBrowserArgs } from '../support/box-tls';
+
+let deviceTls: Awaited<ReturnType<typeof sharedDeviceTls>>;
 
 /**
  * **D04-FR-05 mobile POS and queue-busting, in a real Chromium on a low-spec phone's screen (360 × 640, touch): a member of
@@ -54,7 +57,8 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'pos'], { stdio: 'ignore' });
     execFileSync('node', ['scripts/build-app.mjs', 'queue-pos'], { stdio: 'ignore' });
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    deviceTls = await sharedDeviceTls(); // OB-422: the store computer's authority, trusted as an enrolled handheld trusts it
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: trustingBrowserArgs(deviceTls.keyPin) });
   }, 120_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
@@ -79,6 +83,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     dirs.push(dir);
     await writeSignedPack(dir, signedPack());
     const edge: EdgeProcess = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_SCREEN_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({
@@ -95,7 +100,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
       }),
     }, () => {}))!;
     stops.push(() => edge.stop());
-    const dev = `http://127.0.0.1:${edge.devices!.port}`;
+    const dev = `${boxDoor(edge)}`;
 
     // ── The handheld: not enrolled → the enrolment page, then straight to the queue till's sign-in.
     const phone = await browser.newContext(HANDHELD);
@@ -242,6 +247,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     dirs.push(dir);
     await writeSignedPack(dir, signedPack());
     const edge: EdgeProcess = (await startEdge({
+      EDGE_DEVICE_TLS_DIR: deviceTls.dir,
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_SCREEN_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({
@@ -256,7 +262,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     const phone = await browser.newContext(HANDHELD);
     stops.push(() => phone.close());
     const page = await phone.newPage();
-    await page.goto(`http://127.0.0.1:${edge.devices!.port}/queue-pos/`, { waitUntil: 'load' });
+    await page.goto(`${boxDoor(edge)}/queue-pos/`, { waitUntil: 'load' });
     await page.fill('#deviceId', 'hh-q1');
     await page.fill('#code', ENROL);
     await page.click('button[type=submit]');

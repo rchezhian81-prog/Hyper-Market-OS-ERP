@@ -23,16 +23,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - The owner's answers to the three questions below.
 
 **Owner decisions (27 Oct 2026, in writing)**
-- OB-422: pre-fill the delivery State from the customer's GSTIN, still editable.
-- OB-423: remove a GSTIN with a reason.
-- OB-424: put the place of supply and the reverse-charge flag in the GSTN file before the first live filing.
+- OB-426: pre-fill the delivery State from the customer's GSTIN, still editable.
+- OB-427: remove a GSTIN with a reason.
+- OB-428: put the place of supply and the reverse-charge flag in the GSTN file before the first live filing.
 
 **What is next (after this PR merges)**
-- Build OB-422, OB-423 and OB-424 in one small PR.
+- Build OB-426, OB-427 and OB-428 in one small PR.
 - A separate fix for the intermittent real-Keycloak lockout test, which also fails on main.
 
 **Needs an owner decision**
 - None open.
+
+---
+
+## Round 5 (27 October 2026): the handheld door is encrypted, the seal is on the store PC's screen, and release reports reach head office (OB-422 to OB-425)
+
+**What changed**
+- **OB-422 (ADR-0030):** the handhelds and the queue till now talk to the store computer over https only, under a signing authority the store computer makes for itself at install. That authority may vouch only for the shop's private addresses; its key never leaves the box or enters a backup. The box renews the door's certificate itself. Plain http is refused in words. The till's own sale path (loopback) is unchanged, so selling never depends on this.
+- **OB-424:** the store PC's own screen has a **Handheld seal** page (`http://127.0.0.1:8091/handheld-seal/`) with a QR code carrying the seal, an `authority.crt` download and a short code staff compare by eye. The shop-network door never serves it. Cable copy stays as the fallback.
+- **OB-425:** self-checkout and the price kiosk stay on their own PCs; nothing changed for them.
+- **OB-423 / QG-10:** after every release the release script posts its QG-10 note to head office's gate register with its own per-computer login. Every attempt is kept and shown, newest first, on the Quality gates page. Mr Sivakumar sets each computer's login secret. QG-10 itself stays the owner's decision.
+- **OA-16:** the staff-only Wi-Fi password is now defence in depth, not the only protection.
+
+**Tests that ran (this box, synthetic data)**
+- Builders: full unit + integration on real PostgreSQL (about 15,000 tests each; one unrelated load-sensitive test failed in each full run and passed alone), guardrails, typecheck, eslint, the affected browser suites (handheld, queue till, self-checkout, kiosk, seal page, Quality gates). The coordinator re-ran typecheck, guardrails and the unit suite on the joined branch; CI runs the rest on the pull request.
+- Not tried: a real Android handheld installing the seal; a real release computer posting a note to a live head office.
+
+**What is next**
+- On the real handheld model, try the seal by QR and by cable (if the phone camera cannot save the seal as a file, the owner picks: cable every time, approve one QR app, or head office sends the seal).
+- Mr Sivakumar creates one QG-10 login per release computer (`qg10-release-<computer>`) and sets its secret.
+
+**Blocked / needs an owner decision**
+- Nothing new blocked. The handheld-model question above is asked only if the QR route does not work on the shop's handhelds.
 
 ---
 

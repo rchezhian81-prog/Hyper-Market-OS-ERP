@@ -10,7 +10,8 @@
       Quality gates (QG-12 · roadmap §22 "every gate ends GO, HOLD or REWORK with evidence; silence is not approval"
       · §36 the owner decides · OB-288 gates lane). A THIN CLIENT over head office's GET /v1/compliance/gate-register and
       POST /v1/compliance/gate-decisions/:gate/:release. Its session is apps/web-erp/src/gates-session.ts. A gate nobody
-      decided reads "Not decided — silence is not approval". Nothing is read before the person chooses a release, and
+      decided reads "Not decided — silence is not approval". OB-423: the QG-10 row also lists the release script's own QG-10
+      notes (GET /v1/compliance/gate-register/qg10-evidence) — every attempt of every release, newest first. Nothing is read before the person chooses a release, and
       nothing is written except the decision they record by name. No prompt/confirm/alert; nothing on a timer.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
@@ -42,6 +43,12 @@
       .decisions input { min-height: 0; }
       .counts { display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
       .counts span { font-weight: 700; }
+      /* OB-423: the release script's QG-10 notes on the QG-10 row */
+      .qg10 { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+      .qg10 h4 { margin: 0; font-size: 14px; }
+      ul.qg10-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      ul.qg10-notes > li { border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; }
+      ul.qg10-notes > li.tone-ok { border-left-color: var(--ok); } ul.qg10-notes > li.tone-error { border-left-color: var(--error); }
       [hidden] { display: none !important; }
     </style>
   </head>

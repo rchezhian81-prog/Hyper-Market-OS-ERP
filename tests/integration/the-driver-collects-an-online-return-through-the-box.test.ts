@@ -20,6 +20,7 @@ import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-re
 import { withTillPeople, issueTillPins, signInOnPhone } from '../support/till-operator';
 import { seedOnlineShop, listShopOnline, deliveredOrder, callsFor, codeOf, MANAGER, CHECKER, CUSTOMER, STORE, type ShopCalls } from '../support/online-shop';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **R4 · WF-16 (signed, OB-227) — an online return after delivery is COLLECTED BY THE DRIVER: his phone → the REAL store box
@@ -67,7 +68,7 @@ const DRIVER = 'u-driver';
 const HELPER = 'u-helper';
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
@@ -143,7 +144,7 @@ describe.each(backings)('WF-16 — the driver collects an online return through 
       return edge;
     };
     let edge = await startBox();
-    const base = () => `http://127.0.0.1:${edge.devices!.port}`;
+    const base = () => `${boxDoor(edge)}`;
     const enrolled = await savedFetch(`${base()}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: 'hh-03', code: CODE }) });
     const device = enrolled.headers.get('set-cookie')!.split(';')[0]!;
     const asDriver = await signInOnPhone(base(), device, DRIVER, 'driver');

@@ -20,6 +20,7 @@ import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 import { startTheJourneyMidMorning } from '../support/trading-day-clock';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **THE FINAL INTEGRATED STORE ACCEPTANCE — one synthetic store, one journey, twelve steps, every one through a served
@@ -121,7 +122,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
   let cloud: RealCloud;
   const dirs: string[] = [];
   const edges: EdgeProcess[] = [];
-  const realFetch = globalThis.fetch;
+  const realFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
   let cableCut = false;
   /** A RECOVERY drill: head office takes the next relayed sale, but its reply is lost on the way back to the store. */
   let loseNextSaleReply = false;
@@ -205,7 +206,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
   }
 
   // ── the warehouse phone: enrolled once on the box's device socket, then each person signs in with their own PIN ────────
-  const deviceBase = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
+  const deviceBase = (edge: EdgeProcess): string => `${boxDoor(edge)}`;
   let deviceCookie = '';
   async function enrolPhone(edge: EdgeProcess, code: string): Promise<void> {
     const res = await realFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: PHONE, code }) });

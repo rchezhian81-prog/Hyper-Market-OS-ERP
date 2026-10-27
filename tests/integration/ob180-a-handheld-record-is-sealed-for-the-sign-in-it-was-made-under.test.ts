@@ -16,6 +16,7 @@ import { DeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outb
 import { WarehouseSession } from '../../apps/warehouse-app/src/warehouse-session';
 import { fromHex, hmacSha256Hex, phoneStamper, readPhoneSignIn, stampMessage, type PhoneSignIn, type SignInStamp } from '../../packages/sync/src/sign-in-stamp';
 import type { DeviceAck } from '../../packages/sync/src/device-relay';
+import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
 
 /**
  * **OB-180 "A" (owner, 17 Oct 2026, "Stamp each record") on the REAL store computer (`startEdge`), head office in memory.**
@@ -46,7 +47,7 @@ const PEOPLE: readonly TillPerson[] = [
 ];
 
 const cleanups: Array<() => Promise<void>> = [];
-const savedFetch = globalThis.fetch;
+const savedFetch = trustTheBoxes(globalThis.fetch); // OB-422: the handheld door is https, trusted by its box's authority
 afterEach(async () => {
   globalThis.fetch = savedFetch;
   for (const c of cleanups.splice(0).reverse()) await c();
@@ -127,7 +128,7 @@ describe('OB-180: a handheld record is sealed for the sign-in it was made under'
       CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A_TENANT, branchId: 'store-1' }),
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
-    const device = `http://127.0.0.1:${edge.devices!.port}`;
+    const device = `${boxDoor(edge)}`;
     const post = async (cookie: string, items: { key: string; event: DomainEvent; stamp?: SignInStamp }[]): Promise<DeviceAck[]> => {
       const res = await savedFetch(`${device}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items }) });
       expect(res.status).toBe(200);

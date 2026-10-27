@@ -278,6 +278,12 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
   // through. Absent → no device socket at all. The host stays loopback unless named — a shop names its LAN address.
   { key: 'EDGE_DEVICE_PORT', numeric: true, optional: true },
   { key: 'EDGE_DEVICE_HOST', optional: true },
+  /**
+   * OB-422 · ADR-0030: the folder holding the device socket's lock — the store computer's own signing authority (its
+   * private key never leaves this folder) and the door's certificate. Absent → `<EDGE_DATA_DIR>-device-tls`, beside the
+   * data folder and never inside it, so a backup of the data never carries a private key off the box.
+   */
+  { key: 'EDGE_DEVICE_TLS_DIR', optional: true },
   /** Where `apps/` lives on this box, so the screens can be served from disk. */
   { key: 'EDGE_APPS_DIR', optional: true },
   /**

@@ -328,7 +328,7 @@ import { createAffinitySession, affinityWords, affinityOutcomeWords, type Affini
 import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type EventsSession } from './demand-events-session';
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
 // OB-288 gates lane (QG-12): the Quality gates page — the owner's GO / HOLD / REWORK register.
-import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
+import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, qg10NoteView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
 // OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
@@ -5185,7 +5185,7 @@ interface ManagerWindow {
   // ── end R4 Lane 3 ──
   // OB-288 gates lane (QG-12): the Quality gates page — who is looking; head office answers the rest.
   gatesData?: ViewerIdentity;
-  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
+  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly noteView: typeof qg10NoteView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
   approvalRulesData?: ViewerIdentity;
   // OB-288 P2: the Floor heat map page — who is looking; head office answers the rest.
@@ -7053,7 +7053,7 @@ if (browserWindow !== undefined) {
   // ── end R4 Lane 3 ──
   // OB-288 gates lane (QG-12): the Quality gates page — reads on a click, writes only the owner's explicit decision.
   browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
-  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, names: GATE_NAMES, releases: GATE_RELEASES };
+  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, noteView: qg10NoteView, names: GATE_NAMES, releases: GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
   // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
   browserWindow.floorHeatMapData = viewerIdentity(browserWindow.floorHeatMapData);

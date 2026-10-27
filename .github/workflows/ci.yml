@@ -729,6 +729,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
           # OB-342: the release signature the security-scans job made (empty when not signed) — the release script's 4th argument.
+          # OB-423: then attempt=<this run's attempt> — every re-run of the pipeline is its own QG-10 note at head office.
           RELEASE_SIGNATURE: ${{ needs.security-scans.outputs.release-signature }}
         run: |
           umask 077
@@ -745,7 +746,7 @@ jobs:
               -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
               -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
-              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"} 2>&1 | tee release-output.txt
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"} "attempt=$GITHUB_RUN_ATTEMPT" 2>&1 | tee release-output.txt
           echo "Canary: $GITHUB_SHA ($([ -n "$RELEASE_SIGNATURE" ] && echo signed || echo not signed)) deployed to the canary box and stayed healthy through its bake." >> "$GITHUB_STEP_SUMMARY"
 
       - name: QG-10 — this release's evidence line from the box (health, smoke, reconcile, monitoring, rollback)
@@ -824,6 +825,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
           # OB-342: the release signature the security-scans job made (empty when not signed) — the release script's 4th argument.
+          # OB-423: then attempt=<this run's attempt> — every re-run of the pipeline is its own QG-10 note at head office.
           RELEASE_SIGNATURE: ${{ needs.security-scans.outputs.release-signature }}
         run: |
           umask 077
@@ -841,7 +843,7 @@ jobs:
               -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
               -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
-              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"} 2>&1 | tee release-output.txt
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" ${RELEASE_SIGNATURE:+"$RELEASE_SIGNATURE"} "attempt=$GITHUB_RUN_ATTEMPT" 2>&1 | tee release-output.txt
           echo "Deployed $GITHUB_SHA ($([ -n "$RELEASE_SIGNATURE" ] && echo signed || echo not signed)) to the demo box (merged by $GITHUB_ACTOR)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: QG-10 — this release's evidence line from the box (health, smoke, reconcile, monitoring, rollback)

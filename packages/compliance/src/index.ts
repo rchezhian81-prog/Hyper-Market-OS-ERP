@@ -9,3 +9,5 @@ export * from './risk';
 export * from './findings';
 // QG-12: the gate-decision register (GO / HOLD / REWORK with evidence; no default — silence is not approval).
 export * from './gate-decisions';
+// OB-423 · QG-10: the release script's per-release evidence line, as head office's gate register reads and keeps it.
+export * from './qg10-evidence';

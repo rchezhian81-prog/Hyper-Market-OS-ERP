@@ -237,7 +237,9 @@ Per `in-store-install.md` Step 6, performed by `pilot-platform-admin` or `pilot-
 2. Issue each phone's one-time code: `POST /v1/platform/devices/<deviceId>/enrolment`. The answer shows the code **once**;
    write it down for the phone. Nothing is copied anywhere: the store setup carries the store's phones with only the
    code's fingerprint and expiry, and the store computer has it after its next sync pass (a minute or so).
-3. On the phone, on the staff wifi, open `http://<the store PC's address>:8092/warehouse/` (or `/picker/`, `/driver/`):
+3. On the phone, trust the store PC once (OB-422 · `in-store-install.md` Step 6 step 4: install its `authority.crt` and
+   compare the fingerprint), then, on the staff wifi, open `https://<the store PC's address>:8092/warehouse/` (or
+   `/picker/`, `/driver/`; plain http is refused):
    it is sent to **Enrol this handheld**; type the device id and the code; it comes back on the screen it asked for.
 4. The phone's list **Sent from this handheld / phone** shows each action as *saved here* → *with the store computer* →
    *posted at head office*, or *refused* with the reason.
@@ -286,7 +288,7 @@ the screens in a browser — those are SP-10 (§7).
 | Public origin (customer app, guest; the API) | `https://<the box>` — the address is in the owner's own records and in the GitHub `demo` environment, never in the repository | anyone; browse as a guest; the DEMO banner shows |
 | Till | `http://127.0.0.1:8091/pos/` on the store PC | the cashier signs in with **staff ID** = the demo user id (`pilot-cashier`) **and their till PIN**, set on the store PC with the administrator's command (`till/start-till.sh till-pin --user pilot-cashier --by "<name>"`, in-store-install Step 2b) — the cashier types it themselves, hidden; the store PC checks it (ADR-0020) |
 | ERP screens (manager, buying, goods receipt, indents, cash office, day book, suppliers, …) | `http://127.0.0.1:8091/<screen>/` on the store PC | run as the person who signed in at the front door (OB-16). Opened directly on the store PC with no front door, a screen names nobody and saves nothing — use the hosted demo's screens for the ERP part of the practice, see §4.3 |
-| Handhelds | `http://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4; then each person signs in on the phone with their staff ID and **the same till PIN** (OB-30) — issue one for each phone user like the cashier's |
+| Handhelds | `https://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4; then each person signs in on the phone with their staff ID and **the same till PIN** (OB-30) — issue one for each phone user like the cashier's |
 | Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
 
 Role restrictions are enforced by head office on every write: a cashier cannot set a price, a buyer cannot approve

@@ -47,10 +47,10 @@
 - With the internet down the queue keeps moving: the handheld, the box and the till talk over the shop's own wifi.
 - With the wifi or the store computer down the handheld still scans (the page and the pack are cached), but it can
   neither hand over nor take money — the screen says the store computer is not answering.
-- A money write now crosses the shop network. The device socket still speaks plain HTTP (ADR-0019 "what this does not
-  do"): the handhelds must stay on a staff-only WPA2/WPA3 network separate from guest wifi. No card data travels — only the
-  box's attempt reference and the machine's approval number — but a session cookie is readable by a device already on that
-  network. TLS on the device socket remains the follow-up ADR-0019 names.
+- A money write now crosses the shop network. **Since ADR-0030 (OB-422, 27 Oct 2026) it crosses it encrypted:** the
+  device socket speaks TLS only under the store computer's own authority, which the handheld trusted at enrolment; plain
+  http is refused; the queue till's `sre_operator` cookie is `Secure`. No card data travels at all — only the box's
+  attempt reference and the machine's approval number. The staff-only wifi stays as defence in depth.
 - A handheld's bills are numbered by the store computer for lane `device:<id>`. Head office issues that lane its own
   bill-number prefix through the till-prefix route (OB-376, `POST /v1/stores/:storeId/tills/device:<id>/receipt-prefix`,
   only for a handheld registered at that store); until it does, they carry the store computer's own store-coded prefix and
@@ -63,6 +63,6 @@
 
 ## Reconsider-when
 
-The owner reverses OB-372 (cash on the handheld); TLS is added to the device socket; tills share one store computer, or a
+The owner reverses OB-372 (cash on the handheld); tills share one store computer, or a
 cross-box hand-over or reprint is wanted; a Bluetooth printer is bought for the handheld's bill (OB-373 would then be
 revisited).

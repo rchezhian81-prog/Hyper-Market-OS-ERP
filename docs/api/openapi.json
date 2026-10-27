@@ -13227,6 +13227,131 @@
         }
       }
     },
+    "/v1/compliance/gate-register/qg10-evidence": {
+      "get": {
+        "operationId": "getComplianceGateRegisterQg10Evidence",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.gate.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetComplianceGateRegisterQg10EvidenceReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.gate.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postComplianceGateRegisterQg10Evidence",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.qg10.evidence.push",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostComplianceGateRegisterQg10EvidenceRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostComplianceGateRegisterQg10EvidenceReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostComplianceGateRegisterQg10EvidenceReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.qg10.evidence.push\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/compliance/gates/blocked": {
       "get": {
         "operationId": "getComplianceGatesBlocked",
@@ -115663,6 +115788,43 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/gate-decisions.ts"
       },
+      "GetComplianceGateRegisterQg10EvidenceReply": {
+        "type": "object",
+        "required": [
+          "gate",
+          "passCondition",
+          "notes",
+          "count",
+          "says",
+          "asAt"
+        ],
+        "properties": {
+          "gate": {
+            "type": "string"
+          },
+          "passCondition": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Qg10EvidenceRecord"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "says": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/qg10-evidence.ts"
+      },
       "GetComplianceGateRegisterReply": {
         "type": "object",
         "required": [
@@ -140329,19 +140491,19 @@
           "targets": {
             "type": "object",
             "required": [
+              "rollback",
               "backup_restore",
               "store_recovery",
-              "rollback",
               "incident_escalation"
             ],
             "properties": {
+              "rollback": {
+                "$ref": "#/components/schemas/RecoveryTarget"
+              },
               "backup_restore": {
                 "$ref": "#/components/schemas/RecoveryTarget"
               },
               "store_recovery": {
-                "$ref": "#/components/schemas/RecoveryTarget"
-              },
-              "rollback": {
                 "$ref": "#/components/schemas/RecoveryTarget"
               },
               "incident_escalation": {
@@ -161197,6 +161359,202 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/gate-decisions.ts"
+      },
+      "PostComplianceGateRegisterQg10EvidenceReply200": {
+        "type": "object",
+        "required": [
+          "note",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "note": {
+            "$ref": "#/components/schemas/Qg10EvidenceRecord"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/qg10-evidence.ts"
+      },
+      "PostComplianceGateRegisterQg10EvidenceReply201": {
+        "type": "object",
+        "required": [
+          "note",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "note": {
+            "$ref": "#/components/schemas/Qg10EvidenceRecord"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/qg10-evidence.ts"
+      },
+      "PostComplianceGateRegisterQg10EvidenceRequest": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "attempt": {
+                "type": "string"
+              },
+              "box": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "checks": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {}
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "health": {
+                        "type": "string",
+                        "enum": [
+                          "exercised_failed",
+                          "exercised_ok",
+                          "failed",
+                          "not_run",
+                          "not_run_on_this_box",
+                          "ready",
+                          "verified"
+                        ]
+                      },
+                      "smoke": {
+                        "type": "string",
+                        "enum": [
+                          "exercised_failed",
+                          "exercised_ok",
+                          "failed",
+                          "not_run",
+                          "not_run_on_this_box",
+                          "ready",
+                          "verified"
+                        ]
+                      },
+                      "reconciliation": {
+                        "type": "string",
+                        "enum": [
+                          "exercised_failed",
+                          "exercised_ok",
+                          "failed",
+                          "not_run",
+                          "not_run_on_this_box",
+                          "ready",
+                          "verified"
+                        ]
+                      },
+                      "monitoring": {
+                        "type": "string",
+                        "enum": [
+                          "exercised_failed",
+                          "exercised_ok",
+                          "failed",
+                          "not_run",
+                          "not_run_on_this_box",
+                          "ready",
+                          "verified"
+                        ]
+                      },
+                      "rollback": {
+                        "type": "string",
+                        "enum": [
+                          "exercised_failed",
+                          "exercised_ok",
+                          "failed",
+                          "not_run",
+                          "not_run_on_this_box",
+                          "ready",
+                          "verified"
+                        ]
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "health": {
+                        "type": "string"
+                      },
+                      "smoke": {
+                        "type": "string"
+                      },
+                      "reconciliation": {
+                        "type": "string"
+                      },
+                      "monitoring": {
+                        "type": "string"
+                      },
+                      "rollback": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "decision": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "differences": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gate": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "notVerified": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "outcome": {
+                "type": "string"
+              },
+              "passCondition": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "previous": {
+                "type": "string"
+              },
+              "release": {
+                "type": "string"
+              },
+              "run": {
+                "type": "string"
+              },
+              "verified": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/qg10-evidence.ts"
       },
       "PostComplianceIncidentsByIncidentIdReply": {
         "type": "object",
@@ -276202,6 +276560,179 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Qg10EvidenceRecord": {
+        "type": "object",
+        "required": [
+          "recordedBy",
+          "recordedAt",
+          "noteDigest",
+          "gate",
+          "passCondition",
+          "release",
+          "previous",
+          "at",
+          "by",
+          "run",
+          "attempt",
+          "box",
+          "outcome",
+          "checks",
+          "verified",
+          "notVerified",
+          "differences",
+          "decision"
+        ],
+        "properties": {
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "noteDigest": {
+            "type": "string"
+          },
+          "gate": {
+            "type": "string",
+            "const": "QG-10"
+          },
+          "passCondition": {
+            "type": "string"
+          },
+          "release": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "run": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "string"
+          },
+          "box": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "deployed",
+              "refused_books_unreadable",
+              "rollback_failed",
+              "rolled_back",
+              "rolled_back_in_canary_bake",
+              "rolled_back_on_reconcile"
+            ]
+          },
+          "checks": {
+            "type": "object",
+            "required": [
+              "health",
+              "smoke",
+              "reconciliation",
+              "monitoring",
+              "rollback"
+            ],
+            "properties": {
+              "health": {
+                "type": "string",
+                "enum": [
+                  "exercised_failed",
+                  "exercised_ok",
+                  "failed",
+                  "not_run",
+                  "not_run_on_this_box",
+                  "ready",
+                  "verified"
+                ]
+              },
+              "smoke": {
+                "type": "string",
+                "enum": [
+                  "exercised_failed",
+                  "exercised_ok",
+                  "failed",
+                  "not_run",
+                  "not_run_on_this_box",
+                  "ready",
+                  "verified"
+                ]
+              },
+              "reconciliation": {
+                "type": "string",
+                "enum": [
+                  "exercised_failed",
+                  "exercised_ok",
+                  "failed",
+                  "not_run",
+                  "not_run_on_this_box",
+                  "ready",
+                  "verified"
+                ]
+              },
+              "monitoring": {
+                "type": "string",
+                "enum": [
+                  "exercised_failed",
+                  "exercised_ok",
+                  "failed",
+                  "not_run",
+                  "not_run_on_this_box",
+                  "ready",
+                  "verified"
+                ]
+              },
+              "rollback": {
+                "type": "string",
+                "enum": [
+                  "exercised_failed",
+                  "exercised_ok",
+                  "failed",
+                  "not_run",
+                  "not_run_on_this_box",
+                  "ready",
+                  "verified"
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "notVerified": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "health",
+                "monitoring",
+                "reconciliation",
+                "rollback",
+                "smoke"
+              ]
+            }
+          },
+          "differences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decision": {
+            "type": "string",
+            "const": "not decided here — this is evidence for the owner's QG-10 decision in the gate register (QG-12: silence is not approval)"
           }
         },
         "additionalProperties": true

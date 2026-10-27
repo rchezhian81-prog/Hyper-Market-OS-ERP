@@ -44,7 +44,8 @@ import { createConnection, createServer } from 'node:net';
 import * as os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { backup, drill, restoreCheck } from './store-computer-recovery.mjs';
+import { backup, drill, restoreCheck, tillFolders } from './store-computer-recovery.mjs';
+import { deviceDoorRow } from './store-computer-device-door.mjs';
 import { autostart, backupStatus, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup } from './store-computer-schedule.mjs';
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
@@ -1155,6 +1156,9 @@ export function doctorRows(deps, extra = {}) {
     if (L.mode === 'data-folder') row('Data', true, `the shop's data folder is ${L.dataRoot} — apart from the system's own folder`);
     else row('Data', false, `this copy's settings and the till's data are inside the system's own folder (${deps.repoRoot}), where a new release would replace them`, 'Close the till window, then run: pnpm run store-computer -- migrate-data-folder');
   }
+  // OB-422: the handheld door's lock, when this computer's till opens the door — read-only, public certificates only.
+  const door = deviceDoorRow(deps, tillFolders(deps, L));
+  if (door !== undefined) rows.push(door);
 
   // Windows only, read-only: the edition (OB-282 — a server is refused before this list), Docker's disk image on the
   // data drive (OB-283), who is an administrator and who can read the data on this shared PC (OB-251 · OB-284). A check

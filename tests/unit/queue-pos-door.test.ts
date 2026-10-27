@@ -97,7 +97,7 @@ describe('switched off (OB-316): nothing but the reason', () => {
     const handOver = await postJson('/queue-pos/handoff', { basketId: 'B-1', lines: [] });
     expect([handOver.status, (await handOver.json() as { refusedBecause: string }).refusedBecause]).toEqual([403, 'queue_busting_off']);
     const out = await call('/queue-pos/sign-out', { method: 'POST' });
-    expect([out.status, out.headers.get('location'), out.headers.get('set-cookie')]).toEqual([303, '/queue-pos/sign-in', 'sre_operator=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0']);
+    expect([out.status, out.headers.get('location'), out.headers.get('set-cookie')]).toEqual([303, '/queue-pos/sign-in', 'sre_operator=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0']);
     expect(reached).toEqual([]);
   });
 });
@@ -110,7 +110,7 @@ describe('who: signed in on THIS phone, for SELLING', () => {
     expect(bad.status).toBe(401);
     const good = await call('/queue-pos/sign-in', { method: 'POST', signedIn: false, headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'staffId=u-ravi&pin=123456' });
     expect([good.status, good.headers.get('location')]).toEqual([303, '/queue-pos/']);
-    expect(good.headers.get('set-cookie')).toBe('sre_operator=tok-1; Path=/; HttpOnly; SameSite=Strict; Max-Age=14400');
+    expect(good.headers.get('set-cookie')).toBe('sre_operator=tok-1; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=14400');
     expect(signIns).toEqual([
       { staffId: 'u-ravi', pin: '000000', deviceId: 'hh-q1', authority: 'pos.sale.sync' },
       { staffId: 'u-ravi', pin: '123456', deviceId: 'hh-q1', authority: 'pos.sale.sync' },

@@ -44,6 +44,7 @@ import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall, isHeadOfficePage } from './h
 import { HEAD_OFFICE_CALL_MAX_BYTES, headOfficeCallRefusal, headOfficeSignInPage, type HeadOfficeCallRefusal, type HeadOfficeLink } from './head-office-link'; // OB-388
 import { rolesAtThisStore } from './office-sign-in';
 import { peopleFrom } from './screen-navigation';
+import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -422,6 +423,12 @@ export function startScreenServer(input: {
    * socket knows its own address (the sign-in returns to it). Absent: the box never answers `/v1` (a lost link, P-08).
    */
   readonly headOffice?: (origin: string) => HeadOfficeLink;
+  /**
+   * OB-424 · ADR-0030: the "Handheld seal" panel — the public authority certificate the handheld door is locked under, its
+   * QR and its short fingerprint code, read per request from the RUNNING door. Served here (the PC's loopback) only, never
+   * on the shop network. Absent: the panel's paths answer 404, as on a box with no screens for it.
+   */
+  readonly handheldSeal?: () => HandheldSealSource;
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -547,6 +554,31 @@ export function startScreenServer(input: {
     await ho.carry(req, res, session, body === null ? null : Buffer.from(body, 'utf8'));
   };
 
+  /**
+   * OB-424: the seal panel and its `authority.crt`. Read-only. With the office PIN on, for a person signed in to the office
+   * screens (anyone who sets up a handheld is); the material itself is public. Nothing to show → the panel says why in
+   * words, and the download answers 404 in words: never a made-up seal.
+   */
+  const sealDoor = async (req: IncomingMessage, res: ServerResponse, path: string, source: () => HandheldSealSource): Promise<void> => {
+    req.resume();
+    if (req.method !== 'GET' && req.method !== 'HEAD') { send(res, 405, 'text/plain; charset=utf-8', 'the handheld seal is only read'); return; }
+    if (office !== undefined) {
+      const session = await office.check(officeTokenOf(req.headers['cookie']));
+      if (!session.ok) {
+        page(res, 401, signInPage({ next: HANDHELD_SEAL_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
+        return;
+      }
+    }
+    const panel = handheldSealPanel(source());
+    if (path !== HANDHELD_SEAL_PATHS.certificate) { page(res, 200, handheldSealPage(panel)); return; }
+    if (!panel.ok) {
+      send(res, 404, 'text/plain; charset=utf-8', `No seal to download. ${panel.en}\n${panel.ta}\n`);
+      return;
+    }
+    res.setHeader('content-disposition', `attachment; filename="${panel.download.fileName}"`);
+    send(res, 200, panel.download.type, panel.certificateDer);
+  };
+
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
@@ -608,6 +640,11 @@ export function startScreenServer(input: {
           return;
         }
         await carryToHeadOffice(req, res, link);
+        return;
+      }
+      // OB-424 · ADR-0030: the handheld seal — public material only, on this loopback socket only.
+      if (input.handheldSeal !== undefined && (doorPath === HANDHELD_SEAL_PATHS.page || doorPath === HANDHELD_SEAL_PATHS.page.slice(0, -1) || doorPath === HANDHELD_SEAL_PATHS.certificate)) {
+        await sealDoor(req, res, doorPath, input.handheldSeal);
         return;
       }
       if (req.method !== 'GET') {

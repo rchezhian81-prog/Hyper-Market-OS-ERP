@@ -47,6 +47,22 @@
 # rollback — each verified or not) to SRE_QG10_LOG and prints it ("QG-10 record: …") for the pipeline's summary. The
 # record is evidence for the owner's QG-10 decision, never a decision (QG-12).
 #
+# OB-423: the same QG-10 line is then POSTED to head office's gate register (shown on the Quality gates page) under the
+# release script's OWN limited machine identity (role qg10_release_evidence — it may only add QG-10 release evidence). Its
+# key is supplied by the custodian at deploy time in a root-only file on the box; this script hands only the file's PATH
+# (SRE_QG10_PUSH_TOKEN_FILE) to the post tool and never reads, prints or passes the key itself. No key, head office
+# unreachable or refusing: the release still runs, the line stays in SRE_QG10_LOG, and it says "QG-10 note NOT POSTED" (P-08).
+#
+# OB-423 (owner, 27 Oct 2026) — every release ATTEMPT is its own QG-10 note, named by the pipeline RUN and its ATTEMPT:
+#   • the pipeline hands both over (the run id as the 3rd word, then the word attempt=<GITHUB_RUN_ATTEMPT> after the optional
+#     signature — SSH does not carry the runner's environment to the box);
+#   • with no run/attempt words, GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT from this script's environment are used when present
+#     (the script run on a CI runner itself);
+#   • otherwise (by hand on the box) the run is "manual" and the attempt is "local-<UTC yyyymmddThhmmssZ>", the box's own
+#     time of this attempt — one deployment at a time (the lock), so two attempts never share it.
+# Each box has its OWN QG-10 machine login (qg10-release-<this box's host name>); head office refuses a note from another
+# computer's login.
+#
 # WF-20 · AID-08 "sign releases" (OB-288 P5): a box given the release-signing PUBLIC key (SRE_RELEASE_PUBKEY) deploys
 # only a commit whose signature verifies — the 4th argument, the base64 Ed25519 signature `scripts/release-signing.mjs
 # sign` made over "sre-release-v1 / commit=<sha> / tree=<tree id>". The box rebuilds those lines from its own fetch and
@@ -57,8 +73,8 @@ set -euo pipefail
 
 say() { printf 'release: %s\n' "$*"; }
 usage() {
-  echo "usage: release.sh <40-hex commit sha> [actor] [run-id] [signature]" >&2
-  echo "   or, as an SSH forced command:  release <sha> [actor] [run-id] [signature]" >&2
+  echo "usage: release.sh <40-hex commit sha> [actor] [run-id] [signature] [attempt=<n>]" >&2
+  echo "   or, as an SSH forced command:  release <sha> [actor] [run-id] [signature] [attempt=<n>]" >&2
   exit 64
 }
 
@@ -104,6 +120,14 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_RECONCILE_CMD:=}"
 : "${SRE_RECONCILE_MAX_BACKLOG_GROWTH:=0}"
 : "${SRE_QG10_LOG:=/opt/sre/qg10-evidence.jsonl}"
+# OB-423: the QG-10 note to head office's gate register.
+#   SRE_QG10_REGISTER_URL      head office's address (default: SRE_API_URL — on the pilot box head office is this box).
+#                              https, or this box's own loopback; never an address with a sign-in in it.
+#   SRE_QG10_PUSH_TOKEN_FILE   the PATH of the root-only (mode 600) file holding the release script's machine key, which the
+#                              custodian puts there at deploy time (docs/runbooks/automatic-deployment.md). The key itself
+#                              never goes in deploy.conf, the repository or a log. Missing, empty or unset: NOT POSTED, said.
+: "${SRE_QG10_REGISTER_URL:=$SRE_API_URL}"
+: "${SRE_QG10_PUSH_TOKEN_FILE:=/etc/sre-pilot/qg10-push.token}"
 
 COMPOSE_FILE_ARGS=()
 for f in $SRE_COMPOSE_FILES; do COMPOSE_FILE_ARGS+=(-f "$f"); done
@@ -117,12 +141,35 @@ if [ $# -eq 0 ] && [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then
   [ "${WORDS[0]:-}" = "release" ] || usage
   set -- "${WORDS[@]:1}"
 fi
-SHA="${1:-}"; ACTOR="${2:-unknown}"; RUN="${3:-manual}"
-SIGNATURE=""; if [ "$PHASE" = 1 ]; then SIGNATURE="${4:-}"; fi
+SHA="${1:-}"; ACTOR="${2:-unknown}"; RUN="${3:-${GITHUB_RUN_ID:-manual}}"
+# OB-423 (a): which attempt of the run this is. Phase 1 reads the words after the run id: an optional signature, and the
+# pipeline's attempt=<n>. Phase 2 is handed the attempt phase 1 settled on (5th word); a phase 2 started by an older phase 1
+# gets none and settles it itself.
+SIGNATURE=""; ATTEMPT=""; ATTEMPT_WORD=""
+if [ "$PHASE" = 1 ]; then
+  for w in "${@:4}"; do
+    case "$w" in
+      attempt=*) ATTEMPT_WORD="${w#attempt=}" ;;
+      *) [ -n "$SIGNATURE" ] || SIGNATURE="$w" ;;
+    esac
+  done
+  ATTEMPT="$ATTEMPT_WORD"
+else
+  ATTEMPT="${5:-}"
+fi
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
 if [ -n "$SIGNATURE" ] && ! [[ "$SIGNATURE" =~ ^[A-Za-z0-9+/]{86}==$ ]]; then SIGNATURE="unreadable"; fi
 [[ "$ACTOR" =~ ^[A-Za-z0-9._@-]{1,64}$ ]] || ACTOR=unknown
 [[ "$RUN" =~ ^[A-Za-z0-9._:/-]{1,80}$ ]] || RUN=manual
+if ! [[ "$ATTEMPT" =~ ^([1-9][0-9]{0,5}|local-[0-9]{8}T[0-9]{6}Z)$ ]]; then
+  if [ -z "$ATTEMPT_WORD" ] && [ "$RUN" = "${GITHUB_RUN_ID:-}" ] && [[ "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]{0,5}$ ]]; then
+    ATTEMPT="$GITHUB_RUN_ATTEMPT"
+  else
+    ATTEMPT="local-$(date -u +%Y%m%dT%H%M%SZ)"
+  fi
+  # A garbled attempt word is never believed, and never silently: the box's own time names this attempt instead (P-08).
+  if [ -n "$ATTEMPT_WORD" ]; then say "the attempt word given (attempt=…) is not an attempt number — this attempt is named by the box's own time instead: $ATTEMPT."; fi
+fi
 
 record() {
   mkdir -p "$(dirname "$SRE_RELEASE_LOG")"
@@ -198,7 +245,7 @@ if [ "$PHASE" = 1 ]; then
   if [ "$PREVIOUS" = "$SHA" ]; then say "this box is already at $SHA — re-applying it (harmless, idempotent)."; fi
   say "live now: $PREVIOUS — checking out $SHA"
   git checkout --quiet --detach "$SHA"
-  exec bash "$SRE_APP_DIR/infra/deploy/release.sh" --phase2 "$SHA" "$ACTOR" "$RUN" "$PREVIOUS"
+  exec bash "$SRE_APP_DIR/infra/deploy/release.sh" --phase2 "$SHA" "$ACTOR" "$RUN" "$PREVIOUS" "$ATTEMPT"
 fi
 
 # ── Phase 2: build, bring up, verify — or put the previous release back ─────────────────────────────────
@@ -396,15 +443,26 @@ reconcile_after() {
   return 1
 }
 
+# OB-423: post this attempt's QG-10 line to head office's gate register. Only the key file's PATH is handed over; the tool
+# prints one sentence (posted / already there / NOT POSTED and why). It never stops the release, and is never silent.
+qg10_post() {
+  local said
+  printf '%s\n' "$1" > "$RECON_DIR/qg10-line.json"
+  said="$(reconcile_tool post-qg10 --line "$RECON_DIR/qg10-line.json" --url "$SRE_QG10_REGISTER_URL" --token-file "$SRE_QG10_PUSH_TOKEN_FILE" 2>/dev/null)" || true
+  [ -n "$said" ] || said="QG-10 note NOT POSTED to head office's gate register — the release's post tool gave no answer. The line is kept in this box's QG-10 log only."
+  say "$said"
+}
+
 # Append and print this attempt's QG-10 evidence line. A record that cannot be written is said, loudly (P-08).
 qg10_record() {
   local outcome="$1" line
-  if line="$(reconcile_tool qg10 --sha "$SHA" --previous "$PREVIOUS" --by "$ACTOR" --run "$RUN" \
+  if line="$(reconcile_tool qg10 --sha "$SHA" --previous "$PREVIOUS" --by "$ACTOR" --run "$RUN" --attempt "$ATTEMPT" \
         --box "$(hostname 2>/dev/null || echo box)" --outcome "$outcome" --health "$Q_HEALTH" --smoke "$Q_SMOKE" \
         --reconciliation "$Q_RECONCILE" --monitoring "$Q_MONITOR" --rollback "$Q_ROLLBACK" \
         $( [ -f "$RECON_DIR/result.json" ] && printf -- '--differences %s' "$RECON_DIR/result.json" ))" \
      && mkdir -p "$(dirname "$SRE_QG10_LOG")" && printf '%s\n' "$line" >> "$SRE_QG10_LOG"; then
     say "QG-10 record: $line"
+    qg10_post "$line"
   else
     say "QG-10 record NOT WRITTEN — the evidence line for $SHA could not be made or appended to $SRE_QG10_LOG. Tell the custodian."
   fi
@@ -442,7 +500,7 @@ if bring_up && verify && bake && reconcile_after; then
   [ "$SRE_RECONCILE" = "off" ] && Q_RECONCILE=not_run
   record deployed
   qg10_record deployed
-  say "DEPLOYED $SHA (replaced $PREVIOUS) — merged by $ACTOR, pipeline run $RUN. The stack is up and the stand-up check is GREEN."
+  say "DEPLOYED $SHA (replaced $PREVIOUS) — merged by $ACTOR, pipeline run $RUN (attempt $ATTEMPT). The stack is up and the stand-up check is GREEN."
   exit 0
 fi
 

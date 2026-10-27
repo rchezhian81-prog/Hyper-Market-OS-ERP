@@ -81,7 +81,7 @@ export function checkNodeVersion(version) {
 
 /** Parse the command line into flags. Unknown flags are named, not ignored. */
 export function parseArgs(argv) {
-  const flags = { tenant: undefined, lane: undefined, store: undefined, dir: undefined, dataDir: undefined, composeEnv: undefined, settingsNamed: false, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
+  const flags = { tenant: undefined, lane: undefined, store: undefined, dir: undefined, dataDir: undefined, composeEnv: undefined, settingsNamed: false, lanePort: '8090', screenPort: '8091', devicePort: undefined, deviceHost: undefined, generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => { i += 1; return argv[i]; };
@@ -102,6 +102,10 @@ export function parseArgs(argv) {
     else if (a === '--settings') { flags.composeEnv = next(); flags.settingsNamed = true; }
     else if (a === '--lane-port') flags.lanePort = next();
     else if (a === '--screen-port') flags.screenPort = next();
+    // OB-422 · ADR-0030: the handheld door (the device socket) and the store computer's address on the STAFF wifi. With a
+    // door, the install also makes the store computer's own signing authority and the door's certificate.
+    else if (a === '--device-port') flags.devicePort = next();
+    else if (a === '--device-host') flags.deviceHost = next();
     // OB-388 · ADR-0029: where head office's sign-in is (the identity server realm's https address), for the office pages.
     else if (a === '--head-office-sign-in') flags.headOfficeSignIn = next();
     else if (a === '--generate-key') flags.generateKey = true;
@@ -114,6 +118,17 @@ export function parseArgs(argv) {
 }
 
 const isPort = (v) => /^\d+$/.test(String(v)) && Number(v) > 0 && Number(v) < 65536;
+/**
+ * OB-422: an address the store computer's authority may vouch for — loopback or a private shop-network IPv4 range. The
+ * same ranges as `PERMITTED_RANGES` in edge/store-edge/src/device-certificates.ts (a unit test keeps the two the same).
+ */
+export function isShopAddress(v) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(v).trim());
+  if (m === null) return false;
+  if (m.slice(1).some((x) => Number(x) > 255)) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
 const realValue = (v) => typeof v === 'string' && v !== '' && !v.includes(PLACEHOLDER);
 
 /**
@@ -163,6 +178,14 @@ export function planTillSettings(input) {
   if (!isPort(flags.lanePort)) problems.push(`--lane-port must be a port number (got "${flags.lanePort}")`);
   if (!isPort(flags.screenPort)) problems.push(`--screen-port must be a port number (got "${flags.screenPort}")`);
   if (isPort(flags.lanePort) && isPort(flags.screenPort) && flags.lanePort === flags.screenPort) problems.push('the lane port and the screen port must differ');
+  // OB-422: the handheld door — named here, or kept from an earlier install. Its address must be one the store computer's
+  // authority may vouch for (a private shop-network address); it is locked (https only) from the first start.
+  const devicePort = flags.devicePort ?? existing?.EDGE_DEVICE_PORT;
+  const deviceHost = flags.deviceHost ?? existing?.EDGE_DEVICE_HOST;
+  if (devicePort !== undefined && !isPort(devicePort)) problems.push(`--device-port must be a port number (got "${devicePort}")`);
+  if (devicePort !== undefined && [flags.lanePort, flags.screenPort].includes(String(devicePort))) problems.push('the handheld door\'s port must differ from the lane and screen ports');
+  if (deviceHost !== undefined && !isShopAddress(deviceHost)) problems.push(`--device-host must be this computer's address on the staff wifi (10.x.x.x, 172.16–31.x.x or 192.168.x.x), got "${deviceHost}" — the handheld door is only ever opened, locked, on the shop's own network`);
+  if (deviceHost !== undefined && devicePort === undefined) problems.push('--device-host needs --device-port (the handheld door\'s port, for example 8092)');
   // OB-388 · ADR-0029: the office pages' head-office sign-in — named here, or kept from an earlier install; https only.
   const headOfficeSignIn = flags.headOfficeSignIn ?? existing?.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER;
   if (flags.headOfficeSignIn !== undefined && !/^https:\/\/[^\s/]+\/\S*realms\/[A-Za-z0-9._-]+\/?$/.test(String(flags.headOfficeSignIn))) {
@@ -199,12 +222,18 @@ export function planTillSettings(input) {
     EDGE_DATA_DIR: join(installDir, 'edge-data'),
     // OB-87: the bill-number witness, OUTSIDE edge-data so a backup of edge-data never carries it (a restore is then seen).
     EDGE_WITNESS_DIR: join(installDir, 'edge-witness'),
+    // OB-422: the handheld door's lock — the store computer's own signing authority and the door's certificate. OUTSIDE
+    // edge-data, so a backup of the till's data never carries a private key off this computer.
+    // The same place the edge uses when none is named (`<EDGE_DATA_DIR>-device-tls`), so naming it changes nothing.
+    EDGE_DEVICE_TLS_DIR: existing?.EDGE_DEVICE_TLS_DIR ?? `${join(installDir, 'edge-data')}-device-tls`,
     EDGE_TENANT_ID: tenantId ?? '',
     EDGE_LANE_ID: laneId ?? '',
     PACK_SIGNING_KEY: signingKey ?? '',
     EDGE_CAPACITY_BYTES: existing?.EDGE_CAPACITY_BYTES ?? '10737418240',
     EDGE_LANE_PORT: String(flags.lanePort),
     EDGE_SCREEN_PORT: String(flags.screenPort),
+    ...(devicePort === undefined ? {} : { EDGE_DEVICE_PORT: String(devicePort) }),
+    ...(deviceHost === undefined ? {} : { EDGE_DEVICE_HOST: String(deviceHost) }),
     EDGE_APPS_DIR: appsDir,
     CLOUD_API_URL: cloudUrl,
     // Never copied from anywhere: kept from an earlier install, or (W-5, the store computer's own copy) made here for this
@@ -256,6 +285,9 @@ export function renderTillEnv(settings) {
     '# The bill-number witness: OUTSIDE edge-data, never backed up with it, never restored over. If this till\'s edge-data is',
     '# restored from a backup, the witness shows it and the till numbers under a brand-new prefix until head office answers.',
     `EDGE_WITNESS_DIR=${settings.EDGE_WITNESS_DIR}`,
+    '# OB-422: the handheld door\'s lock — this computer\'s own signing authority and the door\'s certificate. Its private',
+    '# keys never leave this folder: never copy it, never back it up with edge-data. Handhelds trust authority.crt (public).',
+    `EDGE_DEVICE_TLS_DIR=${settings.EDGE_DEVICE_TLS_DIR}`,
     '# Which shop this till belongs to.',
     `EDGE_TENANT_ID=${settings.EDGE_TENANT_ID}`,
     '# Which LANE this till is. Every sale it rings names this lane; the cashier signs in with their staff code.',
@@ -268,6 +300,14 @@ export function renderTillEnv(settings) {
     `EDGE_LANE_PORT=${settings.EDGE_LANE_PORT}`,
     '# The loopback port the till and office screens are served from: open http://127.0.0.1:<port>/pos/',
     `EDGE_SCREEN_PORT=${settings.EDGE_SCREEN_PORT}`,
+    ...(settings.EDGE_DEVICE_PORT === undefined ? [] : [
+      '# OB-422: the handheld door (handhelds, the queue till) — https only; plain http on the shop network is refused.',
+      `EDGE_DEVICE_PORT=${settings.EDGE_DEVICE_PORT}`,
+    ]),
+    ...(settings.EDGE_DEVICE_HOST === undefined ? [] : [
+      "# This computer's address on the STAFF wifi (never the guest wifi). Left out, the door opens on this computer only.",
+      `EDGE_DEVICE_HOST=${settings.EDGE_DEVICE_HOST}`,
+    ]),
     '# Where the screens live on this PC.',
     `EDGE_APPS_DIR=${settings.EDGE_APPS_DIR}`,
     '# OPTIONAL — leave both blank and the till still sells and queues (offline-first). Fill both to sync to the cloud.',
@@ -309,13 +349,15 @@ export function renderTillEnv(settings) {
 export const STORE_TOKEN_HOURS = 720;
 /** What a connect (W-5) or a newer install may add to or change in an existing till.env — never the key, the lane or the folders. */
 export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN', 'EDGE_HEAD_OFFICE_SIGN_IN_ISSUER']);
+/** OB-422: what a re-run may add to an existing till.env for the handheld door — only when named on the command line. */
+export const DEVICE_KEYS = Object.freeze(['EDGE_DEVICE_PORT', 'EDGE_DEVICE_HOST']);
 
 /**
  * An existing till.env with the connect keys set from the plan, in place; every other line is kept exactly as it was (the
  * signing key, the lane, the folders, the comments). Returns the new text and the NAMES that changed — never their values.
  */
 export function updateTillEnv(text, settings) {
-  const want = Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, String(settings[k])]));
+  const want = Object.fromEntries([...CONNECT_KEYS, ...DEVICE_KEYS].filter((k) => settings[k] !== undefined).map((k) => [k, String(settings[k])]));
   const changed = [];
   const done = new Set();
   const out = String(text).split(/\r?\n/).map((raw) => {
@@ -339,8 +381,10 @@ export function updateTillEnv(text, settings) {
  * update or a re-run never rewrites the address or the token by surprise.
  */
 export function tillEnvChangesFor({ settings, existing, flags }) {
-  if (flags.store !== undefined) return Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));
-  return Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]]));
+  // OB-422: the handheld door's port and address, only when this run names them.
+  const door = Object.fromEntries([['EDGE_DEVICE_PORT', flags.devicePort], ['EDGE_DEVICE_HOST', flags.deviceHost]].filter(([k, v]) => v !== undefined && settings[k] !== undefined).map(([k]) => [k, settings[k]]));
+  if (flags.store !== undefined) return { ...Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]])), ...door };
+  return { ...Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]])), ...door };
 }
 
 /**
@@ -477,7 +521,7 @@ async function readEnvFile(path) {
 async function main() {
   const flags = parseArgs(process.argv.slice(2));
   if (flags.unknown.length > 0) {
-    process.stderr.write(`Unknown option(s): ${flags.unknown.join(' ')}\nUsage: pnpm run till:install -- --lane <lane, e.g. lane-1> [--store <store id>] [--tenant <id>] [--dir <folder>] [--from-compose-env <file> | --settings <file>] [--lane-port 8090] [--screen-port 8091] [--generate-key] [--skip-build] [--force] [--dry-run]\n`);
+    process.stderr.write(`Unknown option(s): ${flags.unknown.join(' ')}\nUsage: pnpm run till:install -- --lane <lane, e.g. lane-1> [--store <store id>] [--tenant <id>] [--dir <folder>] [--from-compose-env <file> | --settings <file>] [--lane-port 8090] [--screen-port 8091] [--device-port 8092 --device-host <staff-wifi address>] [--generate-key] [--skip-build] [--force] [--dry-run]\n`);
     process.exitCode = 64; // EX_USAGE
     return;
   }
@@ -562,7 +606,32 @@ async function main() {
     process.stdout.write('• build skipped (--skip-build)\n');
   }
 
+  // OB-422: the store computer makes its own signing authority and the door's certificate AT INSTALL — by the built edge's
+  // own command, reading the settings just written. Fingerprints and dates only are said; the keys stay in their folder.
+  const finalSettings = parseEnv(await readFile(envPath, 'utf8'));
+  if (finalSettings.EDGE_DEVICE_PORT !== undefined && finalSettings.EDGE_DEVICE_PORT !== '') {
+    const lock = makeDeviceLock({ repoRoot: REPO, settings: finalSettings });
+    for (const line of lock.lines) process.stdout.write(`${line}\n`);
+    if (!lock.ok) process.exitCode = 78;
+  }
+
   process.stdout.write(`${renderNextSteps({ settings: plan.settings, installDir, scriptsDir, platform: process.platform, realCopy })}\n`);
+}
+
+/**
+ * OB-422: run the built edge's `device-authority` command with the till's settings, so the authority and the door's
+ * certificate are made now, at install. Without a built edge (`--skip-build` on a fresh checkout) it says the lock is made
+ * at the till's first start instead — the start does the same, and says so in its window.
+ */
+export function makeDeviceLock({ repoRoot, settings, run = execFileSync, exists = existsSync }) {
+  const entry = join(repoRoot, 'edge', 'store-edge', 'dist', 'start.js');
+  if (!exists(entry)) return { ok: true, lines: ['• the handheld door\'s lock is made when the till first starts (the edge is not built yet) — its window says the fingerprint'] };
+  try {
+    const out = run(process.execPath, [entry, 'device-authority'], { cwd: repoRoot, encoding: 'utf8', env: { ...process.env, ...settings }, stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ok: true, lines: String(out).trim().split('\n').map((l) => `• ${l}`) };
+  } catch (e) {
+    return { ok: false, lines: [`✕ the handheld door's lock could not be made: ${String(e?.stderr ?? e?.message ?? e).trim()}`] };
+  }
 }
 
 // Run only when invoked directly, so the pure helpers can be imported by tests without side effects.

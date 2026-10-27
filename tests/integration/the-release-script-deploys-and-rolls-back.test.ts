@@ -23,7 +23,13 @@ import { generateKeyPairSync } from 'node:crypto';
  *   • the secrets file is never printed;
  *   • QG-10 · WF-20 (FG-3): the books are snapshotted before the release and compared after it — a lost event, a new
  *     dead letter or a grown sync backlog rolls the release back (70); books that cannot be read before refuse it (69);
- *     every attempt writes one QG-10 evidence line (health, smoke, reconciliation, monitoring, rollback).
+ *     every attempt writes one QG-10 evidence line (health, smoke, reconciliation, monitoring, rollback);
+ *   • OB-423: that line is posted to head office's gate register with the key from the custodian's file on the box — the
+ *     key only in the Authorization header, never printed; no key, an unreachable or a refusing head office: the release
+ *     still runs and says "QG-10 note NOT POSTED". Every release ATTEMPT is its own note: the line names the pipeline run
+ *     and attempt (the CI's `attempt=N` word or GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT; by hand, run "manual" and a box-local
+ *     attempt time), a second attempt of one release is posted too, and a different note re-using an attempt is refused
+ *     and said.
  */
 
 const REAL_SCRIPT = join(process.cwd(), 'infra/deploy/release.sh');
@@ -38,6 +44,23 @@ case " $* " in *" --upto "*) cat "$SRE_TEST_SNAPS/after.json" 2>/dev/null ;; *) 
 const books = (count: number, deadLetter = 0, pending = 0) => ({ version: 1, at: '2026-10-26T00:00:00.000Z', ledger: { count, maxSeq: count, digest: `d${count}`, byFamily: { sales: count } }, outbox: { pending, deadLetter, oldestPendingSeconds: null } });
 const after = (count: number, upTo: { seq: number; count: number; digest: string; sales: number }, deadLetter = 0, pending = 0) =>
   ({ ...books(count, deadLetter, pending), upTo: { seq: upTo.seq, count: upTo.count, digest: upTo.digest, byFamily: { sales: upTo.sales } } });
+// OB-423: a stand-in for head office's gate-register route, run as its own process (release.sh runs synchronously in the
+// test). It records what it was sent and answers as head office does: 201 for a box's first note on a release ATTEMPT (box +
+// release + run + attempt), 200 "already recorded" for the same note again, 409 for a different note claiming that attempt.
+const REGISTER_STUB = `const http = require('node:http'); const fs = require('node:fs');
+const [, , portFile, logFile] = process.argv; const seen = new Map();
+http.createServer((req, res) => { let b = ''; req.on('data', (d) => { b += d; }); req.on('end', () => {
+  fs.appendFileSync(logFile, JSON.stringify({ method: req.method, path: req.url, auth: req.headers.authorization || null, key: req.headers['idempotency-key'] || null, body: b }) + '\\n');
+  let note; try { note = JSON.parse(b).note; } catch { note = undefined; }
+  const k = ['release', 'box', 'run', 'attempt'].map((f) => String(note && note[f])).join('|');
+  const send = (s, o) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+  if (!seen.has(k)) { seen.set(k, b); send(201, { alreadyRecorded: false }); return; }
+  if (seen.get(k) === b) { send(200, { alreadyRecorded: true }); return; }
+  send(409, { error: { code: 'qg10_note_already_recorded' } });
+}); }).listen(0, '127.0.0.1', function () { fs.writeFileSync(portFile, String(this.address().port)); });
+`;
+// The release script's machine key, as the custodian's file holds it — a sentinel the output must never show.
+const QG10_KEY = ['qg10', 'machine', 'key', 'sentinel', 'fedcba9876543210'].join('-');
 // Constructed from parts so the repository's secret scan (which refuses hard-coded credential assignments) does
 // not trip on obviously-fake test material. It is a sentinel: the test only asserts it NEVER appears in output.
 const KEY_NAME = ['PACK', 'SIGNING', 'KEY'].join('_');
@@ -169,6 +192,8 @@ describe('the release script deploys a merged commit and rolls a broken one back
       SRE_TEST_CALLS: calls, SRE_TEST_UP_RESULTS: upResults, SRE_TEST_READY: ready, SRE_TEST_METRICS: join(sandbox, 'metrics'), SRE_TEST_SETTINGS: join(sandbox, 'settings'),
       // QG-10 (FG-3): the books' snapshot comes from the stand-in; the per-release evidence goes to the sandbox.
       SRE_RECONCILE_CMD: 'snapshot-books', SRE_TEST_SNAPS: join(sandbox, 'snaps'), SRE_QG10_LOG: join(sandbox, 'state', 'qg10.jsonl'),
+      // OB-423: the custodian's key file — absent unless a test puts it there; head office (SRE_API_URL) is not listening.
+      SRE_QG10_PUSH_TOKEN_FILE: join(sandbox, 'secrets', 'qg10-push.token'),
     };
     await mkdir(join(sandbox, 'snaps'), { recursive: true });
   });
@@ -177,7 +202,7 @@ describe('the release script deploys a merged commit and rolls a broken one back
     await writeFile(join(sandbox, 'snaps', 'before.json'), `${JSON.stringify(before)}\n`);
     await writeFile(join(sandbox, 'snaps', 'after.json'), `${JSON.stringify(afterBooks)}\n`);
   };
-  const lastQg10 = async () => JSON.parse((await readFile(join(sandbox, 'state', 'qg10.jsonl'), 'utf8')).trim().split('\n').at(-1) ?? '{}') as { release: string; outcome: string; verified: boolean; checks: Record<string, string>; differences: string[]; decision: string; notVerified: string[] };
+  const lastQg10 = async () => JSON.parse((await readFile(join(sandbox, 'state', 'qg10.jsonl'), 'utf8')).trim().split('\n').at(-1) ?? '{}') as { release: string; run: string; attempt: string; outcome: string; verified: boolean; checks: Record<string, string>; differences: string[]; decision: string; notVerified: string[] };
   beforeEach(async () => {
     await writeFile(calls, ''); await writeFile(upResults, ''); await writeFile(ready, 'down\n'); await writeFile(join(sandbox, 'metrics'), '0\n'); await writeFile(join(sandbox, 'settings'), 'complete\n');
     // The books agree by default: 10 events before; 12 after, the first 10 unchanged.
@@ -411,9 +436,11 @@ describe('the release script deploys a merged commit and rolls a broken one back
     const release = keyPair();
     const pubPath = join(sandbox, 'release-signing.pub'); await writeFile(pubPath, release.pub);
     await writeFile(upResults, 'ok\n');
-    const r = run([], { SRE_RELEASE_PUBKEY: pubPath, SSH_ORIGINAL_COMMAND: `release ${V3} octocat 305 ${signed(V3, release.pem)}` });
+    // OB-423: the pipeline's word order — the signature, then the attempt (`attempt=N`) — both read.
+    const r = run([], { SRE_RELEASE_PUBKEY: pubPath, SSH_ORIGINAL_COMMAND: `release ${V3} octocat 305 ${signed(V3, release.pem)} attempt=2` });
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`release signature verified for ${V3}`);
+    expect(await lastQg10()).toMatchObject({ release: V3, run: '305', attempt: '2' });
     expect(head()).toBe(V3);
     expect(await lastLogLine()).toMatch(new RegExp(`result=deployed sha=${V3} previous=[0-9a-f]{40} by=octocat run=305$`));
     // The key path set but unreadable: NOT SET UP (78), never "skip the check".
@@ -536,4 +563,122 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(await lastLogLine()).toContain(`result=deployed sha=${V2} previous=${V2} by=octocat run=409`);
     expect(await lastQg10()).toMatchObject({ release: V2, outcome: 'deployed' });
   }, 30_000);
+
+  // ── OB-423: the QG-10 line reaches head office's gate register under the release script's own machine identity ───────────
+  it('OB-423: with no key on the box the release still runs and says plainly the QG-10 note was NOT POSTED', async () => {
+    await writeFile(upResults, 'ok\n');
+    const r = run([V3, 'octocat', '501']);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`DEPLOYED ${V3}`);
+    expect(r.out).toMatch(new RegExp(`release: QG-10 note NOT POSTED to head office's gate register \\(release ${V3}, box [^)]+\\) — the key file named by SRE_QG10_PUSH_TOKEN_FILE is not on this box`));
+    expect(await lastQg10()).toMatchObject({ release: V3, outcome: 'deployed' }); // the box's own log still has the line
+    // An empty key file is not a key either.
+    await mkdir(join(sandbox, 'secrets'), { recursive: true });
+    await writeFile(join(sandbox, 'secrets', 'qg10-push.token'), '\n', { mode: 0o600 });
+    await writeFile(upResults, 'ok\n');
+    const empty = run([V3, 'octocat', '502']);
+    expect(empty.code, empty.out).toBe(0);
+    expect(empty.out).toContain('the key file named by SRE_QG10_PUSH_TOKEN_FILE is empty');
+    await rm(join(sandbox, 'secrets', 'qg10-push.token'));
+  }, 60_000);
+
+  it('OB-423: with the custodian\'s key the note is posted (key only in the header, never printed); a second, different note for the release is refused and said; an unreachable head office is said — the release runs every time', async () => {
+    const portFile = join(sandbox, 'register.port'); const posted = join(sandbox, 'register.log');
+    await writeFile(join(sandbox, 'register-stub.cjs'), REGISTER_STUB);
+    await writeFile(posted, '');
+    const server = spawn(process.execPath, [join(sandbox, 'register-stub.cjs'), portFile, posted], { stdio: 'ignore' });
+    try {
+      let port = '';
+      for (let i = 0; i < 100 && port === ''; i += 1) { port = await readFile(portFile, 'utf8').catch(() => ''); if (port === '') await new Promise((d) => { setTimeout(d, 50); }); }
+      expect(port).not.toBe('');
+      await mkdir(join(sandbox, 'secrets'), { recursive: true });
+      await writeFile(join(sandbox, 'secrets', 'qg10-push.token'), `${QG10_KEY}\n`, { mode: 0o600 });
+      const env = { SRE_QG10_REGISTER_URL: `http://127.0.0.1:${port}` };
+      const runAsync = (args: readonly string[]) => new Promise<{ code: number | null; out: string }>((done) => {
+        const c = spawn('bash', [join(app, 'infra/deploy/release.sh'), ...args], { env: { ...baseEnv, ...env } });
+        let out = ''; c.stdout.on('data', (d) => { out += String(d); }); c.stderr.on('data', (d) => { out += String(d); });
+        c.on('close', (code) => { done({ code, out }); });
+      });
+      const sent = async () => (await readFile(posted, 'utf8')).trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { method: string; path: string; auth: string | null; key: string | null; body: string });
+
+      await writeFile(upResults, 'ok\n');
+      const r = await runAsync([V2, 'octocat', '503', 'attempt=1']);
+      expect(r.code, r.out).toBe(0);
+      expect(r.out).toMatch(new RegExp(`release: QG-10 note posted to head office's gate register \\(release ${V2}, box [^,]+, run 503, attempt 1\\)\\.`));
+      // The run and the attempt are in the line itself.
+      expect(r.out).toMatch(/release: QG-10 record: \{[^\n]*"run":"503","attempt":"1"/);
+      const [first] = await sent();
+      expect(first).toMatchObject({ method: 'POST', path: '/v1/compliance/gate-register/qg10-evidence', auth: `Bearer ${QG10_KEY}` });
+      expect(first!.key).toMatch(/^qg10-note-[0-9a-f]{40}$/);
+      const note = (JSON.parse(first!.body) as { note: { release: string; outcome: string; decision: string } }).note;
+      expect(note).toMatchObject({ release: V2, outcome: 'deployed' });
+      expect(note).toEqual(await lastQg10()); // exactly the line the box logged
+      // The key is never printed, never on a command line the stand-ins saw, never in the box's logs.
+      expect(r.out).not.toContain(QG10_KEY);
+      expect((await callLog()).join('\n')).not.toContain(QG10_KEY);
+      expect(await readFile(join(sandbox, 'state', 'qg10.jsonl'), 'utf8')).not.toContain(QG10_KEY);
+      expect(await readFile(releaseLog, 'utf8')).not.toContain(QG10_KEY);
+
+      // OB-423 (a): the pipeline re-runs the same release (attempt 2) — its own note, posted too; head office holds both.
+      await writeFile(upResults, 'ok\n');
+      const again = await runAsync([V2, 'octocat', '503', 'attempt=2']);
+      expect(again.code, again.out).toBe(0);
+      expect(again.out).toMatch(new RegExp(`release: QG-10 note posted to head office's gate register \\(release ${V2}, box [^,]+, run 503, attempt 2\\)\\.`));
+      const attempts = (await sent()).map((x) => JSON.parse(x.body) as { note: { release: string; run: string; attempt: string } }).map((x) => `${x.note.release.slice(0, 7)} ${x.note.run}/${x.note.attempt}`);
+      expect(attempts).toEqual([`${V2.slice(0, 7)} 503/1`, `${V2.slice(0, 7)} 503/2`]);
+      // A DIFFERENT note claiming an attempt already noted (the same words typed again by hand): refused, the first kept; said.
+      await writeFile(upResults, 'ok\n');
+      const reused = await runAsync([V2, 'octocat', '503', 'attempt=1']);
+      expect(reused.code, reused.out).toBe(0);
+      expect(reused.out).toMatch(/release: QG-10 note NOT POSTED to head office's gate register \(release [0-9a-f]{40}, box [^,]+, run 503, attempt 1\) — head office already holds a different note from this box for this release attempt and keeps the first \(HTTP 409 qg10_note_already_recorded\)/);
+
+      // A rollback leaves its note too.
+      await writeFile(upResults, 'down\nok\n');
+      const back = await runAsync([V3, 'octocat', '505']);
+      expect(back.code, back.out).toBe(70);
+      expect(back.out).toMatch(new RegExp(`QG-10 note posted to head office's gate register \\(release ${V3}`));
+      expect((JSON.parse((await sent()).at(-1)!.body) as { note: { outcome: string } }).note.outcome).toBe('rolled_back');
+      expect(back.out).not.toContain(QG10_KEY);
+    } finally { server.kill(); }
+
+    // Head office not listening: said, and the release still deploys.
+    await writeFile(upResults, 'ok\n');
+    const down = run([V3, 'octocat', '506'], { SRE_QG10_REGISTER_URL: 'http://127.0.0.1:9' });
+    expect(down.code, down.out).toBe(0);
+    expect(down.out).toContain('QG-10 note NOT POSTED to head office\'s gate register');
+    expect(down.out).toContain('head office could not be reached at SRE_QG10_REGISTER_URL');
+    expect(down.out).not.toContain(QG10_KEY);
+    // An address that is neither https nor the box's loopback is refused before anything is sent.
+    await writeFile(upResults, 'ok\n');
+    const plain = run([V3, 'octocat', '507'], { SRE_QG10_REGISTER_URL: 'http://ho.example.test' });
+    expect(plain.code, plain.out).toBe(0);
+    expect(plain.out).toContain('neither https nor this box\'s own loopback');
+    await rm(join(sandbox, 'secrets', 'qg10-push.token'));
+  }, 90_000);
+
+  it('OB-423 (a): the line names the run and the attempt — the CI\'s own run id and attempt when present, else "manual" and a box-local attempt time', async () => {
+    // Run on a CI runner with no run words: GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT from the environment.
+    await writeFile(upResults, 'ok\n');
+    const ci = run([V3], { GITHUB_RUN_ID: '777001', GITHUB_RUN_ATTEMPT: '3' });
+    expect(ci.code, ci.out).toBe(0);
+    expect(await lastQg10()).toMatchObject({ release: V3, run: '777001', attempt: '3' });
+    expect(ci.out).toContain('pipeline run 777001 (attempt 3)');
+    // The words win over the environment (the pipeline hands them to the box over SSH, where its environment does not reach).
+    await writeFile(upResults, 'ok\n');
+    const words = run([V3, 'octocat', '777002', 'attempt=4'], { GITHUB_RUN_ID: 'other', GITHUB_RUN_ATTEMPT: '9' });
+    expect(words.code, words.out).toBe(0);
+    expect(await lastQg10()).toMatchObject({ run: '777002', attempt: '4' });
+    // By hand on the box: run "manual", and the attempt is the box's own UTC time of this attempt.
+    await writeFile(upResults, 'ok\n');
+    const byHand = run([V3]);
+    expect(byHand.code, byHand.out).toBe(0);
+    const manual = await lastQg10();
+    expect(manual.run).toBe('manual');
+    expect(manual.attempt).toMatch(/^local-\d{8}T\d{6}Z$/);
+    // Garbage in the attempt word is not believed: the box-local time is used instead, never the garbage.
+    await writeFile(upResults, 'ok\n');
+    const junk = run([V3, 'octocat', '777003', 'attempt=0;rm']);
+    expect(junk.code, junk.out).toBe(0);
+    expect((await lastQg10()).attempt).toMatch(/^local-\d{8}T\d{6}Z$/);
+  }, 60_000);
 });
