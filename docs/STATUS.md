@@ -5,6 +5,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## CI fix (27 October 2026): the intermittent "Identity server suites (real Keycloak)" failure, root cause found
+
+**What changed**
+- **Cause:** in `tests/integration/keycloak-store-computer.test.ts` the test store computer held a head-office token that head office did not believe. The earlier fix in #820 made the token for the wrong audience, so head office still refused it (`audience_not_ours`). The box's first background pass, 15 s after it starts, makes about fifteen head-office calls. The first five failed, and the sign-in lock (5 failures → 5 s) closed 127.0.0.1. The person's carried session comes from the same address. Their call was refused 429 whenever it landed in those 5 s, and the one-time code's 30-second window decides when it lands.
+- **Fix (test only):** the box's token is now made for the audience head office checks (`sre-retail-os-api`). Setup now checks that head office believes it, so a mismatch fails at once, by name, not by timing. The lockout is unchanged and correct: a token head office refuses *is* a failed sign-in.
+- **Ruled out:** the earlier 401s in the flow (the box refuses them itself and never sends them); the first sign-in; a cold key download (no token was refused); earlier suites (each suite starts its own head office, and the lock is kept in that process's memory).
+
+**Tests that ran (this box, real Keycloak 26.0.7 + PostgreSQL 16, synthetic data)**
+- Forced the person's call into the lock window (16–19 s after the box starts). Main's version: refused 429, every time. The fixed version: 200 every time, and head office refused no tokens.
+- Repeated untouched runs of both versions (counts in the pull request), plus lint and type check.
+
+**Needs an owner decision (raised, not changed)**
+- In the shop, if a store computer's own head-office login ever breaks (expired or revoked), its background calls would lock the store's address. People signing in to head office on the store PC would then be told "too many sign-in attempts", which hides the real cause. Options are in the pull request.
+
+---
+
 ## Round 5 (27 October 2026): the handheld door is encrypted, the seal is on the store PC's screen, and release reports reach head office (OB-422 to OB-425)
 
 **What changed**
