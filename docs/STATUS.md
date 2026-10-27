@@ -19,12 +19,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - The cited unit, integration, guardrail and performance files in each lane, all passing: 268 files and 1,489 tests, 27 skipped (PostgreSQL legs).
 - Browser and PostgreSQL halves were not run here; they run in CI.
 
-**What is next (once the owner has decided D-1 to D-3)**
+**Owner decisions (27 Oct 2026, in writing)**
+- OB-401 = D-1 A: hold new prices and offers at the 5-minute clock flag, and alert head office and the owner.
+- OB-402 = D-2 A: a supplier rebate claim document.
+- OB-403 = D-3 B: Mr Sivakumar is the interim named security reviewer.
+
+**What is next (one final batch, after this PR merges)**
 - **QG-02:** move "return one whole line" to a recorded exception (OB-394), and add a web-ERP rebates page.
-- **§31.1:** the clock-drift hold and its alert, as decided in D-1.
-- **D03-FR-03:** as decided in D-2.
+- **§31.1 / OB-401:** the clock-drift hold on new prices, offers and bill-year changes, with its alert to head office and the owner.
+- **D03-FR-03 / OB-402:** the rebate claim document.
 - **WF-18:** a test that gives the receivables close check real figures.
 - **B15:** put the tobacco warning board on the go-live checklist.
+- **OB-403:** record Mr Sivakumar as the reviewer where the D14-FR-05 and R8-7 release checks look for one.
 
 **Blocked / external**
 - As before:
@@ -35,10 +41,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - the pen test.
 
 **Needs an owner decision**
-- **D-1:** a wrong store-computer clock and new prices or offers.
-- **D-2:** supplier rebate claims.
-- **D-3:** name the privacy and security reviewer (OB-330).
-- Options for each are in the re-audit report.
+- None open.
 
 ---
 
