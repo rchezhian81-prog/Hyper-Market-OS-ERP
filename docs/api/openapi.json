@@ -91246,6 +91246,470 @@
         }
       }
     },
+    "/v1/purchase/rebate-claims": {
+      "get": {
+        "operationId": "getPurchaseRebateClaims",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.commitment.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPurchaseRebateClaimsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.commitment.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/rebate-claims/answer-period": {
+      "post": {
+        "operationId": "postPurchaseRebateClaimsAnswerPeriod",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.rebate.terms.set",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseRebateClaimsAnswerPeriodRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateClaimsAnswerPeriodReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.rebate.terms.set\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/rebate-claims/{claimId}/document": {
+      "get": {
+        "operationId": "getPurchaseRebateClaimsByClaimIdDocument",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.commitment.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "claimId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPurchaseRebateClaimsByClaimIdDocumentReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.commitment.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/rebate-claims/{claimId}/matches/{receiptId}": {
+      "post": {
+        "operationId": "postPurchaseRebateClaimsByClaimIdMatchesByReceiptId",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "finance.journal.post",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "claimId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "receiptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdMatchesByReceiptIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdMatchesByReceiptIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdMatchesByReceiptIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"finance.journal.post\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/rebate-claims/{claimId}/send": {
+      "post": {
+        "operationId": "postPurchaseRebateClaimsByClaimIdSend",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.contract.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "claimId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdSendRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdSendReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdSendReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/rebate-claims/{claimId}/withdraw": {
+      "post": {
+        "operationId": "postPurchaseRebateClaimsByClaimIdWithdraw",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.contract.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "claimId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdWithdrawRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdWithdrawReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateClaimsByClaimIdWithdrawReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/purchase/rebate-schemes": {
       "get": {
         "operationId": "getPurchaseRebateSchemes",
@@ -91491,6 +91955,108 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostPurchaseRebateSchemesBySchemeIdAccrualsByAccrualIdReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/rebate-schemes/{schemeId}/claims/{claimId}": {
+      "post": {
+        "operationId": "postPurchaseRebateSchemesBySchemeIdClaimsByClaimId",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.contract.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "schemeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "claimId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseRebateSchemesBySchemeIdClaimsByClaimIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateSchemesBySchemeIdClaimsByClaimIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseRebateSchemesBySchemeIdClaimsByClaimIdReply201"
                 }
               }
             }
@@ -104853,6 +105419,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GetSupplierPortalMeOrdersReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"supplier.portal.self\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/supplier-portal/me/rebate-claims": {
+      "get": {
+        "operationId": "getSupplierPortalMeRebateClaims",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "supplier.portal.self",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSupplierPortalMeRebateClaimsReply"
                 }
               }
             }
@@ -144039,6 +144649,801 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/api/src/fg4-buying-adapters.ts"
       },
+      "GetPurchaseRebateClaimsByClaimIdDocumentReply": {
+        "type": "object",
+        "required": [
+          "document",
+          "printable",
+          "asAt"
+        ],
+        "properties": {
+          "document": {
+            "type": "object",
+            "required": [
+              "words",
+              "title",
+              "titleTa",
+              "claimNumber",
+              "status",
+              "from",
+              "to",
+              "scheme",
+              "earnedFrom",
+              "amountClaimedMinor",
+              "raisedOn",
+              "sentOn",
+              "approvedByFinance",
+              "answerDueOn",
+              "answerDue",
+              "paidMinor",
+              "leftToPayMinor"
+            ],
+            "properties": {
+              "words": {
+                "type": "string"
+              },
+              "withdrawn": {
+                "type": "object",
+                "required": [
+                  "reason",
+                  "on"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "note": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "titleTa": {
+                "type": "string"
+              },
+              "claimNumber": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "name"
+                    ],
+                    "properties": {
+                      "gstin": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "to": {
+                "type": "object",
+                "required": [
+                  "supplierId",
+                  "name"
+                ],
+                "properties": {
+                  "supplierId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              },
+              "scheme": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "schemeId",
+                      "basis",
+                      "rateBp",
+                      "startsOn",
+                      "endsOn"
+                    ],
+                    "properties": {
+                      "schemeId": {
+                        "type": "string"
+                      },
+                      "basis": {
+                        "type": "string",
+                        "enum": [
+                          "growth_over_baseline",
+                          "purchase_value",
+                          "volume_units"
+                        ]
+                      },
+                      "rateBp": {
+                        "type": "number"
+                      },
+                      "startsOn": {
+                        "type": "string"
+                      },
+                      "endsOn": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "schemeId"
+                    ],
+                    "properties": {
+                      "schemeId": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "earnedFrom": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "accrualId",
+                    "periodFrom",
+                    "periodTo",
+                    "accruedMinor"
+                  ],
+                  "properties": {
+                    "accrualId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "periodFrom": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "periodTo": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "accruedMinor": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "amountClaimedMinor": {
+                "type": "number"
+              },
+              "raisedOn": {
+                "type": "string"
+              },
+              "sentOn": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "approvedByFinance": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "answerDueOn": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "answerDue": {
+                "type": "string"
+              },
+              "paidMinor": {
+                "type": "number"
+              },
+              "leftToPayMinor": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "printable": {
+            "type": "boolean"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "GetPurchaseRebateClaimsReply": {
+        "type": "object",
+        "required": [
+          "answerPeriod",
+          "schemes",
+          "claims",
+          "unmatchedReceipts",
+          "receivedFrom",
+          "counts",
+          "today",
+          "asAt"
+        ],
+        "properties": {
+          "answerPeriod": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "state",
+                  "days",
+                  "say"
+                ],
+                "properties": {
+                  "clearedBy": {
+                    "type": "string"
+                  },
+                  "clearedAt": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "days": {
+                    "type": "null"
+                  },
+                  "say": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "required": [
+                  "state",
+                  "days",
+                  "setBy",
+                  "setAt"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "days": {
+                    "type": "number"
+                  },
+                  "setBy": {
+                    "type": "string"
+                  },
+                  "setAt": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "schemes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "findings",
+                "accruals",
+                "receipts",
+                "outstandingMinor",
+                "openClaimedMinor",
+                "claimableMinor",
+                "overClaimedMinor",
+                "schemeId",
+                "supplierId",
+                "basis",
+                "rateBp",
+                "startsOn",
+                "endsOn",
+                "approved",
+                "accruedMinor",
+                "receivedMinor"
+              ],
+              "properties": {
+                "findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "accruals": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "accrualId",
+                      "periodFrom",
+                      "periodTo",
+                      "accruedMinor",
+                      "thresholdMet"
+                    ],
+                    "properties": {
+                      "accrualId": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "periodFrom": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "periodTo": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "accruedMinor": {
+                        "type": "number"
+                      },
+                      "thresholdMet": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "receipts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "matchedMinor",
+                      "schemeId",
+                      "receiptId",
+                      "amountMinor",
+                      "receivedOn",
+                      "reference"
+                    ],
+                    "properties": {
+                      "matchedMinor": {
+                        "type": "number"
+                      },
+                      "schemeId": {
+                        "type": "string"
+                      },
+                      "receiptId": {
+                        "type": "string"
+                      },
+                      "amountMinor": {
+                        "type": "number"
+                      },
+                      "receivedOn": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "outstandingMinor": {
+                  "type": "number"
+                },
+                "openClaimedMinor": {
+                  "type": "number"
+                },
+                "claimableMinor": {
+                  "type": "number"
+                },
+                "overClaimedMinor": {
+                  "type": "number"
+                },
+                "schemeId": {
+                  "type": "string"
+                },
+                "supplierId": {
+                  "type": "string"
+                },
+                "basis": {
+                  "type": "string",
+                  "enum": [
+                    "growth_over_baseline",
+                    "purchase_value",
+                    "volume_units"
+                  ]
+                },
+                "rateBp": {
+                  "type": "number"
+                },
+                "startsOn": {
+                  "type": "string"
+                },
+                "endsOn": {
+                  "type": "string"
+                },
+                "approved": {
+                  "type": "boolean"
+                },
+                "accruedMinor": {
+                  "type": "number"
+                },
+                "receivedMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "findings",
+                "state",
+                "matchedMinor",
+                "unansweredMinor",
+                "releasedMinor",
+                "dueOn",
+                "overdue",
+                "claimId",
+                "schemeId",
+                "supplierId",
+                "amountMinor",
+                "raisedBy",
+                "raisedAt",
+                "matches"
+              ],
+              "properties": {
+                "approvalAsk": {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "subjectRef",
+                    "valueMinor",
+                    "details",
+                    "summary",
+                    "reason"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "rebate_claim"
+                    },
+                    "subjectRef": {
+                      "type": "string"
+                    },
+                    "valueMinor": {
+                      "type": "number"
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "claimId",
+                        "schemeId",
+                        "supplierId",
+                        "amountMinor"
+                      ],
+                      "properties": {
+                        "claimId": {
+                          "type": "string"
+                        },
+                        "schemeId": {
+                          "type": "string"
+                        },
+                        "supplierId": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "const": "rebate earned and not yet received (D03-FR-03)"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "answered",
+                    "partly_answered",
+                    "raised",
+                    "sent",
+                    "withdrawn"
+                  ]
+                },
+                "matchedMinor": {
+                  "type": "number"
+                },
+                "unansweredMinor": {
+                  "type": "number"
+                },
+                "releasedMinor": {
+                  "type": "number"
+                },
+                "dueOn": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "overdue": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string",
+                      "const": "not_set"
+                    }
+                  ]
+                },
+                "claimId": {
+                  "type": "string"
+                },
+                "schemeId": {
+                  "type": "string"
+                },
+                "supplierId": {
+                  "type": "string"
+                },
+                "amountMinor": {
+                  "type": "number"
+                },
+                "raisedBy": {
+                  "type": "string"
+                },
+                "raisedAt": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "sent": {
+                  "type": "object",
+                  "required": [
+                    "approvalId",
+                    "approvedBy",
+                    "sentBy",
+                    "sentOn",
+                    "sentAt"
+                  ],
+                  "properties": {
+                    "approvalId": {
+                      "type": "string"
+                    },
+                    "approvedBy": {
+                      "type": "string"
+                    },
+                    "sentBy": {
+                      "type": "string"
+                    },
+                    "sentOn": {
+                      "type": "string"
+                    },
+                    "sentAt": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "withdrawn": {
+                  "type": "object",
+                  "required": [
+                    "reason",
+                    "withdrawnBy",
+                    "withdrawnAt"
+                  ],
+                  "properties": {
+                    "reason": {
+                      "type": "string"
+                    },
+                    "withdrawnBy": {
+                      "type": "string"
+                    },
+                    "withdrawnAt": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "matches": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "receiptId",
+                      "amountMinor",
+                      "matchedBy",
+                      "matchedAt"
+                    ],
+                    "properties": {
+                      "receiptId": {
+                        "type": "string"
+                      },
+                      "amountMinor": {
+                        "type": "number"
+                      },
+                      "matchedBy": {
+                        "type": "string"
+                      },
+                      "matchedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "unmatchedReceipts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "leftToMatchMinor",
+                "matchedMinor",
+                "schemeId",
+                "receiptId",
+                "amountMinor",
+                "receivedOn",
+                "reference"
+              ],
+              "properties": {
+                "leftToMatchMinor": {
+                  "type": "number"
+                },
+                "matchedMinor": {
+                  "type": "number"
+                },
+                "schemeId": {
+                  "type": "string"
+                },
+                "receiptId": {
+                  "type": "string"
+                },
+                "amountMinor": {
+                  "type": "number"
+                },
+                "receivedOn": {
+                  "type": "string"
+                },
+                "reference": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "receivedFrom": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "claims",
+              "waitingForFinance",
+              "overdue",
+              "overdueNotKnown"
+            ],
+            "properties": {
+              "claims": {
+                "type": "number"
+              },
+              "waitingForFinance": {
+                "type": "number"
+              },
+              "overdue": {
+                "type": "number"
+              },
+              "overdueNotKnown": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "today": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
       "GetPurchaseRebateSchemesBySchemeIdAccrualsReply": {
         "type": "object",
         "required": [
@@ -149705,6 +151110,125 @@
               },
               "mayUpdate": {
                 "type": "boolean"
+              },
+              "asAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-portal.ts"
+      },
+      "GetSupplierPortalMeRebateClaimsReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "partnerId",
+              "claimsKnown",
+              "claims",
+              "asAt"
+            ],
+            "properties": {
+              "partnerId": {
+                "type": "string"
+              },
+              "claimsKnown": {
+                "type": "boolean"
+              },
+              "claims": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "claimId",
+                    "schemeId",
+                    "amountMinor",
+                    "sentOn",
+                    "answerDueOn",
+                    "paidMinor",
+                    "leftToPayMinor",
+                    "state",
+                    "words"
+                  ],
+                  "properties": {
+                    "claimId": {
+                      "type": "string"
+                    },
+                    "schemeId": {
+                      "type": "string"
+                    },
+                    "amountMinor": {
+                      "type": "number"
+                    },
+                    "sentOn": {
+                      "type": "string"
+                    },
+                    "answerDueOn": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "paidMinor": {
+                      "type": "number"
+                    },
+                    "leftToPayMinor": {
+                      "type": "number"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "answered",
+                        "partly_answered",
+                        "raised",
+                        "sent",
+                        "withdrawn"
+                      ]
+                    },
+                    "words": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "asAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "partnerId",
+              "claimsKnown",
+              "claims",
+              "why",
+              "asAt"
+            ],
+            "properties": {
+              "partnerId": {
+                "type": "string"
+              },
+              "claimsKnown": {
+                "type": "boolean"
+              },
+              "claims": {
+                "type": "array",
+                "items": {
+                  "not": {}
+                }
+              },
+              "why": {
+                "type": "string"
               },
               "asAt": {
                 "type": "string"
@@ -219585,6 +221109,239 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/related-party-order-guard.ts"
       },
+      "PostPurchaseRebateClaimsAnswerPeriodReply": {
+        "type": "object",
+        "required": [
+          "answerPeriod",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "answerPeriod": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "state",
+                  "days",
+                  "say"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "days": {
+                    "type": "null"
+                  },
+                  "say": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "required": [
+                  "state",
+                  "days"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "days": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsAnswerPeriodRequest": {
+        "type": "object",
+        "required": [
+          "days"
+        ],
+        "properties": {
+          "clear": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "days": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdMatchesByReceiptIdReply200": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadyMatched"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadyMatched": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdMatchesByReceiptIdReply201": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadyMatched"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadyMatched": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdMatchesByReceiptIdRequest": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdSendReply200": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadySent"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadySent": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdSendReply201": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadySent"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadySent": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdSendRequest": {
+        "type": "object",
+        "required": [
+          "sentOn"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "sentOn": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdWithdrawReply200": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadyWithdrawn"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadyWithdrawn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdWithdrawReply201": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadyWithdrawn"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadyWithdrawn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateClaimsByClaimIdWithdrawRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
       "PostPurchaseRebateSchemesBySchemeIdAccrualsByAccrualIdReply": {
         "type": "object",
         "required": [
@@ -219622,6 +221379,119 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/rebates.ts"
+      },
+      "PostPurchaseRebateSchemesBySchemeIdClaimsByClaimIdReply200": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadyRaised"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadyRaised": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateSchemesBySchemeIdClaimsByClaimIdReply201": {
+        "type": "object",
+        "required": [
+          "claim",
+          "alreadyRaised",
+          "approvalAsk",
+          "next"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/RebateClaimView"
+          },
+          "alreadyRaised": {
+            "type": "boolean"
+          },
+          "approvalAsk": {
+            "type": "object",
+            "required": [
+              "kind",
+              "subjectRef",
+              "valueMinor",
+              "details",
+              "summary",
+              "reason"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "rebate_claim"
+              },
+              "subjectRef": {
+                "type": "string"
+              },
+              "valueMinor": {
+                "type": "number"
+              },
+              "details": {
+                "type": "object",
+                "required": [
+                  "claimId",
+                  "schemeId",
+                  "supplierId",
+                  "amountMinor"
+                ],
+                "properties": {
+                  "claimId": {
+                    "type": "string"
+                  },
+                  "schemeId": {
+                    "type": "string"
+                  },
+                  "supplierId": {
+                    "type": "string"
+                  },
+                  "amountMinor": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "summary": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "const": "rebate earned and not yet received (D03-FR-03)"
+              }
+            },
+            "additionalProperties": true
+          },
+          "next": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
+      },
+      "PostPurchaseRebateSchemesBySchemeIdClaimsByClaimIdRequest": {
+        "type": "object",
+        "required": [
+          "amountMinor"
+        ],
+        "properties": {
+          "amountMinor": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/rebate-claims.ts"
       },
       "PostPurchaseRebateSchemesBySchemeIdReply": {
         "type": "object",
@@ -274582,6 +276452,163 @@
           },
           "agrees": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RebateClaimView": {
+        "type": "object",
+        "required": [
+          "state",
+          "matchedMinor",
+          "unansweredMinor",
+          "releasedMinor",
+          "dueOn",
+          "overdue",
+          "claimId",
+          "schemeId",
+          "supplierId",
+          "amountMinor",
+          "raisedBy",
+          "raisedAt",
+          "matches"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "partly_answered",
+              "raised",
+              "sent",
+              "withdrawn"
+            ]
+          },
+          "matchedMinor": {
+            "type": "number"
+          },
+          "unansweredMinor": {
+            "type": "number"
+          },
+          "releasedMinor": {
+            "type": "number"
+          },
+          "dueOn": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "overdue": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string",
+                "const": "not_set"
+              }
+            ]
+          },
+          "claimId": {
+            "type": "string"
+          },
+          "schemeId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "raisedBy": {
+            "type": "string"
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "sent": {
+            "type": "object",
+            "required": [
+              "approvalId",
+              "approvedBy",
+              "sentBy",
+              "sentOn",
+              "sentAt"
+            ],
+            "properties": {
+              "approvalId": {
+                "type": "string"
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "sentBy": {
+                "type": "string"
+              },
+              "sentOn": {
+                "type": "string"
+              },
+              "sentAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "withdrawn": {
+            "type": "object",
+            "required": [
+              "reason",
+              "withdrawnBy",
+              "withdrawnAt"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "withdrawnBy": {
+                "type": "string"
+              },
+              "withdrawnAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "receiptId",
+                "amountMinor",
+                "matchedBy",
+                "matchedAt"
+              ],
+              "properties": {
+                "receiptId": {
+                  "type": "string"
+                },
+                "amountMinor": {
+                  "type": "number"
+                },
+                "matchedBy": {
+                  "type": "string"
+                },
+                "matchedAt": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
           }
         },
         "additionalProperties": true

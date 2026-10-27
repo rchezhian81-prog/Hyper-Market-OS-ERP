@@ -93,9 +93,11 @@ describe('the view renders from the tested session and re-decides nothing', () =
     expect(topUp).toMatch(/readTopUpProposal\(input, feed\)/);
     expect(topUp).not.toMatch(/supplierId|partnerId/);
     expect(ENTRY).not.toMatch(/partners\/:?\w*\/submissions|\/partners\//);
-    // No other write route is named anywhere in the bundle.
+    // No other write route is named anywhere in the bundle. (D03-FR-03 · OB-404: `rebate-claims` is a READ — the claims the
+    // shop sent this supplier, fetched with the same GET helper as the statement; nothing is written to it.)
     const routes = [...ENTRY.matchAll(/['`](\/v1\/[^'`$]+)/g)].map((m) => m[1]);
-    expect(routes.filter((r) => !/^\/v1\/supplier-portal\/me\/(submissions|statement|orders|vmi(\/proposals\/)?)$/.test(r ?? ''))).toEqual([]);
+    expect(routes.filter((r) => !/^\/v1\/supplier-portal\/me\/(submissions|statement|orders|rebate-claims|vmi(\/proposals\/)?)$/.test(r ?? ''))).toEqual([]);
+    expect(ENTRY).toMatch(/getPortal\('\/v1\/supplier-portal\/me\/rebate-claims'\)/);
   });
 
   it('OB-389: the top-up form proposes only the supplier\'s own items at one store, within the room, and refuses before sending', () => {

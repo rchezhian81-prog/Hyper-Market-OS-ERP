@@ -24,6 +24,7 @@ import {
   type PartnerAuditEntry, type PartnerSession,
 } from '../../../packages/supplier-portal/src/index';
 import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import type { SupplierRebateClaim } from './rebate-claims';
 
 export type { PartnerDocument, StatementLine, PartnerAuditEntry } from '../../../packages/supplier-portal/src/index';
 
@@ -200,6 +201,11 @@ export interface SupplierPortalDeps {
    * "Delivery update" form may name. Undefined: this head office cannot list them (said, never an empty list).
    */
   readonly openOrdersOf?: (tenantId: string, partnerId: string) => Promise<readonly SupplierOpenOrder[]>;
+  /**
+   * D03-FR-03 · OB-404: the rebate claims the shop has SENT this supplier (approved by Finance) — each with what it asks
+   * for, when the answer is due and what has been paid against it. Undefined: this head office does not list them (said).
+   */
+  readonly rebateClaimsOf?: (tenantId: string, partnerId: string) => Promise<readonly SupplierRebateClaim[]>;
   readonly now: () => string;
 }
 
@@ -598,6 +604,24 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
             deliveryStatuses: DELIVERY_STATUSES, mayUpdate: session.grants.includes('acknowledge_orders'), asAt: deps.now(),
           },
         };
+      },
+    },
+    {
+      // D03-FR-03 · OB-404: a supplier reads the rebate claims the shop has SENT it (approved by Finance) — what each asks for,
+      // when the answer is due, and what has been paid against it. The partner is the login's stored binding (never the
+      // request); a `?partnerId=` naming another partner is refused AND recorded. Read under the statement grant: a claim is
+      // money between the two businesses, like the statement. A claim not yet approved is never shown outside the shop.
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/me/rebate-claims',
+      permission: 'supplier.portal.self',
+      handler: async (ctx) => {
+        const session = await meSession(ctx.tenantId, ctx.userId);
+        const requested = isStr(ctx.query['partnerId']) ? ctx.query['partnerId'] : undefined;
+        if (deps.rebateClaimsOf === undefined) {
+          await scopedOrRefused(ctx.tenantId, session, [], 'view_statement', requested, 'read:rebate-claims');
+          return { status: 200, body: { partnerId: session.partnerId, claimsKnown: false, claims: [], why: 'this head office does not list rebate claims to the portal', asAt: deps.now() } };
+        }
+        const rows = await scopedOrRefused(ctx.tenantId, session, await deps.rebateClaimsOf(ctx.tenantId, session.partnerId), 'view_statement', requested, 'read:rebate-claims');
+        return { status: 200, body: { partnerId: session.partnerId, claimsKnown: true, claims: rows.map((c) => ({ claimId: c.claimId, schemeId: c.schemeId, amountMinor: c.amountMinor, sentOn: c.sentOn, answerDueOn: c.answerDueOn, paidMinor: c.paidMinor, leftToPayMinor: c.leftToPayMinor, state: c.state, words: c.words })), asAt: deps.now() } };
       },
     },
     {

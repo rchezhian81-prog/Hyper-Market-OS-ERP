@@ -231,7 +231,7 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
   it('a supplier\'s terms (2b-vi-c-1) are approved by the authority that approves suppliers — Purchase Approver / Finance', () => {
     // M06-FR-01 names "Purchase Approver/Finance" as who approves a supplier; D02-FR-06 "Finance approves funding terms".
     expect(APPROVAL_KINDS['display_contract']).toMatchObject({ makerPermission: 'merchandising.display.manage', checkerPermission: 'purchase.supplier.approve' });
-    for (const k of ['rebate_scheme', 'purchase_contract']) {
+    for (const k of ['rebate_scheme', 'rebate_claim', 'purchase_contract']) {
       expect(APPROVAL_KINDS[k]).toMatchObject({ makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve' });
     }
   });
@@ -248,6 +248,6 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(42); // FG-4: role_scope_change · OB-360: b2b_credit_limit · OB-288 commercial desks: b2b_contract, b2b_credit_override · OB-288 till side: hsn_class_change (OB-347) · OB-288 P2: tax_rate_change, promotion_funding · OB-288 lane 1 · P1: approval_rule_change, org_structure_change, config_change, flag_change, department_scope_change + FUL-14 substitution_above_cap + PA-04 branch_transition + D14 r10 partner_webhook_subscription + r26 OB-97 store_computer_replaced + R2 C20 OB-165 posh_committee_change + F1 L2 scale_stamp_change · OB-288 P4: tenant_closure
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(43); // D03-FR-03 · OB-404: rebate_claim · FG-4: role_scope_change · OB-360: b2b_credit_limit · OB-288 commercial desks: b2b_contract, b2b_credit_override · OB-288 till side: hsn_class_change (OB-347) · OB-288 P2: tax_rate_change, promotion_funding · OB-288 lane 1 · P1: approval_rule_change, org_structure_change, config_change, flag_change, department_scope_change + FUL-14 substitution_above_cap + PA-04 branch_transition + D14 r10 partner_webhook_subscription + r26 OB-97 store_computer_replaced + R2 C20 OB-165 posh_committee_change + F1 L2 scale_stamp_change · OB-288 P4: tenant_closure
   });
 });

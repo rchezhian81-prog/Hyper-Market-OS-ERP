@@ -71,6 +71,12 @@ const ORDERS = [
   { poId: 'po-a3', number: 'PO-000003', issuedAt: '2026-10-22T09:00:00Z', deliverToLocationId: 'br-1', lines: 2 },
 ];
 
+/** D03-FR-03 · OB-404: two claims the shop SENT this supplier — one waiting with no due day set yet, one partly paid. */
+const REBATE_CLAIMS = [
+  { claimId: 'RC-1', schemeId: 'rb-1', amountMinor: 150000, sentOn: '2026-10-27', answerDueOn: null, paidMinor: 0, leftToPayMinor: 150000, state: 'sent' },
+  { claimId: 'RC-0', schemeId: 'rb-1', amountMinor: 90000, sentOn: '2026-09-01', answerDueOn: '2026-10-01', paidMinor: 40000, leftToPayMinor: 50000, state: 'partly_answered' },
+];
+
 /** A server that serves the supplier-app page AND answers the two read-only feeds on the SAME origin, so a
  *  relative `/v1/...` with `credentials: 'same-origin'` reaches it exactly as in production. A login without the
  *  supplier.portal.self grant is refused (403), the same re-check the real server runs (§35). */
@@ -94,6 +100,11 @@ async function startPageAndCloud(rec: Recorder): Promise<{ base: string; stop: (
       }
       if (req.method === 'GET' && path === '/v1/supplier-portal/me/orders') {
         feed({ partnerId: STATEMENT.partnerId, ordersKnown: true, orders: ORDERS, mayUpdate: rec.mayUpdate === true, deliveryStatuses: ['dispatched', 'in_transit', 'delayed'] });
+        return;
+      }
+      // D03-FR-03 · OB-404: the rebate claims the shop has sent this supplier (read only; scoped on the server).
+      if (req.method === 'GET' && path === '/v1/supplier-portal/me/rebate-claims') {
+        feed({ partnerId: STATEMENT.partnerId, claimsKnown: true, claims: REBATE_CLAIMS, asAt: '2026-10-27T00:00:00.000Z' });
         return;
       }
       // OB-362: the ONE write — the delivery update, recorded with its body (the server re-checks the order is this supplier's).
@@ -180,6 +191,36 @@ describe.skipIf(!HAVE_BROWSER)('a supplier reads its own account end to end in a
       expect(rec.requests.every((r) => r.method === 'GET')).toBe(true);
       expect(rec.requests.some((r) => r.path === '/v1/supplier-portal/me/submissions')).toBe(true);
       expect(rec.requests.some((r) => r.path === '/v1/supplier-portal/me/statement')).toBe(true);
+    } finally {
+      await context.close();
+      await srv.stop();
+    }
+  });
+
+  it('D03-FR-03 · OB-404: the rebate claims the shop sent it — amount, due day ("not set" when the shop has not set it), paid and still to pay — read only, in Tamil too', async () => {
+    const rec: Recorder = { supplierData: login('u-acme', ['supplier.portal.self']), mayRead: true, requests: [] };
+    const srv = await startPageAndCloud(rec);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    try {
+      await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rebates-rows li.row').length === 2, undefined, { timeout: 10_000 });
+      expect(await page.textContent('#rebates-h')).toBe('Rebate claims from us');
+      const waiting = await page.locator('#rebates-rows li[data-claim="RC-1"]').innerText();
+      expect(waiting).toContain('Waiting for your payment');
+      expect(waiting).toContain('₹1,500.00');
+      expect(waiting).toContain('due not set');
+      const partly = await page.locator('#rebates-rows li[data-claim="RC-0"]').innerText();
+      expect(partly).toContain('Partly paid');
+      expect(partly).toContain('due 2026-10-01');
+      expect(partly).toContain('still to pay ₹500.00');
+      await page.click('#lang');
+      expect(await page.textContent('#rebates-h')).toBe('எங்களிடமிருந்து தள்ளுபடிக் கோரிக்கைகள்');
+      expect(rec.requests.some((r) => r.path === '/v1/supplier-portal/me/rebate-claims')).toBe(true);
+      expect(rec.requests.every((r) => r.method === 'GET'), 'reading the claims writes nothing').toBe(true);
+      expect(errors).toEqual([]);
     } finally {
       await context.close();
       await srv.stop();

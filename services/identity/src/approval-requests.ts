@@ -148,6 +148,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'rebate_scheme', label: 'Approve a supplier rebate scheme',
     makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
   },
+  // D03-FR-03 · §28 "Finance approves rebate claims" (OB-404, owner, 27 Oct 2026, option A): the person who keeps the
+  // supplier schemes raises a claim; Finance (`purchase.supplier.approve` — the accountant and the owner, the same Finance
+  // authority that approves a rebate scheme) approves exactly that claim — supplier, scheme and amount — before it is sent.
+  rebate_claim: {
+    kind: 'rebate_claim', label: 'Approve a supplier rebate claim before it is sent',
+    makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
+  },
   purchase_contract: {
     kind: 'purchase_contract', label: 'Approve a supplier contract',
     makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,

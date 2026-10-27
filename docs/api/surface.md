@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1558 | 906 | 906 | 167 | 419 |
+| 13 | 1566 | 911 | 911 | 167 | 420 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -256,10 +256,17 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/purchase/orders/:poId/related-party` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/orders/:poId/related-party-approval` | `purchase.relatedparty.approve` | core | yes |
 | GET | `/v1/purchase/price-variance` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/rebate-claims` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/rebate-claims/:claimId/document` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/rebate-claims/:claimId/matches/:receiptId` | `finance.journal.post` | core | yes |
+| POST | `/v1/purchase/rebate-claims/:claimId/send` | `purchase.contract.manage` | core | yes |
+| POST | `/v1/purchase/rebate-claims/:claimId/withdraw` | `purchase.contract.manage` | core | yes |
+| POST | `/v1/purchase/rebate-claims/answer-period` | `purchase.rebate.terms.set` | core | yes |
 | GET | `/v1/purchase/rebate-schemes` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/rebate-schemes/:schemeId` | `purchase.contract.manage` | core | yes |
 | GET | `/v1/purchase/rebate-schemes/:schemeId/accruals` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/rebate-schemes/:schemeId/accruals/:accrualId` | `purchase.contract.manage` | core | yes |
+| POST | `/v1/purchase/rebate-schemes/:schemeId/claims/:claimId` | `purchase.contract.manage` | core | yes |
 | GET | `/v1/purchase/requisitions` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/requisitions/:requisitionId` | `purchase.order.propose` | core | yes |
 | GET | `/v1/purchase/requisitions/:requisitionId/comparison` | `purchase.commitment.read` | core | — |
@@ -284,6 +291,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/purchase/vmi/:supplierId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/vmi/limits/:supplierId/:storeId/:productId` | `purchase.order.propose` | core | yes |
 | GET | `/v1/supplier-portal/me/orders` | `supplier.portal.self` | core | — |
+| GET | `/v1/supplier-portal/me/rebate-claims` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/statement` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/submissions` | `supplier.portal.self` | core | — |
 | POST | `/v1/supplier-portal/me/submissions` | `supplier.portal.self.submit` | core | yes |

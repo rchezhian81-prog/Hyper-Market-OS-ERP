@@ -115,6 +115,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.invoice.sync',
       // SP-7b: the owner sets the three-way-match tolerances every invoice is judged by (never the body, OC-13).
       'purchase.match.policy.set',
+      // D03-FR-03 · OB-404: the owner sets how many days a supplier has to answer a rebate claim before it shows overdue
+      // (his number; "not set" until he enters it).
+      'purchase.rebate.terms.set',
       // SP-7c (M06-FR-01 · M23-FR-01): the supplier master — propose / update, approve (a different person), the list, and
       // recording a payment a second person approved.
       'purchase.supplier.manage', 'purchase.supplier.approve', 'purchase.supplier.pay', 'supplier.view',

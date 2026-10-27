@@ -253,7 +253,7 @@ export function commitmentReportAdapter(input: Base): CommitmentReportDeps {
 
 // ── M06-FR-03 — rebate basis from the matched invoices; rebate receipts as journals ─────────────────────────────────
 
-async function rebateJournals(store: EventStore, tenantId: string): Promise<readonly RebateReceiptJournal[]> {
+export async function rebateJournals(store: EventStore, tenantId: string): Promise<readonly RebateReceiptJournal[]> {
   return (await payloads<JournalEntry & Partial<RebateReceiptJournal>>(store, tenantId, STREAM.finance, 'JournalPosted'))
     .filter((j): j is RebateReceiptJournal => j.rebateReceipt !== undefined);
 }

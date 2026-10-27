@@ -157,6 +157,7 @@ function paint() {
   paintStatement(view);
   paintDelivery();
   paintVmi();
+  paintRebates();
 }
 
 // OB-362: the Delivery update form — the supplier's own open orders only; the bundle checks and sends it.
@@ -292,6 +293,35 @@ async function sendTopUp() {
   }
 }
 el('vmi-send').addEventListener('click', () => { void sendTopUp(); });
+
+// D03-FR-03 · OB-404: the rebate claims the shop has sent this supplier — read only. A due day the shop has not set is said.
+const rupeesOf = (minor) => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function paintRebates() {
+  const api = window.supplierPortal;
+  const feed = api && typeof api.rebateClaims === 'function' ? api.rebateClaims() : null;
+  const v = session.view(lang);
+  const notPermitted = v.screenState.tone === 'error' && v.awaiting.length === 0 && v.processed.length === 0 && v.statement === null && !v.statementInaccessible;
+  el('rebates').hidden = window.supplierPortalSession === undefined || notPermitted;
+  el('rebates-h').textContent = t('rebateH');
+  el('rebates-lead').textContent = t('rebateLead');
+  const said = el('rebates-said');
+  said.textContent = feed === null ? (ordersTried ? t('rebateUnknown') : '') : !feed.claimsKnown ? t('rebateUnknown') : feed.claims.length === 0 ? t('rebateNone') : '';
+  said.hidden = said.textContent === '';
+  el('rebates-rows').replaceChildren(...(feed?.claims ?? []).map((c) => {
+    const li = document.createElement('li');
+    const tone = c.state === 'answered' ? 'ok' : c.state === 'withdrawn' ? 'muted' : 'degraded';
+    li.className = `row tone-${tone}`;
+    li.dataset.claim = c.claimId; li.dataset.state = c.state;
+    const st = document.createElement('span'); st.className = 'status';
+    const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = c.state === 'answered' ? '✓' : c.state === 'withdrawn' ? '○' : '⏳';
+    const w = document.createElement('span'); w.textContent = t(`rebate_${c.state}`);
+    st.append(ic, w); st.setAttribute('aria-label', t(`rebate_${c.state}`));
+    const facts = document.createElement('div'); facts.className = 'facts';
+    facts.textContent = fill(t('rebateFacts'), { claim: c.claimId, scheme: c.schemeId, amount: rupeesOf(c.amountMinor), sent: c.sentOn, due: c.answerDueOn ?? t('rebateDueNotSet'), paid: rupeesOf(c.paidMinor), left: rupeesOf(c.leftToPayMinor) });
+    li.append(st, facts);
+    return li;
+  }));
+}
 el('vmi-store').addEventListener('change', () => { paintVmi(); });
 { const i = icon('package'); if (i !== null) el('vmi-send').prepend(i); }
 { const i = icon('truck'); if (i !== null) el('du-send').prepend(i); }
@@ -309,7 +339,7 @@ async function refresh() {
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
   ordersTried = true;
-  if (data) { session = api.present(data); paint(); } else { paintDelivery(); paintVmi(); }
+  if (data) { session = api.present(data); paint(); } else { paintDelivery(); paintVmi(); paintRebates(); }
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 

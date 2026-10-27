@@ -161,6 +161,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       // A supplier's commercial terms (2b-vi-c-1).
       display_contract: { en: 'Approve a supplier\'s display-space funding', ta: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்' },
       rebate_scheme: { en: 'Approve a supplier rebate scheme', ta: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்' },
+      // D03-FR-03 · OB-404: Finance approves a rebate claim before it is sent.
+      rebate_claim: { en: 'Approve a supplier rebate claim before it is sent', ta: 'அனுப்பும் முன் விநியோகஸ்தர் தள்ளுபடிக் கோரிக்கையை அனுமதித்தல்' },
       purchase_contract: { en: 'Approve a supplier contract', ta: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்' },
       // Access (2b-vi-c-2).
       emergency_access: { en: 'Give someone emergency access for a short time', ta: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்' },

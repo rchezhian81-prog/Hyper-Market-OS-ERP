@@ -104,7 +104,7 @@ export type CopyKey =
   | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
-  | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
+  | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
   | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
@@ -147,7 +147,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindStockWriteOff: 'Write off stock (a material loss)', kindStockAdjustmentUp: 'Correct stock upward',
     kindOrderRefund: 'Refund an online order', kindServiceCompensation: 'Give a customer compensation above the desk\'s own limit',
     kindSupplierInvoiceCheck: 'Check a supplier bill', kindSupplierPayment: 'Pay a supplier',
-    kindDisplayContract: 'Approve a supplier\'s display-space funding', kindRebateScheme: 'Approve a supplier rebate scheme',
+    kindDisplayContract: 'Approve a supplier\'s display-space funding', kindRebateScheme: 'Approve a supplier rebate scheme', kindRebateClaim: 'Approve a supplier rebate claim before it is sent',
     kindPurchaseContract: 'Approve a supplier contract',
     kindEmergencyAccess: 'Give someone emergency access for a short time', kindAccessChange: 'Change a person\'s access (joining, moving or leaving)',
     kindSubstitutionAboveCap: 'Charge a dearer substitute above the original price',
@@ -224,7 +224,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindStockWriteOff: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)', kindStockAdjustmentUp: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்',
     kindOrderRefund: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்', kindServiceCompensation: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்',
     kindSupplierInvoiceCheck: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்', kindSupplierPayment: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்',
-    kindDisplayContract: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்', kindRebateScheme: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்',
+    kindDisplayContract: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்', kindRebateScheme: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்', kindRebateClaim: 'அனுப்பும் முன் விநியோகஸ்தர் தள்ளுபடிக் கோரிக்கையை அனுமதித்தல்',
     kindPurchaseContract: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்',
     kindEmergencyAccess: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்', kindAccessChange: 'ஒருவரின் அணுகலை மாற்றுதல் (சேர்தல், இடமாற்றம் அல்லது விலகல்)',
     kindSubstitutionAboveCap: 'விலை கூடிய மாற்றுப் பொருளுக்கு அசல் விலைக்கு மேல் கட்டணம் வசூலித்தல்',
@@ -310,6 +310,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   supplier_payment: 'kindSupplierPayment',
   display_contract: 'kindDisplayContract',
   rebate_scheme: 'kindRebateScheme',
+  rebate_claim: 'kindRebateClaim',
   purchase_contract: 'kindPurchaseContract',
   emergency_access: 'kindEmergencyAccess',
   access_change: 'kindAccessChange',

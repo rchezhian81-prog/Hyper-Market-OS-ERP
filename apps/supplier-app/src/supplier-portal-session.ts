@@ -88,7 +88,27 @@ export interface SupplierPortalData {
   readonly orders?: SupplierOrdersFeed | null;
   /** OB-389: the supplier's own VMI items and proposals — absent until read. */
   readonly vmi?: SupplierVmiFeed | null;
+  /** D03-FR-03 · OB-404: the rebate claims the shop has sent this supplier — absent until read. */
+  readonly rebateClaims?: SupplierRebateClaimsFeed | null;
   readonly asAt: string;
+}
+
+/** D03-FR-03 · OB-404: one rebate claim the shop sent this supplier (`…/me/rebate-claims`). */
+export interface SupplierRebateClaimView {
+  readonly claimId: string;
+  readonly schemeId: string;
+  readonly amountMinor: number;
+  readonly sentOn: string;
+  /** Null while the shop has not set how many days a supplier has to answer — said "not set", never a guessed day. */
+  readonly answerDueOn: string | null;
+  readonly paidMinor: number;
+  readonly leftToPayMinor: number;
+  readonly state: 'sent' | 'partly_answered' | 'answered' | 'withdrawn';
+}
+/** The claims as last read; `claimsKnown` false = head office could not list them (never "none"). */
+export interface SupplierRebateClaimsFeed {
+  readonly claimsKnown: boolean;
+  readonly claims: readonly SupplierRebateClaimView[];
 }
 
 /** OB-362: the delivery statuses a supplier may send (`DELIVERY_STATUSES`, services/purchase/src/supplier-portal.ts). */
@@ -211,7 +231,9 @@ export type CopyKey =
   | 'cannotUpdate' | 'noOpenOrders' | 'ordersUnknown' | 'notSent' | 'refusedSay'
   | 'vmiH' | 'vmiLead' | 'vmiStoreL' | 'chooseStore' | 'vmiItemFacts' | 'vmiQtyL' | 'vmiNoteL' | 'sendTopUp' | 'topUpSent'
   | 'cannotPropose' | 'needStore' | 'notYourStore' | 'needQuantity' | 'badQuantity' | 'aboveRoom' | 'notYourItem'
-  | 'vmiUnknown' | 'vmiProposalsH' | 'vmiAwaiting' | 'vmiAccepted' | 'vmiRejected' | 'vmiBelowMin' | 'topUpNotSent';
+  | 'vmiUnknown' | 'vmiProposalsH' | 'vmiAwaiting' | 'vmiAccepted' | 'vmiRejected' | 'vmiBelowMin' | 'topUpNotSent'
+  | 'rebateH' | 'rebateLead' | 'rebateNone' | 'rebateUnknown' | 'rebateFacts' | 'rebateDueNotSet'
+  | 'rebate_sent' | 'rebate_partly_answered' | 'rebate_answered' | 'rebate_withdrawn';
 
 export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -246,6 +268,10 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     notYourItem: 'That item is not one of yours at this store. Nothing was sent.', vmiUnknown: 'Your stocked items could not be read just now, so no proposal can be sent.',
     vmiProposalsH: 'Your top-up proposals', vmiAwaiting: 'Waiting for a buyer', vmiAccepted: 'Accepted — the buyer raised an order', vmiRejected: 'Not accepted',
     vmiBelowMin: 'Below the minimum', topUpNotSent: 'No connection — the proposal was not sent. Try again when you are online.',
+    rebateH: 'Rebate claims from us', rebateLead: 'The rebates your schemes with us have earned, that we have asked you to pay — what each asks for, when payment is due and what has been paid. Quote the claim number when you pay.',
+    rebateNone: 'We have sent you no rebate claim.', rebateUnknown: 'Your rebate claims could not be read just now.',
+    rebateFacts: 'Claim {claim} · scheme {scheme} · {amount} · sent {sent} · due {due} · paid {paid} · still to pay {left}', rebateDueNotSet: 'not set',
+    rebate_sent: 'Waiting for your payment', rebate_partly_answered: 'Partly paid', rebate_answered: 'Paid in full — thank you', rebate_withdrawn: 'Withdrawn by us',
   },
   ta: {
     title: 'SRE உடன் உங்கள் கணக்கு', langName: 'English',
@@ -279,6 +305,10 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     notYourItem: 'அந்தப் பொருள் இந்தக் கடையில் உங்களுடையது அல்ல. எதுவும் அனுப்பப்படவில்லை.', vmiUnknown: 'உங்கள் இருப்புப் பொருட்களை இப்போது படிக்க முடியவில்லை, எனவே முன்மொழிவு அனுப்ப முடியாது.',
     vmiProposalsH: 'உங்கள் முன்மொழிவுகள்', vmiAwaiting: 'வாங்குபவருக்காகக் காத்திருக்கிறது', vmiAccepted: 'ஏற்கப்பட்டது — வாங்குபவர் ஆர்டர் எழுப்பினார்', vmiRejected: 'ஏற்கப்படவில்லை',
     vmiBelowMin: 'குறைந்த அளவுக்குக் கீழே', topUpNotSent: 'இணைப்பு இல்லை — முன்மொழிவு அனுப்பப்படவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
+    rebateH: 'எங்களிடமிருந்து தள்ளுபடிக் கோரிக்கைகள்', rebateLead: 'எங்களுடனான உங்கள் திட்டங்கள் ஈட்டிய, நாங்கள் செலுத்தக் கேட்ட தள்ளுபடிகள் — ஒவ்வொன்றும் கேட்பது, செலுத்த வேண்டிய நாள், செலுத்தியது. செலுத்தும்போது கோரிக்கை எண்ணைக் குறிப்பிடுங்கள்.',
+    rebateNone: 'நாங்கள் உங்களுக்கு எந்தத் தள்ளுபடிக் கோரிக்கையும் அனுப்பவில்லை.', rebateUnknown: 'உங்கள் தள்ளுபடிக் கோரிக்கைகளை இப்போது படிக்க முடியவில்லை.',
+    rebateFacts: 'கோரிக்கை {claim} · திட்டம் {scheme} · {amount} · அனுப்பியது {sent} · செலுத்த வேண்டியது {due} · செலுத்தியது {paid} · இன்னும் செலுத்த {left}', rebateDueNotSet: 'அமைக்கப்படவில்லை',
+    rebate_sent: 'உங்கள் கட்டணத்துக்காகக் காத்திருக்கிறது', rebate_partly_answered: 'பகுதி செலுத்தப்பட்டது', rebate_answered: 'முழுமையாகச் செலுத்தப்பட்டது — நன்றி', rebate_withdrawn: 'எங்களால் திரும்பப் பெறப்பட்டது',
   },
 };
 
