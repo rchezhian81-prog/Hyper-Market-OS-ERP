@@ -28,6 +28,8 @@ const snapshot = (): ScreenInput => ({
   pack: readPack({ version: 1, lossPreventionRules: [], policies: { tradingDayCutoff: '00:00', storeId: 'S1', branchId: 'S1' }, ...PEOPLE }, NOW),
   sales: [], unreadableRecords: 0, outbox: new SyncOutbox(), now: NOW, tradingDay: '2026-10-27',
 }) as unknown as ScreenInput;
+/** In the page: the rail has marked the item for the screen being shown (wait for it before reading). */
+const MARKED = `document.querySelectorAll('#sre-menu a[aria-current="page"]').length > 0`;
 
 describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail open real pages on the store computer', () => {
   let browser: Browser;
@@ -57,22 +59,22 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
 
       await menuLink(page, 'Reconciliation').click();
       await page.waitForURL(/\/finance-close\/\?tab=payments$/, { timeout: 15_000 });
-      await page.waitForFunction(() => document.title === 'SRE Month-end' && document.querySelectorAll('#sre-menu a[aria-current="page"]').length > 0, undefined, { timeout: 15_000 });
+      await page.waitForFunction(`document.title === 'SRE Month-end' && ${MARKED}`, undefined, { timeout: 15_000 });
       expect(await page.getAttribute('#tab-payments', 'aria-current')).toBe('page');
-      expect(await page.evaluate(() => (document.getElementById('view-payments') as HTMLElement).hidden)).toBe(false);
+      expect(await page.evaluate('document.getElementById("view-payments").hidden')).toBe(false);
       expect(await current(page)).toEqual(['Reconciliation']);
 
       await menuLink(page, 'Settings').click();
       await page.waitForURL(/\/setup\/\?tab=settings$/, { timeout: 15_000 });
-      await page.waitForFunction(() => document.title === 'SRE Store setup' && document.querySelectorAll('#sre-menu a[aria-current="page"]').length > 0, undefined, { timeout: 15_000 });
+      await page.waitForFunction(`document.title === 'SRE Store setup' && ${MARKED}`, undefined, { timeout: 15_000 });
       expect(await current(page)).toEqual(['Settings']);
 
       // Reached by its own item, each page marks only that item.
       await page.goto(`${base}/setup/`, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => document.querySelectorAll('#sre-menu a[aria-current="page"]').length > 0, undefined, { timeout: 15_000 });
+      await page.waitForFunction(MARKED, undefined, { timeout: 15_000 });
       expect(await current(page)).toEqual(['Store setup']);
       await page.goto(`${base}/finance-close/`, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => document.querySelectorAll('#sre-menu a[aria-current="page"]').length > 0, undefined, { timeout: 15_000 });
+      await page.waitForFunction(MARKED, undefined, { timeout: 15_000 });
       expect(await current(page)).toEqual(['Month-end']);
     } finally {
       await context.close();
@@ -86,7 +88,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
       await page.goto(`${base}/finance-close/?tab=payments`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#sre-menu a', { timeout: 15_000 });
       await page.click('#lang');
-      await page.waitForFunction(() => [...document.querySelectorAll('#sre-menu a')].some((a) => (a.textContent ?? '').includes('சரிக்கட்டல்')), undefined, { timeout: 15_000 });
+      await page.waitForFunction(`[...document.querySelectorAll('#sre-menu a')].some((a) => (a.textContent || '').includes('சரிக்கட்டல்'))`, undefined, { timeout: 15_000 });
       const ta = await page.$$eval('#sre-menu a', (as) => as.map((a) => ({ words: (a.textContent ?? '').trim(), icon: a.querySelector('svg') !== null })));
       expect(ta.find((x) => x.words === 'சரிக்கட்டல்')).toMatchObject({ icon: true });
       expect(ta.find((x) => x.words === 'அமைப்புகள்')).toMatchObject({ icon: true });
