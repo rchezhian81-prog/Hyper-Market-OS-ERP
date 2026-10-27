@@ -22,10 +22,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 **What is next**
 - The owner's answers to the three questions below.
 
+**Owner decisions (27 Oct 2026, in writing)**
+- OB-422: pre-fill the delivery State from the customer's GSTIN, still editable.
+- OB-423: remove a GSTIN with a reason.
+- OB-424: put the place of supply and the reverse-charge flag in the GSTN file before the first live filing.
+
+**What is next (after this PR merges)**
+- Build OB-422, OB-423 and OB-424 in one small PR.
+- A separate fix for the intermittent real-Keycloak lockout test, which also fails on main.
+
 **Needs an owner decision**
-- **Place of supply:** should a credit invoice's delivery State be pre-filled from the customer's GSTIN State?
-- **Removing a GSTIN:** should a customer's GSTIN be removable, with a reason, when their registration is cancelled?
-- **GSTN portal file:** B2B invoices carry no place of supply or reverse-charge flag. Fix it before the first live filing.
+- None open.
 
 ---
 
