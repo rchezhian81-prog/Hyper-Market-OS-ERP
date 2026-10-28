@@ -220,8 +220,8 @@ describe('toGstnB2cFromSales (the GSTN portal JSON, net of returns)', () => {
     expect(h).toMatchObject({ num: 1, hsn_sc: '0401', rt: 18, txval: 200, camt: 18, samt: 18, iamt: 0 });
   });
 
-  it('OB-431: an inter-State (IGST) till line has no recorded State, so the file is refused by name — never guessed', () => {
-    // Before OB-431 this filed as an INTER b2cs row with no place of supply; a till sale records no State but the store's own.
+  it('OB-432: an inter-State (IGST) till line has no recorded State, so the file is refused by name — never guessed', () => {
+    // Before OB-432 this filed as an INTER b2cs row with no place of supply; a till sale records no State but the store's own.
     const net = netTable12(
       salesToOutwardSupplies({ sales: [{ productId: 'P', quantityMinor: 1, uom: 'each', lineTotalMinor: 10_500 }], taxTable: [{ productId: 'P', hsnCode: '1006', rateBps: 500, placeOfSupply: 'inter_state' }], annualTurnoverMinor: SMALL }).table12,
       { rows: [], totalTaxableMinor: 0, totalTaxMinor: 0, b2bTaxableMinor: 0, b2cTaxableMinor: 0, detail: '' },

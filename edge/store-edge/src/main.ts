@@ -140,6 +140,7 @@ import { join } from 'node:path';
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
 import { readHeldWorkFeeds, writeHeldWorkFeeds, type HeldWorkFeeds } from './work-feeds-file';
 import { ClockGuard, clockObservingFetch, readClockThresholds, type ClockCheck } from './clock-guard';
+import { boxLoginGate } from './box-login-gate'; // OB-429
 import { activationHoldReport, type ActivationHoldReport } from './activation-hold';
 import type { BoxCapturedRun } from './store-work';
 
@@ -2576,7 +2577,13 @@ export async function startEdge(
   }
 
   // §31.1 · OB-327: every answer from head office has its clock measured against this box's (the call itself unchanged).
-  const cloudFetch = clockObservingFetch(globalThis.fetch, clockGuard);
+  // OB-429: the first `401 unauthenticated` head office gives the box's OWN login closes this gate — no further call with it
+  // leaves the box, so head office counts one failed sign-in from the shop's address, never the five that would lock every
+  // person signing in to head office on the store PC. Restarting the box (with a renewed login) opens it again.
+  const boxLogin = boxLoginGate(globalThis.fetch, {
+    onRefused: (at) => { say(`head office refused this store computer's own login at ${at}. It has stopped contacting head office so the shop's sign-ins are not locked. Selling continues and everything stays queued. Renew the store computer's head-office login (CLOUD_API_TOKEN) and restart it.`); },
+  });
+  const cloudFetch = clockObservingFetch(boxLogin.fetch, clockGuard);
   const agent = new SyncAgent(outbox, httpTransport({
     baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
@@ -2642,6 +2649,7 @@ export async function startEdge(
     lastPackStatus,
     lastContactAt,
     now: new Date().toISOString(),
+    boxLogin: boxLogin.state(),
     // Verifier r19 OB87-1: the bill-number witness check, on the box's own status read (P-08).
     ...(receiptNumbers === null ? {} : { billNumbering: receiptNumbers.witnessHealthNow() }),
   });
@@ -3037,6 +3045,8 @@ export async function startEdge(
    * `refreshPack` drives one inbound pull — the timer-based `pass` below is the only other caller.
    */
   const drainAndSettle = async (opts?: { readonly limit?: number }): Promise<{ sent: number; dead: number; remaining: number; signInLog?: { sent: number; dead: number; remaining: number } }> => {
+    // OB-429: with the box's login refused nothing is attempted, so no queued item spends its retry budget on it.
+    if (boxLogin.state().refused) return { sent: 0, dead: 0, remaining: queuesNow().reduce((n, q) => n + q.unsentCount, 0) };
     const at = new Date().toISOString();
     const result = await agent.drain({ at, ...(opts?.limit === undefined ? {} : { limit: opts.limit }) });
     await settleSales(at);
@@ -3079,6 +3089,11 @@ export async function startEdge(
   };
 
   const pass = async (): Promise<void> => {
+    // OB-429: head office refused the box's own login — no call is made at all until the box is restarted with a renewed one.
+    if (boxLogin.state().refused) {
+      if (!stopping) { timer = setTimeout(() => { void pass(); }, MAX_INTERVAL_MS); }
+      return;
+    }
     // Sequential by construction: the next pass is scheduled only after this one returns, so two
     // drains can never run at once.
     try {

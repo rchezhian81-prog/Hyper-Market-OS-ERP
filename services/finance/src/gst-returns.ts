@@ -245,7 +245,7 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
           if (e instanceof InvalidSalesToOutwardInput) {
             throw apiError(400, { code: 'invalid_from_sales_request', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the request and re-send. Nothing was changed.' });
           }
-          // OB-431: a till sale records no place of supply other than the store's own State — an IGST row is never guessed.
+          // OB-432: a till sale records no place of supply other than the store's own State — an IGST row is never guessed.
           if (e instanceof GstnB2cFromSalesRefused) {
             throw apiError(422, {
               code: 'gstr1_place_of_supply_not_judged',
@@ -288,7 +288,7 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         try {
           return { status: 200, body: toGstnGstr1(gstr1Return(docs), { gstin, fp }) };
         } catch (e) {
-          // OB-428 · OB-431: a B2B or B2C document whose place of supply is missing or disagrees with its tax split is never guessed.
+          // OB-428 · OB-432: a B2B or B2C document whose place of supply is missing or disagrees with its tax split is never guessed.
           if (e instanceof Gstr1ExportRefused) {
             throw apiError(422, {
               code: 'gstr1_place_of_supply_not_judged',

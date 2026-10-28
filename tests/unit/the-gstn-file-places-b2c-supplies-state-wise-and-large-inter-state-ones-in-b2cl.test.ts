@@ -5,7 +5,7 @@ import {
   type OutwardDocument, type OutwardSupplyLine, type GstnGstr1,
 } from '../../packages/finance/src/index';
 
-// OB-431 (owner, option A, 28 Oct 2026, in writing) — B2CS and B2CL in the GSTN GSTR-1 file. Every B2C supply carries its
+// OB-432 (owner, option A, 28 Oct 2026, in writing) — B2CS and B2CL in the GSTN GSTR-1 file. Every B2C supply carries its
 // place of supply: B2CS rows are one (supply type, place of supply, rate) group each, with `pos`; an inter-State B2C invoice
 // above the legal line (₹2,50,000 before 1 Aug 2024, ₹1,00,000 from then) is reported invoice-wise in B2CL and is then not in
 // B2CS; a document whose place of supply cannot be judged stops the file by name. Till sales are over the counter — the
@@ -33,7 +33,7 @@ const sectionTotals = (f: GstnGstr1) => {
   return { taxable, tax };
 };
 
-describe('OB-431 — B2CS is State-wise: one row per supply type, place of supply and rate', () => {
+describe('OB-432 — B2CS is State-wise: one row per supply type, place of supply and rate', () => {
   it('groups by pos and rate; INTRA for the filer\'s own State, INTER for another; a blank State with CGST + SGST is the filer\'s own', () => {
     const f = file([
       b2c('C-1'), // no State recorded, CGST + SGST → 33
@@ -64,7 +64,7 @@ describe('OB-431 — B2CS is State-wise: one row per supply type, place of suppl
   });
 });
 
-describe('OB-431 — B2CL: an inter-State B2C invoice above the legal line, invoice by invoice', () => {
+describe('OB-432 — B2CL: an inter-State B2C invoice above the legal line, invoice by invoice', () => {
   // ₹95,238.10 + 5% IGST ₹4,761.90 = exactly ₹1,00,000 — ON the line, not above it.
   const onTheLine = igst(9_523_810, 500, 476_190);
   const justAbove = igst(9_523_810, 500, 476_191); // ₹1,00,000.01
@@ -133,7 +133,7 @@ describe('OB-431 — B2CL: an inter-State B2C invoice above the legal line, invo
   });
 });
 
-describe('OB-431 — every B2C supply carries its place of supply, or the file stops by name', () => {
+describe('OB-432 — every B2C supply carries its place of supply, or the file stops by name', () => {
   it('a B2C document that charged IGST with no State is refused, named as an unregistered buyer, together with any B2B one', () => {
     const e = refusedBy([
       b2c('C-9', { lines: [igst(10_000)] }),
@@ -155,7 +155,7 @@ describe('OB-431 — every B2C supply carries its place of supply, or the file s
   });
 });
 
-describe('OB-431 — till sales are over the counter: the store\'s own State', () => {
+describe('OB-432 — till sales are over the counter: the store\'s own State', () => {
   const SMALL = 1_000_000;
   it('each till b2cs row is INTRA with the filer\'s State as pos, grouped by rate', () => {
     const t12 = salesToOutwardSupplies({

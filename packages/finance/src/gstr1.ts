@@ -168,7 +168,7 @@ export interface B2bInvoice {
 }
 
 /**
- * OB-431: a supply to an unregistered buyer (no GSTIN), kept invoice by invoice so the GSTN file can place it State-wise in
+ * OB-432: a supply to an unregistered buyer (no GSTIN), kept invoice by invoice so the GSTN file can place it State-wise in
  * B2CS, or — inter-State and above the legal value (`b2clThresholdOn`) — invoice-wise in B2CL. The value is what the invoice
  * was for: its taxable value, GST and compensation cess.
  */
@@ -184,7 +184,7 @@ export interface B2cInvoice {
 export interface Gstr1Return {
   readonly b2b: readonly B2bInvoice[];
   readonly b2c: readonly RateSummary[];
-  /** OB-431: the same B2C supplies as `b2c`, document by document (what the GSTN file's B2CS and B2CL are built from). */
+  /** OB-432: the same B2C supplies as `b2c`, document by document (what the GSTN file's B2CS and B2CL are built from). */
   readonly b2cInvoices: readonly B2cInvoice[];
   readonly hsn: Gstr1Table12;
   readonly totalTaxableMinor: number;
@@ -225,7 +225,7 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
       b2b.push({ recipientGstin: doc.recipientGstin as string, invoiceNumber: doc.documentId, invoiceDate: doc.documentDate, invoiceValueMinor, ...pos, rateLines });
     } else {
       b2cLines.push(...doc.lines);
-      // OB-431: the invoice value the B2CL line is judged on is the whole invoice — taxable value, GST and cess.
+      // OB-432: the invoice value the B2CL line is judged on is the whole invoice — taxable value, GST and cess.
       const invoiceValueMinor = rateLines.reduce((s, r) => s + r.taxableMinor + r.cgstMinor + r.sgstMinor + r.igstMinor + (r.cessMinor ?? 0), 0);
       b2cInvoices.push({ invoiceNumber: doc.documentId, invoiceDate: doc.documentDate, invoiceValueMinor, ...pos, rateLines });
     }
@@ -257,7 +257,7 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
 // (the first two digits of the filer's GSTIN). One that charged IGST with no State recorded, or whose State disagrees with
 // its split, is NOT guessed: the file is refused, naming each invoice (`Gstr1ExportRefused`).
 //
-// OB-431 (owner, option A, 28 Oct 2026, in writing): supplies to unregistered buyers go State-wise. Each `b2cs` row carries
+// OB-432 (owner, option A, 28 Oct 2026, in writing): supplies to unregistered buyers go State-wise. Each `b2cs` row carries
 // its place of supply `pos` and is one (supply type, place of supply, rate) group — the GSTN schema's `sply_ty` "INTRA"
 // when the place of supply is the filer's own State, "INTER" otherwise. An inter-State B2C invoice whose value is above
 // the legal line (`b2clThresholdOn` — the line is dated) is reported invoice by invoice in `b2cl`, grouped by place of
@@ -269,7 +269,7 @@ export interface GstnInvoiceItem { readonly num: number; readonly itm_det: GstnI
 export interface GstnB2bInvoice { readonly inum: string; readonly idt: string; readonly val: number; readonly pos: string; readonly rchrg: 'Y' | 'N'; readonly inv_typ: 'R'; readonly itms: readonly GstnInvoiceItem[]; }
 export interface GstnB2b { readonly ctin: string; readonly inv: readonly GstnB2bInvoice[]; }
 export interface GstnB2cs { readonly sply_ty: 'INTRA' | 'INTER'; readonly pos: string; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; readonly csamt?: number; }
-/** OB-431: a B2CL invoice item — inter-State only, so IGST (and any cess), never CGST/SGST. */
+/** OB-432: a B2CL invoice item — inter-State only, so IGST (and any cess), never CGST/SGST. */
 export interface GstnB2clItemDetail { readonly rt: number; readonly txval: number; readonly iamt: number; readonly csamt?: number; }
 export interface GstnB2clItem { readonly num: number; readonly itm_det: GstnB2clItemDetail; }
 export interface GstnB2clInvoice { readonly inum: string; readonly idt: string; readonly val: number; readonly itms: readonly GstnB2clItem[]; }
@@ -319,7 +319,7 @@ export function b2clThresholdOn(invoiceDate: string, table: readonly B2clThresho
 /** A document the GSTN file cannot be made with, named. `recipientGstin` is absent for a supply to an unregistered buyer. */
 export interface Gstr1ExportProblem { readonly invoiceNumber: string; readonly recipientGstin?: string; readonly why: string }
 
-/** OB-428 · OB-431: the GSTN file cannot be made as it stands — each named document's place of supply is missing or disagrees. */
+/** OB-428 · OB-432: the GSTN file cannot be made as it stands — each named document's place of supply is missing or disagrees. */
 export class Gstr1ExportRefused extends Error {
   constructor(readonly problems: readonly Gstr1ExportProblem[]) {
     super(`the GSTR-1 file cannot be made: ${problems.map((p) => `${p.invoiceNumber} (${p.recipientGstin ?? 'unregistered buyer'}) — ${p.why}`).join('; ')}`);
@@ -328,7 +328,7 @@ export class Gstr1ExportRefused extends Error {
 }
 
 /**
- * OB-428 · OB-431: the place of supply a document files under, or why it cannot be said. The State it records is used; with
+ * OB-428 · OB-432: the place of supply a document files under, or why it cannot be said. The State it records is used; with
  * none, a document with only CGST + SGST (or no tax) is inside the filer's own State. The split must agree with the State:
  * CGST + SGST only inside the filer's State, IGST only outside it. Pure.
  */
@@ -352,7 +352,7 @@ export function gstnPlaceOfSupply(inv: B2bInvoice, filerGstin: string): { readon
 /** One B2CS group, summed in paise before the single conversion to rupees. */
 export interface B2csGroup { readonly sply_ty: 'INTRA' | 'INTER'; readonly pos: string; readonly rateBps: number; taxable: number; cgst: number; sgst: number; igst: number; cess?: number }
 
-/** OB-431: add a rate line to its (supply type, place of supply, rate) B2CS group. */
+/** OB-432: add a rate line to its (supply type, place of supply, rate) B2CS group. */
 export function addToB2cs(acc: Map<string, B2csGroup>, sply: 'INTRA' | 'INTER', pos: string, r: RateSummary): void {
   const k = `${sply}|${pos}|${r.rateBps}`;
   const row = acc.get(k) ?? { sply_ty: sply, pos, rateBps: r.rateBps, taxable: 0, cgst: 0, sgst: 0, igst: 0 };
@@ -361,7 +361,7 @@ export function addToB2cs(acc: Map<string, B2csGroup>, sply: 'INTRA' | 'INTER', 
   acc.set(k, row);
 }
 
-/** OB-431: the B2CS rows, ordered by supply type, place of supply and rate (stable, diffable), in rupees. */
+/** OB-432: the B2CS rows, ordered by supply type, place of supply and rate (stable, diffable), in rupees. */
 export function b2csRows(acc: ReadonlyMap<string, B2csGroup>): GstnB2cs[] {
   return [...acc.values()]
     .sort((a, b) => a.sply_ty.localeCompare(b.sply_ty) || a.pos.localeCompare(b.pos) || a.rateBps - b.rateBps)
@@ -389,7 +389,7 @@ export function toGstnGstr1(ret: Gstr1Return, meta: { readonly gstin: string; re
     };
     byCtin.set(inv.recipientGstin, [...(byCtin.get(inv.recipientGstin) ?? []), invoice]);
   }
-  // OB-431: each B2C document — State-wise into B2CS, or (inter-State and above the dated line) invoice-wise into B2CL.
+  // OB-432: each B2C document — State-wise into B2CS, or (inter-State and above the dated line) invoice-wise into B2CL.
   const own = meta.gstin.slice(0, 2);
   const b2csAcc = new Map<string, B2csGroup>();
   const byPos = new Map<string, GstnB2clInvoice[]>();

@@ -38,8 +38,8 @@ const REALM = 'sre-store';
 const ISSUER = `${BASE}/realms/${REALM}`;
 const BOX_PORT = 8091; // the installer's screen port — the loopback callback the realm allows (OB-388)
 const BOX = `http://127.0.0.1:${BOX_PORT}`;
+const AUDIENCE = 'sre-retail-os-api'; // the realm's audience — head office believes only tokens made for it
 const KEY = ['kc', 'store', 'pc', 'signing', 'key'].join('-').padEnd(48, '0');
-const AUDIENCE = 'sre-retail-os-api'; // head office's audience — the identity server's tokens and the box's own are both checked for it
 
 class Jar {
   readonly cookies = new Map<string, string>();
@@ -123,13 +123,14 @@ describe.skipIf(!READY).sequential('a real Keycloak: the store computer carries 
       BOOTSTRAP_OWNER_TENANT_ID: TENANT, BOOTSTRAP_OWNER_USER_ID: privileged,
     }, (t) => { said.push(t); }, (t) => { said.push(t); });
     expect(api, said.join('')).toBeDefined();
-
-    // The box's own head-office credential, signed for head office's audience so head office BELIEVES it. A token head office
-    // refuses fails sign-in on every background pass — five failures from 127.0.0.1 lock that address for the brute-force
-    // backoff (FND-03 · SEC-04), and the person's carried session arrives from the same address: the intermittent 429.
-    // Believed, it may still be forbidden (this box holds no role here); a refusal by permission is not a failed sign-in.
+    // The box's own head-office credential, for the audience head office checks. A token head office does not believe fails
+    // sign-in on every background pass (the first comes 15 s after the box starts and makes about fifteen calls); five
+    // failures from 127.0.0.1 lock that address for 5 s, and the person's carried session arrives from the same address —
+    // refused 429 too_many_sign_in_attempts whenever it lands in that window (the intermittent failure). So it is checked
+    // here, before the box starts: refused → this fails now, by name, instead of by timing later.
     const boxToken = new LocalIdp({ ...pilot, audience: AUDIENCE }).issue({ sub: 'u-box', tenantId: TENANT!, branchId: 'store-1' });
-    expect((await fetch(`http://127.0.0.1:${api!.port}/v1/catalogue/pack`, { headers: { authorization: `Bearer ${boxToken}` } })).status).not.toBe(401);
+    const believed = await fetch(`http://127.0.0.1:${api!.port}/v1/catalogue/pack`, { headers: { authorization: `Bearer ${boxToken}` } });
+    expect(believed.status, `head office must believe the box's own token: ${said.filter((l) => l.includes('auth refused')).join('')}`).not.toBe(401);
 
     // The REAL store computer, on the store PC's own screen address; its setup names both people at this store.
     dir = await mkdtemp(join(tmpdir(), 'sre-kc-store-pc-'));

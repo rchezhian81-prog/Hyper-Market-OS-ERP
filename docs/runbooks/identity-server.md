@@ -261,11 +261,6 @@ person to Keycloak with PKCE and `prompt=login`; a privileged person sets up, th
 the session (an HttpOnly cookie, no token in the browser) and a head-office call through the box is answered by the real
 API as that person; with no session the box refuses it and sends nothing; a password-only sign-in is refused at the box;
 Sign out ends it. Port 8091 must be free on the test machine.
-The box's own head-office credential in this suite is signed for head office's audience (`sre-retail-os-api`), and the
-suite checks head office believes it before the box starts. A credential head office refuses fails sign-in on every
-background pass (13 calls, the first 15 seconds after start); five failures lock `127.0.0.1` for 5 seconds under the
-brute-force backoff (FND-03 · SEC-04), and the person's carried session arrives from the same address, so it was refused
-`429 too_many_sign_in_attempts` whenever it landed in that window (the intermittent failure on main, #815 to #819).
 
 **People's sign-ins** (`tests/integration/keycloak-provisioning.test.ts`, same settings, a freshly migrated
 database). It proves on the real server:

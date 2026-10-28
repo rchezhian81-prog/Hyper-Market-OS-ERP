@@ -10,22 +10,18 @@ import { vi } from 'vitest';
 export const JOURNEY_STARTS_AT = '10:00';
 
 /**
- * Pin `Date` (only — timers and I/O run normally, and the clock keeps moving) to 10:00 UTC on the current UTC date, and
- * return that date. The journeys that use it set the shop's time zone to UTC and its cut-off to 00:00, so this is 10:00 in
+ * Pin `Date` (only — timers and I/O run normally, and the clock keeps moving) to the most recent 10:00 UTC that has already
+ * passed — today's, or yesterday's before 10:00 UTC — and return that date. Never a 10:00 still to come: the store computer
+ * stamps its handheld door's certificate from `Date` (valid from an hour before), while TLS checks it against the real clock,
+ * so a pinned clock ahead of the real one served a certificate "not yet valid" whenever CI ran before 09:00 UTC (OB-422). The journeys that use it set the shop's time zone to UTC and its cut-off to 00:00, so this is 10:00 in
  * the shop's day, with fourteen hours of trading day ahead of the script. `vi.useRealTimers()` in the suite's `afterAll`
  * gives the real clock back.
- *
- * The pinned moment is the most recent 10:00 UTC that has already passed — today's after 10:00, otherwise yesterday's —
- * never one still to come. Only `Date` is faked: TLS checks a certificate against the REAL clock, and the store computer
- * dates its handheld-door certificate from `Date` (valid from an hour before). Pinned ahead of the real clock (runs between
- * 00:00 and 09:00 UTC), the phone's connection was refused "certificate is not yet valid".
  */
 export function startTheJourneyMidMorning(): string {
-  const real = Date.now();
-  const today = new Date(real).toISOString().slice(0, 10);
-  const todayAtStart = Date.parse(`${today}T${JOURNEY_STARTS_AT}:00.000Z`);
-  const start = todayAtStart <= real ? todayAtStart : todayAtStart - 86_400_000;
+  const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
+  const day = Date.parse(`${today}T${JOURNEY_STARTS_AT}:00.000Z`) <= now ? today : new Date(now - 86_400_000).toISOString().slice(0, 10);
   vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
-  vi.setSystemTime(new Date(start));
-  return new Date(start).toISOString().slice(0, 10);
+  vi.setSystemTime(new Date(`${day}T${JOURNEY_STARTS_AT}:00.000Z`));
+  return day;
 }

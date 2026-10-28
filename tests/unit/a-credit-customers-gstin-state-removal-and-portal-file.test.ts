@@ -89,7 +89,7 @@ describe('OB-428 — the place of supply on the GSTN file', () => {
     const localAway = run([doc('INV-6', { placeOfSupplyStateCode: '32' })]);
     expect((localAway as Gstr1ExportRefused).problems[0]!.why).toMatch(/charged CGST \+ SGST but its place of supply \(32\) is not the filer's own State \(33\)/);
   });
-  it('the B2C summary is rate-wise and, since OB-431, State-wise: an intra-State supply carries the filer\'s own State', () => {
+  it('the B2C summary is rate-wise and, since OB-432, State-wise: an intra-State supply carries the filer\'s own State', () => {
     const file = toGstnGstr1(gstr1Return([doc('B-1', { supplyType: 'b2c', recipientGstin: undefined })]), { gstin: STORE, fp: '102026' });
     expect(file.b2b).toEqual([]);
     expect(file.b2cl).toEqual([]);

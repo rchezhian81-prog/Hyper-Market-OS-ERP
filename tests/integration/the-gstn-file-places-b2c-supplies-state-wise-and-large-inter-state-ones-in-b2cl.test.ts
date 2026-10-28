@@ -17,7 +17,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM } from '../../services/api/src/adapters';
 
 /**
- * **OB-431 (owner, option A, 28 Oct 2026, in writing) — B2CS State-wise and B2CL in the GSTN GSTR-1 file.** On the real
+ * **OB-432 (owner, option A, 28 Oct 2026, in writing) — B2CS State-wise and B2CL in the GSTN GSTR-1 file.** On the real
  * head-office API (in memory and, with DATABASE_URL, on real PostgreSQL), a Tamil Nadu store (33) has a month of:
  *   • till sales (18% ghee, over the counter);
  *   • a B2C tax invoice from the business desk delivered inside Tamil Nadu (5% rice, CGST + SGST);
@@ -61,7 +61,7 @@ interface Evidence { checks: { name: string; leftMinor: number; rightMinor: numb
 
 const paise = (r: number) => Math.round(r * 100);
 
-describe.each(backings)('OB-431 — B2C supplies State-wise in B2CS, large inter-State ones in B2CL — on $name', ({ harness }) => {
+describe.each(backings)('OB-432 — B2C supplies State-wise in B2CS, large inter-State ones in B2CL — on $name', ({ harness }) => {
   it('till sales, an intra-State desk invoice and two Kerala invoices either side of the line file in the right sections; the close\'s Output GST still agrees', async () => {
     const h = harness();
     const t = randomUUID();

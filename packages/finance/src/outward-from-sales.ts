@@ -306,7 +306,7 @@ export interface GstnB2cGstr1 {
 const rupees2 = (minor: number): number => Math.round(minor) / 100;
 
 /**
- * OB-431: the till-sales GSTN file cannot be made — a HSN/rate row charged IGST (a supply to another State), but a till
+ * OB-432: the till-sales GSTN file cannot be made — a HSN/rate row charged IGST (a supply to another State), but a till
  * sale records no place of supply, so the State it went to cannot be said. Named per row; never guessed.
  */
 export class GstnB2cFromSalesRefused extends Error {
@@ -321,7 +321,7 @@ export class GstnB2cFromSalesRefused extends Error {
  * GSTIN and `fp` the filing period `MMYYYY`. `b2cs` aggregates the net rows State-wise by rate; `hsn.data` is the
  * net HSN summary. Pure.
  *
- * OB-431: a till sale is over the counter, so its place of supply is the store's own State (the first two digits of the
+ * OB-432: a till sale is over the counter, so its place of supply is the store's own State (the first two digits of the
  * filer's GSTIN): each `b2cs` row is `INTRA` with that `pos`. A till sale records no other State, so a row that charged
  * IGST cannot be placed and the file is refused by name (`GstnB2cFromSalesRefused`). No till sale goes to B2CL: B2CL is
  * only for inter-State supplies.
