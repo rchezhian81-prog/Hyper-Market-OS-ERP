@@ -76,6 +76,36 @@ describe('scrap proceeds are made to exist, flagged not refused (M28-FR-02, API-
     expect(flagsFor((await review(h, A, 'u-owner')).body as Review, 'c1')).not.toContain('rate_below_average');
   });
 
+  // OB-515: the owner and the accountant may RECORD a scrap / recycling sale; a store manager reviews only. Real role
+  // catalogue (services/api/src/roles.ts), provisioned through the harness — no hand-made grants.
+  it('OB-515: a store manager is refused recording (403) but can review; the accountant may record', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await h.provisionRole(A, 'u-acct', 'accountant');
+
+    // The store manager: recording is refused by permission, and nothing is written.
+    const refused = await record(h, A, 'u-mgr', scrap({ scrapId: 'sm1', handledBy: 'u-mgr' }));
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    // Marking proceeds as posted is recording too — refused the same way.
+    await record(h, A, 'u-owner', scrap({ scrapId: 'own1' }));
+    expect((await markPosted(h, A, 'u-mgr', 'own1')).status).toBe(403);
+
+    // The accountant: records a sale, and may mark it posted to the books.
+    const byAcct = await record(h, A, 'u-acct', scrap({ scrapId: 'ac1', handledBy: 'u-acct', buyerName: 'City Recyclers', evidenceRefs: ['slip-7'] }));
+    expect(byAcct.status, JSON.stringify(byAcct.body)).toBe(201);
+    expect((await markPosted(h, A, 'u-acct', 'ac1')).status).toBe(200);
+
+    // The store manager reviews: he sees the owner's and the accountant's sales — and not his refused one.
+    const seen = await review(h, A, 'u-mgr');
+    expect(seen.status, JSON.stringify(seen.body)).toBe(200);
+    const r = seen.body as Review;
+    expect(r.sales).toBe(2);
+    expect(r.findings.some((f) => f.scrapId === 'sm1')).toBe(false);
+    expect(flagsFor(r, 'own1')).toContain('not_posted_to_finance');
+    expect(flagsFor(r, 'ac1')).not.toContain('not_posted_to_finance');
+  });
+
   it('is authorized and per-tenant, and refuses a malformed disposal', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
