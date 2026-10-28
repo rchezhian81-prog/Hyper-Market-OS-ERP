@@ -49,6 +49,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - F-3: two untested OB-412 rules.
   - F-4: two records fixes.
 
+---
+
+## Session end (28 October 2026): the intermittent real-Keycloak failure, independent confirmation; #822 closed
+
+**What changed**
+- No code changed in this session's final state. Pull request #822 was closed at the owner's request (option 1), because #821 had already merged the same two fixes to main:
+  - the store computer's own token is made for head office's audience;
+  - the journey clock is never ahead of the real one.
+- **Independent proof of the Keycloak cause**, on a real Keycloak 26.0.7 with the repository realm and PostgreSQL 16, with the person's call forced into the lock window:
+  - main's old test failed 3 of 3, with the exact CI error (429 too_many_sign_in_attempts);
+  - the #820 version (wrong audience) still failed 2 of 3;
+  - the fixed version passed 5 of 5, and head office logged no failed sign-ins.
+  - Untouched runs: the full CI identity job passed 3 of 3, and the store-computer suite passed 10 of 10.
+- **The "certificate is not yet valid" failure** (store-acceptance-journey) was reproduced at 01:31 UTC with the old clock helper and passed with the fix.
+- Main's CI on b805c55 (#821) was all green, including Keycloak and the stage gate, on a run that started at 01:51 UTC.
+
+**What is next**
+- Before merging #825 (Round 6), check that every check on it is green. Its last run failed Keycloak and the browser tests; it may predate #821 on main. That pull request belongs to its own session.
+
+**Blocked:** nothing. **Owner decisions needed:** none.
+
+---
+
 ## GST answers OB-433 and OB-434 (28 October 2026)
 - **What changed:**
   - **OB-433:** the owner confirmed the B2CL line: more than ₹1,00,000 for invoices from 1 Aug 2024, more than ₹2,50,000 before. Nothing to build.
