@@ -11,6 +11,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { createShelfTagsSession } from '../../apps/web-erp/src/shelf-tags-session';
 import { createQuotationsSession } from '../../apps/web-erp/src/quotations-session';
 import { httpQuotations } from '../../edge/store-edge/src/quotations-at-lane';
+import { toCloudSale } from '../../edge/store-edge/src/cloud-sale';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { SignedPack } from '../../services/catalogue/src/pack';
 
@@ -22,8 +23,10 @@ import type { SignedPack } from '../../services/catalogue/src/pack';
  *     the one whose net quantity no price divides by, by name. A person without the pack read is refused by head office (403).
  *   • QUOTATIONS: the manager makes one on the page's session (counted items from the pack, a promised price); a cashier may
  *     not make or convert one (403); the store computer may convert but never make or void (403). The till keys the number:
- *     the box converts it for the till's bill, the till rings the quoted price with the quotation as evidence, and the bill
- *     pays. The same bill asking again gets its lines; another bill is told which bill has it; a voided quotation is refused.
+ *     the box converts it for the till's bill, the till rings the quoted price with the quotation as evidence — lowered, or
+ *     RAISED above the till's price (owner, 28 Oct 2026), and a line quoted above its MRP refused in words, not rung — and
+ *     the bill pays. Head office banks the bill and explains each quoted price from its own quotation record (informational,
+ *     never an unapproved price change). The same bill asking again gets its lines; another bill is told which bill has it; a voided quotation is refused.
  *     After a cold restart the quotation is still rung up on that bill and still refused to any other.
  * Synthetic data only.
  */
@@ -118,10 +121,14 @@ describe.each(backings)('shelf tags and quotations on head office\'s records —
     const page = createQuotationsSession({ viewer: { userId: MANAGER, permissions: ['pos.quotation.read', 'pos.quotation.write'] }, fetch: asPerson(() => h, T, MANAGER, STORE), newNumber: () => numbers[n++]!, now: () => '2030-06-01T06:00:00.000Z' });
     const rice = await page.line({ code: 'RICE-25', qty: '2', priceRupees: '1380' });
     const dal = await page.line({ code: '8901000000019', qty: '3', priceRupees: '' });
-    expect(rice.result === 'ok' && dal.result === 'ok').toBe(true);
-    if (rice.result !== 'ok' || dal.result !== 'ok') return;
-    const made = await page.make({ storeId: STORE, customerRef: 'Murugan Stores', validUntil: '2099-12-31', approvalId: '', lines: [rice.value, dal.value] });
-    expect(made, JSON.stringify(made)).toMatchObject({ result: 'ok', value: { quotationId: '48151623', totalMinor: 2 * 138_000 + 3 * 7_200 } });
+    // OB-506 (owner, 28 Oct 2026): oil quoted ABOVE the till's ₹190 (within its ₹210 MRP); ghee quoted ABOVE its ₹650 MRP.
+    const oil = await page.line({ code: 'OIL-1L', qty: '1', priceRupees: '200' });
+    const ghee = await page.line({ code: 'GHEE-JAR', qty: '1', priceRupees: '700' });
+    expect(rice.result === 'ok' && dal.result === 'ok' && oil.result === 'ok' && ghee.result === 'ok').toBe(true);
+    if (rice.result !== 'ok' || dal.result !== 'ok' || oil.result !== 'ok' || ghee.result !== 'ok') return;
+    expect(oilInPack).toMatchObject({ unitPriceMinor: 19_000, mrpMinor: 21_000 });
+    const made = await page.make({ storeId: STORE, customerRef: 'Murugan Stores', validUntil: '2099-12-31', approvalId: '', lines: [rice.value, dal.value, oil.value, ghee.value] });
+    expect(made, JSON.stringify(made)).toMatchObject({ result: 'ok', value: { quotationId: '48151623', totalMinor: 2 * 138_000 + 3 * 7_200 + 20_000 + 70_000 } });
     const second = await page.make({ storeId: STORE, customerRef: 'Selvi', validUntil: '2099-12-31', approvalId: '', lines: [dal.value] });
     expect(second.result).toBe('ok');
     // Who may do what, at head office: a cashier neither makes nor converts; the store computer converts only.
@@ -140,17 +147,32 @@ describe.each(backings)('shelf tags and quotations on head office\'s records —
       durable: async (_id, record) => { written.push(JSON.parse(record) as Record<string, unknown>); return { committed: true, durable: true, detail: 'double', laneMessage: 'Sale complete.' }; },
     });
     const rung = await till.ringQuotationAtTill('48151623');
-    expect(rung, JSON.stringify(rung)).toMatchObject({ ok: true, quotationId: '48151623', notAdded: [] });
-    expect(rung.added?.map((a) => [a.description, a.qty, a.unitPriceMinor, a.at])).toEqual([['Ponni rice 25 kg', 2, 138_000, 'quoted'], ['Toor dal 500 g', 3, 7_200, 'same']]);
+    expect(rung, JSON.stringify(rung)).toMatchObject({ ok: true, quotationId: '48151623' });
+    expect(rung.added?.map((a) => [a.description, a.qty, a.unitPriceMinor, a.at])).toEqual([['Ponni rice 25 kg', 2, 138_000, 'quoted'], ['Toor dal 500 g', 3, 7_200, 'same'], ['Groundnut oil 1 L', 1, 20_000, 'quoted_higher']]);
+    // The ghee quoted above its MRP is refused in words and never rung.
+    expect(rung.notAdded?.map((x) => [x.productId, x.refusedBecause])).toEqual([['p-ghee', 'quoted_above_mrp']]);
+    expect(rung.notAdded?.[0]?.laneMessage).toBe('NOT rung — the quoted price ₹700.00 is above this item\'s MRP ₹650.00 — a customer is never charged above the MRP. Ask the office to correct the quotation.');
     const bill = till.currentBillRef();
-    expect(till.payableMinor()).toBe(2 * 138_000 + 3 * 7_200);
+    expect(till.payableMinor()).toBe(2 * 138_000 + 3 * 7_200 + 20_000);
     // The same bill asking again (a lost answer) gets its lines; another bill is told which bill has it.
     expect((await box.convert({ quotationNumber: '48151623', billRef: bill, laneId: 'lane-1', cashierId: CASHIER })).converted).toBe(true);
     const other = await box.convert({ quotationNumber: '48151623', billRef: 'B-another', laneId: 'lane-2', cashierId: CASHIER });
     expect(other).toMatchObject({ converted: false, refusedBecause: 'already_converted', laneMessage: `Quotation 48151623 was already rung up on bill ${bill}. A quotation becomes one bill — nothing was rung.` });
     await till.tenderCash('S-Q-1', 'R-Q-1', `${AS_OF}T07:00:00.000Z`);
     const lines = (written[0] as { lines: { productId: string; unitPriceMinor: number; priceOverride?: Record<string, unknown> }[] }).lines;
-    expect(lines.find((l) => l.productId === 'p-rice')).toMatchObject({ unitPriceMinor: 138_000, priceOverride: { fromUnitPriceMinor: 145_000, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623' } });
+    expect(lines.find((l) => l.productId === 'p-rice')).toMatchObject({ unitPriceMinor: 138_000, priceOverride: { fromUnitPriceMinor: 145_000, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623', quotationId: '48151623' } });
+    expect(lines.find((l) => l.productId === 'p-oil')).toMatchObject({ unitPriceMinor: 20_000, priceOverride: { fromUnitPriceMinor: 19_000, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623', quotationId: '48151623' } });
+    expect(lines.some((l) => l.productId === 'p-ghee')).toBe(false);
+    // Head office banks the bill and explains each quoted price from ITS OWN quotation record — informational, naming the
+    // quotation; never a material "check the lane" price difference, and nothing above the MRP.
+    // (The store computer sends it in the cloud's shape — its own `toCloudSale`, which carries each line as the till wrote it.)
+    const banked = await ok(req('POST', '/v1/sales', toCloudSale(written[0], pack.snapshot.version, STORE, 'lane-1'), BOX), 'bank the quotation bill');
+    const findings = (banked.body as { exceptions: { kind: string; severity: string; productId?: string; detail: string }[] }).exceptions;
+    const priced = findings.filter((e) => e.kind === 'price_differs_from_catalogue' || e.kind === 'sold_above_mrp').map((e) => [e.productId, e.kind, e.severity]);
+    expect(priced, JSON.stringify(findings)).toEqual(expect.arrayContaining([['p-rice', 'price_differs_from_catalogue', 'informational'], ['p-oil', 'price_differs_from_catalogue', 'informational']]));
+    expect(priced).toHaveLength(2);
+    expect(findings.find((e) => e.productId === 'p-oil' && e.kind === 'price_differs_from_catalogue')!.detail).toBe('OIL-1L was charged at 20000, the price quotation 48151623 promised (the catalogue says 19000)');
+    expect(findings.filter((e) => e.productId === 'p-oil').map((e) => e.kind), JSON.stringify(findings)).toEqual(['price_differs_from_catalogue']);
 
     // A voided quotation is refused at the till — kept on record, with its reason.
     expect((await page.void('48151624', 'customer bought elsewhere')).result).toBe('ok');

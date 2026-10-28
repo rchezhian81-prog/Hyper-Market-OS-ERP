@@ -95,6 +95,12 @@ export interface PosSessionConfig {
    */
   readonly hsnCodeOf?: (productId: string) => string | undefined;
   /**
+   * OB-506 (owner, 28 Oct 2026): a product's MRP as the lane's signed catalogue pack carries it, by id — the legal ceiling a
+   * line raised to a quotation's price may never pass (Legal Metrology · A9). Absent, or no MRP on the product → the till
+   * cannot show a raised price is within the MRP, so it refuses to raise it.
+   */
+  readonly mrpOf?: (productId: string) => number | undefined;
+  /**
    * OB-306 (M03-FR-02): the own-barcode bundle a product is sold as, from the lane's signed catalogue pack. A bundle line is
    * exploded at the commit (`explodeBundleLine`) and the components it takes off the shelf are frozen on the line, so head
    * office writes one stock movement per component. Absent → no product is a bundle here.
@@ -275,7 +281,7 @@ export interface BasketEntry {
    * The line's price was LOWERED at the till with a manager's approval (audit PF-07 · M12-FR-04): the unit price before,
    * who approved it and the till action the store computer holds as evidence. Carried on the sale record.
    */
-  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string };
+  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string; readonly quotationId?: string };
 }
 
 /**
@@ -387,6 +393,37 @@ export interface BasketTotals extends BillTotals {
    * `payable`. Absent off real trading — the till charges exactly the lines, as before.
    */
   readonly roundOffMinor?: number;
+}
+
+/**
+ * OB-506 (owner, 28 Oct 2026): a quotation's price HIGHER than the till's price is charged — but never above the line's
+ * MRP (Legal Metrology · A9). The till refuses to raise the line, in plain words, rather than quietly charging less than
+ * the quotation promised or more than the law allows.
+ */
+export class QuotedPriceRefusedError extends Error {
+  readonly laneMessage: string;
+  readonly laneMessageTa: string;
+  constructor(public readonly refusedBecause: 'quoted_above_mrp' | 'mrp_not_known', words: { readonly en: string; readonly ta: string }) {
+    super(`quoted price refused: ${refusedBecause}`);
+    this.name = 'QuotedPriceRefusedError';
+    this.laneMessage = words.en;
+    this.laneMessageTa = words.ta;
+  }
+}
+
+const rupeesOf = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
+
+/** The till's words when a quoted price would pass the MRP, or the MRP is not known — English and Tamil. */
+export function quotedPriceRefusal(refusedBecause: 'quoted_above_mrp' | 'mrp_not_known', quotedMinor: number, mrpMinor?: number): { readonly en: string; readonly ta: string } {
+  return refusedBecause === 'quoted_above_mrp'
+    ? {
+      en: `the quoted price ${rupeesOf(quotedMinor)} is above this item's MRP ${rupeesOf(mrpMinor ?? 0)} — a customer is never charged above the MRP`,
+      ta: `சொன்ன விலை ${rupeesOf(quotedMinor)} இந்தப் பொருளின் அதிகபட்ச சில்லறை விலை (MRP) ${rupeesOf(mrpMinor ?? 0)}-ஐ விட அதிகம் — MRP-க்கு மேல் வாடிக்கையாளரிடம் வசூலிக்கக் கூடாது`,
+    }
+    : {
+      en: `the quoted price ${rupeesOf(quotedMinor)} is higher than the till's price, and this till's price pack carries no MRP for the item, so the till cannot show the quoted price is within the MRP`,
+      ta: `சொன்ன விலை ${rupeesOf(quotedMinor)} பில்லிங் விலையை விட அதிகம்; இந்த பில்லிங்கின் விலைத் தொகுப்பில் இந்தப் பொருளுக்கு MRP இல்லை, எனவே சொன்ன விலை MRP-க்குள் உள்ளதா என்று காட்ட முடியாது`,
+    };
 }
 
 export class EmptyBasketError extends Error {
@@ -950,14 +987,44 @@ export class PosSession {
    * Lower a line's price — ONLY once the store computer holds the approved change as evidence (the caller's job, audit
    * PF-07). The line keeps where the price came from and who approved it; the sale record carries both.
    */
-  overridePrice(lineId: string, toUnitMinor: number, evidence: { readonly approvedBy: string; readonly activityId: string }): BasketEntry {
+  overridePrice(lineId: string, toUnitMinor: number, evidence: { readonly approvedBy: string; readonly activityId: string; readonly quotationId?: string }): BasketEntry {
     this.notWhileAwaiting();
     // The line's first price — kept through every later cut, so the sale record and head office see the whole cut.
     const { fromUnitMinor } = this.overrideValue(lineId, toUnitMinor);
     const line = this.lines.find((l) => l.lineId === lineId)!;
     const next: BasketEntry = Object.freeze({
       ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency),
-      priceOverride: { fromUnitMinor, approvedBy: evidence.approvedBy, activityId: evidence.activityId },
+      priceOverride: { fromUnitMinor, approvedBy: evidence.approvedBy, activityId: evidence.activityId, ...(evidence.quotationId === undefined ? {} : { quotationId: evidence.quotationId }) },
+    });
+    this.replace(lineId, next);
+    return next;
+  }
+
+  /**
+   * OB-506 (owner, 28 Oct 2026): RAISE a line to the price a quotation promised, when that is higher than the till's price —
+   * the only way a till raises a price. Never above the line's MRP as the lane's own signed pack carries it (Legal Metrology
+   * · A9): above it, or with no MRP known, the line is refused in words (`QuotedPriceRefusedError`) and keeps its price. The
+   * line records where the price came from — the quotation's number — so head office's sale check sees why.
+   */
+  chargeQuotedPrice(lineId: string, toUnitMinor: number, quotationId: string): BasketEntry {
+    this.notWhileAwaiting();
+    const line = this.lines.find((l) => l.lineId === lineId && !l.voided);
+    if (line === undefined) throw new NoSuchLineError(lineId);
+    if (!Number.isSafeInteger(toUnitMinor) || toUnitMinor <= line.unitPrice.minor) {
+      throw new RangeError(`A quoted price is raised to only when it is above the till's price: ${toUnitMinor} is not above ${line.unitPrice.minor}.`);
+    }
+    const id = quotationId.trim();
+    if (id === '') throw new RangeError('A raised price names the quotation it came from.');
+    const mrp = this.config.mrpOf?.(line.productId);
+    if (mrp === undefined || !Number.isSafeInteger(mrp)) throw new QuotedPriceRefusedError('mrp_not_known', quotedPriceRefusal('mrp_not_known', toUnitMinor));
+    if (toUnitMinor > mrp) throw new QuotedPriceRefusedError('quoted_above_mrp', quotedPriceRefusal('quoted_above_mrp', toUnitMinor, mrp));
+    const first = line.priceOverride?.fromUnitMinor ?? line.unitPrice.minor;
+    const raised: BasketEntry = { ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) };
+    const refusals = this.lineRefusals(raised, this.nowIso(), undefined, Math.max(first, toUnitMinor));
+    if (refusals.length > 0) throw new TillRuleRefusedError(refusals);
+    const next: BasketEntry = Object.freeze({
+      ...raised,
+      priceOverride: { fromUnitMinor: first, approvedBy: `quotation ${id}`, activityId: `quotation:${id}`, quotationId: id },
     });
     this.replace(lineId, next);
     return next;
@@ -1369,8 +1436,9 @@ export class PosSession {
         ...(scale === undefined ? {} : { scaleCheck: scale }),
         ...(flags.tobacco === true && flags.packMinimumMinor !== undefined ? { packCheck: { packMinimumMinor: flags.packMinimumMinor } } : {}),
         ...(flags.carryBag === true ? { carryBag: { ...(flags.plasticMaterial === undefined ? {} : { material: flags.plasticMaterial }), ...(flags.plasticThicknessMicrons === undefined ? {} : { thicknessMicrons: flags.plasticThicknessMicrons }) } } : {}),
-        // A price lowered with a manager's approval (PF-07): where it came from, who approved it, the evidence's id.
-        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitPriceMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId } }),
+        // A price lowered with a manager's approval (PF-07), or set from a quotation (OB-506 — lowered or raised): where it
+        // came from, who approved it, the evidence's id, and the quotation's number when a quotation set it.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitPriceMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId, ...(l.priceOverride.quotationId === undefined ? {} : { quotationId: l.priceOverride.quotationId }) } }),
       };
     });
     // The record's net and GST are the sum of what is INSIDE each line as actually charged — after the attributed

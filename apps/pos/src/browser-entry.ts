@@ -1208,8 +1208,8 @@ export function bootPos(config?: {
   readonly recallQueueBasketAtTill: (code: string) => Promise<PhoneBasketAtTill>;
   /**
    * R7-C · OB-506 (M12-FR-02): ring a retail quotation up by its number (onto an EMPTY till) — head office converts it (once;
-   * expired or withdrawn refused), the till rings each line through its own pack and keeps the quoted price where it is
-   * lower. Needs head office: with it out of reach nothing is rung and the screen says so (`quotation-at-till.ts`).
+   * expired or withdrawn refused), the till rings each line through its own pack at the quoted price — lowered or raised
+   * (owner, 28 Oct 2026), never above the MRP: a line quoted above it is refused in words. Needs head office: with it out of reach nothing is rung and the screen says so (`quotation-at-till.ts`).
    */
   readonly ringQuotationAtTill: (quotationNumber: string) => Promise<QuotationAtTill>;
   readonly quotationWords: (lang: 'en' | 'ta') => (typeof QUOTATION_TILL_WORDS)['en' | 'ta'];
@@ -1315,6 +1315,8 @@ export function bootPos(config?: {
       baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
       // B17 · OB-348: each product's HSN from the lane's signed pack (an alcoholic-drink heading is refused), and the shop's state.
       hsnCodeOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.hsnCode,
+      // OB-506: each product's MRP from the lane's signed pack — a line raised to a quotation's price never passes it.
+      mrpOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.mrpMinor,
       ...(config?.shopState === undefined ? {} : { shopState: config.shopState }),
       // OB-306: a bundle line is exploded into its components from the lane's signed pack.
       bundleOf: (productId: string) => catalogueRef.cache?.bundleOf(productId),
@@ -2154,6 +2156,11 @@ export function bootPos(config?: {
       setQuantity: (lineId, qty) => { view.setQuantity(lineId, qty); },
       unitPriceOf: (lineId) => view.basket().find((l) => l.lineId === lineId)?.unitPriceMinor,
       lowerPrice: (lineId, toUnitMinor, evidence) => { session.overridePrice(lineId, toUnitMinor, evidence); },
+      raisePrice: (lineId, toUnitMinor, quotationId) => { session.chargeQuotedPrice(lineId, toUnitMinor, quotationId); },
+      packOf: (productId) => {
+        const p = catalogueRef.cache?.findByProductId(productId);
+        return p === undefined ? undefined : { unitPriceMinor: p.unitPriceMinor, ...(p.mrpMinor === undefined ? {} : { mrpMinor: p.mrpMinor }) };
+      },
     },
   });
   const quotedView = Object.assign(view, { ringQuotationAtTill, quotationWords: (lang: 'en' | 'ta') => QUOTATION_TILL_WORDS[lang] });

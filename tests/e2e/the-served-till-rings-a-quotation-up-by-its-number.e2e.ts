@@ -8,6 +8,9 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
+import { writeSignedPack } from '../../edge/store-edge/src/signed-pack-file';
+import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
+import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { TEST_IDP } from '../support/api-harness';
 
 /**
@@ -16,7 +19,9 @@ import { TEST_IDP } from '../support/api-harness';
  *
  * In a real Chromium against a real edge whose head office is a stand-in answering the convert route: More → "Quotation
  * number" → the eight digits on the till's own keypad → the store computer asks head office to convert it for THIS bill
- * (under its own credential) → the line is rung through this till's pack and lowered to the quoted ₹450 (from ₹480) → paid.
+ * (under its own credential) → the lines are rung through this till's pack at the QUOTED prices: dal lowered to ₹450 (from
+ * ₹480), and sugar RAISED to the quoted ₹52 (from ₹50, within its ₹55 MRP — owner, 28 Oct 2026); a line quoted above its MRP
+ * is refused in words and not rung → paid.
  * The same number on another bill is refused in words (it is on bill …); with head office unreachable the till says so
  * plainly and rings nothing; the option is not offered while a basket is on the till. Tamil.
  */
@@ -30,6 +35,21 @@ const PACK = JSON.stringify({
   lossPreventionRules: [],
   products: [{ productId: 'P1', name: 'Toor dal 1kg', categoryId: 'grocery', unitPriceMinor: 48_000, uom: 'ea', barcodes: ['8901234567890'], availableMinor: 100, taxBps: 0, status: 'active' }],
 });
+/** Head office's signed catalogue pack on the box's disk — what the served till rings from, MRPs included (Legal Metrology). */
+function signedPack() {
+  const snapshot: CatalogueSnapshot = {
+    tenantId: 't-sre', version: 3, builtAt: new Date().toISOString(),
+    products: [
+      { productId: 'P1', sku: 'DAL-1KG', name: 'Toor dal 1kg', baseUom: 'ea', unitPriceMinor: 48_000, mrpMinor: 50_000, taxBps: 0, status: 'active' },
+      { productId: 'P2', sku: 'SUGAR-1KG', name: 'Sugar 1kg', baseUom: 'ea', unitPriceMinor: 5_000, mrpMinor: 5_500, taxBps: 0, status: 'active' },
+      { productId: 'P3', sku: 'TEA-250', name: 'Tea 250g', baseUom: 'ea', unitPriceMinor: 12_000, mrpMinor: 13_000, taxBps: 0, status: 'active' },
+    ],
+    barcodes: [{ code: '8901234567890', productId: 'P1', kind: 'standard' }, { code: '8901234567891', productId: 'P2', kind: 'standard' }, { code: '8901234567892', productId: 'P3', kind: 'standard' }],
+  };
+  const result = publishPack({ snapshot, approvals: [], signer: hmacSigner(KEY), publishedBy: 'u-manager', publishedAt: snapshot.builtAt });
+  if (!result.ok || result.pack === undefined) throw new Error(result.detail);
+  return result.pack;
+}
 interface PosWindow { readonly posSession?: { hasCatalogue(): boolean; tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>; nextReceipt(): Promise<string>; newSale(): void; payableMinor(): number; currentBillRef(): string } }
 
 describe.skipIf(!existsSync(CHROMIUM))('the served till rings a quotation up by its number (OB-506)', () => {
@@ -77,7 +97,11 @@ describe.skipIf(!existsSync(CHROMIUM))('the served till rings a quotation up by 
         const body = JSON.parse(String(init?.body)) as { saleId: string; laneId: string; cashierId: string };
         converts.push({ url: u, body, auth: String((init?.headers as Record<string, string>)['authorization']) });
         return converts.length === 1
-          ? new Response(JSON.stringify({ quotationId: '48151623', converted: true, saleId: body.saleId, saleLines: [{ lineId: 'l1', productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 45_000, quantityMinor: 2, uom: 'ea', taxBps: 0 }] }), { status: 200 })
+          ? new Response(JSON.stringify({ quotationId: '48151623', converted: true, saleId: body.saleId, saleLines: [
+            { lineId: 'l1', productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 45_000, quantityMinor: 2, uom: 'ea', taxBps: 0 },
+            { lineId: 'l2', productId: 'P2', description: 'Sugar 1kg', unitPriceMinor: 5_200, quantityMinor: 1, uom: 'ea', taxBps: 0 },
+            { lineId: 'l3', productId: 'P3', description: 'Tea 250g', unitPriceMinor: 14_000, quantityMinor: 1, uom: 'ea', taxBps: 0 },
+          ] }), { status: 200 })
           : new Response(JSON.stringify({ quotationId: '48151623', converted: false, alreadyConverted: true, saleId: converts[0]!.body.saleId }), { status: 200 });
       }
       return new Response('{}', { status: 503 });
@@ -88,6 +112,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the served till rings a quotation up by 
     dirs.push(dir);
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, PACK, 'utf8');
+    await writeSignedPack(dir, signedPack());
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_PACK_FILE: packFile,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
@@ -105,14 +130,15 @@ describe.skipIf(!existsSync(CHROMIUM))('the served till rings a quotation up by 
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.hasCatalogue() === true, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
 
-    // ── The cashier keys the number on the customer's quotation: the line rung at the QUOTED price (₹450, not ₹480).
+    // ── The cashier keys the number on the customer's quotation: each line rung at the QUOTED price — dal ₹450 (not ₹480),
+    // sugar ₹52 (not ₹50: quoted above today's price, within its MRP) — and the tea quoted above its ₹130 MRP refused, not rung.
     expect(await more(page)).toContain('Quotation number');
     await choose(page, 'Quotation number');
     await keyDigits(page, '48151623');
     const rung = await shown(page);
-    expect(rung.text).toBe('Quotation 48151623: 1 line(s) rung at the quoted prices. Check the goods, then take the payment.');
+    expect(rung.text).toBe('Quotation 48151623: 2 line(s) rung; 1 need the cashier — deal with each one. 1 line(s) are quoted above today\'s till price — the quoted price is charged. 1 line(s) are quoted above the MRP and were NOT rung — the office must correct the quotation.');
     await page.waitForSelector('#lines tr');
-    expect(await page.evaluate(() => (globalThis as unknown as PosWindow).posSession!.payableMinor())).toBe(90_000);
+    expect(await page.evaluate(() => (globalThis as unknown as PosWindow).posSession!.payableMinor())).toBe(90_000 + 5_200);
     const billRef = await page.evaluate(() => (globalThis as unknown as PosWindow).posSession!.currentBillRef());
     expect(converts).toEqual([{ url: 'https://cloud.example.test/v1/pos/quotations/48151623/convert', body: { saleId: billRef, laneId: 'lane-1', cashierId: 'u-lanecash' }, auth: `Bearer ${BOX_TOKEN}` }]);
     // While a basket is on the till, the option is not offered — a quotation is rung on its own bill.
@@ -123,9 +149,11 @@ describe.skipIf(!existsSync(CHROMIUM))('the served till rings a quotation up by 
       await w.posSession!.tenderCash('S-quote-1', await w.posSession!.nextReceipt(), new Date().toISOString());
       w.posSession!.newSale();
     });
-    const sold = (await readLog(edge.log.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { total: number; lines: { unitPriceMinor: number; priceOverride?: { approvedBy?: string } }[] }] : []));
-    expect(sold).toEqual([expect.objectContaining({ total: 90_000 })]);
-    expect(sold[0]!.lines[0]).toMatchObject({ unitPriceMinor: 45_000, priceOverride: { approvedBy: 'quotation 48151623' } });
+    const sold = (await readLog(edge.log.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { total: number; lines: { unitPriceMinor: number; priceOverride?: { approvedBy?: string; fromUnitPriceMinor?: number; quotationId?: string } }[] }] : []));
+    expect(sold).toEqual([expect.objectContaining({ total: 95_200 })]);
+    expect(sold[0]!.lines[0]).toMatchObject({ unitPriceMinor: 45_000, priceOverride: { approvedBy: 'quotation 48151623', quotationId: '48151623' } });
+    expect(sold[0]!.lines[1]).toMatchObject({ unitPriceMinor: 5_200, priceOverride: { fromUnitPriceMinor: 5_000, approvedBy: 'quotation 48151623', quotationId: '48151623' } });
+    expect(sold[0]!.lines).toHaveLength(2);
 
     // ── The same number on a new bill: refused in words, naming the bill it is on; nothing rung.
     await more(page);

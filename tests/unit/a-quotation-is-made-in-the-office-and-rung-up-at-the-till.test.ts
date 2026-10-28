@@ -7,15 +7,22 @@ import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { HEAD_OFFICE_PAGE_SCREENS, HEAD_OFFICE_PAGE_GLOBALS } from '../../edge/store-edge/src/head-office-pages';
 import { buildSurface } from '../../services/api/src/main';
 import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
-import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
+import { CatalogueCache, type CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
+import { PosSession, taxRateFromPercent, createPosView } from '../../apps/pos/src/index';
+import { QuotedPriceRefusedError } from '../../apps/pos/src/session';
+import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
+import { SyncOutbox } from '../../packages/sync/src/index';
+import { acceptSale, type IncomingSale, type IntakeContext } from '../../services/pos/src/sale-intake';
 
 /**
  * **A retail quotation is made in the office and rung up at the till by its number (OB-506 · M12-FR-02 · hard rule #1 ·
  * P-08).** The office page makes, lists, follows up and voids quotations over head office's own routes (only those, with the
  * body the handler reads; counted items from the signed pack; an eight-digit number the till's keypad can key). At the till
  * the number goes to the store computer, which asks head office to convert it; the till rings each line through its OWN
- * pack and lowers it to the quoted price (the quotation named as the evidence), keeps the till's price where that is lower,
- * and lists what it cannot ring. With head office (or the store computer) out of reach NOTHING is rung, said in words.
+ * pack at the QUOTED price — lowered or, since the owner's word of 28 Oct 2026, RAISED to it (the quotation named as the
+ * evidence, its number on the line) — never above the MRP: a quoted price above the MRP is refused in words and not rung.
+ * It lists what it cannot ring. With head office (or the store computer) out of reach NOTHING is rung, said in words.
+ * Head office's sale check explains a quoted line from its OWN quotation record, never on the till's word.
  * Synthetic data only.
  */
 
@@ -127,22 +134,90 @@ const converted = (lines: { productId: string; unitPriceMinor: number; quantityM
 });
 
 describe('the till rings a quotation up by its number', () => {
-  it('lowers a line to the quoted price with the quotation as its evidence; keeps the till\'s lower price; lists what it cannot ring — and the bill pays', async () => {
+  it('lowers a line to the quoted price and RAISES one quoted above the till\'s price, the quotation as evidence; lists what it cannot ring — and the bill pays', async () => {
     const asked: { quotationNumber: string; billRef: string }[] = [];
     const { pos, written } = till({ convert: async (i) => { asked.push(i); return converted([{ productId: 'P-RICE', unitPriceMinor: 1_380_00, quantityMinor: 2 }, { productId: 'P-OIL', unitPriceMinor: 190_00, quantityMinor: 1 }, { productId: 'P-GHEE', unitPriceMinor: 290_00, quantityMinor: 1 }, { productId: 'P-ONION', unitPriceMinor: 40_00, quantityMinor: 1000, uom: 'kg' }]); } });
     const r = await pos.ringQuotationAtTill(' 48151623 ');
     expect(asked).toEqual([{ quotationNumber: '48151623', billRef: pos.currentBillRef() }]);
     expect(r.ok).toBe(true);
-    expect(r.added?.map((a) => [a.description, a.qty, a.unitPriceMinor, a.at])).toEqual([['Ponni rice 25 kg', 2, 1_380_00, 'quoted'], ['Oil 1 L', 1, 180_00, 'till_lower']]);
+    // Rice quoted BELOW the till's ₹1,450 → lowered to ₹1,380; oil quoted ABOVE the till's ₹180 (MRP ₹200) → charged ₹190.
+    expect(r.added?.map((a) => [a.description, a.qty, a.unitPriceMinor, a.at])).toEqual([['Ponni rice 25 kg', 2, 1_380_00, 'quoted'], ['Oil 1 L', 1, 190_00, 'quoted_higher']]);
     expect(r.notAdded?.map((n) => n.productId)).toEqual(['P-GHEE', 'P-ONION']);
     expect(r.notAdded?.[1]?.laneMessage).toMatch(/weigh it on the scale/);
-    expect(r.laneMessage).toBe('Quotation 48151623: 2 line(s) rung; 2 need the cashier — deal with each one. 1 line(s) are cheaper on the till today than quoted — the till\'s lower price is charged.');
+    expect(r.laneMessage).toBe('Quotation 48151623: 2 line(s) rung; 2 need the cashier — deal with each one. 1 line(s) are quoted above today\'s till price — the quoted price is charged.');
     expect(r.laneMessageTa).toMatch(/விலைப்புள்ளி 48151623/);
-    expect(pos.payableMinor()).toBe(2 * 1_380_00 + 180_00);
+    expect(r.laneMessageTa).toMatch(/சொன்ன விலையே வசூலிக்கப்படும்/);
+    expect(pos.payableMinor()).toBe(2 * 1_380_00 + 190_00);
     await pos.tenderCash('S-Q1', 'R-Q1', NOW);
     const lines = (written[0] as { lines: { productId: string; unitPriceMinor: number; priceOverride?: Record<string, unknown> }[] }).lines;
-    expect(lines.find((l) => l.productId === 'P-RICE')).toMatchObject({ unitPriceMinor: 1_380_00, priceOverride: { fromUnitPriceMinor: 1_450_00, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623' } });
-    expect(lines.find((l) => l.productId === 'P-OIL')?.priceOverride).toBeUndefined();
+    expect(lines.find((l) => l.productId === 'P-RICE')).toMatchObject({ unitPriceMinor: 1_380_00, priceOverride: { fromUnitPriceMinor: 1_450_00, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623', quotationId: '48151623' } });
+    // The raised line says truthfully where its price came from: the till's ₹180 raised to quotation 48151623's ₹190.
+    expect(lines.find((l) => l.productId === 'P-OIL')).toMatchObject({ unitPriceMinor: 190_00, priceOverride: { fromUnitPriceMinor: 180_00, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623', quotationId: '48151623' } });
+  });
+
+  it('OB-506 (owner, 28 Oct 2026): quoted ABOVE the till price → charged the quoted price; quoted BELOW → lowered as before; the same → unchanged', async () => {
+    const { pos, written } = till({ convert: async () => converted([{ productId: 'P-OIL', unitPriceMinor: 200_00, quantityMinor: 3 }, { productId: 'P-RICE', unitPriceMinor: 1_400_00, quantityMinor: 1 }]) });
+    const r = await pos.ringQuotationAtTill('48151623');
+    expect(r).toMatchObject({ ok: true, notAdded: [] });
+    // Oil quoted at exactly its MRP (₹200) — above the till's ₹180, so the quoted ₹200 is charged, not more.
+    expect(r.added?.map((a) => [a.description, a.qty, a.unitPriceMinor, a.at])).toEqual([['Oil 1 L', 3, 200_00, 'quoted_higher'], ['Ponni rice 25 kg', 1, 1_400_00, 'quoted']]);
+    expect(r.laneMessage).toBe('Quotation 48151623: 2 line(s) rung at the quoted prices. 1 line(s) are quoted above today\'s till price — the quoted price is charged. Check the goods, then take the payment.');
+    expect(pos.payableMinor()).toBe(3 * 200_00 + 1_400_00);
+    await pos.tenderCash('S-Q2', 'R-Q2', NOW);
+    const lines = (written[0] as { lines: { productId: string; unitPriceMinor: number; lineTotalMinor: number; priceOverride?: Record<string, unknown> }[] }).lines;
+    expect(lines.find((l) => l.productId === 'P-OIL')).toMatchObject({ unitPriceMinor: 200_00, lineTotalMinor: 600_00, priceOverride: { fromUnitPriceMinor: 180_00, quotationId: '48151623' } });
+    expect(lines.find((l) => l.productId === 'P-RICE')).toMatchObject({ unitPriceMinor: 1_400_00, priceOverride: { fromUnitPriceMinor: 1_450_00, quotationId: '48151623' } });
+    // Quoted at the till's own price: nothing changed, nothing recorded as a change.
+    const same = till({ convert: async () => converted([{ productId: 'P-OIL', unitPriceMinor: 180_00, quantityMinor: 1 }]) });
+    expect((await same.pos.ringQuotationAtTill('48151623')).added?.map((a) => [a.unitPriceMinor, a.at])).toEqual([[180_00, 'same']]);
+    expect(same.pos.payableMinor()).toBe(180_00);
+  });
+
+  it('OB-506 · Legal Metrology: a quoted price ABOVE the MRP is refused in English and Tamil and NOT rung — never charged, never quietly capped', async () => {
+    const { pos } = till({ convert: async () => converted([{ productId: 'P-OIL', unitPriceMinor: 210_00, quantityMinor: 1 }, { productId: 'P-RICE', unitPriceMinor: 1_380_00, quantityMinor: 1 }]) });
+    const r = await pos.ringQuotationAtTill('48151623');
+    expect(r.ok).toBe(true);
+    expect(r.added?.map((a) => [a.description, a.unitPriceMinor, a.at])).toEqual([['Ponni rice 25 kg', 1_380_00, 'quoted']]);
+    expect(r.notAdded).toEqual([{
+      productId: 'P-OIL', name: 'P-OIL', qty: 1, refusedBecause: 'quoted_above_mrp',
+      laneMessage: 'NOT rung — the quoted price ₹210.00 is above this item\'s MRP ₹200.00 — a customer is never charged above the MRP. Ask the office to correct the quotation.',
+      laneMessageTa: expect.stringMatching(/^சேர்க்கப்படவில்லை — சொன்ன விலை ₹210\.00 .*MRP.*₹200\.00/),
+    }]);
+    expect(r.laneMessage).toBe('Quotation 48151623: 1 line(s) rung; 1 need the cashier — deal with each one. 1 line(s) are quoted above the MRP and were NOT rung — the office must correct the quotation.');
+    expect(r.laneMessageTa).toMatch(/MRP-க்கு மேல் சொல்லப்பட்டதால் சேர்க்கப்படவில்லை/);
+    // Only the rice is on the bill: the oil was never rung, so nothing above the MRP can be charged.
+    expect(pos.basket().map((l) => [l.productId, l.unitPriceMinor])).toEqual([['P-RICE', 1_380_00]]);
+    expect(pos.payableMinor()).toBe(1_380_00);
+  });
+
+  it('OB-506: a raise on an item whose MRP this till\'s pack does not carry is refused in words; the session itself never raises past the MRP', async () => {
+    const noMrp: CatalogueSnapshot = { ...CAT, products: CAT.products.map((p) => (p.productId === 'P-OIL' ? { ...p, mrpMinor: undefined } as typeof p : p)) };
+    const pos = bootPos({ laneId: 'lane-1', cashierId: 'u-cash', tradingDay: NOW.slice(0, 10), catalogue: noMrp, quotationsPort: { convert: async () => converted([{ productId: 'P-OIL', unitPriceMinor: 190_00, quantityMinor: 1 }]) } });
+    const r = await pos.ringQuotationAtTill('48151623');
+    expect(r.notAdded).toMatchObject([{ productId: 'P-OIL', refusedBecause: 'mrp_not_known', laneMessage: expect.stringMatching(/^NOT rung — the quoted price ₹190\.00 is higher than the till's price, and this till's price pack carries no MRP/), laneMessageTa: expect.stringMatching(/MRP இல்லை/) }]);
+    expect(pos.basket()).toEqual([]);
+    // The till's model refuses on its own too (a backstop behind the screen step): above the MRP, at it, and only upwards.
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'u-cash', tradingDay: NOW.slice(0, 10), currency: 'INR', defaultTaxRate: taxRateFromPercent(0), mrpOf: (id) => CAT.products.find((p) => p.productId === id)?.mrpMinor },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }),
+    );
+    const view = createPosView(session, 'INR', new CatalogueCache(CAT));
+    const line = view.scanBarcode('8902');
+    expect(() => session.chargeQuotedPrice(line.lineId, 201_00, '48151623')).toThrow(QuotedPriceRefusedError);
+    expect(() => session.chargeQuotedPrice(line.lineId, 201_00, '48151623')).toThrow(expect.objectContaining({ refusedBecause: 'quoted_above_mrp', laneMessageTa: expect.stringMatching(/MRP/) }));
+    expect(() => session.chargeQuotedPrice(line.lineId, 170_00, '48151623')).toThrow(RangeError);
+    expect(session.basket()[0]).toMatchObject({ unitPrice: { minor: 180_00 } });
+    session.chargeQuotedPrice(line.lineId, 200_00, '48151623');
+    expect(session.basket()[0]).toMatchObject({ unitPrice: { minor: 200_00 }, priceOverride: { fromUnitMinor: 180_00, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623', quotationId: '48151623' } });
+    // A session with no MRP source (an older composition) never raises a price.
+    const blind = new PosSession(
+      { laneId: 'lane-1', cashierId: 'u-cash', tradingDay: NOW.slice(0, 10), currency: 'INR', defaultTaxRate: taxRateFromPercent(0) },
+      new Ledger(new InMemoryLedgerStore()), new SyncOutbox(),
+      () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }),
+    );
+    const blindLine = createPosView(blind, 'INR', new CatalogueCache(CAT)).scanBarcode('8902');
+    expect(() => blind.chargeQuotedPrice(blindLine.lineId, 190_00, '48151623')).toThrow(expect.objectContaining({ refusedBecause: 'mrp_not_known' }));
   });
 
   it('says plainly when head office (or the store computer) cannot be reached, or refuses — and rings nothing', async () => {
@@ -215,5 +290,41 @@ describe('the store computer asks head office to convert, under its own credenti
     expect((await port.convert({ quotationNumber: 7, billRef: 'B-1', laneId: 'l', cashierId: 'c' })).converted).toBe(false);
     expect((await port.convert({ quotationNumber: '7', billRef: '', laneId: 'l', cashierId: 'c' })).converted).toBe(false);
     expect(ho.calls).toEqual([]);
+  });
+});
+
+describe('OB-506 — head office\'s sale check explains a quoted price from its OWN quotation record', () => {
+  const CATALOGUE = new Map(CAT.products.map((p) => [p.productId, p]));
+  const sale = (unitPriceMinor: number, priceOverride: NonNullable<IncomingSale['lines'][number]['priceOverride']> | undefined): IncomingSale => ({
+    saleId: 'S-Q', receiptNumber: 'R-Q', laneId: 'lane-1', cashierId: 'u-cash', tradingDay: '2026-10-28', committedAt: '2026-10-28T10:00:00Z',
+    totalMinor: unitPriceMinor, currency: 'INR', packVersion: 5, tenders: [{ kind: 'cash', amountMinor: unitPriceMinor }],
+    lines: [{ productId: 'P-OIL', quantityMinor: 1, uom: 'ea', unitPriceMinor, lineTotalMinor: unitPriceMinor, ...(priceOverride === undefined ? {} : { priceOverride }) }],
+  });
+  const RAISED = { fromUnitPriceMinor: 180_00, approvedBy: 'quotation 48151623', activityId: 'quotation:48151623', quotationId: '48151623' };
+  const QUOTE = { quotationId: '48151623', state: 'converted', lines: [{ productId: 'P-OIL', unitPriceMinor: 190_00 }] };
+  const ctx = (over: Partial<IntakeContext> = {}): IntakeContext => ({ catalogue: CATALOGUE, currentPackVersion: 5, saleHoldingThisReceipt: undefined, alreadyBanked: false, now: '2026-10-28T12:00:00Z', ...over });
+  const prices = (r: ReturnType<typeof acceptSale>) => r.exceptions.filter((e) => e.kind === 'price_differs_from_catalogue' || e.kind === 'sold_above_mrp' || e.kind.startsWith('price_cut')).map((e) => [e.kind, e.severity]);
+
+  it('a line RAISED to a converted quotation\'s price is informational (named), not an unapproved price change', () => {
+    const r = acceptSale(sale(190_00, RAISED), ctx({ quotationsNamed: [QUOTE] }));
+    expect(prices(r)).toEqual([['price_differs_from_catalogue', 'informational']]);
+    expect(r.exceptions.find((e) => e.kind === 'price_differs_from_catalogue')!.detail).toBe('OIL was charged at 19000, the price quotation 48151623 promised (the catalogue says 18000)');
+    // Even with head office's price-cut rules looked at, a raise is no cut — no approver-limit or floor finding.
+    expect(prices(acceptSale(sale(190_00, RAISED), ctx({ quotationsNamed: [QUOTE], tillOverrideRules: { floors: new Map([['P-OIL', 150_00]]), limits: new Map() } })))).toEqual([['price_differs_from_catalogue', 'informational']]);
+  });
+
+  it('a quotation head office cannot back (another price, not converted, unknown) is MATERIAL; nobody looked → judged as before', () => {
+    expect(prices(acceptSale(sale(195_00, RAISED), ctx({ quotationsNamed: [QUOTE] })))).toEqual([['price_differs_from_catalogue', 'material']]);
+    expect(prices(acceptSale(sale(190_00, RAISED), ctx({ quotationsNamed: [{ ...QUOTE, state: 'issued' }] })))).toEqual([['price_differs_from_catalogue', 'material']]);
+    expect(prices(acceptSale(sale(190_00, RAISED), ctx({ quotationsNamed: [] })))).toEqual([['price_differs_from_catalogue', 'material']]);
+    expect(prices(acceptSale(sale(190_00, RAISED), ctx()))).toEqual([['price_differs_from_catalogue', 'material']]);
+    // A till that names the quotation only in its evidence id (no quotationId) is read the same way.
+    const { quotationId: _q, ...older } = RAISED; void _q;
+    expect(prices(acceptSale(sale(190_00, older), ctx({ quotationsNamed: [QUOTE] })))).toEqual([['price_differs_from_catalogue', 'informational']]);
+  });
+
+  it('a quotation never excuses a price above the MRP — still CRITICAL', () => {
+    const r = acceptSale(sale(210_00, RAISED), ctx({ quotationsNamed: [{ ...QUOTE, lines: [{ productId: 'P-OIL', unitPriceMinor: 210_00 }] }] }));
+    expect(prices(r)).toEqual([['sold_above_mrp', 'critical']]);
   });
 });

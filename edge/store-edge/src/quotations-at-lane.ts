@@ -5,7 +5,9 @@
 // its own store credential (`POST /v1/pos/quotations/:id/convert` — the existing convert flow, `pos.quotation.convert`) for
 // the bill the cashier is ringing. Head office converts the quotation ONCE: an expired or withdrawn one is refused, a
 // second bill is told which bill already has it, and the same bill asking again (its first answer lost) gets the lines
-// back. The answer is the quoted lines; the till rings them through its own pack.
+// back. The answer is the quoted lines, each price exactly as head office holds it; the till rings them through its own
+// pack at the quoted price — lowered or raised (owner, 28 Oct 2026) — and refuses a line quoted above the MRP its pack
+// carries (Legal Metrology). This box judges no price: it relays.
 //
 // The quotation and its convert rule are head office's alone — this box holds no copy of any promise, so with head office
 // out of reach the box says so in the cashier's words and NOTHING is rung (never a guessed price, never a faked success).
