@@ -29,9 +29,11 @@
 //   • OB-532 — a line on a product whose floor head office cannot read (never received at a cost) needs the OWNER's approval
 //     (kind `quotation_floor_not_known`, the owner's alone, and a decider who holds the owner role at the quotation's store),
 //     like a till price cut on such a product (OB-520); the person quoting can never approve their own.
+// Follow-up (OB-506): a quotation is CONVERTED only at the store it was made for (`quotation_for_another_store`, 403) — another
+//   store's computer or till cannot ring it up, as another store's computer cannot free it (OB-523).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, assertBranchInScope } from '../../kernel/src/index';
+import { apiError, assertBranchInScope, branchInScope } from '../../kernel/src/index';
 import {
   issueQuotation, convertQuotation, withdrawQuotation, quotationsNeedingFollowUp, freeQuotation,
   type Quotation, type QuotationLine, type QuotationApproval, type QuotationRelease,
@@ -199,6 +201,17 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
         const quotation = await find(ctx.tenantId, quotationId);
         if (quotation === undefined) {
           throw apiError(404, { code: 'unknown_quotation', whatHappened: `There is no quotation '${quotationId}'.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the id against GET /v1/pos/quotations.' });
+        }
+        // A quotation is rung up only at the store it was made for: its floor and its approval were judged there (OB-525 ·
+        // OB-532). The quotation's store as head office holds it — never the request's — must be in the caller's scope, and a
+        // caller acting at another store is refused too (the free route scopes the same way). Nothing is converted.
+        if (!branchInScope(ctx, quotation.storeId) || (ctx.branchId !== null && ctx.branchId !== quotation.storeId)) {
+          throw apiError(403, {
+            code: 'quotation_for_another_store',
+            whatHappened: `Quotation '${quotationId}' was made for another store, so it cannot be rung up here.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was rung up. Ring it up at the store it was made for, or ask the office to quote again for this store.',
+          });
         }
         const quantities = isObj(b['quantities']) && Object.values(b['quantities']).every(isInt) ? (b['quantities'] as Record<string, number>) : undefined;
         const result = convertQuotation({ quotation, saleId: b['saleId'] as string, at: isStr(b['at']) ? (b['at'] as string) : deps.now(), ...(quantities !== undefined ? { quantities } : {}) });

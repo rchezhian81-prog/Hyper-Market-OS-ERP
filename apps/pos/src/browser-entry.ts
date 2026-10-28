@@ -2168,6 +2168,11 @@ export function bootPos(config?: {
   const ringQuotationAtTill = quotationAtTill({
     port: config?.quotationsPort ?? laneQuotations({ base: () => laneBase(config?.lanePort ?? DEFAULT_LANE_PORT), headers: operatorHeaders, frontRefused: FRONT_REFUSED }),
     barcodeOf: (productId) => barcodeOfProduct.get(productId),
+    // Nothing of the quotation could be rung → freed again at once, through the cancelled-bill release on the box (OB-523).
+    release: {
+      post: (body) => sendTillActivity(body, 'This till cannot reach its store computer, so the quotation could not be freed. It stays on this bill.'),
+      newActivityId: () => `QF-${newRequestKey().slice(3)}`,
+    },
     ops: {
       signedIn: () => session.operator() !== undefined,
       basketInProgress: () => session.currentState() !== 'committed' && session.basketToHold().lines.length > 0,
@@ -2195,7 +2200,8 @@ export function bootPos(config?: {
   const quotationsOnBill = (): readonly string[] => (onBill.billRef === session.billRef() ? [...onBill.ids] : []);
   const ringQuotationRemembered = async (quotationNumber: string): Promise<QuotationAtTill> => {
     const out = await ringQuotationAtTill(quotationNumber);
-    if (out.ok && out.quotationId !== undefined) {
+    // A quotation freed because nothing could be rung is not on this bill any more (a later cancel must not free it again).
+    if (out.ok && out.quotationId !== undefined && out.quotationFreed !== true) {
       const ref = session.billRef();
       if (onBill.billRef !== ref) { onBill.billRef = ref; onBill.ids = []; onBill.saleOf = {}; }
       if (!onBill.ids.includes(out.quotationId)) { onBill.ids.push(out.quotationId); onBill.saleOf[out.quotationId] = ref; }
