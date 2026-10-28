@@ -282,6 +282,9 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // bill it is on), recording who cancelled it and why. `quotationId` is a plain top-level payload field; a release head
   // office cannot accept (another bill has it, an unknown number) is 4xx → dead-lettered here, visible for a person.
   QuotationFreedAtTill: '/v1/pos/quotations/:quotationId/free/synced',
+  // R9-B · OB-537: the build a queue till's basket was made on (the basket itself stays on the store computer) — head office
+  // judges it against its own version policy and keeps a finding when it is barred. `basketId` is a plain payload field.
+  QueueBasketBuildReported: '/v1/platform/handheld-work/queue-baskets/:basketId/build/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

@@ -4,7 +4,7 @@
 // server's key, pinned to the issuer, our audience and the one shop — and refuses a revoked person (a leaver, "sign me out
 // everywhere") with 401, as head office's revocation list does. It records every call with WHOSE token it carried (or that
 // it carried the store computer's machine credential, or nothing), so a test can prove each page's call went as the
-// person. It answers the Month-end page's first read, and the company report's two; anything else is a plain 404.
+// person. It answers the Month-end page's first read, the company report's two, and the Rota's two (R9-B); anything else is a plain 404.
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { KeyObject } from 'node:crypto';
@@ -29,6 +29,9 @@ export interface StandInHeadOffice {
 
 export async function startStandInHeadOffice(input: {
   readonly issuer: string; readonly publicKey: KeyObject; readonly tenantId: string; readonly machineToken?: string; readonly audience?: string;
+  /** R9-B · OB-539: what the roster reads answer (default: an empty roster). */
+  readonly roster?: () => unknown;
+  readonly rosterGaps?: () => readonly unknown[];
 }): Promise<StandInHeadOffice> {
   const calls: HeadOfficeCall[] = [];
   const revoked = new Set<string>();
@@ -68,6 +71,9 @@ export async function startStandInHeadOffice(input: {
         json(res, 200, { measures: { grossMinor: 123_400 }, freshness: { state: 'fresh' }, missingBranches: [], withheldByScope: [], reconciles: true, contributors: [{ branchId: 'B-TEST', measures: { grossMinor: 123_400, netMinor: 111_000 }, lastRefreshAt: new Date().toISOString() }] });
         return;
       }
+      // R9-B · OB-539: the manager's Rota reads the roster and its gaps.
+      if (req.method === 'GET' && path === '/v1/hr/workforce/roster') { json(res, 200, input.roster?.() ?? { employees: [], shifts: [], assignments: [] }); return; }
+      if (req.method === 'GET' && path === '/v1/hr/workforce/roster-gaps') { json(res, 200, { gaps: input.rosterGaps?.() ?? [] }); return; }
       if (req.method === 'POST' && path === '/v1/echo') { json(res, 200, { youAre: as, idempotencyKey: req.headers['idempotency-key'] ?? null, got: Buffer.concat(parts).toString('utf8') }); return; }
       json(res, 404, { error: { code: 'not_found', whatHappened: 'No such route at the stand-in head office.' } });
     });

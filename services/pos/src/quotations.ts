@@ -25,6 +25,10 @@
 //   • OB-523 — a bill that rang a quotation up and was then CANCELLED at the till frees the quotation again: the store
 //     computer relays the cancellation (`POST …/:quotationId/free/synced`, `pos.quotation.free` — the box's own narrow word)
 //     and the release is appended as a compensating fact with who cancelled the bill and why. A later bill may ring it up.
+// Round 9 (owner, 28 Oct 2026):
+//   • OB-532 — a line on a product whose floor head office cannot read (never received at a cost) needs the OWNER's approval
+//     (kind `quotation_floor_not_known`, the owner's alone, and a decider who holds the owner role at the quotation's store),
+//     like a till price cut on such a product (OB-520); the person quoting can never approve their own.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, assertBranchInScope } from '../../kernel/src/index';
@@ -52,6 +56,11 @@ export interface QuotationsDeps {
    * store's margin floor) — `notKnown` for a product never received at a cost. Absent on a bare stub (no floor read).
    */
   readonly floorsAt?: (tenantId: string, storeId: string, productIds: readonly string[]) => Promise<{ readonly floors: Readonly<Record<string, number>>; readonly notKnown: readonly string[] }>;
+  /**
+   * OB-532: the people who hold the OWNER role at a store (head office's own grants) — the only ones whose approval lets a
+   * product with no known floor be quoted. Absent on a bare stub: then nobody counts as the owner (such a quote is refused).
+   */
+  readonly ownersAt?: (tenantId: string, storeId: string) => Promise<readonly string[]>;
   /**
    * OB-523: append a quotation freed from a cancelled bill — its own fact, keyed on the release, so a re-send collapses.
    * Absent → `record` is used.
@@ -124,21 +133,31 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
           throw apiError(409, { code: 'quotation_already_exists', whatHappened: `A quotation '${quotationId}' already exists.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a new quotation id, or convert/withdraw the existing one.' });
         }
 
+        // OB-525: each product's floor at THIS quotation's store, read here — before the approval is judged, because the kind
+        // of approval needed depends on it (OB-532).
+        const floors = deps.floorsAt === undefined ? undefined
+          : await deps.floorsAt(ctx.tenantId, b['storeId'] as string, [...new Set(lines.map((l) => l.productId))]);
+        // OB-532: a line on a product whose floor head office cannot read needs the OWNER's approval (kind
+        // `quotation_floor_not_known`, the owner's alone); otherwise a below-floor line needs a second person's (kind
+        // `quotation_below_floor`).
+        const notKnownHere = floors === undefined ? false : lines.some((l) => floors.notKnown.includes(l.productId));
+        const kind = notKnownHere ? 'quotation_floor_not_known' : 'quotation_below_floor';
         // The second person (ADR-0024 · §28 · M05-FR-02): a below-floor quote is approved by someone holding the pricing-
         // approval authority (`price.change.approve`), in their own session, for exactly this quotation (kind
         // `quotation_below_floor`). Before, any name passed — no authority was checked at all. A typed one is refused.
         const opened = await approvalNamedIn(deps.approvals, {
           tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approval.decidedBy',
           typedValue: isObj(b['approval']) ? (b['approval'] as Record<string, unknown>)['decidedBy'] : undefined,
-          kind: 'quotation_below_floor', subjectRef: quotationId, details: actionDetails(ctx.body, { quotationId }), valueMinor: null,
+          kind, subjectRef: quotationId, details: actionDetails(ctx.body, { quotationId }), valueMinor: null,
           maker: ctx.userId, usedBy: `quotation:${quotationId}`, now: deps.now(),
         });
+        // OB-532: the owner's approval counts as the owner's only when its decider holds the OWNER role at this store (the
+        // till's OB-520 rule) — read here, never taken from the request.
+        const byOwner = opened !== undefined && kind === 'quotation_floor_not_known' && deps.ownersAt !== undefined
+          && (await deps.ownersAt(ctx.tenantId, b['storeId'] as string)).includes(opened.decision.decidedBy);
         const approval: QuotationApproval | undefined = opened === undefined ? undefined
-          : { subjectRef: quotationId, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason };
+          : { subjectRef: quotationId, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason, ...(byOwner ? { byOwner: true } : {}) };
         const issuedAt = isStr(b['issuedAt']) ? (b['issuedAt'] as string) : deps.now();
-        // OB-525: each product's floor at THIS quotation's store, read here.
-        const floors = deps.floorsAt === undefined ? undefined
-          : await deps.floorsAt(ctx.tenantId, b['storeId'] as string, [...new Set(lines.map((l) => l.productId))]);
         const result = issueQuotation({
           quotationId, tenantId: ctx.tenantId, storeId: b['storeId'] as string, customerRef: b['customerRef'] as string,
           currency: b['currency'] as string, lines, issuedBy: ctx.userId, issuedAt, validUntil: b['validUntil'] as string,
@@ -149,7 +168,9 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
         if (!result.issued || result.quotation === undefined) {
           throw apiError(422, { code: `quotation_${result.outcome}`, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: result.outcome === 'below_floor_unapproved'
             ? 'Nothing was quoted. Ask for approval (POST /v1/approvals/requests, kind quotation_below_floor, with exactly this quotation); once someone who may approve prices approves it, send the approvalId.'
-            : 'Nothing was quoted. Address the reason and issue again.' });
+            : result.outcome === 'floor_not_known_unapproved'
+              ? 'Nothing was quoted. Ask the OWNER for approval (POST /v1/approvals/requests, kind quotation_floor_not_known, with exactly this quotation); once the owner approves it, send the approvalId (OB-532).'
+              : 'Nothing was quoted. Address the reason and issue again.' });
         }
         // Every rule passed: the approval is spent — once — and only then is the quotation recorded.
         await opened?.spend();

@@ -17,6 +17,7 @@
 
 import { lineIsWeighed } from '../../../packages/restricted-sales/src/till-gate';
 import { QUEUE_CODE, type QueueBasketLine } from '../../../packages/suspended-sales/src/queue-basket';
+import { APP_BUILD_VERSION } from '../../../packages/platform-admin/src/client-version';
 
 /** The parts of the till's session (`bootPos`) the queue till uses. */
 export interface QueueTill {
@@ -30,7 +31,8 @@ export interface QueueTill {
 
 /** The store computer's queue-basket door (`/queue-pos/handoff`), injectable for tests. */
 export interface QueueBasketPorts {
-  handOver(body: { readonly basketId: string; readonly lines: readonly QueueBasketLine[]; readonly handheldTotalMinor: number }): Promise<Record<string, unknown>>;
+  /** `appVersion` — Round 9 · OB-537: the build this queue till runs, carried on the basket it hands over. */
+  handOver(body: { readonly basketId: string; readonly lines: readonly QueueBasketLine[]; readonly handheldTotalMinor: number; readonly appVersion?: string }): Promise<Record<string, unknown>>;
   waiting(): Promise<Record<string, unknown>>;
   giveUp(body: { readonly code: string; readonly reason: string }): Promise<Record<string, unknown>>;
 }
@@ -76,7 +78,9 @@ export interface QueueSession<T extends QueueTill = QueueTill> {
   newCustomer(): void;
 }
 
-export function createQueueSession<T extends QueueTill>(till: T, ports: QueueBasketPorts, options: { readonly payments: boolean }): QueueSession<T> {
+export function createQueueSession<T extends QueueTill>(till: T, ports: QueueBasketPorts, options: { readonly payments: boolean; readonly appVersion?: string }): QueueSession<T> {
+  // OB-537: the build that made each basket rides on its hand-over (the store computer and head office flag a barred one).
+  const appVersion = options.appVersion ?? APP_BUILD_VERSION;
   const scannedWith = new Map<string, string>();
 
   const handOverLines: QueueSession<T>['handOverLines'] = () => {
@@ -112,7 +116,7 @@ export function createQueueSession<T extends QueueTill>(till: T, ports: QueueBas
       if (read.lines.length === 0) return { ok: false, refusedBecause: 'empty_basket', laneMessage: 'There is nothing in the basket to hand over.', laneMessageTa: 'ஒப்படைக்க கூடையில் எதுவும் இல்லை.' };
       let r: Record<string, unknown>;
       try {
-        r = await ports.handOver({ basketId: till.currentBillRef(), lines: read.lines, handheldTotalMinor: till.payableMinor() });
+        r = await ports.handOver({ basketId: till.currentBillRef(), lines: read.lines, handheldTotalMinor: till.payableMinor(), appVersion });
       } catch {
         return { ok: false, refusedBecause: 'box_unreachable', laneMessage: UNREACHABLE.en, laneMessageTa: UNREACHABLE.ta };
       }

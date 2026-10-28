@@ -1585,6 +1585,8 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
+        // R9-A · OB-533: a lowered line (a quotation's price, a manager's cut) is parked with its price evidence.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId } }),
       })),
       ageAnswers: this.ageAnswerLog.map((a) => ({ minimumAge: a.minimumAge, outcome: a.outcome, by: a.by, at: a.at, ...(a.productId === undefined ? {} : { productId: a.productId }) })),
     };
@@ -1614,6 +1616,8 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
+        // R9-A · OB-533: a lowered line comes back with its price evidence — never a lower price without its reason.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId } }),
         // The pack's flags come back with the line (B14 · B19), so the commit judges a recalled line like a scanned one.
         ...(this.config.regulatedFlagsOf?.(l.productId) === undefined ? {} : { regulatedFlags: this.config.regulatedFlagsOf(l.productId) }),
       }));

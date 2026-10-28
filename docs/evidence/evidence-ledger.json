@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1906,
+  "testFiles": 1914,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2043,7 +2043,7 @@
         "unit": 12,
         "integration": 27,
         "realDb": 12,
-        "browser": 9,
+        "browser": 10,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -2113,6 +2113,7 @@
           "tests/e2e/r7d-staff-see-their-shift-and-clock-in-with-the-line-down.e2e.ts",
           "tests/e2e/r8c-a-cook-is-allowed-once-the-certificate-is-recorded-and-verified.e2e.ts",
           "tests/e2e/r8c-the-rota-shows-the-store-computers-copy-with-the-line-down.e2e.ts",
+          "tests/e2e/r9b-the-rota-shows-the-store-computers-copy-when-head-office-refuses-the-sign-in.e2e.ts",
           "tests/e2e/rostering-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts"

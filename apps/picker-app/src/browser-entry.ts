@@ -21,7 +21,7 @@ import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../pack
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { PickSession, type PickLineInput } from './pick-session';
-import { openNewWorkGate, bindNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
+import { openNewWorkGate, bindNewWorkGate, APP_BUILD_VERSION, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A) · OB-537 (R9)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -140,7 +140,8 @@ if (browserWindow !== undefined) {
     ...(storage === undefined ? {} : { storage }),
     ...(perf === undefined ? {} : { perfNow: () => perf.now() }),
   });
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.pickerStorageProblem = why; }, stamping?.stamp);
+  // OB-537 (Round 9): every record this handheld queues carries the app build that made it.
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.pickerStorageProblem = why; }, stamping?.stamp, APP_BUILD_VERSION);
   browserWindow.pickerOutbox = outbox;
   const session = bootPicker(browserWindow.pickerData, outbox);
   if (session !== null) {

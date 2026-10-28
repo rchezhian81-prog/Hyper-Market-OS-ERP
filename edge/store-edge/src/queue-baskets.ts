@@ -19,6 +19,7 @@ import {
   handOverBasket, recallQueueBasket, giveUpQueueBasket, waitingFrom, QUEUE_BASKET_WORDS,
   type QueueBasket, type QueueBasketLine,
 } from '../../../packages/suspended-sales/src/queue-basket';
+import { readReportedBuild, type HandheldBuild } from '../../../packages/platform-admin/src/handheld-build';
 
 export type QueueHandOverAnswer =
   | { readonly handedOver: true; readonly code: string; readonly basketId: string; readonly lineCount: number; readonly laneMessage: string; readonly laneMessageTa: string }
@@ -52,7 +53,11 @@ export class QueueBaskets {
 
   private constructor(
     private readonly log: OpenFileLog,
-    private readonly deps: { readonly now: () => string; readonly codes: () => readonly string[] },
+    private readonly deps: {
+      readonly now: () => string; readonly codes: () => readonly string[];
+      readonly buildOf?: (appVersion: string | null) => HandheldBuild;
+      readonly onHandedOver?: (basket: QueueBasket) => Promise<void>;
+    },
     restored: readonly QueueBasket[],
     unreadable: number,
   ) {
@@ -67,6 +72,13 @@ export class QueueBaskets {
     readonly now?: () => string;
     /** The codes to try for a new hand-over (tests pass a fixed list). Default: drawn at random. */
     readonly codes?: () => readonly string[];
+    /**
+     * Round 9 · OB-537: what this box makes of the build that made a basket (its signed pack's version policy) — kept on the
+     * basket; never a reason to refuse it. Absent → the basket keeps no build.
+     */
+    readonly buildOf?: (appVersion: string | null) => HandheldBuild;
+    /** OB-537: told once per NEW hand-over, after it is on the disk (the box reports its build to head office). */
+    readonly onHandedOver?: (basket: QueueBasket) => Promise<void>;
   }): Promise<QueueBaskets> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'queue-baskets.log' });
     const restored: QueueBasket[] = [];
@@ -79,7 +91,10 @@ export class QueueBaskets {
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
-    return new QueueBaskets(log, { now: input.now ?? (() => new Date().toISOString()), codes: input.codes ?? drawCodes }, restored, unreadable);
+    return new QueueBaskets(log, {
+      now: input.now ?? (() => new Date().toISOString()), codes: input.codes ?? drawCodes,
+      ...(input.buildOf === undefined ? {} : { buildOf: input.buildOf }), ...(input.onHandedOver === undefined ? {} : { onHandedOver: input.onHandedOver }),
+    }, restored, unreadable);
   }
 
   private serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -99,9 +114,17 @@ export class QueueBaskets {
   }
 
   /** The handheld hands a basket over: on the disk before it hears the code. A re-sent hand-over is the same one. */
-  handOver(input: { readonly handheldLane: string; readonly by: string; readonly basketId: unknown; readonly lines: unknown; readonly handheldTotalMinor: unknown }): Promise<QueueHandOverAnswer> {
+  handOver(input: { readonly handheldLane: string; readonly by: string; readonly basketId: unknown; readonly lines: unknown; readonly handheldTotalMinor: unknown; readonly appVersion?: unknown }): Promise<QueueHandOverAnswer> {
     return this.serial(async () => {
-      const out = handOverBasket(this.all(), { ...input, handedOverBy: input.by, at: this.deps.now(), candidates: this.deps.codes() });
+      // OB-537: the build the queue till says made the basket. Not a build number → the hand-over is refused as unreadable.
+      const reported = readReportedBuild(input.appVersion);
+      if (!reported.ok) {
+        const w = words('basket_not_readable');
+        return { handedOver: false, refusedBecause: 'basket_not_readable', laneMessage: w.en, laneMessageTa: w.ta };
+      }
+      const build = this.deps.buildOf?.(reported.appVersion ?? null);
+      const out = handOverBasket(this.all(), {
+        basketId: input.basketId, handheldLane: input.handheldLane, lines: input.lines, handheldTotalMinor: input.handheldTotalMinor, handedOverBy: input.by, at: this.deps.now(), candidates: this.deps.codes(), ...(build === undefined ? {} : { handheldBuild: build }) });
       if (!out.handedOver) {
         const w = words(out.refusedBecause);
         return { handedOver: false, refusedBecause: out.refusedBecause, laneMessage: w.en, laneMessageTa: w.ta };
@@ -114,6 +137,9 @@ export class QueueBaskets {
             laneMessageTa: 'கடை கணினியால் கூடையைச் சேமிக்க முடியவில்லை; அது இந்தக் கருவியிலேயே உள்ளது — அழிக்க வேண்டாம்.',
           };
         }
+        // OB-537: the basket (with its build) is on the disk; its build report to head office is queued after — a failure
+        // there is said by the hook, never a reason to take the basket back (it is already the customer's code).
+        if (this.deps.onHandedOver !== undefined) await this.deps.onHandedOver(out.basket);
       }
       const b = out.basket;
       return {

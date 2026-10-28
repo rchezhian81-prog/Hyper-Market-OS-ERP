@@ -32,6 +32,11 @@ async function cast(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');                    // pos.quotation.write + read
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // pos.quotation.write + read
   await h.provisionRole(A, 'u-cash', 'cashier');      // neither
+  // R9-A · OB-532: a product never received at a cost needs the OWNER's approval to be quoted — so p1 has come in at s1 at
+  // ₹95.00 a unit (an opening-stock receipt before the cutover GO), and head office knows its floor.
+  const booked = await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/opening-q-cast', userId: 'u-owner', tenantId: A, idempotencyKey: 'opening-q-cast',
+    body: { warehouseId: 's1', receivedOnDate: '2027-01-02', currency: 'INR', lines: [{ lineId: 'L1', productId: 'p1', orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: { minor: 9500, currency: 'INR' }, condition: 'good' }] } });
+  if (booked.status !== 201) throw new Error(JSON.stringify(booked.body));
   return h;
 }
 

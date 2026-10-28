@@ -107,7 +107,7 @@ export type CopyKey =
   | 'askedByLabel' | 'whyLabel' | 'whenLabel' | 'amountLabel' | 'detailsLabel' | 'aboutLabel'
   | 'reasonLabel' | 'reasonPlaceholder' | 'approveBtn' | 'rejectBtn'
   | 'kindDataImport' | 'kindDataImportRollback' | 'kindCategoryDefine' | 'kindSupplierBank'
-  | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor'
+  | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor' | 'kindQuotationFloorNotKnown'
   | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
@@ -150,6 +150,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDataImport: 'Apply a bulk import', kindDataImportRollback: 'Undo a bulk import', kindCategoryDefine: 'Add or change a product category', kindSupplierBank: 'Change where a supplier is paid',
     kindPriceChange: 'Change a price by more than the set size, or below cost or the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
     kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
+    kindQuotationFloorNotKnown: 'Quote a customer a price on a product whose lowest price is not known (owner only)', // R9-A · OB-532
     kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
     kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit',
     kindStockWriteOff: 'Write off stock (a material loss)', kindStockAdjustmentUp: 'Correct stock upward',
@@ -232,6 +233,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindDataImportRollback: 'மொத்த இறக்குமதியைத் திரும்பப் பெறுதல்', kindCategoryDefine: 'பொருள் வகையைச் சேர்த்தல் அல்லது மாற்றுதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
     kindPriceChange: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலையை மாற்றுதல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
     kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
+    kindQuotationFloorNotKnown: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு வாடிக்கையாளருக்கு விலை மேற்கோள் (உரிமையாளர் மட்டும்)', // R9-A · OB-532
     kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
     kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்',
     kindStockWriteOff: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)', kindStockAdjustmentUp: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்',
@@ -315,6 +317,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   price_list_entry: 'kindPriceListEntry',
   promotion_launch: 'kindPromotionLaunch',
   quotation_below_floor: 'kindQuotationBelowFloor',
+  quotation_floor_not_known: 'kindQuotationFloorNotKnown', // R9-A · OB-532
   period_close: 'kindPeriodClose',
   period_reopen: 'kindPeriodReopen',
   concession_contract: 'kindConcessionContract',

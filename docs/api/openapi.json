@@ -80137,6 +80137,134 @@
         }
       }
     },
+    "/v1/platform/handheld-work/queue-baskets/{basketId}/build/synced": {
+      "post": {
+        "operationId": "postPlatformHandheldWorkQueueBasketsByBasketIdBuildSynced",
+        "tags": [
+          "API-10 Reporting"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.handheldbuild.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "basketId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPlatformHandheldWorkQueueBasketsByBasketIdBuildSyncedRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPlatformHandheldWorkQueueBasketsByBasketIdBuildSyncedReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.handheldbuild.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/platform/handheld-work/version-exceptions": {
+      "get": {
+        "operationId": "getPlatformHandheldWorkVersionExceptions",
+        "tags": [
+          "API-10 Reporting"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.health.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPlatformHandheldWorkVersionExceptionsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.health.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/platform/health": {
       "get": {
         "operationId": "getPlatformHealth",
@@ -145124,6 +145252,38 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/platform/src/index.ts"
+      },
+      "GetPlatformHandheldWorkVersionExceptionsReply": {
+        "type": "object",
+        "required": [
+          "material",
+          "informational",
+          "informationalExceptions",
+          "asAt"
+        ],
+        "properties": {
+          "material": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandheldBuildException"
+            }
+          },
+          "informational": {
+            "type": "number"
+          },
+          "informationalExceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandheldBuildException"
+            }
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/r9b-handheld-build-adapters.ts"
       },
       "GetPlatformHealthReply": {
         "$ref": "#/components/schemas/Health",
@@ -219360,6 +219520,120 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/platform/src/governed-config.ts"
       },
+      "PostPlatformHandheldWorkQueueBasketsByBasketIdBuildSyncedReply": {
+        "type": "object",
+        "required": [
+          "basketId",
+          "flagged"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "informational",
+              "material"
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "no_policy",
+              "no_version_reported",
+              "not_comparable",
+              "ok",
+              "upgrade_available",
+              "upgrade_required",
+              "version_killed"
+            ]
+          },
+          "basketId": {
+            "type": "string"
+          },
+          "flagged": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/r9b-handheld-build-adapters.ts"
+      },
+      "PostPlatformHandheldWorkQueueBasketsByBasketIdBuildSyncedRequest": {
+        "type": "object",
+        "required": [
+          "handedOverAt",
+          "handedOverBy",
+          "handheldLane",
+          "reportedBuild"
+        ],
+        "properties": {
+          "basketId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "handedOverAt": {
+            "type": "string"
+          },
+          "handedOverBy": {
+            "type": "string"
+          },
+          "handheldLane": {
+            "type": "string"
+          },
+          "reportedBuild": {
+            "type": "object",
+            "required": [
+              "client"
+            ],
+            "properties": {
+              "appVersion": {
+                "type": "string"
+              },
+              "client": {
+                "type": "string",
+                "enum": [
+                  "driver",
+                  "picker",
+                  "queue_till",
+                  "warehouse"
+                ]
+              },
+              "storeComputerVersionCheck": {
+                "type": "object",
+                "properties": {
+                  "minimumSupportedVersion": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "reported": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "verdict": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/r9b-handheld-build-adapters.ts"
+      },
       "PostPlatformIncidentsByIncidentIdActionsByActionIdDoneReply": {
         "anyOf": [
           {
@@ -223426,6 +223700,21 @@
                       "type": "string"
                     },
                     "confirmedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "priceOverride": {
+                  "type": "object",
+                  "properties": {
+                    "fromUnitMinor": {
+                      "type": "number"
+                    },
+                    "approvedBy": {
+                      "type": "string"
+                    },
+                    "activityId": {
                       "type": "string"
                     }
                   },
@@ -272260,6 +272549,120 @@
             "type": "string"
           },
           "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "HandheldBuildException": {
+        "type": "object",
+        "required": [
+          "exceptionId",
+          "kind",
+          "route",
+          "recordRef",
+          "store",
+          "relayedBy",
+          "at",
+          "severity",
+          "verdict",
+          "client",
+          "appVersion",
+          "markedByStoreComputer",
+          "detail",
+          "ownerAction"
+        ],
+        "properties": {
+          "exceptionId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "const": "handheld_work_on_an_unsupported_app_version"
+          },
+          "route": {
+            "type": "string"
+          },
+          "recordRef": {
+            "type": "string"
+          },
+          "store": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "relayedBy": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "informational",
+              "material"
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "no_policy",
+              "no_version_reported",
+              "not_comparable",
+              "ok",
+              "upgrade_available",
+              "upgrade_required",
+              "version_killed"
+            ]
+          },
+          "client": {
+            "type": "string",
+            "enum": [
+              "driver",
+              "picker",
+              "queue_till",
+              "warehouse"
+            ]
+          },
+          "appVersion": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "markedByStoreComputer": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "no_policy",
+                  "no_version_reported",
+                  "not_comparable",
+                  "ok",
+                  "upgrade_available",
+                  "upgrade_required",
+                  "version_killed"
+                ]
+              }
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "ownerAction": {
             "type": "string"
           }
         },

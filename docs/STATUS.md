@@ -5,6 +5,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Round 9 (28 October 2026): the owner's decisions OB-532 to OB-539 built; OB-540 to OB-543 decided
+
+**What changed**
+- **Quotations:** a quotation on a product never bought at a known cost needs the owner's approval through the maker-checker engine; the quoter never approves (OB-532). A held basket carries its quotation; giving it up frees the quotation with who and why, queued offline and sent once; recall keeps it (OB-533).
+- **Receiving:** a "Match the bill" button on the goods-receipt screen, refused for the person who received the goods, English and Tamil (OB-534).
+- **Handhelds:** every warehouse, picker, driver and queue-till record carries the app version that made it; work on a withdrawn or too-old version is flagged on the store computer (offline) and listed by head office, never refused or dropped (OB-537).
+- **Rota:** when head office refuses the store PC's sign-in, the Rota shows the store computer's read-only copy and says why (OB-539).
+- Kept as built: OB-535, OB-536, OB-538, OB-541.
+
+**Tests that ran (this box, synthetic data)**
+- Unit + guardrails + integration + contract + security + migration on real PostgreSQL: 15,475 passed, 22 skipped, 3 failed under load; the 3 passed when re-run alone (19 of 19). Full browser suite: 659 of 659 passed. Type check clean.
+- Not run here: real hardware; staff UAT; live providers.
+
+**What is next**
+- Round 10 (being built): handheld version findings on the Devices page (OB-540); the accountant approves a no-floor quotation the owner makes himself (OB-542); the accountant can match bills on the goods-receipt screen (OB-543).
+
+**Blocked / needs the owner:** nothing new.
+
+---
+
 ## Rounds 7 and 8 (28 October 2026): the owner's decisions OB-500 to OB-531 built
 
 **What changed**
