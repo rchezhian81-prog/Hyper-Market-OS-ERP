@@ -21,7 +21,7 @@ import { contractsEndingWithin, contractPosition, type StoredB2BContract } from 
 import type { ConcessionContract } from '../../../packages/concession/src/index';
 import { toMaster } from '../../catalogue/src/catalogue-preview';
 import {
-  STREAM, streamName, b2bCreditAdapter, b2bDocumentsAdapter, b2bOrderingAdapter, priceListAdapter, productMasterAdapter,
+  STREAM, streamName, b2bCreditAdapter, b2bCustomerGstinAdapter, b2bDocumentsAdapter, b2bOrderingAdapter, priceListAdapter, productMasterAdapter,
   approvalRequestsAdapter, concessionAdapter, supplierPortalAdapter,
 } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
@@ -195,6 +195,7 @@ export function commercialDesksRoutes(input: { readonly store: EventStore | unde
         ...(await payloads<{ customerId: string }>(base.store, t, B2B_DESK_CUSTOMERS_STREAM, 'B2BDeskCustomerSeen')).map((x) => x.customerId),
         ...(await ordering.quoteRequests(t)).map((r) => r.customerId),
       ],
+      customerGstins: (t, c) => b2bCustomerGstinAdapter(base).gstins(t, c), // OB-416
       now: base.now,
     }),
     ...concessionDeskRoutes({ ...concessionDeskDeps(base), ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }),

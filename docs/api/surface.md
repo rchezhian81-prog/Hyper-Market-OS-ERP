@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1568 | 912 | 912 | 167 | 421 |
+| 13 | 1571 | 914 | 914 | 170 | 421 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -930,6 +930,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/b2b/accounts/:customerId` | `b2b.account.read` | `b2b` | — |
 | POST | `/v1/b2b/accounts/:customerId` | `b2b.account.manage` | `b2b` | yes |
 | POST | `/v1/b2b/accounts/:customerId/credit-check` | `b2b.credit.check` | `b2b` | yes |
+| GET | `/v1/b2b/accounts/:customerId/gstin` | `b2b.account.read` | `b2b` | — |
+| POST | `/v1/b2b/accounts/:customerId/gstin` | `b2b.account.manage` | `b2b` | yes |
+| POST | `/v1/b2b/accounts/:customerId/gstin/removal` | `b2b.account.manage` | `b2b` | yes |
 | POST | `/v1/b2b/accounts/:customerId/receivables` | `b2b.receivable.record` | `b2b` | yes |
 | GET | `/v1/b2b/collections/:customerId/ageing` | `b2b.account.read` | `b2b` | — |
 | GET | `/v1/b2b/collections/:customerId/dunning` | `b2b.account.read` | `b2b` | — |

@@ -69,13 +69,14 @@ export interface B2BDocument {
  * A8 (roadmap v2.1 · IGST Act s.10(1)(a)): where goods are DELIVERED decides the tax — within the supplier's own State the
  * line's GST is CGST + SGST (half each, the odd paisa on SGST); delivered to another State it is one IGST. `basis` says
  * where the delivery State came from: `delivery_state` when the invoice named it, `store_state_assumed` when it did not
- * (a local delivery, said on the document — never silent).
+ * (a local delivery, said on the document — never silent), and (OB-426) `customer_gstin_state` when it was left blank and
+ * taken from the State of the customer's GSTIN on record.
  */
 export interface B2BGstSplit {
   readonly placeOfSupply: 'intra_state' | 'inter_state';
   readonly supplierStateCode: string;
   readonly deliveryStateCode: string;
-  readonly basis: 'delivery_state' | 'store_state_assumed';
+  readonly basis: 'delivery_state' | 'store_state_assumed' | 'customer_gstin_state';
   readonly cgstMinor: number;
   readonly sgstMinor: number;
   readonly igstMinor: number;
@@ -83,7 +84,7 @@ export interface B2BGstSplit {
 }
 
 /** A8: split each line's GST by the place of supply. Pure; the line tax is exactly what `totals` charges. */
-export function gstSplitOf(lines: readonly B2BLine[], where: { readonly supplierStateCode: string; readonly deliveryStateCode?: string }): B2BGstSplit {
+export function gstSplitOf(lines: readonly B2BLine[], where: { readonly supplierStateCode: string; readonly deliveryStateCode?: string; readonly deliveryStateFrom?: 'customer_gstin' }): B2BGstSplit {
   const delivery = where.deliveryStateCode ?? where.supplierStateCode;
   const inter = delivery !== where.supplierStateCode;
   const out = lines.map((line) => {
@@ -95,7 +96,7 @@ export function gstSplitOf(lines: readonly B2BLine[], where: { readonly supplier
   return {
     placeOfSupply: inter ? 'inter_state' : 'intra_state',
     supplierStateCode: where.supplierStateCode, deliveryStateCode: delivery,
-    basis: where.deliveryStateCode === undefined ? 'store_state_assumed' : 'delivery_state',
+    basis: where.deliveryStateCode === undefined ? 'store_state_assumed' : where.deliveryStateFrom === 'customer_gstin' ? 'customer_gstin_state' : 'delivery_state',
     cgstMinor: out.reduce((s, l) => s + l.cgstMinor, 0), sgstMinor: out.reduce((s, l) => s + l.sgstMinor, 0), igstMinor: out.reduce((s, l) => s + l.igstMinor, 0),
     lines: out,
   };
@@ -416,7 +417,7 @@ export function issueTaxInvoice(input: {
   readonly seq: number;
   readonly at: string;
   /** A8: the supplier's own GST State and where the goods are delivered — the invoice then carries its GST split. */
-  readonly placeOfSupply?: { readonly supplierStateCode: string; readonly deliveryStateCode?: string };
+  readonly placeOfSupply?: { readonly supplierStateCode: string; readonly deliveryStateCode?: string; readonly deliveryStateFrom?: 'customer_gstin' };
 }): InvoiceResult {
   const foreign = input.challans.find((c) => c.derivedFrom !== input.order.documentId);
   if (foreign !== undefined) {

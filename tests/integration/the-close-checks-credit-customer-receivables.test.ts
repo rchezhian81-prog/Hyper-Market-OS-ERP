@@ -35,6 +35,9 @@ import { STREAM } from '../../services/api/src/adapters';
  *      month closes with "Output GST" agreeing, and a hand entry for the same invoice is recognised or refused by name;
  *   2. a customer whose only movements were keyed by hand on their receivables ledger is compared (and holds the close);
  *   3. the check is cut off at the period's end on the shop's calendar — an entry after it is not in that period's check.
+ *
+ * **OB-416** — with the customer's GSTIN on the credit account, the same 5% invoice files in GSTR-1's B2B section under that
+ * GSTIN, and the close's Output GST still agrees with the books (the tax is the same; only the section changes).
  */
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -63,7 +66,7 @@ interface Check { name: string; leftMinor: number; rightMinor: number; leftDeriv
 interface Evidence { agrees: boolean; checks: Check[]; notChecked: string[]; books: { receivablesLedgerMinor: number; receivablesBooksMinor: number } }
 interface Refusal { error: { code: string; whatHappened: string; wasItSaved: string } }
 
-async function creditCustomerInvoicedAndPartPaid(h: ApiHarness, t: string, opts: { readonly taxed?: boolean } = {}) {
+async function creditCustomerInvoicedAndPartPaid(h: ApiHarness, t: string, opts: { readonly taxed?: boolean; readonly gstin?: string } = {}) {
   await h.seedOwner(t, 'u-owner');
   await h.enableFeature(t, 'b2b');
   await h.provisionRole(t, 'u-acct', 'accountant');
@@ -85,6 +88,8 @@ async function creditCustomerInvoicedAndPartPaid(h: ApiHarness, t: string, opts:
   }
 
   await ok(setApprovedCreditLimit(h, t, 'u-owner', 'CUST1', { creditLimitMinor: 1_000_000, paymentTermsDays: 30 }, { checker: 'u-acct' }), 'terms');
+  // OB-416: a registered customer — its GSTIN on the credit account before the invoice is issued.
+  if (opts.gstin !== undefined) await ok(call('POST', '/v1/b2b/accounts/CUST1/gstin', 'u-acct', { gstin: opts.gstin, legalName: 'Synthetic Caterers', reason: 'GST certificate on file' }), 'customer GSTIN');
   await ok(call('POST', '/v1/b2b/documents/CUST1/quotations/q1', 'u-owner', { lines: await onThePriceList(harnessPriceList(h, t), 'CUST1', lines) }), 'quote');
   await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'rice-in', productId: 'p1', locationId: 'S1', kind: 'received', quantityMinor: 50, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' }), 'stock');
   await ok(call('POST', '/v1/b2b/documents/CUST1/orders/so1', 'u-owner', { fromQuotationId: 'q1', locationId: 'S1' }), 'order');
@@ -192,6 +197,22 @@ describe.each(backings)('WF-18 — the close checks the credit-customer receivab
     expect((twice.body as Refusal).error).toMatchObject({ code: 'b2b_invoice_already_on_the_return', wasItSaved: 'not_saved' });
     expect((await s.evidence()).checks.find((c) => c.name === GST_CHECK)).toMatchObject({ leftMinor: 5_000, rightMinor: 5_000 });
 
+    const closed = await s.close();
+    expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+  }, 60_000);
+
+  it('OB-416 — a registered customer\'s 5% invoice files B2B under its GSTIN, and the close\'s Output GST still agrees with the books', async () => {
+    const h = harness();
+    const gstin = '33ZZZZZ9999Z1ZF'; // synthetic, valid check character — no real business
+    const s = await creditCustomerInvoicedAndPartPaid(h, randomUUID(), { taxed: true, gstin });
+    await s.post();
+    const ev = await s.evidence();
+    expect(ev.checks.find((c) => c.name === GST_CHECK), JSON.stringify(ev)).toMatchObject({ leftMinor: 5_000, rightMinor: 5_000 });
+    expect(ev.checks.find((c) => c.name === CHECK)).toMatchObject({ leftMinor: 45_000, rightMinor: 45_000 });
+    expect(ev.agrees, JSON.stringify(ev.checks)).toBe(true);
+    const ret = (await s.call('GET', '/v1/finance/gstr1/return', 'u-acct', undefined, { from: `${PERIOD}-01`, to: `${PERIOD}-31` })).body as { documentCount: number; totalTaxMinor: number; b2b: { recipientGstin: string; invoiceNumber: string }[]; b2c: unknown[] };
+    expect(ret).toMatchObject({ documentCount: 1, totalTaxMinor: 5_000, b2c: [] });
+    expect(ret.b2b).toEqual([expect.objectContaining({ recipientGstin: gstin, invoiceNumber: s.invoiceNumber })]);
     const closed = await s.close();
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
   }, 60_000);

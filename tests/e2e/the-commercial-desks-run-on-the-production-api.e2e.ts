@@ -11,7 +11,9 @@ import { approveSupplierWith, SUPPLIER_MAKER, SUPPLIER_CHECKER } from '../suppor
  * OB-288 commercial desks — the three office screens in a real browser, on the PRODUCTION API over real PostgreSQL:
  *   • Business customers (M22-FR-01/02): the accountant proposes a contract and asks; the OWNER approves; the accountant
  *     puts it in force; the store manager quotes WITHOUT typing a price (the contract prices it), makes the order, sends the
- *     challan and the tax invoice — and a cashier opens nothing;
+ *     challan and the tax invoice — and a cashier opens nothing; (OB-416) the accountant records the customer's GSTIN, a
+ *     mistyped one refused by name, and the tax invoice is made out to it; (OB-426) its delivery State starts as the
+ *     GSTIN's State; (OB-427) the accountant removes the GSTIN with a reason and the issued invoice keeps it;
  *   • Supplier submissions (M24-FR-01/02): a claim is rejected only with a reason, leaves the queue, and the supplier's
  *     "delayed" delivery update is on the order;
  *   • Concessions (M27-FR-01/04 · OB-304): switched off it says so; switched on, a contract approved by a second person is
@@ -107,6 +109,25 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     await back.page.locator('#k-asked button[data-act="put-in-force"]').click();
     await waitText(back.page, '#k-rows li[data-contract="K-1"]', 'in force');
     await waitText(back.page, '#acct', '₹6,000.00');
+    // OB-416: the accountant records the customer's GSTIN (synthetic, valid check character). A mistyped one is refused by
+    // name; the account then shows the GSTIN its tax invoices are made out to.
+    await waitText(back.page, '#acct-gstin', 'No GSTIN on record');
+    await back.page.waitForSelector('#gstin-form:not([hidden])');
+    expect(await back.page.locator('#g-save svg').count()).toBe(1);
+    await back.page.fill('#g-gstin', '33ZZZZZ9999Z1ZA'); await back.page.fill('#g-name', 'Synthetic School Trust'); await back.page.fill('#g-reason', 'GST certificate on file (synthetic)');
+    await back.page.click('#g-save');
+    await waitText(back.page, '#g-status', 'check character does not match');
+    await back.page.fill('#g-gstin', '33ZZZZZ9999Z1ZF');
+    await back.page.click('#g-save');
+    await waitText(back.page, '#acct-gstin', '33ZZZZZ9999Z1ZF — Synthetic School Trust (Tamil Nadu, 33)');
+    // OB-427: with a GSTIN on record, it can be removed (with the reason typed above) — the button carries its icon.
+    await back.page.waitForSelector('#g-remove:not([hidden])');
+    expect(await back.page.locator('#g-remove svg').count()).toBe(1);
+    expect(await auditPage(back.page, { expectLang: 'en' }), 'the business customers page with the GSTIN form').toEqual([]);
+    await back.page.click('#lang');
+    expect(await back.page.textContent('#g-save-text')).toBe('GSTIN-ஐப் பதிவு செய்');
+    expect(await back.page.textContent('#g-remove-text')).toBe('GSTIN-ஐ நீக்கு');
+    expect(back.errors).toEqual([]);
     await back.close();
 
     // ── The store manager quotes WITHOUT a price — the contract prices it — then order, challan, tax invoice.
@@ -131,8 +152,15 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     await order.locator('input.dispatched').first().fill('4');
     await order.locator('button[data-act="challan"]').click();
     await mgr.page.locator('#d-rows li[data-kind="challan"]').waitFor({ timeout: 15_000 });
+    // OB-426: the delivery State starts as the State of the customer's GSTIN (Tamil Nadu, 33), and says so; it can be changed.
+    const orderNow = mgr.page.locator('#d-rows li[data-kind="sales_order"]');
+    expect(await orderNow.locator('input.delivery-state').inputValue()).toBe('33');
+    expect((await orderNow.textContent()) ?? '').toContain('Tamil Nadu (33) — Filled in from the State of the customer\'s GSTIN');
     await mgr.page.locator('#d-rows li[data-kind="sales_order"] button[data-act="invoice"]').click();
     await mgr.page.locator('#d-rows li[data-kind="tax_invoice"]').waitFor({ timeout: 15_000 });
+    // OB-416: the tax invoice is made out to the customer's GSTIN; the order-taker cannot change the GSTIN.
+    await waitText(mgr.page, '#d-rows li[data-kind="tax_invoice"]', 'Bill to: Synthetic School Trust · GSTIN 33ZZZZZ9999Z1ZF · Tamil Nadu (33)');
+    expect(await mgr.page.isHidden('#gstin-form')).toBe(true);
     await waitText(mgr.page, '#o-rows', 'billed ₹5,040.00');
     const desk = (await shop.cloud().request({ method: 'GET', path: '/v1/b2b/desk/SCHOOL', userId: OWNER })).body as { orders: { orderedMinor: number; deliveredMinor: number; invoicedMinor: number }[] };
     expect(desk.orders[0]).toMatchObject({ orderedMinor: 504_000, deliveredMinor: 504_000, invoicedMinor: 504_000 });
@@ -140,6 +168,22 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     expect(await mgr.page.textContent('#page-h')).toBe('வணிக வாடிக்கையாளர்கள்');
     expect(mgr.errors).toEqual([]);
     await mgr.close();
+
+    // OB-427: the accountant removes the GSTIN (registration cancelled) with a reason; the account says none is on record,
+    // and the invoice already issued still names the GSTIN it was made out to.
+    const rm = await open('u-acct', '/b2b');
+    await rm.page.waitForSelector('#customers:not([hidden])');
+    await rm.page.fill('#c-id', 'SCHOOL'); await rm.page.click('#c-open');
+    await rm.page.waitForSelector('#g-remove:not([hidden])');
+    await rm.page.click('#g-remove');
+    await waitText(rm.page, '#g-status', 'Type the reason the GSTIN is removed');
+    await rm.page.fill('#g-reason', 'GST registration cancelled (synthetic)');
+    await rm.page.click('#g-remove');
+    await waitText(rm.page, '#acct-gstin', 'No GSTIN on record');
+    expect(await rm.page.isHidden('#g-remove')).toBe(true);
+    await waitText(rm.page, '#d-rows li[data-kind="tax_invoice"]', 'GSTIN 33ZZZZZ9999Z1ZF');
+    expect(rm.errors).toEqual([]);
+    await rm.close();
 
     const cash = await open('u-cash', '/b2b', 'br-1');
     expect(await cash.page.textContent('#page-status')).toBe('Your role cannot open the business desk.');

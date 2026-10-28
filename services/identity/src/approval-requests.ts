@@ -37,7 +37,32 @@ export interface ApprovalKind {
   readonly checkerPermission: string;
   /** How long an approval may wait to be used. */
   readonly validForMinutes: number;
+  /**
+   * OB-420: the kind is decided by ONE named person, not by everyone who holds `checkerPermission` — today only
+   * `security_reviewer` (the reviewer named NOW under OB-330, judged at decision time). Only that person sees it as theirs
+   * to decide and may decide it (still also holding `checkerPermission`); with nobody named, nobody may, and the asker is
+   * told. Absent: every holder of `checkerPermission` but the maker, as before.
+   */
+  readonly decidedOnlyBy?: NamedDecider;
 }
+
+/** OB-420: a named role whose current holder alone decides a kind. */
+export type NamedDecider = 'security_reviewer';
+
+/** The person named in that role now. */
+export interface NamedPerson { readonly userId: string; readonly displayName: string; }
+
+/** What the asker reads about who decides their request (OB-420, P-08 — never a request silently waiting on nobody). */
+export type DeciderView =
+  | { readonly role: NamedDecider; readonly named: true; readonly userId: string; readonly displayName: string }
+  | { readonly role: NamedDecider; readonly named: false; readonly whatToDo: string };
+
+const NAMED_DECIDER_WORDS: Readonly<Record<NamedDecider, { readonly who: string; readonly nameFirst: string }>> = {
+  security_reviewer: {
+    who: 'the named security reviewer',
+    nameFirst: 'No security reviewer is named (OB-330), so nobody can decide this yet. The owner names one on the Risk acceptance screen; then the reviewer decides it.',
+  },
+};
 
 /** The kinds the engine knows. Each slice that moves a route onto the engine adds its kind here. */
 export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.freeze({
@@ -226,12 +251,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   },
   // OB-407 (owner, 27 Oct 2026, in writing — option B · D14-FR-05 · R8-7 · §8.2): switching ON a floor device (cameras, shelf
   // labels, RFID readers, sensors) needs, besides the owner's `flag_change`, the NAMED security reviewer's signature (OB-330 /
-  // OB-405), given in the reviewer's own session. The engine lets anyone who may read the risk register decide it; the
-  // rollout route counts it only when the decider is the reviewer named NOW, and never the person switching or the owner
-  // who approved (services/platform/src/rollout.ts).
+  // OB-405), given in the reviewer's own session. OB-420 (owner, 27 Oct 2026, in writing — option B): only the reviewer named
+  // at decision time sees it and may decide it (`decidedOnlyBy`); the rollout route still counts it only when the decider is
+  // the reviewer named NOW, and never the person switching or the owner who approved (services/platform/src/rollout.ts).
   floor_device_review: {
     kind: 'floor_device_review', label: 'Sign as the security reviewer: switch on cameras, shelf labels, RFID or sensors',
     makerPermission: 'platform.flag.write', checkerPermission: 'compliance.risk.read', validForMinutes: 24 * 60,
+    decidedOnlyBy: 'security_reviewer',
   },
   // M02-FR-02 · §28 "Department Manager — assigned departments": limiting a person's role to some departments.
   department_scope_change: {
@@ -350,6 +376,12 @@ export interface ApprovalRequestDeps {
   readonly authorityOf?: (tenantId: string, userId: string, subjectType: string) => Promise<Authority>;
   /** OB-292: the requests escalated to the owner by age — when, and after how long. Optional on a bare stub. */
   readonly escalations?: (tenantId: string) => Promise<ReadonlyMap<string, ApprovalEscalationView>>;
+  /**
+   * OB-420: the person named NOW in a role that alone decides a kind (`decidedOnlyBy`) — for `security_reviewer`, the same
+   * OB-330 register the risk acceptance and the rollout read — or undefined when nobody is named. Absent on a bare stub:
+   * then nobody is named, so such a kind is decided by nobody (never by everyone).
+   */
+  readonly namedDeciderOf?: (tenantId: string, role: NamedDecider) => Promise<NamedPerson | undefined>;
   readonly now: () => string;
 }
 
@@ -386,6 +418,15 @@ const notPermitted = (what: string): Error => apiError(403, {
 export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route[] {
   const holds = async (tenantId: string, userId: string, permission: string): Promise<boolean> =>
     ((await deps.permissionsOfUser(tenantId, userId)) ?? []).includes(permission);
+  // OB-420: who is named NOW in each role a kind needs — read once per request, at the moment of judging.
+  const namedNow = async (tenantId: string, roles: Iterable<NamedDecider>): Promise<Map<NamedDecider, NamedPerson | undefined>> => {
+    const out = new Map<NamedDecider, NamedPerson | undefined>();
+    for (const role of roles) if (!out.has(role)) out.set(role, await deps.namedDeciderOf?.(tenantId, role));
+    return out;
+  };
+  const deciderView = (role: NamedDecider, person: NamedPerson | undefined): DeciderView => person === undefined
+    ? { role, named: false, whatToDo: NAMED_DECIDER_WORDS[role].nameFirst }
+    : { role, named: true, userId: person.userId, displayName: person.displayName };
 
   return [
     {
@@ -416,7 +457,10 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
           requestedBy: ctx.userId, requestedAt: deps.now(),
         };
         await deps.recordRequest(ctx.tenantId, request);
-        return { status: 201, body: { ...request, status: 'waiting' } };
+        // OB-420: the asker is told who alone decides it — or that nobody is named yet, so it cannot be decided (P-08).
+        const role = spec.decidedOnlyBy;
+        const decider = role === undefined ? {} : { decider: deciderView(role, (await namedNow(ctx.tenantId, [role])).get(role)) };
+        return { status: 201, body: { ...request, status: 'waiting', ...decider } };
       },
     },
     {
@@ -428,16 +472,29 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
         const now = Date.parse(deps.now());
         const all = await deps.allRequests(ctx.tenantId);
         const escalated = (await deps.escalations?.(ctx.tenantId)) ?? new Map<string, ApprovalEscalationView>();
-        const view = (s: ApprovalState) => ({
-          ...s.request, status: statusOf(s, now),
-          ...(s.decision === undefined ? {} : { decidedBy: s.decision.decidedBy, decisionReason: s.decision.reason, decidedAt: s.decision.decidedAt, expiresAt: s.decision.expiresAt }),
-          ...(s.usedBy === undefined ? {} : { usedBy: s.usedBy }),
-          label: APPROVAL_KINDS[s.request.kind]?.label ?? s.request.kind,
-          // OB-292: an approval that waited past its kind's time has gone to the owner — said on the row, never silent.
-          ...(escalated.has(s.request.requestId) ? { escalation: escalated.get(s.request.requestId)! } : {}),
+        const named = await namedNow(ctx.tenantId, all.flatMap((s) => {
+          const role = APPROVAL_KINDS[s.request.kind]?.decidedOnlyBy;
+          return role === undefined ? [] : [role];
+        }));
+        const view = (s: ApprovalState) => {
+          const role = APPROVAL_KINDS[s.request.kind]?.decidedOnlyBy;
+          return {
+            ...s.request, status: statusOf(s, now),
+            ...(s.decision === undefined ? {} : { decidedBy: s.decision.decidedBy, decisionReason: s.decision.reason, decidedAt: s.decision.decidedAt, expiresAt: s.decision.expiresAt }),
+            ...(s.usedBy === undefined ? {} : { usedBy: s.usedBy }),
+            label: APPROVAL_KINDS[s.request.kind]?.label ?? s.request.kind,
+            // OB-292: an approval that waited past its kind's time has gone to the owner — said on the row, never silent.
+            ...(escalated.has(s.request.requestId) ? { escalation: escalated.get(s.request.requestId)! } : {}),
+            // OB-420: a kind one named person decides says who that is now — or that nobody is named (P-08).
+            ...(s.decision === undefined && role !== undefined ? { decider: deciderView(role, named.get(role)) } : {}),
+          };
+        };
+        const open = all.filter((s) => {
+          const spec = APPROVAL_KINDS[s.request.kind];
+          if (spec === undefined || s.decision !== undefined || s.request.requestedBy === ctx.userId || !held.includes(spec.checkerPermission)) return false;
+          // OB-420: only the person named NOW sees it as theirs to decide; with nobody named, nobody does.
+          return spec.decidedOnlyBy === undefined || named.get(spec.decidedOnlyBy)?.userId === ctx.userId;
         });
-        const open = all.filter((s) => s.decision === undefined && s.request.requestedBy !== ctx.userId
-          && held.includes(APPROVAL_KINDS[s.request.kind]?.checkerPermission ?? '\u0000'));
         // OB-290: a request above the caller's money limit is not theirs to approve — it is routed to the owner, and the
         // caller is told how many went there (never a silently shorter list, P-08).
         const mineToDecide: ApprovalState[] = []; let routedToOwner = 0;
@@ -472,6 +529,26 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
           throw apiError(404, { code: 'not_found', whatHappened: `There is no approval request ${requestId}.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the request in your inbox.' });
         }
         const spec = APPROVAL_KINDS[state.request.kind];
+        // OB-420: a kind one named person decides — judged against who is named NOW, before anything else about the caller.
+        // (The person who already decided may resend their same decision, answered below as before.)
+        if (spec?.decidedOnlyBy !== undefined && state.decision?.decidedBy !== ctx.userId) {
+          const role = spec.decidedOnlyBy;
+          const person = (await namedNow(ctx.tenantId, [role])).get(role);
+          if (person === undefined) {
+            throw apiError(422, {
+              code: 'name_the_security_reviewer_first',
+              whatHappened: `Only ${NAMED_DECIDER_WORDS[role].who} decides "${spec.label}". ${NAMED_DECIDER_WORDS[role].nameFirst}`,
+              wasItSaved: 'not_saved', nextSafeAction: 'Nothing was decided. Ask the owner to name the security reviewer.',
+            });
+          }
+          if (person.userId !== ctx.userId) {
+            throw apiError(403, {
+              code: 'only_the_named_security_reviewer_decides',
+              whatHappened: `Only ${NAMED_DECIDER_WORDS[role].who}, ${person.displayName} (${person.userId}), decides "${spec.label}" (OB-330, OB-420); ${ctx.userId} is not.`,
+              wasItSaved: 'not_saved', nextSafeAction: `Nothing was decided. ${person.displayName} decides it in their own session.`,
+            });
+          }
+        }
         if (spec === undefined || !(await holds(ctx.tenantId, ctx.userId, spec.checkerPermission))) {
           throw notPermitted(`${ctx.userId} may not approve "${spec?.label ?? state.request.kind}".`);
         }
