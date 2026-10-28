@@ -129,7 +129,7 @@ const WORDS = {
     checkingBox: 'Checking the store box…',
     boxNotAnswering: 'the store box is not answering — sales cannot be saved on this lane',
     noCloud: 'Selling offline — head office cannot be reached',
-    cloudNotSetUp: 'No head office link on this box',
+    cloudLoginRefused: 'Selling offline — this box\'s head office login needs renewing', cloudNotSetUp: 'No head office link on this box',
     cloudUnknown: 'Head office not checked yet',
     lastContact: 'last contact',
     unsentHeld: 'sale(s) are saved on this box and waiting to be sent. Nothing is lost — they go as soon as head office can be reached.',
@@ -370,7 +370,7 @@ const WORDS = {
     checkingBox: 'கடைப் பெட்டியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடைப் பெட்டி பதிலளிக்கவில்லை — இந்த வரிசையில் விற்பனைகளைச் சேமிக்க முடியாது',
     noCloud: 'ஆஃப்லைனில் விற்பனை — தலைமை அலுவலகத்தை அடைய முடியவில்லை',
-    cloudNotSetUp: 'இந்தப் பெட்டியில் தலைமை அலுவலக இணைப்பு இல்லை',
+    cloudLoginRefused: 'ஆஃப்லைனில் விற்பனை — இந்தப் பெட்டியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'இந்தப் பெட்டியில் தலைமை அலுவலக இணைப்பு இல்லை',
     cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
     lastContact: 'கடைசித் தொடர்பு',
     unsentHeld: 'விற்பனை(கள்) இந்தப் பெட்டியில் சேமிக்கப்பட்டு அனுப்பக் காத்திருக்கின்றன. எதுவும் இழக்கப்படவில்லை — தலைமை அலுவலகத்தை அடைந்தவுடன் அவை செல்லும்.',
@@ -1351,7 +1351,7 @@ function paintBadge() {
     } else {
       tone = s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded';
       dot.classList.add(tone);
-      state = s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown');
+      state = s.cloud === 'offline' ? t('noCloud') : s.cloud === 'login_refused' ? t('cloudLoginRefused') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown');
     }
   }
   // Words as well as a dot. A colour-only badge is invisible to one man in twelve, and this badge

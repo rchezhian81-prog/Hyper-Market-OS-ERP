@@ -32,7 +32,7 @@
       notConnected: 'Not connected to the store computer', checkingBox: 'Checking the store computer…',
       connected: 'Connected', boxNotAnswering: 'Store computer not answering',
       noCloud: 'Head office cannot be reached — working from the store computer',
-      cloudNotSetUp: 'No head office link on this store computer', cloudUnknown: 'Head office not checked yet',
+      cloudLoginRefused: 'This store computer\'s head office login needs renewing', cloudNotSetUp: 'No head office link on this store computer', cloudUnknown: 'Head office not checked yet',
       lastContact: 'last contact', switchLanguage: 'Switch language', otherLanguage: 'தமிழ்',
       screens: 'Screens', screensFor: 'Screens for', workspace: 'Store workspace', closeScreens: 'Close the screens list',
       newVersion: 'A newer version of this screen has arrived. Reload when you are ready.', reload: 'Reload',
@@ -47,7 +47,7 @@
       notConnected: 'கடை கணினியுடன் இணைப்பு இல்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
       connected: 'இணைப்பில்', boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை',
       noCloud: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — கடை கணினியிலிருந்து வேலை',
-      cloudNotSetUp: 'இந்தக் கடை கணினியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
+      cloudLoginRefused: 'இந்தக் கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'இந்தக் கடை கணினியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
       lastContact: 'கடைசித் தொடர்பு', switchLanguage: 'மொழியை மாற்று', otherLanguage: 'English',
       screens: 'திரைகள்', screensFor: 'இவருக்கான திரைகள்', workspace: 'கடை பணியிடம்', closeScreens: 'திரைகள் பட்டியலை மூடு',
       newVersion: 'இந்தத் திரையின் புதிய பதிப்பு வந்துள்ளது. தயாரானதும் மீண்டும் ஏற்றவும்.', reload: 'மீண்டும் ஏற்று',
@@ -129,7 +129,7 @@
     const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
     if (s.cloud === 'online') { text.textContent = `${t('connected')}${when}`; return; }
     dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
-    text.textContent = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+    text.textContent = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'login_refused' ? t('cloudLoginRefused') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
   }
 
   async function refreshBadge() {

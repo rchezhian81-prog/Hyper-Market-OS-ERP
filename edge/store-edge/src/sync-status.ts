@@ -22,7 +22,13 @@ export type CloudLink =
   /** The last pass reached head office. */
   | 'online'
   /** The last pass could not reach head office. Selling continues; the queue holds (P-01). */
-  | 'offline';
+  | 'offline'
+  /**
+   * OB-429: head office refused this box's own login, so the box has stopped contacting it (one failed sign-in at head
+   * office, never the five that would lock the shop's address). Selling continues; the queue holds until the login is
+   * renewed and the box restarted.
+   */
+  | 'login_refused';
 
 /** What one drain queue reports — the shape `SyncAgent.health()` returns. */
 export interface QueueHealth {
@@ -94,6 +100,8 @@ export function laneSyncStatus(input: {
   readonly now: string;
   /** Verifier r19 OB87-1: the bill-number witness check — an unavailable witness leads the sentence (P-08). */
   readonly billNumbering?: LaneSyncStatus['billNumbering'];
+  /** OB-429: head office's answer to this box's own login (box-login-gate.ts). Absent on a box with no cloud. */
+  readonly boxLogin?: { readonly refused: boolean; readonly refusedAt: string | null };
 }): LaneSyncStatus {
   const unsent = input.queues.reduce((n, q) => n + q.unsentCount, 0);
   const deadLettered = input.queues.reduce((n, q) => n + q.deadLetterCount, 0);
@@ -102,6 +110,7 @@ export function laneSyncStatus(input: {
 
   const cloud: CloudLink = input.configured === 'starting' ? 'starting'
     : input.configured === false ? 'not_configured'
+      : input.boxLogin?.refused === true ? 'login_refused'
       : input.lastPackStatus === 'offline' ? 'offline'
         : input.lastPackStatus !== undefined || lastSentAt !== null ? 'online'
           : 'unknown';
@@ -111,6 +120,7 @@ export function laneSyncStatus(input: {
     cloud === 'starting' ? 'The store box is still starting up.'
       : cloud === 'not_configured' ? `No head office link is set up on this box. ${held(unsent, ' and will go only when a link is set up')}`
         : cloud === 'unknown' ? `Head office has not been checked yet. ${held(unsent, ' and will go on the first pass')}`
+          : cloud === 'login_refused' ? `Head office refused this store computer's own login${input.boxLogin?.refusedAt == null ? '' : ` at ${input.boxLogin.refusedAt}`}, so it has stopped contacting head office (so the shop's sign-ins are not locked). Selling continues. ${held(unsent, ' and will go once the login is renewed')} Renew the store computer's head-office login, then restart the store computer.`
           : cloud === 'online' ? (unsent === 0 ? 'Everything has reached head office.' : `${unsent} item(s) still to send; head office answered at ${lastContactAt}.`)
             : `Head office could not be reached. ${held(unsent, ' and will go when the line is back')}${lastContactAt === null ? ' It has never been reached from this box.' : ` Last contact ${lastContactAt}.`}`
   );

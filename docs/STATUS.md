@@ -16,8 +16,15 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - Forced the person's call into the lock window (16–19 s after the box starts). Main's version: refused 429, every time. The fixed version: 200 every time, and head office refused no tokens.
 - Repeated untouched runs of both versions (counts in the pull request), plus lint and type check.
 
-**Needs an owner decision (raised, not changed)**
-- In the shop, if a store computer's own head-office login ever breaks (expired or revoked), its background calls would lock the store's address. People signing in to head office on the store PC would then be told "too many sign-in attempts", which hides the real cause. Options are in the pull request.
+**Owner decision OB-429 (28 Oct 2026): option B, built in the same pull request**
+- **The problem:** a store computer whose own head-office login broke (expired or revoked) would lock the store's address. People signing in to head office on the store PC were then told "too many sign-in attempts", which hid the real cause.
+- **What it does now:** at the first refusal of its own login, the store computer stops contacting head office. Head office sees one failed sign-in, never the five that lock the address. Selling continues and every bill stays queued, without using up its retry tries. Every screen's connection badge says the store computer's head-office login needs renewing, in English and Tamil. A restart with a renewed login starts it again (runbook: in-store install, Step 5).
+- **What does not trip it:** a permission refusal, head office's own lock, a head-office fault, or a 401 head office did not word. A person's own head-office session is never stopped by it. The lockout itself is unchanged.
+- **Tests:** a unit test for the gate and one for the badge wording. An integration test runs the real store computer against a head office using the real lockout settings: one refusal, then no calls in 8 passes, the address not locked, the sale still queued. With the gate switched off, the same test fails: 45 calls, and the address is locked.
+
+**Next**
+- Merge the pull request once its checks are green.
+- On the real store PC, after go-live, the person installing it can check the message by using an old token once.
 
 ---
 
