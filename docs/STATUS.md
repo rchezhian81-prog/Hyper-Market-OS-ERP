@@ -33,6 +33,28 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-435 and OB-439 (28 October 2026): every alert in English and Tamil; a text message in its reader's language
+
+**What changed**
+- **Alerts speak both languages (OB-435).** Every alert head office raises — the health checks, backups, the store computers' disks, queues, tills, clocks and bill numbers, recalls, GST time bars, late payslips, approvals waiting, contracts, scale stamps, concessions, B2B, CERT-In, the owner's own exception alerts — now carries its words in English and Tamil. The English is word for word what it always said. What a person typed (a recall's reason, a note) stays as they wrote it.
+- **Old alerts still read.** An alert recorded before today has English words only; it still shows, in English, and says so. Nothing old was rewritten.
+- **Each person's language (OB-439).** Every staff record now has an English/Tamil choice, English unless set. The owner, or a manager over that person's store, sets it on `POST /v1/hr/workforce/employees/<person>/language`; a cashier cannot. Each change is on the audit trail with what it was before.
+- **Text messages in the reader's language.** An alert text message (and the delivery-exception message) goes in the recipient's language — one language per message. Nobody gets a message twice: the delivery rule is unchanged.
+- **Screens follow the language button.** The Owner alerts page, the Store computers page ("Needs a person"), the Operations page and the owner app show each alert in the screen's language.
+- **Guardrail.** The build now fails if any alert sentence lacks a Tamil twin, or has a blank one (`tests/guardrails/every-alert-kind-has-a-tamil-twin.test.ts`).
+
+**Tests that ran (this box, synthetic data)**
+- Typecheck and lint clean. Guardrails: 150 files, 1,856 passed. Whole default suite: 1,756 files passed, 60 skipped; 14,380 tests passed, 580 skipped (PostgreSQL and real-identity-server legs skip here; CI runs them). Browser: the new Owner alerts Tamil test and the owner app, Store computers and old-build screens — 4 files, 9 tests passed.
+
+**What is next**
+- The owner (or a Tamil-reading staff member) reads the Tamil alert wording on the Owner alerts page and on a test text message, and marks anything that reads oddly.
+- Round 9 (owner decisions OB-532 to OB-539), as planned.
+
+**Blocked / external**
+- A live SMS provider is still an external gate: messages are prepared in the right language and recorded, not yet sent to real phones.
+
+**Needs an owner decision**
+- None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
 ## Round 9 (28 October 2026): the owner's decisions OB-532 to OB-539 built; OB-540 to OB-543 decided
 
 **What changed**

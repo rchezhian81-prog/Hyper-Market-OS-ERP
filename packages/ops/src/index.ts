@@ -8,3 +8,8 @@ export * from './operations-advisor';
 export * from './logging';
 export * from './backup';
 export * from './recovery-gate';
+// OB-435 · OB-439: every alert's words in English and Tamil (structured, rendered per language).
+export * from './alert-text';
+export * from './alert-words';
+export { durationEn, durationTa, componentTa } from './alert-words-health';
+export { rangeWordsIn, flatRanges, durationWordsIn, BOX_STAYS_ENGLISH } from './alert-words-box';

@@ -12,6 +12,7 @@
 // moves time forward instead of waiting.
 
 import type { Route } from '../../kernel/src/index';
+import type { AlertText } from '../../../packages/ops/src/alert-text';
 import { escalationDue, ESCALATING_SUBJECTS, type EscalationWaits, type EscalatingSubject } from '../../../packages/approvals/src/authority-rules';
 
 /** An approval still waiting for a decision, from wherever it waits (the engine's inbox, a proposed purchase order). */
@@ -24,6 +25,8 @@ export interface PendingApproval {
   readonly requestedBy: string;
   readonly valueMinor: number | null;
   readonly summary: string;
+  /** OB-435: a summary head office made, structured (absent: a summary a person typed — kept as written). */
+  readonly summaryText?: AlertText;
 }
 
 /** One escalation, as recorded (once per request). */
@@ -36,6 +39,7 @@ export interface ApprovalEscalation {
   readonly requestedBy: string;
   readonly valueMinor: number | null;
   readonly summary: string;
+  readonly summaryText?: AlertText;
   readonly waitMinutes: number;
   readonly waitedMinutes: number;
   readonly escalatedAt: string;

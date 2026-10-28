@@ -30,6 +30,7 @@ import {
   approvalRequestsAdapter, concessionAdapter, supplierPortalAdapter,
 } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
+import { told, alertText } from '../../../packages/ops/src/alert-words';
 import {
   b2bContractRoutes, b2bDeskRoutes, contractPricing, contractCreditGate, CONTRACT_WARN_DAYS, CONTRACT_URGENT_DAYS,
   type B2BContractsDeps,
@@ -212,7 +213,9 @@ function concessionDeskDeps(input: Base): ConcessionDeskDeps {
       return out;
     },
     depositMovements: async (tenantId, id) => concessions.depositMovements(tenantId, id),
-    raiseToOwners: (tenantId, alert, by, at) => finBridgeRaiseToOwners(store, now, tenantId, alert.alertId, `Concession ${alert.name}`, alert.detail, by, at, alert.alertId),
+    raiseToOwners: (tenantId, alert, by, at) => finBridgeRaiseToOwners(store, now, tenantId, alert.alertId, `Concession ${alert.name}`, alert.detail, by, at, alert.alertId, {
+      ...(alert.text === undefined ? {} : { text: alert.text }), componentText: alertText('concession.component', { name: alert.name }),
+    }),
     now,
   };
 }
@@ -281,8 +284,8 @@ export function commercialDesksSweep(input: Base & {
       for (const x of ending) {
         const step = x.daysLeft <= CONTRACT_URGENT_DAYS ? 'within_7_days' : 'within_30_days';
         const alertId = `b2b-contract-ending:${x.contract.customerId}:${x.contract.contractId}:${x.contract.validTo}:${step}`;
-        const detail = `${x.contract.customerId}'s contract ${x.contract.contractId} ends on ${x.contract.validTo} (${x.daysLeft} day(s) left). After that it ${x.contract.onExpiry === 'block' ? 'blocks new quotations and orders' : 'falls back to the shop\'s ordinary prices'} until a renewal is approved.`;
-        if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, alertId, `B2B contract ${x.contract.contractId}`, detail, 'system:b2b-contracts', at, alertId)) raised += 1;
+        const words = told('b2b.contract.ending', { customer: x.contract.customerId, contractId: x.contract.contractId, validTo: x.contract.validTo, days: x.daysLeft, blocks: x.contract.onExpiry === 'block' });
+        if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, alertId, `B2B contract ${x.contract.contractId}`, words.detail, 'system:b2b-contracts', at, alertId, { text: words.text, componentText: alertText('b2b.contract.component', { contractId: x.contract.contractId }) })) raised += 1;
       }
       if (input.recurring !== undefined) {
         const on = await shopClock(input.calendar).dateOf(tenantId, at);
@@ -290,8 +293,9 @@ export function commercialDesksSweep(input: Base & {
         const runs = await runRecurringOrders({ ...b2bRecurringOrdersAdapter(input), documents, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }, { tenantId, on, ranBy: RECURRING_RUNNER, oncePerDay: true });
         for (const r of runs.filter((x) => x.outcome === 'exception')) {
           const alertId = `b2b-recurring-exception:${r.scheduleId}:${r.on}`;
-          const detail = `Recurring order ${r.scheduleId} for ${r.customerId} could not be made on ${r.on}: ${r.detail ?? r.code ?? 'refused'}. Nothing was ordered for that day. Fix the stock or credit, then run the day again from the business-customers page.`;
-          if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, alertId, `B2B recurring order ${r.scheduleId}`, detail, RECURRING_RUNNER, at, alertId)) raised += 1;
+          // OB-435: the refusal's own words are kept as they were said (verbatim in both languages); the frame is translated.
+          const words = told('b2b.recurring.exception', { scheduleId: r.scheduleId, customer: r.customerId, on: r.on, why: r.detail ?? r.code ?? 'refused' });
+          if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, alertId, `B2B recurring order ${r.scheduleId}`, words.detail, RECURRING_RUNNER, at, alertId, { text: words.text, componentText: alertText('b2b.recurring.component', { scheduleId: r.scheduleId }) })) raised += 1;
         }
       }
     }

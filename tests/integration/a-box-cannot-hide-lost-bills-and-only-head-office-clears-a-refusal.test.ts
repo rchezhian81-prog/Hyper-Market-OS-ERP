@@ -48,7 +48,7 @@ const AT = new Date(Date.now() - 60_000).toISOString();
 const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15 };
 const ACK_PATH = '/v1/store-computers/bill-number-refusals/acknowledgements';
 
-interface Finding { kind: string; prefix: string; ranges?: [number, number][]; count?: number; through?: number; since: string; detail: string }
+interface Finding { kind: string; prefix: string; ranges?: [number, number][]; count?: number; through?: number; since: string; detail: string; words?: { en: string; ta: string } }
 interface Component { name: string; status: string; detail: string }
 interface Observed { observed: { boxes: { storeId: string; billNumberFindings?: Finding[] }[] }; health: { components: Component[] } }
 
@@ -308,6 +308,12 @@ async function onlyHeadOfficeAcknowledgesAndItSticks(h: ApiHarness): Promise<voi
   await claim(10_600);
   expect(await refused()).toEqual([10_600]);
   const words = (await findings(call, 'report_refused'))[0]!.detail;
+  // OB-435 · OB-439: the finding reaches the Store computers page in both languages — the English word for word, the Tamil in Tamil.
+  const twoLanguages = (await findings(call, 'report_refused'))[0]!.words!;
+  expect(twoLanguages.en).toBe(words);
+  expect(twoLanguages.ta).toMatch(/[\u0B80-\u0BFF]/);
+  expect(twoLanguages.ta).toContain(`${P} இன் கீழ் 10600 வரை`);
+  expect(twoLanguages.ta).not.toMatch(/reported giving bill numbers/);
   expect(words).toMatch(/This stays until head office has banked that many, or the owner or head office staff \(all-stores authority — a store's own manager cannot, and neither can the IT\/platform administrator\) acknowledge this count with a reason/);
   expect(words).toMatch(/The acknowledgement holds while the store computer keeps reporting this same count; a different count needs a new acknowledgement/);
 

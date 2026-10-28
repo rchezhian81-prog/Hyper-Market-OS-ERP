@@ -46,6 +46,7 @@ import {
   checkHealth, raiseAlerts, escalateUnacknowledged, type RaisedAlert, type AlertRule,
 } from '../../../packages/ops/src/index';
 import { readSignals, readThresholds, readRules } from './operational-health';
+import { alertDisplay, type AlertText, type AlertDisplay } from '../../../packages/ops/src/index';
 
 /** One append-only fact about an alert. `change` says which; the extra fields carry its detail. */
 export interface AlertLifecycleEvent {
@@ -66,6 +67,11 @@ export interface AlertLifecycleEvent {
   /** `escalated` only — who it went to, and why. */
   readonly escalatedTo?: string;
   readonly detail?: string;
+  /**
+   * OB-435: `detail`, structured — rendered in English into `detail` (word for word what it always said) and in Tamil for
+   * a Tamil reader. Absent on a fact recorded before OB-435: that one reads in English, as it was recorded.
+   */
+  readonly detailText?: AlertText;
   /** `notified` only — who was told, how (`inbox` or the message provider's name), and at which stage. */
   readonly notifiedTo?: string;
   readonly via?: string;
@@ -104,6 +110,8 @@ export interface LiveAlert {
   readonly escalatedTo?: string;
   readonly escalatedAt?: string;
   readonly escalationDetail?: string;
+  /** OB-435: the escalation's words, structured (absent: recorded before OB-435 — English only). */
+  readonly escalationText?: AlertText;
   /** Every delivery of THIS occurrence to a person (PA-12). */
   readonly deliveries: readonly AlertDelivery[];
   /** When the condition was last seen to have cleared (this occurrence), if it has. */
@@ -127,8 +135,22 @@ export interface LiveAlert {
 interface MutableAlert {
   alert: RaisedAlert; escalatesToUserId?: string; foreign?: true; revision?: number; updatedAt?: string;
   acknowledgedBy?: string; acknowledgedAt?: string;
-  escalatedTo?: string; escalatedAt?: string; escalationDetail?: string;
+  escalatedTo?: string; escalatedAt?: string; escalationDetail?: string; escalationText?: AlertText;
   deliveries: AlertDelivery[]; clearedAt?: string; occurrence: number;
+}
+
+/** OB-435: an event's words — the English `detail` and its structured `detailText` — from `told(...)`. */
+export function eventWords(w: { readonly detail: string; readonly text: AlertText }): { readonly detail: string; readonly detailText: AlertText } {
+  return { detail: w.detail, detailText: w.text };
+}
+
+/**
+ * OB-435 · OB-439: an alert as a screen reads it — its own fields, and its words in BOTH languages (`words.en`,
+ * `words.ta`: the component, the status, the detail and any escalation), so a screen shows it in the language its button
+ * is on. An alert recorded before OB-435 reads in English in both (`words.englishOnly`), exactly as it was recorded.
+ */
+export function withWords<T extends LiveAlert>(a: T): T & { readonly words: AlertDisplay } {
+  return { ...a, words: alertDisplay(a.alert, a.escalationDetail === undefined ? undefined : { detail: a.escalationDetail, ...(a.escalationText === undefined ? {} : { text: a.escalationText }) }) };
 }
 
 /**
@@ -187,6 +209,7 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
       a.escalatedTo = e.escalatedTo ?? '';
       a.escalatedAt = e.at;
       a.escalationDetail = e.detail;
+      if (e.detailText !== undefined) a.escalationText = e.detailText;
     }
   }
   return [...byId.values()].map((a) => ({
@@ -204,6 +227,7 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
     ...(a.escalatedTo !== undefined ? { escalatedTo: a.escalatedTo } : {}),
     ...(a.escalatedAt !== undefined ? { escalatedAt: a.escalatedAt } : {}),
     ...(a.escalationDetail !== undefined ? { escalationDetail: a.escalationDetail } : {}),
+    ...(a.escalationText !== undefined ? { escalationText: a.escalationText } : {}),
   }));
 }
 
@@ -218,6 +242,11 @@ export interface AlertLifecycleDeps {
    * hold the IT/platform administration function (said by name when refused, as OB-91). Absent: nobody may (fail closed).
    */
   readonly builtInAlertAuthorityOf?: (tenantId: string, userId: string) => Promise<{ readonly owner: boolean; readonly platformAdministration: boolean }>;
+  /**
+   * OB-439: the language a person's alert text messages go in — the English/Tamil choice on their staff record. A person
+   * with no choice recorded (or not on the staff list) is English. Absent: every message is English.
+   */
+  readonly alertLanguageOf?: (tenantId: string, userId: string) => Promise<'en' | 'ta'> | 'en' | 'ta';
 }
 
 /** Round 33 · OB-119: the refusal of a hand-raised alert (or a hand-made rule) under a reserved id (403, on the audit trail). */
@@ -340,7 +369,8 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
         const ordered = [...live].sort((a, b) =>
           (SEVERITY[a.alert.status] ?? 9) - (SEVERITY[b.alert.status] ?? 9) || a.alert.ackDueBy.localeCompare(b.alert.ackDueBy));
         const needAttention = live.filter((a) => a.state === 'open' || a.state === 'escalated').length;
-        return { status: 200, body: { alerts: ordered, open: live.filter((a) => a.state === 'open').length, needAttention, asAt: deps.now() } };
+        // OB-435 · OB-439: every alert carries its words in both languages, for the screen's language button.
+        return { status: 200, body: { alerts: ordered.map(withWords), open: live.filter((a) => a.state === 'open').length, needAttention, asAt: deps.now() } };
       },
     },
     {
@@ -360,7 +390,7 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
           status: 200,
           body: {
             userId: me,
-            alerts: ordered.map((a) => ({ ...a, deliveredToMe: a.deliveries.filter((d) => d.to === me) })),
+            alerts: ordered.map((a) => ({ ...withWords(a), deliveredToMe: a.deliveries.filter((d) => d.to === me) })),
             count: ordered.length, asAt: deps.now(),
           },
         };
@@ -383,7 +413,7 @@ export function raiseKey(alertId: string, live: LiveAlert | undefined, ownRule =
  * (the tested `escalateUnacknowledged`); an escalated, cleared or acknowledged alert is left alone, so re-running it
  * never double-escalates. What the route runs on demand and the ops-alert worker runs on its timer.
  */
-export async function escalateDueAlerts(deps: AlertLifecycleDeps, tenantId: string, by: string, at: string): Promise<readonly { readonly alert: RaisedAlert; readonly escalatedTo: string; readonly detail: string }[]> {
+export async function escalateDueAlerts(deps: AlertLifecycleDeps, tenantId: string, by: string, at: string): Promise<readonly { readonly alert: RaisedAlert; readonly escalatedTo: string; readonly detail: string; readonly text: AlertText }[]> {
   const live = (await deps.alerts(tenantId)).filter((a) => a.state !== 'cleared');
   const openAlerts = live.map((a) => a.alert);
   const rules = live.map((a): AlertRule => ({
@@ -397,7 +427,7 @@ export async function escalateDueAlerts(deps: AlertLifecycleDeps, tenantId: stri
   for (const e of due) {
     await deps.recordAlertEvent(tenantId, {
       alertId: e.alert.alertId, change: 'escalated', by, at,
-      escalatedTo: e.escalatedTo, detail: e.detail,
+      escalatedTo: e.escalatedTo, detail: e.detail, detailText: e.text,
     }, `escalate-${e.alert.alertId}-${at}`);
   }
   return due;

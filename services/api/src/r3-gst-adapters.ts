@@ -28,7 +28,8 @@ import { rcmRoutes, type RecordedRcmPurchase } from '../../finance/src/rcm-store
 import { filingRegisterRoutes, financialYearsOf, type RecordedFiling, type FilingRegisterDeps } from '../../finance/src/filing-register';
 import { annualReturnRoutes } from '../../finance/src/annual-return';
 import { eInvoiceGuardRoutes, eInvoiceReportingGuard, type EInvoiceReportingBlock, type EInvoiceGuardDeps } from '../../finance/src/einvoice-reporting-guard';
-import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { eventWords, type AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { told, alertText } from '../../../packages/ops/src/alert-words';
 import type { PeriodSoldLine } from '../../finance/src/gst-returns';
 import {
   STREAM, streamName, gstReturnsAdapter, gstr1SubmissionAdapter, supplierMasterAdapter, alertLifecycleAdapter, effectiveGrants, eInvoiceAdapter,
@@ -398,7 +399,8 @@ async function raiseTimeBarAlerts(store: EventStore, now: () => string, t: strin
         alertId, change: 'raised', by, at,
         alert: {
           alertId, component: `GST ${e.type} ${e.period}`, status: e.warning === 'time_barred' ? 'down' : 'degraded',
-          ownerUserId: owners[0]!, ownerName: owners[0]!, detail: e.detail, raisedAt: at,
+          componentText: alertText('gst.component', { type: e.type, period: e.period }),
+          ownerUserId: owners[0]!, ownerName: owners[0]!, detail: e.detail, ...(e.text === undefined ? {} : { text: e.text }), raisedAt: at,
           ackDueBy: e.warning === 'time_barred' ? at : `${e.timeBarDate}T00:00:00Z`,
           ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
         },
@@ -410,7 +412,7 @@ async function raiseTimeBarAlerts(store: EventStore, now: () => string, t: strin
   const isFiled = new Set(filed.filter((f) => f.filedOn !== undefined).map((f) => `${TIME_BAR_ALERT}${f.type}:${f.period}`));
   for (const a of live) {
     if (!a.alert.alertId.startsWith(TIME_BAR_ALERT) || a.state === 'cleared' || !isFiled.has(a.alert.alertId)) continue;
-    await lifecycle.recordAlertEvent(t, { alertId: a.alert.alertId, change: 'cleared', by, at, detail: 'the return is now filed' }, `${a.alert.alertId}|cleared|${at}`);
+    await lifecycle.recordAlertEvent(t, { alertId: a.alert.alertId, change: 'cleared', by, at, ...eventWords(told('gst.cleared')) }, `${a.alert.alertId}|cleared|${at}`);
     cleared += 1;
   }
   return { raised, alreadyOpen, cleared, owners: owners.length };

@@ -19,6 +19,12 @@
 // invites someone to stop selling. `canTrade` is separate from `status`.
 //
 // Pure and deterministic: "now" is injected, there is no clock and no I/O.
+//
+// OB-435: every component's words are structured (`text`, a kind and its parameters) and rendered in English into
+// `detail` — word for word what it always said — so a screen or a text message can say the same thing in Tamil.
+
+import { told } from './alert-words';
+import type { AlertText } from './alert-text';
 
 export type HealthStatus = 'ok' | 'degraded' | 'down' | 'unknown';
 
@@ -42,6 +48,8 @@ export interface ComponentHealth {
   readonly detail: string;
   /** Numbers behind the verdict, so the judgement can be checked. */
   readonly evidence?: Readonly<Record<string, number | string>>;
+  /** OB-435: the same words, structured (rendered in English into `detail`, and in Tamil for a Tamil reader). */
+  readonly text?: AlertText;
 }
 
 /** Per-tenant thresholds — chosen, never hard-coded (§32 gives the defaults). */
@@ -111,13 +119,6 @@ function ageSeconds(iso: string | undefined, now: string): number | undefined {
   return Math.max(0, Math.floor((Date.parse(now) - then) / 1000));
 }
 
-function humanDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3_600) return `${Math.floor(seconds / 60)} min`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)}h ${Math.floor((seconds % 3_600) / 60)}m`;
-  return `${Math.floor(seconds / 86_400)} days`;
-}
-
 /**
  * Compute health from evidence. Components with no signal are `unknown`, which is a
  * finding in itself — the absence of a heartbeat is not a heartbeat.
@@ -135,7 +136,7 @@ export function checkHealth(
     components.push({
       name: 'sync',
       status: 'unknown',
-      detail: 'nothing has ever reported a successful sync — that is not the same as being up to date',
+      ...told('health.sync.never'),
     });
   } else {
     const status: HealthStatus =
@@ -147,17 +148,14 @@ export function checkHealth(
     components.push({
       name: 'sync',
       status,
-      detail:
-        status === 'ok'
-          ? `last synced ${humanDuration(lag)} ago`
-          : `nothing has reached the cloud for ${humanDuration(lag)} — the store is still trading, but head-office figures are that old`,
+      ...told(status === 'ok' ? 'health.sync.ok' : 'health.sync.behind', { lagSeconds: lag }),
       evidence: { lagSeconds: lag },
     });
   }
 
   // --- outbox depth ---------------------------------------------------------
   if (signals.queueDepth === undefined) {
-    components.push({ name: 'queue', status: 'unknown', detail: 'the outbox has not reported its depth' });
+    components.push({ name: 'queue', status: 'unknown', ...told('health.queue.unknown') });
   } else {
     const depth = signals.queueDepth;
     const status: HealthStatus =
@@ -169,26 +167,23 @@ export function checkHealth(
     components.push({
       name: 'queue',
       status,
-      detail:
-        depth === 0
-          ? 'everything has been sent'
-          : `${depth} item(s) waiting to send${status === 'ok' ? '' : ' — the queue is not draining'}`,
+      ...(depth === 0 ? told('health.queue.empty') : told('health.queue.waiting', { depth, notDraining: status !== 'ok' })),
       evidence: { depth },
     });
   }
 
   // --- dead letters ---------------------------------------------------------
   if (signals.deadLetterCount === undefined) {
-    components.push({ name: 'dead_letter', status: 'unknown', detail: 'dead letters have not been reported' });
+    components.push({ name: 'dead_letter', status: 'unknown', ...told('health.deadLetter.unknown') });
   } else if (signals.deadLetterCount === 0) {
-    components.push({ name: 'dead_letter', status: 'ok', detail: 'nothing is stuck' });
+    components.push({ name: 'dead_letter', status: 'ok', ...told('health.deadLetter.none') });
   } else {
     // A dead letter is a real business item nobody has dealt with. It never expires
     // and it is never dropped (hard rule #6), so it stays visible until resolved.
     components.push({
       name: 'dead_letter',
       status: signals.deadLetterCount >= thresholds.deadLetterCritical ? 'down' : 'degraded',
-      detail: `${signals.deadLetterCount} item(s) could not be sent and are waiting for a person — each one is a real sale, receipt or order`,
+      ...told('health.deadLetter.some', { count: signals.deadLetterCount }),
       evidence: { count: signals.deadLetterCount },
     });
   }
@@ -200,9 +195,7 @@ export function checkHealth(
     components.push({
       name: 'catalogue',
       status: stale ? 'degraded' : 'ok',
-      detail: stale
-        ? `prices on the lane are ${humanDuration(catalogueAge)} old — a price changed today may not be here`
-        : `prices are ${humanDuration(catalogueAge)} old`,
+      ...told(stale ? 'health.catalogue.stale' : 'health.catalogue.fresh', { ageSeconds: catalogueAge }),
       evidence: { ageSeconds: catalogueAge },
     });
   }
@@ -213,18 +206,14 @@ export function checkHealth(
       name: 'database',
       // Losing the cloud is DEGRADED, never down: the store is designed for it.
       status: signals.databaseReachable ? 'ok' : 'degraded',
-      detail: signals.databaseReachable
-        ? 'cloud database reachable'
-        : 'cloud database not reachable — the store keeps trading locally and work is queued',
+      ...told(signals.databaseReachable ? 'health.database.ok' : 'health.database.unreachable'),
     });
   }
   if (signals.localStoreWritable !== undefined) {
     components.push({
       name: 'local_store',
       status: signals.localStoreWritable ? 'ok' : 'down',
-      detail: signals.localStoreWritable
-        ? 'the lane can record sales'
-        : 'the lane CANNOT record a sale — stop selling on this lane; an unrecorded sale is worse than a refused one',
+      ...told(signals.localStoreWritable ? 'health.localStore.ok' : 'health.localStore.cannot'),
     });
   }
 
@@ -235,16 +224,14 @@ export function checkHealth(
     components.push({
       name: 'backup',
       status: 'unknown',
-      detail: 'no backup has ever been reported — this is the one to fix before anything else',
+      ...told('health.backup.never'),
     });
   } else {
     const overdue = backupAge > backupMax;
     components.push({
       name: 'backup',
       status: overdue ? 'down' : 'ok',
-      detail: overdue
-        ? `the last backup was ${humanDuration(backupAge)} ago — a stale backup is a silent disaster`
-        : `last backup ${humanDuration(backupAge)} ago`,
+      ...told(overdue ? 'health.backup.overdue' : 'health.backup.recent', { ageSeconds: backupAge }),
       evidence: { ageSeconds: backupAge },
     });
   }
@@ -254,7 +241,7 @@ export function checkHealth(
     components.push({
       name: `integration:${name}`,
       status: healthy ? 'ok' : 'degraded',
-      detail: healthy ? 'responding' : `${name} is not responding — work is queued, not lost`,
+      ...(healthy ? told('health.integration.ok') : told('health.integration.down', { name })),
     });
   }
 
@@ -329,6 +316,10 @@ export interface RaisedAlert {
    * open, the alert is UPDATED and sent again (the same alert to tick, no new occurrence). Absent: an ordinary alert.
    */
   readonly members?: readonly string[];
+  /** OB-435: the detail, structured (absent on an alert raised before it: that one reads in English, as recorded). */
+  readonly text?: AlertText;
+  /** OB-435: the component's name, structured, when it is words rather than a health component's id (a recall, a GST return). */
+  readonly componentText?: AlertText;
 }
 
 /** Turn a health check into owned, actionable alerts. */
@@ -348,6 +339,7 @@ export function raiseAlerts(
       ownerUserId: rule.ownerUserId,
       ownerName: rule.ownerName,
       detail: component.detail,
+      ...(component.text === undefined ? {} : { text: component.text }),
       raisedAt: health.checkedAt,
       ackDueBy: new Date(Date.parse(health.checkedAt) + rule.ackWithinMinutes * 60_000)
         .toISOString()
@@ -365,19 +357,15 @@ export function escalateUnacknowledged(
   rules: readonly AlertRule[],
   acknowledgedIds: readonly string[],
   now: string,
-): readonly { readonly alert: RaisedAlert; readonly escalatedTo: string; readonly detail: string }[] {
+): readonly { readonly alert: RaisedAlert; readonly escalatedTo: string; readonly detail: string; readonly text: AlertText }[] {
   return alerts
     .filter((a) => !acknowledgedIds.includes(a.alertId) && a.ackDueBy <= now)
     .map((alert) => {
       const rule = rules.find((r) => r.alertId === alert.alertId);
       const to = rule?.escalatesToUserId;
-      return {
-        alert,
-        escalatedTo: to ?? '',
-        detail:
-          to === undefined
-            ? `nobody is configured above ${alert.ownerName} — this alert has nowhere to escalate to`
-            : `${alert.ownerName} has not acknowledged in time; escalated to ${to}`,
-      };
+      const words = to === undefined
+        ? told('alert.escalate.nowhere', { ownerName: alert.ownerName })
+        : told('alert.escalate.to', { ownerName: alert.ownerName, to });
+      return { alert, escalatedTo: to ?? '', ...words };
     });
 }

@@ -13,12 +13,16 @@
 //   3. DELIVER — every open alert to its owner, every escalated alert to the person it was escalated to: a `notified`
 //      fact into that person's own inbox (`GET /v1/platform/alerts/inbox`) and, when a message provider is configured,
 //      a message to them (idempotent on alert × occurrence × stage × person; a failed message is retried next pass).
+//      OB-439: the message is in THAT person's language — the English/Tamil choice on their staff record
+//      (`alertLanguageOf`), English when none is set — one language per message, never both. The idempotency key does not
+//      change with the language: one delivery per alert × occurrence × revision × stage × person, exactly as before.
 //
 // Sequential and restart-safe like the notification worker: it holds nothing of its own — every step is an
 // append-only fact, so after a restart it carries on from the ledger. A pass that throws for one shop is said and the
 // loop carries on (a dead alert loop is exactly the silent failure P-08 forbids). No AI acts here (hard rule #5).
 
 import type { NotificationTransport } from '../../../packages/notifications/src/index';
+import { alertMessage, languageOrEnglish } from '../../../packages/ops/src/index';
 import { escalateDueAlerts, type AlertLifecycleDeps, type LiveAlert } from './alert-lifecycle';
 import { raiseObservedAlerts, type ObservedHealthDeps } from './observed-health';
 
@@ -72,9 +76,9 @@ export async function deliverAlerts(deps: AlertLifecycleDeps, tenantId: string, 
         delivered += 1;
       }
       if (transport !== undefined && !had(transport.name)) {
-        const text = stage === 'escalated'
-          ? `ESCALATED to you: ${a.alert.component} is ${a.alert.status} — ${a.alert.detail}. ${a.alert.ownerName} has not acknowledged it.`
-          : `${a.revision === undefined ? '' : 'UPDATED: '}${a.alert.component} is ${a.alert.status} — ${a.alert.detail}. Please acknowledge by ${a.alert.ackDueBy}.`;
+        // OB-439: in the recipient's own language (English unless their staff record says Tamil).
+        const lang = deps.alertLanguageOf === undefined ? 'en' : languageOrEnglish(await deps.alertLanguageOf(tenantId, to));
+        const text = alertMessage(a.alert, stage, a.revision !== undefined, lang, { ackDueBy: a.alert.ackDueBy, ownerName: a.alert.ownerName });
         const sent = await transport.send({ messageId: `alert-${tenantId}-${base}`, channel: 'sms', customerId: to, text });
         if (sent.ok) {
           await deps.recordAlertEvent(tenantId, { alertId: a.alert.alertId, change: 'notified', by, at, notifiedTo: to, via: transport.name, stage, detail: sent.providerRef }, `${base}-${transport.name}`);

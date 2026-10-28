@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1628 | 944 | 944 | 178 | 434 |
+| 13 | 1629 | 945 | 945 | 178 | 434 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1404,6 +1404,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/hr/workforce/employees/:employeeId` | `workforce.roster.manage` | core | yes |
 | POST | `/v1/hr/workforce/employees/:employeeId/appointment-letters/:letterId` | `hr.appointmentletter.issue` | core | yes |
 | POST | `/v1/hr/workforce/employees/:employeeId/home-department` | `workforce.roster.manage` | core | yes |
+| POST | `/v1/hr/workforce/employees/:employeeId/language` | `workforce.roster.manage` | core | yes |
 | POST | `/v1/hr/workforce/employees/:employeeId/salary-account` | `hr.salaryaccount.record` | core | yes |
 | GET | `/v1/hr/workforce/employees/:employeeId/sop-status` | `workforce.sop.read` | core | — |
 | GET | `/v1/hr/workforce/employees/:employeeId/task-gate` | `workforce.task.read` | core | — |

@@ -39,6 +39,8 @@ import {
   orgStructureAdapter,
 } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
+import { eventWords } from '../../platform/src/alert-lifecycle';
+import { told, alertText } from '../../../packages/ops/src/alert-words';
 import { foldBlanketAgreements } from './p3-procure-adapters';
 import { billedCostOf } from './r7b-receiving-adapters'; // OB-517
 import { freeSampleRoutes, FREE_SAMPLE_REASON, type FreeSampleIssue, type FreeSampleCheck, type FreeSampleRequest, type FreeSampleDecision } from '../../inventory/src/free-samples';
@@ -150,12 +152,14 @@ export function contractExpirySweep(raw: Omit<Fg4BuyingInput, 'store'> & { reado
     let raised = 0;
     for (const a of due) {
       const component = a.register === 'display' ? `Display contract ${a.contractId}` : `Supplier contract ${a.contractId}`;
-      if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, a.alertId, component, a.detail, 'system:contract-expiry', at, a.alertId)) raised += 1;
+      if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, a.alertId, component, a.detail, 'system:contract-expiry', at, a.alertId, {
+        ...(a.text === undefined ? {} : { text: a.text }), componentText: alertText('contract.component', { register: a.register, contractId: a.contractId }),
+      })) raised += 1;
     }
     const lifecycle = alertLifecycleAdapter({ store: input.store, now: input.now });
     const open = (await lifecycle.alerts(tenantId)).filter((x) => x.state !== 'cleared').map((x) => x.alert.alertId);
     for (const id of staleAlertIds({ openAlertIds: open, due })) {
-      await lifecycle.recordAlertEvent(tenantId, { alertId: id, change: 'cleared', by: 'system:contract-expiry', at, detail: 'the contract was renewed, or is no longer due' }, `${id}|cleared|${at}`);
+      await lifecycle.recordAlertEvent(tenantId, { alertId: id, change: 'cleared', by: 'system:contract-expiry', at, ...eventWords(told('contract.cleared')) }, `${id}|cleared|${at}`);
     }
     return raised;
   };
