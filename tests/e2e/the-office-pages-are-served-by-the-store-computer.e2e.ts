@@ -41,7 +41,7 @@ const PAGES = ['/payroll/', '/finance-close/', '/transfers/', '/supplier-bills/'
 /** What every page in this product says when head office does not answer — in its own words, in either language. */
 const UNREACHABLE = /Head office cannot be reached|head office could not be reached|could not be read from head office|தலைமை அலுவலகத்தை அடைய முடியவில்லை/i;
 const OWNER_WORDS = [
-  'identity.self.read', 'payroll.statutory.read', 'finance.period.read', 'inventory.availability.read', 'purchase.invoice.capture',
+  'identity.self.read', 'payroll.statutory.read', 'finance.period.read', 'inventory.availability.read', 'purchase.invoice.capture', 'purchase.invoice.match',
   'platform.flag.read', 'delivery.run.read', 'fulfilment.wave.assign', 'till.dayclose.read',
 ];
 
