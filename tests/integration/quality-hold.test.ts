@@ -17,8 +17,15 @@ const codeOf = (res: { body: unknown }): string | undefined => (res.body as { er
 
 const placeHold = (h: ApiHarness, user: string, batchId: string, body: unknown, key?: string) =>
   h.request({ method: 'POST', path: `/v1/quality/holds/${batchId}`, userId: user, tenantId: A, idempotencyKey: key ?? `hold-${batchId}`, body });
-const release = (h: ApiHarness, user: string, batchId: string, body: unknown) =>
-  h.request({ method: 'POST', path: `/v1/quality/holds/${batchId}/release`, userId: user, tenantId: A, idempotencyKey: `rel-${batchId}-${Math.random()}`, body });
+// Round 6 (M10-FR-02): a sample is RECORDED on the hold first (its own append-only fact), and the release is judged on what
+// is recorded there — so this helper records the samples a scenario names, by the QC owner, then releases with no samples.
+const release = async (h: ApiHarness, user: string, batchId: string, body: { samples?: ReturnType<typeof sample>[] } & Record<string, unknown>) => {
+  const { samples = [], ...rest } = body;
+  for (const s of samples) {
+    await h.request({ method: 'POST', path: `/v1/quality/holds/${batchId}/samples/${s.sampleId}`, userId: 'u-owner', tenantId: A, idempotencyKey: `smp-${s.sampleId}-${Math.random()}`, body: { test: s.test, result: s.result, takenAt: s.takenAt } });
+  }
+  return h.request({ method: 'POST', path: `/v1/quality/holds/${batchId}/release`, userId: user, tenantId: A, idempotencyKey: `rel-${batchId}-${Math.random()}`, body: rest });
+};
 const listHolds = (h: ApiHarness, user: string) =>
   h.request({ method: 'GET', path: '/v1/quality/holds', userId: user, tenantId: A });
 const getHold = (h: ApiHarness, user: string, batchId: string) =>

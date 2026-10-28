@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Scrap and recycling</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Scrap and recycling (M28-FR-02 "Scrap/recycling sales and evidence" · P-08). A THIN CLIENT over head office's own scrap
+      routes: record a disposal with its weight, money and evidence (never refused for missing evidence — flagged instead);
+      review a branch over a window (money not yet in the books, each category's own average rate, every finding); mark a
+      disposal's money as taken into the books. Its session is apps/web-erp/src/scrap-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .acts input { flex: 1 1 160px; }
+      #doc { border: 2px solid var(--ink); }
+      .draft { font-weight: 700; }
+      [hidden] { display: none !important; }
+    </style>
+    <style>
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .figures { display: flex; gap: 16px; flex-wrap: wrap; }
+      .figures span { display: grid; }
+      .figures b { font-size: 20px; }
+      .warn { color: var(--degraded); font-weight: 700; }
+      .table-wrap { overflow-x: auto; }
+      label.check { display: flex; gap: 8px; align-items: center; min-height: var(--tap); }
+      label.check input { min-height: 0; width: 24px; height: 24px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Scrap and recycling</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Scrap and recycling</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="review" hidden aria-labelledby="review-h">
+        <h3 id="review-h"></h3>
+        <div class="row-form">
+          <label for="v-branch"><span id="v-branch-l"></span><input id="v-branch" autocomplete="off" /></label>
+          <label for="v-from"><span id="v-from-l"></span><input id="v-from" inputmode="numeric" autocomplete="off" /></label>
+          <label for="v-to"><span id="v-to-l"></span><input id="v-to" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <button id="v-show" type="button"><span id="v-show-text"></span></button>
+        <p class="status" id="v-status" role="status" aria-live="polite"></p>
+        <div class="figures" id="v-figures"></div>
+        <h4 id="rates-h"></h4>
+        <ul class="rows" id="rate-rows"></ul>
+        <h4 id="findings-h"></h4>
+        <ul class="rows" id="finding-rows"></ul>
+      </section>
+      <section id="record" hidden aria-labelledby="record-h">
+        <h3 id="record-h"></h3>
+        <div class="row-form">
+          <label for="s-branch"><span id="s-branch-l"></span><input id="s-branch" autocomplete="off" /></label>
+          <label for="s-category"><span id="s-category-l"></span><select id="s-category"></select></label>
+          <label for="s-disposal"><span id="s-disposal-l"></span><select id="s-disposal"></select></label>
+          <label for="s-kg"><span id="s-kg-l"></span><input id="s-kg" inputmode="decimal" autocomplete="off" /></label>
+          <label for="s-proceeds"><span id="s-proceeds-l"></span><input id="s-proceeds" inputmode="decimal" autocomplete="off" /></label>
+          <label for="s-buyer"><span id="s-buyer-l"></span><input id="s-buyer" autocomplete="off" /></label>
+          <label for="s-evidence"><span id="s-evidence-l"></span><input id="s-evidence" autocomplete="off" /></label>
+          <label for="s-recycler"><span id="s-recycler-l"></span><input id="s-recycler" autocomplete="off" /></label>
+          <label for="s-by"><span id="s-by-l"></span><input id="s-by" autocomplete="off" /></label>
+        </div>
+        <button id="s-record" type="button"><span id="s-record-text"></span></button>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./scrap.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

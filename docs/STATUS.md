@@ -19,6 +19,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Next:** F-1 (OB-435, Tamil alert messages), once the owner answers F-1a. F-1a asks which language an alert text message goes in: (A) each person's own choice; (B) both languages; (C) English only.
 - **Blocked:** F-1 waits on F-1a.
 - **Owner decisions needed:** F-1a.
+- **Correction:** the 28 Oct final re-audit re-read only the rows not DONE. The fresh round 6 audit (#825, another session) re-read the DONE rows too and found gaps. So its "0 partial" holds only for the rows it re-read (see the note at the top of `docs/audit/REAUDIT-2026-10-28.md`).
+## Round 6 (28 October 2026): a fresh, independent re-audit, and the gaps it found fixed
+
+**What happened**
+- Four checkers re-read the whole roadmap against main, without trusting our earlier audits or records. They checked each item's code and test, ran over 1,500 test files between them (on real PostgreSQL and in a real browser too), and confirmed every screen calls a route that exists. Result: 376 rows — 332 done, 27 half done, 14 outside software, 3 needing a decision, none missing. No hard rule was broken.
+- The half-done items were fixed in this round (round 6), or are being built now (round 7) after the owner's 19 decisions OB-500 to OB-518.
+
+**What changed in round 6**
+- **Access:** an approved emergency grant now really gives its role, only while it is live (M02-FR-04).
+- **Receiving:** a direct receipt is valued at the purchase order's cost; a typed difference is kept as a valued, flagged discrepancy (M07-FR-01). "A sale in progress is not repriced" is now proved by a test (M05-FR-01).
+- **Labels and products:** two MRPs on one date are refused at publish (B2); packed goods need a consumer-care contact (B4); counter labels carry the veg/non-veg mark and the 8 allergen groups (B9), lawful letter heights (B24) and the price per kg/litre (B3).
+- **Quality:** samples are stored on the hold and decide the release (M10-FR-02). Scales due for re-stamping reach the owner's alerts (B7).
+- **Customers and B2B:** a real customer sign-in-by-code service, off until an SMS provider is approved (M20-FR-01, ADR-0031); B2B recurring orders made on their day (M22-FR-03).
+- **Reports and screens:** the published API contract now lists all 47 routes it left out (M32-FR-01); new pages for scrap sales, packaging and crates, and side-by-side comparison (M28, M29-FR-02); the owner assistant suggests likely causes with evidence (A01).
+- **Test fixes:** the scripted store-day journeys pinned their clock ahead of real time before 10:00 UTC, so the store computer's door certificate looked "not yet valid"; the clock is now never ahead. The brief-worker test waits instead of assuming.
+
+**Tests that ran (this box, synthetic data)**
+- Joined branch: typecheck clean; unit + guardrails + integration + contract + security + migration on real PostgreSQL — 15,225 passed, 2 failed (the evidence ledger, regenerated; the store journey clock, fixed and re-run with its two sister journeys: all pass), 19 skipped (real Keycloak / store-volume runs). Builders ran their browser suites; CI runs all of them on the pull request.
+- Not tried: real hardware, a live SMS provider, a live Keycloak customer realm.
+
+**What is next**
+- Round 7 (building now): till price floors and manager limits (OB-500), old versions refused (OB-501), certificates block food handling (OB-502), manufacture date at receiving (OB-504), shelf tags (OB-505), retail quotations (OB-506), offline rosters (OB-507), discrepancy owners (OB-508), cost-not-known receipts (OB-509), the customer sign-in signer (OB-510), MRP replacement with approval (OB-512), food samples before release (OB-513), weekday comparison (OB-516), price differences from the bill (OB-517).
+
+**Blocked / external**
+- As before: real hardware, live providers, the CA and legacy data, staff UAT and rehearsals, the pen test; the yearly card self-assessment is filed by the shop (OB-511).
+
+**Needs an owner decision**
+- None open.
+
+---
 
 ## Final roadmap re-audit (28 October 2026): nothing partial; four small follow-ups for the owner
 - **What changed:** a read-only check at `main` edeb0a03 (`docs/audit/REAUDIT-2026-10-28.md`, lane tables in `docs/audit/reaudit-2026-10-28/`). The roadmap now has 390 distinct rows: 343 done, 0 partial, 0 missing, 0 decision, 41 external, 6 deferred to R8 in writing. The old total of 391 counted QG-11 twice.
@@ -34,6 +64,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - F-3: two untested OB-412 rules.
   - F-4: two records fixes.
 
+---
+
+## Session end (28 October 2026): the intermittent real-Keycloak failure, independent confirmation; #822 closed
+
+**What changed**
+- No code changed in this session's final state. Pull request #822 was closed at the owner's request (option 1), because #821 had already merged the same two fixes to main:
+  - the store computer's own token is made for head office's audience;
+  - the journey clock is never ahead of the real one.
+- **Independent proof of the Keycloak cause**, on a real Keycloak 26.0.7 with the repository realm and PostgreSQL 16, with the person's call forced into the lock window:
+  - main's old test failed 3 of 3, with the exact CI error (429 too_many_sign_in_attempts);
+  - the #820 version (wrong audience) still failed 2 of 3;
+  - the fixed version passed 5 of 5, and head office logged no failed sign-ins.
+  - Untouched runs: the full CI identity job passed 3 of 3, and the store-computer suite passed 10 of 10.
+- **The "certificate is not yet valid" failure** (store-acceptance-journey) was reproduced at 01:31 UTC with the old clock helper and passed with the fix.
+- Main's CI on b805c55 (#821) was all green, including Keycloak and the stage gate, on a run that started at 01:51 UTC.
+
+**What is next**
+- Before merging #825 (Round 6), check that every check on it is green. Its last run failed Keycloak and the browser tests; it may predate #821 on main. That pull request belongs to its own session.
+
+**Blocked:** nothing. **Owner decisions needed:** none.
+
+---
+
 ## GST answers OB-433 and OB-434 (28 October 2026)
 - **What changed:**
   - **OB-433:** the owner confirmed the B2CL line: more than ₹1,00,000 for invoices from 1 Aug 2024, more than ₹2,50,000 before. Nothing to build.
@@ -46,6 +99,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Test only; the food-safety screen is unchanged.
 - **Blocked:** nothing.
 - **Owner decisions needed:** none.
+
+---
 
 ## CI fix (28 October 2026): the store-day journeys failed "certificate is not yet valid" before 09:00 UTC
 

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Compare side by side</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Compare side by side (M29-FR-02 "KPI comparison and drill-through" · §27 Owner "branch comparison" · NFR-15 · §28). A THIN
+      CLIENT: the figures and the transactions behind them are head office's governed drill (in the reader's scope as the SERVER
+      derives it, and logged); the ranking is head office's compare over exactly those rows; a row opens to its exact
+      transactions. A drill that does not add up is said loudly. Its session is apps/web-erp/src/branch-compare-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .acts input { flex: 1 1 160px; }
+      #doc { border: 2px solid var(--ink); }
+      .draft { font-weight: 700; }
+      [hidden] { display: none !important; }
+    </style>
+    <style>
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .figures { display: flex; gap: 16px; flex-wrap: wrap; }
+      .figures span { display: grid; }
+      .figures b { font-size: 20px; }
+      .warn { color: var(--degraded); font-weight: 700; }
+      .table-wrap { overflow-x: auto; }
+      label.check { display: flex; gap: 8px; align-items: center; min-height: var(--tap); }
+      label.check input { min-height: 0; width: 24px; height: 24px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Compare side by side</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Compare side by side</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="form" hidden aria-labelledby="form-h">
+        <h3 id="form-h"></h3>
+        <div class="row-form">
+          <label for="c-by"><span id="c-by-l"></span><select id="c-by"></select></label>
+          <label for="c-from"><span id="c-from-l"></span><input id="c-from" inputmode="numeric" autocomplete="off" /></label>
+          <label for="c-to"><span id="c-to-l"></span><input id="c-to" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <button id="c-go" type="button"><span id="c-go-text"></span></button>
+        <p class="status" id="c-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="result" hidden aria-labelledby="result-h">
+        <h3 id="result-h"></h3>
+        <p class="meta" id="r-scope"></p>
+        <p id="r-check"></p>
+        <ul class="rows" id="r-honesty"></ul>
+        <div class="table-wrap"><table id="r-table"><thead><tr><th>#</th><th id="th-name"></th><th class="num" id="th-value"></th><th class="num" id="th-share"></th><th class="num" id="th-count"></th><th></th></tr></thead><tbody id="r-rows"></tbody></table></div>
+        <p class="meta" id="r-total"></p>
+      </section>
+      <section id="txns" hidden aria-labelledby="txns-h">
+        <h3 id="txns-h"></h3>
+        <div class="table-wrap"><table><thead><tr><th id="tx-when"></th><th id="tx-branch"></th><th id="tx-what"></th><th class="num" id="tx-amount"></th></tr></thead><tbody id="tx-rows"></tbody></table></div>
+        <button id="tx-close" class="quiet" type="button"><span id="tx-close-text"></span></button>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./branch-compare.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

@@ -50,7 +50,7 @@ import {
   produceBatch, validateRecipe, planProduction, InvalidRecipeError, InsufficientMaterialError,
   type Recipe, type RecipeInput, type ProductionException,
 } from '../../../packages/production/src/recipe';
-import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, type PackLabel } from '../../../packages/production/src/packing';
+import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, LabelTooSmallError, readLabelTemplate, labelPrintFacts, type PackLabel } from '../../../packages/production/src/packing';
 import {
   requireDepartment, operatedDepartments, DEPARTMENT_CATALOGUE,
   DepartmentNotOperatedError, UnknownDepartmentError,
@@ -486,18 +486,22 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         const runId = ctx.params['runId'] ?? '';
         const b = (ctx.body ?? {}) as {
           productName?: unknown; netQuantity?: unknown; packerDetails?: unknown; priceMinor?: unknown;
-          currency?: unknown; weightMinor?: unknown; allergens?: unknown; barcode?: unknown;
+          currency?: unknown; weightMinor?: unknown; allergens?: unknown; barcode?: unknown; vegClass?: unknown; template?: unknown;
         };
+        // B24: a printer may name its own label stock; otherwise the counter template prints it. Unreadable → 400.
+        const template = b.template === undefined ? undefined : readLabelTemplate(b.template);
         if (!isStr(runId) || !isStr(b.productName) || !isNonNegInt(b.priceMinor)
           || (b.currency !== undefined && !isCurrencyCode(b.currency as string))
           || (b.netQuantity !== undefined && typeof b.netQuantity !== 'string')
           || (b.packerDetails !== undefined && typeof b.packerDetails !== 'string')
           || (b.weightMinor !== undefined && !isNonNegInt(b.weightMinor))
           || (b.allergens !== undefined && !(Array.isArray(b.allergens) && b.allergens.every((a) => typeof a === 'string')))
-          || (b.barcode !== undefined && typeof b.barcode !== 'string')) {
+          || (b.barcode !== undefined && typeof b.barcode !== 'string')
+          || (b.vegClass !== undefined && b.vegClass !== 'veg' && b.vegClass !== 'non_veg')
+          || (b.template !== undefined && template === undefined)) {
           throw apiError(400, {
             code: 'not_readable_as_a_label',
-            whatHappened: 'A label needs at least a productName and a whole priceMinor.',
+            whatHappened: 'A label needs at least a productName and a whole priceMinor (vegClass, when sent, is veg or non_veg; template, when sent, is { templateId, principalPanelAreaCm2, letterHeightMm, numeralHeightMm }).',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the label fields. Nothing was printed.',
           });
@@ -520,17 +524,23 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           ...(b.weightMinor === undefined ? {} : { weightMinor: b.weightMinor }),
           ...(b.barcode === undefined ? {} : { barcode: b.barcode as string }),
           ...(b.allergens === undefined ? {} : { allergens: b.allergens as readonly string[] }),
+          ...(b.vegClass === undefined ? {} : { vegClass: b.vegClass as 'veg' | 'non_veg' }),
+          ...(template === undefined ? {} : { template }),
           producedAt: run.at,
         };
+        let prepared: ReturnType<typeof buildPackLabel>;
         try {
-          buildPackLabel(label, department);
+          prepared = buildPackLabel(label, department);
         } catch (e) {
           if (e instanceof IncompleteLabelError) {
             throw apiError(422, { code: 'incomplete_label', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Add the missing field and re-send. Nothing was printed.' });
           }
+          if (e instanceof LabelTooSmallError) {
+            throw apiError(422, { code: 'label_print_too_small', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Print on a template whose letters and numerals meet the minimum height for its panel (or a larger label). Nothing was printed.' });
+          }
           throw e;
         }
-        return { status: 200, body: { runId, batchId: run.outputBatchId, lines: renderLabel(label) } };
+        return { status: 200, body: { runId, batchId: run.outputBatchId, lines: renderLabel(prepared), ...labelPrintFacts(prepared) } };
       },
     },
     {

@@ -5,8 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
-import { beginOtpChallenge, verifyOtp, type OtpChallenge } from '../../packages/identity/src/index';
-import { createOtpSimulator } from '../support/otp-simulator';
+import type { OtpSimulator } from '../support/otp-simulator';
+import { mountCustomerSignIn, testCustomerSigner } from '../support/customer-sign-in-test-ports';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { randomUUID } from 'node:crypto';
@@ -74,9 +74,11 @@ interface Recorder {
   grantedCustomerRole: number;
 }
 
-async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string; sms: ReturnType<typeof createOtpSimulator>; stop: () => Promise<void> }> {
-  const sms = createOtpSimulator();
-  const challenges = new Map<string, OtpChallenge>();
+async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string; sms: OtpSimulator; stop: () => Promise<void> }> {
+  // The REAL customer sign-in service (services/identity/src/customer-sign-in.ts) with the recording SMS transport and the
+  // local test IdP as its signer; a verified customer holds the `customer` role in this shop.
+  const signIn = mountCustomerSignIn({ tenantId: T, signer: testCustomerSigner({ idp: TEST_IDP, subjectFor: () => SUBJECT, onSignIn: async (s) => { await h.provisionRole(T, s, 'customer'); rec.grantedCustomerRole += 1; } }) });
+  const sms = signIn.sms;
   const readBody = (req: IncomingMessage): Promise<Record<string, unknown>> =>
     new Promise((resolve) => {
       let data = '';
@@ -92,31 +94,7 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
     void (async () => {
       const [path = '/'] = (req.url ?? '/').split('?');
 
-      // ── The auth backend: production OTP engines, local test IdP, and the customer's registration ──
-      if (req.method === 'POST' && path === '/auth/otp/begin') {
-        const body = await readBody(req);
-        const challengeId = `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const begun = beginOtpChallenge({ challengeId, tenantId: T, phoneNumber: String(body['phoneNumber'] ?? ''), purpose: 'login', now: new Date().toISOString() });
-        challenges.set(challengeId, begun.challenge);
-        sms.send({ phoneNumber: begun.challenge.phoneNumber, code: begun.code, purpose: 'login', tenantId: T });
-        sendJson(res, 200, { ok: true, challengeId });
-        return;
-      }
-      if (req.method === 'POST' && path === '/auth/otp/verify') {
-        const body = await readBody(req);
-        const challenge = challenges.get(String(body['challengeId'] ?? ''));
-        if (challenge === undefined) { sendJson(res, 200, { ok: false, reason: 'unknown_challenge' }); return; }
-        const v = verifyOtp({ challenge, tenantId: T, submittedCode: String(body['code'] ?? ''), now: new Date().toISOString() });
-        if (!v.verified) { sendJson(res, 200, { ok: false, reason: v.outcome }); return; }
-        challenges.set(challenge.challengeId, v.challenge);
-        // The backend's second duty: a verified customer holds the `customer` role in this shop.
-        await h.provisionRole(T, SUBJECT, 'customer');
-        rec.grantedCustomerRole += 1;
-        const token = TEST_IDP.issue({ sub: SUBJECT, tenantId: T, amr: ['otp'] });
-        sendJson(res, 200, { ok: true, token, sessionId: `s-${Date.now()}` });
-        return;
-      }
-      if (req.method === 'POST' && path === '/auth/signout') { sendJson(res, 200, { ok: true }); return; }
+      if (await signIn.handle(req, res)) return;
 
       // ── The API, behind the same origin — every call the app makes to the shop passes here ──
       if (path.startsWith('/v1/')) {
@@ -195,7 +173,7 @@ const ordersOf = async (h: ApiHarness) =>
   ((await h.request({ method: 'GET', path: '/v1/storefront/orders', userId: SUBJECT, tenantId: T })).body as { orders: { orderId: string; payment: { state: string; paidMinor: number } }[] }).orders;
 
 /** Drive the customer up to the moment of paying: one milk in the basket, checked, slot chosen, located, signed in. */
-async function readyToPay(page: Page, base: string, sms: ReturnType<typeof createOtpSimulator>): Promise<void> {
+async function readyToPay(page: Page, base: string, sms: OtpSimulator): Promise<void> {
   // The provider's own payment sheet gives the app its token (no card data ever touches the app — hard rule #3).
   await page.addInitScript((ref) => { (globalThis as unknown as { shopPaymentRef?: string }).shopPaymentRef = ref; }, PAY_REF);
   await page.goto(`${base}/`, { waitUntil: 'load' });

@@ -24,7 +24,7 @@ const bundle: ExtractBundle = {
   products: [
     {
       productId: 'P-RICE', sku: 'RICE-5KG', name: 'Ponni raw rice 5 kg', baseUom: 'each', primaryCategoryId: 'staples', taxClass: '1006',
-      lifecycle: 'active', brand: 'SRE', safety: { allergens: [], countryOfOrigin: 'IN', netQuantity: '5 kg', packerDetails: 'SRE Hyper Market, Tamil Nadu' },
+      lifecycle: 'active', brand: 'SRE', safety: { allergens: [], countryOfOrigin: 'IN', netQuantity: '5 kg', packerDetails: 'SRE Hyper Market, Tamil Nadu', consumerCareContact: 'Care desk, 1800-000-0000' },
       barcodes: [{ code: '8901234567890', kind: 'ean' }], priceMinor: 42_000, mrpMinor: 45_000, costMinor: 36_000, marginFloorBps: 0,
     },
     {
@@ -84,7 +84,7 @@ describe('planLoad — the guards (each refusal is its own reason, so the operat
         ...bundle.products,
         { ...bundle.products[1]!, productId: 'P-X', sku: 'SOAP-1', taxClass: '9999', priceMinor: 9_000, mrpMinor: 8_000, barcodes: [{ code: '8901234567890', kind: 'ean' }] },
         // a FOOD item with no allergen declaration — the product engine's rule, surfaced in the plan
-        { ...bundle.products[0]!, productId: 'P-DAL', sku: 'DAL-1', barcodes: [], safety: { countryOfOrigin: 'IN', netQuantity: '1 kg', packerDetails: 'SRE' } },
+        { ...bundle.products[0]!, productId: 'P-DAL', sku: 'DAL-1', barcodes: [], safety: { countryOfOrigin: 'IN', netQuantity: '1 kg', packerDetails: 'SRE', consumerCareContact: 'Care desk, 1800-000-0000' } },
       ],
       openingStock: [...bundle.openingStock, { productId: 'P-GHOST', quantityMinor: 0, uom: 'each', unitCostMinor: 100 }],
     };
@@ -258,8 +258,8 @@ describe('bundleFromFiles — the CSV extract, every conversion stated', () => {
       categories: rows(['Category ID', 'Name', 'Parent', 'Regulated'], [['grocery', 'Grocery', '', ''], ['staples', 'Staples', 'grocery', 'food|packed']]),
       taxRates: rows(['HSN Code', 'Effective From', 'Rate %'], [['1006', '2017-07-01', '5']]),
       products: rows(
-        ['Item Code', 'Description', 'UOM', 'Category', 'HSN', 'MRP', 'Selling Price', 'Cost Price', 'Barcodes', 'Allergens', 'Country of Origin', 'Net Quantity', 'Packer', 'Status', 'Brand'],
-        [['P-RICE', 'Ponni rice 5 kg', 'each', 'staples', '1006', '450.00', '420', '360.00', '8901234567890|INT-1', '', 'IN', '5 kg', 'SRE Hyper Market', 'Active', 'SRE'],
+        ['Item Code', 'Description', 'UOM', 'Category', 'HSN', 'MRP', 'Selling Price', 'Cost Price', 'Barcodes', 'Allergens', 'Country of Origin', 'Net Quantity', 'Packer', 'Status', 'Brand', 'Consumer Care'],
+        [['P-RICE', 'Ponni rice 5 kg', 'each', 'staples', '1006', '450.00', '420', '360.00', '8901234567890|INT-1', '', 'IN', '5 kg', 'SRE Hyper Market', 'Active', 'SRE', 'Care desk, 1800-000-0000'],
          ['P-BAD', '', 'each', 'staples', '1006', '10', '9', '', '', '', '', '', '', '', '']],
       ),
       suppliers: rows(['supplier_code', 'supplier_name', 'GSTIN'], [['SUP-1', 'Kaveri Traders', '33AAAAA0000A1Z9']]),
@@ -273,7 +273,7 @@ describe('bundleFromFiles — the CSV extract, every conversion stated', () => {
     expect(mapped.bundle.taxRates).toEqual([{ hsnCode: '1006', effectiveFrom: '2017-07-01', rateBps: 500 }]);
     expect(mapped.bundle.products).toEqual([{
       productId: 'P-RICE', sku: 'P-RICE', name: 'Ponni rice 5 kg', baseUom: 'each', primaryCategoryId: 'staples', taxClass: '1006', lifecycle: 'active', brand: 'SRE',
-      safety: { countryOfOrigin: 'IN', netQuantity: '5 kg', packerDetails: 'SRE Hyper Market' },
+      safety: { countryOfOrigin: 'IN', netQuantity: '5 kg', packerDetails: 'SRE Hyper Market', consumerCareContact: 'Care desk, 1800-000-0000' },
       barcodes: [{ code: '8901234567890', kind: 'ean' }, { code: 'INT-1', kind: 'internal' }],
       priceMinor: 42_000, mrpMinor: 45_000, costMinor: 36_000, marginFloorBps: 0,
     }]);

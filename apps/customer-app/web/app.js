@@ -59,6 +59,9 @@ const WORDS = {
     enterNumberFirst: 'Please enter your mobile number.', sendingCode: 'Sending a code to your phone…',
     codeSent: 'We sent a code to your phone. Enter it below.', codeNotSent: 'We could not send a code. Please check the number and try again.',
     codeNotAccepted: 'That code was not accepted. Please try again.',
+    smsOff: 'Sign-in by a code to your phone is switched off: no SMS provider is connected to this shop yet. No code was sent. You can still browse, or order at the store.',
+    signInOff: 'Customer sign-in is not switched on for this shop yet. No code was sent. You can still browse, or order at the store.',
+    tooManyTries: 'Too many tries for now. Please wait a few minutes, then ask for a new code.',
     needSignIn: 'Please sign in first, so the shop knows whose order this is. Your basket is kept.',
     sendingOrder: 'Sending your order to the shop…', sendNow: 'Send my order now', shopSaidNo: 'The shop did not accept the order',
     payAvailable: 'Pay for what the shop has', cancelOrder: 'Cancel the order', checkPayment: 'Check my payment',
@@ -121,6 +124,9 @@ const WORDS = {
     enterNumberFirst: 'உங்கள் கைபேசி எண்ணை உள்ளிடுங்கள்.', sendingCode: 'உங்கள் தொலைபேசிக்கு குறியீடு அனுப்பப்படுகிறது…',
     codeSent: 'உங்கள் தொலைபேசிக்கு குறியீடு அனுப்பினோம். கீழே உள்ளிடுங்கள்.', codeNotSent: 'குறியீடு அனுப்ப முடியவில்லை. எண்ணைச் சரிபார்த்து மீண்டும் முயலுங்கள்.',
     codeNotAccepted: 'அந்தக் குறியீடு ஏற்கப்படவில்லை. மீண்டும் முயலுங்கள்.',
+    smsOff: 'தொலைபேசிக்குக் குறியீடு மூலம் உள்நுழைவு நிறுத்தப்பட்டுள்ளது: இந்தக் கடைக்கு இன்னும் SMS சேவை இணைக்கப்படவில்லை. குறியீடு அனுப்பப்படவில்லை. பொருட்களைப் பார்க்கலாம், அல்லது கடையில் ஆர்டர் செய்யலாம்.',
+    signInOff: 'இந்தக் கடைக்கு வாடிக்கையாளர் உள்நுழைவு இன்னும் இயக்கப்படவில்லை. குறியீடு அனுப்பப்படவில்லை. பொருட்களைப் பார்க்கலாம், அல்லது கடையில் ஆர்டர் செய்யலாம்.',
+    tooManyTries: 'இப்போது அதிக முயற்சிகள். சில நிமிடங்கள் காத்திருந்து, புதிய குறியீடு கேளுங்கள்.',
     needSignIn: 'முதலில் உள்நுழையுங்கள் — இது யாருடைய ஆர்டர் என்று கடைக்குத் தெரிய வேண்டும். உங்கள் கூடை அப்படியே உள்ளது.',
     sendingOrder: 'உங்கள் ஆர்டர் கடைக்கு அனுப்பப்படுகிறது…', sendNow: 'என் ஆர்டரை இப்போது அனுப்பு', shopSaidNo: 'கடை ஆர்டரை ஏற்கவில்லை',
     payAvailable: 'கடையில் உள்ளதற்கு பணம் செலுத்து', cancelOrder: 'ஆர்டரை ரத்து செய்', checkPayment: 'என் கட்டணத்தைச் சரிபார்',
@@ -526,16 +532,24 @@ el('accept').addEventListener('click', () => {
 // No password, no signing key, no token-minting code in this page. The auth backend sends a
 // one-time code to the customer's phone; on a verified code it hands back a short-lived session
 // token, which goes STRAIGHT to the shop model (`shop.signedIn`) and is held there, in memory, for
-// the tab's life — never in storage, never in a cookie this script sets (hard rule #4). This file
-// keeps only the session id, to ask the backend to revoke the session on sign-out.
+// the tab's life — never in storage, never in a cookie this script sets (hard rule #4). The session
+// itself lives on the sign-in service (services/identity/src/customer-sign-in.ts) behind an HttpOnly
+// cookie this script cannot read; sign-out asks the service to end it.
 let challengeId = null;
-let sessionId = null;
 let signedInPhone = null;
 
 async function post(path, body) {
   const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   return res.json();
 }
+/** The service's refusal, in the customer's language — the reason, never a guess (P-08). */
+const refusalKey = (out, fallback) => {
+  const code = out?.error?.code ?? out?.reason;
+  if (code === 'sms_provider_not_configured') return 'smsOff';
+  if (code === 'customer_sign_in_not_switched_on' || code === 'sign_in_not_deployed') return 'signInOff';
+  if (code === 'too_many_tries') return 'tooManyTries';
+  return fallback;
+};
 function sayStatus(key, tone = '') {
   el('si-status').textContent = key === '' ? '' : t(key);
   el('si-status').className = 'note' + (tone === 'bad' ? ' bad' : '');
@@ -558,8 +572,9 @@ el('si-send').addEventListener('click', async () => {
   const phoneNumber = el('si-phone').value.trim();
   if (phoneNumber === '') { sayStatus('enterNumberFirst', 'bad'); return; }
   sayStatus('sendingCode');
+  let out = null;
   try {
-    const out = await post('/auth/otp/begin', { phoneNumber });
+    out = await post('/auth/otp/begin', { phoneNumber });
     if (out && out.ok) {
       challengeId = out.challengeId;
       signedInPhone = phoneNumber;
@@ -569,15 +584,15 @@ el('si-send').addEventListener('click', async () => {
       return;
     }
   } catch { /* fall through — the backend could not be reached */ }
-  sayStatus('codeNotSent', 'bad');
+  sayStatus(refusalKey(out, 'codeNotSent'), 'bad');
 });
 el('si-verify').addEventListener('click', async () => {
   const code = el('si-code').value.trim();
+  let out = null;
   try {
-    const out = await post('/auth/otp/verify', { challengeId, code });
+    out = await post('/auth/otp/verify', { challengeId, code });
     if (out && out.ok) {
       shop.signedIn(out.token); // the token's only destination
-      sessionId = out.sessionId;
       // FUL-06: the privacy screen shows what the SHOP holds for this customer, read once signed in.
       if (typeof shop.loadPrivacy === 'function') shop.loadPrivacy().then(() => render());
       // Round 8: my favourites are the shop's, read once signed in.
@@ -591,18 +606,17 @@ el('si-verify').addEventListener('click', async () => {
       return;
     }
   } catch { /* fall through */ }
-  sayStatus('codeNotAccepted', 'bad');
+  sayStatus(refusalKey(out, 'codeNotAccepted'), 'bad');
 });
 el('si-out').addEventListener('click', async () => {
   // Forgetting the token here is the easy half; the backend revoking the session is what protects
   // a replayed token (proved in the login e2e). Either way this page holds nothing afterwards.
   shop.signOut();
-  const ending = sessionId;
-  sessionId = null;
   signedInPhone = null;
   paintSignIn();
   sayStatus('signedOutNow');
-  if (ending !== null) { try { await post('/auth/signout', { sessionId: ending }); } catch { /* nothing to hold on to either way */ } }
+  // The cookie goes with this call (same origin); the service ends the session and clears it.
+  try { await post('/auth/otp/signout', {}); } catch { /* nothing to hold on to either way */ }
 });
 
 /**
@@ -622,7 +636,7 @@ function showOutcome(outcome) {
         : outcome.refusedBecause === 'review_is_out_of_date' ? t('priceChanged')
           : outcome.refusedBecause === 'not_signed_in' ? t('needSignIn')
             : outcome.tellTheCustomer; // the session's or the shop's own sentence, never a cheerier one
-    if (outcome.refusedBecause === 'signed_out') { sessionId = null; paintSignIn(); }
+    if (outcome.refusedBecause === 'signed_out') { paintSignIn(); }
     tell(outcome.refusedBecause === 'the_shop_refused' ? t('shopSaidNo') : t('payAndPlace'), why, 'bad');
     render();
     return;

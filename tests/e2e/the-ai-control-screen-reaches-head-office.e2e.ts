@@ -15,7 +15,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { simulatedTransport, type ModelTier, type TierPricing } from '../../packages/ai/src/index';
-import { EVALUATION_SIMULATOR } from '../../services/ai/src/evaluation-set';
+import { EVALUATION_SET, EVALUATION_SIMULATOR } from '../../services/ai/src/evaluation-set';
 
 /**
  * **The AI control screen in a real browser, on the production API surface (OB-288 lane 4 · P1 · roadmap §27).**
@@ -38,6 +38,8 @@ const HAVE_BROWSER = existsSync(CHROMIUM);
 const DATABASE_URL = process.env['DATABASE_URL'];
 const WEB_DIR = 'apps/web-erp/web';
 const OWNER = 'u-owner'; const OWNER2 = 'u-owner-2';
+// As many checks as the evaluation set holds for A01 (it grows with the agent; never a hard-coded count).
+const A01_CASES = EVALUATION_SET.filter((c) => c.agentId === 'A01').length;
 const PERMS = ['ai.proposal.read', 'ai.killswitch.set', 'ai.proposal.decide', 'ai.model.approve', 'ai.evaluation.run', 'ai.incident.manage', 'ai.budget.set', 'ai.agent.run'];
 const PRICING: Readonly<Record<ModelTier, TierPricing>> = {
   small: { inputPerMillionMinor: 1_000_000, outputPerMillionMinor: 2_000_000 },
@@ -233,7 +235,7 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
       await page.click('#check-list .row[data-check="A01"] button');
       expect(await afterAct(page, n)).toMatch(/The checks ran/);
       await page.click('#banner-ok');
-      expect(await page.textContent('#check-list .row[data-check="A01"]')).toMatch(/3\/3 passed/);
+      expect(await page.textContent('#check-list .row[data-check="A01"]')).toContain(`${A01_CASES}/${A01_CASES} passed`);
 
       await page.click('#tab-incidents');
       await page.selectOption('#raise-agent', 'A04');

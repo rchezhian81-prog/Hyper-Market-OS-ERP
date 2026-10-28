@@ -5,8 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
-import { beginOtpChallenge, verifyOtp, type OtpChallenge } from '../../packages/identity/src/index';
-import { createOtpSimulator } from '../support/otp-simulator';
+import type { OtpSimulator } from '../support/otp-simulator';
+import { mountCustomerSignIn, testCustomerSigner } from '../support/customer-sign-in-test-ports';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 
 /**
@@ -38,9 +38,11 @@ const shopData = () => ({
   consentPurposes: [{ purpose: 'marketing', channel: 'sms' }],
 });
 
-async function startStore(h: ApiHarness): Promise<{ base: string; sms: ReturnType<typeof createOtpSimulator>; stop: () => Promise<void> }> {
-  const sms = createOtpSimulator();
-  const challenges = new Map<string, OtpChallenge>();
+async function startStore(h: ApiHarness): Promise<{ base: string; sms: OtpSimulator; stop: () => Promise<void> }> {
+  // The REAL customer sign-in service (services/identity/src/customer-sign-in.ts) with the recording SMS transport and the
+  // local test IdP as its signer; a verified customer holds the `customer` role in this shop.
+  const signIn = mountCustomerSignIn({ tenantId: T, signer: testCustomerSigner({ idp: TEST_IDP, subjectFor: () => SUBJECT, onSignIn: async (s) => { await h.provisionRole(T, s, 'customer'); } }) });
+  const sms = signIn.sms;
   const readBody = (req: IncomingMessage): Promise<Record<string, unknown>> => new Promise((resolve) => {
     let data = '';
     req.on('data', (c) => { data += String(c); });
@@ -53,25 +55,8 @@ async function startStore(h: ApiHarness): Promise<{ base: string; sms: ReturnTyp
   const server: Server = createServer((req, res) => {
     void (async () => {
       const [path = '/'] = (req.url ?? '/').split('?');
-      if (req.method === 'POST' && path === '/auth/otp/begin') {
-        const body = await readBody(req);
-        const challengeId = `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const begun = beginOtpChallenge({ challengeId, tenantId: T, phoneNumber: String(body['phoneNumber'] ?? ''), purpose: 'login', now: new Date().toISOString() });
-        challenges.set(challengeId, begun.challenge);
-        sms.send({ phoneNumber: begun.challenge.phoneNumber, code: begun.code, purpose: 'login', tenantId: T });
-        sendJson(res, 200, { ok: true, challengeId });
-        return;
-      }
-      if (req.method === 'POST' && path === '/auth/otp/verify') {
-        const body = await readBody(req);
-        const challenge = challenges.get(String(body['challengeId'] ?? ''));
-        if (challenge === undefined) { sendJson(res, 200, { ok: false, reason: 'unknown_challenge' }); return; }
-        const v = verifyOtp({ challenge, tenantId: T, submittedCode: String(body['code'] ?? ''), now: new Date().toISOString() });
-        if (!v.verified) { sendJson(res, 200, { ok: false, reason: v.outcome }); return; }
-        await h.provisionRole(T, SUBJECT, 'customer');
-        sendJson(res, 200, { ok: true, token: TEST_IDP.issue({ sub: SUBJECT, tenantId: T, amr: ['otp'] }), sessionId: `s-${Date.now()}` });
-        return;
-      }
+      if (await signIn.handle(req, res)) return;
+
       if (path.startsWith('/v1/')) {
         const auth = req.headers['authorization'] ?? '';
         const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;

@@ -42,8 +42,9 @@ async function boxWithHeldBatches(dir: string): Promise<void> {
     'quality-holds': {
       receivedAt: asAt,
       feed: { name: 'quality-holds', asAt, body: { holds: [
-        { batchId: 'B-1', productId: 'CURD', reason: 'chiller ran warm overnight', heldAt: asAt, heldBy: 'u-owner' },
-        { batchId: 'B-2', productId: 'PANEER', reason: 'supplier notice pending', heldAt: asAt, heldBy: 'u-owner' },
+        // Round 6 · M10-FR-02: each hold carries the samples recorded on it at head office.
+        { batchId: 'B-1', productId: 'CURD', reason: 'chiller ran warm overnight', heldAt: asAt, heldBy: 'u-owner', samples: [{ sampleId: 'S-1', test: 'listeria', result: 'pass', takenBy: 'u-qc', takenAt: asAt }] },
+        { batchId: 'B-2', productId: 'PANEER', reason: 'supplier notice pending', heldAt: asAt, heldBy: 'u-owner', samples: [{ sampleId: 'S-2', test: 'coliform', result: 'fail', takenBy: 'u-qc', takenAt: asAt }] },
       ] } },
     },
   });
@@ -98,6 +99,12 @@ describe.skipIf(!HAVE_BROWSER)('a quality-hold release at the facilities screen 
     expect((await page.textContent(row('B-1'))) ?? '').toContain('chiller ran warm overnight');
     // Nothing on this screen places a hold.
     expect(await page.locator('#qh button').filter({ hasText: /hold/i }).count()).toBe(0);
+    // M10-FR-02: the samples recorded on each hold, in words beside their icons; a failed one takes the release away, said.
+    await waitText(page, row('B-1'), 'listeria — Passed');
+    expect(await page.getAttribute(`${row('B-1')} .qh-samples li`, 'data-result')).toBe('pass');
+    await waitText(page, row('B-2'), 'coliform — Failed');
+    await waitText(page, row('B-2'), 'A sample failed — this batch cannot be released for sale.');
+    expect(await page.locator(`${row('B-2')} button.qh-release`).count()).toBe(0);
 
     // With nothing written about what was checked, refused in words and nothing saved.
     await page.click(`${row('B-1')} button.qh-release`);
@@ -121,6 +128,7 @@ describe.skipIf(!HAVE_BROWSER)('a quality-hold release at the facilities screen 
     // Tamil: the section speaks Tamil.
     await page.click('#lang');
     expect((await page.textContent('#qh-heading')) ?? '').toContain('தரத் தடை');
+    await waitText(page, row('B-1'), 'listeria — தேர்ச்சி');
     await page.click('#lang');
 
     await page.reload({ waitUntil: 'load' });

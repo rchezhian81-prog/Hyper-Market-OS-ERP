@@ -263,11 +263,14 @@ function priceVarianceRoutes(input: Base): Route[] {
           const sup = g.poId === null ? null : (orders.get(g.poId)?.supplierId ?? null);
           if (supplierId !== undefined && sup !== supplierId) continue;
           if (!inScope(g.warehouseId)) { outsideScope += 1; continue; }
+          // Round 6 (M07-FR-01/02): a line typed at a cost other than its order's is BOOKED at the order's cost; the cost it
+          // was received at is kept on the receipt's cost discrepancy, so the variance report still measures it (unchanged).
+          const typedCost = new Map((g.costDiscrepancies ?? []).map((d) => [d.lineId, d.typedUnitCost] as const));
           receipts.push({
             grnId: g.grnId, number: g.number, poId: g.poId, supplierId: sup, receivedOn, locationId: g.warehouseId,
             lines: g.captured.lines
               .filter((l) => productId === undefined || l.productId === productId)
-              .map((l) => ({ lineId: l.lineId, productId: l.productId, keptMinor: l.sellableMinor + l.quarantinedMinor + l.heldMinor, uom: l.uom, unitCost: l.unitCost })),
+              .map((l) => ({ lineId: l.lineId, productId: l.productId, keptMinor: l.sellableMinor + l.quarantinedMinor + l.heldMinor, uom: l.uom, unitCost: (typedCost.get(l.lineId) as typeof l.unitCost | undefined) ?? l.unitCost })),
           });
         }
         const ppvAgreements: PpvAgreement[] = [...agreements.values()].map((a) => ({

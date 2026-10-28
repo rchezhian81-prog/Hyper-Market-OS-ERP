@@ -96,6 +96,7 @@ describe('validateProduct — typed per-tenant attributes', () => {
         countryOfOrigin: 'India',
         netQuantity: '5 kg',
         packerDetails: 'ITC Ltd, Kolkata',
+        consumerCareContact: 'Care desk, 1800-000-0000',
         storageConditions: 'Store in a cool dry place',
       },
       attributes: { shelf_life_days: '180', storage: 'ambient' },
@@ -142,24 +143,25 @@ describe('validateProduct — safety and compliance content (M03-FR-03)', () => 
         countryOfOrigin: 'India',
         netQuantity: '5 kg',
         packerDetails: 'ITC Ltd, Kolkata',
+        consumerCareContact: 'Care desk, 1800-000-0000',
       },
       ...over,
     });
 
   it('blocks a food item that has declared nothing about allergens (acceptance)', () => {
-    const result = validateProduct(food({ safety: { countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'X' } }), CATEGORIES);
+    const result = validateProduct(food({ safety: { countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'X', consumerCareContact: 'Care desk, 1800-000-0000' } }), CATEGORIES);
     expect(result.publishable).toBe(false);
     expect(result.issues[0]?.message).toContain('must state its allergens');
   });
 
   it('accepts an explicit declaration of "no allergens" — silence is not a declaration', () => {
-    const result = validateProduct(food({ safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'X' } }), CATEGORIES);
+    const result = validateProduct(food({ safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'X', consumerCareContact: 'Care desk, 1800-000-0000' } }), CATEGORIES);
     expect(result.publishable).toBe(true);
   });
 
   it('blocks packed goods missing their Legal Metrology label fields (§9.3)', () => {
     const noNetQty = validateProduct(
-      food({ safety: { allergens: [], countryOfOrigin: 'India', packerDetails: 'X' } }),
+      food({ safety: { allergens: [], countryOfOrigin: 'India', packerDetails: 'X', consumerCareContact: 'Care desk, 1800-000-0000' } }),
       CATEGORIES,
     );
     expect(noNetQty.issues.map((i) => i.field)).toContain('safety.netQuantity');
@@ -173,7 +175,7 @@ describe('validateProduct — safety and compliance content (M03-FR-03)', () => 
 
   it('blocks an age-restricted item that never says what age', () => {
     const result = validateProduct(
-      product({ primaryCategoryId: 'liquor', safety: { netQuantity: '750 ml', packerDetails: 'X' } }),
+      product({ primaryCategoryId: 'liquor', safety: { netQuantity: '750 ml', packerDetails: 'X', consumerCareContact: 'Care desk, 1800-000-0000' } }),
       CATEGORIES,
     );
     expect(result.issues.map((i) => i.field)).toContain('safety.minimumAge');

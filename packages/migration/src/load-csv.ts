@@ -156,6 +156,7 @@ export function bundleFromFiles(files: ExtractFiles): MappedBundle {
     const storageConditions = cell(row, 'storage_conditions', 'storage');
     const netQuantity = cell(row, 'net_quantity', 'pack_size');
     const packerDetails = cell(row, 'packer_details', 'packer', 'packed_by', 'importer');
+    const consumerCareContact = cell(row, 'consumer_care_contact', 'consumer_care', 'customer_care');
     const minimumAgeText = cell(row, 'minimum_age', 'min_age');
     const minimumAge = minimumAgeText !== undefined && /^\d+$/.test(minimumAgeText) ? Number(minimumAgeText) : yes(cell(row, 'age_restricted')) ? 18 : undefined;
     const safety = {
@@ -165,6 +166,7 @@ export function bundleFromFiles(files: ExtractFiles): MappedBundle {
       ...(storageConditions === undefined ? {} : { storageConditions }),
       ...(netQuantity === undefined ? {} : { netQuantity }),
       ...(packerDetails === undefined ? {} : { packerDetails }),
+      ...(consumerCareContact === undefined ? {} : { consumerCareContact }),
       ...(minimumAge === undefined ? {} : { minimumAge }),
     };
     const brand = cell(row, 'brand', 'manufacturer');

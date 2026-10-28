@@ -46,7 +46,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the import
     await post('/v1/catalogue/categories/grocery', { name: 'Grocery', parentId: null });
     await post('/v1/catalogue/categories/staples', { name: 'Staples', parentId: 'grocery', regulated: ['food', 'packed'] });
     await post('/v1/catalogue/categories/home', { name: 'Home care', parentId: null });
-    await post('/v1/catalogue/products/p-rice/publish', { product: { sku: 'RICE5', name: 'Rice 5kg', baseUom: 'each', primaryCategoryId: 'staples', taxClass: '1006', lifecycle: 'draft', safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'Synthetic Mills' } } });
+    await post('/v1/catalogue/products/p-rice/publish', { product: { sku: 'RICE5', name: 'Rice 5kg', baseUom: 'each', primaryCategoryId: 'staples', taxClass: '1006', lifecycle: 'draft', safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'Synthetic Mills', consumerCareContact: 'Synthetic Mills care desk, care@synthetic-mills.test' } } });
     await post('/v1/catalogue/products/p-soap/publish', { product: { sku: 'SOAP', name: 'Soap', baseUom: 'each', primaryCategoryId: 'home', taxClass: '3401', lifecycle: 'draft' } });
     shell = await startPageShell({
       cloud: () => cloud, page: { path: '/data-io', html: 'data-io.html', dataGlobal: 'dataIoData' },

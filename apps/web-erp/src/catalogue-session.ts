@@ -462,7 +462,8 @@ export interface ProductView {
   readonly priceToday: PriceEntry | null;
 }
 
-export type PublishRefusal = 'not_finished' | 'recall_blocked' | 'barcode_belongs_to_another_item';
+/** `two_mrps_on_one_date` (B2): the record carries two different MRPs taking effect on one date — refused by name. */
+export type PublishRefusal = 'not_finished' | 'recall_blocked' | 'barcode_belongs_to_another_item' | 'two_mrps_on_one_date';
 
 export type ShelfRefusal =
   | 'this_box_has_no_shelf_map'
@@ -499,6 +500,7 @@ const PUBLISH_REFUSALS: Readonly<Record<PublishRefusal, PublishRefusal>> = Objec
   not_finished: 'not_finished',
   recall_blocked: 'recall_blocked',
   barcode_belongs_to_another_item: 'barcode_belongs_to_another_item',
+  two_mrps_on_one_date: 'two_mrps_on_one_date',
 });
 
 export const PUBLISH_REFUSAL_KINDS: readonly PublishRefusal[] = Object.freeze(Object.values(PUBLISH_REFUSALS));
@@ -813,9 +815,11 @@ export function createCatalogueSession(
         if (e instanceof NotPublishableError) {
           // Every reason at once. One per attempt is how somebody ends up saving six times.
           const missing = e.issues.map((i) => i.message);
+          // B2: two MRPs on one date is not "unfinished" — it is a price the law forbids, so it is refused by its own name.
+          const dualMrp = e.issues.some((i) => i.field === 'mrpHistory');
           return {
             ok: false,
-            refusal: 'not_finished',
+            refusal: dualMrp ? 'two_mrps_on_one_date' : 'not_finished',
             detail: `${missing.length} thing(s) still needed before this can be sold.`,
             missing,
           };

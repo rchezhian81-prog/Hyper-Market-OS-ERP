@@ -151,7 +151,7 @@ describe.each(backings)('Batch 2 · the screens drive the real routes — on $na
     // The label for the batch on the (re-read) board: the run's batch, printed by head office.
     const after = await screen();
     expect(after.view('en').labelRuns.map((r) => r.runId)).toContain('run-scr');
-    const printed = await after.printLabel({ runId: 'run-scr', productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', price: '120', allergens: 'wheat, milk' });
+    const printed = await after.printLabel({ runId: 'run-scr', productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', price: '120', allergens: 'cereals_gluten, milk', vegClass: 'veg' });
     expect(printed.outcome).toBe('printed');
     expect(printed.outcome === 'printed' && printed.lines.join(' ')).toContain('CAKE-SCR');
     const incomplete = await after.printLabel({ runId: 'run-scr', productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE', price: '120', allergens: '' });

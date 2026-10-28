@@ -96,6 +96,7 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'services/customer/src/duplicates.ts', field: 'email', whose: 'customer', protection: 'not_kept', evidence: 'the duplicate-detection route reads the candidates in the request and keeps only the match it proposes' },
   { file: 'services/customer/src/index.ts', field: 'dateOfBirth', whose: 'customer', protection: 'not_kept', evidence: 'the child-data route computes an age from it for one decision and keeps the decision only' },
   // ── R4 Lane 2 (begin) ──
+  { file: 'services/identity/src/customer-sign-in.ts', field: 'phoneNumber', whose: 'customer', protection: 'not_kept', evidence: 'customer sign-in by code (ADR-0031): the number lives only in memory, inside a waiting code for its five minutes and beside the session it signed in; limiter keys hold its hash; never written to disk or a log' },
   { file: 'services/customer/src/signup-sms-code.ts', field: 'mobile', whose: 'customer', protection: 'not_kept', evidence: 'the switched-off SMS code link reads the number in the request; only a test stand-in challenge holds it, in memory' },
   // OB-288 lane 4 · P2 (OB-315): a customer file's mobile column is read only to make the member code; the job's record and
   // the kept dry run hold the member code and the last four digits (`storedRow`, `personalColumns`) — never the number.

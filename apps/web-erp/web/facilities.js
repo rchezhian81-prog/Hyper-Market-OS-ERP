@@ -339,6 +339,19 @@ function paintQualityHolds() {
     st.append(icon, word); st.setAttribute('aria-label', row.stateWord); head.append(name, st);
     const why = document.createElement('div'); why.className = 'saved'; why.textContent = `${qt('qhWhy')}: ${row.reason}`;
     li.append(head, why);
+    // M10-FR-02: the samples recorded on the hold — each result in words beside its icon; "not told" is said, never blank.
+    const sh = document.createElement('div'); sh.className = 'saved qh-samples-head'; sh.textContent = row.samplesWords; li.append(sh);
+    if (row.samples !== null && row.samples.length > 0) {
+      const ul = document.createElement('ul'); ul.className = 'qh-samples';
+      for (const s of row.samples) {
+        const item = document.createElement('li'); item.dataset.sample = s.sampleId; item.dataset.result = s.result;
+        const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = s.icon;
+        const w = document.createElement('span'); w.textContent = ` ${s.test} — ${s.resultWord} (${qt('qhTakenBy')} ${s.takenBy}, ${s.takenAt.slice(0, 16).replace('T', ' ')})`;
+        item.append(ic, w); ul.append(item);
+      }
+      li.append(ul);
+    }
+    if (row.blockedWords) { const bw = document.createElement('div'); bw.className = 'exc qh-blocked'; bw.textContent = row.blockedWords; li.append(bw); }
     if (row.saved !== undefined) {
       const s = document.createElement('div'); s.className = 'saved'; s.textContent = row.saved.stateWord; li.append(s);
       if (row.saved.reason) { const ex = document.createElement('div'); ex.className = 'exc'; ex.textContent = row.saved.reason; li.append(ex); }

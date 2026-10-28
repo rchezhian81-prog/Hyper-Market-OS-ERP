@@ -2770,7 +2770,8 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     expect(groups.map((g) => g.group.en)).toEqual(['Today', 'Receiving & QC', 'Inventory & backstore', 'Cash & finance']); // OB-16 workspaces
     const items = groups.flatMap((g) => g.items);
     // OB-380: Transfers and Store events (head-office pages on the same availability read) are served by the box now.
-    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'dock-diary', 'counts', 'transfers', 'stock-health', 'unsellable', 'warehouse-supervisor', 'demand-events', 'day-reopen']);
+    // Round 6: Packaging and crates (M28-FR-03) on the same availability read.
+    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'dock-diary', 'counts', 'transfers', 'packaging', 'stock-health', 'unsellable', 'warehouse-supervisor', 'demand-events', 'day-reopen']);
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
     // Both languages ride along, so the chrome never draws half a menu.
     for (const i of items) expect(i.label.ta, `${i.id} has no Tamil label`).toMatch(/[஀-௿]/);
