@@ -11,6 +11,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **OB-434 (option a):** in the GSTN GSTR-1 file, a B2B invoice's `val` now includes compensation cess, as B2CL's already did. Each rate line with cess carries `csamt`, so the lines add up to `val`. The return's taxable value and GST totals are unchanged.
 - **Tests:** `tests/unit/a-b2b-invoice-in-the-gstn-file-carries-its-cess.test.ts` (5 tests). The two cess tests fail on the old code.
 - **Next:** before the first live filing, the owner's accountant loads the GSTR-1 file into the GSTN offline tool.
+- **CI fix in the same PR (owner, option A).** `tests/e2e/store-ops-screens-on-the-production-api.e2e.ts` failed with "expected 'missed' to be 'due'" because case (a) ran at 02:59:30 UTC.
+  - Cause: the test pinned "this hour" when the file loaded. The hourly check's slot, with 59 minutes' grace, turns missed at :59.
+  - Fix: the hour is now set just before seeding. A run that would seed in an hour's last three minutes first waits for the next hour.
+  - Test only; the food-safety screen is unchanged.
 - **Blocked:** nothing.
 - **Owner decisions needed:** none.
 
