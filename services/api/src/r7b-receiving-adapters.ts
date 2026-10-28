@@ -84,8 +84,15 @@ export async function isFoodProduct(input: Base, tenantId: string, productId: st
 
 const GRN_STREAM = streamName(STREAM.purchase, 'grn');
 
+type LiveInvoice = Awaited<ReturnType<typeof liveSupplierInvoices>>[number];
+/** OB-509: a registered supplier bill as the goods-receipt match reads it — only what a receipt's cost is read from. */
+const billForReceipt = (inv: LiveInvoice): SupplierBillForReceipt => ({
+  invoiceId: inv.invoiceId, supplierId: inv.supplierId, poId: inv.poId, currency: inv.currency, approvedBy: inv.approvedBy,
+  lines: inv.lines.map((l) => ({ productId: l.productId, unitPriceMinor: l.unitPriceMinor, ...(l.unitPricePer === undefined ? {} : { unitPricePer: l.unitPricePer }) })),
+});
+
 /** OB-508 · OB-509 · Round 7: everything the goods-receipt routes take from this round, spread into their deps (main.ts). */
-export function r7bReceiptHooks(input: Base): Pick<GoodsReceiptDeps, 'orderRaisedBy' | 'storeManagersOf' | 'supplierBill' | 'commitBillMatch' | 'orderLineCost' | 'productRule' | 'productFacts'> {
+export function r7bReceiptHooks(input: Base): Pick<GoodsReceiptDeps, 'orderRaisedBy' | 'storeManagersOf' | 'supplierBill' | 'supplierBills' | 'commitBillMatch' | 'orderLineCost' | 'productRule' | 'productFacts'> {
   return {
     ...receiptCostHooks(input),
     ...packagedRule(input),
@@ -98,11 +105,10 @@ export function r7bReceiptHooks(input: Base): Pick<GoodsReceiptDeps, 'orderRaise
     // OB-509: the supplier's bill as head office's register holds it (a withdrawn bill is not on it).
     supplierBill: async (tenantId, invoiceId): Promise<SupplierBillForReceipt | undefined> => {
       const inv = (await liveSupplierInvoices(input.store, tenantId)).find((i) => i.invoiceId === invoiceId);
-      return inv === undefined ? undefined : {
-        invoiceId: inv.invoiceId, supplierId: inv.supplierId, poId: inv.poId, currency: inv.currency, approvedBy: inv.approvedBy,
-        lines: inv.lines.map((l) => ({ productId: l.productId, unitPriceMinor: l.unitPriceMinor, ...(l.unitPricePer === undefined ? {} : { unitPricePer: l.unitPricePer }) })),
-      };
+      return inv === undefined ? undefined : billForReceipt(inv);
     },
+    // OB-509 (G3): every bill on the register — the ones the bill-matching screen offers beside a receipt waiting for its cost.
+    supplierBills: async (tenantId) => (await liveSupplierInvoices(input.store, tenantId)).map(billForReceipt),
     // OB-509: the receipt's next version and the value its bill puts on the unvalued stock — ONE append, once per bill.
     commitBillMatch: async (tenantId, record, postings, key) => {
       const at = record.billCosts?.at(-1)?.matchedAt ?? input.now();

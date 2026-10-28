@@ -98,6 +98,16 @@
         <ul class="register" id="register" aria-label="Bills handed in"></ul>
       </section>
 
+      <!-- OB-509 (G3): deliveries booked with their cost NOT KNOWN (no order, or not on the order) — a person with the
+           bill-checking right picks the supplier bill on head office's register and head office matches it to the delivery.
+           Only { invoiceId } is sent, never a typed cost; every refusal is said in English and Tamil. -->
+      <section aria-labelledby="cnk-h" id="cnk-section">
+        <h2 id="cnk-h">Deliveries waiting for their bill</h2>
+        <p class="lede" id="cnk-lede">Goods that came with no order, or that were not on the order, are booked with their cost not known. Pick the supplier's bill for the delivery and match it: their cost becomes the bill's. A typed figure never sets the stock's value.</p>
+        <p class="status" id="cnk-status" role="status" aria-live="polite"></p>
+        <ul class="register" id="cnk-list" aria-label="Deliveries waiting for their bill"></ul>
+      </section>
+
       <section aria-labelledby="drawer-h" id="drawer" hidden>
         <h2 id="drawer-h">Bill</h2>
         <p class="facts" id="drawer-facts"></p>

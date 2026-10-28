@@ -18,6 +18,13 @@
 //   • CHECK it against the order: the three-way match head office runs over what IT holds (`/match`), its exceptions
 //     shown line by line.
 //
+//   • MATCH A BILL TO A DELIVERY whose cost is not known (OB-509 · G3): goods received with no order, or not on the order,
+//     are booked with their cost NOT KNOWN until the supplier's bill is matched to the receipt. Head office lists those
+//     receipts with the bills on its register that could be matched (`GET /v1/inventory/receipts-cost-not-known`); a person
+//     picks one and head office matches it (`POST /v1/inventory/goods-receipt/:grnId/bill-match`, `{ invoiceId }` only —
+//     never a typed cost). Every refusal (the receiver matching their own delivery, a bill for another order …) is said in
+//     plain English and Tamil (`billMatchWords`), with head office's own words beside it.
+//
 // Nothing here posts money or stock; the match is head office's record. A machine reads; a person commits (P-05).
 
 /** One call to head office under the signed-in person's own session. `'unreachable'` when the link is down (P-08). */
@@ -261,6 +268,113 @@ export function bodyKey(prefix: string, body: unknown): string {
 
 const nonce = (): string => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
+// ── OB-509 (G3): receipts whose cost is not known, and matching a registered bill to one ─────────────────────────────
+
+/** A bill on head office's register that could be matched to a waiting receipt — its price for each waiting product. */
+export interface CandidateBillView {
+  readonly invoiceId: string;
+  readonly supplierId: string;
+  readonly poId: string | null;
+  readonly currency: string;
+  readonly prices: readonly { readonly productId: string; readonly unitPriceMinor: number; readonly unitPricePer?: number }[];
+  readonly checkedBy: string | null;
+}
+
+/** One receipt still waiting for its supplier's bill, as head office listed it. */
+export interface WaitingReceiptView {
+  readonly grnId: string;
+  readonly number: string;
+  readonly poId: string | null;
+  readonly warehouseId: string;
+  readonly receivedBy: string;
+  readonly receivedAt: string;
+  readonly waiting: readonly { readonly lineId: string; readonly productId: string; readonly uom: string; readonly because: 'no_issued_order' | 'not_on_order'; readonly inStockMinor: number }[];
+  readonly bills: readonly CandidateBillView[];
+  /** The reader booked this delivery in — head office refuses them the match (§28); the screen says so and offers nothing. */
+  readonly receivedByYou: boolean;
+}
+
+export interface WaitingForBillList {
+  readonly receipts: readonly WaitingReceiptView[];
+  readonly count: number;
+  readonly asAt: string;
+}
+
+/** What head office answered a match: the lines whose cost the bill made known, and any still waiting. */
+export interface ReceiptBillMatchView {
+  readonly matched: readonly { readonly lineId: string; readonly productId: string; readonly unitCost: { readonly minor: number; readonly currency: string; readonly per?: number }; readonly quantityMinor: number; readonly valueMinor: number }[];
+  readonly stillNotKnown: readonly { readonly lineId: string; readonly productId: string }[];
+  readonly alreadyMatched: boolean;
+}
+
+export type BillMatchLang = 'en' | 'ta';
+
+/** Every refusal of the bill match head office can give, said in plain words for the office — English and Tamil. */
+export const BILL_MATCH_WORDS: Readonly<Record<BillMatchLang, Readonly<Record<string, string>>>> = Object.freeze({
+  en: {
+    matched: 'Matched — the cost of these goods is now the bill\'s, and their stock is valued at it.',
+    alreadyMatched: 'This bill was already matched to this delivery — nothing was changed.',
+    stillWaiting: 'Still waiting for a bill:',
+    unreachable: 'Head office cannot be reached — nothing was changed. Try again when connected.',
+    pickBill: 'Pick the supplier bill first.', pick_a_bill: 'Pick the supplier bill first — nothing was sent.',
+    receivedByYou: 'You booked this delivery in, so another person must match its bill.',
+    self_match: 'Not matched — you booked this delivery in, so another person (the buyer or the accountant) must match its bill.',
+    bill_for_another_order: 'Not matched — that bill is for a different purchase order (or for none) than this delivery.',
+    bill_unknown: 'Not matched — that bill is not on head office\'s register. Hand it in or type it above first.',
+    receipt_unknown: 'Not matched — head office has no such delivery. The store may not have synchronised yet.',
+    nothing_waiting_for_a_bill: 'Not matched — nothing on this delivery is waiting for that bill.',
+    bill_names_none_of_these_goods: 'Not matched — that bill does not name any of the goods whose cost is not known.',
+    bill_match_not_available: 'Not matched — head office cannot match bills to deliveries just now.',
+    not_readable_as_a_bill_match: 'Not matched — only a bill on the register can be matched; a typed cost is never taken.',
+    forbidden: 'Not matched — your role cannot match supplier bills.',
+    outside_your_branch_scope: 'Not matched — that delivery belongs to a store outside yours.',
+    other: 'Not matched — head office refused it.',
+    headOfficeSaid: 'Head office said:',
+  },
+  ta: {
+    matched: 'பொருத்தப்பட்டது — இந்தப் பொருட்களின் விலை இப்போது பில்லின் விலை; அவற்றின் இருப்பு அந்த விலையில் மதிப்பிடப்படுகிறது.',
+    alreadyMatched: 'இந்த பில் ஏற்கனவே இந்த டெலிவரியுடன் பொருத்தப்பட்டது — எதுவும் மாற்றப்படவில்லை.',
+    stillWaiting: 'இன்னும் பில்லுக்காகக் காத்திருப்பவை:',
+    unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை. இணைப்பு கிடைத்ததும் மீண்டும் முயலவும்.',
+    pickBill: 'முதலில் சப்ளையர் பில்லைத் தேர்ந்தெடுக்கவும்.', pick_a_bill: 'முதலில் சப்ளையர் பில்லைத் தேர்ந்தெடுக்கவும் — எதுவும் அனுப்பப்படவில்லை.',
+    receivedByYou: 'இந்த டெலிவரியை நீங்கள் பெற்றீர்கள்; எனவே அதன் பில்லை வேறு ஒருவர் பொருத்த வேண்டும்.',
+    self_match: 'பொருத்தப்படவில்லை — இந்த டெலிவரியை நீங்கள் பெற்றீர்கள்; எனவே வேறு ஒருவர் (வாங்குநர் அல்லது கணக்காளர்) அதன் பில்லைப் பொருத்த வேண்டும்.',
+    bill_for_another_order: 'பொருத்தப்படவில்லை — அந்த பில் இந்த டெலிவரியின் கொள்முதல் ஆர்டருக்கானது அல்ல.',
+    bill_unknown: 'பொருத்தப்படவில்லை — அந்த பில் தலைமை அலுவலகப் பதிவேட்டில் இல்லை. முதலில் மேலே அதைக் கொடுக்கவும் அல்லது தட்டச்சு செய்யவும்.',
+    receipt_unknown: 'பொருத்தப்படவில்லை — அப்படி ஒரு டெலிவரி தலைமை அலுவலகத்தில் இல்லை. கடை இன்னும் ஒத்திசைக்காமல் இருக்கலாம்.',
+    nothing_waiting_for_a_bill: 'பொருத்தப்படவில்லை — இந்த டெலிவரியில் எதுவும் அந்த பில்லுக்காகக் காத்திருக்கவில்லை.',
+    bill_names_none_of_these_goods: 'பொருத்தப்படவில்லை — விலை தெரியாத பொருட்கள் எதுவும் அந்த பில்லில் இல்லை.',
+    bill_match_not_available: 'பொருத்தப்படவில்லை — தலைமை அலுவலகத்தால் இப்போது பில்களை டெலிவரிகளுடன் பொருத்த முடியாது.',
+    not_readable_as_a_bill_match: 'பொருத்தப்படவில்லை — பதிவேட்டில் உள்ள பில்லை மட்டுமே பொருத்த முடியும்; தட்டச்சு செய்த விலை ஒருபோதும் ஏற்கப்படாது.',
+    forbidden: 'பொருத்தப்படவில்லை — உங்கள் பங்கால் சப்ளையர் பில்களைப் பொருத்த முடியாது.',
+    outside_your_branch_scope: 'பொருத்தப்படவில்லை — அந்த டெலிவரி உங்கள் கடைக்கு வெளியே உள்ள கடையைச் சேர்ந்தது.',
+    other: 'பொருத்தப்படவில்லை — தலைமை அலுவலகம் மறுத்தது.',
+    headOfficeSaid: 'தலைமை அலுவலகம் சொன்னது:',
+  },
+});
+
+/**
+ * The match's answer in the reader's language: what happened in plain words; for a refusal, head office's own words beside it
+ * (they name the bill and the delivery). `good` tells the page which tone to draw.
+ */
+export function billMatchWords(lang: BillMatchLang, answer: Answer<ReceiptBillMatchView>): { readonly good: boolean; readonly text: string } {
+  const w = BILL_MATCH_WORDS[lang];
+  if (answer.ok) {
+    const still = answer.value.stillNotKnown.map((l) => l.productId);
+    const head = answer.value.alreadyMatched ? w['alreadyMatched']! : w['matched']!;
+    return { good: true, text: still.length === 0 ? head : `${head} ${w['stillWaiting']!} ${still.join(', ')}` };
+  }
+  if (answer.unreachable) return { good: false, text: w['unreachable']! };
+  const plain = w[answer.code] ?? w['other']!;
+  return { good: false, text: answer.whatHappened === '' ? plain : `${plain} ${w['headOfficeSaid']!} ${answer.whatHappened}` };
+}
+
+const asWaitingList = (b: unknown): WaitingForBillList => {
+  const body = (b ?? {}) as { receipts?: unknown; count?: unknown; asAt?: unknown };
+  const receipts = Array.isArray(body.receipts) ? body.receipts as WaitingReceiptView[] : [];
+  return { receipts, count: typeof body.count === 'number' ? body.count : receipts.length, asAt: typeof body.asAt === 'string' ? body.asAt : '' };
+};
+
 export interface SupplierBillsSession {
   /** Whether the signed-in person may hand in, confirm and type bills (`purchase.invoice.capture`). */
   readonly mayCapture: boolean;
@@ -273,6 +387,12 @@ export interface SupplierBillsSession {
   match(invoiceId: string): Promise<Answer<MatchView>>;
   /** The latest match head office holds for an invoice (null when nobody has matched it). */
   latestMatch(invoiceId: string): Promise<Answer<MatchView | null>>;
+  /** OB-509 (G3): the receipts still waiting for their supplier's bill, with the registered bills that could be matched. */
+  waitingForBill(): Promise<Answer<WaitingForBillList>>;
+  /** OB-509 (G3): match a registered bill to a receipt — head office decides; only `{ invoiceId }` is sent, never a cost. */
+  matchToReceipt(grnId: string, invoiceId: string): Promise<Answer<ReceiptBillMatchView> | { readonly ok: false; readonly unreachable: false; readonly status: 0; readonly code: 'pick_a_bill'; readonly whatHappened: ''; readonly nextSafeAction: '' }>;
+  /** OB-509 (G3): the match's answer in plain English or Tamil (`billMatchWords`), for the page to show as it is. */
+  matchWords(lang: BillMatchLang, answer: Answer<ReceiptBillMatchView>): { readonly good: boolean; readonly text: string };
 }
 
 export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { readonly permissions: readonly string[] }): SupplierBillsSession {
@@ -307,6 +427,17 @@ export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { reado
       return r.ok && r.value === null ? { ok: false, unreachable: false, status: 200, code: 'unreadable_match', whatHappened: 'head office answered with something that is not a match', nextSafeAction: '' } : r as Answer<MatchView>;
     },
     latestMatch: async (invoiceId) => answerOf(await call({ method: 'GET', path: `/v1/purchase/invoices/${encodeURIComponent(invoiceId)}` }), (b) => presentMatch((b as { match?: unknown }).match ?? null)),
+    waitingForBill: async () => answerOf(await call({ method: 'GET', path: '/v1/inventory/receipts-cost-not-known' }), asWaitingList),
+    matchToReceipt: async (grnId, invoiceId) => {
+      if (invoiceId.trim() === '' || grnId.trim() === '') return { ok: false, unreachable: false, status: 0, code: 'pick_a_bill', whatHappened: '', nextSafeAction: '' };
+      // Each click its own key: head office is idempotent on the receipt and bill itself (a second match is "already matched").
+      return answerOf(await call({ method: 'POST', path: `/v1/inventory/goods-receipt/${encodeURIComponent(grnId.trim())}/bill-match`, body: { invoiceId: invoiceId.trim() }, idempotencyKey: `bill-match-${grnId.trim()}-${nonce()}` }),
+        (b) => {
+          const r = (b ?? {}) as Partial<ReceiptBillMatchView>;
+          return { matched: Array.isArray(r.matched) ? r.matched : [], stillNotKnown: Array.isArray(r.stillNotKnown) ? r.stillNotKnown : [], alreadyMatched: r.alreadyMatched === true };
+        });
+    },
+    matchWords: billMatchWords,
   };
 }
 
