@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { ApiHarness } from '../support/api-harness';
 import { useRestartableBackings } from '../support/p3-backings';
+import { regulatedPublishBody } from '../support/approval-request';
 import { productMasterAdapter } from '../../services/api/src/adapters';
 import { bundlesInForce } from '../../services/api/src/p2-catalogue-adapters';
 
@@ -28,13 +29,19 @@ async function cast(h: ApiHarness, T: string): Promise<void> {
   await h.provisionRole(T, 'u-mgr', 'store_manager');
   await h.provisionRole(T, 'u-cash', 'cashier');
   await h.provisionRole(T, 'u-shopper', 'customer');
+  await h.provisionRole(T, 'u-acct', 'accountant'); // OB-503: approves an age-restricted or regulated product reaching the tills
 }
 const post = (h: ApiHarness, T: string, path: string, body: unknown, userId = 'u-owner') =>
   h.request({ method: 'POST', path, userId, tenantId: T, idempotencyKey: `k-${randomUUID()}`, body });
 const get = (h: ApiHarness, T: string, path: string, query: Record<string, string> = {}, userId = 'u-owner') =>
   h.request({ method: 'GET', path, userId, tenantId: T, query });
+const publishBody = (productId: string, product: Record<string, unknown>) =>
+  ({ product: { baseUom: 'each', lifecycle: 'active', taxClass: '3305', primaryCategoryId: 'hair', ...product, sku: product['sku'] ?? `SKU-${productId}`, name: product['name'] ?? productId }, categories: CATS });
 const publish = (h: ApiHarness, T: string, productId: string, product: Record<string, unknown>) =>
-  post(h, T, `/v1/catalogue/products/${productId}/publish`, { product: { baseUom: 'each', lifecycle: 'active', taxClass: '3305', primaryCategoryId: 'hair', ...product, sku: product['sku'] ?? `SKU-${productId}`, name: product['name'] ?? productId }, categories: CATS });
+  post(h, T, `/v1/catalogue/products/${productId}/publish`, publishBody(productId, product));
+/** OB-503: an age-restricted product reaches the tills with a second person's approval of exactly its publish. */
+const publishApproved = async (h: ApiHarness, T: string, productId: string, product: Record<string, unknown>) =>
+  post(h, T, `/v1/catalogue/products/${productId}/publish`, await regulatedPublishBody(h, T, productId, publishBody(productId, product)));
 
 describe.each(backings)('OB-288 P2 — the product master keeps variants, nutrition, bundles and substitutes — on $name', ({ harness }) => {
   it('variants share a one-level parent and differ from their siblings; the category report rolls them up with the manufacturer', async () => {
@@ -120,7 +127,7 @@ describe.each(backings)('OB-288 P2 — the product master keeps variants, nutrit
     expect((await milk('milk-b', ['milk'])).status).toBe(201);
     expect((await milk('milk-nut', ['milk', 'peanuts_tree_nuts'])).status).toBe(201);
     expect((await milk('milk-old', ['milk'], { lifecycle: 'discontinued' })).status).toBe(201);
-    expect((await publish(h, T, 'energy', { primaryCategoryId: 'home', taxClass: '22029920', safety: { minimumAge: 18 } })).status).toBe(201);
+    expect((await publishApproved(h, T, 'energy', { primaryCategoryId: 'home', taxClass: '22029920', safety: { minimumAge: 18 } })).status).toBe(201);
     const set = (productId: string, substitutes: readonly string[], userId = 'u-owner') => post(h, T, `/v1/catalogue/products/${productId}/substitutes`, { substitutes, reason: 'same size, same price band' }, userId);
     expect((await set('milk-a', ['milk-b'], 'u-mgr')).status).toBe(403);
     expect(codeOf(await set('milk-a', ['energy']))).toBe('substitute_controlled');

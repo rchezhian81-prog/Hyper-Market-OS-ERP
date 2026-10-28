@@ -43,13 +43,32 @@ export function classifyPublishResponse(status: number): 'accepted' | 'retryable
 }
 
 /**
+ * The cloud's answer to one POST: its HTTP status — or, when head office refused it, the status with head office's own
+ * code and plain words (`whatHappened`), so a refusal such as "this age-restricted product needs a second person" reaches
+ * the person reviewing the queue in words, never only as a number (P-08 · OB-503).
+ */
+export type PublishAnswer = number | { readonly status: number; readonly code?: string; readonly whatHappened?: string };
+
+/** The HTTP status of an answer. */
+export const statusOfAnswer = (a: PublishAnswer): number => (typeof a === 'number' ? a : a.status);
+
+/** What a dead-lettered publish says: head office's own words when it gave them, else the status. */
+export function refusalReason(a: PublishAnswer): string {
+  const status = statusOfAnswer(a);
+  const words = typeof a === 'number' ? '' : (a.whatHappened ?? '').trim();
+  return words === ''
+    ? `the publish was refused by the cloud (HTTP ${status}) — kept for review`
+    : `head office refused this publish: ${words} — kept for review`;
+}
+
+/**
  * Operator-authenticated POST of one publish command to its idempotent cloud route. The implementation
  * carries the operator's session auth and the command's idempotency key, and returns the HTTP status (or 0
  * for a network/timeout error). Injected, so delivery is tested without a network — and so this file, like
  * every screen, never opens a socket itself.
  */
 export interface PublishDeliveryPort {
-  post(payload: ProductPublishPayload, idempotencyKey: string): Promise<number>;
+  post(payload: ProductPublishPayload, idempotencyKey: string): Promise<PublishAnswer>;
 }
 
 /**
@@ -58,8 +77,8 @@ export interface PublishDeliveryPort {
  * 0 for a network/timeout). Injected so the delivery leg is tested without a network.
  */
 export interface PublishHttp {
-  publishProduct(payload: ProductPublishPayload, idempotencyKey: string): Promise<number>;
-  assignBarcode(productId: string, barcode: ProductPublishBarcode, idempotencyKey: string): Promise<number>;
+  publishProduct(payload: ProductPublishPayload, idempotencyKey: string): Promise<PublishAnswer>;
+  assignBarcode(productId: string, barcode: ProductPublishBarcode, idempotencyKey: string): Promise<PublishAnswer>;
 }
 
 /**
@@ -80,15 +99,17 @@ export async function deliverOnePublish(
   payload: ProductPublishPayload,
   idempotencyKey: string,
   http: PublishHttp,
-): Promise<number> {
-  const productStatus = await http.publishProduct(payload, idempotencyKey);
-  if (classifyPublishResponse(productStatus) !== 'accepted') return productStatus;
+): Promise<PublishAnswer> {
+  const productAnswer = await http.publishProduct(payload, idempotencyKey);
+  const productStatus = statusOfAnswer(productAnswer);
+  if (classifyPublishResponse(productStatus) !== 'accepted') return productAnswer;
 
   let heldStatus: number | undefined;
   for (const barcode of payload.barcodes) {
-    const status = await http.assignBarcode(payload.product.productId, barcode, `${idempotencyKey}|bc|${barcode.code}`);
+    const answer = await http.assignBarcode(payload.product.productId, barcode, `${idempotencyKey}|bc|${barcode.code}`);
+    const status = statusOfAnswer(answer);
     const outcome = classifyPublishResponse(status);
-    if (outcome === 'rejected') return status;   // a real conflict (409/4xx) — dead-letter the command for a person
+    if (outcome === 'rejected') return answer;   // a real conflict (409/4xx) — dead-letter the command for a person
     if (outcome === 'retryable') heldStatus = status; // a transient failure — hold + retry the whole command
   }
   // All barcodes in (or none) → the product's own success status; else the transient one so the command holds.
@@ -150,8 +171,8 @@ export async function deliverReadyPublishes(
   for (const key of summary.readyKeys) {
     const item = outbox.find(key);
     if (item === undefined) continue;
-    const status = await port.post(item.event.payload, item.event.idempotencyKey);
-    switch (classifyPublishResponse(status)) {
+    const answer = await port.post(item.event.payload, item.event.idempotencyKey);
+    switch (classifyPublishResponse(statusOfAnswer(answer))) {
       case 'accepted':
         outbox.acknowledge(key);
         delivered.push(key);
@@ -161,7 +182,7 @@ export async function deliverReadyPublishes(
         held.push(key);
         break;
       case 'rejected':
-        outbox.deadLetter(key, `the publish was refused by the cloud (HTTP ${status}) — kept for review`);
+        outbox.deadLetter(key, refusalReason(answer)); // head office's own words when it gave them (OB-503 · P-08)
         refused.push(key);
         break;
     }

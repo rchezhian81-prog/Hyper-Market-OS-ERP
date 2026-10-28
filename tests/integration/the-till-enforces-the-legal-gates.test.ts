@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { regulatedPublishBody } from '../support/approval-request';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -79,6 +80,7 @@ describe.each(backings)('R2 lane 1 — the till enforces the legal gates — on 
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-box', 'store_computer', ['S1']);
     await h.provisionRole(T, 'u-cash', 'cashier', ['S1']);
+    await h.provisionRole(T, 'u-acct', 'accountant'); // OB-503: approves a regulated product reaching the tills
     const call = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner', query?: Record<string, string>) =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
     expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
@@ -149,11 +151,13 @@ describe.each(backings)('R2 lane 1 — the till enforces the legal gates — on 
   });
 
   it('B14 · B19: the product master carries tobacco pack size and carry-bag facts into the pack; a tobacco product with no pack size does not publish', async () => {
-    const { call } = await headOffice();
+    const { h, T, call } = await headOffice();
     const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
     const TOBACCO = { categoryId: 'tobacco', name: 'Tobacco', parentId: null, regulated: ['age_restricted'] };
     const product = (sku: string, name: string, cat: string, safety: Record<string, unknown>) => ({ sku, name, baseUom: 'each', primaryCategoryId: cat, taxClass: '24022010', lifecycle: 'draft', safety });
     const publish = (id: string, p: unknown, categories: unknown[]) => call('POST', `/v1/catalogue/products/${id}/publish`, { product: p, categories });
+    // OB-503: a regulated product reaching the tills does so with a second person's approval of exactly that publish.
+    const publishApproved = async (id: string, p: unknown, categories: unknown[]) => call('POST', `/v1/catalogue/products/${id}/publish`, await regulatedPublishBody(h, T, id, { product: p, categories }));
 
     const noPack = await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true }), [TOBACCO]);
     expect(noPack.status).toBe(422);
@@ -166,9 +170,9 @@ describe.each(backings)('R2 lane 1 — the till enforces the legal gates — on 
     expect(unconfirmed.body).toMatchObject({ product: { lifecycle: 'draft' }, activation: { refused: true, because: 'tobacco_warning_not_confirmed' } });
     expect((await call('POST', '/v1/catalogue/tobacco-warning-pictures/P-2020', { effectiveFrom: '2020-01-01', notifiedOn: '2019-10-01', reference: 'G.S.R. demo', evidenceRef: 'DOC-gsr-demo' })).status).toBe(201);
     expect((await call('POST', '/v1/catalogue/products/p-cig/tobacco-warning-confirmation', { imageId: 'P-2020', evidenceRef: 'PHOTO-cig-pack' })).status).toBe(201);
-    expect((await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true, packMinimumMinor: 1 }), [TOBACCO])).body).toMatchObject({ product: { lifecycle: 'new' } });
-    expect((await publish('p-bag', product('BAG120', 'Carry bag 120 micron', 'grocery', { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 }), [GROCERY])).status).toBe(201);
-    expect((await publish('p-straw', product('STRAW', 'Plastic straws', 'grocery', { bannedSingleUsePlastic: true }), [GROCERY])).status).toBe(201);
+    expect((await publishApproved('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true, packMinimumMinor: 1 }), [TOBACCO])).body).toMatchObject({ product: { lifecycle: 'new' } });
+    expect((await publishApproved('p-bag', product('BAG120', 'Carry bag 120 micron', 'grocery', { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 }), [GROCERY])).status).toBe(201);
+    expect((await publishApproved('p-straw', product('STRAW', 'Plastic straws', 'grocery', { bannedSingleUsePlastic: true }), [GROCERY])).status).toBe(201);
     expect((await call('POST', '/v1/catalogue/tax-classes/24022010/rates/2017-07-01', { rateBps: 2800 })).status).toBe(201);
     for (const id of ['p-cig', 'p-bag', 'p-straw']) {
       expect((await call('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: 'S1', priceMinor: 500, mrpMinor: 600, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: '2030-01-01' })).status).toBe(201);

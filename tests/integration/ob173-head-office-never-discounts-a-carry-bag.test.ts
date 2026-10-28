@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { useBackings } from '../support/backings';
+import { regulatedPublishBody } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -39,6 +40,7 @@ describe.each(backings)('OB-173 — head office never discounts a carry bag — 
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-box', 'store_computer', ['S1']);
     await h.provisionRole(T, 'u-cash', 'cashier', ['S1']);
+    await h.provisionRole(T, 'u-acct', 'accountant'); // OB-503: approves a regulated product reaching the tills
     const call = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner') =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
     expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
@@ -49,7 +51,8 @@ describe.each(backings)('OB-173 — head office never discounts a carry bag — 
     }));
     const product = (sku: string, safety: Record<string, unknown>) => ({ sku, name: sku, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '63053300', lifecycle: 'draft', safety });
     const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
-    expect((await call('POST', '/v1/catalogue/products/p-bag/publish', { product: product('BAG120', { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 }), categories: [GROCERY] })).status).toBe(201);
+    // OB-503: a carry bag is a regulated product — it reaches the tills with a second person's approval.
+    expect((await call('POST', '/v1/catalogue/products/p-bag/publish', await regulatedPublishBody(h, T, 'p-bag', { product: product('BAG120', { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 }), categories: [GROCERY] }))).status).toBe(201);
     expect((await call('POST', '/v1/catalogue/products/p-rice/publish', { product: product('RICE1', {}), categories: [GROCERY] })).status).toBe(201);
     return { call };
   }

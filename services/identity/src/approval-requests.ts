@@ -299,6 +299,14 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'mrp_replacement', label: 'Replace an MRP that is not yet in force',
     makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
   },
+  // OB-503 (owner, in writing): "only risky new products need a second person before reaching the tills" — a product that
+  // reaches the tills newly age-restricted or regulated (`regulatedFlags`, incl. a minimum age) is asked by the person who
+  // keeps the catalogue and approved by a second person who approves catalogue changes (`catalogue.tax.approve`: the
+  // accountant or the owner) — the OB-347 pair, never the maker. An ordinary new product is published by one person.
+  regulated_product_publish: {
+    kind: 'regulated_product_publish', label: 'Put an age-restricted or regulated product on sale',
+    makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
+  },
   // ── OB-288 till side — end
   // ── OB-288 commercial desks (M22 · M24 · M27) — begin
   // M22-FR-01 "contract/credit changes approved": a B2B contract (its price list, dates, terms, credit limit, expiry policy)

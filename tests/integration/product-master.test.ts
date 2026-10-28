@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { regulatedPublishBody } from '../support/approval-request';
 
 // M03-FR-01 / M03-FR-03: the product-master store + compliance-gated authoring on the live API. A product
 // does not reach the catalogue until it VALIDATES — a name, SKU, unit of measure, category and HSN/tax
@@ -70,8 +71,13 @@ describe('product master authoring (M03-FR-01/03)', () => {
     }
     expect((await list(h, 'u-owner')).body).toMatchObject({ count: 0 }); // none of those landed
 
-    const ok = await publish(h, 'u-owner', 'p-energy', drink({ minimumAge: 21 }), [RESTRICTED], 'k-energy-ok');
-    expect(ok.status).toBe(201);
+    // OB-503: a complete age-restricted product still needs a second person's approval before it reaches the tills.
+    const alone = await publish(h, 'u-owner', 'p-energy', drink({ minimumAge: 21 }), [RESTRICTED], 'k-energy-alone');
+    expect(codeOf(alone)).toBe('regulated_product_needs_second_person');
+    await h.provisionRole(A, 'u-acct', 'accountant');
+    const ok = await h.request({ method: 'POST', path: '/v1/catalogue/products/p-energy/publish', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-energy-ok',
+      body: await regulatedPublishBody(h, A, 'p-energy', { product: drink({ minimumAge: 21 }), categories: [RESTRICTED] }) });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
     expect((await get(h, 'u-owner', 'p-energy')).body).toMatchObject({ product: { safety: { minimumAge: 21 } } });
   });
 

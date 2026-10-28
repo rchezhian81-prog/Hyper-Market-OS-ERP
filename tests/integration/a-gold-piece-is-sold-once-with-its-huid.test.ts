@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { regulatedPublishBody } from '../support/approval-request';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -71,6 +72,7 @@ describe.each(backings)('B13: a gold piece is sold once, with its HUID — on $n
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-cash', 'cashier');
+    await h.provisionRole(T, 'u-acct', 'accountant'); // OB-503: the second person who approves a regulated product reaching the tills
     const req = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner'): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
     const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
@@ -80,9 +82,10 @@ describe.each(backings)('B13: a gold piece is sold once, with its HUID — on $n
     const bad = await req('POST', '/v1/catalogue/products/p-ring/publish', { product: piece('RING-22K-01', 'Gold ring 22K (demo)', { gold: true, huid: 'ab12' }), categories: [JEWELLERY] });
     expect(bad.status).toBe(422);
     expect(JSON.stringify(bad.body)).toContain('6 letters and digits');
-    await ok(req('POST', '/v1/catalogue/products/p-ring/publish', { product: piece('RING-22K-01', 'Gold ring 22K (demo)', { gold: true, huid: 'AB12CD' }), categories: [JEWELLERY] }), 'ring');
+    // OB-503: gold is a regulated product — it reaches the tills with a second person's approval.
+    await ok(req('POST', '/v1/catalogue/products/p-ring/publish', await regulatedPublishBody(h, T, 'p-ring', { product: piece('RING-22K-01', 'Gold ring 22K (demo)', { gold: true, huid: 'AB12CD' }), categories: [JEWELLERY] })), 'ring');
     // A gold piece with no HUID recorded yet may be listed — and the till will not sell it.
-    await ok(req('POST', '/v1/catalogue/products/p-chain/publish', { product: piece('CHAIN-22K-01', 'Gold chain 22K (demo)', { gold: true }), categories: [JEWELLERY] }), 'chain');
+    await ok(req('POST', '/v1/catalogue/products/p-chain/publish', await regulatedPublishBody(h, T, 'p-chain', { product: piece('CHAIN-22K-01', 'Gold chain 22K (demo)', { gold: true }), categories: [JEWELLERY] })), 'chain');
     for (const [id, code] of [['p-ring', RING], ['p-chain', CHAIN]] as const) {
       await ok(req('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: STORE, priceMinor: 45_000_00, mrpMinor: 45_000_00, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: '2030-01-01' }), `price ${id}`);
       await ok(req('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, { kind: 'ean' }), `barcode ${id}`);

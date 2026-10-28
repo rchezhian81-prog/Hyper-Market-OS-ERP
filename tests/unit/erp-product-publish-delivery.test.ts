@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { buildProductPublishCommand } from '../../apps/web-erp/src/catalogue-publish-command';
 import {
-  deliverReadyPublishes, deliverOnePublish, classifyPublishResponse,
+  deliverReadyPublishes, deliverOnePublish, classifyPublishResponse, statusOfAnswer,
   type PublishDeliveryPort, type PublishHttp,
 } from '../../apps/web-erp/src/product-publish-delivery';
 import { PUBLISH_PERMISSION, type PublishReviewContext } from '../../apps/web-erp/src/product-publish-queue';
@@ -78,6 +78,22 @@ describe('product-publish delivery (ADR-0013)', () => {
     expect(ob.deadLetters()).toHaveLength(1);
   });
 
+  it('OB-503: a refusal in head office\'s own words ("needs a second person") is kept WITH the dead letter, not only its number', async () => {
+    const ob = outboxWith([salt()]);
+    const key = ob.pending()[0]!.key;
+    const words = '"Energy drink" would reach the tills with a minimum age to buy it. An age-restricted or regulated product needs a second person to approve it before it goes on sale';
+    const refusing: PublishDeliveryPort = { post: async () => ({ status: 422, code: 'regulated_product_needs_second_person', whatHappened: words }) };
+    const report = await deliverReadyPublishes(ob, ctx(), refusing);
+    expect(report.refused).toEqual([key]);
+    expect(ob.find(key)?.state).toBe('dead_letter');
+    expect(ob.find(key)?.reason).toContain('needs a second person');
+    expect(ob.find(key)?.reason).toContain(words);
+    // With no words, the status is still said.
+    const ob2 = outboxWith([salt()]);
+    await deliverReadyPublishes(ob2, ctx(), port({}, 422));
+    expect(ob2.deadLetters()[0]?.reason).toContain('HTTP 422');
+  });
+
   it('delivers ONLY what the review cleared: a no-permission operator sends nothing', async () => {
     const ob = outboxWith([salt()]);
     const p = port();
@@ -143,14 +159,14 @@ describe('deliverOnePublish — product then barcodes, collapsed to one status',
   it('a real barcode conflict (409) collapses to rejected — the whole command will dead-letter', async () => {
     const f = httpFake({ barcodes: { '222': 409 } });
     const status = await deliverOnePublish(payloadWith([BC('111'), BC('222')]), 'k', f.http);
-    expect(classifyPublishResponse(status)).toBe('rejected');
+    expect(classifyPublishResponse(statusOfAnswer(status))).toBe('rejected');
     expect(status).toBe(409);
   });
 
   it('a transient barcode failure collapses to retryable — the whole command holds and retries', async () => {
     const f = httpFake({ barcodes: { '111': 0 } }); // a lost link on the barcode POST
     const status = await deliverOnePublish(payloadWith([BC('111')]), 'k', f.http);
-    expect(classifyPublishResponse(status)).toBe('retryable');
+    expect(classifyPublishResponse(statusOfAnswer(status))).toBe('retryable');
   });
 });
 

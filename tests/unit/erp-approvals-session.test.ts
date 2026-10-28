@@ -193,6 +193,7 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       // OB-288 till side (OB-347): a published product's tax class changed — Finance approves.
       hsn_class_change: { en: APPROVALS_COPY.en.kindHsnClassChange, ta: APPROVALS_COPY.ta.kindHsnClassChange },
       mrp_replacement: { en: APPROVALS_COPY.en.kindMrpReplacement, ta: APPROVALS_COPY.ta.kindMrpReplacement }, // OB-512
+      regulated_product_publish: { en: APPROVALS_COPY.en.kindRegulatedProductPublish, ta: APPROVALS_COPY.ta.kindRegulatedProductPublish }, // OB-503
       // OB-288 commercial desks (M22-FR-01): a B2B contract, and an order over the credit limit (the owner decides, OB-290).
       b2b_contract: { en: APPROVALS_COPY.en.kindB2BContract, ta: APPROVALS_COPY.ta.kindB2BContract },
       b2b_credit_override: { en: APPROVALS_COPY.en.kindB2BCreditOverride, ta: APPROVALS_COPY.ta.kindB2BCreditOverride },
