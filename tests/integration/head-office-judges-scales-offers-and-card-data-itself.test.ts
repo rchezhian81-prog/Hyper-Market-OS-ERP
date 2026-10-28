@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { regulatedPublishBody } from '../support/approval-request';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -67,7 +66,6 @@ describe.each(backings)('F1 at head office — on $name', ({ harness, sql }) => 
     await h.provisionRole(T, 'u-box', 'store_computer', ['S1']);
     await h.provisionRole(T, 'u-mgr', 'store_manager', ['S1']);
     await h.provisionRole(T, 'u-cash', 'cashier', ['S1']);
-    await h.provisionRole(T, 'u-acct', 'accountant'); // OB-503: approves a regulated product reaching the tills
     const call = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner', branchId?: string) =>
       h.request({ method, path, userId, tenantId: T, ...(branchId === undefined ? {} : { branchId }), ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
     expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
@@ -146,11 +144,10 @@ describe.each(backings)('F1 at head office — on $name', ({ harness, sql }) => 
   });
 
   it('NEW-1: an offer that names a carry bag is refused when it is defined; one on rice is defined', async () => {
-    const { h, T, call } = await headOffice();
+    const { call } = await headOffice();
     const product = (sku: string, safety: Record<string, unknown>) => ({ sku, name: sku, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '63053300', lifecycle: 'draft', safety });
     const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
-    // OB-503: a carry bag is a regulated product — it reaches the tills with a second person's approval.
-    expect((await call('POST', '/v1/catalogue/products/p-bag/publish', await regulatedPublishBody(h, T, 'p-bag', { product: product('BAG120', { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 }), categories: [GROCERY] }))).status).toBe(201);
+    expect((await call('POST', '/v1/catalogue/products/p-bag/publish', { product: product('BAG120', { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 }), categories: [GROCERY] })).status).toBe(201);
     expect((await call('POST', '/v1/catalogue/products/p-rice/publish', { product: product('RICE1', {}), categories: [GROCERY] })).status).toBe(201);
     const offer = (productIds: string[]) => ({ kind: 'amount_off', startsAt: '2026-01-01T00:00:00Z', endsAt: '2099-01-01T00:00:00Z', amountOffMinor: 500, productIds });
     const bag = await call('POST', '/v1/promotions/PR-FREEBAG/definition', offer(['p-rice', 'p-bag']));

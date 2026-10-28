@@ -4,7 +4,6 @@ import { bootPos } from '../../apps/pos/src/browser-entry';
 import { TillRuleRefusedError } from '../../apps/pos/src/session';
 import { signInTill, signInAtLane, receiptNumberAt, operatorHeader } from '../support/till-operator';
 import { backingsFor, headOffice, linkBoxTo, startBox, storePack, type Box, type Link } from '../support/till-bill-world';
-import { regulatedPublishBody } from '../support/approval-request';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
@@ -36,16 +35,13 @@ afterEach(async () => {
 
 describe.each(backings)('B12 — BIS goods need a current licence, refused offline at the till and the box — on $name', (backing) => {
   it('unlicensed product not published; current one sells, lapsed one refused at the scan and at the socket, across cold restarts', async () => {
-    const ho = await headOffice(backing, [{ userId: 'u-box', role: 'store_computer', stores: [STORE] }, { userId: 'u-acct', role: 'accountant' }]);
+    const ho = await headOffice(backing, [{ userId: 'u-box', role: 'store_computer', stores: [STORE] }]);
     const water = [{ categoryId: 'water', name: 'Packaged drinking water', parentId: null, regulated: ['bis_controlled'] }];
     await ho.ok('POST', '/v1/catalogue/tax-classes/2201/rates/2017-07-01', 'u-owner', { rateBps: 1_800 });
-    const bodyOf = (id: string, safety: Record<string, unknown> | undefined) => ({
+    const publish = (id: string, safety: Record<string, unknown> | undefined) => ho.call('POST', `/v1/catalogue/products/${id}/publish`, 'u-owner', {
       product: { sku: id.toUpperCase(), name: `Drinking water ${id}`, baseUom: 'ea', primaryCategoryId: 'water', taxClass: '2201', lifecycle: 'active', ...(safety === undefined ? {} : { safety }) },
       categories: water,
     });
-    // OB-503: a BIS-controlled product reaches the tills with a second person's approval (asked only once it is complete).
-    const publish = async (id: string, safety: Record<string, unknown> | undefined) => ho.call('POST', `/v1/catalogue/products/${id}/publish`, 'u-owner',
-      safety === undefined ? bodyOf(id, safety) : await regulatedPublishBody(ho.h, ho.tenantId, id, bodyOf(id, safety)));
     const none = await publish('p-none', undefined);
     expect(none.status).toBe(422);
     expect(JSON.stringify(none.body)).toContain('no BIS licence number');

@@ -72,16 +72,20 @@ const REGULATED_WORDS: Readonly<Record<string, string>> = {
 };
 
 /**
- * OB-503 (owner, in writing): the age-restricted or regulated markers a publish puts on the tills that head office has not
+ * OB-503 (owner, in writing; narrowed 28 Oct 2026 to an age limit and tobacco): the second-person markers a publish puts on the tills that head office has not
  * already put there for this product — every marker of a product reaching the tills for the first time (never published,
  * or published only as a draft), or a marker newly added to one already on sale. Empty when the product does not reach
  * the tills from this publish (it stays a draft or is discontinued), or carries nothing new.
  */
+// OB-503 as the owner narrowed it (28 Oct 2026): only an age limit and tobacco need the second person. Gold, BIS goods, carry
+// bags/plastic and perishables keep their till checks but are published by one person (with the step-up at pack publish).
+const SECOND_PERSON_MARKERS: ReadonlySet<string> = new Set(['minimumAge', 'tobacco', 'packMinimumMinor']);
+const secondPersonMarkers = (r: ProductRecord): readonly string[] => Object.keys(regulatedFlagsFor(r) ?? {}).filter((k) => SECOND_PERSON_MARKERS.has(k));
 function regulationGained(current: ProductRecord | undefined, next: ProductRecord): readonly string[] {
   if (!SELLING.includes(next.lifecycle)) return [];
-  const now = Object.keys(regulatedFlagsFor(next) ?? {});
+  const now = secondPersonMarkers(next);
   if (now.length === 0) return [];
-  const before = new Set(current === undefined || current.lifecycle === 'draft' ? [] : Object.keys(regulatedFlagsFor(current) ?? {}));
+  const before = new Set(current === undefined || current.lifecycle === 'draft' ? [] : secondPersonMarkers(current));
   return now.filter((k) => !before.has(k)).sort();
 }
 const regulatedWords = (flags: readonly string[]): string => flags.map((f) => REGULATED_WORDS[f] ?? f).join(', ');
@@ -411,7 +415,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
           if (regulatedApproval === undefined) {
             throw apiError(422, {
               code: 'regulated_product_needs_second_person',
-              whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(gained)}. An age-restricted or regulated product needs a second person to approve it before it goes on sale — never the person publishing it (OB-503).`,
+              whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(gained)}. An age-restricted or tobacco product needs a second person to approve it before it goes on sale — never the person publishing it (OB-503).`,
               wasItSaved: 'not_saved',
               nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind regulated_product_publish, subjectRef product:${productId}, with exactly this product record); once a second person who approves catalogue changes (the accountant or the owner) approves it, send it again with the approvalId. Nothing was saved.`,
             });

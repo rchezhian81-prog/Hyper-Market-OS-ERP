@@ -115,6 +115,14 @@ describe.each(backings)('G2 — an MRP on record stays, and a risky product need
     const ordinary = await req('POST', '/v1/catalogue/products/p-det/publish', { product: { ...DETERGENT, mrpHistory: [{ value: inr(120_00), effectiveFrom: '2026-01-01' }] }, categories: [PACKED] });
     expect(ordinary.status, JSON.stringify(ordinary.body)).toBe(201);
     expect(ordinary.body).not.toHaveProperty('regulatedApproval');
+    // The owner narrowed OB-503 (28 Oct 2026) to an age limit and tobacco: a new perishable (milk) still keeps its till check
+    // but is published by one person, with no second-person approval asked.
+    const milk = await req('POST', '/v1/catalogue/products/p-milk/publish', {
+      product: { sku: 'MILK-500-G2', name: 'Milk 500ml', baseUom: 'ea', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', safety: { perishable: true } },
+      categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }],
+    });
+    expect(milk.status, JSON.stringify(milk.body)).toBe(201);
+    expect(milk.body).not.toHaveProperty('regulatedApproval');
 
     // The risky one without an approval: refused by name, in plain words, nothing saved.
     const alone = await publishDrink(drink);

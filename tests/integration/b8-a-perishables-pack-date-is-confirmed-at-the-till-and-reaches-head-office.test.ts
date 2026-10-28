@@ -4,7 +4,6 @@ import { bootPos } from '../../apps/pos/src/browser-entry';
 import { PackDateCheckRequiredError } from '../../apps/pos/src/session';
 import { signInTill, signInAtLane, receiptNumberAt, operatorHeader } from '../support/till-operator';
 import { backingsFor, headOffice, linkBoxTo, startBox, storePack, type Box, type Link } from '../support/till-bill-world';
-import { regulatedPublishBody } from '../support/approval-request';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
@@ -35,13 +34,12 @@ afterEach(async () => {
 
 describe.each(backings)('B8 — the pack date is confirmed at the till and reaches head office — on $name', (backing) => {
   it('asked before the line is added; kept on the line, on a held basket across a cold restart, and at head office', async () => {
-    const ho = await headOffice(backing, [{ userId: 'u-box', role: 'store_computer', stores: [STORE] }, { userId: 'u-meena', role: 'cashier' }, { userId: 'u-acct', role: 'accountant' }]);
+    const ho = await headOffice(backing, [{ userId: 'u-box', role: 'store_computer', stores: [STORE] }, { userId: 'u-meena', role: 'cashier' }]);
     await ho.ok('POST', '/v1/catalogue/tax-classes/0401/rates/2017-07-01', 'u-owner', { rateBps: 0 });
-    // OB-503: a regulated (perishable) product reaches the tills with a second person's approval.
-    await ho.ok('POST', '/v1/catalogue/products/p-milk/publish', 'u-owner', await regulatedPublishBody(ho.h, ho.tenantId, 'p-milk', {
+    await ho.ok('POST', '/v1/catalogue/products/p-milk/publish', 'u-owner', {
       product: { sku: 'MILK-500', name: 'Milk 500ml', baseUom: 'ea', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', safety: { perishable: true } },
       categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }],
-    }));
+    });
     await ho.ok('POST', '/v1/prices/list/p-milk/entries/e1', 'u-owner', { scope: 'store', scopeRef: STORE, priceMinor: 3_000, mrpMinor: 3_000, costMinor: 2_500, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY });
     await ho.ok('POST', `/v1/catalogue/products/p-milk/barcodes/${MILK_CODE}`, 'u-owner', { kind: 'ean' });
     await ho.ok('POST', '/v1/catalogue/pack', 'u-owner', { storeId: STORE, asOf: TODAY });
