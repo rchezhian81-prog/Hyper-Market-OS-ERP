@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1625 | 943 | 943 | 178 | 433 |
+| 13 | 1626 | 943 | 943 | 178 | 433 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -404,6 +404,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/performance` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.read` | core | — |
 | POST | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.set` | core | yes |
+| GET | `/v1/inventory/receipts-cost-not-known` | `purchase.invoice.match` | core | — |
 | GET | `/v1/inventory/receiving-scans` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/receiving-scans/:commandId/synced` | `inventory.receipt.sync` | core | yes |
 | GET | `/v1/inventory/sales-history` | `inventory.availability.read` | core | — |

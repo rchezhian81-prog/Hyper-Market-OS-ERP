@@ -2715,6 +2715,34 @@
         },
         "additionalProperties": true
       },
+      "BillValuedRelease": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "invoiceId",
+          "unitCost",
+          "quantityMinor",
+          "valueMinor"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "invoiceId": {
+            "type": "string"
+          },
+          "unitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "CapturedReceipt": {
         "type": "object",
         "required": [
@@ -3534,6 +3562,12 @@
               "direct",
               "relayed"
             ]
+          },
+          "valuedAtBill": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillValuedRelease"
+            }
           }
         },
         "additionalProperties": true
@@ -4051,6 +4085,9 @@
               },
               "activityId": {
                 "type": "string"
+              },
+              "quotationId": {
+                "type": "string"
               }
             },
             "additionalProperties": true
@@ -4312,6 +4349,9 @@
           "valueNotKnown": {
             "type": "boolean",
             "const": true
+          },
+          "valuedAtBill": {
+            "$ref": "#/components/schemas/BillValuedRelease"
           }
         },
         "additionalProperties": true
