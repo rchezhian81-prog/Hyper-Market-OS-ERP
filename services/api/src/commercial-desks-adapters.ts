@@ -8,12 +8,17 @@
 //                                  and the contract-aware credit gate with the owner's override (OB-290).
 //   • withSupplierPartnerIndex   — the supplier-portal adapter with a partner index (so the buyer has ONE queue).
 //   • commercialDesksRoutes      — the contract, desk, concession-desk and supplier-review-desk routes.
+//   • b2bRecurringOrdersAdapter  — the recurring-order register with every record kept (proposed, each approval round,
+//                                  each pause), append-only.
 //   • commercialDesksSweep       — the ops-alert worker's pass: concession agreement / insurance / licence alerts and B2B
-//                                  contracts ending soon, raised to every owner (only where each feature is switched on).
+//                                  contracts ending soon, raised to every owner (only where each feature is switched on);
+//                                  and (M22-FR-03) each B2B recurring order in force made ONCE on each due day, by itself —
+//                                  an order it cannot make raised to the owners.
 
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
+import type { NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { InMemoryEventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import { resolvePrice } from '../../../packages/price-list/src/price-list';
@@ -21,7 +26,7 @@ import { contractsEndingWithin, contractPosition, type StoredB2BContract } from 
 import type { ConcessionContract } from '../../../packages/concession/src/index';
 import { toMaster } from '../../catalogue/src/catalogue-preview';
 import {
-  STREAM, streamName, b2bCreditAdapter, b2bCustomerGstinAdapter, b2bDocumentsAdapter, b2bOrderingAdapter, priceListAdapter, productMasterAdapter,
+  STREAM, streamName, b2bCreditAdapter, b2bCustomerGstinAdapter, b2bDocumentsAdapter, b2bOrderingAdapter, b2bStockAdapter, priceListAdapter, productMasterAdapter,
   approvalRequestsAdapter, concessionAdapter, supplierPortalAdapter,
 } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
@@ -33,8 +38,9 @@ import type { B2BDocumentsDeps } from '../../finance/src/b2b-documents';
 import { concessionDeskRoutes, raiseConcessionAlerts, type ConcessionDeskDeps } from '../../finance/src/concession-desk';
 import { supplierReviewDeskRoutes } from '../../purchase/src/supplier-review-desk';
 import type { SupplierPortalDeps } from '../../purchase/src/supplier-portal';
-import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { shopDateIn, shopClock } from '../../../packages/calendar/src/shop-clock';
 import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { runRecurringOrders, scheduleRecordKey, RECURRING_RUNNER, type B2BOrderingDeps } from '../../finance/src/b2b-ordering';
 
 interface Base { readonly store: EventStore; readonly now: () => string }
 
@@ -139,6 +145,42 @@ export function commercialDeskContractState(input: Base): (tenantId: string, cus
   };
 }
 
+// ── the B2B recurring orders (M22-FR-03) ──────────────────────────────────────────────────────────────────────────
+
+const B2B_RECURRING_STREAM = streamName('b2b-ordering', 'recurring');
+
+/**
+ * The B2B ordering adapter with its recurring-order register keeping EVERY record of a schedule: proposed, each approval
+ * round, each pause — keyed by `scheduleRecordKey`, so a re-sent one collapses and none overwrites another (hard rule #2).
+ * The first two keys are the ones the register has always used, so records already on file read the same.
+ */
+export function b2bRecurringOrdersAdapter(input: Base): ReturnType<typeof b2bOrderingAdapter> {
+  const base = b2bOrderingAdapter(input);
+  return {
+    ...base,
+    recordSchedule: async (tenantId, s) => {
+      const key = scheduleRecordKey(s);
+      await input.store.append(tenantId, B2B_RECURRING_STREAM, makeEvent({
+        id: `b2b-rec-${key}`, type: 'B2BRecurringOrderRecorded', occurredAt: s.pausedAt ?? s.approvedAt ?? s.proposedAt,
+        idempotencyKey: `b2b-rec-${tenantId}-${key}`, source: 'api/finance', payload: s as unknown as Record<string, unknown>,
+      }));
+    },
+  };
+}
+
+/**
+ * The part of the B2B document chain a recurring run uses — a quotation repeated from its template and the order made
+ * from it: the documents and their numbers, the ordinary stock the order holds, the contract-aware credit gate. (The
+ * invoice-time hooks — money effects, GST split, commission — belong to the challan and invoice, which a person makes.)
+ */
+export function b2bOrderMakingChain(input: Base & { readonly numberSeries?: NumberSeriesStore }): B2BOrderingDeps['documents'] {
+  return {
+    ...b2bDocumentsAdapter({ store: input.store, now: input.now, ...(input.numberSeries === undefined ? {} : { numberSeries: input.numberSeries }) }),
+    stock: b2bStockAdapter(input),
+    ...commercialDeskB2BHooks(input),
+  };
+}
+
 // ── the supplier-portal partner index ────────────────────────────────────────────────────────────────────────────
 
 const indexPartner = async (store: EventStore, now: () => string, tenantId: string, partnerId: string): Promise<void> => {
@@ -216,8 +258,21 @@ const featureOn = async (store: EventStore, tenantId: string, feature: string): 
   return on;
 };
 
-/** Concession alerts (when `dept.concession` is on) and B2B contracts ending within 30 / 7 days (when `b2b` is on). */
-export function commercialDesksSweep(input: Base): (tenantId: string, at: string) => Promise<number> {
+/**
+ * Concession alerts (when `dept.concession` is on) and B2B contracts ending within 30 / 7 days (when `b2b` is on) — and,
+ * when `b2b` is on and the document chain is handed in, the day's B2B recurring orders (M22-FR-03): each schedule in
+ * force that is due on the shop's date is run ONCE that day, through the ordinary credit and stock checks. What it has
+ * run is read back from the record, so a restart (or the next pass a minute later) never makes a second order or a
+ * second exception for the same day. An order it cannot make is raised to every owner, once.
+ * OB-384: the `b2b` switch stays off in production until the old system is retired — and then nothing here runs.
+ */
+export function commercialDesksSweep(input: Base & {
+  /** Run the B2B recurring orders: present (head office's worker) → each due day's orders are made; the number series is
+   *  head office's own gap-free one, shared with the desk. */
+  readonly recurring?: { readonly numberSeries?: NumberSeriesStore };
+  /** The shop's calendar: "due today" is the shop's date (R1c). */
+  readonly calendar?: ShopCalendarOf;
+}): (tenantId: string, at: string) => Promise<number> {
   return async (tenantId, at) => {
     let raised = 0;
     if (await featureOn(input.store, tenantId, 'dept.concession')) raised += await raiseConcessionAlerts(concessionDeskDeps(input), tenantId, at);
@@ -228,6 +283,16 @@ export function commercialDesksSweep(input: Base): (tenantId: string, at: string
         const alertId = `b2b-contract-ending:${x.contract.customerId}:${x.contract.contractId}:${x.contract.validTo}:${step}`;
         const detail = `${x.contract.customerId}'s contract ${x.contract.contractId} ends on ${x.contract.validTo} (${x.daysLeft} day(s) left). After that it ${x.contract.onExpiry === 'block' ? 'blocks new quotations and orders' : 'falls back to the shop\'s ordinary prices'} until a renewal is approved.`;
         if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, alertId, `B2B contract ${x.contract.contractId}`, detail, 'system:b2b-contracts', at, alertId)) raised += 1;
+      }
+      if (input.recurring !== undefined) {
+        const on = await shopClock(input.calendar).dateOf(tenantId, at);
+        const documents = b2bOrderMakingChain({ store: input.store, now: input.now, ...(input.recurring.numberSeries === undefined ? {} : { numberSeries: input.recurring.numberSeries }) });
+        const runs = await runRecurringOrders({ ...b2bRecurringOrdersAdapter(input), documents }, { tenantId, on, ranBy: RECURRING_RUNNER, oncePerDay: true });
+        for (const r of runs.filter((x) => x.outcome === 'exception')) {
+          const alertId = `b2b-recurring-exception:${r.scheduleId}:${r.on}`;
+          const detail = `Recurring order ${r.scheduleId} for ${r.customerId} could not be made on ${r.on}: ${r.detail ?? r.code ?? 'refused'}. Nothing was ordered for that day. Fix the stock or credit, then run the day again from the business-customers page.`;
+          if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, alertId, `B2B recurring order ${r.scheduleId}`, detail, RECURRING_RUNNER, at, alertId)) raised += 1;
+        }
       }
     }
     return raised;

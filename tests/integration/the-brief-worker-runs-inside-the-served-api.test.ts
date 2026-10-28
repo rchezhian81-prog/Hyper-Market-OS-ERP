@@ -71,9 +71,12 @@ describe.skipIf(!DATABASE_URL)('the brief worker runs inside the served API (EA-
       });
       expect(sentDays).toEqual([today]);
       expect(transport.sent.filter((m) => m.messageId.startsWith('brief-'))).toHaveLength(1); // once, however many ticks
-      // The worker said what it did, as the worker.
-      expect(cloud.said.some((l) => l.includes('"briefWorker"') && l.includes('"outcome":"queued"'))).toBe(true);
-      expect(cloud.said.some((l) => l.includes('"briefWorker"') && l.includes('"outcome":"acknowledged"'))).toBe(true);
+      // The worker said what it did, as the worker. It prints a tick's report only AFTER the whole pass returns, while the
+      // acknowledgement it records inside that pass is readable a moment earlier — so the line is waited for (the flake
+      // seen once in a parallel PostgreSQL batch read `said` in that gap), never assumed to be there already.
+      const saidBy = (outcome: string) => async () => (cloud.said.some((l) => l.includes('"briefWorker"') && l.includes(`"outcome":"${outcome}"`)) ? true : undefined);
+      expect(await waitFor('the worker to say it queued the brief', saidBy('queued'))).toBe(true);
+      expect(await waitFor('the worker to say it acknowledged the day', saidBy('acknowledged'))).toBe(true);
 
       // NO AI leg: no model was called for it and nothing was spent on AI — the brief stands on the governed figures alone.
       const calls = (await cloud.request({ method: 'GET', path: '/v1/ai/model-calls', userId: 'u-owner' })).body as { count: number };

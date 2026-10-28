@@ -92,6 +92,7 @@ const REGULATED: readonly { readonly field: string; readonly label: string }[] =
   { field: 'safety.storageConditions', label: 'how it must be stored' },
   { field: 'safety.netQuantity', label: 'the net quantity on the label' },
   { field: 'safety.packerDetails', label: 'the packer or importer' },
+  { field: 'safety.consumerCareContact', label: 'a consumer-care contact' },
   { field: 'safety.minimumAge', label: 'the minimum age to buy it' },
   { field: 'safety.ingredients', label: 'an ingredient list' },
 ]);
@@ -152,6 +153,9 @@ export function completeness(
     push(check.field, check.label, check.blocks, done);
   }
 
+  // B2: two different MRPs on one date is listed only when it happens — a record with one MRP per date is not being asked it.
+  if (issueFor(issues, 'mrpHistory') !== undefined) push('mrpHistory', 'one MRP per date', true, false);
+
   // What THIS tenant said this department requires. Never our opinion of what a shop should record.
   for (const attribute of category?.attributes ?? []) {
     const value = product.attributes?.[attribute.key];
@@ -202,6 +206,7 @@ function safetyFilled(product: ProductRecord, field: string): boolean {
     case 'safety.storageConditions': return (safety.storageConditions ?? '') !== '';
     case 'safety.netQuantity': return (safety.netQuantity ?? '') !== '';
     case 'safety.packerDetails': return (safety.packerDetails ?? '') !== '';
+    case 'safety.consumerCareContact': return (safety.consumerCareContact ?? '').trim() !== '';
     case 'safety.minimumAge': return safety.minimumAge !== undefined;
     case 'safety.ingredients': return (safety.ingredients ?? '') !== '';
     default: return false;

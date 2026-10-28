@@ -54,6 +54,34 @@ describe('the Caddyfile routes only what is public', () => {
     expect(CADDY).toContain('import {$SRE_AUTH_ROUTE}');
   });
 
+  it('customer sign-in by code (/auth/otp/*, ADR-0031) has its OWN switch: 503 by name by default, else ONLY the customer sign-in service', () => {
+    const off = snippet('customer-sign-in-not-deployed');
+    expect(off).toMatch(/handle \/auth\/otp\/\* \{/);
+    expect(off).toMatch(/sign_in_not_deployed[^\n]*` 503/);
+    expect(off).not.toContain('reverse_proxy');
+    const on = snippet('customer-sign-in-upstream');
+    expect([...on.matchAll(/reverse_proxy ([^ \n{]+)/g)].map((m) => m[1])).toEqual(['customer-sign-in:8093']);
+    expect(on).toMatch(/header_up X-Forwarded-For \{remote_host\}/); // its per-address limits cannot be spoofed
+    expect(CADDY.indexOf('import {$SRE_CUSTOMER_SIGN_IN_ROUTE}')).toBeGreaterThan(0);
+    expect(CADDY.indexOf('import {$SRE_CUSTOMER_SIGN_IN_ROUTE}')).toBeLessThan(CADDY.indexOf('import {$SRE_AUTH_ROUTE}'));
+    expect(service('proxy')).toContain('SRE_CUSTOMER_SIGN_IN_ROUTE: ${SRE_CUSTOMER_SIGN_IN_ROUTE:-customer-sign-in-not-deployed}');
+    for (const [name, text] of [['.env.example', ENV], ['.env.pilot.example', PILOT_ENV]] as const) {
+      expect(text, name).toMatch(/^SRE_CUSTOMER_SIGN_IN_ROUTE=customer-sign-in-not-deployed$/m);
+    }
+  });
+
+  it('the customer sign-in service is opt-in, read-only, unprivileged, publishes no port and holds no secret', () => {
+    const svc = service('customer-sign-in');
+    expect(svc).toContain("profiles: ['customer-sign-in']");
+    expect(svc).toContain("command: ['node', '/app/customer-sign-in.mjs']");
+    expect(svc).toContain("user: '1000:1000'");
+    expect(svc).toContain('read_only: true');
+    expect(svc).toContain('no-new-privileges:true');
+    expect(svc).toContain('../../services/identity/dist:/app:ro');
+    expect(svc).not.toMatch(/^\s+ports:/m);
+    expect(svc).not.toMatch(/SECRET|PASSWORD|KEY:/);
+  });
+
   it('forwards ONE screen — the customer app — to the edge, sends / there, and refuses everything else by name', () => {
     expect(CADDY).toMatch(/@customer path \/customer \/customer\/\*/);
     expect(CADDY).toContain('reverse_proxy edge:8091');

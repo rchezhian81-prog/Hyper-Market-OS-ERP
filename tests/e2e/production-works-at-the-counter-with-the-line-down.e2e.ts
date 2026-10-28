@@ -151,18 +151,20 @@ describe.skipIf(!HAVE_BROWSER)('the production screen at the counter with the li
     expect(await page.isHidden('#label-name')).toBe(true);
     expect(await page.isHidden('#label-price')).toBe(true);
     await page.selectOption('#label-run', 'run-ho');
-    await page.fill('#label-net', '1 piece'); await page.fill('#label-packer', 'SRE Hyper Market, Tamil Nadu'); await page.fill('#label-allergens', 'cereals_gluten, eggs');
+    await page.fill('#label-net', '1 piece'); await page.fill('#label-packer', 'SRE Hyper Market, Tamil Nadu'); await page.check('#label-allergens input.ag[value="cereals_gluten"]'); await page.check('#label-allergens input.ag[value="eggs"]'); await page.check('#label-veg-non');
     await page.click('#label');
     await page.waitForSelector('#label-out:not([hidden])');
     const printed = (await page.textContent('#label-out')) ?? '';
     expect(printed).toContain('Plum cake'); expect(printed).toContain('Batch CAKE-HO'); expect(printed).toContain('INR 120.00'); expect(printed).toContain('8901234567890');
+    // B9 · B3: the box prints the mark, the groups in words and the unit sale price.
+    expect(printed).toContain('[▲] NON-VEG'); expect(printed).toContain('Contains: Cereals containing gluten, Eggs'); expect(printed).toContain('Unit price ₹120.00 per piece');
     // …and the run just saved here, before head office has it: its use-by from the recipe (made now + 48 h).
     const runId = (await saved(page)).find((w) => w.kind === 'run')!.id;
     await page.selectOption('#label-run', runId);
     await page.click('#label');
     await waitText(page, '#label-out', 'Batch CAKE-77');
     // A label with no allergen declaration is refused in words; nothing printed.
-    await page.fill('#label-allergens', '');
+    await page.uncheck('#label-allergens input.ag[value="cereals_gluten"]'); await page.uncheck('#label-allergens input.ag[value="eggs"]');
     await page.click('#label');
     await waitText(page, '#result-text', 'allergen declaration');
     expect(await page.isHidden('#label-out')).toBe(true);

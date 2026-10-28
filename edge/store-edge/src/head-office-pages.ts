@@ -41,6 +41,9 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'company-report',
   // QG-02 · OB-404 (owner, 27 Oct 2026): Supplier rebates — the schemes, the claims and the money, served the same way.
   'rebates',
+  // Round 6 (OB-380: the store computer serves every office page head office answers): Scrap and recycling (M28-FR-02),
+  // Packaging and crates (M28-FR-03) and Compare side by side (M29-FR-02 · §27 Owner "branch comparison").
+  'scrap', 'packaging', 'branch-compare',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -105,6 +108,9 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   switches: 'switchesData',
   'company-report': 'companyReportData',
   rebates: 'rebatesData',
+  scrap: 'scrapData',
+  packaging: 'packagingData',
+  'branch-compare': 'branchCompareData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({

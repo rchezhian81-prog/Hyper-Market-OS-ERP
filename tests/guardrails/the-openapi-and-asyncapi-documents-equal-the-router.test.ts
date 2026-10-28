@@ -14,7 +14,7 @@ import { KNOWN_EVENT_TYPES } from '../../packages/contracts/src/event';
 import { OUTBOUND_API_VERSION } from '../../services/platform/src/outbound-webhooks';
 import { buildOpenApi, buildAsyncApi, renderContract, undeclaredBodies } from '../../services/platform/src/api-contracts';
 import { DECLARED_BODIES } from '../../services/platform/src/api-body-schemas';
-import { derivedContract, servedRoutes } from '../support/derived-contract';
+import { derivedContract, servedRoutes, storelessRoutes } from '../support/derived-contract';
 
 const OPENAPI = fileURLToPath(new URL('../../docs/api/openapi.json', import.meta.url));
 const ASYNCAPI = fileURLToPath(new URL('../../docs/api/asyncapi.json', import.meta.url));
@@ -58,6 +58,24 @@ describe('the OpenAPI document is the router (M32-FR-01)', () => {
     expect(new Set(ops.map((o) => o.op.operationId)).size).toBe(ops.length);
     const served = new Set(routes.map((r) => `${r.method.toLowerCase()} ${r.path.replace(/:[A-Za-z0-9_]+/g, '{}')}|${r.permission}`));
     for (const o of ops) expect(served.has(`${o.method} ${o.path.replace(/\{[A-Za-z0-9_]+\}/g, '{}')}|${o.op['x-permission']}`), `${o.method} ${o.path}`).toBe(true);
+  });
+
+  it('is built from the surface AS PRODUCTION SERVES IT (with an event store): no route mounted only with a store is left out', () => {
+    // M32-FR-01 · D14-FR-06 (round 6 audit): built without a store, ~47 served routes (/v1/me/lists, /v1/hr/posh/*, the
+    // profit-and-loss read, ...) were missing from the published contract. The committed document must name every one.
+    const key = (r: { method: string; path: string }) => `${r.method} ${r.path}`;
+    const storeless = new Set(storelessRoutes().map(key));
+    const servedKeys = new Set(routes.map(key));
+    for (const k of storeless) expect(servedKeys.has(k), `${k} is served without a store but not with one`).toBe(true);
+    const storeOnly = routes.filter((r) => !storeless.has(key(r)));
+    expect(storeOnly.length, 'the published surface must include the routes production mounts only with a store').toBeGreaterThan(40);
+    for (const must of ['GET /v1/me/lists', 'GET /v1/me/favourites', 'GET /v1/hr/posh/complaints', 'GET /v1/ai/security/anomaly-summaries', 'GET /v1/finance/periods/:period/profit-and-loss']) {
+      expect(servedKeys.has(must), must).toBe(true);
+    }
+    let committed: { paths?: Record<string, Record<string, unknown>> } = {};
+    try { committed = JSON.parse(readOr(OPENAPI)) as typeof committed; } catch { committed = {}; }
+    const missing = storeOnly.filter((r) => committed.paths?.[r.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}')]?.[r.method.toLowerCase()] === undefined).map(key);
+    expect(missing, `docs/api/openapi.json leaves out routes production serves — run: ${REGENERATE}`).toEqual([]);
   });
 
   it('declares every path parameter, and the Idempotency-Key header on every idempotent write (paths stay /v1)', () => {

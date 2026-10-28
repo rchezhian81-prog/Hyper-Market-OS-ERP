@@ -106,6 +106,7 @@ import {
   createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
 } from './payroll-session';
 import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
+import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring'; // M28-FR-02 · M28-FR-03 · M29-FR-02
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7121,4 +7122,6 @@ if (browserWindow !== undefined) {
   }
   // QG-02 lane 1 R4: the Dock diary, Standing orders, Supplier offer funding and Feature switches pages.
   wireR4Screens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // Round 6: Scrap and recycling, Packaging and crates, Compare side by side.
+  wireSalvageAndCompareScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
 }

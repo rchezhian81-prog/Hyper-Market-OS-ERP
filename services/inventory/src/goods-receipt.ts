@@ -150,6 +150,9 @@ export const RECEIPT_FLAGS = Object.freeze([
   'segregation_of_duties',
   // OB-288 P3 (M07-FR-01): what arrived differs from the supplier's advance ship notice for this order (`asnCheck`).
   'asn_differs',
+  // Round 6 (M07-FR-01/02 · hard rule #10): the receiver typed a unit cost that is not the one the issued order agreed. The
+  // order's cost is booked; the typed figure is kept beside it as a valued cost discrepancy (`costDiscrepancies`).
+  'cost_differs_from_order',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -264,6 +267,11 @@ export interface GrnRecord {
    * order — every product that differs, valued at the delivered cost. Absent when the order has no ASN on file.
    */
   readonly asnCheck?: AsnCheck;
+  /**
+   * Round 6 (M07-FR-01/02 · hard rule #10): every line whose typed unit cost differed from the issued order's — the order's
+   * cost is what was booked; the typed one is kept here, valued, never silently dropped and never booked. Absent when none.
+   */
+  readonly costDiscrepancies?: readonly ReceiptCostDiscrepancy[];
   /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
   readonly relayedBy?: string;
   readonly source?: string;
@@ -277,6 +285,72 @@ export interface AsnCheck {
   /** Every product whose count differs from the notice (a match is not a row), with its value at the delivered cost. */
   readonly differences: readonly (AsnComparison & { readonly valueMinor: number })[];
   readonly matched: boolean;
+}
+
+/** The unit cost a purchase-order line agreed — per `per` whole units (absent ⇒ 1), in its currency. */
+export interface OrderLineCost {
+  readonly minor: number;
+  readonly currency: string;
+  readonly per?: number;
+}
+
+/**
+ * Round 6 (M07-FR-01/02 · hard rule #10) — one receipt line whose TYPED unit cost is not the cost its issued order agreed.
+ * The order's cost is the one booked on the stock; the typed figure is kept here so the difference is visible and valued
+ * (the counted quantity at the typed cost minus the same quantity at the order's cost), never a silent overwrite.
+ */
+export interface ReceiptCostDiscrepancy {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  /** The cost the issued order agreed — the one booked. */
+  readonly orderUnitCost: OrderLineCost;
+  /** The cost the receiver typed — NOT booked. */
+  readonly typedUnitCost: OrderLineCost;
+  /** |counted × typed − counted × order|, in minor units of the order's currency. */
+  readonly valueMinor: number;
+  /** Positive when the typed cost was higher than the order's. */
+  readonly differenceMinor: number;
+  readonly currency: string;
+  readonly detail: string;
+}
+
+const sameCost = (a: OrderLineCost, b: OrderLineCost): boolean =>
+  a.currency === b.currency && a.minor * (b.per ?? 1) === b.minor * (a.per ?? 1);
+
+/**
+ * Round 6 (M07-FR-01/02): on a receipt against an ISSUED order, each line is booked at the cost the ORDER agreed for its
+ * product — head office's own record, never the receiver's typed figure (the handheld path already does this,
+ * `orderUnitCost`). A typed cost that differs is kept as a valued `ReceiptCostDiscrepancy` and flagged
+ * `cost_differs_from_order`. A line the order does not name, or a receipt with no issued order, keeps its line as sent
+ * (unchanged behaviour). With no `orderLineCost` port (a bare stub) nothing changes.
+ */
+export async function costFromOrder(
+  deps: Pick<GoodsReceiptDeps, 'orderLineCost'>, tenantId: string, order: OrderForReceipt, lines: readonly CapturedLine[], flags: ReceiptFlag[],
+): Promise<{ readonly lines: readonly CapturedLine[]; readonly costDiscrepancies: readonly ReceiptCostDiscrepancy[] }> {
+  if (deps.orderLineCost === undefined || !order.folds || order.poId === null) return { lines, costDiscrepancies: [] };
+  const poId = order.poId;
+  const out: CapturedLine[] = [];
+  const costDiscrepancies: ReceiptCostDiscrepancy[] = [];
+  for (const l of lines) {
+    const agreed = await deps.orderLineCost(tenantId, poId, l.productId);
+    if (agreed === undefined) { out.push(l); continue; }
+    const typed: OrderLineCost = { minor: l.unitCost.minor, currency: l.unitCost.currency, ...((l.unitCost as CostBasis).per === undefined ? {} : { per: (l.unitCost as CostBasis).per! }) };
+    const booked = { minor: agreed.minor, currency: agreed.currency, ...(agreed.per === undefined || agreed.per === 1 ? {} : { per: agreed.per }) } as CapturedLine['unitCost'];
+    out.push({ ...l, unitCost: booked });
+    if (sameCost(typed, agreed)) continue;
+    const atOrder = valueAtCost(l.countedMinor, l.uom, agreed);
+    const atTyped = valueAtCost(l.countedMinor, l.uom, typed);
+    costDiscrepancies.push({
+      lineId: l.lineId, productId: l.productId, quantityMinor: l.countedMinor, uom: l.uom,
+      orderUnitCost: agreed, typedUnitCost: typed, valueMinor: Math.abs(atTyped - atOrder), differenceMinor: atTyped - atOrder,
+      currency: agreed.currency,
+      detail: `${l.productId} was typed at ${typed.minor}${(typed.per ?? 1) > 1 ? ` per ${typed.per}` : ''} but order ${poId} agreed ${agreed.minor}${(agreed.per ?? 1) > 1 ? ` per ${agreed.per}` : ''} — booked at the order's cost; the difference is for the buyer to check with the supplier`,
+    });
+  }
+  if (costDiscrepancies.length > 0 && !flags.includes('cost_differs_from_order')) flags.push('cost_differs_from_order');
+  return { lines: out, costDiscrepancies };
 }
 
 /**
@@ -503,6 +577,11 @@ export interface GoodsReceiptDeps {
   readonly orderVersion?: (tenantId: string, poId: string) => Promise<number> | number;
   /** SP-6 (F01): the purchase order head office holds — its status and ordered quantity per product — or `undefined`. */
   readonly purchaseOrder: (tenantId: string, poId: string) => Promise<PurchaseOrderForReceipt | undefined> | PurchaseOrderForReceipt | undefined;
+  /**
+   * Round 6 (M07-FR-01/02): the unit cost an ISSUED order agreed for a product — what a receipt against it is booked at,
+   * never the receiver's typed figure. Absent on a bare stub (then the line's cost stands, as before).
+   */
+  readonly orderLineCost?: (tenantId: string, poId: string, productId: string) => Promise<OrderLineCost | undefined> | OrderLineCost | undefined;
   /** SP-6 (M07-FR-03): record a line disposition and, for an accept, the released movement as ONE atomic append. */
   readonly commitDisposition: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
   readonly now: () => string;
@@ -1385,7 +1464,9 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const known = await withProductFacts(deps, ctx.tenantId, (lines as CapturedLine[]).map((l) => l.productId));
         for (const l of lines as CapturedLine[]) inUnits.push(await lineInProductUnit(known, ctx.tenantId, l, flags));
         const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags, b['warehouseId'] as string);
-        const aligned = alignToOrder(inUnits, order.ordered, flags);
+        // Round 6 (M07-FR-01/02): booked at the cost the ISSUED order agreed — a typed cost that differs is kept, valued, flagged.
+        const costed = await costFromOrder(deps, ctx.tenantId, order, alignToOrder(inUnits, order.ordered, flags), flags);
+        const aligned = costed.lines;
         // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
         const master = await rulesFromMaster(known, ctx.tenantId, aligned.map((l) => l.productId));
         if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
@@ -1434,6 +1515,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
           governanceFlags: flags,
           poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
           ...(order.position === undefined ? {} : { orderPosition: order.position }),
+          ...(costed.costDiscrepancies.length === 0 ? {} : { costDiscrepancies: costed.costDiscrepancies }),
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held are on the GRN but not on-hand.
         const movements = inboundMovements({
@@ -1676,6 +1758,8 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             receipts, count: ordered.length, needingApprovalCount: waiting.length,
             heldExcessCount: all.filter((g) => g.heldMinor > 0 && g.excessDecision === undefined).length,
             awaitingDispositionCount: all.filter((g) => linesAwaitingDisposition(g).length > 0).length,
+            // Round 6 (M07-FR-01/02): receipts whose typed cost differed from the order's — listed, never hidden (P-08).
+            costDiscrepancyCount: all.filter((g) => (g.costDiscrepancies ?? []).length > 0).length,
           },
         };
       },

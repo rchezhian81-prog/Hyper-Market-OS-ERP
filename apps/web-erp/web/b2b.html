@@ -129,6 +129,23 @@
         <ul class="rows" id="o-rows"></ul>
       </section>
 
+      <section id="recurring" hidden aria-labelledby="rec-h">
+        <h3 id="rec-h"></h3>
+        <p class="meta" id="rec-lead"></p>
+        <ul class="rows" id="rec-rows"></ul>
+        <div id="rec-form" hidden>
+          <div class="row-form">
+            <label for="rec-quote"><span id="rec-quote-l"></span><select id="rec-quote"></select></label>
+            <label for="rec-cadence"><span id="rec-cadence-l"></span><select id="rec-cadence"><option value="weekly" id="rec-cadence-weekly"></option><option value="monthly" id="rec-cadence-monthly"></option></select></label>
+            <label for="rec-day"><span id="rec-day-l"></span><input id="rec-day" inputmode="numeric" autocomplete="off" /></label>
+            <label for="rec-start"><span id="rec-start-l"></span><input id="rec-start" type="date" /></label>
+            <label for="rec-sp"><span id="rec-sp-l"></span><input id="rec-sp" autocomplete="off" /></label>
+          </div>
+          <button id="rec-save" type="button"><span id="rec-save-text"></span></button>
+        </div>
+        <p class="status" id="rec-status" role="status" aria-live="polite"></p>
+      </section>
+
       <section id="collect" hidden aria-labelledby="collect-h">
         <h3 id="collect-h"></h3>
         <div class="figs" id="ageing"></div>

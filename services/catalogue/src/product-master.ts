@@ -20,7 +20,7 @@ import { apiError, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
 import {
-  publishProduct, NotPublishableError, CategoryNotFoundError, isTobacco, warningStanding, checkVariant,
+  publishProduct, NotPublishableError, CategoryNotFoundError, isTobacco, warningStanding, checkVariant, dualMrpConflict, dualMrpMessage,
   type ProductRecord, type ProductLifecycle, type HandlingClass,
 } from '../../../packages/product/src/index';
 import { liquorReason, LIQUOR_NOT_SOLD } from '../../../packages/restricted-sales/src/liquor';
@@ -154,6 +154,19 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             whatHappened: `${MEDICINE_NOT_SOLD} "${record.name}" cannot be published: ${medicine}.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Do not list it. If it is not a medicine (a balm, a cosmetic, a bandage), correct its HSN and category and take the medicine mark off. Nothing was saved.',
+          });
+        }
+        // B2 (roadmap v2.1, Legal Metrology): a pack carries ONE MRP at a time. The MRP history is effective-dated and never
+        // overwritten (hard rule #2), so the MRPs head office already holds for this product are judged TOGETHER with the
+        // ones sent: a second, different MRP taking effect on a date that already has one is refused at commit, by name —
+        // whether the screen sent both, or sent only the new one. A later-dated MRP is a normal price move and passes.
+        const dual = dualMrpConflict([...(current?.mrpHistory ?? []), ...(record.mrpHistory ?? [])]);
+        if (dual !== undefined) {
+          throw apiError(422, {
+            code: 'dual_mrp_rejected',
+            whatHappened: `"${record.name}" cannot be published: ${dualMrpMessage(dual)}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep the MRP already on record for that date, or give the new MRP the date it really takes effect from (a later date), and publish again. Nothing was saved.',
           });
         }
         // OB-347 (owner, 24 Oct 2026, in writing): a PUBLISHED product's tax (HSN) class changes only with a Finance approver's

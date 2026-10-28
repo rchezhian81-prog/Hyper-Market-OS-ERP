@@ -1,13 +1,14 @@
 // R4 Lane 2 — the customer app served the way the store box serves it, over the REAL API kernel (in memory), for the
 // online-store browser journeys. One Node server: the app's own files with `window.shopData` injected (from the shop's
-// published pack), the auth backend with the production OTP engines and the local test IdP (a minter never enters the
-// page), and every `/v1/*` call handed straight to the API. Synthetic data only.
+// published pack), the REAL customer sign-in service at `/auth/otp/*` (services/identity/src/customer-sign-in.ts, with
+// the recording SMS transport and the local test IdP as its signer — a minter never enters the page), and every `/v1/*`
+// call handed straight to the API. Synthetic data only.
 
 import { readFile } from 'node:fs/promises';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import { beginOtpChallenge, verifyOtp, type OtpChallenge } from '../../../packages/identity/src/index';
-import { createOtpSimulator } from '../../support/otp-simulator';
+import type { OtpSimulator } from '../../support/otp-simulator';
+import { mountCustomerSignIn, testCustomerSigner } from '../../support/customer-sign-in-test-ports';
 import { TEST_IDP, type ApiHarness } from '../../support/api-harness';
 
 const WEB_DIR = 'apps/customer-app/web';
@@ -15,7 +16,7 @@ const DATA_MARKER = '<!--SCREEN-DATA-->';
 
 export interface CustomerShop {
   readonly base: string;
-  readonly sms: ReturnType<typeof createOtpSimulator>;
+  readonly sms: OtpSimulator;
   /** Every non-read call the app made to the shop. */
   readonly writes: { method: string; path: string }[];
   stop(): Promise<void>;
@@ -25,8 +26,9 @@ export async function startCustomerShop(input: {
   readonly h: ApiHarness; readonly tenantId: string; readonly subject: string; readonly shopData: () => Promise<Record<string, unknown>>;
 }): Promise<CustomerShop> {
   const { h, tenantId: T, subject } = input;
-  const sms = createOtpSimulator();
-  const challenges = new Map<string, OtpChallenge>();
+  // Every number signs in as the one synthetic customer this shop is set up for, given the customer role on first sign-in.
+  const auth = mountCustomerSignIn({ tenantId: T, signer: testCustomerSigner({ idp: TEST_IDP, subjectFor: () => subject, onSignIn: (s) => h.provisionRole(T, s, 'customer') }) });
+  const sms = auth.sms;
   const writes: { method: string; path: string }[] = [];
   const readBody = (req: IncomingMessage): Promise<Record<string, unknown>> =>
     new Promise((resolve) => {
@@ -42,27 +44,7 @@ export async function startCustomerShop(input: {
     void (async () => {
       const [path = '/', search = ''] = (req.url ?? '/').split('?');
       const query = Object.fromEntries(new URLSearchParams(search));
-      if (req.method === 'POST' && path === '/auth/otp/begin') {
-        const body = await readBody(req);
-        const challengeId = `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const begun = beginOtpChallenge({ challengeId, tenantId: T, phoneNumber: String(body['phoneNumber'] ?? ''), purpose: 'login', now: new Date().toISOString() });
-        challenges.set(challengeId, begun.challenge);
-        sms.send({ phoneNumber: begun.challenge.phoneNumber, code: begun.code, purpose: 'login', tenantId: T });
-        sendJson(res, 200, { ok: true, challengeId });
-        return;
-      }
-      if (req.method === 'POST' && path === '/auth/otp/verify') {
-        const body = await readBody(req);
-        const challenge = challenges.get(String(body['challengeId'] ?? ''));
-        if (challenge === undefined) { sendJson(res, 200, { ok: false, reason: 'unknown_challenge' }); return; }
-        const v = verifyOtp({ challenge, tenantId: T, submittedCode: String(body['code'] ?? ''), now: new Date().toISOString() });
-        if (!v.verified) { sendJson(res, 200, { ok: false, reason: v.outcome }); return; }
-        challenges.set(challenge.challengeId, v.challenge);
-        await h.provisionRole(T, subject, 'customer');
-        sendJson(res, 200, { ok: true, token: TEST_IDP.issue({ sub: subject, tenantId: T, amr: ['otp'] }), sessionId: `s-${Date.now()}` });
-        return;
-      }
-      if (req.method === 'POST' && path === '/auth/signout') { sendJson(res, 200, { ok: true }); return; }
+      if (await auth.handle(req, res)) return;
       if (path.startsWith('/v1/')) {
         const auth = req.headers['authorization'] ?? '';
         const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;

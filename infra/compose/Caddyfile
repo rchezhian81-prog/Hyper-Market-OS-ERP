@@ -4,7 +4,9 @@
 # sends its short-lived token only to the host that served the page:
 #   /v1/*, /livez, /readyz  → the cloud API          (the client address is OVERWRITTEN from the connection,
 #                                                      so nobody can spoof the per-IP rate limit with a header)
-#   /auth/*                 → customer sign-in        (503 by name until the sign-in service is deployed)
+#   /auth/otp/*             → customer sign-in by a code to the phone (M20-FR-01 · ADR-0031): 503 by name until the
+#                             customer sign-in service is switched in (SRE_CUSTOMER_SIGN_IN_ROUTE); its own switch
+#   /auth/*                 → the identity server     (503 by name until it is deployed: SRE_AUTH_ROUTE)
 #   /customer/*             → the customer app        (served by the edge's screen server, private network only)
 #   /                       → /customer/
 #   staff screens, /login,  → 404 by name (SRE_STAFF_ROUTE=staff-not-public, the default): till, owner, manager, … stay on
@@ -47,6 +49,26 @@
 	}
 	handle /auth/* {
 		reverse_proxy {$SRE_AUTH_UPSTREAM} {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}
+
+# Customer sign-in by a code to the phone (M20-FR-01 · ADR-0031) — the customer sign-in service, on its OWN switch so the
+# identity server's /auth/ route above is untouched. `customer-sign-in-not-deployed` (the default) says so by name;
+# `customer-sign-in-upstream` forwards to the service (compose profile `customer-sign-in`). The service itself refuses to
+# send a code while no SMS provider is connected (OB-222) — and says that in plain words too.
+(customer-sign-in-not-deployed) {
+	handle /auth/otp/* {
+		header Content-Type application/json
+		respond `{"error":{"code":"sign_in_not_deployed","whatHappened":"Customer sign-in is not deployed on this server yet.","wasItSaved":"not_saved","nextSafeAction":"Browse as a guest. Ordering needs sign-in, which arrives with the customer sign-in service."}}` 503
+	}
+}
+
+(customer-sign-in-upstream) {
+	handle /auth/otp/* {
+		reverse_proxy customer-sign-in:8093 {
+			# The service limits codes and wrong codes per address on the leftmost entry: overwritten from the connection.
 			header_up X-Forwarded-For {remote_host}
 		}
 	}
@@ -126,6 +148,8 @@
 		}
 	}
 
+	# Customer sign-in by code first (the more specific /auth/otp/*), then the identity server's /auth/*.
+	import {$SRE_CUSTOMER_SIGN_IN_ROUTE}
 	import {$SRE_AUTH_ROUTE}
 
 	@customer path /customer /customer/*

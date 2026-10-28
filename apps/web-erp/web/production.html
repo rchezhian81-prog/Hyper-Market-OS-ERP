@@ -57,6 +57,12 @@
       section.form button.act { background:var(--accent, var(--line)); color:var(--ink); }
       input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.note { margin:0; color:var(--muted); font-size:14px; }
+      fieldset.ticks { border:1px solid var(--line); border-radius:10px; padding:8px 12px; margin:0; display:grid; gap:4px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
+      fieldset.ticks legend { font-size:13px; color:var(--muted); padding:0 4px; }
+      fieldset.ticks p.note { grid-column:1 / -1; }
+      label.tick { display:flex; align-items:center; gap:10px; min-height:var(--tap); font-size:15px; color:var(--ink); margin:0; cursor:pointer; }
+      label.tick input { width:24px; height:24px; min-height:0; margin:0; }
+      .mark { font-size:18px; } .mark.veg { color:var(--ok); } .mark.nonveg { color:var(--danger-text); }
       pre.label { margin:0; padding:12px; background:var(--bg); border:1px dashed var(--line); border-radius:10px; font-size:14px; white-space:pre-wrap; }
       [hidden] { display:none !important; }
     </style>
@@ -109,9 +115,25 @@
             <div><label for="label-net" id="label-net-label"></label><input id="label-net" type="text" autocomplete="off" /></div>
             <div><label for="label-packer" id="label-packer-label"></label><input id="label-packer" type="text" autocomplete="off" /></div>
             <div><label for="label-price" id="label-price-label"></label><input id="label-price" type="text" inputmode="decimal" autocomplete="off" /></div>
-            <div><label for="label-allergens" id="label-allergens-label"></label><input id="label-allergens" type="text" autocomplete="off" /></div>
             <div id="label-weight-box" hidden><label for="label-weight" id="label-weight-label"></label><input id="label-weight" type="text" inputmode="numeric" autocomplete="off" /></div>
           </div>
+          <!-- B9: the veg / non-veg mark and the eight major allergen groups, each a person's own tick (silence is not a declaration). -->
+          <fieldset class="ticks" id="label-veg"><legend id="label-veg-legend"></legend>
+            <label class="tick"><input type="radio" name="label-veg" id="label-veg-veg" value="veg" /><span class="mark veg" aria-hidden="true">●</span><span id="label-veg-veg-word"></span></label>
+            <label class="tick"><input type="radio" name="label-veg" id="label-veg-non" value="non_veg" /><span class="mark nonveg" aria-hidden="true">▲</span><span id="label-veg-non-word"></span></label>
+          </fieldset>
+          <fieldset class="ticks" id="label-allergens"><legend id="label-allergens-label"></legend>
+            <p class="note" id="label-allergens-hint"></p>
+            <label class="tick"><input type="checkbox" class="ag" value="cereals_gluten" /><span class="ag-word" data-key="agCerealsGluten"></span></label>
+            <label class="tick"><input type="checkbox" class="ag" value="crustaceans" /><span class="ag-word" data-key="agCrustaceans"></span></label>
+            <label class="tick"><input type="checkbox" class="ag" value="eggs" /><span class="ag-word" data-key="agEggs"></span></label>
+            <label class="tick"><input type="checkbox" class="ag" value="fish" /><span class="ag-word" data-key="agFish"></span></label>
+            <label class="tick"><input type="checkbox" class="ag" value="peanuts_tree_nuts" /><span class="ag-word" data-key="agPeanutsTreeNuts"></span></label>
+            <label class="tick"><input type="checkbox" class="ag" value="milk" /><span class="ag-word" data-key="agMilk"></span></label>
+            <label class="tick"><input type="checkbox" class="ag" value="soybeans" /><span class="ag-word" data-key="agSoybeans"></span></label>
+            <label class="tick"><input type="checkbox" class="ag" value="sulphites" /><span class="ag-word" data-key="agSulphites"></span></label>
+            <label class="tick"><input type="checkbox" id="label-allergen-none" value="none" /><span id="label-allergen-none-word"></span></label>
+          </fieldset>
           <p class="note" id="label-box-hint" hidden></p>
           <button id="label" class="act" type="button"></button>
         </div>

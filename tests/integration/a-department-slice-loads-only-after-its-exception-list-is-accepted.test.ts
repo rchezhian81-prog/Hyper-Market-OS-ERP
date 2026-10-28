@@ -29,7 +29,7 @@ const ACCEPTOR = 'u-owner';
 const CASHIER = 'u-cash';
 const STORE = 'S1';
 const LOAD = 'slice-staples-1';
-const FOOD = 'none,India,1 kg,Synthetic Packers Pvt Ltd Chennai';
+const FOOD = 'none,India,1 kg,Synthetic Packers Pvt Ltd Chennai,Care desk 1800-000-0000';
 
 const FILES: Record<SliceFile, string> = {
   'tax-classes.csv': ['hsn_code,effective_from,rate_percent', '1006,2017-07-01,5', '0713,2017-07-01,0'].join('\n'),
@@ -38,7 +38,7 @@ const FILES: Record<SliceFile, string> = {
     `R-001,,Synthetic rice 1kg,each,staples,1006,,active,${FOOD},,,`,
     `R-002,,Synthetic dal 1kg,each,staples,0713,,active,${FOOD},,,`,
     `R-003,,Synthetic oil 1L,each,oils,1006,,active,${FOOD},,,`,
-    `R-004,,Synthetic sugar 1kg,each,staples,1006,,active,,India,1 kg,Synthetic Packers,,,`,
+    `R-004,,Synthetic sugar 1kg,each,staples,1006,,active,,India,1 kg,Synthetic Packers,Care desk 1800-000-0000,,,`,
   ].join('\n'),
   'prices.csv': ['item_code,mrp,selling_price,cost_price,margin_floor_percent', 'R-001,60.00,55.00,48.00,', 'R-002,140.00,130.00,120.00,', 'R-003,200.00,190.00,170.00,'].join('\n'),
   'barcodes.csv': ['item_code,barcode,kind', 'R-001,8900000000012,', 'R-002,8900000000029,', 'R-003,8900000000036,'].join('\n'),

@@ -42,6 +42,12 @@ export class InvalidScaleVerification extends Error {
   }
 }
 
+/**
+ * B7: the scale register's notice period — a stamp falling due within this many days is "due soon" on the Scales page
+ * and raised into the owners' alerts. One constant, so the page and the alert can never disagree.
+ */
+export const SCALE_VERIFICATION_NOTICE_DAYS = 30;
+
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function assertDate(value: string, label: string): void {
@@ -63,7 +69,7 @@ function daysBetween(from: string, to: string): number {
 export function weighingScaleVerification(
   scale: { readonly reverificationDueOn: string },
   asOf: string,
-  noticeDays = 30,
+  noticeDays = SCALE_VERIFICATION_NOTICE_DAYS,
 ): ScaleVerificationStatus {
   assertDate(scale.reverificationDueOn, 'reverificationDueOn');
   assertDate(asOf, 'asOf');

@@ -50,7 +50,7 @@ describe.each(backings)('existing products are changed by file, and the change c
     for (const [id, body] of [['grocery', { name: 'Grocery', parentId: null }], ['staples', { name: 'Staples', parentId: 'grocery', regulated: ['food', 'packed'] }], ['home', { name: 'Home care', parentId: null }]] as const) {
       expect((await post(`/v1/catalogue/categories/${id}`, 'u-owner', body)).status).toBe(201);
     }
-    expect((await post('/v1/catalogue/products/p-rice/publish', 'u-owner', { product: { sku: 'RICE5', name: 'Rice 5kg', baseUom: 'each', primaryCategoryId: 'staples', taxClass: '1006', lifecycle: 'draft', safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'Synthetic Mills' } } })).status).toBe(201);
+    expect((await post('/v1/catalogue/products/p-rice/publish', 'u-owner', { product: { sku: 'RICE5', name: 'Rice 5kg', baseUom: 'each', primaryCategoryId: 'staples', taxClass: '1006', lifecycle: 'draft', safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'Synthetic Mills', consumerCareContact: 'Care desk 1800-000-0000' } } })).status).toBe(201);
     expect((await post('/v1/catalogue/products/p-soap/publish', 'u-owner', { product: { sku: 'SOAP', name: 'Soap', baseUom: 'each', primaryCategoryId: 'home', taxClass: '3401', lifecycle: 'draft' } })).status).toBe(201);
     const riceBefore = await product('p-rice');
 

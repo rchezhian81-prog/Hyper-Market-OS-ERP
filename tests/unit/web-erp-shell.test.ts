@@ -54,7 +54,7 @@ describe('role-scoped navigation', () => {
     expect(nav.map((g) => g.group)).toEqual(['Today', 'Receiving', 'Inventory', 'Sales', 'Finance', 'Customers', 'Reports']); // round 8: + Customers (Customer cases, service.case.read)
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
     // Round 12: Transfers (gated on the same availability read) joins the Inventory group.
-    expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'transfers', 'stock-health', 'unsellable', 'warehouse-supervisor', 'demand-events']); // R4 Lane 3: Store events (D-24) on the same read
+    expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'transfers', 'packaging', 'stock-health', 'unsellable', 'warehouse-supervisor', 'demand-events']); // R4 Lane 3: Store events (D-24) on the same read; round 6: Packaging and crates (M28-FR-03) on the same read
   });
 
   it('shows nothing to an unknown user (default-deny)', () => {

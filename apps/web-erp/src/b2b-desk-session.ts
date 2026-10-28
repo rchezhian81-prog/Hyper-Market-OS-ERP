@@ -9,7 +9,10 @@
 //     person ASKS — the owner decides (OB-290) — and then makes the order naming the approval;
 //   • the PROFORMA, the CHALLAN (what actually left) and the TAX INVOICE (from the challans);
 //   • CONTRACTS — proposed by one person, approved by another (kind b2b_contract), then put in force;
-//   • a PAYMENT received, allocated to the oldest invoices.
+//   • a PAYMENT received, allocated to the oldest invoices;
+//   • RECURRING orders (M22-FR-03) — set up from a quotation by one person, APPROVED by another, then made by head office
+//     on each due day by itself; PAUSED with a reason (it then makes nothing until approved again); a day that could not
+//     go through may be tried again.
 // OB-280 (owner, 21 Oct 2026): business bills stay on the old system for real trading — this is the office module, behind
 // the shop's `b2b` switch. Nothing is read or written on open; every write is a person's click, in their own name.
 
@@ -38,6 +41,13 @@ export const B2B_DESK_COPY = {
     // OB-426 · OB-427
     deliveryFromGstin: 'Filled in from the State of the customer\'s GSTIN — change it if the goods are delivered to another State. CGST + SGST or IGST follows the State used.', deliveryBlank: 'Leave it blank for a delivery in this store\'s State.',
     removeGstin: 'Remove the GSTIN', removeGstinNote: 'Remove it only when the customer\'s GST registration is cancelled, and type the reason above. Tax invoices issued after this file as B2C; those already issued do not change.', needRemoveReason: 'Type the reason the GSTIN is removed (for example, the registration was cancelled).',
+    recurringH: 'Recurring orders', recurringLead: 'An order made again by itself every week or month from a quotation — the same items, prices and store. It runs only after someone other than the person who set it up approves it; on each due day head office makes it once, through the usual stock and credit checks. Paused, it makes nothing until it is approved again.',
+    recurringNone: 'No recurring order for this customer.', recFromL: 'From quotation', recPickQuote: 'Choose a quotation', cadenceL: 'How often', weekly: 'Every week', monthly: 'Every month',
+    dayOfL: 'Day (week: 1 = Monday … 7 = Sunday; month: 1–28)', startsOnL: 'Starts on', salespersonL: 'Salesperson id (optional)', recPropose: 'Set up the recurring order',
+    recWaiting: 'waiting for a second person to approve', recInForce: 'in force', recPaused: 'paused', recApprove: 'Approve', recPause: 'Pause', pauseReasonL: 'Why pause it',
+    recEveryWeek: 'every week on', recEveryMonth: 'every month on day', wd1: 'Monday', wd2: 'Tuesday', wd3: 'Wednesday', wd4: 'Thursday', wd5: 'Friday', wd6: 'Saturday', wd7: 'Sunday',
+    recFrom: 'from', recStarts: 'starting', recProposedBy: 'set up by', recPausedBy: 'paused by', recMade: 'order made', recCouldNot: 'could not be made', recRetry: 'Try this day again', recByItself: 'made by head office by itself',
+    needQuotation: 'Choose the quotation the order repeats.', needSchedule: 'Give how often, the day (1–7 for a week, 1–28 for a month) and the start date.', needReason: 'Write why it is paused.',
     read: 'Read', saved: 'Saved.', nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot open the business desk.',
     needCustomer: 'Type the customer id first.', needStore: 'Name the store it is supplied from.', needLines: 'Add at least one line: product, description, a whole quantity and a GST %.', needDates: 'Give both dates (from, to) — the end on or after the start.', needPrices: 'Write the price list: one "product id = rupees" per line.', needMoney: 'Write the amount in rupees, like 1250 or 1250.50.', needDispatched: 'Type how many of each line left the building.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.', offFeature: 'The business-customer feature is switched off for this shop.',
@@ -60,6 +70,13 @@ export const B2B_DESK_COPY = {
     gstinNote: 'இதன் பின் வெளியிடப்படும் வரி விலைப்பட்டியல்களில் GSTIN இருக்கும்; அவை GSTR-1 இன் B2B பிரிவில் ஒவ்வொன்றாகப் பதிவாகும். ஏற்கனவே வெளியிட்டவை மாறாது.', billTo: 'பெறுநர்', billToNone: 'GSTIN இல்லை (B2C ஆகப் பதிவு)', needGstin: 'வாடிக்கையாளரின் 15 எழுத்து GSTIN, அதன் சட்டப் பெயர், காரணம் ஆகியவற்றைத் தட்டச்சு செய்யவும்.',
     deliveryFromGstin: 'வாடிக்கையாளரின் GSTIN மாநிலத்திலிருந்து நிரப்பப்பட்டது — பொருள் வேறு மாநிலத்துக்குச் சென்றால் மாற்றவும். CGST + SGST அல்லது IGST பயன்படுத்திய மாநிலத்தைப் பொறுத்தது.', deliveryBlank: 'இந்தக் கடையின் மாநிலத்துக்குள் டெலிவரி என்றால் காலியாக விடவும்.',
     removeGstin: 'GSTIN-ஐ நீக்கு', removeGstinNote: 'வாடிக்கையாளரின் GST பதிவு ரத்து செய்யப்பட்டால் மட்டும் நீக்கவும்; மேலே காரணத்தைத் தட்டச்சு செய்யவும். இதன் பின் வெளியிடப்படும் வரி விலைப்பட்டியல்கள் B2C ஆகப் பதிவாகும்; ஏற்கனவே வெளியிட்டவை மாறாது.', needRemoveReason: 'GSTIN நீக்கப்படும் காரணத்தைத் தட்டச்சு செய்யவும் (எ.கா. பதிவு ரத்து செய்யப்பட்டது).',
+    recurringH: 'தொடர் ஆர்டர்கள்', recurringLead: 'ஒரு விலைக்குறிப்பிலிருந்து ஒவ்வொரு வாரமும் அல்லது மாதமும் தானாக மீண்டும் செய்யப்படும் ஆர்டர் — அதே பொருட்கள், விலைகள், கடை. அமைத்தவர் அல்லாத வேறொருவர் அனுமதித்த பிறகே இயங்கும்; ஒவ்வொரு உரிய நாளிலும் தலைமை அலுவலகம் வழக்கமான இருப்பு, கடன் சரிபார்ப்புகளுடன் ஒருமுறை செய்யும். நிறுத்தி வைத்தால், மீண்டும் அனுமதிக்கும் வரை எதுவும் செய்யாது.',
+    recurringNone: 'இந்த வாடிக்கையாளருக்குத் தொடர் ஆர்டர் இல்லை.', recFromL: 'எந்த விலைக்குறிப்பிலிருந்து', recPickQuote: 'விலைக்குறிப்பைத் தேர்ந்தெடுக்கவும்', cadenceL: 'எத்தனை முறை', weekly: 'ஒவ்வொரு வாரமும்', monthly: 'ஒவ்வொரு மாதமும்',
+    dayOfL: 'நாள் (வாரம்: 1 = திங்கள் … 7 = ஞாயிறு; மாதம்: 1–28)', startsOnL: 'தொடங்கும் நாள்', salespersonL: 'விற்பனையாளர் எண் (விருப்பம்)', recPropose: 'தொடர் ஆர்டரை அமை',
+    recWaiting: 'இரண்டாவது நபரின் அனுமதிக்காகக் காத்திருக்கிறது', recInForce: 'நடைமுறையில்', recPaused: 'நிறுத்தி வைக்கப்பட்டது', recApprove: 'அனுமதி', recPause: 'நிறுத்து', pauseReasonL: 'ஏன் நிறுத்துகிறீர்கள்',
+    recEveryWeek: 'ஒவ்வொரு வாரமும்', recEveryMonth: 'ஒவ்வொரு மாதமும் நாள்', wd1: 'திங்கள்', wd2: 'செவ்வாய்', wd3: 'புதன்', wd4: 'வியாழன்', wd5: 'வெள்ளி', wd6: 'சனி', wd7: 'ஞாயிறு',
+    recFrom: 'விலைக்குறிப்பு', recStarts: 'தொடக்கம்', recProposedBy: 'அமைத்தவர்', recPausedBy: 'நிறுத்தியவர்', recMade: 'ஆர்டர் செய்யப்பட்டது', recCouldNot: 'செய்ய முடியவில்லை', recRetry: 'இந்த நாளை மீண்டும் முயல்', recByItself: 'தலைமை அலுவலகம் தானாகச் செய்தது',
+    needQuotation: 'ஆர்டர் மீண்டும் செய்யும் விலைக்குறிப்பைத் தேர்ந்தெடுக்கவும்.', needSchedule: 'எத்தனை முறை, நாள் (வாரத்திற்கு 1–7, மாதத்திற்கு 1–28), தொடங்கும் தேதி ஆகியவற்றைக் கொடுக்கவும்.', needReason: 'ஏன் நிறுத்துகிறீர்கள் என்று எழுதவும்.',
     read: 'படி', saved: 'சேமிக்கப்பட்டது.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு வணிக மேசையைத் திறக்க முடியாது.',
     needCustomer: 'முதலில் வாடிக்கையாளர் எண்ணைத் தட்டச்சு செய்யவும்.', needStore: 'வழங்கும் கடையைக் குறிப்பிடவும்.', needLines: 'குறைந்தது ஒரு வரி சேர்க்கவும்: பொருள், விவரம், முழு அளவு, GST %.', needDates: 'இரு தேதிகளையும் தரவும் — முடிவு தொடக்கத்திற்குப் பின் அல்லது அதே நாள்.', needPrices: 'விலைப்பட்டியலை எழுதவும்: ஒவ்வொரு வரியிலும் "பொருள் எண் = ரூபாய்".', needMoney: 'தொகையை ரூபாயில் எழுதவும், உதா. 1250 அல்லது 1250.50.', needDispatched: 'ஒவ்வொரு வரியிலும் எத்தனை அனுப்பப்பட்டது என்று தட்டச்சு செய்யவும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.', offFeature: 'இந்தக் கடைக்கு வணிக வாடிக்கையாளர் வசதி அணைக்கப்பட்டுள்ளது.',
@@ -121,7 +138,25 @@ export interface ContractInput {
 export interface ContractBody { readonly customerId: string; readonly contractId: string; readonly body: Record<string, unknown> }
 export interface AskedRequest { readonly requestId: string; readonly kind: string; readonly status: string; readonly subjectRef: string; readonly details: Record<string, unknown>; readonly decidedBy?: string; readonly decisionReason?: string }
 
-export type Invalid = 'nobody' | 'needCustomer' | 'needStore' | 'needLines' | 'needDates' | 'needPrices' | 'needMoney' | 'needDispatched' | 'needGstin' | 'needRemoveReason';
+export type Invalid = 'nobody' | 'needCustomer' | 'needStore' | 'needLines' | 'needDates' | 'needPrices' | 'needMoney' | 'needDispatched' | 'needGstin' | 'needRemoveReason' | 'needQuotation' | 'needSchedule' | 'needReason';
+
+/** A recurring order as head office keeps it (GET /v1/b2b/recurring) — with every day it ran. */
+export interface RecurringOrderView {
+  readonly scheduleId: string; readonly customerId: string; readonly templateQuotationId: string; readonly cadence: 'weekly' | 'monthly'; readonly dayOf: number; readonly startsOn: string;
+  readonly salespersonId?: string; readonly proposedBy: string; readonly approvedBy?: string; readonly pausedBy?: string; readonly pauseReason?: string; readonly inForce: boolean;
+  readonly runs: readonly { readonly on: string; readonly outcome: 'generated' | 'exception'; readonly orderId?: string; readonly detail?: string; readonly ranBy: string }[];
+}
+export interface RecurringInput { readonly customerId: string; readonly quotationId: string; readonly cadence: string; readonly dayOf: string; readonly startsOn: string; readonly salespersonId: string }
+
+/** Read the recurring-order form into the exact body head office takes (it checks again). */
+export function recurringBodyOf(input: RecurringInput): Record<string, unknown> | Invalid {
+  if (input.customerId.trim() === '') return 'needCustomer';
+  if (input.quotationId.trim() === '') return 'needQuotation';
+  const cadence = input.cadence === 'weekly' || input.cadence === 'monthly' ? input.cadence : undefined;
+  const day = Number(input.dayOf.trim());
+  if (cadence === undefined || !Number.isInteger(day) || day < 1 || day > (cadence === 'weekly' ? 7 : 28) || !DATE.test(input.startsOn)) return 'needSchedule';
+  return { customerId: input.customerId.trim(), fromQuotationId: input.quotationId.trim(), cadence, dayOf: day, startsOn: input.startsOn, ...(input.salespersonId.trim() === '' ? {} : { salespersonId: input.salespersonId.trim() }) };
+}
 
 /** Read the contract form into the exact body head office takes. */
 export function contractBodyOf(input: ContractInput, makeId: () => string = () => newId('K')): ContractBody | Invalid {
@@ -158,7 +193,7 @@ export function quoteLinesOf(lines: readonly QuoteLineInput[]): { lineId: string
 }
 
 export interface B2BDeskSession {
-  readonly may: { readonly named: boolean; readonly open: boolean; readonly issue: boolean; readonly readContracts: boolean; readonly manageContracts: boolean; readonly collect: boolean; readonly readAccount: boolean; readonly manageAccount: boolean };
+  readonly may: { readonly named: boolean; readonly open: boolean; readonly issue: boolean; readonly readContracts: boolean; readonly manageContracts: boolean; readonly collect: boolean; readonly readAccount: boolean; readonly manageAccount: boolean; readonly approveRecurring: boolean };
   readDesk(): Promise<Outcome<{ readonly customers: readonly { readonly customerId: string; readonly contract: { readonly inForce: string | null; readonly lapsed: string | null; readonly blocked: boolean } }[] }>>;
   readCustomer(customerId: string): Promise<Outcome<Record<string, unknown>, 'needCustomer'>>;
   readAgeing(customerId: string): Promise<Outcome<Record<string, unknown>, 'needCustomer'>>;
@@ -181,6 +216,14 @@ export interface B2BDeskSession {
   recordGstin(input: { readonly customerId: string; readonly gstin: string; readonly legalName: string; readonly reason: string }): Promise<Outcome<unknown, Invalid>>;
   /** OB-427: remove the GSTIN in force, with a reason — head office refuses by name when none is on record. */
   removeGstin(input: { readonly customerId: string; readonly reason: string }): Promise<Outcome<unknown, Invalid>>;
+  /** M22-FR-03: one customer's recurring orders, each with the days it ran. */
+  readRecurring(customerId: string): Promise<Outcome<readonly RecurringOrderView[], 'needCustomer'>>;
+  /** Set one up from a quotation — it waits for a second person's approval. */
+  proposeRecurring(input: RecurringInput): Promise<Outcome<unknown, Invalid>>;
+  approveRecurring(scheduleId: string): Promise<Outcome<unknown, Invalid>>;
+  pauseRecurring(scheduleId: string, reason: string): Promise<Outcome<unknown, Invalid>>;
+  /** Try a day again (a day that could not go through) — head office makes what is due and not yet made. */
+  runRecurringDay(on: string): Promise<Outcome<unknown, Invalid>>;
 }
 
 export function createB2BDeskSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly makeId?: (prefix: string) => string }): B2BDeskSession {
@@ -190,7 +233,7 @@ export function createB2BDeskSession(input: { readonly viewer: { readonly userId
     named, open: named && held.has('b2b.document.read'), issue: named && held.has('b2b.document.issue'),
     readContracts: named && held.has('b2b.contract.read'), manageContracts: named && held.has('b2b.contract.manage'),
     collect: named && held.has('b2b.receivable.record'), readAccount: named && held.has('b2b.account.read'),
-    manageAccount: named && held.has('b2b.account.manage'),
+    manageAccount: named && held.has('b2b.account.manage'), approveRecurring: named && held.has('b2b.recurring.approve'),
   };
   const call = makeCaller({ keyPrefix: 'b2b-desk', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const id = input.makeId ?? newId;
@@ -297,5 +340,24 @@ export function createB2BDeskSession(input: { readonly viewer: { readonly userId
       if (reason.trim() === '') return { result: 'invalid', why: 'needRemoveReason' };
       return call('POST', `/v1/b2b/accounts/${enc(customerId.trim())}/gstin/removal`, { reason: reason.trim() });
     },
+    readRecurring: async (customerId) => {
+      if (customerId.trim() === '') return { result: 'invalid', why: 'needCustomer' };
+      const r = await call<{ schedules?: RecurringOrderView[] }>('GET', '/v1/b2b/recurring');
+      if (r.result !== 'ok') return r;
+      return { result: 'ok', value: (r.value.schedules ?? []).filter((x) => x.customerId === customerId.trim()) };
+    },
+    proposeRecurring: async (input) => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      const body = recurringBodyOf(input);
+      if (typeof body === 'string') return { result: 'invalid', why: body };
+      return call('POST', `/v1/b2b/recurring/${enc(id('REC'))}`, body);
+    },
+    approveRecurring: async (scheduleId) => (named ? call('POST', `/v1/b2b/recurring/${enc(scheduleId)}/approve`, {}) : { result: 'invalid', why: 'nobody' }),
+    pauseRecurring: async (scheduleId, reason) => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (reason.trim() === '') return { result: 'invalid', why: 'needReason' };
+      return call('POST', `/v1/b2b/recurring/${enc(scheduleId)}/pause`, { reason: reason.trim() });
+    },
+    runRecurringDay: async (on) => (named ? (DATE.test(on) ? call('POST', '/v1/b2b/recurring-runs', { on }) : { result: 'invalid', why: 'needSchedule' }) : { result: 'invalid', why: 'nobody' }),
   };
 }

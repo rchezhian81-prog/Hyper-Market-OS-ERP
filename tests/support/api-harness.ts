@@ -171,7 +171,7 @@ export function apiHarness(opts: {
   const kernel: Kernel = {
     router: built.router!,
     authenticate: revocationAwareAuthenticator(TEST_IDP.policy(), revocations),
-    access: tenantAccessResolver(store, ROLE_CATALOGUE),
+    access: tenantAccessResolver(store, ROLE_CATALOGUE, opts.now ?? (() => new Date().toISOString())),
     // Support/remote session binding (PA-10), composed exactly as main.ts does it.
     channels: sessionChannelsOf({ store, revocations, now: opts.now ?? (() => new Date().toISOString()) }),
     // OB-54: each store computer's credential locked to its own store, composed exactly as main.ts does it.

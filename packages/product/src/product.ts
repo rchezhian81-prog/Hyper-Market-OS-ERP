@@ -35,6 +35,8 @@ import type { TobaccoWarningRecord } from './tobacco-warning';
 import { nutritionProblems, nutritionRequired, type NutritionFacts } from './nutrition';
 import { liquorReason, LIQUOR_NOT_SOLD } from '../../restricted-sales/src/liquor';
 import { medicineReason, MEDICINE_NOT_SOLD } from '../../restricted-sales/src/medicines';
+import { checkDualMrp, type DualMrpCheck, type MrpEntry } from './dual-mrp';
+import { checkPackDeclarations } from './pack-declarations';
 
 export type ProductLifecycle = 'draft' | 'new' | 'active' | 'clearance' | 'discontinued';
 
@@ -111,6 +113,11 @@ export interface SafetyContent {
   readonly netQuantity?: string;
   /** Name and address of the packer/importer — a Legal Metrology label field. */
   readonly packerDetails?: string;
+  /**
+   * B4 (Legal Metrology, Packaged Commodities Rule 6): who a customer complains to — a name with a phone or email. A
+   * packed product cannot be published without it.
+   */
+  readonly consumerCareContact?: string;
   readonly minimumAge?: number;
   /**
    * B14 (COTPA 2003): the product is tobacco. It then needs the customer to be at least 18 at the till, whatever
@@ -413,6 +420,30 @@ export function validateProduct(
       message: 'no packer or importer details — a Legal Metrology label field',
     });
   }
+  // B4 (roadmap v2.1, Packaged Commodities Rule 6): a pre-packed commodity carries the statutory declarations the tested
+  // `checkPackDeclarations` names — the consumer-care contact and the country of origin among them — or it is not sellable.
+  // (The month and year of manufacture is NOT judged here: it is a per-batch fact awaiting an owner decision.)
+  if (regulated.includes('packed')) {
+    const pack = checkPackDeclarations({
+      ...(safety?.netQuantity === undefined ? {} : { netQuantity: safety.netQuantity }),
+      ...(safety?.consumerCareContact === undefined ? {} : { consumerCareContact: safety.consumerCareContact }),
+      ...(safety?.countryOfOrigin === undefined ? {} : { countryOfOrigin: safety.countryOfOrigin }),
+    });
+    if (pack.missing.some((m) => m.startsWith('consumerCareContact'))) {
+      issues.push({
+        field: 'safety.consumerCareContact',
+        severity: 'blocks_publish',
+        message: 'no consumer-care contact — a packed product must say who a customer complains to (a name with a phone or email), a Legal Metrology declaration',
+      });
+    }
+    if (pack.missing.some((m) => m.startsWith('countryOfOrigin')) && !issues.some((i) => i.field === 'safety.countryOfOrigin')) {
+      issues.push({
+        field: 'safety.countryOfOrigin',
+        severity: 'blocks_publish',
+        message: 'no country of origin — a Legal Metrology declaration for a packed product',
+      });
+    }
+  }
   if (regulated.includes('age_restricted') && safety?.minimumAge === undefined) {
     issues.push({
       field: 'safety.minimumAge',
@@ -560,11 +591,46 @@ export function validateProduct(
     }
   }
 
+  // B2 (roadmap v2.1, Legal Metrology): one pack carries ONE printed MRP at a time. Two different MRPs taking effect on the
+  // same date are refused by the tested `checkDualMrp` — a later-dated change is a normal price move and passes.
+  const dual = dualMrpConflict(product.mrpHistory ?? []);
+  if (dual !== undefined) {
+    issues.push({ field: 'mrpHistory', severity: 'blocks_publish', message: dualMrpMessage(dual) });
+  }
+
   return {
     productId: product.productId,
     issues,
     publishable: !issues.some((i) => i.severity === 'blocks_publish'),
   };
+}
+
+const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
+
+/** The plain-English refusal for a dual MRP (B2), the same words on the screen and at head office. */
+export function dualMrpMessage(check: DualMrpCheck): string {
+  const c = check.conflict;
+  return c === undefined
+    ? 'two different MRPs would be active on the same date — a pack may carry only one MRP at a time'
+    : `two different MRPs (${rupees(c.existingMinor)} and ${rupees(c.proposedMinor)}) take effect on ${c.effectiveFrom} — a pack may carry only one MRP at a time (Legal Metrology); give the new MRP its own later date, or keep the one on record`;
+}
+
+/**
+ * B2: the first same-date clash in an MRP history — each entry judged by the tested `checkDualMrp` against the entries
+ * before it — or undefined when the history carries one MRP per date. Entries the dual-MRP engine cannot read (no valid
+ * date, no positive whole amount) are left to the rules that own them; they never make a clash.
+ */
+export function dualMrpConflict(history: readonly EffectiveValue<Money>[]): DualMrpCheck | undefined {
+  const seen: MrpEntry[] = [];
+  for (const entry of history) {
+    const candidate: MrpEntry = { effectiveFrom: String(entry?.effectiveFrom ?? ''), valueMinor: Number(entry?.value?.minor) };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate.effectiveFrom) || Number.isNaN(Date.parse(`${candidate.effectiveFrom}T00:00:00.000Z`))
+      || !Number.isInteger(candidate.valueMinor) || candidate.valueMinor <= 0) continue;
+    const check = checkDualMrp(seen, candidate);
+    if (!check.ok) return check;
+    seen.push(candidate);
+  }
+  return undefined;
 }
 
 /** Publish a validated product. Throws `NotPublishableError` with every reason. */

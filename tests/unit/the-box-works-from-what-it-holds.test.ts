@@ -43,14 +43,17 @@ const input = (over: Partial<ScreenInput> = {}): ScreenInput => ({
 
 describe('the counter label, rendered on the box (M11-FR-03 offline)', () => {
   it('prints a cafe run from head office\'s board with the catalogue\'s name and price, the run\'s batch and use-by, and its own barcode', () => {
-    const l = counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1 piece (450 g)', packerDetails: 'SRE Hyper Market, Tamil Nadu', allergens: ['cereals_gluten', 'eggs'] });
+    const l = counterLabelFor(input(), { runId: 'r-cake', netQuantity: '450 g', packerDetails: 'SRE Hyper Market, Tamil Nadu', allergens: ['cereals_gluten', 'eggs'], vegClass: 'non_veg' });
     expect(l).toMatchObject({ ok: true, batchId: 'CAKE-1', useBy: '2026-10-25T06:00:00.000Z', productName: 'Plum cake', priceMinor: 12_000, barcode: '8901234567890', from: 'head_office_board' });
-    expect(l.ok && l.lines).toEqual(expect.arrayContaining(['Plum cake', 'Batch CAKE-1', 'USE BY 2026-10-25 06:00', 'Contains: cereals_gluten, eggs', 'INR 120.00']));
+    // B9 · B3 · B24: the mark and the eight-group allergens in words, the unit sale price, and the print sizes it was judged at.
+    expect(l.ok && l.lines).toEqual(expect.arrayContaining(['[▲] NON-VEG', 'Plum cake', 'Batch CAKE-1', 'USE BY 2026-10-25 06:00', 'Contains: Cereals containing gluten, Eggs', 'INR 120.00', 'Unit price ₹266.67 per kg']));
+    expect(l).toMatchObject({ vegClass: 'non_veg', unitPrice: { unitPriceMinor: 266_67, per: 'kg' }, print: { templateId: 'counter-58x40', minHeightMm: 1, letterHeightMm: 2 } });
   });
 
   it('prices a weighed pack at the price per kilo × its weight, with the weight in a barcode the till itself reads back', () => {
-    const l = counterLabelFor(input(), { runId: 'r-meat', weightGrams: 450, packerDetails: 'SRE Hyper Market', allergens: [] });
-    expect(l).toMatchObject({ ok: true, priceMinor: 36_000, barcode: expect.stringMatching(/^212345600450\d$/) });
+    const l = counterLabelFor(input(), { runId: 'r-meat', weightGrams: 450, packerDetails: 'SRE Hyper Market', allergens: [], vegClass: 'non_veg' });
+    expect(l).toMatchObject({ ok: true, priceMinor: 36_000, barcode: expect.stringMatching(/^212345600450\d$/), unitPrice: { unitPriceMinor: 800_00, per: 'kg' } });
+    expect(l.ok && l.lines).toContain('Allergens: none of the 8 major groups');
     // One definition, both directions: the till decodes the label's barcode to the same product and weight.
     const till = new CatalogueCache(catalogue().snapshot);
     const scan = till.scan((l as { barcode: string }).barcode);
@@ -59,7 +62,7 @@ describe('the counter label, rendered on the box (M11-FR-03 offline)', () => {
 
   it('labels a run captured on this box before head office has it, its use-by worked out from the recipe like head office does', () => {
     const captured = { runId: 'r-new', recipeId: 'rc-cake', outputBatchId: 'CAKE-9', actualOutputMinor: 4, producedBy: 'u-cook', at: '2026-10-23T07:30:00.000Z' };
-    const l = counterLabelFor(input({ boxCapturedRuns: [captured] }), { runId: 'r-new', netQuantity: '1 piece', packerDetails: 'SRE', allergens: [] });
+    const l = counterLabelFor(input({ boxCapturedRuns: [captured] }), { runId: 'r-new', netQuantity: '1 piece', packerDetails: 'SRE', allergens: [], vegClass: 'veg' });
     expect(l).toMatchObject({ ok: true, batchId: 'CAKE-9', useBy: useByOf('2026-10-23T07:30:00.000Z', 48), from: 'captured_here' });
     expect(useByOf('2026-10-23T07:30:00.000Z', 48)).toBe('2026-10-25T07:30:00.000Z');
   });
@@ -75,19 +78,29 @@ describe('the counter label, rendered on the box (M11-FR-03 offline)', () => {
     expect(codeOf(counterLabelFor(noCatalogue, { runId: 'r-cake', netQuantity: '1', packerDetails: 'SRE', allergens: [] }))).toBe('product_not_on_the_pack');
     expect(codeOf(counterLabelFor(input(), { runId: 'r-meat', packerDetails: 'SRE', allergens: [] }))).toBe('weight_needed');
     // A cafe label without its allergen declaration, or without its packer, is unlawful (Legal Metrology / FSSAI).
-    expect(codeOf(counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1', packerDetails: 'SRE' }))).toBe('incomplete_label');
-    expect(codeOf(counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1', allergens: [] }))).toBe('incomplete_label');
+    expect(codeOf(counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1 piece', packerDetails: 'SRE', vegClass: 'veg' }))).toBe('incomplete_label');
+    expect(codeOf(counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1 piece', allergens: [], vegClass: 'veg' }))).toBe('incomplete_label');
+    // B9: no veg / non-veg mark, or a word that is not one of the eight groups — refused, nothing printed.
+    const noMark = counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1 piece', packerDetails: 'SRE', allergens: [] });
+    expect(noMark).toMatchObject({ ok: false, refusedBecause: 'incomplete_label', detail: expect.stringContaining('veg or non-veg mark') });
+    const freeText = counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1 piece', packerDetails: 'SRE', allergens: ['wheat'], vegClass: 'veg' });
+    expect(freeText).toMatchObject({ ok: false, refusedBecause: 'incomplete_label', detail: expect.stringContaining('"wheat"') });
+    // B3: a net quantity the price per unit cannot be worked out from is refused, never printed without it.
+    expect(counterLabelFor(input(), { runId: 'r-cake', netQuantity: 'one slab', packerDetails: 'SRE', allergens: [], vegClass: 'veg' })).toMatchObject({ ok: false, detail: expect.stringContaining('price per unit') });
+    // B24: a printer template whose numerals are below the panel's minimum height fails — nothing printed.
+    const tiny = counterLabelFor(input(), { runId: 'r-cake', netQuantity: '1 piece', packerDetails: 'SRE', allergens: [], vegClass: 'veg', template: { templateId: 'tiny', principalPanelAreaCm2: 150, letterHeightMm: 2, numeralHeightMm: 1.5 } });
+    expect(tiny).toMatchObject({ ok: false, refusedBecause: 'label_print_too_small', detail: expect.stringContaining('below the 2 mm minimum') });
     // Food past its use-by is never labelled.
-    expect(codeOf(counterLabelFor(input(), { runId: 'r-old', netQuantity: '1', packerDetails: 'SRE', allergens: [] }))).toBe('already_expired');
+    expect(codeOf(counterLabelFor(input(), { runId: 'r-old', netQuantity: '1 piece', packerDetails: 'SRE', allergens: [], vegClass: 'veg' }))).toBe('already_expired');
     // A weighed pack with no barcode rule on the catalogue could not be scanned at the till.
     const noRule = catalogue();
     (noRule.snapshot as { embeddedRules?: unknown }).embeddedRules = [];
-    expect(codeOf(counterLabelFor(input({ cataloguePack: noRule }), { runId: 'r-meat', weightGrams: 450, packerDetails: 'SRE', allergens: [] }))).toBe('no_scale_barcode_rule');
+    expect(codeOf(counterLabelFor(input({ cataloguePack: noRule }), { runId: 'r-meat', weightGrams: 450, packerDetails: 'SRE', allergens: [], vegClass: 'non_veg' }))).toBe('no_scale_barcode_rule');
   });
 
   it('reads the counter\'s request strictly', () => {
-    expect(readCounterLabelRequest({ runId: 'r-1', weightGrams: 450, allergens: ['milk'] })).toEqual({ runId: 'r-1', weightGrams: 450, allergens: ['milk'] });
-    for (const bad of [null, {}, { runId: '' }, { runId: 'r', weightGrams: 0 }, { runId: 'r', weightGrams: 1.5 }, { runId: 'r', allergens: 'milk' }, { runId: 'r', priceMinor: 1, netQuantity: 4 }]) {
+    expect(readCounterLabelRequest({ runId: 'r-1', weightGrams: 450, allergens: ['milk'], vegClass: 'veg' })).toEqual({ runId: 'r-1', weightGrams: 450, allergens: ['milk'], vegClass: 'veg' });
+    for (const bad of [null, {}, { runId: '' }, { runId: 'r', weightGrams: 0 }, { runId: 'r', weightGrams: 1.5 }, { runId: 'r', allergens: 'milk' }, { runId: 'r', priceMinor: 1, netQuantity: 4 }, { runId: 'r', vegClass: 'egg' }, { runId: 'r', template: { templateId: 't', principalPanelAreaCm2: 0, letterHeightMm: 2, numeralHeightMm: 2 } }]) {
       expect(readCounterLabelRequest(bad), JSON.stringify(bad)).toBeUndefined();
     }
   });

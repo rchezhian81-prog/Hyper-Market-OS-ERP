@@ -3682,6 +3682,12 @@
           "asnCheck": {
             "$ref": "#/components/schemas/AsnCheck"
           },
+          "costDiscrepancies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+            }
+          },
           "relayedBy": {
             "type": "string"
           },
@@ -4331,6 +4337,25 @@
         },
         "additionalProperties": true
       },
+      "OrderLineCost": {
+        "type": "object",
+        "required": [
+          "minor",
+          "currency"
+        ],
+        "properties": {
+          "minor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "per": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "OrderPosition": {
         "type": "object",
         "required": [
@@ -4395,6 +4420,54 @@
               "asked",
               "no_answer"
             ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "ReceiptCostDiscrepancy": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "productId",
+          "quantityMinor",
+          "uom",
+          "orderUnitCost",
+          "typedUnitCost",
+          "valueMinor",
+          "differenceMinor",
+          "currency",
+          "detail"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "orderUnitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "typedUnitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "differenceMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
           }
         },
         "additionalProperties": true

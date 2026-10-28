@@ -6,6 +6,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { auditPage } from './lib/a11y-audit';
 import { approveSupplierWith, SUPPLIER_MAKER, SUPPLIER_CHECKER } from '../support/approved-supplier';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * OB-288 commercial desks — the three office screens in a real browser, on the PRODUCTION API over real PostgreSQL:
@@ -16,6 +17,10 @@ import { approveSupplierWith, SUPPLIER_MAKER, SUPPLIER_CHECKER } from '../suppor
  *     GSTIN's State; (OB-427) the accountant removes the GSTIN with a reason and the issued invoice keeps it;
  *   • Supplier submissions (M24-FR-01/02): a claim is rejected only with a reason, leaves the queue, and the supplier's
  *     "delayed" delivery update is on the order;
+ *   • Recurring orders (M22-FR-03): the manager sets one up from a quotation; only the OWNER may approve it (a second
+ *     person); head office's own worker makes the day's order BY ITSELF — over the credit limit it is an exception on the
+ *     page and raised to the owner, once; with the money in, "Try this day again" makes it; the manager pauses it with a
+ *     reason; English and Tamil;
  *   • Concessions (M27-FR-01/04 · OB-304): switched off it says so; switched on, a contract approved by a second person is
  *     put in force, its insurance ending in 5 days shows, and the owner is told.
  * English and Tamil; every button its icon; the accessibility audit clean. Needs DATABASE_URL and Chromium; else it SKIPS.
@@ -188,6 +193,77 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     const cash = await open('u-cash', '/b2b', 'br-1');
     expect(await cash.page.textContent('#page-status')).toBe('Your role cannot open the business desk.');
     await cash.close();
+  }, 180_000);
+
+  it('recurring orders (M22-FR-03): set up by the manager, approved by the owner, made by head office by itself on its day, paused with a reason', async () => {
+    const today = shopDateIn(new Date().toISOString());
+    const weekday = ((new Date(`${today}T00:00:00.000Z`).getUTCDay() + 6) % 7) + 1;
+    // ── The manager sets one up from the customer's quotation; he cannot approve it.
+    const mgr = await open(MGR, '/b2b', 'br-1');
+    await mgr.page.waitForSelector('#customers:not([hidden])');
+    await mgr.page.locator('#c-rows li[data-customer="SCHOOL"] button[data-act="open"]').click();
+    await mgr.page.waitForSelector('#recurring:not([hidden])');
+    await waitText(mgr.page, '#rec-rows', 'No recurring order for this customer.');
+    await mgr.page.waitForSelector('#rec-form:not([hidden])');
+    expect(await mgr.page.locator('#rec-save svg').count()).toBe(1);
+    await mgr.page.click('#rec-save');
+    await waitText(mgr.page, '#rec-status', 'Choose the quotation the order repeats.');
+    await mgr.page.selectOption('#rec-quote', { index: 1 });
+    await mgr.page.selectOption('#rec-cadence', 'weekly');
+    await mgr.page.fill('#rec-day', String(weekday));
+    await mgr.page.fill('#rec-start', today);
+    await mgr.page.click('#rec-save');
+    await waitText(mgr.page, '#rec-status', 'Saved.');
+    await waitText(mgr.page, '#rec-rows', 'waiting for a second person to approve');
+    expect(await mgr.page.locator('#rec-rows button[data-act="rec-approve"]').count()).toBe(0); // the order-taker never approves
+    expect(mgr.errors).toEqual([]);
+    await mgr.close();
+
+    // ── The owner approves it on the page.
+    const own = await open(OWNER, '/b2b');
+    await own.page.waitForSelector('#customers:not([hidden])');
+    await own.page.locator('#c-rows li[data-customer="SCHOOL"] button[data-act="open"]').click();
+    const row = own.page.locator('#rec-rows li[data-recurring]');
+    await row.waitFor({ timeout: 15_000 });
+    expect(await row.locator('button[data-act="rec-approve"] svg').count()).toBe(1);
+    await row.locator('button[data-act="rec-approve"]').click();
+    await waitText(own.page, '#rec-rows', 'in force');
+    await own.close();
+
+    // ── Head office's own worker pass makes the day's order by itself: over the credit limit (₹5,040 owed of ₹6,000), it
+    //    is an EXCEPTION — on the page and raised to the owner — and a second pass makes nothing more.
+    await shop.cloud().opsAlertWorker!.runOnce();
+    await shop.cloud().opsAlertWorker!.runOnce();
+    const board = JSON.stringify((await shop.cloud().request({ method: 'GET', path: '/v1/platform/alerts', userId: OWNER })).body);
+    expect(board).toContain(`:${today}`);
+    expect(board).toContain('b2b-recurring-exception:');
+    const book = (await shop.cloud().request({ method: 'GET', path: '/v1/b2b/recurring', userId: OWNER })).body as { schedules: { runs: { ranBy: string; outcome: string }[] }[] };
+    expect(book.schedules[0]!.runs).toEqual([expect.objectContaining({ ranBy: 'system:b2b-recurring', outcome: 'exception' })]);
+
+    // ── The school pays; the manager tries the day again from the page, and the order is made. Then he pauses it.
+    await ok(shop.cloud().request({ method: 'POST', path: '/v1/b2b/collections/SCHOOL/payments/rcpt-rec', userId: OWNER, idempotencyKey: 'rcpt-rec', body: { receivedMinor: 504_000 } }), 'the school pays');
+    const back = await open(MGR, '/b2b', 'br-1');
+    await back.page.waitForSelector('#customers:not([hidden])');
+    await back.page.locator('#c-rows li[data-customer="SCHOOL"] button[data-act="open"]').click();
+    const line = back.page.locator(`#rec-rows span[data-run="${today}"]`);
+    await line.waitFor({ timeout: 15_000 });
+    expect((await line.textContent()) ?? '').toContain('could not be made');
+    expect((await line.textContent()) ?? '').toContain('made by head office by itself');
+    expect(await back.page.locator('#rec-rows button[data-act="rec-retry"] svg').count()).toBe(1);
+    await back.page.locator('#rec-rows button[data-act="rec-retry"]').click();
+    await waitText(back.page, `#rec-rows span[data-run="${today}"]`, 'order made RSO-');
+    expect(await auditPage(back.page, { expectLang: 'en' }), 'the business customers page with a recurring order').toEqual([]);
+    await back.page.locator('#rec-rows button[data-act="rec-pause"]').click();
+    await waitText(back.page, '#rec-status', 'Write why it is paused.');
+    await back.page.locator('#rec-rows input.rec-reason').fill('school closed for the holidays (synthetic)');
+    await back.page.locator('#rec-rows button[data-act="rec-pause"]').click();
+    await waitText(back.page, '#rec-rows', 'paused by');
+    await waitText(back.page, '#rec-rows', 'school closed for the holidays');
+    await back.page.click('#lang');
+    await waitText(back.page, '#rec-rows', 'நிறுத்தி வைக்கப்பட்டது');
+    expect(await back.page.textContent('#rec-h')).toBe('தொடர் ஆர்டர்கள்');
+    expect(back.errors).toEqual([]);
+    await back.close();
   }, 180_000);
 
   it('supplier submissions: a claim is rejected only with a reason and leaves the queue; the delayed delivery is on the order', async () => {

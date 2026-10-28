@@ -261,7 +261,8 @@ describe('labels, quality release and repacking (M11-FR-03)', () => {
       packerDetails: 'SRE Hyper Market, Cafe counter',
       useBy: '2026-08-03T18:00:00Z',
       price: money(9_000, INR),
-      allergens: ['wheat', 'milk'],
+      allergens: ['cereals_gluten', 'milk'],
+      vegClass: 'veg',
       producedAt: AT,
       ...over,
     };
@@ -269,10 +270,12 @@ describe('labels, quality release and repacking (M11-FR-03)', () => {
 
   it('prints a complete label', () => {
     const printed = renderLabel(buildPackLabel(label(), CAFE));
-    expect(printed[0]).toBe('Cheese sandwich');
+    expect(printed[1]).toBe('Cheese sandwich');
     expect(printed).toContain('Net 180 g');
     expect(printed).toContain('USE BY 2026-08-03 18:00');
-    expect(printed).toContain('Contains: wheat, milk');
+    expect(printed).toContain('Contains: Cereals containing gluten, Milk');
+    expect(printed[0]).toBe('[●] VEG');
+    expect(printed).toContain('Unit price ₹500.00 per kg');
     expect(printed).toContain('INR 90.00');
   });
 
@@ -286,7 +289,7 @@ describe('labels, quality release and repacking (M11-FR-03)', () => {
     expect(() => buildPackLabel(label({ allergens: undefined }), CAFE)).toThrow(/allergen declaration/);
     // An explicit "none" is a declaration and passes.
     const none = buildPackLabel(label({ allergens: [] }), CAFE);
-    expect(renderLabel(none)).toContain('Allergens: none declared');
+    expect(renderLabel(none)).toContain('Allergens: none of the 8 major groups');
   });
 
   it('does not demand a weight from a department that does not sell by weight', () => {

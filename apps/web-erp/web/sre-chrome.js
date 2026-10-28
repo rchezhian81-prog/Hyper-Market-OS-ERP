@@ -495,6 +495,9 @@
     'dock-diary': 'truck',
     'promotion-funding': 'banknote',
     'rebates': 'percent', // QG-02 · OB-404 — an icon already in the set
+    'scrap': 'package-minus', // round 6 · M28-FR-02 — an icon already in the set
+    'packaging': 'boxes', // round 6 · M28-FR-03 — an icon already in the set
+    'branch-compare': 'chart-column', // round 6 · M29-FR-02 — an icon already in the set
     'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set

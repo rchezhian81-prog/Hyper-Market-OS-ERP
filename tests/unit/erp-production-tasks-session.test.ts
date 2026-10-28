@@ -39,6 +39,16 @@ describe('FUL-13 — the production staff\'s task paths', () => {
     expect(sent.label).toEqual([{ runId: 'run-1', productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE', priceMinor: 12_050, allergens: ['wheat', 'milk'] }]);
   });
 
+  it('B9: the veg / non-veg tick is sent as the person ticked it; an unticked (or unknown) mark is sent as nothing', async () => {
+    const { s, sent } = session();
+    await s.printLabel({ ...LABEL, vegClass: 'non_veg' });
+    await s.printLabel({ ...LABEL, vegClass: '' });
+    await s.printLabel({ ...LABEL, vegClass: 'eggetarian' });
+    expect(sent.label[0]).toMatchObject({ vegClass: 'non_veg' });
+    expect(sent.label[1]).not.toHaveProperty('vegClass');
+    expect(sent.label[2]).not.toHaveProperty('vegClass');
+  });
+
   it('a blank allergen box is NOT DECLARED (sent without the field — head office refuses a label that needs it); "none" declares none', async () => {
     const { s, sent } = session();
     await s.printLabel({ ...LABEL, allergens: '  ' });

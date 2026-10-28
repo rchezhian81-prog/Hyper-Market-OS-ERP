@@ -53,7 +53,7 @@ export const SLICE_TEMPLATES: Readonly<Record<SliceFile, SliceTemplate>> = Objec
   },
   'products.csv': {
     file: 'products.csv',
-    columns: ['item_code', 'sku', 'description', 'uom', 'category', 'hsn_code', 'brand', 'status', 'allergens', 'country_of_origin', 'net_quantity', 'packer', 'ingredients', 'storage', 'minimum_age'],
+    columns: ['item_code', 'sku', 'description', 'uom', 'category', 'hsn_code', 'brand', 'status', 'allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care', 'ingredients', 'storage', 'minimum_age'],
     required: ['item_code', 'description', 'uom', 'category', 'hsn_code'],
     help: {
       item_code: 'The old ERP item code. It becomes the product id.',
@@ -68,6 +68,7 @@ export const SLICE_TEMPLATES: Readonly<Record<SliceFile, SliceTemplate>> = Objec
       country_of_origin: 'Food: required.',
       net_quantity: 'Packed or weighed: required (e.g. 500 g).',
       packer: 'Packed: the packer or importer name and address.',
+      consumer_care: 'Packed: who a customer complains to — a name with a phone or email (Legal Metrology).',
       ingredients: 'Optional.',
       storage: 'Optional storage conditions.',
       minimum_age: 'Age-restricted: the minimum age in whole years.',
@@ -340,6 +341,7 @@ export function stageSlice(input: {
       ...(cell(r.row, 'storage') === undefined ? {} : { storageConditions: cell(r.row, 'storage')! }),
       ...(cell(r.row, 'net_quantity') === undefined ? {} : { netQuantity: cell(r.row, 'net_quantity')! }),
       ...(cell(r.row, 'packer') === undefined ? {} : { packerDetails: cell(r.row, 'packer')! }),
+      ...(cell(r.row, 'consumer_care') === undefined ? {} : { consumerCareContact: cell(r.row, 'consumer_care')! }),
       ...(ageText === undefined ? {} : { minimumAge: Number(ageText) }),
     };
     const brand = cell(r.row, 'brand');

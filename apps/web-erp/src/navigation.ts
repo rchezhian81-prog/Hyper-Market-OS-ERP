@@ -139,6 +139,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.
   { id: 'transfers', label: 'Transfers', labelTa: 'இடமாற்றங்கள்', path: '/transfers', requires: 'inventory.availability.read', group: 'Inventory' },
   { id: 'waste', label: 'Waste & write-off', labelTa: 'வீணானவை மற்றும் தள்ளுபடி', path: '/waste', requires: 'waste.view', group: 'Inventory' },
+  // Round 6 · M28-FR-02: scrap and recycling — every disposal with its weight, money and evidence, flagged (never refused) when
+  // the evidence or the books are missing. Gated on the review the scrap routes check (`scrap.review.read`); recording needs
+  // `scrap.sale.record`. A head-office page, served by the store computer (OB-380).
+  { id: 'scrap', label: 'Scrap and recycling', labelTa: 'கழிவுப் பொருள் மற்றும் மறுசுழற்சி', path: '/scrap', requires: 'scrap.review.read', group: 'Inventory' },
+  // Round 6 · M28-FR-03: packaging and crates — the item master, movements and each item's position (still out, never came
+  // back, negative shown negative). Gated on the position read (`inventory.availability.read`); writes need
+  // `inventory.movement.append`. A head-office page, served by the store computer (OB-380).
+  { id: 'packaging', label: 'Packaging and crates', labelTa: 'பொதிப் பொருட்களும் கூடைகளும்', path: '/packaging', requires: 'inventory.availability.read', group: 'Inventory' },
   // Record a write-off from the shop floor — the WRITE sibling of the read-only /waste review. Gated on the
   // SAME authority the governed write-off route checks (`inventory.movement.append`), so the menu never offers
   // it to someone the server would refuse; §28/evidence/threshold all stay server-side (M28-FR-01).
@@ -272,6 +280,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // roll-up and its logged export — served by the store computer like the other office pages. Gated on the report read.
   { id: 'company-report', label: 'Company report', labelTa: 'நிறுவன அறிக்கை', path: '/company-report', requires: 'reporting.report.read', group: 'Reports' },
   { id: 'morning-brief', label: 'Morning brief', labelTa: 'காலைச் சுருக்கம்', path: '/morning-brief', requires: 'owner.kpi.read', group: 'Reports' },
+  // Round 6 · M29-FR-02 · §27 Owner "branch comparison": rank branches, departments, suppliers or staff on head office's own
+  // governed figures and drill to the exact transactions; scope is the server's. Gated on what the drill and compare routes
+  // check (`owner.kpi.read`). A head-office page, served by the store computer (OB-380).
+  { id: 'branch-compare', label: 'Compare side by side', labelTa: 'அருகருகே ஒப்பிடு', path: '/branch-compare', requires: 'owner.kpi.read', group: 'Reports' },
   // ── OB-288 lane 4 · P2 — begin
   // M29-FR-03/04: the owner's five exception-alert thresholds (each "not set" until entered), today's exceptions, and his
   // scheduled reports and exports. Gated on the SAME permission the thresholds read checks (`owner.alert.read`).

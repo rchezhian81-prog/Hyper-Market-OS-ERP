@@ -73,7 +73,7 @@ describe('SF-06-b — head office\'s own category list', () => {
     const bare = await post(h, '/v1/catalogue/products/p-rice/publish', 'u-owner', { product: rice });
     expect(codeOf(bare)).toBe('product_not_publishable');
     expect(JSON.stringify(bare.body)).toMatch(/allergen/);
-    const full = { ...rice, safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'Synthetic Mills, Madurai' } };
+    const full = { ...rice, safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'Synthetic Mills, Madurai', consumerCareContact: 'Care desk, 1800-000-0000' } };
     expect((await post(h, '/v1/catalogue/products/p-rice/publish', 'u-owner', { product: full })).status).toBe(201);
     // A category the list lacks, sent by the owner: defined by that publish, and the answer says so.
     const soap = { sku: 'SOAP', name: 'Soap', baseUom: 'each', primaryCategoryId: 'home', taxClass: '3401', lifecycle: 'draft' };
@@ -86,9 +86,10 @@ describe('SF-06-b — head office\'s own category list', () => {
   });
 });
 
-const PRODUCT_HEADER = 'productId,sku,name,baseUom,primaryCategoryId,taxClass,brand,allergens,countryOfOrigin,netQuantity,packerDetails,minimumAge';
-const csv = (...rows: string[]) => [PRODUCT_HEADER, ...rows].join('\n');
-const RICE_ROW = 'p-rice,RICE5,Rice 5kg,each,staples,1006,,none,India,5 kg,Synthetic Mills,';
+const PRODUCT_HEADER = 'productId,sku,name,baseUom,primaryCategoryId,taxClass,brand,allergens,countryOfOrigin,netQuantity,packerDetails,minimumAge,consumerCareContact';
+// B4: the consumer-care column is the last; a row written before it existed gets it empty.
+const csv = (...rows: string[]) => [PRODUCT_HEADER, ...rows.map((r) => (r.split(',').length === 12 ? `${r},` : r))].join('\n');
+const RICE_ROW = 'p-rice,RICE5,Rice 5kg,each,staples,1006,,none,India,5 kg,Synthetic Mills,,Care desk 1800-000-0000';
 const SOAP_ROW = 'p-soap,SOAP,Soap,each,home,3401,,,,,,';
 
 async function withList(): Promise<ApiHarness> {
