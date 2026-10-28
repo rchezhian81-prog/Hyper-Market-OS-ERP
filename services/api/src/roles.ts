@@ -357,6 +357,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // OB-543: the owner holds the goods-receipt screen's narrow read only so he may grant it (he reads with the broad one).
       'pos.quotation.nofloor.ownerquote.approve', 'inventory.goodsreceipt.read',
       // ── R10-A · OB-542 · OB-543 — end
+      // ── R11-A · OB-602 — begin: held only so the owner may grant it; he never approves his own quotation with it.
+      'pos.quotation.belowfloor.ownerquote.approve',
+      // ── R11-A · OB-602 — end
       'finance.einvoice.generate', 'finance.einvoice.read',
       'finance.gstr.generate', 'finance.gstr.read', 'finance.gstr.approve', 'finance.gstr.submit',
       'payroll.statutory.read', 'payroll.ess.self',
@@ -866,6 +869,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // who received the goods (`self_match`).
       'inventory.goodsreceipt.read',
       // ── R10-A · OB-542 · OB-543 — end
+      // ── R11-A · OB-602 (owner, 28 Oct 2026) — begin: the accountant approves a quotation BELOW the margin floor that the
+      // OWNER himself makes. Only that kind: anyone else's below-floor quotation still needs the owner (`price.change.approve`).
+      'pos.quotation.belowfloor.ownerquote.approve',
+      // ── R11-A · OB-602 — end
     ],
   },
   {

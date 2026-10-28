@@ -33,6 +33,9 @@
 //   • OB-542 — when the person quoting such a product holds the OWNER role at the quotation's store, the ACCOUNTANT approves
 //     it instead (kind `quotation_floor_not_known_owner_quoted`, a decider who holds the accountant role at that store);
 //     anyone else's quotation still needs the owner's. The quoter still never approves his own.
+// Round 11 (owner, 28 Oct 2026):
+//   • OB-602 — the same for a line quoted BELOW its product's floor: the OWNER's own is approved by the store's ACCOUNTANT
+//     (kind `quotation_below_floor_owner_quoted`); anyone else's still needs `quotation_below_floor` (the owner's word).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, assertBranchInScope } from '../../kernel/src/index';
@@ -153,8 +156,12 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
         // OB-542: the OWNER quoting such a product himself is approved by the ACCOUNTANT — whether the quoter holds the owner
         // role at this store is read from head office's own grants, never from the request.
         const storeId = b['storeId'] as string;
-        const quoterIsOwner = notKnownHere && deps.ownersAt !== undefined && (await deps.ownersAt(ctx.tenantId, storeId)).includes(ctx.userId);
-        const kind = !notKnownHere ? 'quotation_below_floor' : quoterIsOwner ? 'quotation_floor_not_known_owner_quoted' : 'quotation_floor_not_known';
+        // OB-602: so is the owner quoting a line BELOW its product's floor (head office's own floor, read above).
+        const belowHere = floors === undefined ? false : lines.some((l) => floors.floors[l.productId] !== undefined && l.unitPriceMinor < floors.floors[l.productId]!);
+        const quoterIsOwner = (notKnownHere || belowHere) && deps.ownersAt !== undefined && (await deps.ownersAt(ctx.tenantId, storeId)).includes(ctx.userId);
+        const kind = notKnownHere
+          ? (quoterIsOwner ? 'quotation_floor_not_known_owner_quoted' : 'quotation_floor_not_known')
+          : (quoterIsOwner ? 'quotation_below_floor_owner_quoted' : 'quotation_below_floor');
         // The second person (ADR-0024 · §28 · M05-FR-02): a below-floor quote is approved by someone holding the pricing-
         // approval authority (`price.change.approve`), in their own session, for exactly this quotation (kind
         // `quotation_below_floor`). Before, any name passed — no authority was checked at all. A typed one is refused.
@@ -169,7 +176,8 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
         const byOwner = opened !== undefined && kind === 'quotation_floor_not_known' && deps.ownersAt !== undefined
           && (await deps.ownersAt(ctx.tenantId, storeId)).includes(opened.decision.decidedBy);
         // OB-542: the accountant's approval counts only when its decider holds the ACCOUNTANT role at this store.
-        const byAccountant = opened !== undefined && kind === 'quotation_floor_not_known_owner_quoted' && deps.accountantsAt !== undefined
+        // OB-602: and so under the owner's own below-floor kind.
+        const byAccountant = opened !== undefined && (kind === 'quotation_floor_not_known_owner_quoted' || kind === 'quotation_below_floor_owner_quoted') && deps.accountantsAt !== undefined
           && (await deps.accountantsAt(ctx.tenantId, storeId)).includes(opened.decision.decidedBy);
         const approval: QuotationApproval | undefined = opened === undefined ? undefined
           : { subjectRef: quotationId, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason, ...(byOwner ? { byOwner: true } : {}), ...(byAccountant ? { byAccountant: true } : {}) };
@@ -189,7 +197,9 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
               ? 'Nothing was quoted. Ask the OWNER for approval (POST /v1/approvals/requests, kind quotation_floor_not_known, with exactly this quotation); once the owner approves it, send the approvalId (OB-532).'
               : result.outcome === 'floor_not_known_owner_quoted_unapproved'
                 ? 'Nothing was quoted. You hold the owner role, so ask the ACCOUNTANT for approval (POST /v1/approvals/requests, kind quotation_floor_not_known_owner_quoted, with exactly this quotation); once the accountant approves it, send the approvalId (OB-542).'
-                : 'Nothing was quoted. Address the reason and issue again.' });
+                : result.outcome === 'below_floor_owner_quoted_unapproved'
+                  ? 'Nothing was quoted. You hold the owner role, so ask the ACCOUNTANT for approval (POST /v1/approvals/requests, kind quotation_below_floor_owner_quoted, with exactly this quotation); once the accountant approves it, send the approvalId (OB-602).'
+                  : 'Nothing was quoted. Address the reason and issue again.' });
         }
         // Every rule passed: the approval is spent — once — and only then is the quotation recorded.
         await opened?.spend();

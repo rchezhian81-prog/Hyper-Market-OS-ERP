@@ -20,6 +20,30 @@
 
 import { valueAtUnitCost } from '../../contracts/src/quantity';
 import { DEFAULT_RECEIVING_POLICY } from './asn';
+import { manufactureDateVerdict, batchTrackedVerdict } from './capture';
+
+/** An expiry date as the door keys it: a real calendar date, YYYY-MM-DD. */
+const EXPIRY_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+export const isDsdExpiryDate = (v: unknown): v is string => typeof v === 'string' && EXPIRY_DATE.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+
+/**
+ * B4 · OB-504 (round 11, the DSD door): judge one scan's batch facts by the SAME packed-goods rule every other receiving path
+ * uses (capture.ts `manufactureDateVerdict`) — a packed product needs its month and year of manufacture; a date given must
+ * read as one; an expiry given must be a real date. `packaged` is the product master's word (on the handheld: the store
+ * pack's `packedProductIds`; at head office: its own product master), never the scan's. Undefined = the scan may be taken.
+ */
+export function dsdScanCaptureRefusal(scan: Pick<DsdScan, 'productId' | 'batchId' | 'expiry' | 'manufacturedOn'>, packaged: boolean, batchTracked = false): DsdRefusedError | undefined {
+  // OB-605 (owner, 28 Oct 2026): a BATCH-TRACKED product needs its batch and its expiry — the goods receipt's own rule
+  // (capture.ts `batchTrackedVerdict`), applied per scan; `batchTracked` is the product master's word, never the scan's.
+  const tracked = batchTrackedVerdict(batchTracked, scan.batchId, scan.expiry);
+  if (tracked === 'batch_missing') return new DsdRefusedError('batch_required', `${scan.productId} is batch-tracked: scan the batch number on the pack before it is scanned in (OB-605).`);
+  if (tracked === 'expiry_missing') return new DsdRefusedError('expiry_required', `${scan.productId} is batch-tracked: key the expiry date printed on the pack before it is scanned in (OB-605).`);
+  const verdict = manufactureDateVerdict(packaged, scan.manufacturedOn);
+  if (verdict === 'missing') return new DsdRefusedError('manufacture_date_required', `${scan.productId} is a packed product: key the month and year of manufacture printed on the pack (YYYY-MM) before it is scanned in (OB-504).`);
+  if (verdict === 'unreadable') return new DsdRefusedError('manufacture_date_required', `The manufacture date "${String(scan.manufacturedOn)}" for ${scan.productId} cannot be read: it is written YYYY-MM (or YYYY-MM-DD), as printed on the pack (OB-504).`);
+  if (scan.expiry !== undefined && !isDsdExpiryDate(scan.expiry)) return new DsdRefusedError('expiry_not_readable', `The expiry "${scan.expiry}" for ${scan.productId} is not a date (YYYY-MM-DD).`);
+  return undefined;
+}
 
 /** Why goods were handed back to the driver — from the receiving engine's own conditions and outcomes. */
 export const DSD_HAND_BACK_REASONS = Object.freeze(['damaged', 'temperature_breach', 'expired', 'not_ordered', 'other'] as const);
@@ -34,7 +58,15 @@ export interface DsdExpectedLine {
   readonly uom?: string;
 }
 
-export interface DsdScan { readonly scanId: string; readonly productId: string; readonly quantityMinor: number; readonly at: string }
+export interface DsdScan {
+  readonly scanId: string; readonly productId: string; readonly quantityMinor: number; readonly at: string;
+  /** B4 · OB-504 (round 11): the batch printed on the pack, as scanned off its label; absent when none was taken. */
+  readonly batchId?: string;
+  /** B4 · OB-504 (round 11): the batch's expiry date (YYYY-MM-DD), as printed; absent when none was taken. */
+  readonly expiry?: string;
+  /** B4 · OB-504 (round 11): the batch's month and year (YYYY-MM) or date of manufacture — required for a PACKED product. */
+  readonly manufacturedOn?: string;
+}
 export interface DsdHandBack { readonly handBackId: string; readonly productId: string; readonly quantityMinor: number; readonly reason: DsdHandBackReason; readonly note: string | null; readonly at: string }
 
 export type DsdDiscrepancyKind = 'short' | 'over' | 'not_expected';
@@ -52,6 +84,61 @@ export interface DsdLine {
   readonly heldMinor: number;
   readonly unitCostMinor: number | null;
   readonly uom: string;
+  /**
+   * OB-604 (owner, 28 Oct 2026): the product's quantities SPLIT BY BATCH — present whenever a scan of it named batch facts
+   * (batch, expiry or month of manufacture), one entry per distinct batch in the order it first came off the van. Each batch
+   * becomes its own received (and, if held, its own held) movement, so a recall knows how much of each came in. How the
+   * product's figures are split (said, never guessed silently):
+   *   • goods HANDED BACK name no batch at the door — they come off the batch scanned LAST first (the newest crate on the trolley);
+   *   • what is RECEIVABLE within the order is taken from the batches in the order they were first scanned; the rest of each
+   *     batch's kept goods is HELD for a second person;
+   *   • a SHORTAGE or EXCESS is against the order, which names products, not batches — it stays one discrepancy per product.
+   * The batch parts always add up to the line's own figures.
+   */
+  readonly batches?: readonly DsdBatchPart[];
+}
+
+/** OB-604: one batch's share of a product's line at the door. */
+export interface DsdBatchPart {
+  readonly batchId: string | null;
+  readonly expiry: string | null;
+  readonly manufacturedOn: string | null;
+  readonly scannedMinor: number;
+  readonly handedBackMinor: number;
+  readonly keptMinor: number;
+  readonly receivableMinor: number;
+  readonly heldMinor: number;
+}
+
+/**
+ * OB-604: the deterministic key of a batch part — from its batch, expiry and month of manufacture only (never the scan order),
+ * so a replayed close or decision derives the SAME movement id and never double-posts.
+ */
+export const dsdBatchKey = (b: Pick<DsdBatchPart, 'batchId' | 'expiry' | 'manufacturedOn'>): string =>
+  [b.batchId ?? '', b.expiry ?? '', b.manufacturedOn ?? ''].map((x) => encodeURIComponent(x)).join('~');
+
+/** OB-604: split a product's scans into batch parts (see `DsdLine.batches`). Undefined when no scan named a batch fact. */
+function batchPartsOf(scans: readonly DsdScan[], handedBackMinor: number, receivableMinor: number): readonly DsdBatchPart[] | undefined {
+  const parts = new Map<string, { batchId: string | null; expiry: string | null; manufacturedOn: string | null; scannedMinor: number }>();
+  for (const s of scans) {
+    const b = { batchId: s.batchId ?? null, expiry: s.expiry ?? null, manufacturedOn: s.manufacturedOn ?? null };
+    const key = dsdBatchKey(b);
+    const prior = parts.get(key);
+    if (prior === undefined) parts.set(key, { ...b, scannedMinor: s.quantityMinor });
+    else prior.scannedMinor += s.quantityMinor;
+  }
+  const list = [...parts.values()];
+  if (!list.some((b) => b.batchId !== null || b.expiry !== null || b.manufacturedOn !== null)) return undefined;
+  const back = new Array<number>(list.length).fill(0);
+  let toHandBack = handedBackMinor;
+  for (let i = list.length - 1; i >= 0 && toHandBack > 0; i -= 1) { const take = Math.min(list[i]!.scannedMinor, toHandBack); back[i] = take; toHandBack -= take; }
+  let toReceive = receivableMinor;
+  return list.map((b, i) => {
+    const kept = b.scannedMinor - back[i]!;
+    const receivable = Math.min(kept, toReceive);
+    toReceive -= receivable;
+    return { ...b, handedBackMinor: back[i]!, keptMinor: kept, receivableMinor: receivable, heldMinor: kept - receivable };
+  });
 }
 
 export interface DsdReconciliation {
@@ -105,7 +192,9 @@ export function reconcileDsd(input: {
     const held = kept - receivable;
     const uom = e?.uom ?? 'ea';
     const cost = e?.unitCostMinor ?? null;
-    lines.push({ productId, expectedMinor: exp, scannedMinor: sc, handedBackMinor: hb, keptMinor: kept, receivableMinor: receivable, heldMinor: held, unitCostMinor: cost, uom });
+    // OB-604: the line split by batch (absent when no scan named a batch fact — the line is then as it always was).
+    const batches = batchPartsOf(input.scans.filter((s) => s.productId === productId), hb, receivable);
+    lines.push({ productId, expectedMinor: exp, scannedMinor: sc, handedBackMinor: hb, keptMinor: kept, receivableMinor: receivable, heldMinor: held, unitCostMinor: cost, uom, ...(batches === undefined ? {} : { batches }) });
     if (e === undefined) discrepancies.push({ productId, kind: 'not_expected', expectedMinor: 0, scannedMinor: sc, differenceMinor: sc });
     else if (sc < exp) discrepancies.push({ productId, kind: 'short', expectedMinor: exp, scannedMinor: sc, differenceMinor: sc - exp });
     else if (sc > exp) discrepancies.push({ productId, kind: 'over', expectedMinor: exp, scannedMinor: sc, differenceMinor: sc - exp });

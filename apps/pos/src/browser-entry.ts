@@ -1350,9 +1350,12 @@ export function bootPos(config?: {
   session.holdOffersStartingAfter(config?.offerHoldCutoff ?? null);
   // OB-501 (R7-A): a withdrawn or too-old build starts no new bill (it finishes the one in progress) — from the signed pack.
   const appVersion = config?.appVersion ?? APP_BUILD_VERSION;
+  // R11-A · OB-501: the bar's words kept here too, so a quotation is refused BEFORE the box converts it (quotation-at-till.ts).
+  let newBillBarWords: { readonly en: string; readonly ta: string } | null = null;
   const applyVersionPolicy = (policy: unknown): ClientVersionJudgement => {
     const judged = judgeClientVersion(appVersion, readPackVersionPolicy(policy), config?.clientKind ?? 'till');
-    session.barNewBills(judged.mayStartBill || judged.words === undefined ? null : judged.words);
+    newBillBarWords = judged.mayStartBill || judged.words === undefined ? null : judged.words;
+    session.barNewBills(newBillBarWords);
     return judged;
   };
   applyVersionPolicy(config?.appVersionPolicy);
@@ -2171,6 +2174,7 @@ export function bootPos(config?: {
     ops: {
       signedIn: () => session.operator() !== undefined,
       basketInProgress: () => session.currentState() !== 'committed' && session.basketToHold().lines.length > 0,
+      newBillBar: () => newBillBarWords, // R11-A · OB-501
       committed: () => session.currentState() === 'committed',
       hasCatalogue: () => view.hasCatalogue(),
       newSale: () => { view.newSale(); },

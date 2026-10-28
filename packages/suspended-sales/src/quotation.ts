@@ -113,6 +113,9 @@ export interface QuotationApproval {
    */
   readonly byAccountant?: boolean;
 }
+// OB-602 (round 11): `byAccountant` also marks the accountant's approval under `quotation_below_floor_owner_quoted` — the
+// OWNER's own quotation BELOW the margin floor is issued only with it.
+
 
 export type IssueRefusal =
   | 'issued'
@@ -121,6 +124,7 @@ export type IssueRefusal =
   | 'below_floor_unapproved'
   | 'floor_not_known_unapproved'
   | 'floor_not_known_owner_quoted_unapproved'
+  | 'below_floor_owner_quoted_unapproved'
   | 'self_approved';
 
 export interface IssueResult {
@@ -167,6 +171,7 @@ export function issueQuotation(
     /**
      * OB-542: the person quoting holds the OWNER role at the quotation's store (head office's own grants). Then a product with
      * no known floor needs the ACCOUNTANT's approval instead of the owner's; anyone else's quotation still needs the owner's.
+     * OB-602: so does a line he quotes BELOW its product's floor.
      */
     readonly quoterIsOwner?: boolean;
     readonly approval?: QuotationApproval;
@@ -246,7 +251,13 @@ export function issueQuotation(
     if (below.length > 0) {
       const a = input.approval;
       const said = below.map((l) => `${l.description} at ${(l.unitPriceMinor / 100).toFixed(2)} (floor ${(floors[l.productId]! / 100).toFixed(2)})`).join('; ');
-      if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId) {
+      // OB-602: the OWNER's own below-floor quotation is approved by the ACCOUNTANT — an owner's approval does not count for
+      // it (he would be approving his own); anyone else's still needs a second person's (the route asks for the owner's).
+      if (input.quoterIsOwner === true) {
+        if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId || a.byAccountant !== true) {
+          return { ...base, issued: false, outcome: 'below_floor_owner_quoted_unapproved', detail: `quoted below the product's floor price: ${said} — the owner is quoting it himself, so only the accountant may approve it (OB-602)` };
+        }
+      } else if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId) {
         return { ...base, issued: false, outcome: 'below_floor_unapproved', detail: `quoted below the product's floor price: ${said} — it needs a second person's approval before the price is promised` };
       }
       if (a.decidedBy === input.issuedBy) {

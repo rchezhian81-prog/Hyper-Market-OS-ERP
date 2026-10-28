@@ -23,6 +23,7 @@ import type { IngredientBatchOnHand, RunInputBatch } from '../../inventory/src/p
 import type { Recipe } from '../../../packages/production/src/recipe';
 import { fefoBatchesAt } from '../../inventory/src/index';
 import { channelPricingRoutes, channelPricingGate, type ChannelPricingDeps, type ChannelSwitchRequest, type ZoneMembership } from '../../pricing/src/channel-pricing';
+import { r11aDsdHooks } from './r11a-check-gaps-adapters'; // R11-A · OB-504
 import { dsdCheckInRoutes, type DsdCheckInDeps, type DsdCheckInRecord, type DsdRouteSheet } from '../../inventory/src/dsd-checkin';
 import { assertBranchInScope } from '../../kernel/src/index';
 import { rangeStatusOf } from '../../inventory/src/assortment';
@@ -370,7 +371,7 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
   return [
     ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter({ ...base, ...calendar })),
     ...clearanceMarkdownRoutes({ ...clearanceMarkdownAdapter(base), ...calendar }),
-    ...dsdCheckInRoutes(dsdCheckInAdapter({ ...base, ...(input.numberSeries === undefined ? {} : { numberSeries: input.numberSeries }) })), // OB-196
+    ...dsdCheckInRoutes({ ...dsdCheckInAdapter({ ...base, ...(input.numberSeries === undefined ? {} : { numberSeries: input.numberSeries }) }), ...r11aDsdHooks(base) }), // OB-196 · OB-504 (R11-A)
     ...productionPlanRoutes({ ...productionPlanAdapter(base), ...calendar }),
     ...channelPricingRoutes(channelPricingAdapter(base)),
     ...biometricConsentRoutes({ ...biometricConsentAdapter(base), ...calendar }),

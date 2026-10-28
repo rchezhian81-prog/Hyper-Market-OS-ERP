@@ -216,6 +216,7 @@
       }
       /* Wave 3 · SF-07 part 3: the arrival-temperature box — a full-width 56 px touch target, the phone's number keyboard. */
       #recv-temp-field { margin: var(--space-2) 0 10px; }
+      #dsd-batch, #dsd-expiry, #dsd-mfg { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
       #recv-mfg { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); margin-top: var(--space-2); }
       #recv-temp { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
@@ -247,6 +248,7 @@
       #dsd-lines .item .qty { grid-column: 1; grid-row: auto; justify-self: start; text-align: left; display: block; max-width: none; }
       #dsd-lines .item .count { grid-column: 2; grid-row: 1 / span 2; font-size: 14px; color: var(--muted); text-align: right; font-variant-numeric: var(--numbers); }
       #dsd-lines .item .count .n { display: block; font-size: 24px; font-weight: 700; color: var(--ink); }
+      #dsd-lines .item .batches { grid-column: 1 / -1; display: block; font-size: 14px; color: var(--muted); } /* OB-604: the line split by batch */
       #dsd-differences .discrepancy {
         margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); font-size: 16px; font-weight: 700;
         background: var(--warn-surface); color: var(--on-warn-surface); border-left: 4px solid var(--degraded);
@@ -477,6 +479,11 @@
           <div class="hint" id="dsd-against"></div>
           <div id="dsd-lines"></div>
           <div id="dsd-differences"></div>
+          <!-- B4 · OB-504 (round 11): the batch, its expiry and its month of manufacture, off the pack — they ride on every
+               door scan until changed. A packed product needs the month of manufacture, here offline and at head office. -->
+          <button id="dsd-batch" type="button" class="wide">Batch: not scanned</button>
+          <button id="dsd-expiry" type="button" class="wide">Expiry: not entered</button>
+          <button id="dsd-mfg" type="button" class="wide">Month of manufacture (packed goods): not entered</button>
           <div class="sheet-actions two">
             <button id="dsd-scan" class="primary" type="button">Scan an item</button>
             <button id="dsd-hand-back" type="button">Hand back to the driver</button>

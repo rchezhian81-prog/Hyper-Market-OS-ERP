@@ -55,6 +55,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 11 (28 October 2026): the gaps from the independent check closed; OB-602, OB-604 and OB-605 built
+
+**What changed**
+- **Van deliveries at the back door (DSD):** the handheld asks for the batch (scanned), expiry and month of manufacture; packed goods need the month (OB-504) and batch-tracked goods need a batch and expiry (OB-605), offline on the handheld and again at head office. One product in several batches is booked into stock separately per batch (OB-604).
+- **Out-of-date till:** it refuses a quotation number before anything is used up; the quotation stays open (OB-501).
+- **Quotations:** the owner's own quotation below the margin floor is approved by the store's accountant (OB-602).
+- **Proved by new tests, unchanged:** a held basket can be recalled on an out-of-date till (OB-603); put-away works on an out-of-date handheld (OB-536); a store manager cannot record scrap (OB-515).
+- A manager-approved cut whose quantity changes is refused by the other session's round 7 check (#831, OB-500).
+- Rounds 10 and 11 were rebuilt together on main after #831 and #833 merged.
+
+**Tests that ran (this box, synthetic data):** see the pull request.
+
+**What is next:** nothing open in software from the rounds 6–11 checks. **Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 10 (28 October 2026): the owner's decisions OB-540 to OB-543 and OB-600 to OB-601 built; OB-602 and OB-603 decided
 
 **What changed**

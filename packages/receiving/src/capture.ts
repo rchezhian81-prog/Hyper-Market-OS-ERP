@@ -101,6 +101,31 @@ export const MANUFACTURE_DATE_MISSING = 'a manufacture date (month and year, YYY
 export const MANUFACTURE_DATE_UNREADABLE = 'a manufacture date it can read (YYYY-MM or YYYY-MM-DD)';
 /** True when a manufacture date is present and reads as one. */
 export const isManufactureDate = (v: unknown): v is string => typeof v === 'string' && MANUFACTURE_DATE.test(v.trim());
+/**
+ * M10 · OB-605 (owner, 28 Oct 2026): THE batch-tracked rule, in one place — a batch-tracked item is not received without a
+ * batch number and an expiry date (an unidentified batch cannot be recalled). The goods receipt below and the DSD door's
+ * scans (OB-605) both read this verdict.
+ */
+export type BatchTrackedVerdict = 'ok' | 'batch_missing' | 'expiry_missing';
+export function batchTrackedVerdict(batchTracked: boolean, batchId: string | null | undefined, expiry: string | null | undefined): BatchTrackedVerdict {
+  if (!batchTracked) return 'ok';
+  if (batchId === undefined || batchId === null || batchId.trim() === '') return 'batch_missing';
+  if (expiry === undefined || expiry === null || expiry.trim() === '') return 'expiry_missing';
+  return 'ok';
+}
+
+/**
+ * B4 · OB-504: THE packed-goods rule, in one place, for every receiving path (the goods receipt below, the handheld's scan,
+ * head office's relayed scan, and — OB-504 round 11 — the direct-delivery door): a date given must read as one; a PACKED
+ * product (the product master's word) needs one unless the caller says it is not required (an opening-stock load, OB-529).
+ */
+export type ManufactureDateVerdict = 'ok' | 'missing' | 'unreadable';
+export function manufactureDateVerdict(packaged: boolean, manufacturedOn: string | null | undefined, required = true): ManufactureDateVerdict {
+  const mfg = typeof manufacturedOn === 'string' && manufacturedOn.trim() !== '' ? manufacturedOn.trim() : undefined;
+  if (mfg !== undefined && !MANUFACTURE_DATE.test(mfg)) return 'unreadable';
+  if (packaged && mfg === undefined && required) return 'missing';
+  return 'ok';
+}
 
 /** Tolerances and thresholds — per tenant, chosen, never hard-coded. */
 export interface ReceiptPolicy {
@@ -262,19 +287,16 @@ export function captureReceipt(input: {
     }
 
     // Traceability is not optional: an unidentified batch cannot be recalled (M10).
-    if (rule.batchTracked) {
-      if (line.batchId === undefined || line.batchId === null || line.batchId.trim() === '') {
-        throw new IncompleteCaptureError(line.lineId, 'a batch number (the item is batch-tracked)');
-      }
-      if (line.expiry === undefined || line.expiry === null || line.expiry.trim() === '') {
-        throw new IncompleteCaptureError(line.lineId, 'an expiry date (the item is batch-tracked)');
-      }
-    }
+    // OB-605: the one batch-tracked rule (`batchTrackedVerdict`), which the DSD door's scans read too.
+    const tracked = batchTrackedVerdict(rule.batchTracked, line.batchId, line.expiry);
+    if (tracked === 'batch_missing') throw new IncompleteCaptureError(line.lineId, 'a batch number (the item is batch-tracked)');
+    if (tracked === 'expiry_missing') throw new IncompleteCaptureError(line.lineId, 'an expiry date (the item is batch-tracked)');
     // B4 · OB-504 (Legal Metrology, Packaged Commodities Rule 6): a packed product's batch carries its month and year of
     // manufacture — without it the line is refused, whoever books it in and wherever (P-04). A date given is read strictly.
     const mfg = typeof line.manufacturedOn === 'string' && line.manufacturedOn.trim() !== '' ? line.manufacturedOn.trim() : undefined;
-    if (mfg !== undefined && !MANUFACTURE_DATE.test(mfg)) throw new IncompleteCaptureError(line.lineId, MANUFACTURE_DATE_UNREADABLE);
-    if (rule.packaged === true && mfg === undefined && input.manufactureDateRequired !== false) throw new IncompleteCaptureError(line.lineId, MANUFACTURE_DATE_MISSING);
+    const mfgVerdict = manufactureDateVerdict(rule.packaged === true, mfg, input.manufactureDateRequired !== false);
+    if (mfgVerdict === 'unreadable') throw new IncompleteCaptureError(line.lineId, MANUFACTURE_DATE_UNREADABLE);
+    if (mfgVerdict === 'missing') throw new IncompleteCaptureError(line.lineId, MANUFACTURE_DATE_MISSING);
     // Wave 3 · SF-07 (owner decision 9 Oct 2026, option 3): a cold-chain line with no recorded temperature is no longer refused
     // at the dock — the goods are physically in the building and the store must keep trading (P-01). It is RECEIVED but HELD
     // in quarantine, never sellable, until a second person checks the goods and releases or returns them (below).

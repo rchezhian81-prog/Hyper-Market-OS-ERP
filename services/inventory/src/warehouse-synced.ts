@@ -27,7 +27,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { MOVEMENT_KINDS, STOCK_STATES, assertBinsInScope, type WarehouseDeps } from './warehouse';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { Movement } from './index';
-import { coldChainVerdict, isManufactureDate, type ColdChainVerdict, type ProductReceiptRules, type ReceiptPolicy } from '../../../packages/receiving/src/index';
+import { coldChainVerdict, manufactureDateVerdict, type ColdChainVerdict, type ProductReceiptRules, type ReceiptPolicy } from '../../../packages/receiving/src/index';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 
 export const WAREHOUSE_SYNC_FLAGS = Object.freeze([
@@ -290,7 +290,7 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
         // the product master's word (its department is regulated `packed`), never the phone's. Refused by name (422), so the box
         // keeps the scan as a dead letter for a person (hard rule #6) and nothing is posted.
         const rule = deps.productRule === undefined ? undefined : await deps.productRule(ctx.tenantId, s.productId);
-        if ((rule?.packaged === true && s.manufacturedOn === undefined) || (s.manufacturedOn !== undefined && !isManufactureDate(s.manufacturedOn))) {
+        if (manufactureDateVerdict(rule?.packaged === true, s.manufacturedOn) !== 'ok') {
           throw apiError(422, {
             code: 'manufacture_date_required',
             whatHappened: s.manufacturedOn === undefined
