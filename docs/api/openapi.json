@@ -55296,6 +55296,50 @@
         }
       }
     },
+    "/v1/inventory/goods-receipt-review": {
+      "get": {
+        "operationId": "getInventoryGoodsReceiptReview",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.goodsreceipt.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryGoodsReceiptReviewReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.goodsreceipt.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/goods-receipt/{grnId}": {
       "get": {
         "operationId": "getInventoryGoodsReceiptByGrnId",
@@ -135788,6 +135832,379 @@
         "x-derived-from": "services/inventory/src/goods-receipt.ts"
       },
       "GetInventoryGoodsReceiptReply": {
+        "type": "object",
+        "required": [
+          "receipts",
+          "count",
+          "needingApprovalCount",
+          "heldExcessCount",
+          "awaitingDispositionCount",
+          "costDiscrepancyCount",
+          "costNotKnownCount"
+        ],
+        "properties": {
+          "receipts": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "grnId",
+                    "number",
+                    "poId",
+                    "warehouseId",
+                    "receivedBy",
+                    "receivedAt",
+                    "captured",
+                    "availableMinor",
+                    "heldMinor"
+                  ],
+                  "properties": {
+                    "grnId": {
+                      "type": "string"
+                    },
+                    "receivingChecklist": {
+                      "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+                    },
+                    "receivingChecklistNotAccepted": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "poId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warehouseId": {
+                      "type": "string"
+                    },
+                    "receivedBy": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string"
+                    },
+                    "captured": {
+                      "$ref": "#/components/schemas/CapturedReceipt"
+                    },
+                    "availableMinor": {
+                      "type": "number"
+                    },
+                    "heldMinor": {
+                      "type": "number"
+                    },
+                    "excessDecision": {
+                      "$ref": "#/components/schemas/ExcessDecision"
+                    },
+                    "excessReturn": {
+                      "$ref": "#/components/schemas/ExcessReturn"
+                    },
+                    "lineReturns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineReturn"
+                      }
+                    },
+                    "poReceipt": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "receiptId",
+                            "receivedByProduct"
+                          ],
+                          "properties": {
+                            "receiptId": {
+                              "type": "string"
+                            },
+                            "receivedByProduct": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "orderPosition": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/OrderPosition"
+                      }
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineDisposition"
+                      }
+                    },
+                    "assembledFrom": {
+                      "$ref": "#/components/schemas/AssembledFromScans"
+                    },
+                    "governanceFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "segregationConflict": {
+                      "type": "string"
+                    },
+                    "asnCheck": {
+                      "$ref": "#/components/schemas/AsnCheck"
+                    },
+                    "costDiscrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                      }
+                    },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "returnDispatches",
+                    "grnId",
+                    "number",
+                    "poId",
+                    "warehouseId",
+                    "receivedBy",
+                    "receivedAt",
+                    "captured",
+                    "availableMinor",
+                    "heldMinor"
+                  ],
+                  "properties": {
+                    "returnDispatches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierReturnDispatchStatus"
+                      }
+                    },
+                    "grnId": {
+                      "type": "string"
+                    },
+                    "receivingChecklist": {
+                      "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+                    },
+                    "receivingChecklistNotAccepted": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "poId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warehouseId": {
+                      "type": "string"
+                    },
+                    "receivedBy": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string"
+                    },
+                    "captured": {
+                      "$ref": "#/components/schemas/CapturedReceipt"
+                    },
+                    "availableMinor": {
+                      "type": "number"
+                    },
+                    "heldMinor": {
+                      "type": "number"
+                    },
+                    "excessDecision": {
+                      "$ref": "#/components/schemas/ExcessDecision"
+                    },
+                    "excessReturn": {
+                      "$ref": "#/components/schemas/ExcessReturn"
+                    },
+                    "lineReturns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineReturn"
+                      }
+                    },
+                    "poReceipt": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "receiptId",
+                            "receivedByProduct"
+                          ],
+                          "properties": {
+                            "receiptId": {
+                              "type": "string"
+                            },
+                            "receivedByProduct": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "orderPosition": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/OrderPosition"
+                      }
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineDisposition"
+                      }
+                    },
+                    "assembledFrom": {
+                      "$ref": "#/components/schemas/AssembledFromScans"
+                    },
+                    "governanceFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "segregationConflict": {
+                      "type": "string"
+                    },
+                    "asnCheck": {
+                      "$ref": "#/components/schemas/AsnCheck"
+                    },
+                    "costDiscrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                      }
+                    },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              ]
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "needingApprovalCount": {
+            "type": "number"
+          },
+          "heldExcessCount": {
+            "type": "number"
+          },
+          "awaitingDispositionCount": {
+            "type": "number"
+          },
+          "costDiscrepancyCount": {
+            "type": "number"
+          },
+          "costNotKnownCount": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt.ts"
+      },
+      "GetInventoryGoodsReceiptReviewReply": {
         "type": "object",
         "required": [
           "receipts",

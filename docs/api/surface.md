@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1627 | 944 | 944 | 178 | 434 |
+| 13 | 1628 | 944 | 944 | 178 | 435 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -380,6 +380,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/free-samples/:issueId/decision` | `inventory.freesample.approve` | core | yes |
 | GET | `/v1/inventory/free-samples/pending` | `inventory.freesample.approve` | core | — |
 | GET | `/v1/inventory/goods-receipt` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/goods-receipt-review` | `inventory.goodsreceipt.read` | core | — |
 | GET | `/v1/inventory/goods-receipt/:grnId` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/goods-receipt/:grnId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/assemble` | `inventory.movement.append` | core | yes |

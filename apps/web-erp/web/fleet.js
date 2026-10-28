@@ -246,7 +246,47 @@ function paint() {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; if (pendingAction !== null) closeSheet(); paint(); });
+// ── R10-A · OB-540: handheld work done on a withdrawn or too-old app version ──────────────────────────────────────────
+// Head office's register, read through the store computer by the bundled port (window.fleetVersionExceptions) — this file
+// never calls the network. Read-only. Every way the read can fail is said in words, never an empty "all well" (P-08).
+const vxPort = window.fleetVersionExceptions;
+let vxRead = { state: 'not_read_yet' };
+const VX_NOT_SERVED = {
+  en: { heading: 'Handheld work on a withdrawn or too-old app version', text: 'Not known — this page was not opened from the store computer, so head office\'s list cannot be read here.' },
+  ta: { heading: 'திரும்பப் பெற்ற அல்லது மிகப் பழைய செயலிப் பதிப்பில் கைக்கருவி செய்த பணி', text: 'தெரியாது — இந்தப் பக்கம் கடைக் கணினியிலிருந்து திறக்கப்படவில்லை, எனவே தலைமை அலுவலகப் பட்டியலை இங்கே படிக்க முடியாது.' },
+};
+
+function vxRowNode(r, labels) {
+  const li = document.createElement('li');
+  li.className = 'row vx-row';
+  const dl = document.createElement('dl');
+  for (const [label, value] of [[labels.kind, r.kind], [labels.version, r.version], [labels.what, r.what], [labels.when, r.when], [labels.finding, r.finding]]) {
+    const dt = document.createElement('dt'); dt.textContent = label;
+    const dd = document.createElement('dd'); dd.textContent = value;
+    dl.append(dt, dd);
+  }
+  li.append(dl);
+  if (r.detail) { const p = document.createElement('p'); p.className = 'vx-detail'; p.textContent = r.detail; li.append(p); }
+  return li;
+}
+
+function paintVx() {
+  if (vxPort === undefined) {
+    const words = VX_NOT_SERVED[lang] ?? VX_NOT_SERVED.en;
+    el('vx-h').textContent = words.heading; el('vx-lead').textContent = '';
+    el('vx-status').className = 'vx-status tone-unknown'; el('vx-icon').textContent = '?'; el('vx-text').textContent = words.text;
+    el('vx-asat').hidden = true; el('vx-info').hidden = true; el('vx-rows').replaceChildren();
+    return;
+  }
+  const v = vxPort.view(lang, vxRead);
+  el('vx-h').textContent = v.heading; el('vx-lead').textContent = v.lead;
+  el('vx-status').className = `vx-status tone-${v.tone}`; el('vx-icon').textContent = v.icon; el('vx-text').textContent = v.status;
+  el('vx-asat').hidden = v.asAt === null; el('vx-asat').textContent = v.asAt ?? '';
+  el('vx-info').hidden = v.informational === null; el('vx-info').textContent = v.informational ?? '';
+  el('vx-rows').replaceChildren(...v.rows.map((r) => vxRowNode(r, v.labels)));
+}
+
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; if (pendingAction !== null) closeSheet(); paint(); paintVx(); });
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
 el('sheet-confirm').addEventListener('click', confirmSheet);
 el('sheet-cancel').addEventListener('click', closeSheet);
@@ -273,6 +313,10 @@ el('send').addEventListener('click', async () => {
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
+paintVx();
+if (vxPort !== undefined) {
+  vxPort.read().then((read) => { vxRead = read; paintVx(); }, () => { vxRead = { state: 'unreachable' }; paintVx(); });
+}
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

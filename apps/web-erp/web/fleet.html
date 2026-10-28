@@ -58,6 +58,17 @@
       .sheet .row2 { display:flex; gap:10px; justify-content:flex-end; }
       .sheet button { min-height:44px; padding:0 18px; border:0; border-radius:10px; font-size:15px; font-weight:600; }
       .sheet .primary { background:var(--info); color:var(--on-info); } .sheet .ghost { background:var(--line); color:var(--ink); }
+      /* R10-A · OB-540: handheld work on a withdrawn or too-old app version — read-only, from head office's register. */
+      section.vx { display:grid; gap:10px; border-top:1px solid var(--line); padding-top:16px; }
+      .vx-status { margin:0; padding:12px 14px; background:var(--panel); border-radius:12px; display:flex; gap:8px; align-items:flex-start; font-weight:600; border-left:6px solid var(--idle); }
+      .vx-status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .vx-status.tone-ok { border-left-color:var(--ok); } .vx-status.tone-attention { border-left-color:var(--error); } .vx-status.tone-unknown { border-left-color:var(--degraded); }
+      .vx-asat, .vx-info { margin:0; color:var(--muted); font-size:14px; }
+      .vx-asat[hidden], .vx-info[hidden] { display:none; }
+      li.vx-row { border-left-color:var(--error); }
+      .vx-row dl { margin:0; display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; font-size:15px; }
+      .vx-row dt { color:var(--muted); } .vx-row dd { margin:0; overflow-wrap:anywhere; }
+      .vx-row .vx-detail { margin:0; color:var(--muted); font-size:14px; }
     </style>
   </head>
   <body>
@@ -91,6 +102,18 @@
 
       <ul class="rows" id="rows" aria-label="Registered devices"></ul>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <!-- R10-A · OB-540: handheld work done on a withdrawn or too-old app version, from head office's register (read-only). -->
+      <section class="vx" id="vx" aria-labelledby="vx-h">
+        <div>
+          <h2 id="vx-h">Handheld work on a withdrawn or too-old app version</h2>
+          <p class="lead" id="vx-lead"></p>
+        </div>
+        <p class="vx-status tone-unknown" id="vx-status" role="status" aria-live="polite"><span class="icon" id="vx-icon" aria-hidden="true">?</span><span id="vx-text"></span></p>
+        <p class="vx-asat" id="vx-asat" hidden></p>
+        <ul class="rows" id="vx-rows" aria-labelledby="vx-h"></ul>
+        <p class="vx-info" id="vx-info" hidden></p>
+      </section>
     </main>
 
     <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>

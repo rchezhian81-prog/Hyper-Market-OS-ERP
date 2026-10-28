@@ -269,6 +269,7 @@ import {
 } from './fleet-session';
 import type { DeviceChangeCommand } from './fleet-device-command';
 import { deviceChangeRequest, type FleetDeliveryPort } from './fleet-device-delivery';
+import { fleetVersionExceptionsPort, type FleetVersionExceptionsPort } from './fleet-version-exceptions'; // R10-A · OB-540
 import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
@@ -3122,7 +3123,8 @@ export function goodsReceiptPortsFromData(
   return {
     snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_GOODS_RECEIPT,
     // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
-    mayRead: () => held.has(INVENTORY_READ_PERMISSION),
+    // R10-A · OB-543: the screen's own narrow read (`inventory.goodsreceipt.read`, the accountant's) opens it too.
+    mayRead: () => held.has(INVENTORY_READ_PERMISSION) || held.has(GOODS_RECEIPT_SCREEN_READ_PERMISSION),
     // Batch 2: recording a supplier return is the route's own right (`inventory.movement.append`).
     mayRecordReturn: () => held.has(WRITE_OFF_APPEND_PERMISSION),
     returnPort: () => returnPort ?? null,
@@ -3251,8 +3253,22 @@ function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string
   });
 }
 
-export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
-  const body = await getInventory('/v1/inventory/goods-receipt');
+/** R10-A · OB-543: the goods-receipt screen's own narrow read — the accountant's word, which opens only the screen's list. */
+export const GOODS_RECEIPT_SCREEN_READ_PERMISSION = 'inventory.goodsreceipt.read';
+
+/**
+ * R10-A · OB-543: which list the screen reads for this reader — the broad receipts list for a reader holding the stock read
+ * (`inventory.availability.read`), else the screen's own narrow list (`inventory.goodsreceipt.read`, the accountant's). The
+ * same body; head office checks the word on each.
+ */
+export function goodsReceiptListPathFor(permissions: readonly string[] | undefined): string {
+  const held = new Set(permissions ?? []);
+  return !held.has(INVENTORY_READ_PERMISSION) && held.has(GOODS_RECEIPT_SCREEN_READ_PERMISSION)
+    ? '/v1/inventory/goods-receipt-review' : '/v1/inventory/goods-receipt';
+}
+
+export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): Promise<GoodsReceiptData | null> {
+  const body = await getInventory(path);
   if (body === null || !Array.isArray(body['receipts'])) return null;
 
   type Money = { readonly minor: number; readonly currency: string };
@@ -5511,6 +5527,8 @@ interface ManagerWindow {
   };
   fleetData?: FleetData;
   fleetSession?: FleetSession;
+  /** R10-A · OB-540: the Devices page's section on handheld work done on a withdrawn or too-old app version. */
+  fleetVersionExceptions?: FleetVersionExceptionsPort;
   /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
   fleetOutbox?: SyncOutbox;
   productPublishReviewData?: ProductPublishReviewData;
@@ -6960,7 +6978,7 @@ if (browserWindow !== undefined) {
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {
-      refresh: fetchGoodsReceipt,
+      refresh: () => fetchGoodsReceipt(goodsReceiptListPathFor(goodsReceiptData?.permissions)), // R10-A · OB-543
       present: (snapshot) => createGoodsReceiptSession(
         { userId: goodsReceiptData?.userId === undefined ? null : goodsReceiptData.userId },
         goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort, grnLineDispatchPort, grnBillMatchPort),
@@ -7043,6 +7061,8 @@ if (browserWindow !== undefined) {
   if (fleet !== null) {
     browserWindow.fleetSession = fleet;
     browserWindow.fleetOutbox = fleetOutbox;
+    // R10-A · OB-540: head office's register of handheld work on a barred build, read through the store computer as this person.
+    browserWindow.fleetVersionExceptions = fleetVersionExceptionsPort(browserWindow.fleetData?.permissions);
   }
   // The products-to-publish review shares the SAME device-backed catalogue outbox the Save button commits to,
   // so exactly what was queued there is what is reviewed here. Its delivery port POSTs a ready publish under

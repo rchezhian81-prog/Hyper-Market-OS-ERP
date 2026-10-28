@@ -47,7 +47,7 @@
 // (`inventory.receipt.policy.set/read`); reads are `inventory.availability.read`. The three-way PO-GRN-invoice
 // match (FR-04) reads these GRNs.
 
-import type { Route } from '../../kernel/src/index';
+import type { Route, HandlerResult } from '../../kernel/src/index';
 import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
@@ -1708,6 +1708,33 @@ export const stillCostNotKnown = (g: GrnRecord): readonly CostNotKnownLine[] =>
   (g.costNotKnown ?? []).filter((l) => !(g.billCosts ?? []).some((b) => b.lineId === l.lineId));
 
 export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
+  // Every GRN in the caller's branches — the ones still waiting for a second person first (control by exception, P-03).
+  // Shared by the broad list and the goods-receipt screen's narrow read (OB-543).
+  const listReceipts = async (ctx: RequestContext): Promise<HandlerResult> => {
+    const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches' receipts
+    const all = (await deps.all(ctx.tenantId)).filter((g) => scope.covers(g.warehouseId));
+    const waiting = all.filter(awaitsDecision);
+    const ordered = [...waiting, ...all.filter((g) => !awaitsDecision(g))];
+    // OB-204: each supplier return's dispatch state, so the screen can say it before anyone presses Dispatch.
+    const receipts = await Promise.all(ordered.map(async (g) => {
+      const returnDispatches = await supplierReturnDispatchStatuses(deps, ctx.tenantId, g);
+      // OB-508: each discrepancy's named owner, on the list too.
+      const owned = await withDiscrepancyOwners(deps, ctx.tenantId, g);
+      return returnDispatches === undefined ? owned : { ...owned, returnDispatches };
+    }));
+    return {
+      status: 200,
+      body: {
+        receipts, count: ordered.length, needingApprovalCount: waiting.length,
+        heldExcessCount: all.filter((g) => g.heldMinor > 0 && g.excessDecision === undefined).length,
+        awaitingDispositionCount: all.filter((g) => linesAwaitingDisposition(g).length > 0).length,
+        // Round 6 (M07-FR-01/02): receipts whose typed cost differed from the order's — listed, never hidden (P-08).
+        costDiscrepancyCount: all.filter((g) => (g.costDiscrepancies ?? []).length > 0).length,
+        // OB-509: receipts with a line whose cost is NOT KNOWN until its supplier bill is matched.
+        costNotKnownCount: all.filter((g) => stillCostNotKnown(g).length > 0).length,
+      },
+    };
+  };
   return [
     {
       // Capture a goods receipt. Body: { number?, poId, warehouseId, receivedOnDate, currency, lines[] }. The product
@@ -2079,31 +2106,16 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
       // Every GRN — the ones still waiting for a second person first (control by exception, P-03).
       api: 'API-04', method: 'GET', path: '/v1/inventory/goods-receipt',
       permission: 'inventory.availability.read',
-      handler: async (ctx) => {
-        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches' receipts
-        const all = (await deps.all(ctx.tenantId)).filter((g) => scope.covers(g.warehouseId));
-        const waiting = all.filter(awaitsDecision);
-        const ordered = [...waiting, ...all.filter((g) => !awaitsDecision(g))];
-        // OB-204: each supplier return's dispatch state, so the screen can say it before anyone presses Dispatch.
-        const receipts = await Promise.all(ordered.map(async (g) => {
-          const returnDispatches = await supplierReturnDispatchStatuses(deps, ctx.tenantId, g);
-          // OB-508: each discrepancy's named owner, on the list too.
-          const owned = await withDiscrepancyOwners(deps, ctx.tenantId, g);
-          return returnDispatches === undefined ? owned : { ...owned, returnDispatches };
-        }));
-        return {
-          status: 200,
-          body: {
-            receipts, count: ordered.length, needingApprovalCount: waiting.length,
-            heldExcessCount: all.filter((g) => g.heldMinor > 0 && g.excessDecision === undefined).length,
-            awaitingDispositionCount: all.filter((g) => linesAwaitingDisposition(g).length > 0).length,
-            // Round 6 (M07-FR-01/02): receipts whose typed cost differed from the order's — listed, never hidden (P-08).
-            costDiscrepancyCount: all.filter((g) => (g.costDiscrepancies ?? []).length > 0).length,
-            // OB-509: receipts with a line whose cost is NOT KNOWN until its supplier bill is matched.
-            costNotKnownCount: all.filter((g) => stillCostNotKnown(g).length > 0).length,
-          },
-        };
-      },
+      handler: (ctx) => listReceipts(ctx),
+    },
+    {
+      // OB-543 (owner, 28 Oct 2026): the SAME list for the goods-receipt screen, under its own narrow word
+      // (`inventory.goodsreceipt.read` — the accountant's), so a reader who must see the receipts to match their supplier bills
+      // is not also given every stock read `inventory.availability.read` opens (least privilege, P-04). Read-only; only the
+      // caller's branches (where they hold THIS word), as above.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/goods-receipt-review',
+      permission: 'inventory.goodsreceipt.read',
+      handler: (ctx) => listReceipts(ctx),
     },
     {
       // The tenant's receiving tolerances (F03) — the owner's call, read by the capture routes, never the body's.
