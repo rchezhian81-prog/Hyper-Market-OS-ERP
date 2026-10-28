@@ -1429,7 +1429,8 @@ el('qty').addEventListener('click', async () => {
     session.setQuantity(selectedLineId, qty);
   } catch (e) {
     // B6 · B14: a loose-cigarette count, or a weight on a lane whose scale stamp ran out, is refused; the line keeps its quantity.
-    tell(e && e.name === 'TillRuleRefusedError' ? t('cannotSellTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    // OB-500: so is a new quantity on a line whose price a manager cut — said in the screen's language.
+    tell(e && e.name === 'TillRuleRefusedError' ? t('cannotSellTitle') : t('read'), e && e.laneMessage ? saidInLang(e) : String(e && e.message ? e.message : e), STOP);
     return;
   }
   render();
@@ -2206,7 +2207,7 @@ async function changeLinePrice() {
   const value = session.priceChangeValue(lineId, toUnitMinor);
   if (!value.ok) { tell(t('read'), saidInLang(value), STOP); return; }
   // OB-500 (R7-A): the product and the new price go with the request — the store computer judges its floor and the manager's limit.
-  const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t(value.ownerOnly ? 'overrideOwnerOnly' : 'overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason', priceCut: { productId: value.productId, toUnitMinor } });
+  const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t(value.ownerOnly ? 'overrideOwnerOnly' : 'overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason', priceCut: { productId: value.productId, toUnitMinor, lineId: value.lineId, fromUnitMinor: value.fromUnitMinor, quantityMinor: value.quantityMinor, uom: value.uom } });
   if (!approval) return;
   const r = await session.priceChangeAtTill(lineId, toUnitMinor, approval.reason, { approvalId: approval.approvalId });
   if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }

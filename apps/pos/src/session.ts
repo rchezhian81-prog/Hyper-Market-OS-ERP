@@ -443,6 +443,22 @@ export class LocalCommitRefusedError extends Error {
 }
 
 /**
+ * OB-500: a line whose price a manager cut cannot change quantity — the approval was for the rupees taken off THAT
+ * quantity, and ten of them would take ten times as much off with nobody approving it. The line keeps its quantity; the
+ * cashier voids it and rings it again. Said in the cashier's words, English and Tamil.
+ */
+export class CutLineQuantityRefusedError extends Error {
+  readonly laneMessage: string;
+  readonly laneMessageTa: string;
+  constructor(public readonly description: string) {
+    super(`${description}: a line with a manager-approved price cut cannot change quantity.`);
+    this.name = 'CutLineQuantityRefusedError';
+    this.laneMessage = `The price of ${description} was cut with a manager's approval, so its quantity cannot be changed. Nothing was changed — void the line and ring it again.`;
+    this.laneMessageTa = `${description} பொருளின் விலை மேலாளரின் ஒப்புதலுடன் குறைக்கப்பட்டது, எனவே அதன் எண்ணிக்கையை மாற்ற முடியாது. எதுவும் மாற்றப்படவில்லை — வரியை ரத்து செய்து மீண்டும் பில்லில் சேர்க்கவும்.`;
+  }
+}
+
+/**
  * OB-501 (R7-A · M33-FR-02): this till's app build is withdrawn or below the minimum supported version, so it may finish the
  * bill in progress but may not START a new one until it is updated. Said in the cashier's words, English and Tamil.
  */
@@ -877,6 +893,9 @@ export class PosSession {
     if (!Number.isSafeInteger(quantityMinor) || quantityMinor <= 0) {
       throw new RangeError(`Quantity must be a positive integer, got ${quantityMinor}.`);
     }
+    // OB-500: a manager approved a price cut for THIS quantity — the rupees it takes off the line. A new quantity would
+    // multiply that cut with no new approval, so it is refused; the cashier voids the line and rings it again.
+    if (line.priceOverride !== undefined && quantityMinor !== line.quantityMinor) throw new CutLineQuantityRefusedError(line.description);
     // A new quantity is judged like a new scan (B6 · B14): a loose-cigarette count, or a weight keyed on a lane whose
     // scale has lapsed, is refused and the line keeps the quantity it had.
     const refusals = this.lineRefusals({ ...line, quantityMinor }, this.nowIso());
@@ -908,6 +927,9 @@ export class PosSession {
   /**
    * What lowering a line's unit price to `toUnitMinor` would take off the line, priced exactly as the line is priced
    * (weighed goods included) — the value a manager approves and loss prevention judges (audit PF-07).
+   *
+   * OB-500: measured from the line's FIRST price (the price it was rung at, before any cut), never from a price already
+   * cut — so a second cut on the same line is judged on everything taken off it, and two ₹90 cuts are ₹180, not ₹90 twice.
    */
   overrideValue(lineId: string, toUnitMinor: number): { readonly fromUnitMinor: number; readonly reductionMinor: number } {
     const line = this.lines.find((l) => l.lineId === lineId && !l.voided);
@@ -918,9 +940,10 @@ export class PosSession {
     // B19: a carry bag stays a PRICED line — no approval can make it free. Asked here, before any approval is spent.
     const refusals = this.lineRefusals({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }, this.nowIso(), undefined, line.priceOverride?.fromUnitMinor ?? line.unitPrice.minor);
     if (refusals.length > 0) throw new TillRuleRefusedError(refusals);
-    const before = this.priceOf(line).total.minor;
+    const firstUnitMinor = line.priceOverride?.fromUnitMinor ?? line.unitPrice.minor;
+    const before = this.priceOf({ ...line, unitPrice: money(firstUnitMinor, line.unitPrice.currency) }).total.minor;
     const after = this.priceOf({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }).total.minor;
-    return { fromUnitMinor: line.unitPrice.minor, reductionMinor: before - after };
+    return { fromUnitMinor: firstUnitMinor, reductionMinor: before - after };
   }
 
   /**
@@ -929,12 +952,12 @@ export class PosSession {
    */
   overridePrice(lineId: string, toUnitMinor: number, evidence: { readonly approvedBy: string; readonly activityId: string }): BasketEntry {
     this.notWhileAwaiting();
+    // The line's first price — kept through every later cut, so the sale record and head office see the whole cut.
     const { fromUnitMinor } = this.overrideValue(lineId, toUnitMinor);
     const line = this.lines.find((l) => l.lineId === lineId)!;
-    const first = line.priceOverride?.fromUnitMinor ?? fromUnitMinor;
     const next: BasketEntry = Object.freeze({
       ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency),
-      priceOverride: { fromUnitMinor: first, approvedBy: evidence.approvedBy, activityId: evidence.activityId },
+      priceOverride: { fromUnitMinor, approvedBy: evidence.approvedBy, activityId: evidence.activityId },
     });
     this.replace(lineId, next);
     return next;
@@ -1585,6 +1608,8 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
+        // OB-500: a cut line keeps its first price and its approval when parked, so a recalled line is still a cut line.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { ...l.priceOverride } }),
       })),
       ageAnswers: this.ageAnswerLog.map((a) => ({ minimumAge: a.minimumAge, outcome: a.outcome, by: a.by, at: a.at, ...(a.productId === undefined ? {} : { productId: a.productId }) })),
     };
@@ -1614,6 +1639,9 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
+        // OB-500: a cut line comes back as a cut line — its first price and approval — so its quantity stays locked and a
+        // further cut is measured from its first price, and head office still re-checks it.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { ...l.priceOverride } }),
         // The pack's flags come back with the line (B14 · B19), so the commit judges a recalled line like a scanned one.
         ...(this.config.regulatedFlagsOf?.(l.productId) === undefined ? {} : { regulatedFlags: this.config.regulatedFlagsOf(l.productId) }),
       }));

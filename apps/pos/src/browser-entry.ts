@@ -303,6 +303,14 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
   };
 }
 
+/**
+ * What lowering a line to a new price takes off it — measured from the line's FIRST price (OB-500) — with the line, its
+ * first price, quantity and unit the store computer needs to work the cut out itself; or why it cannot be lowered.
+ */
+export type PriceChangeValue =
+  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true }
+  | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string };
+
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
 export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override' | 'late_payment_answer' | 'card_refund_on_machine';
 export interface TillApprovalRequest {
@@ -315,6 +323,11 @@ export interface TillApprovalRequest {
   /** OB-500 (R7-A): for a price cut — the product and the new unit price, judged by the store computer's floor and limits. */
   readonly productId?: string;
   readonly toUnitMinor?: number;
+  /** OB-500: and the line, its FIRST price (before any cut), its quantity and unit — the store computer works out the cut itself. */
+  readonly lineId?: string;
+  readonly fromUnitMinor?: number;
+  readonly quantityMinor?: number;
+  readonly uom?: string;
 }
 export type TillApprovalOutcome =
   | { readonly approved: true; readonly approvalId: string; readonly approvedBy: string; readonly displayName: string; readonly expiresAt: string }
@@ -1229,7 +1242,7 @@ export function bootPos(config?: {
    */
   readonly voidAtTill: (lineId: string, reason: string) => Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
   /** What lowering a line to `toUnitMinor` takes off it — the amount a manager approves (audit PF-07). */
-  readonly priceChangeValue: (lineId: string, toUnitMinor: number) => { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly ownerOnly?: true } | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string };
+  readonly priceChangeValue: (lineId: string, toUnitMinor: number) => PriceChangeValue;
   /**
    * Lower a line's price WITH a manager's approval issued on the store computer (audit PF-07 · M12-FR-04): the change, the
    * reason and the approval go to the box first; the price changes only once the box has them. Refused (price kept)
@@ -1723,10 +1736,11 @@ export function bootPos(config?: {
     laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
   });
   /** What lowering a line to `toUnitMinor` takes off it — the amount the manager approves. */
-  const priceChangeValue = (lineId: string, toUnitMinor: number): { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly ownerOnly?: true } | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string } => {
+  const priceChangeValue = (lineId: string, toUnitMinor: number): PriceChangeValue => {
     try {
       const value = session.overrideValue(lineId, toUnitMinor);
-      const productId = session.basket().find((l) => l.lineId === lineId)?.productId ?? '';
+      const onBill = session.basket().find((l) => l.lineId === lineId);
+      const productId = onBill?.productId ?? '';
       // OB-500 (R7-A): never below the product's lowest allowed price — refused here, before a manager is asked, offline.
       const floor = floorRefusal({ toUnitMinor, floorMinor: config?.priceFloors?.[productId] });
       if (floor !== undefined) return { ok: false, laneMessage: floor.en, laneMessageTa: floor.ta };
@@ -1734,7 +1748,8 @@ export function bootPos(config?: {
       // Said here so the cashier calls the owner; the store computer refuses anyone else's approval.
       const floors = config?.priceFloors;
       const ownerOnly = floors !== undefined && floors !== null && value.reductionMinor > 0 && floors[productId] === undefined;
-      return { ok: true, ...value, productId, ...(ownerOnly ? { ownerOnly: true as const } : {}) };
+      // OB-500: the line, its first price, its quantity and unit go with the request — the store computer works out the cut itself.
+      return { ok: true, ...value, productId, lineId, quantityMinor: onBill?.quantityMinor ?? 0, uom: onBill?.uom ?? '', ...(ownerOnly ? { ownerOnly: true as const } : {}) };
     } catch (e) {
       // B19: a carry bag cannot be made free — said in the gate's own words.
       if (e instanceof TillRuleRefusedError) return { ok: false, laneMessage: e.laneMessage };
@@ -1751,7 +1766,7 @@ export function bootPos(config?: {
     const activityId = `O-${newRequestKey().slice(3)}`;
     const body = {
       activityId, kind: 'price_override', billRef: session.billRef(), lineId, productId: line.productId, description: line.description,
-      fromUnitMinor: value.fromUnitMinor, toUnitMinor, quantityMinor: line.quantityMinor, valueMinor: value.reductionMinor, reason, approvalId: approval.approvalId,
+      fromUnitMinor: value.fromUnitMinor, toUnitMinor, quantityMinor: line.quantityMinor, uom: line.uom, valueMinor: value.reductionMinor, reason, approvalId: approval.approvalId,
     };
     const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the price change was not recorded. The line keeps its price.');
     if (r['recorded'] !== true) return refusedActivity(r, 'The price change was not recorded. The line keeps its price.');

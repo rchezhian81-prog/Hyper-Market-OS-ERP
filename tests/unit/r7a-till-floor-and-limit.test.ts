@@ -129,7 +129,8 @@ describe('OB-500 — the store computer\'s approval holds the floor and the limi
   };
   const ask = (managerId: string, toUnitMinor: number | undefined, valueMinor: number) => ({
     token: 't', laneId: 'lane-1', managerId, pin: people[managerId]?.pin ?? '', kind: 'price_override', billRef: 'B-1', valueMinor, reason: 'damaged_pack',
-    ...(toUnitMinor === undefined ? {} : { productId: 'p-ghee', toUnitMinor }),
+    // OB-500: the line, its first price, its quantity and unit — the box works the cut out itself.
+    ...(toUnitMinor === undefined ? {} : { productId: 'p-ghee', toUnitMinor, lineId: 'L1', fromUnitMinor: 64_000, quantityMinor: 1, uom: 'each' }),
   });
 
   it('refuses below the floor before any PIN is looked at; above the limit after; with no rules at all; and binds the approval to the product and price', async () => {
@@ -145,7 +146,7 @@ describe('OB-500 — the store computer\'s approval holds the floor and the limi
       const fine = await approvals.grant(ask('u-mgr', 55_000, 9_000));
       expect(fine).toMatchObject({ approved: true, approvedBy: 'u-mgr' });
       const id = (fine as { approvalId: string }).approvalId;
-      const spend = (productId: string, toUnitMinor: number, activityId: string) => approvals.spendOverride({ approvalId: id, kind: 'price_override', billRef: 'B-1', valueMinor: 9_000, requestedBy: 'u-cash', laneId: 'lane-1', activityId, productId, toUnitMinor });
+      const spend = (productId: string, toUnitMinor: number, activityId: string) => approvals.spendOverride({ approvalId: id, kind: 'price_override', billRef: 'B-1', valueMinor: 9_000, requestedBy: 'u-cash', laneId: 'lane-1', activityId, productId, toUnitMinor, lineId: 'L1', fromUnitMinor: 64_000, quantityMinor: 1 });
       expect(await spend('p-other', 55_000, 'O-1')).toMatchObject({ ok: false, refusedBecause: 'approval_does_not_match' });
       expect(await spend('p-ghee', 54_000, 'O-1')).toMatchObject({ ok: false, refusedBecause: 'approval_does_not_match' });
       expect(await spend('p-ghee', 55_000, 'O-1')).toMatchObject({ ok: true });
@@ -164,7 +165,7 @@ describe('OB-500 — the store computer\'s approval holds the floor and the limi
     try {
       const fine = await first.approvals.grant(ask('u-mgr', 55_000, 9_000));
       const again = await TillApprovals.open({ dataDir: first.dir, capacityBytes: 1_000_000, approvalThresholdMinor: () => 0, tillControls: () => CONTROLS, now: () => '2026-10-28T10:01:00.000Z', operators: { check: () => ({ ok: true }) as never, verifyPerson: async () => ({ ok: false, refusedBecause: 'wrong_pin' as never, laneMessage: '' }) } });
-      expect(await again.spendOverride({ approvalId: (fine as { approvalId: string }).approvalId, kind: 'price_override', billRef: 'B-1', valueMinor: 9_000, requestedBy: 'u-cash', laneId: 'lane-1', activityId: 'O-9', productId: 'p-ghee', toUnitMinor: 50_000 }))
+      expect(await again.spendOverride({ approvalId: (fine as { approvalId: string }).approvalId, kind: 'price_override', billRef: 'B-1', valueMinor: 9_000, requestedBy: 'u-cash', laneId: 'lane-1', activityId: 'O-9', productId: 'p-ghee', toUnitMinor: 50_000, lineId: 'L1', fromUnitMinor: 64_000, quantityMinor: 1 }))
         .toMatchObject({ ok: false, refusedBecause: 'approval_does_not_match' });
     } finally { await rm(first.dir, { recursive: true, force: true }); }
   });

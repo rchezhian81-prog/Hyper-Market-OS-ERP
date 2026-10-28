@@ -287,6 +287,8 @@ export interface LaneApprovalPort {
     readonly kind: unknown; readonly billRef: unknown; readonly valueMinor: unknown; readonly reason: unknown;
     /** OB-500: for a price cut, the product and the new unit price. */
     readonly productId?: unknown; readonly toUnitMinor?: unknown;
+    /** OB-500: and the line, its first price, its quantity and unit — the box works out the cut itself. */
+    readonly lineId?: unknown; readonly fromUnitMinor?: unknown; readonly quantityMinor?: unknown; readonly uom?: unknown;
   }): Promise<GrantOutcome>;
   checkReturn(input: { readonly record: unknown; readonly requestedBy: string; readonly laneId: string; readonly returnId: string }): Promise<ReturnCheck>;
 }
@@ -1174,6 +1176,7 @@ export function startLaneServer(input: {
             managerId: typeof b['managerId'] === 'string' ? b['managerId'] : '', pin: typeof b['pin'] === 'string' ? b['pin'] : '',
             kind: b['kind'], billRef: b['billRef'], valueMinor: b['valueMinor'], reason: b['reason'],
             productId: b['productId'], toUnitMinor: b['toUnitMinor'], // OB-500
+            lineId: b['lineId'], fromUnitMinor: b['fromUnitMinor'], quantityMinor: b['quantityMinor'], uom: b['uom'],
           });
           send(res, 200, outcome, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {

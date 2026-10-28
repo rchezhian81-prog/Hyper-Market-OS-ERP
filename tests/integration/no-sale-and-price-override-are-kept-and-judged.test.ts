@@ -123,8 +123,12 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
     await signInTill(till, CASHIER);
     return till;
   };
-  const approve = async (till: Awaited<ReturnType<typeof tillOn>>, managerId: string, r: { kind: 'no_sale' | 'price_override'; billRef?: string; valueMinor: number; productId?: string; toUnitMinor?: number }) =>
-    till.approveAtTill({ managerId, pin: pinOf(managerId), reason: r.kind === 'no_sale' ? 'change_for_customer' : 'damaged_pack', ...r });
+  // OB-500: a price-cut approval names the line, its first price, its quantity and unit (the box works the cut out itself).
+  const approve = async (till: Awaited<ReturnType<typeof tillOn>>, managerId: string, r: { kind: 'no_sale' | 'price_override'; billRef?: string; valueMinor: number; productId?: string; toUnitMinor?: number }) => {
+    const l = r.kind === 'price_override' ? till.basket().find((x) => x.productId === r.productId && !x.voided) : undefined;
+    return till.approveAtTill({ managerId, pin: pinOf(managerId), reason: r.kind === 'no_sale' ? 'change_for_customer' : 'damaged_pack', ...r,
+      ...(l === undefined ? {} : { lineId: l.lineId, fromUnitMinor: l.unitPriceMinor, quantityMinor: l.qty, uom: l.uom }) });
+  };
   const boxEvents = async () => (await readLog(edge.deviceEventsLog.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { type: string; payload: Record<string, unknown> }] : []))
     .filter((e) => e.type === 'TillActivityRecorded');
 

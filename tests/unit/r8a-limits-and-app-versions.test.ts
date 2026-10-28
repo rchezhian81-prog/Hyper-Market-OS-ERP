@@ -83,7 +83,7 @@ describe('OB-520 — no known floor: only the owner may approve a cut', () => {
           verifyPerson: async ({ staffId, pin }) => (people[staffId] === pin ? { ok: true, userId: staffId, displayName: staffId } : { ok: false, refusedBecause: 'wrong_pin' as never, laneMessage: 'Wrong PIN.' }),
         },
       });
-      const ask = (managerId: string) => approvals.grant({ token: 't', laneId: 'lane-1', managerId, pin: people[managerId]!, kind: 'price_override', billRef: 'B-1', valueMinor: 500, reason: 'damaged_pack', productId: 'p-new', toUnitMinor: 1_000 });
+      const ask = (managerId: string) => approvals.grant({ token: 't', laneId: 'lane-1', managerId, pin: people[managerId]!, kind: 'price_override', billRef: 'B-1', valueMinor: 500, reason: 'damaged_pack', productId: 'p-new', toUnitMinor: 1_000, lineId: 'L1', fromUnitMinor: 1_500, quantityMinor: 1, uom: 'each' });
       const mgr = await ask('u-mgr');
       expect(mgr).toMatchObject({ approved: false, refusedBecause: 'floor_not_known_owner_only' });
       expect((mgr as { laneMessageTa?: string }).laneMessageTa).toContain('உரிமையாளர்');

@@ -52,6 +52,11 @@ function lineOf(v: unknown): SuspendedLine | undefined {
   if (!isObj(v)) return undefined;
   if (!isStr(v['lineId']) || !isStr(v['productId']) || typeof v['description'] !== 'string' || !int(v['unitPriceMinor'])
     || !int(v['quantityMinor']) || !isStr(v['uom']) || !int(v['taxBps'])) return undefined;
+  const po = v['priceOverride'];
+  const cut = isObj(po) && int(po['fromUnitMinor']) && po['fromUnitMinor'] > v['unitPriceMinor'] && isStr(po['approvedBy']) && isStr(po['activityId'])
+    ? { fromUnitMinor: po['fromUnitMinor'], approvedBy: po['approvedBy'], activityId: po['activityId'] } : undefined;
+  // OB-500: a cut line whose cut cannot be read is not kept as an ordinary line (it would lose its first price and approval).
+  if (po !== undefined && cut === undefined) return undefined;
   return {
     lineId: v['lineId'], productId: v['productId'], description: v['description'], unitPriceMinor: v['unitPriceMinor'],
     quantityMinor: v['quantityMinor'], uom: v['uom'], taxBps: v['taxBps'], voided: v['voided'] === true,
@@ -65,6 +70,8 @@ function lineOf(v: unknown): SuspendedLine | undefined {
     // B8 (OB-298): a perishable line's pack-date check comes back with it, read strictly.
     ...(isObj(v['packDateCheck']) && isStr(v['packDateCheck']['confirmedBy']) && isStr(v['packDateCheck']['confirmedAt'])
       ? { packDateCheck: { confirmedBy: v['packDateCheck']['confirmedBy'], confirmedAt: v['packDateCheck']['confirmedAt'] } } : {}),
+    // OB-500: a cut line's first price and approval come back with it, read strictly (the first price above the price now).
+    ...(cut === undefined ? {} : { priceOverride: cut }),
   };
 }
 function answerOf(v: unknown): SuspendedAgeAnswer | undefined {

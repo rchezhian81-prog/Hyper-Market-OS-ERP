@@ -199,7 +199,12 @@ describe.each(backings)('OB-519 · OB-520 · OB-521 on the store computer, offli
     till.scanBarcode(SOAP);
     const [ghee, soap] = till.basket();
     const approve = (managerId: string, productId: string, toUnitMinor: number, valueMinor: number) =>
-      till.approveAtTill({ managerId, pin: pinOf(managerId), kind: 'price_override', billRef: till.currentBillRef(), valueMinor, reason: 'damaged_pack', productId, toUnitMinor });
+      till.approveAtTill({ managerId, pin: pinOf(managerId), kind: 'price_override', billRef: till.currentBillRef(), valueMinor, reason: 'damaged_pack', productId, toUnitMinor, ...cutOn(productId) });
+    // OB-500: what the till sends with a price-cut approval — the line, its first price, its quantity and unit.
+    const cutOn = (productId: string) => {
+      const l = till.basket().find((x) => x.productId === productId)!;
+      return { lineId: l.lineId, fromUnitMinor: l.unitPriceMinor, quantityMinor: l.qty, uom: l.uom };
+    };
 
     // OB-519: the decided ₹100 — ₹90 off goes through, ₹120 off is refused, with no owner figure ever set.
     expect(await approve(MANAGER, 'p-ghee', 55_000, 9_000)).toMatchObject({ approved: true });
