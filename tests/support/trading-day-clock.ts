@@ -16,7 +16,12 @@ export const JOURNEY_STARTS_AT = '10:00';
  * gives the real clock back.
  */
 export function startTheJourneyMidMorning(): string {
-  const day = new Date().toISOString().slice(0, 10);
+  // Never AHEAD of the real clock: the store computer makes its handheld-door certificate from this pinned time
+  // (OB-422), and TLS checks it against the REAL clock — a 10:00 pin before 10:00 UTC made it "not yet valid". So before
+  // 10:00 UTC the script's day is yesterday; the script still has a whole trading day ahead of it.
+  const real = Date.now();
+  const today = new Date(real).toISOString().slice(0, 10);
+  const day = Date.parse(`${today}T${JOURNEY_STARTS_AT}:00.000Z`) <= real ? today : new Date(real - 86_400_000).toISOString().slice(0, 10);
   vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
   vi.setSystemTime(new Date(`${day}T${JOURNEY_STARTS_AT}:00.000Z`));
   return day;

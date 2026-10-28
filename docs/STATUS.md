@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Round 6 (28 October 2026): a fresh, independent re-audit, and the gaps it found fixed
+
+**What happened**
+- Four checkers re-read the whole roadmap against main, without trusting our earlier audits or records. They checked each item's code and test, ran over 1,500 test files between them (on real PostgreSQL and in a real browser too), and confirmed every screen calls a route that exists. Result: 376 rows — 332 done, 27 half done, 14 outside software, 3 needing a decision, none missing. No hard rule was broken.
+- The half-done items were fixed in this round (round 6), or are being built now (round 7) after the owner's 19 decisions OB-500 to OB-518.
+
+**What changed in round 6**
+- **Access:** an approved emergency grant now really gives its role, only while it is live (M02-FR-04).
+- **Receiving:** a direct receipt is valued at the purchase order's cost; a typed difference is kept as a valued, flagged discrepancy (M07-FR-01). "A sale in progress is not repriced" is now proved by a test (M05-FR-01).
+- **Labels and products:** two MRPs on one date are refused at publish (B2); packed goods need a consumer-care contact (B4); counter labels carry the veg/non-veg mark and the 8 allergen groups (B9), lawful letter heights (B24) and the price per kg/litre (B3).
+- **Quality:** samples are stored on the hold and decide the release (M10-FR-02). Scales due for re-stamping reach the owner's alerts (B7).
+- **Customers and B2B:** a real customer sign-in-by-code service, off until an SMS provider is approved (M20-FR-01, ADR-0031); B2B recurring orders made on their day (M22-FR-03).
+- **Reports and screens:** the published API contract now lists all 47 routes it left out (M32-FR-01); new pages for scrap sales, packaging and crates, and side-by-side comparison (M28, M29-FR-02); the owner assistant suggests likely causes with evidence (A01).
+- **Test fixes:** the scripted store-day journeys pinned their clock ahead of real time before 10:00 UTC, so the store computer's door certificate looked "not yet valid"; the clock is now never ahead. The brief-worker test waits instead of assuming.
+
+**Tests that ran (this box, synthetic data)**
+- Joined branch: typecheck clean; unit + guardrails + integration + contract + security + migration on real PostgreSQL — 15,225 passed, 2 failed (the evidence ledger, regenerated; the store journey clock, fixed and re-run with its two sister journeys: all pass), 19 skipped (real Keycloak / store-volume runs). Builders ran their browser suites; CI runs all of them on the pull request.
+- Not tried: real hardware, a live SMS provider, a live Keycloak customer realm.
+
+**What is next**
+- Round 7 (building now): till price floors and manager limits (OB-500), old versions refused (OB-501), certificates block food handling (OB-502), manufacture date at receiving (OB-504), shelf tags (OB-505), retail quotations (OB-506), offline rosters (OB-507), discrepancy owners (OB-508), cost-not-known receipts (OB-509), the customer sign-in signer (OB-510), MRP replacement with approval (OB-512), food samples before release (OB-513), weekday comparison (OB-516), price differences from the bill (OB-517).
+
+**Blocked / external**
+- As before: real hardware, live providers, the CA and legacy data, staff UAT and rehearsals, the pen test; the yearly card self-assessment is filed by the shop (OB-511).
+
+**Needs an owner decision**
+- None open.
+
+---
+
 ## GST follow-ups (27 October 2026): place of supply, removing a GSTIN, the GSTN file (OB-426 to OB-428). End of session.
 
 **What changed**
