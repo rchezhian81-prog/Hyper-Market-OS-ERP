@@ -65,7 +65,9 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - A manager-approved cut whose quantity changes is refused by the other session's round 7 check (#831, OB-500).
 - Rounds 10 and 11 were rebuilt together on main after #831 and #833 merged.
 
-**Tests that ran (this box, synthetic data):** see the pull request.
+**Tests that ran (this box, synthetic data, rounds 10 and 11 together on main)**
+- Unit + guardrails + integration + contract + security + migration on real PostgreSQL: 15,608 passed, 22 skipped, 1 failed under load (the QG-10 release-snapshot test on PostgreSQL); it passed 3 of 3 when run alone. It also failed under load in round 9, so it is recorded as a follow-up to make it robust. Full browser suite: 669 of 669 passed. Type check clean.
+- Not run here: real hardware, staff UAT, live providers, a real identity server (CI runs that leg).
 
 **What is next:** nothing open in software from the rounds 6–11 checks. **Blocked / needs the owner:** nothing new.
 
