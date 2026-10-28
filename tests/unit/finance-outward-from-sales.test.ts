@@ -3,6 +3,7 @@ import {
   salesToOutwardSupplies,
   netTable12,
   toGstnB2cFromSales,
+  GstnB2cFromSalesRefused,
   InvalidSalesToOutwardInput,
   type SoldTaxLine,
   type ProductTaxEntry,
@@ -219,12 +220,15 @@ describe('toGstnB2cFromSales (the GSTN portal JSON, net of returns)', () => {
     expect(h).toMatchObject({ num: 1, hsn_sc: '0401', rt: 18, txval: 200, camt: 18, samt: 18, iamt: 0 });
   });
 
-  it('serialises an inter-State net line as a single IGST b2cs entry', () => {
+  it('OB-431: an inter-State (IGST) till line has no recorded State, so the file is refused by name — never guessed', () => {
+    // Before OB-431 this filed as an INTER b2cs row with no place of supply; a till sale records no State but the store's own.
     const net = netTable12(
       salesToOutwardSupplies({ sales: [{ productId: 'P', quantityMinor: 1, uom: 'each', lineTotalMinor: 10_500 }], taxTable: [{ productId: 'P', hsnCode: '1006', rateBps: 500, placeOfSupply: 'inter_state' }], annualTurnoverMinor: SMALL }).table12,
       { rows: [], totalTaxableMinor: 0, totalTaxMinor: 0, b2bTaxableMinor: 0, b2cTaxableMinor: 0, detail: '' },
     );
-    const gstn = toGstnB2cFromSales(net, { gstin: '33ABCDE1234F1Z5', fp: '082026' });
-    expect(gstn.b2cs[0]).toMatchObject({ sply_ty: 'INTER', rt: 5, txval: 100, camt: 0, samt: 0, iamt: 5 });
+    let refused: unknown;
+    try { toGstnB2cFromSales(net, { gstin: '33ABCDE1234F1Z5', fp: '082026' }); } catch (e) { refused = e; }
+    expect(refused).toBeInstanceOf(GstnB2cFromSalesRefused);
+    expect((refused as GstnB2cFromSalesRefused).problems).toEqual([{ hsnCode: '1006', rateBps: 500, why: expect.stringMatching(/charged IGST .* a till sale records no place of supply/) }]);
   });
 });

@@ -14,7 +14,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1,
-  salesToOutwardSupplies, netTable12, toGstnB2cFromSales, InvalidSalesToOutwardInput, Gstr1ExportRefused,
+  salesToOutwardSupplies, netTable12, toGstnB2cFromSales, InvalidSalesToOutwardInput, Gstr1ExportRefused, GstnB2cFromSalesRefused,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
   type SoldTaxLine, type ProductTaxEntry, type PlaceOfSupply,
 } from '../../../packages/finance/src/index';
@@ -245,6 +245,15 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
           if (e instanceof InvalidSalesToOutwardInput) {
             throw apiError(400, { code: 'invalid_from_sales_request', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the request and re-send. Nothing was changed.' });
           }
+          // OB-431: a till sale records no place of supply other than the store's own State — an IGST row is never guessed.
+          if (e instanceof GstnB2cFromSalesRefused) {
+            throw apiError(422, {
+              code: 'gstr1_place_of_supply_not_judged',
+              whatHappened: `The GSTN file was not made: ${e.problems.map((p) => `till sales under HSN ${p.hsnCode} at ${p.rateBps / 100}%: ${p.why}`).join('; ')}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'No file was made and nothing was filed. A sale over the counter is a supply inside the store\'s own State: send the request without placeOfSupply "inter_state" (and without an inter_state product override). Ask the accountant about any sale named here before filing.',
+            });
+          }
           throw e;
         }
       },
@@ -279,13 +288,13 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         try {
           return { status: 200, body: toGstnGstr1(gstr1Return(docs), { gstin, fp }) };
         } catch (e) {
-          // OB-428: a B2B invoice whose place of supply is missing or disagrees with its tax split is never guessed.
+          // OB-428 · OB-431: a B2B or B2C document whose place of supply is missing or disagrees with its tax split is never guessed.
           if (e instanceof Gstr1ExportRefused) {
             throw apiError(422, {
               code: 'gstr1_place_of_supply_not_judged',
-              whatHappened: `The GSTN file was not made: ${e.problems.map((p) => `invoice ${p.invoiceNumber} (buyer ${p.recipientGstin}): ${p.why}`).join('; ')}.`,
+              whatHappened: `The GSTN file was not made: ${e.problems.map((p) => `invoice ${p.invoiceNumber} (${p.recipientGstin === undefined ? 'unregistered buyer' : `buyer ${p.recipientGstin}`}): ${p.why}`).join('; ')}.`,
               wasItSaved: 'not_saved',
-              nextSafeAction: 'No file was made and nothing was filed. A B2B invoice that charged IGST must say the State the goods went to: enter a hand-entered invoice with placeOfSupplyStateCode. Ask the accountant about any invoice named here before filing.',
+              nextSafeAction: 'No file was made and nothing was filed. An invoice that charged IGST must say the State the goods went to: enter a hand-entered invoice with placeOfSupplyStateCode. Ask the accountant about any invoice named here before filing.',
             });
           }
           throw e;
