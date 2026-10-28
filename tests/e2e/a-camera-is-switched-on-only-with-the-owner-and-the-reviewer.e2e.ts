@@ -130,8 +130,11 @@ describe.skipIf(!existsSync(CHROMIUM))('OB-407 — a camera is switched on only 
     expect(mine.map((r) => [r.kind, r.subjectRef, r.status]).sort()).toEqual([['flag_change', 'rollout:cctv:B1', 'waiting'], ['floor_device_review', 'rollout:cctv:B1', 'waiting']]);
     // The owner approves his; only then is the reviewer's still missing.
     expect((await decide(h, T, 'u-owner', mine.find((r) => r.kind === 'flag_change')!.requestId)).status).toBe(201);
+    // Wait for head office's REFUSAL, not just the words "security reviewer": the "Asked." line above already holds them,
+    // so matching them alone moved on before this save was answered, and the next Save raced it (OB-436).
     await page.click('#ch-save');
-    await waitText(page, '#ch-status', 'security reviewer');
+    await waitText(page, '#ch-status', 'Head office refused:');
+    expect((await page.textContent('#ch-status')) ?? '').toContain('security reviewer');
     // The reviewer signs in his own session; Save now goes through with both.
     expect((await decide(h, T, 'u-siva', mine.find((r) => r.kind === 'floor_device_review')!.requestId)).status).toBe(201);
     await page.click('#ch-save');

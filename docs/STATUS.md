@@ -5,6 +5,21 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Re-audit follow-ups F-2, F-3 and F-4 (28 October 2026). F-1 waits on one owner answer
+- **What changed:**
+  - **OB-436 (F-2):** the camera switch-on browser test no longer races itself.
+    - It waited for the words "security reviewer", but the earlier "Asked." line already contains them. So it sometimes moved on before head office had refused, and the next Save raced the one still in flight.
+    - It now waits for the refusal itself. The rule it proves is unchanged. Before the fix, it failed 2 of about 150 runs alone; after it, 12 of 12 passed.
+  - **OB-437 (F-3):** OB-412 rules 1 and 2 are now tested on the real API:
+    - a claim under an unapproved scheme is raised, with the warning;
+    - a sent claim is withdrawn with a reason alone.
+  - **OB-438 (F-4):**
+    - the M20-FR-04 traceability row now reads built. The backlog headline and family row are updated: 142 built, 2 partial.
+    - the live-model daily narrative joins OB-382's R8 list.
+- **Next:** F-1 (OB-435, Tamil alert messages), once the owner answers F-1a. F-1a asks which language an alert text message goes in: (A) each person's own choice; (B) both languages; (C) English only.
+- **Blocked:** F-1 waits on F-1a.
+- **Owner decisions needed:** F-1a.
+
 ## Final roadmap re-audit (28 October 2026): nothing partial; four small follow-ups for the owner
 - **What changed:** a read-only check at `main` edeb0a03 (`docs/audit/REAUDIT-2026-10-28.md`, lane tables in `docs/audit/reaudit-2026-10-28/`). The roadmap now has 390 distinct rows: 343 done, 0 partial, 0 missing, 0 decision, 41 external, 6 deferred to R8 in writing. The old total of 391 counted QG-11 twice.
   - §31.1 clock drift, D03-FR-03 and WF-18 are DONE.
