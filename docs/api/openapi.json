@@ -130954,7 +130954,90 @@
           "marks": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AttendanceMark"
+              "type": "object",
+              "required": [
+                "markId",
+                "employeeId",
+                "kind",
+                "method",
+                "at",
+                "date",
+                "recordedBy"
+              ],
+              "properties": {
+                "flaggedOnArrival": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "in_without_out",
+                      "out_without_in",
+                      "repeats_the_last_mark"
+                    ]
+                  }
+                },
+                "exceptions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "in_without_out",
+                      "out_without_in",
+                      "repeats_the_last_mark"
+                    ]
+                  }
+                },
+                "markId": {
+                  "type": "string"
+                },
+                "employeeId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "in",
+                    "out"
+                  ]
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "fingerprint",
+                    "pin"
+                  ]
+                },
+                "at": {
+                  "type": "string"
+                },
+                "date": {
+                  "type": "string"
+                },
+                "recordedBy": {
+                  "type": "string"
+                },
+                "relayed": {
+                  "type": "object",
+                  "required": [
+                    "relayedBy",
+                    "source",
+                    "storeId"
+                  ],
+                  "properties": {
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
             }
           },
           "count": {
@@ -251275,6 +251358,7 @@
             "items": {
               "type": "string",
               "enum": [
+                "in_without_out",
                 "out_without_in",
                 "repeats_the_last_mark"
               ]

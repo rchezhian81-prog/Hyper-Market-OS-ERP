@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-548
+## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-549
 
 **What happened**
 - An independent check of round 7 (OB-500 to OB-518) against the owner's wording found five places where a rule could be walked around, and two places where the build went beyond the decision. #830 was merged before the fixes were ready, so they come in this follow-up.
@@ -22,15 +22,16 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Tests that ran (this box, synthetic data):** new tests for each fix (seen failing before the fix), the full default suite, the affected PostgreSQL and browser tests, typecheck and lint. Counts are in the pull request.
 
-**Follow-ups found by the check, not yet built (small; no owner decision needed unless noted)**
-- Night-shift attendance is flagged "out without in" and the flag never clears.
-- No test yet proves a store manager cannot record a scrap sale (the rule itself is set correctly).
-- The yearly card self-check (OB-511) is not yet a row in the compliance register.
-- Shelf tags print as a cut-out sheet, not one tag per label on a roll label printer.
-- A quotation can be rung up at another store, or used up with nothing rung.
-- When no minimum margin is set, a product's lowest allowed price at the till equals its buying cost (**owner decision needed**: what the floor should be then).
-- A line lowered by a quotation is flagged at head office as a cut beyond a manager's limit (**owner decision needed**).
+**Follow-ups found by the check — built (28 October 2026, owner decision OB-549)**
+- Night-shift attendance: whether marks pair up is now judged when read, so a late "in" clears the flag and a rostered night shift pairs across midnight; forgotten clock-outs now show as "in without out" once the shift has ended.
+- Scrap sales: a test proves a store manager cannot record one (and can review); the accountant can.
+- Card self-check (OB-511): compliance row C-08 (EXTERNAL; the shop files it yearly with its bank); C-07 corrected (no card data enters the system).
+- Shelf tags: one tag per label on a label printer (the default), or a sheet to cut; a tag that does not fit is refused by name; English-and-Tamil tags print their field labels in English only (OB-549), measured to fit 70 × 38 mm.
+- Quotations: rung up only at the store they were made for; freed at once when nothing could be rung.
 
+**Still needs the owner (no change made)**
+- When no minimum margin is set, a product's lowest allowed price at the till equals its buying cost: what should the floor be then?
+- A line lowered by a quotation is flagged at head office as a cut beyond a manager's limit: should it count against the limit?
 ---
 
 ## OB-435 and OB-439 (28 October 2026): every alert in English and Tamil; a text message in its reader's language
