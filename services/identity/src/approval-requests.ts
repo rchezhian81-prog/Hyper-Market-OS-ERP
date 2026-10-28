@@ -105,6 +105,15 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'quotation_below_floor', label: 'Quote a customer below the margin floor',
     makerPermission: 'pos.quotation.write', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
   },
+  // ── R9-A · OB-532 (owner, 28 Oct 2026) — begin: a quotation for a product whose floor head office cannot read (never
+  // received at a cost) needs the OWNER's approval, like a till price cut on such a product (OB-520). The checker word
+  // `pos.quotation.nofloor.approve` is the owner's alone; the quotation route also re-checks that the decider holds the
+  // owner role at the quotation's store. The quoter never approves their own (the engine refuses self-approval).
+  quotation_floor_not_known: {
+    kind: 'quotation_floor_not_known', label: 'Quote a customer a price on a product whose lowest price is not known (owner only)',
+    makerPermission: 'pos.quotation.write', checkerPermission: 'pos.quotation.nofloor.approve', validForMinutes: 24 * 60,
+  },
+  // ── R9-A · OB-532 — end
   // Finance (2b-vi-b-2 · M23-FR-04 "period close/reopen by Finance with approval"): the person who closes or reopens a
   // month asks; someone holding the authority to SIGN a period (`finance.period.sign` — the accountant, the CA, the
   // owner) approves — the signature that certifies the control totals is that person's own act.

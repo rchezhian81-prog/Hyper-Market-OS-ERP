@@ -361,7 +361,9 @@ import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlin
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { tillControlsPackSectionOf, versionPolicyPackSectionOf, tillOverrideRulesForSale, clientVersionPolicyOf } from './r7a-till-controls-adapters'; // OB-500 · OB-501 (R7-A)
 import { appVersionPolicyRoutes } from './r8a-client-version-adapters'; // OB-521 (R8-A)
+import { handheldBuildRoutes, withHandheldBuildCheck } from './r9b-handheld-build-adapters'; // OB-537 (R9-B)
 import { r8bQuotationHooks, r8bReceiptHooks } from './r8b-quotes-receiving-adapters'; // OB-523 · OB-525 · OB-529 (R8-B)
+import { r9aQuotationHooks } from './r9a-quotes-billmatch-adapters'; // OB-532 (R9-A)
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
 import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters';
@@ -1783,7 +1785,7 @@ export function buildSurface(deps: {
     // (idempotent), and a withdrawn/expired quote is kept as a lost-sale signal. Event-sourced, restart-safe.
     ...quotationsRoutes(store === undefined
       ? { quotations: () => [], record: () => {}, now }
-      : { ...quotationsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...r8bQuotationHooks({ store, now, settings, signer }) /* R8 OB-523 · OB-525 */ }),
+      : { ...quotationsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...r8bQuotationHooks({ store, now, settings, signer }) /* R8 OB-523 · OB-525 */, ...r9aQuotationHooks({ store }) /* R9 OB-532 */ }),
     // Restricted-sale gate (B14 / COTPA 2003) — the till's age-18 gate on tobacco and its refusal of a
     // loose single-stick quantity; a decision, not a write, so stateless and offline-safe.
     ...restrictedSalesRoutes(),
@@ -2115,6 +2117,7 @@ export function buildSurface(deps: {
       ? { policy: () => undefined, recordPolicyEvent: () => {}, now }
       : versionPolicyAdapter({ store, now })),
     ...appVersionPolicyRoutes({ store, now }), // OB-521 (R8-A): my app's version policy, for the phone apps
+    ...handheldBuildRoutes({ store, now }), // OB-537 (R9-B): handheld work on a barred build — the register and the queue till's report
     // Durable partner-credential registry + access-check (M36-FR-04, hard rule #7) — an admin registers a
     // partner credential scoped to the tenants that engaged it, and the access-check decides a partner call
     // against the STORED credential (sandbox-in-production, out-of-scope tenant, revoked/expired, unversioned
@@ -2607,7 +2610,8 @@ export async function startApi(
     channels: sessionChannelsOf({ store, revocations, now }),
     // OB-54: each store computer's credential is locked to its own store — refused (and kept) when it names no store,
     // a store its grant does not name, or a record at another store.
-    boundStore: storeComputerBinding({ store, now }),
+    // OB-537 (R9-B): a handheld record's build is taken off before its handler and a barred one is kept as a finding.
+    boundStore: withHandheldBuildCheck(storeComputerBinding({ store, now }), { store, now }),
     // Hard rule #10 · P-08 (verifier r18): a key reused with different content is refused AND kept as a visible exception.
     onIdempotencyConflict: idempotencyConflictsAdapter({ store, now }).record,
     // Per-tenant FEATURE ENTITLEMENT (M36-FR-01 · §35). A route that names an optional/paid feature is

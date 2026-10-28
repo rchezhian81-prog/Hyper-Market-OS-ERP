@@ -67,9 +67,15 @@ export interface RosteringPorts {
  *   • `box_copy` — head office cannot be reached, and this is the STORE COMPUTER'S COPY from the signed pack, read-only,
  *     said with when head office last sent it and how old it is (P-08); editing still needs head office;
  *   • `unreachable` — head office cannot be reached and the store computer holds no copy: said, never an empty roster;
- *   • `refused` — head office answered and refused this person the roster: said, never an empty roster (and no copy shown).
+ *   • `refused` — head office answered and refused this person the roster: said, never an empty roster (and no copy shown);
+ *   • `sign_in_refused` — Round 9 · OB-539: the store PC's head-office sign-in failed (401) and the store computer holds no
+ *     copy: said plainly, never an empty roster. (With a copy, the source is `box_copy` with `heldBecause: 'sign_in_refused'`.)
  */
-export type RosterSource = 'head_office' | 'loading' | 'box_copy' | 'unreachable' | 'refused';
+export type RosterSource = 'head_office' | 'loading' | 'box_copy' | 'unreachable' | 'refused' | 'sign_in_refused';
+
+/** Round 9 · OB-539: why the store computer's copy is on screen — head office cannot be reached (OB-531), or head office
+ *  refused the store PC's head-office sign-in (401). */
+export type HeldBecause = 'unreachable' | 'sign_in_refused';
 
 export interface RosteringConfig {
   /** Who is looking. `null` means the store computer was not told who is at the screen. */
@@ -78,6 +84,8 @@ export interface RosteringConfig {
   readonly source?: RosterSource;
   /** OB-531: when head office last sent the store computer's copy (only for `box_copy`). */
   readonly heldAsAt?: string;
+  /** OB-539: why the copy is shown (only for `box_copy`; absent = head office cannot be reached, as OB-531). */
+  readonly heldBecause?: HeldBecause;
   /** The moment "how old" is measured from (tests pass it; else the clock). */
   readonly now?: () => string;
   /** The shop's time zone for the times shown (default the shop calendar's). */
@@ -95,7 +103,8 @@ export type CopyKey =
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noManage'
   | 'nobodyNamed' | 'staleShell' | 'sampleData'
   | 'loading' | 'heldCopy' | 'heldReadOnly' | 'unreachableNoCopy' | 'rotaHeading' | 'nobodyOnShift'
-  | 'ageMinutes' | 'ageHours' | 'ageDays' | 'ageJustNow' | 'hoRefused';
+  | 'ageMinutes' | 'ageHours' | 'ageDays' | 'ageJustNow' | 'hoRefused'
+  | 'heldCopySignIn' | 'heldReadOnlySignIn' | 'signInRefusedNoCopy';
 
 export const ROSTERING_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -122,6 +131,9 @@ export const ROSTERING_COPY: BilingualCopy<CopyKey> = {
     rotaHeading: 'The rota on the store computer\'s copy', nobodyOnShift: 'nobody on it yet',
     ageMinutes: '{n} minute(s) old', ageHours: '{n} hour(s) old', ageDays: '{n} day(s) old', ageJustNow: 'just now',
     hoRefused: 'Head office refused to show you the roster. Nothing is shown as covered.',
+    heldCopySignIn: 'Head office refused this computer\'s head-office sign-in. This is the STORE COMPUTER\'S COPY of the roster, as head office last sent it at {time} ({age}). It may be out of date.',
+    heldReadOnlySignIn: 'Read-only: changing the roster needs head office. Sign in to head office again on this computer, with your own login and second step, then reload.',
+    signInRefusedNoCopy: 'Head office refused this computer\'s head-office sign-in, and this store computer holds no copy of the roster yet — so it cannot say what is short. Nothing is shown as covered. Sign in to head office again on this computer.',
   },
   ta: {
     title: 'பணிப்பட்டியல் இடைவெளிகள்', langName: 'English',
@@ -147,6 +159,9 @@ export const ROSTERING_COPY: BilingualCopy<CopyKey> = {
     rotaHeading: 'கடைக் கணினி நகலில் உள்ள பணி முறை', nobodyOnShift: 'இன்னும் யாரும் இல்லை',
     ageMinutes: '{n} நிமிடம் பழையது', ageHours: '{n} மணி நேரம் பழையது', ageDays: '{n} நாள் பழையது', ageJustNow: 'இப்போதுதான்',
     hoRefused: 'தலைமை அலுவலகம் உங்களுக்குப் பணிப்பட்டியலைக் காட்ட மறுத்தது. எதுவும் நிரப்பப்பட்டதாகக் காட்டப்படவில்லை.',
+    heldCopySignIn: 'இந்தக் கணினியின் தலைமை அலுவலக உள்நுழைவைத் தலைமை அலுவலகம் மறுத்தது. இது பணிப்பட்டியலின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {time} அன்று அனுப்பியது ({age}). இது பழையதாக இருக்கலாம்.',
+    heldReadOnlySignIn: 'படிக்க மட்டும்: பணிப்பட்டியலை மாற்றத் தலைமை அலுவலகம் தேவை. உங்கள் சொந்த உள்நுழைவாலும் இரண்டாம் படியாலும் இந்தக் கணினியில் தலைமை அலுவலகத்தில் மீண்டும் உள்நுழைந்து, பக்கத்தை மீண்டும் ஏற்றவும்.',
+    signInRefusedNoCopy: 'இந்தக் கணினியின் தலைமை அலுவலக உள்நுழைவைத் தலைமை அலுவலகம் மறுத்தது; இந்தக் கடைக் கணினியில் பணிப்பட்டியல் நகல் இன்னும் இல்லை — எனவே என்ன குறைவு என்று சொல்ல முடியாது. எதுவும் நிரப்பப்பட்டதாகக் காட்டப்படவில்லை. இந்தக் கணினியில் தலைமை அலுவலகத்தில் மீண்டும் உள்நுழையுங்கள்.',
   },
 };
 
@@ -282,6 +297,8 @@ export function createRosteringSession(config: RosteringConfig, ports: Rostering
       if (source === 'loading') return EMPTY_VIEW(presentScreenState({ state: 'loading', label: t('loading') }), nobodyNamed, false, source);
       if (source === 'unreachable') return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('unreachableNoCopy') }), nobodyNamed, false, source, t('heldReadOnly'));
       if (source === 'refused') return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('hoRefused') }), nobodyNamed, false, source);
+      // OB-539: head office refused the store PC's sign-in and there is no copy — said plainly, never "no gaps".
+      if (source === 'sign_in_refused') return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('signInRefusedNoCopy') }), nobodyNamed, false, source, t('heldReadOnlySignIn'));
 
       const data = ports.worklist();
       // Worst first: an unstaffed role (assigned 0) before a partial shortfall; then the larger shortfall; then
@@ -297,6 +314,8 @@ export function createRosteringSession(config: RosteringConfig, ports: Rostering
         .map((gap) => present(lang, gap, data));
       const state = gaps.length === 0 ? 'empty' : 'ready';
       const held = source === 'box_copy' && config.heldAsAt !== undefined;
+      // OB-539: the copy says WHY it is on screen — head office cannot be reached, or it refused this computer's sign-in.
+      const signInRefused = held && config.heldBecause === 'sign_in_refused';
       const names = new Map(data.employees.map((e) => [e.employeeId, e.name.trim() === '' ? e.employeeId : e.name.trim()]));
       const today = shown(now()).slice(0, 10);
       const rota = !held ? [] : data.shifts
@@ -314,8 +333,8 @@ export function createRosteringSession(config: RosteringConfig, ports: Rostering
         nobodyNamed,
         mayManage,
         source,
-        heldWords: held ? t('heldCopy').replace('{time}', shown(config.heldAsAt!)).replace('{age}', rosterAgeWords(lang, config.heldAsAt!, now())) : '',
-        readOnlyWords: live ? '' : t('heldReadOnly'),
+        heldWords: held ? t(signInRefused ? 'heldCopySignIn' : 'heldCopy').replace('{time}', shown(config.heldAsAt!)).replace('{age}', rosterAgeWords(lang, config.heldAsAt!, now())) : '',
+        readOnlyWords: live ? '' : t(signInRefused ? 'heldReadOnlySignIn' : 'heldReadOnly'),
         rota,
       };
     },

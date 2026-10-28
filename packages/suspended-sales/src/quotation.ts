@@ -101,6 +101,11 @@ export interface QuotationApproval {
   readonly status: 'approved' | 'rejected' | 'pending';
   readonly decidedBy: string;
   readonly reason: string;
+  /**
+   * OB-532 (owner, 28 Oct 2026): the decider holds the OWNER role at the quotation's store and approved it as the owner (the
+   * owner-only kind `quotation_floor_not_known`). Only such an approval lets a product with no known floor be quoted.
+   */
+  readonly byOwner?: boolean;
 }
 
 export type IssueRefusal =
@@ -108,6 +113,7 @@ export type IssueRefusal =
   | 'no_lines'
   | 'invalid_validity'
   | 'below_floor_unapproved'
+  | 'floor_not_known_unapproved'
   | 'self_approved';
 
 export interface IssueResult {
@@ -196,6 +202,22 @@ export function issueQuotation(
           };
         }
       }
+    }
+  }
+
+  // OB-532 (owner, 28 Oct 2026): a line on a product whose floor head office cannot read (never received at a cost) needs
+  // the OWNER's approval — like a till price cut on such a product (OB-520). Nobody else's approval counts, and the person
+  // quoting can never approve their own (§28). The owner's approval also stands for any below-floor line beside it.
+  const unknown = new Set(input.floorNotKnown ?? []);
+  const notKnownLines = input.lines.filter((l) => unknown.has(l.productId));
+  if (notKnownLines.length > 0) {
+    const a = input.approval;
+    const said = [...new Set(notKnownLines.map((l) => l.description))].join('; ');
+    if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId || a.byOwner !== true) {
+      return { ...base, issued: false, outcome: 'floor_not_known_unapproved', detail: `head office does not know the lowest price of ${said} (never received at a cost) — only the owner may approve quoting it (OB-532)` };
+    }
+    if (a.decidedBy === input.issuedBy) {
+      return { ...base, issued: false, outcome: 'self_approved', detail: 'the person quoting cannot approve their own quotation, even as the owner (§28 · OB-532)' };
     }
   }
 

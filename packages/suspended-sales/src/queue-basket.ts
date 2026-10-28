@@ -28,6 +28,8 @@
  *     so head office treats it as high-impact: the owner approves it before it is switched on (governed-config.ts).
  * Both are judged for the lane of the store computer the handheld is enrolled on (its `EDGE_LANE_ID`).
  */
+import type { HandheldBuild } from '../../platform-admin/src/handheld-build';
+
 export const QUEUE_BUSTING_SWITCH = 'pos.queue_busting';
 export const MOBILE_POS_PAYMENT_SWITCH = 'payments.mobile_pos';
 
@@ -65,6 +67,8 @@ export interface QueueBasket {
   readonly givenUpBy?: string;
   readonly givenUpAt?: string;
   readonly giveUpReason?: string;
+  /** Round 9 · OB-537: the build that made the basket and the store computer's mark on it, kept with the basket. */
+  readonly handheldBuild?: HandheldBuild;
 }
 
 /** The most lines one hand-over carries — a body cap the till's own basket never comes near. */
@@ -106,6 +110,8 @@ export function handOverBasket(
   input: {
     readonly basketId: unknown; readonly handheldLane: string; readonly handedOverBy: string; readonly lines: unknown;
     readonly handheldTotalMinor: unknown; readonly at: string; readonly candidates: readonly string[];
+    /** OB-537: what the store computer makes of the build that made it (kept on the basket; never a reason to refuse). */
+    readonly handheldBuild?: HandheldBuild;
   },
 ): HandOverOutcome {
   if (!isText(input.basketId, 120)) return { handedOver: false, refusedBecause: 'basket_id_missing' };
@@ -125,7 +131,10 @@ export function handOverBasket(
   const total = Number.isSafeInteger(input.handheldTotalMinor) && (input.handheldTotalMinor as number) >= 0 ? input.handheldTotalMinor as number : 0;
   return {
     handedOver: true, again: false,
-    basket: { basketId, code, handheldLane: input.handheldLane, handedOverBy: input.handedOverBy, handedOverAt: input.at, lines: read.lines, handheldTotalMinor: total, state: 'waiting' },
+    basket: {
+      basketId, code, handheldLane: input.handheldLane, handedOverBy: input.handedOverBy, handedOverAt: input.at, lines: read.lines, handheldTotalMinor: total, state: 'waiting',
+      ...(input.handheldBuild === undefined ? {} : { handheldBuild: input.handheldBuild }),
+    },
   };
 }
 

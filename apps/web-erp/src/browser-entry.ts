@@ -229,7 +229,9 @@ import {
   createGoodsReceiptSession, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
   type GrnLineDispatchPort, type LineDispatchPostResult, type GrnReturnDispatchView,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView, type GrnDiscrepancyOwnerView,
+  type GrnBillMatchPort,
 } from './goods-receipt-session';
+import { openGrnBillMatchPort, billCostsOfReceipt } from './goods-receipt-bill-match'; // R9-A · OB-534
 import {
   createSuppliersSession,
   type SuppliersPorts, type SuppliersSession, type SuppliersData, type SupplierRowView, type SupplierAttentionReason,
@@ -1673,18 +1675,22 @@ export interface RosteringScreenData {
 export type RosteringRead =
   | { readonly kind: 'live'; readonly worklist: RosteringData }
   | { readonly kind: 'unreachable' }
-  | { readonly kind: 'refused'; readonly status: number };
+  | { readonly kind: 'refused'; readonly status: number }
+  /** Round 9 · OB-539: the store PC's head-office sign-in failed (401 — none held, ended, or head office no longer believes it). */
+  | { readonly kind: 'sign_in_refused' };
 
 /** Round 8 · OB-531: the roster source and copy to show for a read — head office's live answer; else, ONLY when head office
  *  cannot be reached, the store computer's copy (read-only, with its age); else said plainly, never an empty roster. */
 export function rosteringViewFor(data: RosteringScreenData | undefined, read: RosteringRead): { readonly worklist: RosteringData; readonly config: Omit<RosteringConfig, 'userId'> } {
   if (read.kind === 'live') return { worklist: read.worklist, config: { source: 'head_office' } };
   if (read.kind === 'refused') return { worklist: EMPTY_ROSTERING, config: { source: 'refused' } };
+  // OB-539: a failed head-office sign-in (401) also shows the store computer's copy, saying head office refused the sign-in.
+  const signInRefused = read.kind === 'sign_in_refused';
   const copy = data?.boxRoster;
-  if (copy === undefined || copy === null || typeof copy.asAt !== 'string') return { worklist: EMPTY_ROSTERING, config: { source: 'unreachable' } };
+  if (copy === undefined || copy === null || typeof copy.asAt !== 'string') return { worklist: EMPTY_ROSTERING, config: { source: signInRefused ? 'sign_in_refused' : 'unreachable' } };
   return {
     worklist: { gaps: Array.isArray(copy.gaps) ? copy.gaps : [], employees: Array.isArray(copy.employees) ? copy.employees : [], shifts: Array.isArray(copy.shifts) ? copy.shifts : [], assignments: Array.isArray(copy.assignments) ? copy.assignments : [] },
-    config: { source: 'box_copy', heldAsAt: copy.asAt },
+    config: { source: 'box_copy', heldAsAt: copy.asAt, heldBecause: signInRefused ? 'sign_in_refused' : 'unreachable' },
   };
 }
 
@@ -1770,6 +1776,13 @@ export async function readRosteringWorklist(fetchFn: typeof fetch | undefined = 
     ]);
     const worst = Math.max(rosterRes.status, gapsRes.status);
     if (worst >= 500) return { kind: 'unreachable' };
+    // OB-539: a 401 is the store PC's head-office sign-in failing (the box holds none for this person, or head office no
+    // longer believes it) — unless the box says it is its OWN office PIN sign-in that ended, which is not head office's.
+    if (rosterRes.status === 401 || gapsRes.status === 401) {
+      const refusal = rosterRes.status === 401 ? rosterRes : gapsRes;
+      const code = await refusal.json().then((b: unknown) => (b as { error?: { code?: unknown } } | null)?.error?.code, () => undefined);
+      if (code !== 'office_sign_in_needed') return { kind: 'sign_in_refused' };
+    }
     if (worst >= 400) return { kind: 'refused', status: worst };
     const roster = (await rosterRes.json()) as { employees?: unknown; shifts?: unknown; assignments?: unknown };
     const gapsBody = (await gapsRes.json()) as { gaps?: unknown };
@@ -3103,6 +3116,7 @@ export function goodsReceiptPortsFromData(
   snapshot?: GoodsReceiptData,
   returnPort?: GrnLineReturnPort,
   dispatchPort?: GrnLineDispatchPort,
+  billMatchPort?: GrnBillMatchPort, // R9-A · OB-534
 ): GoodsReceiptPorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -3114,6 +3128,9 @@ export function goodsReceiptPortsFromData(
     returnPort: () => returnPort ?? null,
     // OB-204: the dispatch is the same route right; head office re-checks it and the e-way bill on every press.
     dispatchPort: () => dispatchPort ?? null,
+    // R9-A · OB-534: matching a supplier bill is the bill-match route's own right; head office re-checks it (and the receiver).
+    mayMatchBill: () => held.has('purchase.invoice.match'),
+    billMatchPort: () => billMatchPort ?? null,
   };
 }
 
@@ -3180,11 +3197,12 @@ export function bootGoodsReceipt(
   snapshot?: GoodsReceiptData,
   returnPort?: GrnLineReturnPort,
   dispatchPort?: GrnLineDispatchPort,
+  billMatchPort?: GrnBillMatchPort, // R9-A · OB-534
 ): GoodsReceiptSession | null {
   if (data === undefined) return null;
   return createGoodsReceiptSession(
     { userId: data.userId === undefined ? null : data.userId },
-    goodsReceiptPortsFromData(data, snapshot, returnPort, dispatchPort),
+    goodsReceiptPortsFromData(data, snapshot, returnPort, dispatchPort, billMatchPort),
   );
 }
 
@@ -3310,6 +3328,7 @@ export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
       returnLines: returnLinesOf(g, lines),
       ...(costNotKnown.length === 0 ? {} : { costNotKnown }),
       ...(captured['discrepancyValueIncomplete'] === true ? { discrepancyValueIncomplete: true } : {}),
+      ...billCostsOfReceipt(g), // R9-A · OB-534: the bills matched to this receipt, and its lines still waiting for one
     };
   });
 
@@ -6938,14 +6957,15 @@ if (browserWindow !== undefined) {
   const goodsReceiptData = browserWindow.goodsReceiptData;
   const grnLineReturnPort = openGrnLineReturnPort();
   const grnLineDispatchPort = openGrnLineDispatchPort(); // OB-204
-  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort, grnLineDispatchPort);
+  const grnBillMatchPort = openGrnBillMatchPort(); // R9-A · OB-534
+  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort, grnLineDispatchPort, grnBillMatchPort);
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {
       refresh: fetchGoodsReceipt,
       present: (snapshot) => createGoodsReceiptSession(
         { userId: goodsReceiptData?.userId === undefined ? null : goodsReceiptData.userId },
-        goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort, grnLineDispatchPort),
+        goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort, grnLineDispatchPort, grnBillMatchPort),
       ),
     };
   }

@@ -25,7 +25,7 @@ import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../pack
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { RouteSession, type CollectionInput, type ContributionRule, type StopInput } from './route-session';
-import { openNewWorkGate, bindNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
+import { openNewWorkGate, bindNewWorkGate, APP_BUILD_VERSION, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A) · OB-537 (R9)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -149,7 +149,8 @@ if (browserWindow !== undefined) {
     ...(storage === undefined ? {} : { storage }),
     ...(perf === undefined ? {} : { perfNow: () => perf.now() }),
   });
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.driverStorageProblem = why; }, stamping?.stamp);
+  // OB-537 (Round 9): every record this handheld queues carries the app build that made it.
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.driverStorageProblem = why; }, stamping?.stamp, APP_BUILD_VERSION);
   browserWindow.driverOutbox = outbox;
   // Defaulted to ₹100 and overridable per tenant. A tolerance of zero would send every driver to
   // the cash office over a rupee, and a control everybody routes around is not a control.

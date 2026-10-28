@@ -81,7 +81,7 @@ export async function drainToBox(input: DrainToBoxInput): Promise<DrainToBoxResu
   const batch = relayableItems(input.outbox.pending(), input.source).slice(0, input.limit ?? 20);
   if (batch.length === 0) return { attempted: 0, handed: 0, refused: 0, failed: 0, offline: false };
 
-  const body: RelayBatch = { source: input.source, items: batch.map((i) => ({ key: i.key, event: i.event, ...(i.stamp === undefined ? {} : { stamp: i.stamp }) })) };
+  const body: RelayBatch = { source: input.source, items: batch.map((i) => ({ key: i.key, event: i.event, ...(i.stamp === undefined ? {} : { stamp: i.stamp }), ...(i.appVersion === undefined ? {} : { appVersion: i.appVersion }) })) };
   // Called as a bare function, never as `input.fetch(...)`: a browser's `fetch` refuses to run with any `this` but
   // the window ("Illegal invocation"), and a method call would hand it this options object.
   const { fetch: fetchFn } = input;

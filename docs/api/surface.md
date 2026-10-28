@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1626 | 943 | 943 | 178 | 433 |
+| 13 | 1628 | 944 | 944 | 178 | 434 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1213,6 +1213,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/platform/devices/evaluate` | `platform.health.read` | core | yes |
 | POST | `/v1/platform/devices/fleet-health` | `platform.health.read` | core | yes |
 | POST | `/v1/platform/devices/fleet-summary` | `platform.health.read` | core | yes |
+| POST | `/v1/platform/handheld-work/queue-baskets/:basketId/build/synced` | `platform.handheldbuild.sync` | core | yes |
+| GET | `/v1/platform/handheld-work/version-exceptions` | `platform.health.read` | core | — |
 | GET | `/v1/platform/version-policy` | `platform.health.read` | core | — |
 | POST | `/v1/platform/version-policy` | `platform.device.manage` | core | yes |
 | POST | `/v1/platform/version-policy/kill` | `platform.device.manage` | core | yes |

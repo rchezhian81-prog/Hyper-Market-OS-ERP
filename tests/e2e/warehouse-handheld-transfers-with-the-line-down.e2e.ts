@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { APP_BUILD_VERSION } from '../../packages/platform-admin/src/client-version';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -161,7 +162,9 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld sends and counts in trans
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
     expect(records.map((r) => r.type)).toEqual(['TransferDispatchRecorded', 'TransferReceiptRecorded']);
     expect(records[0]?.payload).toMatchObject({ transferId: 't-out', storeId: 'S1', dispatchedBy: PHONE_PERSON, source: 'warehouse-handheld' });
-    expect(Object.keys(records[0]!.payload).sort()).toEqual(['at', 'dispatchedBy', 'source', 'storeId', 'transferId']);
+    // OB-537 (R9-B): the box also writes the build the handheld queued it on (head office takes it off before its handler).
+    expect(Object.keys(records[0]!.payload).sort()).toEqual(['at', 'dispatchedBy', 'handheldBuild', 'source', 'storeId', 'transferId']);
+    expect(records[0]!.payload['handheldBuild']).toMatchObject({ client: 'warehouse', appVersion: APP_BUILD_VERSION });
     expect(records[1]?.payload).toMatchObject({ transferId: 't-in', storeId: 'S1', receivedBy: PHONE_PERSON, counted: [{ productId: 'RICE', batchId: null, quantityMinor: 8 }, { productId: 'OIL', batchId: 'OIL-B7', quantityMinor: 4 }] });
     expect((await page.textContent('#sent-work')) ?? '').toContain('Transfer sent');
 

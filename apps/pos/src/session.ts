@@ -1676,6 +1676,7 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
+        // R9-A · OB-533: a lowered (or quotation-raised) line keeps its price evidence while parked — never a changed price without its reason.
         // OB-500: a cut line keeps its first price and its approval when parked, so a recalled line is still a cut line.
         ...(l.priceOverride === undefined ? {} : { priceOverride: { ...l.priceOverride } }),
       })),
@@ -1707,6 +1708,7 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
+        // R9-A · OB-533: a lowered (or quotation-raised) line keeps its price evidence while parked — never a changed price without its reason.
         // OB-500: a cut line comes back as a cut line — its first price and approval — so its quantity stays locked and a
         // further cut is measured from its first price, and head office still re-checks it.
         ...(l.priceOverride === undefined ? {} : { priceOverride: { ...l.priceOverride } }),

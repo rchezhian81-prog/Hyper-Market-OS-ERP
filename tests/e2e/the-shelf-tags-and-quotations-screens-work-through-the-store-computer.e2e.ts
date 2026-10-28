@@ -202,7 +202,24 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await p.waitForSelector('#lines li[data-product="p-rice"]');
     expect(await p.textContent('#lines-total')).toBe('Total: ₹2,760.00');
     await p.click('#q-make');
-    // R8-B · OB-525: head office never received the rice at a cost, so it says it does not know its floor (never a zero floor).
+    // R9-A · OB-532: head office never received the rice at a cost, so its floor is not known — only the OWNER may approve the
+    // quotation. The page offers to ask the owner (not "a second person"), for exactly this quotation.
+    await says(p, '#q-status', /^Head office refused: head office does not know the lowest price of Ponni rice 25 kg \(never received at a cost\) — only the owner may approve quoting it \(OB-532\)/);
+    await p.waitForSelector('#q-ask:not([hidden])');
+    await says(p, '#q-ask-text', /^Ask the owner to approve this price$/);
+    await p.click('#lang');
+    await says(p, '#q-ask-text', /^இந்த விலைக்கு உரிமையாளரின் அனுமதி கேள்$/);
+    await p.click('#lang');
+    await says(p, '#q-ask-text', /^Ask the owner to approve this price$/);
+    await p.click('#q-ask');
+    await says(p, '#q-ask-status', /^Owner's approval asked\. .* Its id: areq-/);
+    const ownerAsk = ((await p.textContent('#q-ask-status')) ?? '').split(' ').at(-1)!;
+    // The manager cannot approve it; the owner does, in his own session at head office.
+    expect((await ho.request({ method: 'POST', path: `/v1/approvals/requests/${ownerAsk}/decide`, userId: MANAGER, tenantId: TENANT, idempotencyKey: `d-${randomUUID()}`, body: { decision: 'approved', reason: 'mine' } })).status).toBe(403);
+    expect((await ho.request({ method: 'POST', path: `/v1/approvals/requests/${ownerAsk}/decide`, userId: OWNER, tenantId: TENANT, idempotencyKey: `d-${randomUUID()}`, body: { decision: 'approved', reason: 'introductory price for a regular' } })).status).toBeLessThan(300);
+    await p.fill('#q-approval', ownerAsk);
+    await p.click('#q-make');
+    // R8-B · OB-525: head office says it does not know the rice's floor (never a zero floor) — kept on the quotation.
     await says(p, '#q-status', /^Quotation made at head office\. Its number — give it to the customer: \d{8} Head office does not know the floor price of \(never received at a cost\): p-rice\.$/);
     const number = (await p.textContent('#q-number'))!;
     expect(number).toMatch(/^\d{8}$/);

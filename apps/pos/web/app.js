@@ -1477,7 +1477,10 @@ async function giveUpHeldBasket() {
   const why = await choose(t('whyGiveUp'), GIVE_UP_REASONS.map((r) => ({ value: r.code, label: r[lang] ?? r.en })));
   if (why === null || why === undefined) return;
   const r = await session.abandonAtTill(pick, why);
-  tell(t('read'), r.ok ? t('givenUp') : r.laneMessage, r.ok ? SUCCESS : STOP);
+  // R9-A · OB-533: a basket that carried a quotation says which quotation is freed again (or that it could not be).
+  const quoted = Array.isArray(r.quotationsFreed) && r.quotationsFreed.length > 0;
+  const words = lang === 'ta' && r.laneMessageTa ? r.laneMessageTa : r.laneMessage;
+  tell(t('read'), r.ok && !quoted && !r.laneMessageTa ? t('givenUp') : words, r.ok ? SUCCESS : STOP);
   await refreshHeld();
 }
 

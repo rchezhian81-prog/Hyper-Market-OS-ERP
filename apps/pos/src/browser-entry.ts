@@ -383,6 +383,12 @@ export interface HeldAnswer {
   readonly ok: boolean;
   readonly refusedBecause?: string;
   readonly laneMessage: string;
+  /** R9-A · OB-533: the box's words in Tamil, when it gave them (a give-up that freed a quotation). */
+  readonly laneMessageTa?: string;
+  /** R9-A · OB-533: on a give-up, the quotations the basket carried that are freed again. */
+  readonly quotationsFreed?: readonly string[];
+  /** R9-A · OB-533: on a recall, the quotations that came back attached to the basket. */
+  readonly quotationsAttached?: readonly string[];
   readonly billId?: string;
   /** On a recall: the basket was held past the shop's price window — check every price before taking money. */
   readonly repriceRequired?: boolean;
@@ -1657,9 +1663,19 @@ export function bootPos(config?: {
   const answer = (r: Record<string, unknown>, ok: boolean, fallback: string): HeldAnswer => ({
     ok,
     laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
+    ...(typeof r['laneMessageTa'] === 'string' ? { laneMessageTa: r['laneMessageTa'] } : {}),
     ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}),
     ...(typeof r['billId'] === 'string' ? { billId: r['billId'] } : {}),
+    ...(Array.isArray(r['quotationsFreed']) ? { quotationsFreed: (r['quotationsFreed'] as unknown[]).filter((q): q is string => typeof q === 'string') } : {}),
   });
+  // ── R9-A · OB-533 — begin: a held basket carries the quotations rung up on it (filled in by the R8-B/R9-A block below) ──
+  const heldQuotations: {
+    /** The quotations on the bill in progress, each with the bill it was rung up on — parked with the basket. */
+    onBill: () => readonly { readonly quotationId: string; readonly saleId: string }[];
+    /** The bill in progress was parked or recalled: what it now carries (none after a hold; the basket's after a recall). */
+    attach: (quotations: readonly { readonly quotationId: string; readonly saleId: string }[]) => void;
+  } = { onBill: () => [], attach: () => {} };
+  // ── R9-A · OB-533 — end ──
   const holdAtTill = async (reason?: string): Promise<HeldAnswer> => {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('hold a basket').laneMessage };
     const basket = session.basketToHold();
@@ -1667,11 +1683,13 @@ export function bootPos(config?: {
     // The basket's own id: a re-sent hold after a lost reply is the same hold, never a second copy.
     const billId = `H-${session.laneId() ?? 'lane'}-${newRequestKey().slice(3)}`;
     const now = new Date().toISOString();
-    const body = { billId, lines: basket.lines, ageAnswers: basket.ageAnswers, tradingDay: session.tradingDayFor(now), ...(reason === undefined || reason.trim() === '' ? {} : { reason }) };
+    const quotations = heldQuotations.onBill(); // R9-A · OB-533: the basket carries its quotations to the box
+    const body = { billId, lines: basket.lines, ageAnswers: basket.ageAnswers, tradingDay: session.tradingDayFor(now), ...(reason === undefined || reason.trim() === '' ? {} : { reason }), ...(quotations.length === 0 ? {} : { quotations }) };
     let r = await held.hold(body);
     if (r['refusedBecause'] === 'lane_unreachable') r = await held.hold(body);
     if (r['held'] !== true) return answer(r, false, UNREACHABLE_HOLD);
     session.newSale();
+    heldQuotations.attach([]); // OB-533: the quotations went with the basket; the fresh bill has none
     return answer(r, true, 'Basket held.');
   };
   const heldAtTill = (): Promise<readonly HeldBasket[]> => held.list();
@@ -1679,10 +1697,15 @@ export function bootPos(config?: {
     if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('recall a basket').laneMessage };
     if (session.basketToHold().lines.length > 0) return { ok: false, refusedBecause: 'basket_not_empty', laneMessage: 'Finish or hold the basket on the till first — a recalled basket never joins another customer\'s.' };
     const r = await held.recall(billId);
-    const bill = r['bill'] as { lines?: SuspendedLineShape[]; ageAnswers?: SuspendedAgeShape[] } | undefined;
+    const bill = r['bill'] as { lines?: SuspendedLineShape[]; ageAnswers?: SuspendedAgeShape[]; quotations?: unknown } | undefined;
     if (r['recalled'] !== true || bill === undefined || !Array.isArray(bill.lines)) return answer(r, false, 'The store computer did not give the basket back. It is still held.');
     session.restoreHeld(bill.lines, Array.isArray(bill.ageAnswers) ? bill.ageAnswers : []);
-    return { ...answer(r, true, 'Basket recalled.'), billId, ...(r['repriceRequired'] === true ? { repriceRequired: true } : {}) };
+    // R9-A · OB-533: recalling keeps the quotation attached — a later cancel or hold of this bill frees or carries it.
+    const attached = (Array.isArray(bill.quotations) ? bill.quotations as Record<string, unknown>[] : [])
+      .filter((q) => typeof q['quotationId'] === 'string' && typeof q['saleId'] === 'string')
+      .map((q) => ({ quotationId: q['quotationId'] as string, saleId: q['saleId'] as string }));
+    heldQuotations.attach(attached);
+    return { ...answer(r, true, 'Basket recalled.'), billId, ...(r['repriceRequired'] === true ? { repriceRequired: true } : {}), ...(attached.length === 0 ? {} : { quotationsAttached: attached.map((q) => q.quotationId) }) };
   };
   // VOIDS AS EVIDENCE (audit PF-07): on the store computer before the line goes.
   const voidAtTill = async (lineId: string, reason: string): Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }> => {
@@ -2167,17 +2190,26 @@ export function bootPos(config?: {
   // ── R7-C · OB-506 — end ──
   // ── R8-B · OB-523 — begin: cancel the whole bill (its own file); a quotation rung up on it is freed through the box ──
   // The quotations rung up on the bill in progress — remembered against the bill's own reference, so a fresh bill has none.
-  const onBill: { billRef: string | undefined; ids: string[] } = { billRef: undefined, ids: [] };
+  // R9-A · OB-533: each with the bill head office holds it converted to (a recalled basket's are on the bill it was held from).
+  const onBill: { billRef: string | undefined; ids: string[]; saleOf: Record<string, string> } = { billRef: undefined, ids: [], saleOf: {} };
   const quotationsOnBill = (): readonly string[] => (onBill.billRef === session.billRef() ? [...onBill.ids] : []);
   const ringQuotationRemembered = async (quotationNumber: string): Promise<QuotationAtTill> => {
     const out = await ringQuotationAtTill(quotationNumber);
     if (out.ok && out.quotationId !== undefined) {
       const ref = session.billRef();
-      if (onBill.billRef !== ref) { onBill.billRef = ref; onBill.ids = []; }
-      if (!onBill.ids.includes(out.quotationId)) onBill.ids.push(out.quotationId);
+      if (onBill.billRef !== ref) { onBill.billRef = ref; onBill.ids = []; onBill.saleOf = {}; }
+      if (!onBill.ids.includes(out.quotationId)) { onBill.ids.push(out.quotationId); onBill.saleOf[out.quotationId] = ref; }
     }
     return out;
   };
+  // ── R9-A · OB-533 — begin: the held basket carries these; a recall attaches the basket's to the recalled bill ──
+  heldQuotations.onBill = () => quotationsOnBill().map((quotationId) => ({ quotationId, saleId: onBill.saleOf[quotationId] ?? session.billRef() }));
+  heldQuotations.attach = (quotations) => {
+    onBill.billRef = quotations.length === 0 ? undefined : session.billRef();
+    onBill.ids = quotations.map((q) => q.quotationId);
+    onBill.saleOf = Object.fromEntries(quotations.map((q) => [q.quotationId, q.saleId]));
+  };
+  // ── R9-A · OB-533 — end ──
   const cancelBillAtTill = billCancelAtTill({
     ops: {
       signedIn: () => session.operator() !== undefined,
@@ -2186,8 +2218,10 @@ export function bootPos(config?: {
       billRef: () => session.billRef(),
       liveLines: () => view.basket().filter((l) => !l.voided).map((l) => ({ lineId: l.lineId, productId: l.productId, description: l.description, valueMinor: l.amountMinor })),
       quotationsOnBill,
+      // R9-A · OB-533: a recalled basket's quotation is freed from the bill it was rung up on, not this bill's reference.
+      quotationBills: () => Object.fromEntries(quotationsOnBill().map((q) => [q, onBill.saleOf[q] ?? session.billRef()]).filter(([, sale]) => sale !== session.billRef())),
       voidLine: (lineId, reason) => { view.voidLine(lineId, reason); },
-      newSale: () => { onBill.billRef = undefined; onBill.ids = []; view.newSale(); },
+      newSale: () => { onBill.billRef = undefined; onBill.ids = []; onBill.saleOf = {}; view.newSale(); },
       newActivityId: () => `BV-${newRequestKey().slice(3)}`,
     },
     post: (body) => sendTillActivity(body, 'This till cannot reach its store computer, so the bill was not cancelled. The bill stays as it is.'),

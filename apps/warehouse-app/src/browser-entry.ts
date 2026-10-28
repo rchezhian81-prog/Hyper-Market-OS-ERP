@@ -21,7 +21,7 @@ import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { WarehouseSession, type WarehouseAssignment } from './warehouse-session';
 import { DsdDoorSession, type DsdDoorData } from './dsd-door';
-import { openNewWorkGate, bindNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
+import { openNewWorkGate, bindNewWorkGate, APP_BUILD_VERSION, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A) · OB-537 (R9)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -134,7 +134,8 @@ if (browserWindow !== undefined) {
     ...(storage === undefined ? {} : { storage }),
     ...(perf === undefined ? {} : { perfNow: () => perf.now() }),
   });
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.warehouseStorageProblem = why; }, stamping?.stamp);
+  // OB-537 (Round 9): every record this handheld queues carries the app build that made it.
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.warehouseStorageProblem = why; }, stamping?.stamp, APP_BUILD_VERSION);
   const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
   browserWindow.warehouseData = withChosenDelivery(browserWindow.warehouseData, new URLSearchParams(search).get('delivery'));
   browserWindow.warehouseOutbox = outbox;

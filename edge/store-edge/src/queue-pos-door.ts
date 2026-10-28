@@ -335,7 +335,8 @@ export function queuePosDoor(deps: QueuePosDoorDeps): QueuePosDoor {
         const b = parse(read.text);
         if (b === null) { sendJson(res, 400, { handedOver: false, refusedBecause: 'not_readable', laneMessage: 'The hand-over could not be read.' }); return; }
         if (pathname === QUEUE_POS_GIVE_UP) { sendJson(res, 200, await baskets.giveUp({ handheldLane: lane, by: selling.userId, code: b['code'], reason: b['reason'] })); return; }
-        sendJson(res, 200, await baskets.handOver({ handheldLane: lane, by: selling.userId, basketId: b['basketId'], lines: b['lines'], handheldTotalMinor: b['handheldTotalMinor'] }));
+        // OB-537 (Round 9): the build that made the basket rides with it; the box keeps (and flags) it, never refuses for it.
+        sendJson(res, 200, await baskets.handOver({ handheldLane: lane, by: selling.userId, basketId: b['basketId'], lines: b['lines'], handheldTotalMinor: b['handheldTotalMinor'], appVersion: b['appVersion'] }));
         return;
       }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { APP_BUILD_VERSION } from '../../packages/platform-admin/src/client-version';
 import { createQueueSession, type QueueBasketPorts, type QueueTill } from '../../apps/queue-pos/src/queue-session';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -43,7 +44,7 @@ describe('the queue till prices with the till\'s own session and remembers what 
     expect(p.sent).toEqual([{ basketId: expect.any(String), lines: [
       { productId: 'P-DAL', name: 'Toor dal 1kg', barcode: '8901234567890', quantityMinor: 1 },
       { productId: 'P-DAL', name: 'Toor dal 1kg', barcode: '8901234567890', quantityMinor: 1 },
-    ], handheldTotalMinor: 24_000 }]);
+    ], handheldTotalMinor: 24_000, appVersion: APP_BUILD_VERSION }]); // OB-537: the basket names the build that made it
     // Kept on the store computer: the basket clears here for the next customer.
     expect(q.till.basket()).toEqual([]);
   });

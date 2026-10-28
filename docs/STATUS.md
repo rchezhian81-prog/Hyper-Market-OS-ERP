@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-540 to OB-543
+## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-547
 
 **What happened**
 - An independent check of round 7 (OB-500 to OB-518) against the owner's wording found five places where a rule could be walked around, and two places where the build went beyond the decision. #830 was merged before the fixes were ready, so they come in this follow-up.
@@ -13,11 +13,11 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 **What changed**
 - **Till price cuts (OB-500):** repeated cuts on one line now count together against the manager's limit; a quantity change on a cut line is refused (void and re-ring); a held basket keeps its cut; the store computer works out the cut itself and refuses a figure that does not match.
 - **MRP on record (OB-512):** an MRP head office holds can no longer be dropped and re-sent with another figure; only the approved correction (reason + second person) changes a future MRP.
-- **Second person for risky new products (OB-503, OB-542):** a new age-limited or tobacco product needs another person's approval before it reaches the tills. Other products (milk, gold, BIS goods, carry bags) are published by one person, as the owner chose.
-- **Goods without an order (OB-509, OB-517, OB-543):** a "Deliveries waiting for their bill" section on the Supplier bills page matches a registered supplier bill to a delivery; units released later are valued at the bill; the accountant reaches it from the menu.
+- **Second person for risky new products (OB-503, OB-546):** a new age-limited or tobacco product needs another person's approval before it reaches the tills. Other products (milk, gold, BIS goods, carry bags) are published by one person, as the owner chose.
+- **Goods without an order (OB-509, OB-517, OB-547):** a "Deliveries waiting for their bill" section on the Supplier bills page matches a registered supplier bill to a delivery; units released later are valued at the bill; the accountant reaches it from the menu.
 - **Paused business orders (OB-514):** no order is made for a day the order was paused or not yet approved.
-- **Certificates (OB-502, OB-540):** only an expired food-handling certificate blocks food work; none on file does not.
-- **Quotations (OB-506, OB-541):** a quotation above today's till price is charged at the quoted price, never above the MRP.
+- **Certificates (OB-502, OB-544):** only an expired food-handling certificate blocks food work; none on file does not.
+- **Quotations (OB-506, OB-545):** a quotation above today's till price is charged at the quoted price, never above the MRP.
 - **A hidden fault:** switching a feature off and on in the same instant lost the "on" (the intermittent recurring-order test failure on #830).
 
 **Tests that ran (this box, synthetic data):** new tests for each fix (seen failing before the fix), the full default suite, the affected PostgreSQL and browser tests, typecheck and lint. Counts are in the pull request.
@@ -30,6 +30,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - A quotation can be rung up at another store, or used up with nothing rung.
 - When no minimum margin is set, a product's lowest allowed price at the till equals its buying cost (**owner decision needed**: what the floor should be then).
 - A line lowered by a quotation is flagged at head office as a cut beyond a manager's limit (**owner decision needed**).
+
+---
+
+## Round 9 (28 October 2026): the owner's decisions OB-532 to OB-539 built; OB-540 to OB-543 decided
+
+**What changed**
+- **Quotations:** a quotation on a product never bought at a known cost needs the owner's approval through the maker-checker engine; the quoter never approves (OB-532). A held basket carries its quotation; giving it up frees the quotation with who and why, queued offline and sent once; recall keeps it (OB-533).
+- **Receiving:** a "Match the bill" button on the goods-receipt screen, refused for the person who received the goods, English and Tamil (OB-534).
+- **Handhelds:** every warehouse, picker, driver and queue-till record carries the app version that made it; work on a withdrawn or too-old version is flagged on the store computer (offline) and listed by head office, never refused or dropped (OB-537).
+- **Rota:** when head office refuses the store PC's sign-in, the Rota shows the store computer's read-only copy and says why (OB-539).
+- Kept as built: OB-535, OB-536, OB-538, OB-541.
+
+**Tests that ran (this box, synthetic data)**
+- Unit + guardrails + integration + contract + security + migration on real PostgreSQL: 15,475 passed, 22 skipped, 3 failed under load; the 3 passed when re-run alone (19 of 19). Full browser suite: 659 of 659 passed. Type check clean.
+- Not run here: real hardware; staff UAT; live providers.
+
+**What is next**
+- Round 10 (being built): handheld version findings on the Devices page (OB-540); the accountant approves a no-floor quotation the owner makes himself (OB-542); the accountant can match bills on the goods-receipt screen (OB-543).
+
+**Blocked / needs the owner:** nothing new.
 
 ---
 
