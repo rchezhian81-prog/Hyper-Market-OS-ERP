@@ -4002,6 +4002,8 @@ export async function fetchWorkforceWorklist(): Promise<WorkforceWorklistData | 
 export interface FleetData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
+  /** OB-601: this store computer's own store — the Devices page asks head office for this store's findings only. */
+  readonly storeId?: string;
   readonly summary?: FleetSummaryRollup;
   readonly devices?: readonly FleetDeviceRow[];
 }
@@ -7062,7 +7064,7 @@ if (browserWindow !== undefined) {
     browserWindow.fleetSession = fleet;
     browserWindow.fleetOutbox = fleetOutbox;
     // R10-A · OB-540: head office's register of handheld work on a barred build, read through the store computer as this person.
-    browserWindow.fleetVersionExceptions = fleetVersionExceptionsPort(browserWindow.fleetData?.permissions);
+    browserWindow.fleetVersionExceptions = fleetVersionExceptionsPort(browserWindow.fleetData?.permissions, undefined, browserWindow.fleetData?.storeId);
   }
   // The products-to-publish review shares the SAME device-backed catalogue outbox the Save button commits to,
   // so exactly what was queued there is what is reviewed here. Its delivery port POSTs a ready publish under

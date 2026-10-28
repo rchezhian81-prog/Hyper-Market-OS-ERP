@@ -16,6 +16,9 @@ import { AccessControl } from '../../packages/rbac/src/rbac';
 import { permissionsForScreen, permissionForScreen } from '../../edge/store-edge/src/screen-server';
 import { goodsReceiptListPathFor, goodsReceiptPortsFromData, GOODS_RECEIPT_SCREEN_READ_PERMISSION } from '../../apps/web-erp/src/browser-entry';
 import { goodsReceiptRoutes } from '../../services/inventory/src/goods-receipt';
+import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
+import { handheldBuildExceptionsAdapter, handheldBuildRoutes, type HandheldBuildException } from '../../services/api/src/r9b-handheld-build-adapters';
+import { fleetPayload } from '../../edge/store-edge/src/screen-data';
 
 /**
  * **Round 10 · R10-A (owner, 28 Oct 2026).**
@@ -299,5 +302,48 @@ describe('OB-543: the accountant reads the goods-receipt screen through its own 
     expect(ports.mayMatchBill?.()).toBe(true);
     expect(ports.mayRecordReturn?.()).toBe(false);
     expect(goodsReceiptPortsFromData({ userId: 'u-cash', permissions: role('cashier').permissions }).mayRead()).toBe(false);
+  });
+});
+
+describe('OB-601: the handheld version register narrows to the branches the caller may see; the store PC asks for its own store', () => {
+  const finding = (exceptionId: string, store: string | null) => ({ ...FINDING, exceptionId, store, recordRef: `${exceptionId}#x` }) as unknown as HandheldBuildException;
+  const registerRead = async (scope: 'all' | readonly string[], query: Record<string, string> = {}) => {
+    const store = new InMemoryEventStore();
+    const register = handheldBuildExceptionsAdapter({ store });
+    for (const f of [finding('ex-s1', 'store-1'), finding('ex-s2', 'store-2')]) await register.record('t', f);
+    const route = handheldBuildRoutes({ store, now: () => '2030-06-01T05:00:00.000Z' }).find((r) => r.method === 'GET')!;
+    try {
+      const out = await route.handler({ tenantId: 't', userId: 'u', params: {}, query, body: undefined, scope } as unknown as Parameters<typeof route.handler>[0]);
+      return { status: out.status, ids: (out.body as { material: { exceptionId: string }[] }).material.map((m) => m.exceptionId) };
+    } catch (e) {
+      return { status: (e as { status?: number }).status, code: (e as { body?: { code?: string } }).body?.code };
+    }
+  };
+
+  it('a store-scoped reader sees only their store; naming it narrows; naming another store is refused by name', async () => {
+    expect(await registerRead(['store-1'])).toEqual({ status: 200, ids: ['ex-s1'] });
+    expect(await registerRead(['store-1'], { branchId: 'store-1' })).toEqual({ status: 200, ids: ['ex-s1'] });
+    expect(await registerRead(['store-1'], { branchId: 'store-2' })).toEqual({ status: 403, code: 'scope_not_held' });
+  });
+
+  it('a company-wide reader sees every store, or the one they name', async () => {
+    expect(await registerRead('all')).toEqual({ status: 200, ids: ['ex-s1', 'ex-s2'] });
+    expect(await registerRead('all', { branchId: 'store-2' })).toEqual({ status: 200, ids: ['ex-s2'] });
+  });
+
+  it('the store PC\'s Devices section asks head office for its own store', async () => {
+    const seen: string[] = [];
+    const fetchFn = (async (url: string) => { seen.push(url); return new Response('{"material":[],"informational":0}', { status: 200 }); }) as unknown as typeof globalThis.fetch;
+    await fleetVersionExceptionsPort(['platform.health.read'], fetchFn, 'store-1').read();
+    await readVersionExceptions(fetchFn);
+    expect(seen).toEqual([`${VERSION_EXCEPTIONS_PATH}?branchId=store-1`, VERSION_EXCEPTIONS_PATH]);
+    // A refusal for a store the person may not see is said by name, never an empty list.
+    expect(await readVersionExceptions(respond(403, { error: { code: 'scope_not_held', whatHappened: 'This account\'s authority does not reach "store-2".' } }), 'store-2'))
+      .toEqual({ state: 'refused', status: 403, code: 'scope_not_held', en: 'This account\'s authority does not reach "store-2".', ta: null });
+  });
+
+  it('the store computer tells the Devices page its own store', () => {
+    const payload = fleetPayload({ pack: { fleetPolicy: { known: true, value: { permissions: [] } }, policies: { known: true, value: { branchId: 'store-1', storeId: 'store-1' } } } } as unknown as Parameters<typeof fleetPayload>[0]);
+    expect(payload).toMatchObject({ storeId: 'store-1' });
   });
 });

@@ -145676,7 +145676,8 @@
           "material",
           "informational",
           "informationalExceptions",
-          "asAt"
+          "asAt",
+          "branchId"
         ],
         "properties": {
           "material": {
@@ -145696,6 +145697,16 @@
           },
           "asAt": {
             "type": "string"
+          },
+          "branchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "additionalProperties": true,

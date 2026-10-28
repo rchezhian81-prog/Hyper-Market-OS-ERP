@@ -160,11 +160,13 @@ function wordsOf(body: unknown): { readonly code: string | null; readonly en: st
  * OB-540: read head office's register through the store computer, as the person signed in (`credentials: 'same-origin'`).
  * Every failure is a named state; nothing is ever read as an empty, healthy list.
  */
-export async function readVersionExceptions(fetchFn: typeof globalThis.fetch | undefined = (globalThis as { fetch?: typeof fetch }).fetch): Promise<VersionExceptionsRead> {
+export async function readVersionExceptions(fetchFn: typeof globalThis.fetch | undefined = (globalThis as { fetch?: typeof fetch }).fetch, storeId?: string): Promise<VersionExceptionsRead> {
   if (fetchFn === undefined) return { state: 'unreachable' };
+  // OB-601: the store PC asks for its own store; head office narrows to what the person may see and refuses any other.
+  const path = storeId === undefined || storeId.trim() === '' ? VERSION_EXCEPTIONS_PATH : `${VERSION_EXCEPTIONS_PATH}?branchId=${encodeURIComponent(storeId.trim())}`;
   let res: Response;
   try {
-    res = await fetchFn(VERSION_EXCEPTIONS_PATH, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    res = await fetchFn(path, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
   } catch {
     return { state: 'unreachable' }; // no connection, or the store computer could not reach head office (it drops the call)
   }
@@ -270,11 +272,11 @@ export interface FleetVersionExceptionsPort {
 }
 
 /** OB-540: the port for this reader — reads only when they hold the Devices page's own word. */
-export function fleetVersionExceptionsPort(permissions: readonly string[] | undefined, fetchFn?: typeof globalThis.fetch): FleetVersionExceptionsPort {
+export function fleetVersionExceptionsPort(permissions: readonly string[] | undefined, fetchFn?: typeof globalThis.fetch, storeId?: string): FleetVersionExceptionsPort {
   const mayRead = (permissions ?? []).includes(VERSION_EXCEPTIONS_READ_PERMISSION);
   return {
     mayRead,
-    read: () => (mayRead ? readVersionExceptions(fetchFn ?? (globalThis as { fetch?: typeof fetch }).fetch) : Promise.resolve({ state: 'not_permitted' })),
+    read: () => (mayRead ? readVersionExceptions(fetchFn ?? (globalThis as { fetch?: typeof fetch }).fetch, storeId) : Promise.resolve({ state: 'not_permitted' })),
     view: (lang, read) => presentVersionExceptions(lang, read),
   };
 }

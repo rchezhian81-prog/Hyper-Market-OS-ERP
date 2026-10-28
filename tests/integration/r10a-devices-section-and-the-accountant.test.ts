@@ -7,13 +7,13 @@ import { createQuotationsSession } from '../../apps/web-erp/src/quotations-sessi
 import { fetchGoodsReceipt, goodsReceiptPortsFromData, goodsReceiptListPathFor } from '../../apps/web-erp/src/browser-entry';
 import { createGoodsReceiptSession } from '../../apps/web-erp/src/goods-receipt-session';
 import { openGrnBillMatchPort } from '../../apps/web-erp/src/goods-receipt-bill-match';
-import { fleetVersionExceptionsPort } from '../../apps/web-erp/src/fleet-version-exceptions';
+import { fleetVersionExceptionsPort, presentVersionExceptions } from '../../apps/web-erp/src/fleet-version-exceptions';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 
 /**
  * **Round 10 · R10-A — by the owner's decisions of 28 Oct 2026, on head office's real routes — in memory and, with DATABASE_URL,
  * on real PostgreSQL, each with a cold restart.**
- *   • OB-540: the Devices page's section reads head office's register of handheld work on a barred build (a queue-till basket
+ *   • OB-540 / OB-601: the Devices page's section reads ONLY its store's findings from head office's register of handheld work on a barred build (a queue-till basket
  *     reported through the real route), as the person; a reader without the Devices word is told so; after a restart too.
  *   • OB-542: the OWNER's own quotation on a product with no known floor is approved by the ACCOUNTANT of that store through the
  *     maker-checker engine — never by the owner himself, a store manager, or an accountant of another store.
@@ -27,7 +27,7 @@ const savedFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = savedFetch; });
 
 const STORE = 'store-1';
-const OWNER = 'u-owner'; const MANAGER = 'u-mgr'; const ACCOUNTANT = 'u-acct'; const ACCOUNTANT_ELSEWHERE = 'u-acct-s2'; const CASHIER = 'u-cash'; const BOX = 'u-box';
+const OWNER = 'u-owner'; const MANAGER = 'u-mgr'; const ACCOUNTANT = 'u-acct'; const ACCOUNTANT_ELSEWHERE = 'u-acct-s2'; const CASHIER = 'u-cash'; const BOX = 'u-box'; const BOX_ELSEWHERE = 'u-box-s2'; const MANAGER_ELSEWHERE = 'u-mgr-s2';
 type Res = { status: number; body: unknown };
 
 /** A browser's same-origin fetch (as the store computer carries it to head office), answered by the harness as one person. */
@@ -159,32 +159,48 @@ describe.each(backings)('R10-A — on $name', ({ harness }) => {
     let h = harness();
     const T = randomUUID();
     await quotingShop(h, T);
-    // The store computer reports a queue-till basket handed over on a build its signed pack withdraws.
-    const reported = await h.request({
-      method: 'POST', path: '/v1/platform/handheld-work/queue-baskets/QB-1/build/synced', userId: BOX, tenantId: T, branchId: STORE, idempotencyKey: `k-${randomUUID()}`,
-      body: { basketId: 'QB-1', handheldLane: 'queue-1', handedOverBy: 'u-cash', handedOverAt: '2030-06-01T04:30:00.000Z', reportedBuild: { client: 'queue_till', appVersion: '0.9.0', storeComputerVersionCheck: { verdict: 'version_killed', reported: '0.9.0', minimumSupportedVersion: null } } },
-    });
-    expect(reported.status, JSON.stringify(reported.body)).toBe(200);
-    expect(reported.body).toMatchObject({ flagged: true, severity: 'material' });
+    // Each store computer reports a queue-till basket handed over on a build its signed pack withdraws (store-1 and store-2).
+    await h.provisionRole(T, BOX_ELSEWHERE, 'store_computer', ['store-2']);
+    await h.provisionRole(T, MANAGER_ELSEWHERE, 'store_manager', ['store-2']);
+    for (const [box, branchId, basketId] of [[BOX, STORE, 'QB-1'], [BOX_ELSEWHERE, 'store-2', 'QB-9']] as const) {
+      const reported = await h.request({
+        method: 'POST', path: `/v1/platform/handheld-work/queue-baskets/${basketId}/build/synced`, userId: box, tenantId: T, branchId, idempotencyKey: `k-${randomUUID()}`,
+        body: { basketId, handheldLane: 'queue-1', handedOverBy: 'u-cash', handedOverAt: '2030-06-01T04:30:00.000Z', reportedBuild: { client: 'queue_till', appVersion: '0.9.0', storeComputerVersionCheck: { verdict: 'version_killed', reported: '0.9.0', minimumSupportedVersion: null } } },
+      });
+      expect(reported.status, JSON.stringify(reported.body)).toBe(200);
+      expect(reported.body).toMatchObject({ flagged: true, severity: 'material' });
+    }
 
-    const section = async (userId: string, roleId: string) => {
-      const port = fleetVersionExceptionsPort(permissionsOf(roleId), asPerson(() => h, T, userId, STORE));
+    // The store PC's Devices section asks for ITS store (OB-601).
+    const section = async (userId: string, roleId: string, storeId: string | null = STORE, workingIn?: string) => {
+      const port = fleetVersionExceptionsPort(permissionsOf(roleId), asPerson(() => h, T, userId, workingIn), storeId ?? undefined);
       return { port, read: await port.read() };
     };
+    const refs = (read: Awaited<ReturnType<typeof section>>['read']): string[] => (read.state === 'read' ? read.material.map((m) => m.recordRef ?? '') : []);
     const owner = await section(OWNER, 'owner');
     expect(owner.read).toMatchObject({ state: 'read', unreadable: 0 });
+    expect(refs(owner.read)).toEqual(['queue-1/QB-1']); // the owner, on store-1's PC: store-1 only
     const en = owner.port.view('en', owner.read);
     expect(en.rows).toEqual([expect.objectContaining({ kind: 'Queue till', version: '0.9.0', what: 'A queue-till basket handed over (record queue-1/QB-1)', finding: 'Version withdrawn by head office (the store computer marked it too)' })]);
     expect(owner.port.view('ta', owner.read).rows[0]).toMatchObject({ kind: 'வரிசைக் கல்லா', what: 'வரிசைக் கல்லா கூடை ஒப்படைப்பு (பதிவு queue-1/QB-1)' });
+    // Company-wide, asking for no store: every store; naming store-2: store-2's.
+    expect(refs((await section(OWNER, 'owner', null)).read).sort()).toEqual(['queue-1/QB-1', 'queue-1/QB-9']);
+    expect(refs((await section(OWNER, 'owner', 'store-2')).read)).toEqual(['queue-1/QB-9']);
+
+    // A store-2 manager sees only store-2 — even asking for nothing; asking for store-1 is refused by name, never emptied.
+    expect(refs((await section(MANAGER_ELSEWHERE, 'store_manager', null, 'store-2')).read)).toEqual(['queue-1/QB-9']);
+    const refused = (await section(MANAGER_ELSEWHERE, 'store_manager', STORE, 'store-2')).read;
+    expect(refused).toMatchObject({ state: 'refused', status: 403, code: 'scope_not_held' });
+    expect(presentVersionExceptions('en', refused).status).toContain('head office refused to show the list');
 
     // A cashier does not hold the Devices page's word: told so, nothing read. If one did ask, head office refuses (403).
     const cashier = await section(CASHIER, 'cashier');
     expect(cashier.read).toEqual({ state: 'not_permitted' });
     expect((await h.request({ method: 'GET', path: '/v1/platform/handheld-work/version-exceptions', userId: CASHIER, tenantId: T })).status).toBe(403);
 
-    // Cold restart: the same finding is on head office's register; the section reads it again.
+    // Cold restart: the same findings are on head office's register, still narrowed.
     h = harness(h);
-    const again = await section(OWNER, 'owner');
-    expect(again.read.state === 'read' ? again.read.material.map((m) => m.recordRef) : []).toEqual(['queue-1/QB-1']);
+    expect(refs((await section(OWNER, 'owner')).read)).toEqual(['queue-1/QB-1']);
+    expect(refs((await section(MANAGER_ELSEWHERE, 'store_manager', null, 'store-2')).read)).toEqual(['queue-1/QB-9']);
   }, 120_000);
 });
