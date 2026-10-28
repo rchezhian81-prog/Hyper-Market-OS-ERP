@@ -5,6 +5,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Final roadmap re-audit (28 October 2026): nothing partial; four small follow-ups for the owner
+- **What changed:** a read-only check at `main` edeb0a03 (`docs/audit/REAUDIT-2026-10-28.md`, lane tables in `docs/audit/reaudit-2026-10-28/`). The roadmap now has 390 distinct rows: 343 done, 0 partial, 0 missing, 0 decision, 41 external, 6 deferred to R8 in writing. The old total of 391 counted QG-11 twice.
+  - §31.1 clock drift, D03-FR-03 and WF-18 are DONE.
+  - QG-02 and QG-04 are now EXTERNAL.
+  - Every one of the 19 owner decisions from OB-403 to OB-434 that needed building is built, tested and traced.
+- **Tests:** the whole default suite on `main` passed: 14,127 tests, 577 skipped (PostgreSQL legs), 0 failed.
+- **Next:** the owner's answers to F-1 to F-4. Then the store pilot (Stage 12), which is all outside pieces.
+- **Blocked:** nothing in software. The 41 external rows wait on hardware, providers, the CA, staff and the pen test.
+- **Owner decisions needed:**
+  - F-1: OB-413 Tamil alerts. Its R4 target is in the past.
+  - F-2: the flaky camera-switch browser test.
+  - F-3: two untested OB-412 rules.
+  - F-4: two records fixes.
+
 ## GST answers OB-433 and OB-434 (28 October 2026)
 - **What changed:**
   - **OB-433:** the owner confirmed the B2CL line: more than ₹1,00,000 for invoices from 1 Aug 2024, more than ₹2,50,000 before. Nothing to build.
