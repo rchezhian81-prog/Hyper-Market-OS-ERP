@@ -8,6 +8,7 @@
 // from main.ts: `financeBridgeRoutes` (routes), `finBridgeJournalHooks` / `finBridgeEvidenceHooks` (spread into existing
 // route deps), `finBridgeCloseChecks` (one line in the close's book checks) and `finBridgeSweep` (the worker's pass).
 
+import { renderAlert, type AlertText } from '../../../packages/ops/src/alert-words';
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
@@ -63,7 +64,9 @@ const accountClassesOf = (input: Base, tenantId: string): Promise<Readonly<Recor
   periodBooksAdapter(input).accountClasses(tenantId);
 
 /** Raise one alert to every owner of the shop, once while it is open (the same lifecycle every owner alert rides). */
-async function raiseToOwners(store: EventStore, now: () => string, tenantId: string, alertId: string, component: string, detail: string, by: string, at: string, key: string): Promise<boolean> {
+/** OB-435: the alert's words structured — its detail and its component — so it reads in Tamil too (the English stays as passed). */
+export interface OwnerAlertWords { readonly text?: AlertText; readonly componentText?: AlertText }
+async function raiseToOwners(store: EventStore, now: () => string, tenantId: string, alertId: string, component: string, detail: string, by: string, at: string, key: string, words: OwnerAlertWords = {}): Promise<boolean> {
   const lifecycle = alertLifecycleAdapter({ store, now });
   const owners = [...new Set((await effectiveGrants(store, tenantId)).filter((g) => g.roleId === OWNER_ROLE_ID).map((g) => g.userId))].sort();
   if (owners.length === 0) return false;
@@ -71,7 +74,12 @@ async function raiseToOwners(store: EventStore, now: () => string, tenantId: str
   if (current !== undefined && current.state !== 'cleared') return false;
   const event: AlertLifecycleEvent = {
     alertId, change: 'raised', by, at,
-    alert: { alertId, component, status: 'degraded', ownerUserId: owners[0]!, ownerName: owners[0]!, detail, raisedAt: at, ackDueBy: at, ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}) },
+    alert: {
+      alertId, component, status: 'degraded', ownerUserId: owners[0]!, ownerName: owners[0]!, detail, raisedAt: at, ackDueBy: at, ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
+      // OB-435: only when the structured words say exactly the English passed (never a Tamil twin of different words).
+      ...(words.text !== undefined && renderAlert(words.text, 'en') === detail ? { text: words.text } : {}),
+      ...(words.componentText !== undefined && renderAlert(words.componentText, 'en') === component ? { componentText: words.componentText } : {}),
+    },
   };
   await lifecycle.recordAlertEvent(tenantId, event, `${alertId}|${key}|${current?.clearedAt ?? 'first'}`);
   return true;

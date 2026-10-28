@@ -25,6 +25,7 @@ import {
   type OwnedException, type ExceptionOwnerRole, type ExceptionSlaPolicy,
 } from '../../../packages/orders/src/substitution-exception-ownership';
 import type { OrdersDeps, StoredSubstitution } from './index';
+import { renderAlert, alertText, languageOrEnglish } from '../../../packages/ops/src/alert-words';
 
 export interface ExceptionOwnershipDeps {
   /** Every owned exception the tenant has acted on — latest per exception id. */
@@ -46,6 +47,11 @@ export interface ExceptionOwnershipDeps {
    * dead letter and budget). Idempotent on the alert's id; answers whether it was newly queued.
    */
   readonly enqueueBreachAlert?: (tenantId: string, alert: BreachAlert) => Promise<boolean> | boolean;
+  /**
+   * OB-439: the language this person's alert text messages go in (the English/Tamil choice on their staff record). Absent,
+   * or nothing recorded for them: English. One language per message — never both.
+   */
+  readonly alertLanguageOf?: (tenantId: string, userId: string) => Promise<'en' | 'ta'> | 'en' | 'ta';
 }
 
 /**
@@ -81,8 +87,6 @@ export interface BreachAlertSweep {
   readonly breached: number;
 }
 
-const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
-
 /**
  * M19-FR-04 SLA management · PA-08 · owner decision OB-61 (round 9): every unresolved exception past its time limit
  * raises an alert on the message queue — to the person HOLDING it (who claimed it, from the stored record), and only when
@@ -109,8 +113,11 @@ export async function raiseBreachAlerts(deps: OrdersDeps & ExceptionOwnershipDep
     if (people.length === 0) { nobodyToTell.push(o.exceptionId); continue; }
     for (const to of people) {
       const id = `subx-${o.exceptionId}-${o.owner}-${to}`;
-      const text = `Delivery exception past its time limit: order ${o.orderId} line ${o.lineId} — ${o.kind.replace(/_/g, ' ')}, ${rupees(o.amountMinor)} at stake, `
-        + `in the ${o.owner.replace(/_/g, ' ')} queue${o.assignedTo === undefined ? ' (nobody has claimed it — you are the duty manager)' : `, held by you (${o.assignedTo})`}; it was due by ${sla.dueAt}. Open Delivery exceptions to work it.`;
+      // OB-435 · OB-439: in the recipient's own language (English unless their staff record says Tamil); the English is as before.
+      const lang = deps.alertLanguageOf === undefined ? 'en' : languageOrEnglish(await deps.alertLanguageOf(tenantId, to));
+      const text = renderAlert(alertText('delivery.breach', {
+        orderId: o.orderId, lineId: o.lineId, kind: o.kind, amountMinor: o.amountMinor, queue: o.owner, assignedTo: o.assignedTo ?? null, dueAt: sla.dueAt,
+      }), lang);
       if (await deps.enqueueBreachAlert(tenantId, { id, to, exceptionId: o.exceptionId, owner: o.owner, text, at: now, by })) queued.push({ exceptionId: o.exceptionId, to, id, as });
       else alreadyQueued += 1;
     }

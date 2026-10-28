@@ -87,6 +87,8 @@ const WORDS = {
   },
 };
 let lang = 'en';
+// OB-435 · OB-439: an alert line in the app's language — its Tamil twin when the brief carries one, else its English.
+const said = (item) => (item.words && typeof item.words[lang] === 'string' && item.words[lang] !== '' ? item.words[lang] : item.sentence);
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 
 /**
@@ -175,7 +177,7 @@ function sampleSession() {
       freshness: { state: 'stale', ageSeconds: 39_600, lastSyncedAt: null, asOf: '' },
       headline: '3 bills today, ₹472.00 taken, margin ₹148.00 (31.4%). These numbers are NOT live — the branch has not synced recently.',
       attention: [{ rank: 1, source: 'approval', sentence: 'Approval waiting: purchase order from Karthik for ₹8,12,000.00.', ref: 'a1' }],
-      alerts: [{ kind: 'void', severity: 'escalate', count: 9, totalValueMinor: 0, linkedTxnIds: ['t-1', 't-2', 't-3'], sentence: 'Urgent: voided bills over the limit — 3 transactions.' }],
+      alerts: [{ kind: 'void', severity: 'escalate', count: 9, totalValueMinor: 0, linkedTxnIds: ['t-1', 't-2', 't-3'], sentence: 'Urgent: voided bills over the limit — 3 transactions.', words: { en: 'Urgent: voided bills over the limit — 3 transactions.', ta: 'அவசரம்: வரம்பை மீறிய ரத்து செய்த பில்கள் — 3 பரிவர்த்தனை(கள்).' } }],
       approvals: approvals.filter((a) => !decided.has(a.id)),
     }),
     drill: (kpi) => ({ kpi, lines: sales, totalMinor: gross, countIsTheAnswer: kpi === 'baskets' }),
@@ -279,7 +281,7 @@ function renderAttention(items) {
     rank.className = 'rank';
     rank.textContent = `#${item.rank} · ${item.source === 'approval' ? t('approval') : t('exception')}`;
     const body = document.createElement('span');
-    body.textContent = item.sentence;
+    body.textContent = said(item);
     card.append(rank, body);
     // Tapping goes to the thing itself. The old version opened a system dialog with a raw id in
     // it, which is a dead end wearing the clothes of an action.
@@ -327,7 +329,7 @@ function renderAlerts(alerts) {
     row.type = 'button';
     row.className = 'alert';
     const line = document.createElement('span');
-    line.textContent = alert.sentence;
+    line.textContent = said(alert);
     const drill = document.createElement('span');
     drill.className = 'drill';
     drill.textContent = `${alert.linkedTxnIds.length} ${t('transactions')}`;
@@ -339,7 +341,7 @@ function renderAlerts(alerts) {
 
 function showAlert(alert) {
   // The transactions behind the alert, in the panel rather than a system dialog.
-  el('drill-title').textContent = alert.sentence;
+  el('drill-title').textContent = said(alert);
   el('drill-total-label').textContent = t('transactions');
   el('drill-total').textContent = String(alert.linkedTxnIds.length);
   el('drill-note').textContent = '';

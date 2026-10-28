@@ -14,6 +14,7 @@ import { capacityRoutes, type CapacityPlan, type CapacityMeasure, type MeasuredV
 import type { IncidentFact } from '../../platform/src/ops-incidents';
 import { STREAM, streamName, SUPPRESSIONS_STREAM, effectiveGrants } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
+import { told, alertText } from '../../../packages/ops/src/alert-words';
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 
@@ -103,9 +104,9 @@ export function opsMessagingSweep(input: Base): (tenantId: string, at: string) =
   return async (tenantId, at) => {
     let raised = 0;
     for (const c of certInOverdue(await payloads<CertInFact>(input.store, tenantId, CERT_IN(), 'CertInFact'), at)) {
+      const words = told('certIn.overdue', { incident: c.incidentId, category: c.category, reportBy: c.reportBy, noticedAt: c.noticedAt });
       const ok = await finBridgeRaiseToOwners(input.store, input.now, tenantId, `cert-in-overdue:${c.incidentId}`, `CERT-In report — incident ${c.incidentId}`,
-        `The CERT-In report for incident ${c.incidentId} (${c.category}) was due by ${c.reportBy} — six hours from when it was noticed (${c.noticedAt}). Report it now and record the reference.`,
-        'system:cert-in-clock', at, c.incidentId);
+        words.detail, 'system:cert-in-clock', at, c.incidentId, { text: words.text, componentText: alertText('certIn.component', { incident: c.incidentId }) });
       if (ok) raised += 1;
     }
     return raised;

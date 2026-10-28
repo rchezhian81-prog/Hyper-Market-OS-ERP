@@ -25,6 +25,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { raiseOwnerAlerts, type ExceptionEvent, type ExceptionKind, type OwnerThresholds, type OwnerAlert } from '../../../packages/owner-control/src/index';
+import { alertWords } from '../../../packages/ops/src/alert-words';
 
 export const THRESHOLD_KINDS: readonly ExceptionKind[] = Object.freeze(['large_discount', 'voided_bill', 'price_override', 'after_hours_login', 'cash_short', 'failed_sign_in']);
 
@@ -269,7 +270,8 @@ export function ownerExceptionRoutes(deps: OwnerExceptionsDeps): readonly Route[
           status: 200,
           body: {
             tradingDay: day, kinds, thresholds: board,
-            alerts: alerts.map((a) => ({ ...a, inboxId: ownerExceptionAlertId(day, a), inOwnersInbox: inInbox.has(ownerExceptionAlertId(day, a)) })),
+            // OB-435 · OB-439: each headline in both languages, for the page's English/Tamil button.
+            alerts: alerts.map((a) => ({ ...a, headlineWords: alertWords(a.headlineText, a.headline), inboxId: ownerExceptionAlertId(day, a), inOwnersInbox: inInbox.has(ownerExceptionAlertId(day, a)) })),
             asAt: deps.now(),
           },
         };

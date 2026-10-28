@@ -40,6 +40,8 @@ export interface Replacement {
 export interface Finding {
   readonly storeId: string; readonly kind: 'report_refused' | 'at_risk_not_checked' | 'unused_number_received'; readonly prefix: string;
   readonly through?: number; readonly count?: number; readonly ranges?: readonly (readonly [number, number])[]; readonly since: string; readonly detail: string;
+  /** OB-435 · OB-439: the detail in English and Tamil, as head office sends it (absent from an older one: English only). */
+  readonly words?: { readonly en: string; readonly ta: string };
 }
 /** One of this person's "store computer replaced" requests on the approvals engine. */
 export interface ReplacementRequest {

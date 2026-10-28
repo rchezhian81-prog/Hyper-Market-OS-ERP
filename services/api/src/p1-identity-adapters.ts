@@ -30,7 +30,8 @@ import { resolvePrice, type PriceEntry } from '../../../packages/price-list/src/
 import { departmentOfCategory, withinDepartmentScope } from '../../../packages/org/src/departments';
 import { limitedSubjectOf, isEscalatingSubject, mayApproveValue, authorityWords, priceChangeSize, type Authority } from '../../../packages/approvals/src/authority-rules';
 import { setupItem, validateSetupAnswer } from '../../../packages/tenant/src/setup';
-import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { eventWords, type AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { told, alertText, partOf } from '../../../packages/ops/src/alert-words';
 import type { IncomingSale } from '../../pos/src/index';
 import type { PersonSignIn } from '../../identity/src/people';
 import { delegationRoutes } from '../../identity/src/delegation';
@@ -168,11 +169,13 @@ export function escalationDeps(input: Base): ApprovalEscalationDeps {
       }
       for (const po of await purchaseOrdersAdapter({ store, now }).all(tenantId)) {
         if (po.status !== 'proposed') continue;
-        out.push({ requestId: `po:${po.poId}`, source: 'purchase_order', kind: 'purchase_order', limitedAs: 'purchase_order', requestedAt: po.at, requestedBy: po.requisitionedBy, valueMinor: po.totalMinor, summary: `Purchase order ${po.number} to ${po.supplierId}` });
+        const summary = told('approval.summary.po', { number: po.number, supplier: po.supplierId });
+        out.push({ requestId: `po:${po.poId}`, source: 'purchase_order', kind: 'purchase_order', limitedAs: 'purchase_order', requestedAt: po.at, requestedBy: po.requisitionedBy, valueMinor: po.totalMinor, summary: summary.detail, summaryText: summary.text });
       }
       for (const r of await adjustmentRequestAdapter({ store, now }).requests(tenantId)) {
         if (r.status !== 'pending') continue;
-        out.push({ requestId: `adj:${r.requestId}`, source: 'approval_engine', kind: 'stock_adjustment', limitedAs: 'stock_adjustment', requestedAt: r.at, requestedBy: r.requestedBy, valueMinor: r.valueMinor, summary: `Stock adjustment of ${r.productId} at ${r.locationId}` });
+        const summary = told('approval.summary.adjustment', { product: r.productId, location: r.locationId });
+        out.push({ requestId: `adj:${r.requestId}`, source: 'approval_engine', kind: 'stock_adjustment', limitedAs: 'stock_adjustment', requestedAt: r.at, requestedBy: r.requestedBy, valueMinor: r.valueMinor, summary: summary.detail, summaryText: summary.text });
       }
       return out;
     },
@@ -189,12 +192,13 @@ export function escalationDeps(input: Base): ApprovalEscalationDeps {
       const owners = await ownersOf(tenantId);
       if (owners.length === 0) return false;
       const alertId = `${APPROVAL_AGE_ALERT_PREFIX}${e.requestId}`;
-      const hours = (m: number) => (m % 60 === 0 ? `${m / 60} hour${m === 60 ? '' : 's'}` : `${m} minutes`);
+      // OB-435: a summary someone typed (an approval request's own) is kept as it was written; one head office made is translated.
+      const summary = partOf(e.summaryText, e.summary);
       const event: AlertLifecycleEvent = {
         alertId, change: 'raised', by: 'system:approval-age', at: e.escalatedAt,
         alert: {
-          alertId, component: `Approval waiting: ${e.summary}`, status: 'degraded', ownerUserId: owners[0]!, ownerName: owners[0]!,
-          detail: `${e.summary}${e.valueMinor === null ? '' : ` (₹${(e.valueMinor / 100).toFixed(2)})`}, asked by ${e.requestedBy}, has waited ${hours(e.waitedMinutes)} — longer than the ${hours(e.waitMinutes)} allowed for a ${e.limitedAs.replace('_', ' ')}. It has come to you to decide.`,
+          alertId, component: `Approval waiting: ${e.summary}`, componentText: alertText('approval.component', { summary }), status: 'degraded', ownerUserId: owners[0]!, ownerName: owners[0]!,
+          ...told('approval.age', { summary, valueMinor: e.valueMinor, by: e.requestedBy, waitedMinutes: e.waitedMinutes, waitMinutes: e.waitMinutes, subject: e.limitedAs }),
           raisedAt: e.escalatedAt, ackDueBy: e.escalatedAt,
           ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
         },
@@ -207,7 +211,7 @@ export function escalationDeps(input: Base): ApprovalEscalationDeps {
       const alertId = `${APPROVAL_AGE_ALERT_PREFIX}${e.requestId}`;
       const current = (await lifecycle.alerts(tenantId)).find((a) => a.alert.alertId === alertId);
       if (current === undefined || current.state === 'cleared') return false;
-      await lifecycle.recordAlertEvent(tenantId, { alertId, change: 'cleared', by: 'system:approval-age', at, detail: 'the approval has been decided' }, `${alertId}|cleared`);
+      await lifecycle.recordAlertEvent(tenantId, { alertId, change: 'cleared', by: 'system:approval-age', at, ...eventWords(told('approval.cleared')) }, `${alertId}|cleared`);
       return true;
     },
   };

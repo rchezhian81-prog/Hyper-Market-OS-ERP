@@ -25,6 +25,14 @@
 // must be told, in the same breath, that they are eight hours old.
 //
 // Pure and deterministic: the clock is injected, nothing is sent from here.
+//
+// OB-435: each alert's headline is structured (`headlineText`) and rendered in English into `headline`, word for word.
+
+import { told, type AlertText } from '../../ops/src/alert-words';
+
+/** OB-435: the headline in English and its structured twin, from `told(...)`. */
+const headlineOf = (w: { readonly detail: string; readonly text: AlertText }): { readonly headline: string; readonly headlineText: AlertText } =>
+  ({ headline: w.detail, headlineText: w.text });
 
 export type ExceptionKind =
   | 'large_discount'
@@ -72,6 +80,8 @@ export interface OwnerAlert {
   readonly severity: AlertSeverity;
   /** Plain English, written for a phone screen. */
   readonly headline: string;
+  /** OB-435: the headline, structured — rendered in English into `headline`, and in Tamil for a Tamil reader. */
+  readonly headlineText?: AlertText;
   readonly count: number;
   readonly valueMinor: number;
   readonly branchId: string;
@@ -132,10 +142,9 @@ export function raiseOwnerAlerts(input: {
           valueMinor: bigValue,
           transactionRefs: big.map((e) => e.transactionRef),
           severity: bigValue >= t.largeDiscountMinor * 5 ? 'urgent' : 'attention',
-          headline:
-            big.length === 1
-              ? `${first.actorId} gave a discount of ${big[0]!.valueMinor} at ${first.branchId}`
-              : `${first.actorId} gave ${big.length} large discounts at ${first.branchId}, ${bigValue} in total`,
+          ...headlineOf(big.length === 1
+            ? told('owner.exception.discountOne', { actor: first.actorId, value: big[0]!.valueMinor, branch: first.branchId })
+            : told('owner.exception.discountMany', { actor: first.actorId, count: big.length, branch: first.branchId, total: bigValue })),
         });
         break;
       }
@@ -144,7 +153,7 @@ export function raiseOwnerAlerts(input: {
         alerts.push({
           ...shared,
           severity: rows.length >= t.voidedBillCount * 2 ? 'urgent' : 'attention',
-          headline: `${first.actorId} voided ${rows.length} bills at ${first.branchId} worth ${value}`,
+          ...headlineOf(told('owner.exception.voids', { actor: first.actorId, count: rows.length, branch: first.branchId, value })),
         });
         break;
       }
@@ -153,7 +162,7 @@ export function raiseOwnerAlerts(input: {
         alerts.push({
           ...shared,
           severity: 'attention',
-          headline: `${first.actorId} overrode the price ${rows.length} times at ${first.branchId}`,
+          ...headlineOf(told('owner.exception.overrides', { actor: first.actorId, count: rows.length, branch: first.branchId })),
         });
         break;
       }
@@ -168,7 +177,7 @@ export function raiseOwnerAlerts(input: {
           transactionRefs: outside.map((e) => e.transactionRef),
           // Somebody in the system when the shop is shut is always worth a look.
           severity: 'urgent',
-          headline: `${first.actorId} signed in at ${first.branchId} outside trading hours (${outside.length} time(s))`,
+          ...headlineOf(told('owner.exception.afterHours', { actor: first.actorId, branch: first.branchId, count: outside.length })),
         });
         break;
       }
@@ -179,7 +188,7 @@ export function raiseOwnerAlerts(input: {
           ...shared,
           // A lockout means somebody kept guessing — always worth a look today.
           severity: locked ? 'urgent' : 'attention',
-          headline: `${first.actorId} failed to sign in ${rows.length} time(s) at ${first.branchId}${locked ? ' and was locked out' : ''}`,
+          ...headlineOf(told('owner.exception.failedSignIn', { actor: first.actorId, count: rows.length, branch: first.branchId, locked })),
         });
         break;
       }
@@ -194,10 +203,9 @@ export function raiseOwnerAlerts(input: {
           valueMinor: shortValue,
           transactionRefs: short.map((e) => e.transactionRef),
           severity: short.length > 1 ? 'urgent' : 'attention',
-          headline:
-            short.length === 1
-              ? `${first.branchId} till was ${shortValue} short on ${first.actorId}'s shift`
-              : `${first.actorId} was short on ${short.length} shifts at ${first.branchId}, ${shortValue} in total`,
+          ...headlineOf(short.length === 1
+            ? told('owner.exception.shortOne', { branch: first.branchId, value: shortValue, actor: first.actorId })
+            : told('owner.exception.shortMany', { actor: first.actorId, count: short.length, branch: first.branchId, total: shortValue })),
         });
         break;
       }
