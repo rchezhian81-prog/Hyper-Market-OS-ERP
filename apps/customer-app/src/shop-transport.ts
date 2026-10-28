@@ -105,7 +105,9 @@ export interface ShopMineRequest {
   readonly method: 'GET' | 'POST';
   readonly path: `favourites${string}` | `lists${string}` | `complaints/${string}` | `orders/${string}` | 'cases'
     // R4 Lane 2: D-28 receipts · M20-FR-04 ratings · WF-16 online returns and the return policy.
-    | `receipts${string}` | `ratings${string}` | 'online-returns' | 'return-policy';
+    | `receipts${string}` | `ratings${string}` | 'online-returns' | 'return-policy'
+    // OB-521 (R8-A): the app version policy MY app is judged by — head office's own (version numbers only).
+    | 'app-version-policy';
   readonly body?: unknown;
   readonly idempotencyKey?: string;
 }

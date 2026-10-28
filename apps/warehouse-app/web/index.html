@@ -216,6 +216,7 @@
       }
       /* Wave 3 · SF-07 part 3: the arrival-temperature box — a full-width 56 px touch target, the phone's number keyboard. */
       #recv-temp-field { margin: var(--space-2) 0 10px; }
+      #recv-mfg { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); margin-top: var(--space-2); }
       #recv-temp { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
       .keypad button, .choices button, .direction button { min-height: 56px; font-size: 19px; background: var(--panel); }
@@ -311,6 +312,8 @@
       <!-- Buttons, never a text box (the handheld's scanner discipline): the reading is entered on its own keypad sheet. -->
       <div id="recv-temp-field">
         <button id="recv-temp" type="button" class="wide">Arrival temperature (chilled or frozen goods): not taken</button>
+        <!-- B4 · OB-504: the month of manufacture on a packed product's pack, keyed as YYYYMM; it rides on every scan. -->
+        <button id="recv-mfg" type="button" class="wide">Month of manufacture (packed goods): not entered</button>
       </div>
       <h2 class="section" id="sent-heading" hidden>—</h2>
       <div id="sent-work"></div>

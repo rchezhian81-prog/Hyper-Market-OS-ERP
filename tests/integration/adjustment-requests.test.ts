@@ -46,7 +46,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-box', 'store_computer', ['S1']);          // the store box's sync identity
   await h.provisionRole(A, 'u-cust', 'customer');        // no inventory authority
   const seed = await h.request({
-    method: 'POST', path: '/v1/inventory/goods-receipt/grn-seed', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-seed',
+    method: 'POST', path: '/v1/inventory/goods-receipt/opening-seed' /* OB-509: opening stock keeps its cost; a no-order delivery is unvalued */, userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-seed',
     body: {
       warehouseId: 'S1', receivedOnDate: '2026-09-01', currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'P1', orderedMinor: 100, countedMinor: 100, uom: 'EA', unitCost: { minor: 2500, currency: 'INR' }, condition: 'good' }],

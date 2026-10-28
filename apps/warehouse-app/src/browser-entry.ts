@@ -21,6 +21,7 @@ import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { WarehouseSession, type WarehouseAssignment } from './warehouse-session';
 import { DsdDoorSession, type DsdDoorData } from './dsd-door';
+import { openNewWorkGate, bindNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -35,6 +36,8 @@ if (demoBannerDoc !== undefined && demoBannerDoc !== null) {
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface WarehouseWindow {
+  /** OB-521: this build's new-work gate — the screen applies each policy the store computer reports. */
+  warehouseVersion?: NewWorkGate;
   warehouseSession?: WarehouseSession;
   warehouseData?: WarehouseAssignment;
   warehouseOutbox?: DeviceOutbox;
@@ -144,4 +147,11 @@ if (browserWindow !== undefined) {
     const relay = openWarehouseRelay(browserWindow.laneWriteBase, session, outbox, stamping?.clock);
     if (relay !== undefined) browserWindow.warehouseRelay = relay;
   }
+  // OB-521: a withdrawn or too-old build finishes the work it started and starts no new work — by the store computer's
+  // signed pack (served with the assignment, then each badge refresh), kept on this device for a reload with no signal.
+  const served = (browserWindow.warehouseData as { appVersionPolicy?: unknown } | undefined);
+  browserWindow.warehouseVersion = bindNewWorkGate(openNewWorkGate({
+    client: 'warehouse', ...(storage === undefined ? {} : { storage }), key: 'sre.warehouse.app-version-policy',
+    ...(served !== undefined && 'appVersionPolicy' in served ? { served: served.appVersionPolicy } : {}),
+  }), [session, browserWindow.dsdSession]);
 }

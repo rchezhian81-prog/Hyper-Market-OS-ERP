@@ -21,6 +21,7 @@ const W = {
     added: 'Added:', why_unknown_barcode: 'That barcode is not in the shop’s list on this phone. Take it to the till to be scanned there.',
     why_weighed_at_the_till: 'This is sold by weight — it is weighed at the till, not on the phone.', why_not_on_sale: 'This is not on sale just now.',
     why_too_many: 'That is as many as one basket can hold here — the till can take the rest.', why_handed_to_the_till: 'This basket is with the till now. Start a new basket to scan more.',
+    why_app_version_too_old: 'This app is too old or was withdrawn — please update it before starting a new basket.',
     needCode: 'Type the number under the barcode first.', empty: 'Nothing scanned yet.',
     shelf: 'On the shelf (before offers)', shop: 'The shop’s price', notAsked: 'not asked yet', priceNote: 'Neither is what you pay: the till works out the price at the lane, with the shop’s offers.',
     quote: 'See the shop’s price', unpriced: 'The shop has no price yet for some of these — the till will price them.',
@@ -37,6 +38,7 @@ const W = {
     added: 'சேர்க்கப்பட்டது:', why_unknown_barcode: 'அந்தப் பார்கோடு இந்த ஃபோனில் உள்ள கடையின் பட்டியலில் இல்லை. கட்டண வரிசையில் ஸ்கேன் செய்ய எடுத்துச் செல்லுங்கள்.',
     why_weighed_at_the_till: 'இது எடைக்கு விற்கப்படுகிறது — ஃபோனில் அல்ல, கட்டண வரிசையில் எடை போடப்படும்.', why_not_on_sale: 'இது இப்போது விற்பனையில் இல்லை.',
     why_too_many: 'ஒரு கூடையில் இங்கே இவ்வளவுதான் — மீதியைக் கட்டண வரிசை எடுத்துக்கொள்ளும்.', why_handed_to_the_till: 'இந்தக் கூடை இப்போது கட்டண வரிசையில் உள்ளது. மேலும் ஸ்கேன் செய்ய புதிய கூடையைத் தொடங்குங்கள்.',
+    why_app_version_too_old: 'இந்தச் செயலி மிகப் பழையது அல்லது திரும்பப் பெறப்பட்டது — புதிய கூடையைத் தொடங்கும் முன் புதுப்பிக்கவும்.',
     needCode: 'முதலில் பார்கோடின் கீழ் உள்ள எண்ணைத் தட்டச்சு செய்யுங்கள்.', empty: 'இன்னும் எதுவும் ஸ்கேன் செய்யப்படவில்லை.',
     shelf: 'அலமாரியில் (சலுகைகளுக்கு முன்)', shop: 'கடையின் விலை', notAsked: 'இன்னும் கேட்கப்படவில்லை', priceNote: 'இரண்டும் நீங்கள் செலுத்துவது அல்ல: கடையின் சலுகைகளுடன் கட்டண வரிசையில் விலை கணக்கிடப்படும்.',
     quote: 'கடையின் விலையைப் பார்', unpriced: 'இவற்றில் சிலவற்றுக்குக் கடையிடம் இன்னும் விலை இல்லை — கட்டண வரிசை விலையிடும்.',
@@ -104,7 +106,12 @@ function paint() {
 
 function add(codeOrId) {
   const out = model().basket.add(codeOrId);
-  if (!out.ok) { say('sg-say', t(`why_${out.why}`), out.why); return; }
+  if (!out.ok) {
+    // OB-521: the gate's own words (with the version) when it has them.
+    const gateSaid = out.why === 'app_version_too_old' ? window.shopVersion?.refusal() : undefined;
+    say('sg-say', gateSaid ? gateSaid[lang()] ?? gateSaid.en : t(`why_${out.why}`), out.why);
+    return;
+  }
   lastQuote = null;
   say('sg-say', `${t('added')} ${out.line.name} (× ${out.line.quantityMinor})`, 'added');
   paint();

@@ -11,6 +11,7 @@ import { assignSaleLots, type LotOnHand } from './sale-lots';
 import { storeComputerTimeFrom, type StoreComputerScopeOfCaller } from './returns';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import { isOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
+import type { VersionPolicy } from '../../../packages/platform-admin/src/devices'; // OB-501 (R7-A)
 import {
   acceptSale, summariseIntake,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,
@@ -72,6 +73,10 @@ export interface PosDeps {
   readonly loyaltyOnSale?: (tenantId: string, sale: IncomingSale) => Promise<unknown>;
   /** OB-348 (B17) · OB-354: the state of the store this sale was rung at (from its GSTIN), which the intake judges liquor by. Absent → "not set". */
   readonly shopStateOf?: (tenantId: string, sale: IncomingSale) => Promise<string | undefined>;
+  /** OB-500 (R7-A): head office's floor and price-cut limits for a sale's lowered lines (undefined when it has none). */
+  readonly tillOverrideRulesFor?: (tenantId: string, sale: IncomingSale) => Promise<IntakeContext['tillOverrideRules'] | undefined>;
+  /** OB-501 (R7-A): head office's app version policy (undefined when none is set). */
+  readonly clientVersionPolicy?: (tenantId: string) => Promise<VersionPolicy | undefined>;
   /**
    * OB-299 (M12-FR-02): a bill the till marked for delivery becomes ONE delivery job — booked once, on a resend too. Runs
    * after the sale is banked; never refuses the sale (its outcome rides on the reply). Absent → no delivery job here.
@@ -216,6 +221,9 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           ...(cashierGrants === undefined ? {} : { cashierGrants }),
           ...(cashierSeal === undefined ? {} : { cashierSeal }),
           ...(await (async () => { const st = await deps.shopStateOf?.(ctx.tenantId, sale); return st === undefined || st === '' ? {} : { shopState: st }; })()),
+          // OB-500 · OB-501 (R7-A): head office's own price-cut rules for the lowered lines, and its app version policy.
+          ...(await (async () => { const r = await deps.tillOverrideRulesFor?.(ctx.tenantId, sale); return r === undefined ? {} : { tillOverrideRules: r }; })()),
+          ...(deps.clientVersionPolicy === undefined ? {} : { versionPolicy: (await deps.clientVersionPolicy(ctx.tenantId)) ?? null }),
         } satisfies IntakeContext);
 
         // NEW-3 (C10 · hard rule #3): what is KEPT never holds card data. The intake above judged the sale as it arrived

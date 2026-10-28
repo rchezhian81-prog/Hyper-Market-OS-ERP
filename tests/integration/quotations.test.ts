@@ -59,7 +59,16 @@ describe('quotations: a price promised, converted once, held only while valid (M
 
   it('refuses a below-floor price without a separate approver, a typed one, a self-approval or one without the authority (§28)', async () => {
     const h = await cast();
-    const belowFloor = { marginFloorBps: 1000, lines: [line({ unitPriceMinor: 10000, unitCostMinor: 9500 })] }; // 5% vs 10% floor
+    // OB-525 (round 8): head office reads the floor ITSELF — here p1 came in at store s1 at ₹95.00 a unit (an opening-stock
+    // receipt before the cutover GO, valued from the extract), so ₹90.00 is below its floor. A request naming a floor or a
+    // cost is refused, never believed.
+    const booked = await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/opening-q-floor', userId: 'u-owner', tenantId: A, idempotencyKey: 'opening-q-floor',
+      body: { warehouseId: 's1', receivedOnDate: '2027-01-02', currency: 'INR', lines: [{ lineId: 'L1', productId: 'p1', orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: { minor: 9500, currency: 'INR' }, condition: 'good' }] } });
+    expect(booked.status, JSON.stringify(booked.body)).toBe(201);
+    const typedFloor = await issue(h, 'u-mgr', 'q-typed-floor', { marginFloorBps: 1000, lines: [line({ unitPriceMinor: 10000, unitCostMinor: 9500 })] });
+    expect(typedFloor.status).toBe(400);
+    expect(codeOf(typedFloor)).toBe('quotation_carries_floor_or_cost');
+    const belowFloor = { lines: [line({ unitPriceMinor: 9000 })] };
     const asked = (id: string) => ({ kind: 'quotation_below_floor', subjectRef: id, details: { storeId: 's1', customerRef: 'cust-1', currency: 'INR', validUntil: '2027-12-31', ...belowFloor, quotationId: id }, valueMinor: null });
 
     const unapproved = await issue(h, 'u-mgr', 'q-lo', belowFloor);

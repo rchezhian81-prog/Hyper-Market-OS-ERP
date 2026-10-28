@@ -91,6 +91,7 @@ const WORDS = {
     ageYes: 'Yes — ID checked, {age} or over', ageNo: 'No — do not sell',
     ageNotSoldTitle: 'Item not sold',
     cannotSellTitle: 'Cannot be sold',
+    newBillRefusedTitle: 'Update this till',
     ageNotSold: 'The customer could not show they are {age} or over, so {item} was not added to the bill. Nothing else changes.',
     // B8 (OB-298): a perishable whose barcode carries no date — the cashier looks at the date printed on the pack, one tap.
     packDateCheck: 'Date check — look at the pack',
@@ -151,7 +152,7 @@ const WORDS = {
     recallWhich: 'Which held basket?',
     noSale: 'Open drawer (no sale)', noSaleDone: 'Recorded — open the drawer', noSaleHint: 'A manager approves opening the drawer with no sale',
     priceChange: 'Change price of the selected line', newPrice: 'New price for one unit (₹) — lower than now', priceChanged: 'Price changed',
-    overrideHint: 'A manager who is not you approves this', overrideReason: 'Manager: why is this allowed?',
+    overrideHint: 'A manager who is not you approves this', overrideOwnerOnly: 'Only the owner can approve a price cut on this item — it has no known lowest price yet', overrideReason: 'Manager: why is this allowed?',
     giveUp: 'Give up a held basket', giveUpWhich: 'Which held basket is being given up?', whyGiveUp: 'Why is it being given up?',
     phoneBasket: 'Phone basket (scan and go)', phoneBasketCode: 'The six digits on the customer\'s phone', phoneBasketHint: 'The till prices every line itself. Check the bag, then take the payment.', phoneBasketNotAdded: 'Not rung — deal with each:',
     queueBasket: 'Handheld basket (queue)', queueBasketCode: 'The four digits on the queue handheld', queueBasketHint: 'The till prices every line itself. Check the bag, then take the payment.',
@@ -337,6 +338,7 @@ const WORDS = {
     ageYes: 'ஆம் — அடையாளம் சரிபார்க்கப்பட்டது, {age} அல்லது அதற்கு மேல்', ageNo: 'இல்லை — விற்க வேண்டாம்',
     ageNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
     cannotSellTitle: 'இதை விற்க முடியாது',
+    newBillRefusedTitle: 'இந்தக் கல்லாவைப் புதுப்பிக்கவும்',
     ageNotSold: 'வாடிக்கையாளர் {age} வயது அல்லது அதற்கு மேல் என்று காட்ட முடியவில்லை, எனவே {item} பில்லில் சேர்க்கப்படவில்லை. வேறு எதுவும் மாறவில்லை.',
     packDateCheck: 'தேதி சரிபார்ப்பு — பொதியைப் பாருங்கள்',
     packDateQuestion: '{item} விரைவில் கெடும் பொருள். பொதியில் அச்சிடப்பட்ட பயன்பாட்டு / காலாவதி தேதியைப் பாருங்கள். இன்று அது இன்னும் செல்லுபடியாகுமா?',
@@ -389,7 +391,7 @@ const WORDS = {
     recallWhich: 'எந்த நிறுத்திய கூடை?',
     noSale: 'டிராயரைத் திற (விற்பனை இல்லை)', noSaleDone: 'பதிவாகியது — டிராயரைத் திறக்கலாம்', noSaleHint: 'விற்பனை இல்லாமல் டிராயரைத் திறக்க மேலாளர் அனுமதிக்க வேண்டும்',
     priceChange: 'தேர்ந்த வரியின் விலையை மாற்று', newPrice: 'ஒரு அலகுக்கான புதிய விலை (₹) — இப்போதையதை விடக் குறைவு', priceChanged: 'விலை மாற்றப்பட்டது',
-    overrideHint: 'உங்களைத் தவிர வேறு ஒரு மேலாளர் அனுமதிக்க வேண்டும்', overrideReason: 'மேலாளர்: இது ஏன் அனுமதிக்கப்படுகிறது?',
+    overrideHint: 'உங்களைத் தவிர வேறு ஒரு மேலாளர் அனுமதிக்க வேண்டும்', overrideOwnerOnly: 'இந்தப் பொருளுக்கு இன்னும் குறைந்தபட்ச விலை தெரியவில்லை — இதன் விலைக் குறைப்புக்கு உரிமையாளர் மட்டுமே ஒப்புதல் தர முடியும்', overrideReason: 'மேலாளர்: இது ஏன் அனுமதிக்கப்படுகிறது?',
     giveUp: 'நிறுத்திய கூடையைக் கைவிடு', giveUpWhich: 'எந்த நிறுத்திய கூடை கைவிடப்படுகிறது?', whyGiveUp: 'ஏன் கைவிடப்படுகிறது?',
     phoneBasket: 'ஃபோன் கூடை (ஸ்கேன் செய்து செல்)', phoneBasketCode: 'வாடிக்கையாளரின் ஃபோனில் உள்ள ஆறு இலக்கங்கள்', phoneBasketHint: 'ஒவ்வொரு வரியையும் கட்டண இயந்திரமே விலையிடும். பையைச் சரிபார்த்து, பிறகு கட்டணத்தைப் பெறுங்கள்.', phoneBasketNotAdded: 'சேர்க்கப்படவில்லை — ஒவ்வொன்றையும் பாருங்கள்:',
     queueBasket: 'கருவிக் கூடை (வரிசை)', queueBasketCode: 'வரிசைக் கருவியில் உள்ள நான்கு இலக்கங்கள்', queueBasketHint: 'ஒவ்வொரு வரியையும் இந்த பில்லிங்கே விலையிடும். பையைச் சரிபார்த்து, பிறகு கட்டணத்தைப் பெறுங்கள்.',
@@ -1394,7 +1396,17 @@ async function refreshBadge() {
     const cutoff = h.held === true && typeof h.cutoffAt === 'string' ? h.cutoffAt : null;
     if (cutoff !== offerHoldCutoff) { offerHoldCutoff = cutoff; session.holdOffersStartingAfter(cutoff); render(); }
   }
+  applyBoxVersionPolicy();
   paintBadge();
+}
+/**
+ * OB-501 (R7-A): the app version policy as the box's signed pack has it now — only an answer from the box changes it (an
+ * unreachable box leaves the rule as it last was). A withdrawn or too-old build then starts no new bill; the bill on screen
+ * is finished.
+ */
+function applyBoxVersionPolicy() {
+  if (!box.reachable || !box.status || !('appVersionPolicy' in box.status) || typeof session.applyVersionPolicy !== 'function') return;
+  session.applyVersionPolicy(box.status.appVersionPolicy);
 }
 void refreshBadge();
 setInterval(() => { void refreshBadge(); }, 10_000);
@@ -1498,6 +1510,52 @@ async function recallQueueBasket() {
   const missing = (r.notAdded ?? []).map((l) => `${l.name} × ${l.qty} — ${l.laneMessage}`).join('\n');
   tell(t('queueBasket'), r.laneMessage, missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${t('phoneBasketNotAdded')}\n${missing}`);
 }
+
+// ── R7-C · OB-506 — begin: a retail quotation rung up by its number (the step's words and rules are in quotation-at-till.ts)
+/**
+ * The customer brings the quotation the office made; the cashier keys its number. Head office converts it (once — expired or
+ * withdrawn refused) and the till rings each line through its own pack, keeping the quoted price where it is lower. It needs
+ * head office: with the line down the till says so and nothing is rung — scan the items as an ordinary sale if the customer
+ * wants them at today's prices.
+ */
+async function ringQuotation() {
+  const w = session.quotationWords(lang);
+  const number = await ask({ title: w.title, mode: 'number', hint: w.hint, initial: '', code: true });
+  if (number === null || number === undefined) return;
+  const r = await session.ringQuotationAtTill(String(number));
+  selectedLineId = null;
+  render();
+  const words = lang === 'ta' && r.laneMessageTa ? r.laneMessageTa : r.laneMessage;
+  if (!r.ok) { tell(w.option, words, STOP); return; }
+  const missing = (r.notAdded ?? []).map((l) => `${l.name} × ${l.qty} — ${l.laneMessage}`).join('\n');
+  tell(w.option, words, missing === '' ? SUCCESS : STOP, missing === '' ? undefined : `${w.notAdded}\n${missing}`);
+}
+// ── R7-C · OB-506 — end
+
+// ── R8-B · OB-523 — begin: cancel the whole bill before it is paid (the step's words and rules are in bill-cancel-at-till.ts)
+/** Why a whole bill is cancelled, preset (M15) — kept on the store computer with the cashier, line by line. */
+const BILL_CANCEL_REASONS = [
+  { code: 'customer_left', en: 'Customer left without it', ta: 'வாடிக்கையாளர் வாங்காமல் சென்றார்' },
+  { code: 'customer_no_money', en: 'Customer could not pay', ta: 'வாடிக்கையாளரால் பணம் செலுத்த முடியவில்லை' },
+  { code: 'wrong_quotation', en: 'Wrong quotation keyed', ta: 'தவறான விலைப்புள்ளி உள்ளிடப்பட்டது' },
+  { code: 'rung_again', en: 'Rung again on a new bill', ta: 'புதிய பில்லில் மீண்டும் போடப்பட்டது' },
+];
+/**
+ * The cashier cancels the whole bill: a preset reason, then a yes. The store computer keeps every line's void and frees each
+ * quotation this bill rang up (head office is told when it can be reached — once); only then does the till clear.
+ */
+async function cancelWholeBill() {
+  const w = session.billCancelWords(lang);
+  const why = await choose(w.reason, BILL_CANCEL_REASONS.map((r) => ({ value: r.code, label: r[lang] ?? r.en })));
+  if (why === null || why === undefined) return;
+  const sure = await choose(w.confirm, [{ value: 'yes', label: w.yes, icon: 'check' }, { value: 'no', label: w.no, icon: 'x' }]);
+  if (sure !== 'yes') return;
+  const r = await session.cancelBillAtTill(why);
+  selectedLineId = null;
+  render();
+  tell(w.option, lang === 'ta' && r.laneMessageTa ? r.laneMessageTa : r.laneMessage, r.ok ? SUCCESS : STOP);
+}
+// ── R8-B · OB-523 — end
 
 async function refreshHeld() {
   if (!session.heldAtTill) return;
@@ -2049,6 +2107,10 @@ el('more').addEventListener('click', async () => {
     // D04-FR-05 queue-busting: a basket a queue handheld handed to this till's store computer — only while this lane's switch
     // (pos.queue_busting, from the signed pack) is on, and onto an empty till.
     ...(session.recallQueueBasketAtTill && session.basket().length === 0 && window.posRollout && window.posRollout.isOn('pos.queue_busting') ? [{ value: 'queue_basket', label: t('queueBasket'), icon: 'scan-barcode' }] : []),
+    // R7-C · OB-506: a quotation by its number — onto an empty till, where this box has a head-office link (it converts there).
+    ...(session.ringQuotationAtTill && session.basket().length === 0 && box.status && box.status.cloud !== 'not_configured' ? [{ value: 'quotation', label: session.quotationWords(lang).option, icon: 'file-text' }] : []),
+    // R8-B · OB-523: cancel the whole bill (not yet paid) — offered while it has a line, or a quotation rung up on it.
+    ...(typeof session.cancelBillAtTill === 'function' && (session.basket().some((l) => !l.voided) || session.quotationsOnBill().length > 0) ? [{ value: 'cancel_bill', label: session.billCancelWords(lang).option, icon: 'x' }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
     // OB-271 · audit A9: today's card/UPI payments with the machine's numbers — real trading only.
     ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption') }] : []),
@@ -2083,6 +2145,8 @@ el('more').addEventListener('click', async () => {
   if (what === 'give_up') return giveUpHeldBasket();
   if (what === 'phone_basket') return recallPhoneBasket();
   if (what === 'queue_basket') return recallQueueBasket();
+  if (what === 'quotation') return ringQuotation(); // R7-C · OB-506
+  if (what === 'cancel_bill') return cancelWholeBill(); // R8-B · OB-523
   if (what === 'member') return nameLoyaltyMember();
   if (what === 'guest_only') { tell(t('guestOnlyTitle'), t('guestOnlyMsg'), STOP); return undefined; }
   if (what === 'no_sale') return openDrawerNoSale();
@@ -2140,8 +2204,9 @@ async function changeLinePrice() {
   if (typed === null || typed === '') return;
   const toUnitMinor = Math.round(Number(typed) * 100);
   const value = session.priceChangeValue(lineId, toUnitMinor);
-  if (!value.ok) { tell(t('read'), value.laneMessage, STOP); return; }
-  const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t('overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason' });
+  if (!value.ok) { tell(t('read'), saidInLang(value), STOP); return; }
+  // OB-500 (R7-A): the product and the new price go with the request — the store computer judges its floor and the manager's limit.
+  const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t(value.ownerOnly ? 'overrideOwnerOnly' : 'overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason', priceCut: { productId: value.productId, toUnitMinor } });
   if (!approval) return;
   const r = await session.priceChangeAtTill(lineId, toUnitMinor, approval.reason, { approvalId: approval.approvalId });
   if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
@@ -2253,7 +2318,12 @@ function askScanOrKey({ title, hint = '' }) {
  * approving themselves, and issues an approval bound to this kind, bill, amount and cashier, used once. Resolves the
  * approval for the refund to carry, or `null` once the cashier has been told why not.
  */
-async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFUND_REASONS, reasonTitle = 'refundApproveReason' }) {
+/** OB-500 · OB-501 (R7-A): the store computer's or the till's own words in the cashier's language, when Tamil was given. */
+function saidInLang(r) {
+  return lang === 'ta' && r && r.laneMessageTa ? r.laneMessageTa : (r && r.laneMessage ? r.laneMessage : '');
+}
+
+async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFUND_REASONS, reasonTitle = 'refundApproveReason', priceCut }) {
   if (!session.approveAtTill) { tell(t('read'), t('noStoreBox'), STOP); return null; }
   const by = await askScanOrKey({ title: t('refundManagerId'), hint });
   if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager'), STOP); return null; }
@@ -2263,8 +2333,8 @@ async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFU
   // cashier's is). The other approvals (no sale, a price change, a card refund's check) keep their tap and OK.
   const reason = await ask({ title: t(reasonTitle), mode: 'choice', choices: reasons, commit: reasons === REFUND_REASONS });
   if (!reason) return null;
-  const outcome = await session.approveAtTill({ managerId: String(by), pin: String(pin), kind, ...(billRef ? { billRef } : {}), valueMinor, reason });
-  if (!outcome.approved) { tell(t('approvalRefused'), outcome.laneMessage, STOP); return null; }
+  const outcome = await session.approveAtTill({ managerId: String(by), pin: String(pin), kind, ...(billRef ? { billRef } : {}), valueMinor, reason, ...(priceCut ? priceCut : {}) });
+  if (!outcome.approved) { tell(t('approvalRefused'), saidInLang(outcome), STOP); return null; }
   return { by: outcome.approvedBy, reason, approvalId: outcome.approvalId };
 }
 
@@ -2946,6 +3016,8 @@ window.addEventListener('keydown', (event) => {
       // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
       // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
       if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }
+      // OB-501 (R7-A): this till's build may not start a new bill — said in the cashier's language.
+      if (e && e.name === 'NewBillRefusedError') { tell(t('newBillRefusedTitle'), saidInLang(e), STOP); return; }
       tell(t('read'), String(e && e.message ? e.message : e), STOP);
     }
     return;

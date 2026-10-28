@@ -48,6 +48,8 @@
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      p.held { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); border-left:6px solid var(--degraded); font-size:15px; font-weight:600; display:flex; gap:8px; align-items:flex-start; }
+      p.held .icon { font-size:18px; }
       [hidden] { display:none !important; }
     </style>
   </head>
@@ -67,12 +69,21 @@
         <p class="lead" id="lead"></p>
       </div>
 
+      <!-- OB-531: when head office cannot be reached — the store computer's copy, said plainly with its age; read-only. -->
+      <p class="held" id="held" hidden role="status"><span class="icon" aria-hidden="true">⚠</span><span id="held-text"></span></p>
+      <p class="held" id="read-only" hidden><span class="icon" aria-hidden="true">ⓘ</span><span id="read-only-text"></span></p>
+
       <div class="summary" role="status" aria-live="polite">
         <span class="count attention" id="gap-count"></span>
       </div>
 
       <h3 id="gaps-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Roster gaps to fill"></ul>
+
+      <section id="rota" hidden aria-labelledby="rota-heading">
+        <h3 id="rota-heading"></h3>
+        <ul class="rows" id="rota-rows"></ul>
+      </section>
 
       <section class="assigner" id="assigner" hidden aria-label="Put someone on a short shift">
         <h3 id="assign-heading"></h3>

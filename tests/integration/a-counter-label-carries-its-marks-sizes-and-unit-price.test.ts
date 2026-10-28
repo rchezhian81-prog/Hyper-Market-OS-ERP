@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { r3OpsBackings, tenantClient } from '../support/r3-ops-backings';
 import type { ApiHarness } from '../support/api-harness';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * **Round 6 · B9 · B24 · B3 (roadmap v2.1 addendum, M03/M11) — the REAL counter label (`POST /v1/production/runs/:runId/label`).**
@@ -23,6 +24,7 @@ describe.each(backings)('a counter label carries its veg mark, its eight-group a
   it('prints a lawful label; refuses each gap by name; refuses a too-small template; a cashier may not print', async () => {
     let h: ApiHarness = harness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await h.provisionRole(A, 'u-cash', 'cashier');
     const { req, ok, code } = tenantClient(() => h, A);
     await ok(req('POST', '/v1/production/departments/cafe', {}), 'cafe enabled');

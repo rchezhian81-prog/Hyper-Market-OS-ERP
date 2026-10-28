@@ -32,6 +32,7 @@ import { money, multiplyByInteger, scaleMoney, type Money, type CurrencyCode } f
 import { precisionOf, type Uom } from '../../../packages/contracts/src/quantity';
 import { confirmSubstitution } from '../../../packages/fulfilment/src/delivery';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { NewWorkRefusedError } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 import { deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 
 export type LineState = 'pending' | 'picked' | 'short' | 'substituted' | 'quality_failed';
@@ -201,6 +202,8 @@ export class PickSession {
   private readonly pickerId: string | null;
   /** The store computer's word on each item it took, keyed by queue key — filled by `noteBoxStatus` (SP-3c-i). */
   private readonly boxWord = new Map<string, BoxItemStatus>();
+  /** OB-521: set while this build may not START a new wave (withdrawn or too old) — the words to refuse it with. */
+  private newWorkBar: { readonly en: string; readonly ta: string } | null = null;
 
   constructor(
     readonly waveId: string,
@@ -224,6 +227,20 @@ export class PickSession {
       pickedQty: 0,
       finalPrice: money(0, this.currency),
     }));
+  }
+
+  /**
+   * OB-521: bar (or, with `null`, lift the bar on) STARTING a new wave on this build. A wave this handheld has already
+   * started — a line resolved here, or anything of it in the device queue — is always finished.
+   */
+  barNewWork(words: { readonly en: string; readonly ta: string } | null): void {
+    this.newWorkBar = words;
+  }
+
+  /** OB-521: has this handheld already started this wave? (A resolved line, or anything of it already queued here.) */
+  started(): boolean {
+    return this.lines.some((l) => l.state !== 'pending') || this.packed !== null
+      || this.outbox.all().some((item) => item.event.source === this.waveId);
   }
 
   /** The assigned work, as the handheld lists it. */
@@ -264,6 +281,8 @@ export class PickSession {
    * failed" is two things that happened and the cloud needs both.
    */
   private replace(next: PickLine): void {
+    // OB-521: the first outcome of a wave STARTS it — refused on a barred build, before anything changes.
+    if (this.newWorkBar !== null && !this.started()) throw new NewWorkRefusedError(this.newWorkBar.en, this.newWorkBar.ta);
     const index = this.lines.findIndex((l) => l.lineId === next.lineId);
     this.lines[index] = next;
     this.outbox.enqueue(

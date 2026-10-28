@@ -88,6 +88,15 @@ export const DEPARTMENT_CATALOGUE: Readonly<Record<string, ProductionDepartment>
 };
 
 /**
+ * OB-502: whether recording a run in this department is FOOD-HANDLING work, which an expired or missing food-handling
+ * certificate blocks. Every department the product runs makes food; one the product does not know is treated as food too
+ * (fail closed — the gate is never skipped because a name was unfamiliar).
+ */
+export function handlesFood(departmentId: string): boolean {
+  return DEPARTMENT_CATALOGUE[departmentId]?.foodSafety ?? true;
+}
+
+/**
  * The paid-plan feature (M36-FR-01 · §35) a specialised department needs before a store may operate it.
  * A department that is NOT listed here needs no feature and is available to any store that runs
  * production (the cafe; the central kitchen for now). This gates ONLY the three whose department id

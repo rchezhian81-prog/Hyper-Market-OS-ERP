@@ -22,10 +22,12 @@ export const DSD_CHECK_IN_CLOSED = 'DsdCheckInClosed';
 export const DSD_FEEDBACK_CODES = Object.freeze([
   'dsd_started', 'dsd_scanned', 'dsd_handed_back', 'dsd_closed', 'unknown_barcode', 'not_a_quantity', 'no_reason',
   'hand_back_more_than_scanned', 'delivery_note_not_signed', 'no_cash_at_the_door', 'dsd_not_started', 'dsd_already_closed', 'dsd_needs_vendor',
+  // OB-521: a check-in refused to START on a withdrawn or too-old build (one already open is finished).
+  'app_version_too_old',
 ] as const);
 export type DsdFeedbackCode = (typeof DSD_FEEDBACK_CODES)[number];
 
-export interface DsdSignal { readonly feedback: 'accept' | 'warn' | 'reject'; readonly code: DsdFeedbackCode; readonly detail: string; readonly sound: 'ok' | 'warn' | 'error'; readonly vibrateMs: number }
+export interface DsdSignal { readonly feedback: 'accept' | 'warn' | 'reject'; readonly code: DsdFeedbackCode; readonly detail: string; readonly sound: 'ok' | 'warn' | 'error'; readonly vibrateMs: number; readonly detailTa?: string }
 const signal = (feedback: DsdSignal['feedback'], code: DsdFeedbackCode, detail: string): DsdSignal => ({
   feedback, code, detail, sound: feedback === 'accept' ? 'ok' : feedback === 'warn' ? 'warn' : 'error', vibrateMs: feedback === 'accept' ? 40 : feedback === 'warn' ? 120 : 300,
 });
@@ -53,6 +55,12 @@ interface Open {
 
 export class DsdDoorSession {
   private current: Open | null = null;
+  /** OB-521: set while this build may not START a new check-in — the words to refuse it with. */
+  private newWorkBar: { readonly en: string; readonly ta: string } | null = null;
+  /** OB-521: bar (or, with `null`, lift the bar on) starting a new check-in; one already open is always finished. */
+  barNewWork(words: { readonly en: string; readonly ta: string } | null): void {
+    this.newWorkBar = words;
+  }
   constructor(private readonly data: DsdDoorData, private readonly outbox: SyncOutbox, private readonly now: () => string = () => new Date().toISOString()) {}
 
   /** What the phone holds to check against: the store's open orders, and any route sheets. */
@@ -65,6 +73,7 @@ export class DsdDoorSession {
 
   start(input: { readonly checkInId: string; readonly poId?: string; readonly routeId?: string; readonly supplierId?: string; readonly driverName: string; readonly vehicleRef?: string }): DsdSignal {
     if (this.current !== null && !this.current.closed) return signal('warn', 'dsd_started', `check-in ${this.current.checkInId} is already open — close it first`);
+    if (this.newWorkBar !== null) return { ...signal('reject', 'app_version_too_old', this.newWorkBar.en), detailTa: this.newWorkBar.ta };
     const order = input.poId === undefined ? undefined : (this.data.openDeliveries ?? []).find((d) => d.poId === input.poId);
     const route = input.routeId === undefined ? undefined : (this.data.dsdRoutes ?? []).find((r) => r.routeId === input.routeId);
     const supplierId = order?.supplierId ?? route?.supplierId ?? input.supplierId;

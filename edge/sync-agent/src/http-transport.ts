@@ -265,6 +265,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   EquipmentReadingRecorded: '/v1/facilities/equipment/:assetId/readings/:readingId/synced',
   WriteOffCaptured: '/v1/inventory/write-off/:writeOffId/synced',
   SopAcknowledged: '/v1/hr/workforce/sops/:sopId/acknowledgements/:employeeId/synced',
+  // Round 7 · OB-507 (M25-FR-01): a clock-in / clock-out made on the self-service page with the line down. `markId` is a plain
+  // top-level payload field; a conflict (a different mark under the same id), a person not at this store or without the right
+  // is 422 → dead-lettered here, visible for a manager (hard rule #10). A mark out of order is booked and flagged there.
+  AttendanceMarked: '/v1/hr/workforce/attendance-marks/:markId/synced',
   // OB-365: the till sign-in log — sign-ins, refusals (a wrong PIN, a lockout) and sign-outs — never a token's hash or a
   // PIN. Head office keeps each once (idempotent on `entryId`, a plain top-level payload field) for the owner's alerts.
   TillSignInLogged: '/v1/identity/till-sign-ins/:entryId/synced',
@@ -274,6 +278,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // OB-373: a copy of a bill printed at a till by its number (a handheld's bill above all) — `copyId` is a plain top-level
   // payload field; a record head office cannot read is 400 → dead-lettered here by name (the sale itself is untouched).
   BillCopyPrinted: '/v1/bill-copies/:copyId/synced',
+  // R8-B · OB-523: a bill that rang a quotation up was CANCELLED at the till — head office frees the quotation (only from the
+  // bill it is on), recording who cancelled it and why. `quotationId` is a plain top-level payload field; a release head
+  // office cannot accept (another bill has it, an unknown number) is 4xx → dead-lettered here, visible for a person.
+  QuotationFreedAtTill: '/v1/pos/quotations/:quotationId/free/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

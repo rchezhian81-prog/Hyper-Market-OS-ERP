@@ -73,6 +73,11 @@ const WORDS = {
     tempLabel: 'Temperature on arrival, °C (chilled or frozen goods)',
     tempHint: 'Probe the goods and type the reading, for example 3.5 or -18. Without it, chilled and frozen goods wait for a manager\'s check before they can be sold.',
     needTemp: 'The temperature must be a number of degrees, for example 3.5 or -18. Leave it empty for goods that are not chilled or frozen.',
+    // B4 · OB-504: the month and year of manufacture on a packed product's pack.
+    mfgLabel: 'Month and year of manufacture (packed goods)', mfgHint: 'As printed on the pack, for example 2026-09. A packed product cannot be saved without it.',
+    needMfg: 'Write the month of manufacture as year-month, for example 2026-09 (or a full date, 2026-09-14).',
+    mfgRequired: 'This is a packed product: type the month and year of manufacture printed on the pack before adding it.',
+    mfgWord: 'made',
     saveDelivery: 'Save the delivery', remove: 'Remove',
     needNumber: 'Give the delivery note a number first.', needLines: 'Add at least one item first.',
     needItem: 'Type an item code and how many.',
@@ -154,6 +159,10 @@ const WORDS = {
     tempLabel: 'வந்தபோது வெப்பநிலை, °C (குளிர்/உறைந்த பொருட்கள்)',
     tempHint: 'பொருளை அளந்து அளவைத் தட்டச்சு செய்யவும், உதாரணமாக 3.5 அல்லது -18. இல்லையெனில் குளிர்/உறைந்த பொருட்கள் மேலாளர் சரிபார்க்கும் வரை விற்பனைக்கு வராது.',
     needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும், உதாரணமாக 3.5 அல்லது -18. குளிர்/உறைந்த பொருள் இல்லையெனில் காலியாக விடவும்.',
+    mfgLabel: 'தயாரிப்பு மாதமும் ஆண்டும் (பொதி செய்த பொருட்கள்)', mfgHint: 'பொதியில் அச்சிட்டபடி, உதாரணமாக 2026-09. பொதி செய்த பொருளை இது இல்லாமல் சேமிக்க முடியாது.',
+    needMfg: 'தயாரிப்பு மாதத்தை ஆண்டு-மாதம் என எழுதவும், உதாரணமாக 2026-09 (அல்லது முழுத் தேதி, 2026-09-14).',
+    mfgRequired: 'இது பொதி செய்த பொருள்: சேர்ப்பதற்கு முன் பொதியில் அச்சிட்ட தயாரிப்பு மாதத்தையும் ஆண்டையும் தட்டச்சு செய்யவும்.',
+    mfgWord: 'தயாரிப்பு',
     noItemsYet: 'இன்னும் எந்தப் பொருளும் சேர்க்கப்படவில்லை.', saveDelivery: 'டெலிவரியைச் சேமி',
     remove: 'நீக்கு', needNumber: 'முதலில் டெலிவரி நோட்டு எண்ணைக் கொடுக்கவும்.',
     needLines: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needItem: 'பொருள் குறியீடும் எண்ணிக்கையும் தேவை.',
@@ -1050,7 +1059,7 @@ function renderLines() {
     name.textContent = line.productId;
     const qty = document.createElement('span');
     qty.className = 'q';
-    qty.textContent = line.temperatureC === undefined ? String(line.quantityMinor) : `${line.quantityMinor} · ${line.temperatureC} °C`;
+    qty.textContent = [String(line.quantityMinor), line.temperatureC === undefined ? '' : `${line.temperatureC} °C`, line.manufacturedOn === undefined ? '' : `${t('mfgWord')} ${line.manufacturedOn}`].filter((x) => x !== '').join(' · ');
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '×';
@@ -1076,10 +1085,22 @@ el('add-line').addEventListener('click', () => {
     tell(t('read'), t('needTemp'));
     return;
   }
-  receiptLines.push({ productId, quantityMinor: quantity, uom: 'ea', ...(temperatureC === undefined ? {} : { temperatureC }) });
+  // B4 · OB-504: the month and year of manufacture, read strictly; a packed product (head office's list) is refused without it.
+  const mfgText = el('grn-mfg').value.trim();
+  if (mfgText !== '' && !/^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/.test(mfgText)) {
+    tell(t('read'), t('needMfg'));
+    return;
+  }
+  const packed = session && typeof session.packedAmong === 'function' ? session.packedAmong([productId]) : [];
+  if (mfgText === '' && packed.length > 0) {
+    tell(t('read'), t('mfgRequired'));
+    return;
+  }
+  receiptLines.push({ productId, quantityMinor: quantity, uom: 'ea', ...(temperatureC === undefined ? {} : { temperatureC }), ...(mfgText === '' ? {} : { manufacturedOn: mfgText }) });
   el('grn-product').value = '';
   el('grn-qty').value = '';
   el('grn-temp').value = '';
+  el('grn-mfg').value = '';
   el('grn-product').focus();
   renderLines();
 });
@@ -1132,7 +1153,8 @@ el('save-receipt').addEventListener('click', () => {
     el('grn-po').value = '';
     renderLines();
   } catch (e) {
-    tell(t('read'), String(e && e.message ? e.message : e));
+    // B4 · OB-504: a packed product with no month of manufacture is refused in the manager's language, not the error's.
+    tell(t('read'), e && e.name === 'ManufactureDateRequiredError' ? `${t('mfgRequired')} (${(e.productIds ?? []).join(', ')})` : String(e && e.message ? e.message : e));
   }
 });
 
@@ -1478,6 +1500,8 @@ function paintChrome() {
   el('grn-qty-label').textContent = t('howMany');
   el('grn-temp-label').textContent = t('tempLabel');
   el('grn-temp-hint').textContent = t('tempHint');
+  el('grn-mfg-label').textContent = t('mfgLabel');
+  el('grn-mfg-hint').textContent = t('mfgHint');
   el('add-line').textContent = t('addItem');
   el('receive-empty').textContent = t('noItemsYet');
   el('save-receipt').textContent = t('saveDelivery');

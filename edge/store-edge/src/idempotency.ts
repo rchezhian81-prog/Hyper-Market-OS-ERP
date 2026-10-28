@@ -50,6 +50,12 @@ export function canonicalHash(record: string): string {
     void _stamp;
     parsed = rest;
   }
+  // OB-501 (R7-A): likewise the store computer's own mark on the till's app version — the box's, never the till's.
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && STORE_COMPUTER_VERSION_CHECK in parsed) {
+    const { [STORE_COMPUTER_VERSION_CHECK]: _mark, ...rest } = parsed as Record<string, unknown>;
+    void _mark;
+    parsed = rest;
+  }
   return createHash('sha256').update(JSON.stringify(canonicalize(parsed))).digest('hex');
 }
 
@@ -65,6 +71,25 @@ export function stampTakenAt(record: string, at: string): string {
     const parsed = JSON.parse(record) as unknown;
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return record;
     return JSON.stringify({ ...(parsed as Record<string, unknown>), [STORE_COMPUTER_TAKEN_AT]: at });
+  } catch {
+    return record;
+  }
+}
+
+/**
+ * OB-501 (R7-A · M33-FR-02 · P-08): the field in which the store computer MARKS a sale rung on a till build its signed pack
+ * says should not have started a bill (withdrawn, or below the minimum supported version), or one that reported no build
+ * while a policy is in force. Written once, when the box takes the bill; the sale is never refused for it (hard rule #1).
+ */
+export const STORE_COMPUTER_VERSION_CHECK = 'storeComputerVersionCheck';
+/** Mark a sale record (JSON text) with the box's version judgement; unchanged when there is nothing to mark or it is not JSON. */
+export function stampVersionCheck(record: string, judge: ((sale: Record<string, unknown>) => Record<string, unknown> | undefined) | undefined): string {
+  if (judge === undefined) return record;
+  try {
+    const parsed = JSON.parse(record) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return record;
+    const mark = judge(parsed as Record<string, unknown>);
+    return mark === undefined ? record : JSON.stringify({ ...(parsed as Record<string, unknown>), [STORE_COMPUTER_VERSION_CHECK]: mark });
   } catch {
     return record;
   }

@@ -40,6 +40,29 @@ export interface QualityHoldDeps {
   /** Append a release (idempotent on the caller's key). */
   readonly recordReleased: (tenantId: string, hold: QualityHold, key: string) => Promise<void> | void;
   readonly now: () => string;
+  /**
+   * OB-513 (owner, 28 Oct 2026): whether a product is FOOD by head office's category list (its department is regulated
+   * `food`) — a held food batch needs at least one recorded sample before it is released. undefined → head office cannot
+   * tell, and the release asks for a sample (never assumed not food). Absent on a bare stub (no sample is required).
+   */
+  readonly isFood?: (tenantId: string, productId: string) => Promise<boolean | undefined> | boolean | undefined;
+}
+
+/** OB-513: why this hold does, or does not, need a recorded sample before release — in head office's words. */
+export interface SampleRule {
+  readonly required: boolean;
+  /** `food`: the product is food; `food_not_known`: head office cannot tell; `not_food`: it may be released without one. */
+  readonly because: 'food' | 'food_not_known' | 'not_food';
+  readonly detail: string;
+}
+
+/** OB-513: the sample rule for a hold (none required when no food lookup is wired). */
+export async function sampleRuleFor(deps: Pick<QualityHoldDeps, 'isFood'>, tenantId: string, hold: Pick<QualityHold, 'batchId' | 'productId'>): Promise<SampleRule> {
+  if (deps.isFood === undefined) return { required: false, because: 'not_food', detail: `batch ${hold.batchId} may be released without a recorded sample` };
+  const food = await deps.isFood(tenantId, hold.productId);
+  if (food === true) return { required: true, because: 'food', detail: `${hold.productId} is a food item, so held batch ${hold.batchId} needs at least one quality sample recorded on its hold before it is released (OB-513)` };
+  if (food === undefined) return { required: true, because: 'food_not_known', detail: `head office cannot tell whether ${hold.productId} is food (it is not on the product master), so held batch ${hold.batchId} needs at least one recorded sample before it is released (OB-513)` };
+  return { required: false, because: 'not_food', detail: `${hold.productId} is not a food item, so batch ${hold.batchId} may be released without a recorded sample (OB-513)` };
 }
 
 // ── Round 6 · M10-FR-02 "sampling": each quality sample is RECORDED on the hold ─────────────────────────────────────────
@@ -104,6 +127,7 @@ const REFUSAL: Readonly<Record<Exclude<ReleaseRefusal, 'released'>, { status: nu
   not_held: { status: 409, what: 'This batch has already been released, so there is no hold to release.', next: 'This batch is already released — nothing is held, so there is nothing to release again.' },
   sample_failed: { status: 422, what: 'A quality sample for this batch failed, so it cannot be released for sale.', next: 'The batch stays held. A failed sample cannot be released — route it to disposal (M28) or re-sample.' },
   sample_pending: { status: 422, what: 'A quality sample for this batch has not come back yet, so releasing now would be a guess.', next: 'The batch stays held. Wait for the outstanding sample to come back, then release.' },
+  sample_required: { status: 422, what: 'This is a held food batch and no quality sample is recorded on its hold, so it cannot be released yet (OB-513).', next: 'The batch stays held. Take a sample, record it on the hold (POST /v1/quality/holds/:batchId/samples/:sampleId), then release.' },
   cold_chain_breach: { status: 422, what: 'A cold-chain breach is on record for this batch, so it cannot be released for sale.', next: 'The batch stays held. A cold-chain breach cannot be released — the incident and evidence stand (M10-FR-04).' },
   expired: { status: 422, what: 'This batch has passed its expiry date, so it can never be released.', next: 'The batch has expired and can never be released — route it to disposal (M28).' },
   no_releaser: { status: 422, what: 'A release arrived without the name of the person making it.', next: 'A release must carry the name of the person making it — sign in and release again.' },
@@ -243,8 +267,11 @@ export function qualityHoldRoutes(deps: QualityHoldDeps & QualitySampleDeps): re
         const coldChain = (b['coldChain'] ?? undefined) as ColdChainAssessment | undefined;
         const expiresOn = isStr(b['expiresOn']) ? (b['expiresOn'] as string) : undefined;
 
+        // OB-513: a held FOOD batch needs at least one recorded sample first; other holds may release without.
+        const rule = await sampleRuleFor(deps, ctx.tenantId, hold);
         const result: QualityReleaseResult = releaseFromQualityHold({
           hold, samples, coldChain, expiresOn, releasedBy: ctx.userId, at: deps.now(),
+          ...(rule.required ? { sampleRequired: rule.detail } : {}),
         });
 
         if (!result.released) {
@@ -280,7 +307,7 @@ export function qualityHoldRoutes(deps: QualityHoldDeps & QualitySampleDeps): re
         const batchId = (ctx.params['batchId'] ?? '').trim();
         const hold = await deps.hold(ctx.tenantId, batchId);
         if (hold === undefined) throw notFound(`quality hold for batch ${batchId}`);
-        return { status: 200, body: { hold, samples: await samplesOf(ctx.tenantId, hold) } };
+        return { status: 200, body: { hold, samples: await samplesOf(ctx.tenantId, hold), sampleRule: await sampleRuleFor(deps, ctx.tenantId, hold) } };
       },
     },
   ];
@@ -365,6 +392,8 @@ export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly R
           coldChain: (b['coldChain'] ?? undefined) as ColdChainAssessment | undefined,
           expiresOn: isStr(b['expiresOn']) ? (b['expiresOn'] as string) : undefined,
           releasedBy, at,
+          // OB-513: the same rule as the direct release — a held food batch needs a recorded sample first.
+          ...await (async () => { const rule = await sampleRuleFor(deps, ctx.tenantId, hold); return rule.required ? { sampleRequired: rule.detail } : {}; })(),
         });
         if (!result.released) {
           const map = REFUSAL[result.outcome as Exclude<ReleaseRefusal, 'released'>];
@@ -394,6 +423,8 @@ export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly R
           batchId: h.batchId, productId: h.productId, reason: h.reason, heldAt: h.heldAt, heldBy: h.heldBy,
           samples: currentSamples(await deps.sampleVersions(ctx.tenantId, h.batchId), h)
             .map((s) => ({ sampleId: s.sampleId, test: s.test, result: s.result, takenBy: s.takenBy, takenAt: s.takenAt, recordedBy: s.recordedBy, recordedAt: s.recordedAt })),
+          // OB-513: whether this hold needs a recorded sample before release, and why — so the screen can say it offline.
+          sampleRule: await sampleRuleFor(deps, ctx.tenantId, h),
         })));
         return { status: 200, body: { holds: held, count: held.length, asAt: deps.now() } };
       },

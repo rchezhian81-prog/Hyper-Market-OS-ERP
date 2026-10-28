@@ -20,6 +20,7 @@ import { randomBytes } from 'node:crypto';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import type { CheckOutcome, CheckRefusal, SignInRefusal } from './till-operators';
+import { judgeTillOverride, readTillControls, type TillOverrideRefusal } from '../../../packages/price-guard/src/till-override';
 
 /** The permission a manager needs to approve a refund at the till — the one head office re-checks on every synced refund. */
 export const APPROVAL_AUTHORITY = 'pos.return.approve';
@@ -56,7 +57,9 @@ export type ApprovalRefusal =
   | SignInRefusal
   | CheckRefusal
   | 'self_approval' | 'approval_not_readable'
-  | 'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match';
+  | 'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match'
+  /** OB-500: a price cut below the product's floor, or beyond the approving manager's limit (or with no rules on the box). */
+  | TillOverrideRefusal;
 
 const WORDS: Readonly<Record<'self_approval' | 'approval_not_readable' | 'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match', string>> = {
   self_approval: 'A refund must be approved by a manager who is not the person at the till. Ask another manager.',
@@ -70,7 +73,7 @@ const WORDS: Readonly<Record<'self_approval' | 'approval_not_readable' | 'approv
 
 export type GrantOutcome =
   | { readonly approved: true; readonly approvalId: string; readonly approvedBy: string; readonly displayName: string; readonly expiresAt: string }
-  | { readonly approved: false; readonly refusedBecause: ApprovalRefusal; readonly laneMessage: string };
+  | { readonly approved: false; readonly refusedBecause: ApprovalRefusal; readonly laneMessage: string; readonly laneMessageTa?: string };
 
 export type ReturnCheck =
   | { readonly ok: true; readonly stamp?: { readonly approvalId: string; readonly approvedBy: string } }
@@ -83,6 +86,8 @@ interface Granted {
   readonly approvalId: string; readonly kind: ApprovalKind; readonly billRef: string | null; readonly valueMinor: number;
   readonly requestedBy: string; readonly approvedBy: string; readonly laneId: string; readonly reason: string;
   readonly at: string; readonly expiresAt: string;
+  /** OB-500: a price cut is approved for exactly this product and this new unit price — spent only by that change. */
+  readonly productId?: string; readonly toUnitMinor?: number;
 }
 type LogRecord =
   | ({ readonly kind: 'granted' } & Omit<Granted, 'kind'> & { readonly subjectKind: ApprovalKind })
@@ -125,6 +130,11 @@ export class TillApprovals {
       };
       /** The shop's approval threshold from the CURRENT pack; `null` when the pack holds no service policy (then every refund needs one). */
       readonly approvalThresholdMinor: () => number | null;
+      /**
+       * OB-500: the CURRENT pack's `tillControls` section (floors and price-cut limits), or undefined when the pack does not
+       * carry it — then no price cut is approved. Left out of the composition only by tests that do not judge price cuts.
+       */
+      readonly tillControls?: () => unknown;
       readonly now: () => string;
     },
     restored: readonly LogRecord[],
@@ -139,6 +149,7 @@ export class TillApprovals {
     readonly capacityBytes: number;
     readonly operators: TillApprovals['deps']['operators'];
     readonly approvalThresholdMinor: () => number | null;
+    readonly tillControls?: () => unknown;
     readonly now?: () => string;
   }): Promise<TillApprovals> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'till-approvals.log' });
@@ -152,7 +163,10 @@ export class TillApprovals {
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
-    return new TillApprovals(log, { operators: input.operators, approvalThresholdMinor: input.approvalThresholdMinor, now: input.now ?? (() => new Date().toISOString()) }, restored, unreadable);
+    return new TillApprovals(log, {
+      operators: input.operators, approvalThresholdMinor: input.approvalThresholdMinor,
+      ...(input.tillControls === undefined ? {} : { tillControls: input.tillControls }), now: input.now ?? (() => new Date().toISOString()),
+    }, restored, unreadable);
   }
 
   private fold(r: LogRecord): void {
@@ -160,6 +174,7 @@ export class TillApprovals {
       this.granted.set(r.approvalId, {
         approvalId: r.approvalId, kind: r.subjectKind, billRef: r.billRef, valueMinor: r.valueMinor, requestedBy: r.requestedBy,
         approvedBy: r.approvedBy, laneId: r.laneId, reason: r.reason, at: r.at, expiresAt: r.expiresAt,
+        ...(typeof r.productId === 'string' ? { productId: r.productId } : {}), ...(typeof r.toUnitMinor === 'number' ? { toUnitMinor: r.toUnitMinor } : {}),
       });
     } else if (!this.usedBy.has(r.approvalId)) this.usedBy.set(r.approvalId, r.usedBy);
   }
@@ -179,8 +194,10 @@ export class TillApprovals {
     readonly token: string | undefined; readonly laneId: string;
     readonly managerId: string; readonly pin: string;
     readonly kind: unknown; readonly billRef: unknown; readonly valueMinor: unknown; readonly reason: unknown;
+    /** OB-500: for a price cut — the product and the new unit price the manager approves. */
+    readonly productId?: unknown; readonly toUnitMinor?: unknown;
   }): Promise<GrantOutcome> {
-    const refuse = (refusedBecause: ApprovalRefusal, laneMessage: string): GrantOutcome => ({ approved: false, refusedBecause, laneMessage });
+    const refuse = (refusedBecause: ApprovalRefusal, laneMessage: string, laneMessageTa?: string): GrantOutcome => ({ approved: false, refusedBecause, laneMessage, ...(laneMessageTa === undefined ? {} : { laneMessageTa }) });
     const asker = this.deps.operators.check(input.token, input.laneId);
     if (!asker.ok) return refuse(asker.refusedBecause, asker.laneMessage);
     const kind = KINDS.find((k) => k === input.kind);
@@ -195,9 +212,22 @@ export class TillApprovals {
     }
     // §28: never the person asking. Said before the PIN is even looked at, so a cashier learns nothing by trying.
     if (managerId === asker.userId) return refuse('self_approval', WORDS.self_approval);
+    // OB-500: a price cut is judged by the shop's own rules from THIS box's signed pack — the floor before any PIN is looked at.
+    const cut = kind === 'price_override' && this.deps.tillControls !== undefined ? this.priceCutOf(input) : undefined;
+    if (cut !== undefined && !cut.readable) return refuse('approval_not_readable', 'A price change approval needs the product and the new price. Nothing was changed.');
+    const controls = cut === undefined ? undefined : readTillControls(this.deps.tillControls?.());
+    if (cut?.readable === true) {
+      const floor = judgeTillOverride({ controls, productId: cut.productId, toUnitMinor: cut.toUnitMinor, reductionMinor: 0, approverId: '' });
+      if (!floor.ok) return refuse(floor.refusedBecause, floor.words.en, floor.words.ta);
+    }
     const authority = OVERRIDE_KINDS.includes(kind) ? OVERRIDE_AUTHORITY : APPROVAL_AUTHORITY;
     const manager = await this.deps.operators.verifyPerson({ staffId: managerId, pin: input.pin, laneId: input.laneId, authority });
     if (!manager.ok) return refuse(manager.refusedBecause, manager.laneMessage);
+    // OB-500: and the approving manager's own price-cut limit, for what the cut takes off the line.
+    if (cut?.readable === true) {
+      const judged = judgeTillOverride({ controls, productId: cut.productId, toUnitMinor: cut.toUnitMinor, reductionMinor: valueMinor, approverId: manager.userId, approverName: manager.displayName });
+      if (!judged.ok) return refuse(judged.refusedBecause, judged.words.en, judged.words.ta);
+    }
     const nowMs = Date.parse(this.deps.now());
     const approvalId = `apr-${randomBytes(12).toString('hex')}`;
     const expiresAt = new Date(nowMs + APPROVAL_MINUTES * 60_000).toISOString();
@@ -205,8 +235,18 @@ export class TillApprovals {
       kind: 'granted', approvalId, subjectKind: kind, billRef: kind === 'no_receipt_return' || kind === 'no_sale' ? null : billRef, valueMinor,
       requestedBy: asker.userId, approvedBy: manager.userId, laneId: input.laneId, reason: String(input.reason).trim().slice(0, 200),
       at: new Date(nowMs).toISOString(), expiresAt,
+      ...(cut?.readable === true ? { productId: cut.productId, toUnitMinor: cut.toUnitMinor } : {}),
     });
     return { approved: true, approvalId, approvedBy: manager.userId, displayName: manager.displayName, expiresAt };
+  }
+
+  /** OB-500: the product and new unit price a price-cut approval names, read defensively off the till's request. */
+  private priceCutOf(input: { readonly productId?: unknown; readonly toUnitMinor?: unknown }):
+    { readonly readable: true; readonly productId: string; readonly toUnitMinor: number } | { readonly readable: false } {
+    const productId = isStr(input.productId) ? input.productId.trim() : undefined;
+    const to = input.toUnitMinor;
+    return productId !== undefined && typeof to === 'number' && Number.isSafeInteger(to) && to >= 0
+      ? { readable: true, productId, toUnitMinor: to } : { readable: false };
   }
 
   /**
@@ -288,6 +328,8 @@ export class TillApprovals {
   async spendOverride(input: {
     readonly approvalId: unknown; readonly kind: 'no_sale' | 'price_override' | 'late_payment_answer' | 'card_refund_on_machine'; readonly billRef: string | null; readonly valueMinor: number;
     readonly requestedBy: string; readonly laneId: string; readonly activityId: string;
+    /** OB-500: the product and new unit price the price change applies — must be the ones approved. */
+    readonly productId?: string; readonly toUnitMinor?: number;
   }): Promise<ReturnCheck> {
     const say: Record<'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match', string> = {
       approval_required: 'This needs a manager\'s approval on this till. Nothing was done — ask a manager to approve it with their PIN.',
@@ -303,7 +345,9 @@ export class TillApprovals {
     const already = this.usedBy.get(input.approvalId);
     if (already !== undefined && already !== input.activityId) return fail('approval_already_used');
     if (already === undefined && Date.parse(g.expiresAt) <= Date.parse(this.deps.now())) return fail('approval_expired');
-    if (g.kind !== input.kind || g.billRef !== input.billRef || g.valueMinor !== input.valueMinor || g.requestedBy !== input.requestedBy || g.laneId !== input.laneId) {
+    if (g.kind !== input.kind || g.billRef !== input.billRef || g.valueMinor !== input.valueMinor || g.requestedBy !== input.requestedBy || g.laneId !== input.laneId
+      // OB-500: an approval given for one product and price is never spent on another.
+      || (g.productId !== undefined && (g.productId !== input.productId || g.toUnitMinor !== input.toUnitMinor))) {
       return fail('approval_does_not_match');
     }
     if (already === undefined) await this.record({ kind: 'used', at: this.deps.now(), approvalId: input.approvalId, usedBy: input.activityId });

@@ -79,7 +79,12 @@ describe('the Caddyfile routes only what is public', () => {
     expect(svc).toContain('no-new-privileges:true');
     expect(svc).toContain('../../services/identity/dist:/app:ro');
     expect(svc).not.toMatch(/^\s+ports:/m);
-    expect(svc).not.toMatch(/SECRET|PASSWORD|KEY:/);
+    // OB-510 · ADR-0031 amended: its ONE credential — the customer realm's client credential — is a FILE the custodian gives
+    // at deploy time, mounted read-only; the setting names the file's path inside the container, never a value.
+    expect(svc).toContain('CUSTOMER_SIGN_IN_CLIENT_SECRET_FILE: /run/sre/customer-realm-client\n');
+    expect(svc).toMatch(/- \$\{CUSTOMER_REALM_CLIENT_FILE:-\/dev\/null\}:\/run\/sre\/customer-realm-client:ro\n/);
+    const withoutTheFile = svc.split('\n').filter((l) => !l.includes('CUSTOMER_SIGN_IN_CLIENT_SECRET_FILE: /run/sre/customer-realm-client')).join('\n');
+    expect(withoutTheFile).not.toMatch(/SECRET|PASSWORD|KEY:/);
   });
 
   it('forwards ONE screen — the customer app — to the edge, sends / there, and refuses everything else by name', () => {

@@ -193,6 +193,18 @@ export interface EffectiveValue<T> {
   readonly effectiveFrom: string;
 }
 
+/** OB-512: one MRP replaced before it came into force — both versions, the reason and the two people, kept for good. */
+export interface MrpReplacement {
+  readonly effectiveFrom: string;
+  readonly replaced: Money;
+  readonly replacedBy: Money;
+  readonly reason: string;
+  readonly requestedBy: string;
+  readonly approvedBy: string;
+  readonly approvalId: string;
+  readonly at: string;
+}
+
 /**
  * D01-FR-06 (round 8): what the customer app shows and searches for a product, authored on the product master and carried
  * to the app through the store pack — a Tamil name, a short description in each language, and the other words customers
@@ -224,6 +236,12 @@ export interface ProductRecord {
   readonly taxClass: string | null;
   /** Effective-dated MRP history, newest last (M03-FR-03). */
   readonly mrpHistory?: readonly EffectiveValue<Money>[];
+  /**
+   * OB-512 (owner, 28 Oct 2026): every MRP that was replaced BEFORE it came into force — the replaced value beside the one
+   * that took its date, with the reason and both people. Append-only: kept forever, carried forward by head office, never
+   * taken from a body. The product's earlier versions (each publish) stay on the product stream as well.
+   */
+  readonly mrpReplacements?: readonly MrpReplacement[];
   readonly attributes?: Readonly<Record<string, string>>;
   readonly safety?: SafetyContent;
   readonly lifecycle: ProductLifecycle;

@@ -31,8 +31,9 @@ import { BackoffAuthThrottle, TokenBucketRateLimiter, type AuthThrottle, type Ra
 
 /**
  * Who signs a customer's token once their code is right. Provider-neutral: this service never mints one (ADR-0019).
- * Which identity server signs customers is an OPEN owner decision (ADR-0031); until it is made, none is configured and
- * every sign-in is refused in plain words. Tests put the local test identity provider behind it.
+ * OB-510 (owner, 28 Oct 2026): our self-hosted identity server signs it, in a customer realm of each shop's own
+ * (`keycloak-customer-signer.ts`, composed from the environment in `customer-sign-in-main.ts`). With none configured every
+ * sign-in is refused in plain words. Tests put the local test identity provider, or a stand-in identity server, behind it.
  */
 export interface CustomerSessionSigner {
   readonly name: string;

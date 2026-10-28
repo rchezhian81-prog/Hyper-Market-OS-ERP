@@ -51,6 +51,7 @@ import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPayment
 import { voiceQuery, voiceSearchLink, builtInRecogniser, customerVoiceSwitch, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort, type RecognitionConstructor } from './voice-search';
 import { basketKey, COUPON_CODE, repeatOrderBody, quoteRows, deliveryHandover, readReferralCode, referralWhy, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
 import { createScanAndGo, linesForTheShop, type ScanAndGo, type ScanProduct } from './scan-and-go';
+import { openNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 import { readScan, scanFrames, scanSupported, type BarcodeReader } from './barcode-scan';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -66,6 +67,9 @@ if (demoBannerDoc !== undefined && demoBannerDoc !== null) {
 
 /** Everything the app was given about this shop and this customer. */
 export interface ShopData {
+  /** OB-521: the app version policy, when the page was served with one (`null` = none in force). Head office's own copy
+   *  (`GET /v1/me/app-version-policy`) is asked again before a new order. */
+  readonly appVersionPolicy?: unknown;
   readonly tenantId?: string;
   readonly customerRef?: string;
   readonly products?: readonly StorefrontProduct[];
@@ -99,7 +103,9 @@ export type PlaceRefusal =
   | 'no_road_to_the_shop'
   | 'signed_out'
   | 'the_shop_refused'
-  | 'the_shop_could_not_answer';
+  | 'the_shop_could_not_answer'
+  /** OB-521: this app's build was withdrawn or is too old — no NEW order; orders already sent are kept and followed up. */
+  | 'app_version_too_old';
 
 export type PlaceOutcome =
   | {
@@ -123,6 +129,8 @@ export type PlaceOutcome =
     readonly refusedBecause: PlaceRefusal;
     /** What the customer is told — the session's or the shop's own sentence, never a cheerier one. */
     readonly tellTheCustomer: string;
+    /** OB-521: the same sentence in Tamil, where the app has its own Tamil words for it. */
+    readonly tellTheCustomerTa?: string;
     readonly detail: string;
   };
 
@@ -246,6 +254,11 @@ export interface Shop {
   payForWhatTheShopHas(input: { readonly providerRef: string; readonly result: ShopPaymentResult }): Promise<PlaceOutcome>;
   cancelOrder(): Promise<PlaceOutcome>;
   checkPayment(): Promise<PlaceOutcome>;
+  /**
+   * OB-521: ask head office for the app version policy this app is judged by (as the signed-in customer). `true` when head
+   * office answered (the gate now holds its policy); `false` when it could not be asked — the last policy told stands.
+   */
+  refreshVersionPolicy(): Promise<boolean>;
   /** Hold the customer's session token, in memory only. */
   signedIn(token: string): void;
   signOut(): void;
@@ -429,6 +442,8 @@ export function bootShop(
   nextId: () => string,
   transport?: ShopTransport,
   newOrderId: () => string = randomOrderId,
+  /** OB-521: this build's new-work gate. Absent → nothing is enforced (no policy was given to it). */
+  gate?: NewWorkGate,
 ): Shop | null {
   const products = data?.products;
   if (products === undefined || products.length === 0) return null;
@@ -536,6 +551,7 @@ export function bootShop(
     cancelOrder: () => followUp('cancel', {}),
     checkPayment: () => followUp('payment/check', {}),
 
+    refreshVersionPolicy: () => refreshVersionPolicy(),
     signedIn: (t) => { token = t; },
     signOut: () => { token = undefined; },
     isSignedIn: () => token !== undefined,
@@ -908,6 +924,15 @@ export function bootShop(
     return { ok: true, state, shopHasIt: true, orderId: held.orderId, detail: `the shop answered the ${action}`, paymentState: verdict.paymentState, ...(verdict.quoteMinor === undefined ? {} : { quoteMinor: verdict.quoteMinor }) };
   }
 
+  /** OB-521: head office's own app version policy, read as the signed-in customer, into the gate. */
+  async function refreshVersionPolicy(): Promise<boolean> {
+    if (gate === undefined || token === undefined || transport?.mine === undefined) return false;
+    const answer = await transport.mine({ token, method: 'GET', path: 'app-version-policy' });
+    if (!answer.reached || answer.status !== 200 || answer.body === null || typeof answer.body !== 'object' || !('policy' in answer.body)) return false;
+    gate.apply((answer.body as { policy: unknown }).policy);
+    return true;
+  }
+
   async function placeThroughTheShop(providerRef: string, result: ShopPaymentResult): Promise<PlaceOutcome> {
     // An order the shop already has is not sent again by tapping Pay twice: the customer changes the
     // basket (which starts a new review) to order again. The idempotent retry path is `retry()`.
@@ -915,7 +940,17 @@ export function bootShop(
       return { ok: false, state, refusedBecause: 'already_sent', tellTheCustomer: state.tellTheCustomer, detail: 'this basket was already sent and the shop has it — change the basket to start a new order' };
     }
     // The same order id as the last attempt for THIS reviewed basket; a fresh one otherwise.
-    const orderId = prepared !== undefined && prepared.review === state.review ? prepared.orderId : newOrderId();
+    const inHand = prepared !== undefined && prepared.review === state.review;
+    // OB-521: a NEW order is new work — refused on a withdrawn or too-old build, by head office's policy (asked now when it
+    // can be; else the last one told). An order already prepared (it may already be at the shop) is finished: it is resent.
+    if (!inHand && gate !== undefined) {
+      await refreshVersionPolicy().catch(() => false);
+      const words = gate.refusal();
+      if (words !== undefined) {
+        return { ok: false, state, refusedBecause: 'app_version_too_old', tellTheCustomer: words.en, tellTheCustomerTa: words.ta, detail: `this build (${gate.appVersion}) may not start a new order — nothing was sent or charged` };
+      }
+    }
+    const orderId = inHand && prepared !== undefined ? prepared.orderId : newOrderId();
 
     // 1. The session's own checks, offline and first: not reviewed, problems unresolved, prices
     //    moved, no slot, a card number. None of these ever reaches the network, and each keeps the
@@ -1030,6 +1065,8 @@ interface ShopWindow {
   shopVoiceSwitch?: { readonly off: () => boolean; readonly set: (on: boolean) => boolean; readonly phoneCanListen: () => boolean };
   /** OB-288 wave 3: the tested rules the commerce screens show (customer-commerce.ts). */
   shopCommerceRules?: { readonly quoteRows: typeof quoteRows; readonly deliveryHandover: typeof deliveryHandover; readonly helpTopics: typeof HELP_TOPICS; readonly substitutionChoices: typeof SUBSTITUTION_CHOICES; readonly readReferralCode: typeof readReferralCode; readonly referralWhy: typeof referralWhy };
+  /** OB-521: this build's new-work gate (its words when a new order or a new scan-and-go basket is refused). */
+  shopVersion?: NewWorkGate;
   /** OB-350: the scan-and-go basket on this phone (scan-and-go.ts) and the lines it sends — ids and counts only. */
   shopScanAndGo?: { readonly basket: ScanAndGo; readonly linesForTheShop: typeof linesForTheShop };
   /** D08-FR-02: the camera barcode rule (the page owns the camera; these decide what was read). */
@@ -1057,7 +1094,14 @@ if (browserWindow !== undefined) {
   const transport = typeof globalThis.fetch === 'function'
     ? httpShopTransport({ fetch: globalThis.fetch.bind(globalThis), isOnline: () => nav?.onLine !== false })
     : undefined;
-  const shop = bootShop(browserWindow.shopData, basket, randomRequestId, transport);
+  // OB-521: the policy the page was served with, else the last one this phone was told; head office's is asked again
+  // before a new order (and on sign-in, by the screen).
+  const gate = openNewWorkGate({
+    client: 'customer_app', ...(storage === undefined ? {} : { storage }), key: 'sre.shop.app-version-policy',
+    ...(browserWindow.shopData !== undefined && 'appVersionPolicy' in browserWindow.shopData ? { served: browserWindow.shopData.appVersionPolicy } : {}),
+  });
+  browserWindow.shopVersion = gate;
+  const shop = bootShop(browserWindow.shopData, basket, randomRequestId, transport, undefined, gate);
   if (shop !== null) browserWindow.shop = shop;
   browserWindow.shopVoiceQuery = voiceQuery;
   // OB-322: voice search through the phone's built-in recogniser, where it has one, and the customer's own switch to turn
@@ -1073,7 +1117,7 @@ if (browserWindow !== undefined) {
   // OB-350: scan-and-go — the basket is built from the shop's own list on this phone and kept here (a convenience).
   const data = browserWindow.shopData as { products?: readonly ScanProduct[] } | undefined;
   browserWindow.shopScanAndGo = {
-    basket: createScanAndGo({ products: () => data?.products ?? [], newBasketId: () => `sg-${randomRequestId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60), storage, key: `sre.shop.scan-and-go.${who}` }),
+    basket: createScanAndGo({ products: () => data?.products ?? [], newBasketId: () => `sg-${randomRequestId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60), storage, key: `sre.shop.scan-and-go.${who}`, newWorkRefusal: () => gate.refusal() }),
     linesForTheShop,
   };
   // D08-FR-02: the camera barcode — the phone's own reader; without one, the typed number always works.

@@ -16,10 +16,21 @@
 // The limit a person holds is the SERVER's answer from their grants — never a figure in a request body (the audit found
 // `/v1/access/approvals/decide` taking the decider's own limit from the body; this is what replaces it).
 
-/** The kinds of decision a money limit governs (OB-290). */
-export const LIMITED_SUBJECTS = Object.freeze(['refund', 'purchase_order', 'stock_adjustment'] as const);
+/**
+ * The kinds of decision a money limit governs (OB-290), and OB-500: a PRICE CUT AT THE TILL (`price_override` — what one
+ * manager's approval may take off a line). OB-519: the store manager's figure is ₹100 a line; every other role but the
+ * owner (unlimited) reads "not set" until the owner sets one: a cut above ₹0 then needs the owner (default deny, P-04).
+ */
+export const LIMITED_SUBJECTS = Object.freeze(['refund', 'purchase_order', 'stock_adjustment', 'price_override'] as const);
 export type LimitedSubject = (typeof LIMITED_SUBJECTS)[number];
 export const isLimitedSubject = (v: unknown): v is LimitedSubject => typeof v === 'string' && (LIMITED_SUBJECTS as readonly string[]).includes(v);
+/**
+ * The kinds whose approvals WAIT and escalate by age (OB-292). A till price cut is approved on the spot by a manager with
+ * their PIN — it never waits in an inbox — so it has no escalation wait.
+ */
+export const ESCALATING_SUBJECTS = Object.freeze(['refund', 'purchase_order', 'stock_adjustment'] as const);
+export type EscalatingSubject = (typeof ESCALATING_SUBJECTS)[number];
+export const isEscalatingSubject = (v: unknown): v is EscalatingSubject => typeof v === 'string' && (ESCALATING_SUBJECTS as readonly string[]).includes(v);
 
 /**
  * Which money limit a decision falls under — the engine's kinds and the store screens' subject types both map here. A kind
@@ -38,6 +49,8 @@ const SUBJECT_OF: Readonly<Record<string, LimitedSubject>> = Object.freeze({
   stock_write_off: 'stock_adjustment',
   write_off: 'stock_adjustment',
   stock_count: 'stock_adjustment',
+  // OB-500: a price lowered at the till with a manager's PIN (the till approval kind).
+  price_override: 'price_override',
 });
 export function limitedSubjectOf(kindOrSubject: string): LimitedSubject | undefined {
   return SUBJECT_OF[kindOrSubject];
@@ -50,7 +63,7 @@ export interface AuthorityLimits {
   readonly byRole: Readonly<Record<string, LimitRow>>;
 }
 
-export type EscalationWaits = Readonly<Record<LimitedSubject, number>>;
+export type EscalationWaits = Readonly<Record<EscalatingSubject, number>>;
 
 export interface PriceCheckThresholds {
   /** A change of MORE than this share of the current price needs a second person, in basis points (1000 = 10%). */
@@ -63,8 +76,11 @@ export interface PriceCheckThresholds {
 export const DECIDED_AUTHORITY_LIMITS: AuthorityLimits = Object.freeze({
   byRole: Object.freeze({
     cashier: Object.freeze({ refund: 0, purchase_order: 0, stock_adjustment: 0 }),
-    store_manager: Object.freeze({ refund: 500_000, purchase_order: 2_500_000, stock_adjustment: 200_000 }),
-    owner: Object.freeze({ refund: null, purchase_order: null, stock_adjustment: null }),
+    // OB-519 (owner, 28 Oct 2026): a store manager may approve a till price cut of up to ₹100 a line; a larger cut needs
+    // the owner (and the floor still applies). The owner can change this figure on the Approval rules page.
+    store_manager: Object.freeze({ refund: 500_000, purchase_order: 2_500_000, stock_adjustment: 200_000, price_override: 10_000 }),
+    // OB-500: the owner is the top of every escalation, so a till price cut of any size may go to him.
+    owner: Object.freeze({ refund: null, purchase_order: null, stock_adjustment: null, price_override: null }),
   }),
 });
 
@@ -88,7 +104,7 @@ const ID = /^[a-z][a-z0-9_]{0,63}$/;
 export type RuleRead<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly why: string };
 
 function readRow(v: unknown, who: string): RuleRead<LimitRow> {
-  if (!isObj(v)) return { ok: false, why: `${who}: a row of limits is { refund?, purchase_order?, stock_adjustment? }` };
+  if (!isObj(v)) return { ok: false, why: `${who}: a row of limits is { refund?, purchase_order?, stock_adjustment?, price_override? }` };
   const out: Partial<Record<LimitedSubject, number | null>> = {};
   for (const [k, x] of Object.entries(v)) {
     if (!isLimitedSubject(k)) return { ok: false, why: `${who}: "${k}" is not a kind of decision a limit governs (${LIMITED_SUBJECTS.join(', ')})` };
@@ -122,15 +138,15 @@ export const MAX_WAIT_MINUTES = 30 * 24 * 60;
 
 export function readEscalationWaits(v: unknown): RuleRead<EscalationWaits> {
   if (!isObj(v)) return { ok: false, why: 'Escalation waits are { refund, purchase_order, stock_adjustment } in whole minutes.' };
-  const out: Partial<Record<LimitedSubject, number>> = {};
-  for (const s of LIMITED_SUBJECTS) {
+  const out: Partial<Record<EscalatingSubject, number>> = {};
+  for (const s of ESCALATING_SUBJECTS) {
     const x = v[s];
     if (typeof x !== 'number' || !Number.isInteger(x) || x < 1 || x > MAX_WAIT_MINUTES) {
       return { ok: false, why: `The ${s} wait must be a whole number of minutes from 1 to ${MAX_WAIT_MINUTES} (30 days).` };
     }
     out[s] = x;
   }
-  for (const k of Object.keys(v)) if (!isLimitedSubject(k)) return { ok: false, why: `"${k}" is not a kind of approval that escalates by age.` };
+  for (const k of Object.keys(v)) if (!isEscalatingSubject(k)) return { ok: false, why: `"${k}" is not a kind of approval that escalates by age.` };
   return { ok: true, value: Object.freeze(out as EscalationWaits) };
 }
 

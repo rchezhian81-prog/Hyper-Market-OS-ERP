@@ -248,6 +248,32 @@
         </div>
         <button id="save-price" class="primary wide" type="button" hidden>Save this price</button>
 
+        <!--
+          OB-512: an MRP on record that is NOT YET IN FORCE may be replaced — with a reason and a second person's approval
+          (a second person who approves catalogue changes — the accountant or the owner — on their own Approvals page). Both versions stay on record. An
+          MRP already in force is never offered here.
+        -->
+        <div class="approval" id="mrp-replace" hidden>
+          <h3 id="mrp-replace-title">Replace an MRP that is not yet in force</h3>
+          <p class="lead" id="mrp-replace-lead">Only an MRP whose start date has not come yet can be replaced. Write why and ask for approval; once a second person approves it, press “Replace it”. The old MRP stays on record beside the new one.</p>
+          <div class="two">
+            <div class="field">
+              <label for="mrp-replace-date" id="mrp-replace-date-label">Which MRP (its start date)</label>
+              <select id="mrp-replace-date"></select>
+            </div>
+            <div class="field">
+              <label for="mrp-replace-new" id="mrp-replace-new-label">New MRP (in rupees)</label>
+              <input id="mrp-replace-new" type="text" inputmode="decimal" autocomplete="off" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="mrp-replace-why" id="mrp-replace-why-label">Why it is replaced (the person approving reads it)</label>
+            <textarea id="mrp-replace-why" maxlength="300"></textarea>
+          </div>
+          <button id="mrp-replace-ask" class="primary wide" type="button">Ask for approval</button>
+          <button id="mrp-replace-save" class="wide" type="button">Replace it</button>
+        </div>
+
         <h3 id="history-title">What this item has been priced at</h3>
         <div id="price-history"></div>
       </section>

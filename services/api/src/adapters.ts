@@ -7104,7 +7104,7 @@ export function goodsReceiptAdapter(input: {
     const byId = new Map<string, GrnRecord>();
     for (const e of await input.store.readStream(tenantId, grnStream)) {
       if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned'
-        || e.event.type === 'GoodsReceiptLineReturned') {
+        || e.event.type === 'GoodsReceiptLineReturned' || e.event.type === 'GoodsReceiptBillMatched' /* OB-509 */) {
         const g = payloadOf<GrnRecord>(e);
         byId.set(g.grnId, g);
       }
@@ -13753,7 +13753,14 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
   // OB-288 P3 (M07-FR-04): a matched bill's freight/duty raises what those receipts cost (value, never quantity).
   for (const adj of await stockCostAdjustments(input.store, tenantId)) {
     if (opts?.throughPeriod !== undefined && tradingMonthIn(adj.occurredAt, calendar) > opts.throughPeriod) continue;
-    const a = acc.get(`${adj.productId}\u001f${branchOf(adj.locationId)}`);
+    const key = `${adj.productId}\u001f${branchOf(adj.locationId)}`;
+    // OB-509: units that came in unvalued, now costed by their matched bill — they join the average with their value.
+    if (adj.costKnown === true) {
+      const a = acc.get(key) ?? { productId: adj.productId, storeId: branchOf(adj.locationId), qty: 0, value: 0, scale: minorPerUnitOf(adj.uom ?? 'ea') };
+      a.qty += adj.quantityMinor; a.value += adj.valueMinor; acc.set(key, a);
+      continue;
+    }
+    const a = acc.get(key);
     if (a !== undefined) a.value += adj.valueMinor;
   }
   const rows = [...acc.values()].map((a): AverageBuyingCost => ({

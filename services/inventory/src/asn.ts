@@ -31,7 +31,9 @@ function readAsnLine(v: unknown): AsnLine | undefined {
   if (!isObj(v) || !isStr(v['lineId']) || !isStr(v['productId']) || !isNonNegInt(v['quantityMinor']) || !isStr(v['uom'])) return undefined;
   if (v['batchId'] !== undefined && !isStr(v['batchId'])) return undefined;
   if (v['expiry'] !== undefined && !isStr(v['expiry'])) return undefined;
+  if (v['manufacturedOn'] !== undefined && !isStr(v['manufacturedOn'])) return undefined;
   return {
+    ...(isStr(v['manufacturedOn']) ? { manufacturedOn: (v['manufacturedOn'] as string).trim() } : {}), // B4 · OB-504
     lineId: v['lineId'] as string, productId: v['productId'] as string, quantityMinor: v['quantityMinor'] as number, uom: v['uom'] as string,
     ...(isStr(v['batchId']) ? { batchId: v['batchId'] } : {}),
     ...(isStr(v['expiry']) ? { expiry: v['expiry'] } : {}),

@@ -200,7 +200,7 @@ describe('pilot seed — trading partners + stock (Phase 4c)', () => {
 
   it('the goods receipt turns the delivery into sellable stock', async () => {
     const { h } = await seed();
-    const grn = await h.request({ method: 'GET', path: '/v1/inventory/goods-receipt/grn-demo-001', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    const grn = await h.request({ method: 'GET', path: '/v1/inventory/goods-receipt/opening-demo-001', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
     expect(grn.status).toBe(200);
     expect((grn.body as { grn: { availableMinor: number } }).grn.availableMinor).toBeGreaterThan(0);
 

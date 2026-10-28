@@ -28,6 +28,8 @@ export interface HeldQualityHolds {
     readonly releasedOnThisBox?: boolean;
     /** M10-FR-02: the samples recorded on the hold at head office (each one's current result). Absent = not told. */
     readonly samples?: readonly HeldSample[];
+    /** OB-513: head office's word on whether this hold needs a recorded sample before release, and why. Absent = not told. */
+    readonly sampleRule?: { readonly required: boolean; readonly because: 'food' | 'food_not_known' | 'not_food' };
   }[];
 }
 
@@ -38,7 +40,8 @@ export type CopyKey =
   | 'qhHeading' | 'qhLead' | 'qhAsOf' | 'qhNotKnown' | 'qhNone' | 'qhHeld' | 'qhReleasedHere' | 'qhWhy' | 'qhNotes' | 'qhRelease'
   | 'qhSaved' | 'qhNobody' | 'qhNoStore' | 'qhNoRight' | 'qhNeedNotes' | 'qhUnknown' | 'qhAlready'
   | 'stSavedHere' | 'stRetrying' | 'stHanded' | 'stPosted' | 'stRefused'
-  | 'qhSamples' | 'qhNoSamples' | 'qhSamplesNotKnown' | 'qhPass' | 'qhFail' | 'qhPending' | 'qhTakenBy' | 'qhBlockedFail' | 'qhBlockedPending';
+  | 'qhSamples' | 'qhNoSamples' | 'qhSamplesNotKnown' | 'qhPass' | 'qhFail' | 'qhPending' | 'qhTakenBy' | 'qhBlockedFail' | 'qhBlockedPending'
+  | 'qhRuleFood' | 'qhRuleFoodNotKnown' | 'qhRuleNotFood' | 'qhBlockedNoSample';
 
 export const QUALITY_RELEASE_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -52,6 +55,11 @@ export const QUALITY_RELEASE_COPY: BilingualCopy<CopyKey> = {
     qhSamples: 'Samples recorded on this hold', qhNoSamples: 'No sample is recorded on this hold.', qhSamplesNotKnown: 'The store computer was not told this hold\'s samples.',
     qhPass: 'Passed', qhFail: 'Failed', qhPending: 'Waiting for the result', qhTakenBy: 'taken by',
     qhBlockedFail: 'A sample failed — this batch cannot be released for sale.', qhBlockedPending: 'A sample has not come back yet — the release waits for its result.',
+    // OB-513: a held FOOD batch needs at least one recorded sample before release; other holds may release without.
+    qhRuleFood: 'Food item — at least one quality sample must be recorded on this hold before it can be released.',
+    qhRuleFoodNotKnown: 'Head office cannot tell whether this item is food, so at least one quality sample must be recorded before it is released.',
+    qhRuleNotFood: 'Not a food item — it may be released without a recorded sample.',
+    qhBlockedNoSample: 'No sample is recorded yet — a held food batch is not released until one is.',
   },
   ta: {
     qhHeading: 'தரத் தடையில் உள்ள தொகுதிகள்', qhLead: 'தடையில் உள்ள தொகுதி விற்கப்படாது. நீங்கள் சரிபார்த்த பின்னரே ஒன்றை விடுவியுங்கள் — இணைப்பு இல்லாவிட்டாலும் கடைக் கணினி உங்கள் விடுவிப்பைத் தலைமை அலுவலகத்திற்குக் கொண்டு செல்லும்; நீங்கள் விடுவிக்கலாமா என்பதைத் தலைமை அலுவலகம் சரிபார்க்கும்.',
@@ -64,6 +72,10 @@ export const QUALITY_RELEASE_COPY: BilingualCopy<CopyKey> = {
     qhSamples: 'இந்தத் தடையில் பதிவான மாதிரிகள்', qhNoSamples: 'இந்தத் தடையில் எந்த மாதிரியும் பதிவாகவில்லை.', qhSamplesNotKnown: 'இந்தத் தடையின் மாதிரிகள் கடைக் கணினிக்குச் சொல்லப்படவில்லை.',
     qhPass: 'தேர்ச்சி', qhFail: 'தோல்வி', qhPending: 'முடிவுக்குக் காத்திருக்கிறது', qhTakenBy: 'எடுத்தவர்',
     qhBlockedFail: 'ஒரு மாதிரி தோல்வியடைந்தது — இந்தத் தொகுதியை விற்பனைக்கு விடுவிக்க முடியாது.', qhBlockedPending: 'ஒரு மாதிரியின் முடிவு இன்னும் வரவில்லை — விடுவிப்பு அதன் முடிவுக்குக் காத்திருக்கிறது.',
+    qhRuleFood: 'உணவுப் பொருள் — விடுவிக்கும் முன் இந்தத் தடையில் குறைந்தது ஒரு தர மாதிரி பதிவாக வேண்டும்.',
+    qhRuleFoodNotKnown: 'இது உணவுப் பொருளா என்று தலைமை அலுவலகத்துக்குத் தெரியவில்லை, அதனால் விடுவிக்கும் முன் குறைந்தது ஒரு தர மாதிரி பதிவாக வேண்டும்.',
+    qhRuleNotFood: 'உணவுப் பொருள் அல்ல — பதிவான மாதிரி இல்லாமலும் விடுவிக்கலாம்.',
+    qhBlockedNoSample: 'இன்னும் எந்த மாதிரியும் பதிவாகவில்லை — தடையில் உள்ள உணவுத் தொகுதி ஒன்று பதிவாகும் வரை விடுவிக்கப்படாது.',
   },
 };
 
@@ -86,6 +98,8 @@ export interface QualityHoldRow {
   readonly samplesWords: string;
   /** A failed or pending sample: the release is not offered, and this says why. */
   readonly blockedWords?: string;
+  /** OB-513: why this hold does or does not need a recorded sample before release — null when head office did not say. */
+  readonly sampleRuleWords: string | null;
 }
 
 export interface QualityHoldView { readonly known: boolean; readonly asAtWords: string; readonly rows: readonly QualityHoldRow[] }
@@ -126,11 +140,15 @@ export function createQualityReleaseQueue(
           ...s, resultWord: text(lang, s.result === 'pass' ? 'qhPass' : s.result === 'fail' ? 'qhFail' : 'qhPending'), icon: s.result === 'pass' ? '✓' : s.result === 'fail' ? '✕' : '…',
         })) : null;
         // The same rule head office releases by: a failed sample can never be released; a pending one waits.
-        const blocked: CopyKey | undefined = samples?.some((s) => s.result === 'fail') === true ? 'qhBlockedFail' : samples?.some((s) => s.result === 'pending') === true ? 'qhBlockedPending' : undefined;
+        const blocked: CopyKey | undefined = samples?.some((s) => s.result === 'fail') === true ? 'qhBlockedFail' : samples?.some((s) => s.result === 'pending') === true ? 'qhBlockedPending'
+          // OB-513: a hold head office says needs a sample, with none recorded, is not offered for release.
+          : h.sampleRule?.required === true && (samples === null || samples.length === 0) ? 'qhBlockedNoSample' : undefined;
+        const ruleKey: CopyKey | undefined = h.sampleRule === undefined ? undefined : h.sampleRule.because === 'food' ? 'qhRuleFood' : h.sampleRule.because === 'food_not_known' ? 'qhRuleFoodNotKnown' : 'qhRuleNotFood';
         return {
           batchId: h.batchId, productId: h.productId, reason: h.reason, heldAt: h.heldAt, state,
           stateWord: text(lang, state === 'held' ? 'qhHeld' : 'qhReleasedHere'), icon: state === 'held' ? '⏸' : '✓',
           samples, samplesWords: text(lang, samples === null ? 'qhSamplesNotKnown' : samples.length === 0 ? 'qhNoSamples' : 'qhSamples'),
+          sampleRuleWords: ruleKey === undefined ? null : text(lang, ruleKey),
           ...(blocked === undefined || state !== 'held' ? {} : { blockedWords: text(lang, blocked) }),
           canRelease: state === 'held' && blocked === undefined && mayRelease && config.userId !== null && config.storeId !== null && saved === undefined && h.releasedOnThisBox !== true,
           ...(saved === undefined ? {} : { saved: { state: saved.state, stateWord: text(lang, STATE_WORD[saved.state]), ...(saved.reason === undefined ? {} : { reason: saved.reason }) } }),
@@ -147,9 +165,12 @@ export function createQualityReleaseQueue(
       if (savedHere().has(input.batchId)) return refuse('already_released_here', 'qhAlready');
       // M10-FR-02: the samples on record decide first — a failed one is never released, a pending one waits (head office
       // re-judges on its own records either way).
-      const samples = held.holds.find((h) => h.batchId === input.batchId)?.samples ?? [];
+      const hold = held.holds.find((h) => h.batchId === input.batchId);
+      const samples = hold?.samples ?? [];
       if (samples.some((s) => s.result === 'fail')) return refuse('sample_failed', 'qhBlockedFail');
       if (samples.some((s) => s.result === 'pending')) return refuse('sample_pending', 'qhBlockedPending');
+      // OB-513: a held food batch is not released until a sample is recorded on its hold (head office says which holds).
+      if (hold?.sampleRule?.required === true && samples.length === 0) return refuse('sample_required', 'qhBlockedNoSample');
       const notes = input.notes.trim();
       if (notes === '') return refuse('notes_required', 'qhNeedNotes');
       const at = config.now();

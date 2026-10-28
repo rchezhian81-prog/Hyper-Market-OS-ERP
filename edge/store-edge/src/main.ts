@@ -80,6 +80,7 @@ import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
 import { commitLocally } from './durability';
 import { selfCheckoutBasketRecorder } from './self-checkout-baskets'; // OB-288 P6 (R8-3 · R8-7)
+import { billVoidRecorder } from './bill-void-at-lane'; // R8-B · OB-523: a whole bill cancelled at the till frees its quotation
 import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '../../../packages/sync/src/device-relay';
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { watchStoreComputerStatus } from './store-computer-status-file';
@@ -94,6 +95,7 @@ import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
 import { httpPhoneBaskets } from './phone-baskets';
+import { httpQuotations } from './quotations-at-lane'; // R7-C · OB-506
 import { PaymentAttempts, type PaymentProviderPort } from './payment-attempts';
 import { PeripheralReports } from './peripheral-health';
 // D04-FR-05 mobile POS and queue-busting (OB-288 Pkg 6b) — begin: additive
@@ -118,6 +120,7 @@ import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withInd
 import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { checkStaffPurchase, packStaffPurchaseOf } from './staff-purchase-gate'; // OB-301
+import { judgeClientVersion, readPackVersionPolicy } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A)
 import { SoldHuids } from './sold-huids';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
@@ -134,6 +137,8 @@ import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/earn-rule';
 import { type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { packRule, packTimeZone, packTradingDay, packCalendarDate, packWallClock, zoneCheck, type ZoneCheck } from './shop-zone';
+import { foodHandlingRefusalAtTheDoor } from './workforce-pack'; // Round 7 · OB-502
+import { handlesFood } from '../../../packages/production/src/departments';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
@@ -1075,6 +1080,20 @@ export async function startEdge(
         acks.push({ key, status: 'duplicate' });
         continue;
       }
+      // OB-502 (M25-FR-03): food-handling work in the name of someone whose food-handling certificate expired or is missing is
+      // refused BEFORE the disk, from the certificates in the signed pack — the same rule as head office, with the line down.
+      const foodRefusal = foodHandlingRefusalAtTheDoor({
+        pack, event, handlesFood, now: new Date().toISOString(), dateOf: (at) => packCalendarDate(pack, at),
+        departmentOfRecipe: (recipeId) => {
+          const recipes = workFeeds.production?.feed.body['recipes'];
+          const found = Array.isArray(recipes) ? (recipes as { recipeId?: unknown; departmentId?: unknown }[]).find((r) => r.recipeId === recipeId) : undefined;
+          return typeof found?.departmentId === 'string' ? found.departmentId : undefined;
+        },
+      });
+      if (foodRefusal !== undefined) {
+        acks.push({ key, status: 'refused', reason: foodRefusal });
+        continue;
+      }
       deviceEventKeys.add(key);
       const outcome = await commitLocally({ saleId: key, record: JSON.stringify(event), log: deviceEventsLog });
       if (!outcome.committed) {
@@ -1103,8 +1122,11 @@ export async function startEdge(
    */
   // OB-288 P6 (R8-3 · R8-7): a self-checkout basket's evidence rides the same door, kept as its own record (self-checkout-baskets.ts).
   const recordSelfCheckoutBasket = selfCheckoutBasketRecorder({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => packTradingDay(pack, at) });
+  // R8-B · OB-523: a whole bill cancelled at the till — each line's void and each quotation's release, on the same door.
+  const recordBillVoid = billVoidRecorder({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => packTradingDay(pack, at) });
   const recordTillActivity: LaneTillActivityHandler = async ({ laneId, cashierId, via, body }) => {
     if (body['kind'] === 'self_checkout_basket') return recordSelfCheckoutBasket({ laneId, cashierId, via, body });
+    if (body['kind'] === 'bill_void') return recordBillVoid({ laneId, cashierId, via, body }); // R8-B · OB-523
     const str = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
     const whole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
     const kind = body['kind'];
@@ -1166,6 +1188,8 @@ export async function startEdge(
       const spent = await tillApprovals.spendOverride({
         approvalId: body['approvalId'], kind, billRef: kind === 'no_sale' ? null : body['billRef'] as string, valueMinor: kind === 'no_sale' ? 0 : value as number,
         requestedBy: cashierId, laneId, activityId: body['activityId'] as string,
+        // OB-500: a price change spends only the approval given for exactly this product and new price.
+        ...(kind === 'price_override' ? { productId: body['productId'] as string, toUnitMinor: body['toUnitMinor'] as number } : {}),
       });
       if (!spent.ok) return { recorded: false, refusedBecause: spent.refusedBecause, laneMessage: spent.laneMessage };
       approval = spent.stamp;
@@ -1339,6 +1363,16 @@ export async function startEdge(
   const node = createEdgeNode({
     tenantId,
     log,
+    // OB-501 (R7-A · M33-FR-02 · P-08): a sale from a till build this box's signed pack withdraws or no longer supports
+    // (or that reports none while a policy is in force) is MARKED on the record it keeps and sends — never refused.
+    clientVersionCheck: (sale) => {
+      if (!pack.versionPolicy.known) return undefined;
+      const policy = readPackVersionPolicy(pack.versionPolicy.value);
+      const judged = judgeClientVersion(typeof sale['appVersion'] === 'string' ? sale['appVersion'] : undefined, policy);
+      if (judged.mayStartBill && judged.verdict !== 'no_version_reported') return undefined;
+      say(`till sale ${String(sale['id'] ?? sale['saleId'] ?? '')} was rung on app ${judged.reported ?? '(no version reported)'} — ${judged.verdict.replace(/_/g, ' ')}; marked for head office.`);
+      return { verdict: judged.verdict, reported: judged.reported, minimumSupportedVersion: judged.minimumSupportedVersion };
+    },
     soldHuids,
     signer,
     // The seam. Without it a sale is durable on the disk and never queued, which is exactly how
@@ -1400,7 +1434,9 @@ export async function startEdge(
       ?? laneSyncStatus({ configured: 'starting', queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     // OB-403 "A" · §31.1: the till reads this every 10 s and applies no offer starting after the cut-off while it is held.
     const hold = seriesClockRef.guard?.activationHold();
-    const withHold = hold === undefined ? s : { ...s, offerHold: { held: hold.held, cutoffAt: hold.held ? hold.cutoffAt : null } };
+    const held = hold === undefined ? s : { ...s, offerHold: { held: hold.held, cutoffAt: hold.held ? hold.cutoffAt : null } };
+    // OB-501 (R7-A): the signed pack's app version policy, re-read by the till every 10 s.
+    const withHold = { ...held, appVersionPolicy: pack.versionPolicy.known ? pack.versionPolicy.value : null };
     return storeComputer === undefined ? withHold : { ...withHold, storeComputer: storeComputer.current() };
   };
 
@@ -1580,6 +1616,8 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     operators: tillOperators,
     approvalThresholdMinor: () => (pack.servicePolicy.known ? pack.servicePolicy.value.approvalThresholdMinor : null),
+    // OB-500 (R7-A): the floors and price-cut limits head office signed into this box's CURRENT pack — judged offline.
+    tillControls: () => (pack.tillControls?.known === true ? pack.tillControls.value : undefined),
   });
   // RECEIPT NUMBERS (audit PF-04 · M01-FR-02): issued by this box from the lane's published range (else its own sequence,
   // said aloud), on its disk before the till hears them, and bound to the record that used them. The numbers already on
@@ -1851,6 +1889,10 @@ export async function startEdge(
     // OB-350: scan-and-go baskets from head office, under this box's own credential — only when a cloud is configured.
     ...(settings['CLOUD_API_URL'] === undefined || settings['CLOUD_API_TOKEN'] === undefined ? {} : {
       phoneBaskets: httpPhoneBaskets({ baseUrl: settings['CLOUD_API_URL'], token: settings['CLOUD_API_TOKEN'], fetch: globalThis.fetch.bind(globalThis) }),
+    }),
+    // R7-C · OB-506: a retail quotation converted at head office for the till's bill, under this box's own credential.
+    ...(settings['CLOUD_API_URL'] === undefined || settings['CLOUD_API_TOKEN'] === undefined ? {} : {
+      quotations: httpQuotations({ baseUrl: settings['CLOUD_API_URL'], token: settings['CLOUD_API_TOKEN'], fetch: globalThis.fetch.bind(globalThis) }),
     }),
     // D04-FR-05: a basket a queue handheld handed to this box, brought up here by its code — while the switch is on.
     ...(queueBaskets === null ? {} : {

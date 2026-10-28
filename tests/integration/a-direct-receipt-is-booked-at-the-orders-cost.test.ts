@@ -116,7 +116,7 @@ describe.each(backings)('a direct goods receipt is booked at the issued order\'s
     expect(await l.stockValue()).toBe(40_000);
   });
 
-  it('a typed cost that matches the order raises nothing; a receipt with no order is unchanged; a cashier is refused (403)', async () => {
+  it('a typed cost that matches the order raises nothing; a receipt with no order is booked with its cost NOT KNOWN (OB-509); a cashier is refused (403)', async () => {
     const h = harness();
     const t = randomUUID();
     const l = lab(h, t);
@@ -124,11 +124,15 @@ describe.each(backings)('a direct goods receipt is booked at the issued order\'s
     const matched = grnOf(await l.receive('grn-3', 'po-3', 10, 5_000));
     expect(matched.governanceFlags).not.toContain('cost_differs_from_order');
     expect(matched.costDiscrepancies).toBeUndefined();
-    // No order: there is no agreed cost to compare with — the line stands as sent (an owner question, not guessed here).
+    // OB-509 (owner, 28 Oct 2026): no order → the cost is NOT KNOWN until the supplier's bill is matched — never the ₹40.00
+    // typed at the door (kept beside the line, not booked), and the stock goes in unvalued.
+    const before = await l.stockValue();
     const noOrder = grnOf(await l.receive('grn-4', undefined, 2, 4_000));
-    expect(noOrder.governanceFlags).toContain('no_purchase_order');
+    expect(noOrder.governanceFlags).toEqual(expect.arrayContaining(['no_purchase_order', 'cost_unknown']));
     expect(noOrder.costDiscrepancies).toBeUndefined();
-    expect(noOrder.captured.lines[0]?.unitCost.minor).toBe(4_000);
+    expect((noOrder as unknown as { costNotKnown: unknown }).costNotKnown).toEqual([expect.objectContaining({ lineId: 'L1', because: 'no_issued_order', typedUnitCost: { minor: 4_000, currency: 'INR' } })]);
+    expect(noOrder.captured.lines[0]).toMatchObject({ costNotKnown: true });
+    expect(await l.stockValue()).toBe(before); // the 2 units add no value — they are unvalued, not ₹0 and not ₹80
     // Booking stock in needs inventory.movement.append — a cashier has none; nothing is recorded.
     expect((await l.receive('grn-5', 'po-3', 1, 1, 'u-cash')).status).toBe(403);
     expect((await l.req('GET', '/v1/inventory/goods-receipt/grn-5', 'u-owner')).status).toBe(404);

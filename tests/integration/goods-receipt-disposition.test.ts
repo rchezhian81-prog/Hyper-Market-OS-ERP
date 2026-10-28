@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { LINE_DISPOSITIONS } from '../../services/inventory/src/goods-receipt';
@@ -31,8 +32,14 @@ interface Disposed { disposition: string; quantityMinor: number; valueMinor: num
 
 const post = (h: ApiHarness, path: string, userId: string, body: unknown, key: string) => h.request({ method: 'POST', path, userId, tenantId: A, idempotencyKey: key, body });
 const get = (h: ApiHarness, path: string, userId: string, query?: Readonly<Record<string, string>>) => h.request({ method: 'GET', path, userId, tenantId: A, ...(query === undefined ? {} : { query }) });
-const receive = (h: ApiHarness, grnId: string, lines: Record<string, unknown>[], userId = 'u-receiver') =>
-  post(h, `/v1/inventory/goods-receipt/${grnId}`, userId, { warehouseId: WH, receivedOnDate: '2026-09-30', currency: 'INR', lines }, grnId);
+// OB-509: each delivery comes against its own ISSUED order (p1 at ₹50, p3 at ₹2) — so every line is booked at a known cost
+// and every disposition carries the delivered value (a delivery with no order would be booked with its cost NOT KNOWN).
+const receive = async (h: ApiHarness, grnId: string, lines: Record<string, unknown>[], userId = 'u-receiver') => {
+  const poId = `po-${grnId}`;
+  expect((await post(h, `/v1/purchase/orders/${poId}`, 'u-po-buyer', { supplierId: 'sup-1', deliverToLocationId: WH, lines: [{ productId: 'p1', orderedQty: 100, unitCost: { minor: 5000, currency: 'INR' } }, { productId: 'p3', orderedQty: 100, unitCost: { minor: 200, currency: 'INR' } }] }, `po-${poId}`)).status).toBe(201);
+  expect((await post(h, `/v1/purchase/orders/${poId}/approval`, 'u-owner', { reason: 'within budget' }, `po-${poId}-ok`)).status).toBe(200);
+  return post(h, `/v1/inventory/goods-receipt/${grnId}`, userId, { warehouseId: WH, receivedOnDate: '2026-09-30', currency: 'INR', poId, lines }, grnId);
+};
 const line = (lineId: string, productId: string, extra: Record<string, unknown> = {}) =>
   ({ lineId, productId, orderedMinor: 100, countedMinor: 100, uom: 'ea', unitCost: { minor: 5000, currency: 'INR' }, condition: 'good', ...extra });
 const dispose = (h: ApiHarness, grnId: string, lineId: string, userId: string, disposition: string, key: string, reason = `${disposition} — inspected on the dock`) =>
@@ -49,6 +56,9 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-receiver', 'store_manager'); // receives; holds approve too — but never on their own delivery
   await h.provisionRole(A, 'u-boss', 'store_manager');     // the second person
   await h.provisionRole(A, 'u-cashier', 'cashier');        // no approval authority
+  await h.provisionRole(A, 'u-po-buyer', 'store_manager'); // raises the orders (never the one who books them in, §28)
+  await approvedSuppliers(h, A, 'sup-1'); // OB-32
+  await deliveryPlaces(h, A, WH); // OB-37
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
     payload: {

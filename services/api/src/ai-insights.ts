@@ -4,7 +4,7 @@
 // producers the reports use and drafts evidence-backed proposals a person acts on. Read-only by construction — nothing
 // here appends an event, and every proposal names the human endpoint that would act on it (hard rule #5).
 //
-//   • A01 (read-only): today's takings against the last day traded, how current that figure is (EA-01 source freshness),
+//   • A01 (read-only): today's takings against the same weekday last week (OB-516), how current that figure is (EA-01 source freshness),
 //     and the department doing the most — each an insight with its evidence, proposing no action at all; and, when the
 //     takings are DOWN, the "likely because…" lines (roadmap §7 "causal hypotheses", ai-owner-causes.ts) — each with its
 //     evidence and a confidence, read-only.
@@ -19,6 +19,7 @@ import { STREAM, inventoryAdapter, orgStructureAdapter } from './adapters';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import type { ReportProducers } from './report-producers';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { shiftDate } from '../../../packages/calendar/src/trading-day';
 import { likelyCauses } from './ai-owner-causes';
 
 type Draft = Omit<Proposal, 'committed'>;
@@ -38,18 +39,20 @@ export async function ownerInsights(producers: ReportProducers, tenantId: string
     });
     return out;
   }
-  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-  const before = await producers.produce(tenantId, 'sales_by_day', { tradingDay: yesterday, scope: 'all' });
+  // OB-516 (owner, 28 Oct 2026): today is weighed against the SAME WEEKDAY LAST WEEK (today − 7 days), never the day before —
+  // a Monday against a Sunday reads as a "drop" that is only the week's shape.
+  const lastWeek = shiftDate(today, -7);
+  const before = await producers.produce(tenantId, 'sales_by_day', { tradingDay: lastWeek, scope: 'all' });
   const prior = before.figures.find((f) => f.name === 'Taken')?.valueMinor;
   out.push({
     proposalId: `a01-takings-${today}`, agent: 'A01', createdAt: now,
     summary: prior === undefined || prior === 0
-      ? `Taken so far today: ${rupees(taken.valueMinor)} (${taken.staleness}, as at ${taken.asAt}); no takings on record for ${yesterday} to compare with`
-      : `Taken so far today: ${rupees(taken.valueMinor)} against ${rupees(prior)} on ${yesterday} (${taken.valueMinor >= prior ? 'up' : 'down'} ${rupees(Math.abs(taken.valueMinor - prior))}); figure ${taken.staleness}, as at ${taken.asAt}`,
+      ? `Taken so far today: ${rupees(taken.valueMinor)} (${taken.staleness}, as at ${taken.asAt}); no takings on record for ${lastWeek} (the same weekday last week) to compare with`
+      : `Taken so far today: ${rupees(taken.valueMinor)} against ${rupees(prior)} on ${lastWeek}, the same weekday last week (${taken.valueMinor >= prior ? 'up' : 'down'} ${rupees(Math.abs(taken.valueMinor - prior))}); figure ${taken.staleness}, as at ${taken.asAt}`,
     wouldRequire: 'nothing — A01 is read-only; a person decides what, if anything, to do',
     evidence: [
       { source: 'report sales_by_day', reference: `/v1/reports/sales_by_day?day=${today}`, summary: taken.detail },
-      ...(prior === undefined ? [] : [{ source: 'report sales_by_day', reference: `/v1/reports/sales_by_day?day=${yesterday}`, summary: `${rupees(prior)} taken on ${yesterday}` }]),
+      ...(prior === undefined ? [] : [{ source: 'report sales_by_day', reference: `/v1/reports/sales_by_day?day=${lastWeek}`, summary: `${rupees(prior)} taken on ${lastWeek} (the same weekday last week)` }]),
     ],
   });
   if (taken.staleness !== 'live') {
@@ -74,25 +77,26 @@ export async function ownerInsights(producers: ReportProducers, tenantId: string
   if (prior !== undefined && prior > taken.valueMinor) {
     const deptMoney = (figures: readonly { name: string; valueMinor?: number }[]): Map<string, number> =>
       new Map(figures.filter((f) => f.name.endsWith(' — taken') && f.valueMinor !== undefined).map((f) => [f.name.replace(' — taken', ''), f.valueMinor!] as const));
-    const deptsBefore = await producers.produce(tenantId, 'units_by_category', { tradingDay: yesterday, scope: 'all' });
+    const deptsBefore = await producers.produce(tenantId, 'units_by_category', { tradingDay: lastWeek, scope: 'all' });
     const sync = await producers.produce(tenantId, 'sync_health', { scope: 'all' });
     const unsent = sync.figures.find((f) => f.name === 'Records not yet sent')?.valueMinor;
-    const products = ledgers === undefined ? { today: new Map<string, number>(), yesterday: new Map<string, number>(), onHand: new Map<string, number>() } : await productTakings(ledgers.store, tenantId, now, today, yesterday);
+    const products = ledgers === undefined ? { today: new Map<string, number>(), lastWeek: new Map<string, number>(), onHand: new Map<string, number>() } : await productTakings(ledgers.store, tenantId, now, today, lastWeek);
     out.push(...likelyCauses({
-      today, yesterday, now, takenToday: taken.valueMinor, takenYesterday: prior, staleness: taken.staleness, asAt: taken.asAt,
-      departmentsToday: deptMoney(depts.figures), departmentsYesterday: deptMoney(deptsBefore.figures),
-      productsToday: products.today, productsYesterday: products.yesterday, onHand: products.onHand, unsentRecords: unsent,
+      today, lastWeek, now, takenToday: taken.valueMinor, takenLastWeek: prior, staleness: taken.staleness, asAt: taken.asAt,
+      departmentsToday: deptMoney(depts.figures), departmentsLastWeek: deptMoney(deptsBefore.figures),
+      productsToday: products.today, productsLastWeek: products.lastWeek, onHand: products.onHand, unsentRecords: unsent,
     }));
   }
   return out;
 }
 
-/** What each product took at each location on the two trading days (the sales ledger), and what the stock ledger holds now. */
-async function productTakings(store: EventStore, tenantId: string, now: string, today: string, yesterday: string): Promise<{ today: Map<string, number>; yesterday: Map<string, number>; onHand: Map<string, number> }> {
-  // A bounded read: from two days before the last day (a late-synced bill is still found by its trading day) to now.
-  const from = new Date(Date.parse(`${yesterday}T00:00:00Z`) - 2 * 86_400_000).toISOString();
+/** What each product took at each location on the two trading days compared (today and the same weekday last week — the
+ *  sales ledger), and what the stock ledger holds now. */
+async function productTakings(store: EventStore, tenantId: string, now: string, today: string, lastWeek: string): Promise<{ today: Map<string, number>; lastWeek: Map<string, number>; onHand: Map<string, number> }> {
+  // A bounded read: from two days before last week's day (a late-synced bill is still found by its trading day) to now.
+  const from = new Date(Date.parse(`${lastWeek}T00:00:00Z`) - 2 * 86_400_000).toISOString();
   const events = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to: now });
-  const byDay = { [today]: new Map<string, number>(), [yesterday]: new Map<string, number>() } as Record<string, Map<string, number>>;
+  const byDay = { [today]: new Map<string, number>(), [lastWeek]: new Map<string, number>() } as Record<string, Map<string, number>>;
   for (const e of events) {
     const s = e.event.payload as IncomingSale;
     const into = byDay[s.tradingDay];
@@ -107,7 +111,7 @@ async function productTakings(store: EventStore, tenantId: string, now: string, 
     const key = `${r.productId}@${r.locationId}`;
     onHand.set(key, (onHand.get(key) ?? 0) + r.onHandMinor);
   }
-  return { today: byDay[today]!, yesterday: byDay[yesterday]!, onHand };
+  return { today: byDay[today]!, lastWeek: byDay[lastWeek]!, onHand };
 }
 
 /** A02 — stock-outs with recent demand: a DRAFT for a buyer, never a quantity it cannot justify, never an order. */

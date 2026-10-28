@@ -23,7 +23,7 @@ import { toCloudSale } from './cloud-sale';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudReturn } from './cloud-return';
 import { toCloudChecklist, toCloudTaskCompletion } from './cloud-completion';
-import { canonicalHash, stampTakenAt, type IdempotencyGuard } from './idempotency';
+import { canonicalHash, stampTakenAt, stampVersionCheck, type IdempotencyGuard } from './idempotency';
 import type { ReturnEntitlement, EntitlementLine } from './entitlement';
 import type { SaleLookupResult } from './receipt-lookup';
 
@@ -170,6 +170,11 @@ export function createEdgeNode(input: {
    * raises `sale_names_no_lane`, P-08).
    */
   readonly laneId?: () => string | undefined;
+  /**
+   * OB-501 (R7-A): the box's judgement of the till's reported app build against its signed pack's version policy — the
+   * mark to write on the sale (`storeComputerVersionCheck`), or undefined when there is nothing to mark. Never refuses.
+   */
+  readonly clientVersionCheck?: (sale: Record<string, unknown>) => Record<string, unknown> | undefined;
 }): EdgeNode {
   let held = input.initialPack;
   // Work committing right now, keyed by its id, so a concurrent second call with the same id awaits
@@ -188,7 +193,7 @@ export function createEdgeNode(input: {
         // Round 29 · OB-108: the store computer's own time for the bill — when it took it from the till — written on the
         // record it keeps (so a restart re-sends it too) and so on what it sends. Not part of the sale's identity (the
         // idempotency hash leaves it out), and never a reason to refuse a sale.
-        const kept = stampTakenAt(record, new Date().toISOString());
+        const kept = stampVersionCheck(stampTakenAt(record, new Date().toISOString()), input.clientVersionCheck);
         const outcome = await commitLocally({
           saleId, record: kept, log: input.log,
           ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),

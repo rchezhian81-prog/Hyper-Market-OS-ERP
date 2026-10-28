@@ -30,6 +30,13 @@
       .row .detail { font-size:13px; color:var(--muted); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      p.asof { margin:0; font-size:14px; color:var(--muted); }
+      section.att { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:10px; }
+      section.att h2 { font-size:18px; } .att .buttons { display:flex; gap:10px; flex-wrap:wrap; }
+      .att button { min-height:56px; min-width:56px; padding:0 18px; border-radius:12px; font:inherit; font-weight:600; display:inline-flex; align-items:center; gap:8px; cursor:pointer; }
+      .att button .icon { font-size:20px; } .att .said { margin:0; font-size:15px; }
+      .att ul { list-style:none; margin:0; padding:0; display:grid; gap:6px; } .att li { font-size:15px; display:flex; gap:8px; flex-wrap:wrap; }
+      .att li .why { color:var(--danger-text); font-size:13px; }
     </style>
   </head>
   <body>
@@ -48,7 +55,20 @@
         <p class="lead" id="lead"></p>
       </div>
 
+      <p class="asof" id="asof" hidden></p>
       <ul class="rows" id="rows" aria-label="My rota and payslip"></ul>
+
+      <!-- OB-507: clock in / clock out on the store computer — saved here at once, carried to head office when the line is up. -->
+      <section class="att" id="att" hidden aria-labelledby="att-title">
+        <h2 id="att-title">My attendance</h2>
+        <p class="lead" id="att-lead"></p>
+        <div class="buttons">
+          <button type="button" id="att-in"><span class="icon" aria-hidden="true">▶</span><span id="att-in-text">I am starting work (in)</span></button>
+          <button type="button" id="att-out"><span class="icon" aria-hidden="true">■</span><span id="att-out-text">I am finishing work (out)</span></button>
+        </div>
+        <p class="said" id="att-said" role="status" aria-live="polite"></p>
+        <ul id="att-marks" aria-label="My attendance marks"></ul>
+      </section>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
     </main>
 

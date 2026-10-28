@@ -72,7 +72,8 @@ describe.skipIf(!HAVE_BROWSER)('the served till records a no-sale and a price ch
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
-      ...await prepareTillBox({ dir, key: KEY, people: PEOPLE }),
+      // OB-500 (R7-A): the signed pack carries the lowest prices and the managers' price-cut limits the box judges by.
+      ...await prepareTillBox({ dir, key: KEY, people: PEOPLE, pack: { tillControls: { floors: { P1: 45_000 }, floorsNotKnown: [], overrideLimits: { 'u-manager': { state: 'limit', limitMinor: 20_000 } }, limitsVersion: 1 } } }),
     }, () => {}))!;
     stops.push(() => edge.stop());
     const context = await browser.newContext();

@@ -98,7 +98,7 @@ describe('the tenant\'s receiving tolerances are the owner\'s call, read by ever
     // A receipt under the default: 101 against 100 is over a 0-tolerance → held 1, and the record says the default applied.
     const under = await receive(h, 'g-default', receipt('p1', 100, 101), 'g-default', 'u-mgr');
     expect(under.status).toBe(201);
-    expect(grnOf(under)).toMatchObject({ availableMinor: 100, heldMinor: 1, governanceFlags: ['no_purchase_order', 'product_rules_unverified', 'handling_unknown', 'default_policy'] });
+    expect(grnOf(under)).toMatchObject({ availableMinor: 100, heldMinor: 1, governanceFlags: ['no_purchase_order', 'cost_unknown', 'product_rules_unverified', 'handling_unknown', 'default_policy'] });
     // The manager cannot set the tenant's tolerances; the owner can.
     expect((await post(h, '/v1/inventory/receipt-policy', 'u-mgr', { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 }, 'p-mgr')).status).toBe(403);
     expect(codeOf(await post(h, '/v1/inventory/receipt-policy', 'u-owner', { excessToleranceBp: -1, shortageToleranceBp: 200, nearExpiryDays: 7 }, 'p-bad'))).toBe('not_readable_as_a_receipt_policy');
@@ -110,7 +110,7 @@ describe('the tenant\'s receiving tolerances are the owner\'s call, read by ever
     expect((await get(h, '/v1/inventory/receipt-policy', 'u-mgr')).status).toBe(403);
     // The same 1% excess is now within tolerance: nothing held, no default flag.
     const within = await receive(h, 'g-within', receipt('p1', 100, 101), 'g-within', 'u-mgr');
-    expect(grnOf(within)).toMatchObject({ availableMinor: 101, heldMinor: 0, governanceFlags: ['no_purchase_order', 'product_rules_unverified', 'handling_unknown'] });
+    expect(grnOf(within)).toMatchObject({ availableMinor: 101, heldMinor: 0, governanceFlags: ['no_purchase_order', 'cost_unknown', 'product_rules_unverified', 'handling_unknown'] });
   });
 
   it('is the tenant\'s own: another tenant\'s policy never applies here', async () => {
@@ -129,9 +129,9 @@ describe('an over-tolerance excess is HELD until a second person decides it (F03
     const res = await receive(h, 'g1', receipt('p1', 100, 110));
     expect(res.status).toBe(201);
     const g = grnOf(res);
-    expect(g).toMatchObject({ availableMinor: 100, heldMinor: 10, governanceFlags: ['no_purchase_order'], captured: { requiresApproval: true } });
+    expect(g).toMatchObject({ availableMinor: 100, heldMinor: 10, governanceFlags: ['no_purchase_order', 'cost_unknown'], captured: { requiresApproval: true } });
     expect(g.captured.lines[0]).toMatchObject({ sellableMinor: 100, heldMinor: 10, disposition: 'sellable' });
-    expect((res.body as { flags: string[] }).flags).toEqual(['no_purchase_order']); // a delivery with no order behind it is SAID (SP-6)
+    expect((res.body as { flags: string[] }).flags).toEqual(['no_purchase_order', 'cost_unknown']); // a delivery with no order behind it is SAID (SP-6), its cost NOT KNOWN (OB-509)
     expect(await onHand(h, 'p1')).toBe(100);
     // A within-tolerance receipt beside it holds nothing.
     expect(grnOf(await receive(h, 'g2', receipt('p3', 100, 104)))).toMatchObject({ availableMinor: 104, heldMinor: 0, captured: { requiresApproval: false } });
@@ -175,9 +175,10 @@ describe('an over-tolerance excess is HELD until a second person decides it (F03
     expect(flip.status).toBe(409);
     expect(codeOf(flip)).toBe('excess_already_decided');
     expect(await onHand(h, 'p1')).toBe(110);
-    // The released movement is valued at what the goods cost (₹50.00 × 110).
-    const valuation = (await get(h, '/v1/inventory/valuation', 'u-owner')).body as { rows: { productId: string; onHandMinor: number; value: { minor: number } }[] };
-    expect(valuation.rows.find((r) => r.productId === 'p1')).toMatchObject({ onHandMinor: 110, value: { minor: 550_000 } });
+    // OB-509: a delivery with no order behind it is booked with its cost NOT KNOWN — the ordered 100 and the released 10 are
+    // on hand UNVALUED (never at the ₹50.00 typed at the door, never at ₹0) until the supplier's bill is matched to the receipt.
+    const valuation = (await get(h, '/v1/inventory/valuation', 'u-owner')).body as { rows: { productId: string; onHandMinor: number; value: { minor: number }; unvaluedMinor: number }[] };
+    expect(valuation.rows.find((r) => r.productId === 'p1')).toMatchObject({ onHandMinor: 110, value: { minor: 0 }, unvaluedMinor: 110 });
   });
 
   it('a rejection releases nothing: the excess stays on the record for the supplier claim, and the receipt no longer waits', async () => {

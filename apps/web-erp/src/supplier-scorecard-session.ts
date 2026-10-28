@@ -54,7 +54,7 @@ export const SCORECARD_COPY = {
     ppvProduct: 'Product', ppvReceipt: 'Receipt', ppvOrder: 'Order', ppvKept: 'Kept', ppvReceived: 'Cost as received', ppvAgreed: 'Order price', ppvContract: 'Contract price',
     ppvVariance: 'Against the order', ppvVsContract: 'Against the contract', ppvNoContract: 'no contract price on file', ppvCompared: 'lines compared', ppvOpen: 'Show the lines',
     ppvTotal: 'In all', ppvNothing: 'No goods were received from this supplier in the period.', ppvBack: 'Back to the roll-ups',
-    ppvNotCompared: 'Not compared:', nc_no_purchase_order: 'no order on the receipt', nc_order_not_held: 'order not held at head office', nc_product_not_on_order: 'product not on the order', nc_currency_differs: 'a different currency',
+    ppvNotCompared: 'Not compared:', nc_no_purchase_order: 'no order on the receipt', nc_order_not_held: 'order not held at head office', nc_product_not_on_order: 'product not on the order', nc_currency_differs: 'a different currency', nc_not_yet_billed: 'not yet billed (no supplier bill matched)', ppvNotYetBilled: 'not yet billed', ppvBillNo: 'bill',
     ppvBlanket: 'priced by the blanket agreement',
   },
   ta: {
@@ -75,7 +75,7 @@ export const SCORECARD_COPY = {
     ppvProduct: 'பொருள்', ppvReceipt: 'வரவு', ppvOrder: 'ஆணை', ppvKept: 'வைத்தது', ppvReceived: 'வந்த விலை', ppvAgreed: 'ஆணை விலை', ppvContract: 'ஒப்பந்த விலை',
     ppvVariance: 'ஆணைக்கு எதிராக', ppvVsContract: 'ஒப்பந்தத்துக்கு எதிராக', ppvNoContract: 'ஒப்பந்த விலை பதிவில் இல்லை', ppvCompared: 'ஒப்பிட்ட வரிகள்', ppvOpen: 'வரிகளைக் காட்டு',
     ppvTotal: 'மொத்தம்', ppvNothing: 'இந்தக் காலத்தில் இந்த விநியோகஸ்தரிடமிருந்து எந்தச் சரக்கும் வரவில்லை.', ppvBack: 'சுருக்கத்துக்குத் திரும்பு',
-    ppvNotCompared: 'ஒப்பிடப்படவில்லை:', nc_no_purchase_order: 'வரவில் ஆணை இல்லை', nc_order_not_held: 'தலைமை அலுவலகத்தில் ஆணை இல்லை', nc_product_not_on_order: 'பொருள் ஆணையில் இல்லை', nc_currency_differs: 'வேறு நாணயம்',
+    ppvNotCompared: 'ஒப்பிடப்படவில்லை:', nc_no_purchase_order: 'வரவில் ஆணை இல்லை', nc_order_not_held: 'தலைமை அலுவலகத்தில் ஆணை இல்லை', nc_product_not_on_order: 'பொருள் ஆணையில் இல்லை', nc_currency_differs: 'வேறு நாணயம்', nc_not_yet_billed: 'இன்னும் பில் வரவில்லை (சப்ளையர் பில் பொருத்தப்படவில்லை)', ppvNotYetBilled: 'இன்னும் பில் வரவில்லை', ppvBillNo: 'பில்',
     ppvBlanket: 'நிலை ஒப்பந்த விலையில்',
   },
 } as const;
@@ -98,9 +98,11 @@ export function ratingWords(lang: Lang, r: RatingView): string {
 export interface PpvCost { readonly minor: number; readonly per?: number }
 export interface PpvLineView {
   readonly grnId: string; readonly receiptNumber: string; readonly lineId: string; readonly productId: string; readonly poNumber: string | null;
-  readonly receivedOn: string; readonly keptMinor: number; readonly uom: string; readonly receivedUnitCost: PpvCost; readonly receivedValueMinor: number;
+  readonly receivedOn: string; readonly keptMinor: number; readonly uom: string; readonly receivedUnitCost: PpvCost | null; readonly receivedValueMinor: number | null;
+  /** OB-517: the matched supplier bill the received cost is from; null — not yet billed. */
+  readonly invoiceId?: string | null;
   readonly order?: { readonly unitCost: PpvCost; readonly varianceMinor: number; readonly varianceBps: number | null; readonly basis: 'purchase_order' | 'blanket_release' };
-  readonly notCompared?: 'no_purchase_order' | 'order_not_held' | 'product_not_on_order' | 'currency_differs';
+  readonly notCompared?: 'no_purchase_order' | 'order_not_held' | 'product_not_on_order' | 'currency_differs' | 'not_yet_billed';
   readonly contract?: { readonly agreementId: string; readonly unitCost: PpvCost; readonly varianceMinor: number };
 }
 export interface PpvRollupView {
@@ -122,6 +124,11 @@ export function signedRupees(minor: number): string {
 /** A unit cost as the page says it: "₹52.00", or "₹250.00 per 24" for a case cost carried exactly (OB-46). */
 export function costWords(c: PpvCost): string {
   return `₹${(c.minor / 100).toFixed(2)}${c.per === undefined || c.per === 1 ? '' : ` / ${c.per}`}`;
+}
+/** OB-517: the cost as received — the matched supplier bill's price and its bill number, or "not yet billed" (never ₹0). */
+export function receivedCostWords(lang: Lang, l: Pick<PpvLineView, 'receivedUnitCost' | 'invoiceId'>): string {
+  if (l.receivedUnitCost === null) return scorecardWords(lang, 'ppvNotYetBilled');
+  return typeof l.invoiceId === 'string' && l.invoiceId !== '' ? `${costWords(l.receivedUnitCost)} (${scorecardWords(lang, 'ppvBillNo')} ${l.invoiceId})` : costWords(l.receivedUnitCost);
 }
 /** The not-compared counts in words — only the reasons that occurred; empty when every line was compared. */
 export function notComparedWords(lang: Lang, counts: Readonly<Record<string, number>>): string {

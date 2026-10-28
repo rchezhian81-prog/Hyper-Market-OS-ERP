@@ -29,6 +29,7 @@ import {
   rosterGaps,
   type ShiftRequirement, type ShiftAssignment, type Employee,
 } from '../../../packages/workforce/src/workforce';
+import { myRosterFrom } from '../../../packages/workforce/src/my-roster';
 
 /** The published week a shift staff can see belongs to, and the limits not checked when it was published. */
 export interface PublishedWeekRef {
@@ -232,28 +233,15 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
       permission: 'payroll.ess.self',
       handler: async (ctx) => {
         const r = await deps.roster(ctx.tenantId);
-        const me = r.employees.find((e) => e.employeeId === ctx.userId);
-        const byShift = new Map(r.shifts.map((s) => [s.shiftId, s]));
         const visibility = await deps.staffVisibility(ctx.tenantId, r);
-        const assigned = r.assignments.filter((a) => a.employeeId === ctx.userId && byShift.has(a.shiftId));
-        const shifts = assigned
-          .filter((a) => visibility.visible.has(a.shiftId))
-          .map((a) => {
-            const shift = byShift.get(a.shiftId);
-            return shift === undefined ? undefined : { shiftId: shift.shiftId, role: a.role, branchId: shift.branchId, startsAt: shift.startsAt, endsAt: shift.endsAt };
-          })
-          .filter((s): s is { shiftId: string; role: string; branchId: string; startsAt: string; endsAt: string } => s !== undefined)
-          .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.shiftId.localeCompare(b.shiftId));
-        const weekRefs = new Map<string, PublishedWeekRef>();
-        for (const s of shifts) { const w = visibility.visible.get(s.shiftId)!; weekRefs.set(`${w.branchId}|${w.weekStart}`, w); }
-        // OB-155: each published week says which working-time limits were not checked when it was published.
-        const weeks = [...weekRefs.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart) || a.branchId.localeCompare(b.branchId))
-          .map((w) => ({ branchId: w.branchId, weekStart: w.weekStart, weekEnd: w.weekEnd, limitsNotChecked: w.limitsNotChecked.map((l) => l.label) }));
+        // OB-507: the same fold the store computer runs on the roster in its signed pack (packages/workforce/src/my-roster.ts).
+        const visible = new Map([...visibility.visible].map(([id, w]) => [id, { branchId: w.branchId, weekStart: w.weekStart, weekEnd: w.weekEnd, limitsNotChecked: w.limitsNotChecked.map((l) => l.label) }] as const));
+        const mine = myRosterFrom({ employeeId: ctx.userId, employees: r.employees, shifts: r.shifts, assignments: r.assignments, visible });
         return {
           status: 200,
           body: {
-            employeeId: ctx.userId, known: me !== undefined, active: me?.active ?? false, shifts, count: shifts.length,
-            notYetPublished: assigned.length - shifts.length, weeks,
+            employeeId: ctx.userId, known: mine.known, active: mine.active, shifts: mine.shifts, count: mine.count,
+            notYetPublished: mine.notYetPublished, weeks: mine.weeks,
           },
         };
       },

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Staff certificates</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Staff certificates (OB-522 · OB-502 · M25-FR-03). A THIN CLIENT over head office's own certificate register routes: read
+      the store's people and the certificates on file, and say for each person whether food-handling work may be recorded in
+      their name today (the same rule head office and the store computer use); record a certificate (the kind from a short
+      pick-list: food handling, or FoSTaC which counts as the same), verify one somebody else recorded (in your own name, never
+      your own certificate), and renew one (a new record; the old one stays on file). Its session is
+      apps/web-erp/src/certificates-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); }
+      label.tick input { width: 24px; height: 24px; min-height: 0; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.certs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      ul.certs li { border-left: 6px solid var(--idle); padding: 6px 10px; display: grid; gap: 4px; }
+      ul.certs li.tone-ok { border-left-color: var(--ok); } ul.certs li.tone-error { border-left-color: var(--error); } ul.certs li.tone-degraded { border-left-color: var(--degraded); }
+      .food { font-weight: 700; display: inline-flex; gap: 6px; align-items: center; }
+      .food.blocked { color: var(--danger-text); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Staff certificates</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Staff certificates</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="record" hidden aria-labelledby="record-h">
+        <h3 id="record-h"></h3>
+        <div class="row-form">
+          <label for="c-person"><span id="c-person-l"></span><select id="c-person"></select></label>
+          <label for="c-kind"><span id="c-kind-l"></span><select id="c-kind"></select></label>
+        </div>
+        <div class="row-form">
+          <label for="c-issued"><span id="c-issued-l"></span><input id="c-issued" type="date" /></label>
+          <label for="c-until"><span id="c-until-l"></span><input id="c-until" type="date" /></label>
+        </div>
+        <label class="tick" for="c-seen"><input id="c-seen" type="checkbox" /><span id="c-seen-l"></span></label>
+        <p class="meta" id="c-renewing" hidden></p>
+        <button id="c-record" type="button"><span id="c-record-text"></span></button>
+        <p class="status" id="c-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="list" hidden aria-labelledby="list-h">
+        <h3 id="list-h"></h3>
+        <button id="l-reload" type="button" class="quiet"><span id="l-reload-text"></span></button>
+        <p class="status" id="l-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="people"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./certificates.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

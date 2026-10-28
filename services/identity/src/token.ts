@@ -56,6 +56,7 @@ export type TokenRefusal =
   | 'no_subject'
   | 'no_tenant'
   | 'tenant_not_this_issuers'
+  | 'subject_not_this_issuers'
   | 'no_issued_at'
   | 'lifetime_too_long'
   | 'channel_ambiguous';
@@ -105,6 +106,12 @@ export interface TokenPolicy {
    * (one shop, or the pilot sign-in).
    */
   readonly tenantId?: string;
+  /**
+   * OB-510 · ADR-0031 (amended): the product ids this issuer may name. A shop's CUSTOMER realm signs only customers, whose
+   * product id the customer sign-in service gives as `customer-…`; a token from that realm naming anybody else (a member of
+   * staff's id) is refused, whatever it says. Absent: not narrowed (a staff realm, the pilot sign-in).
+   */
+  readonly subjectPrefix?: string;
   /** Who it must have been issued *for* — this API, not another service of ours. */
   readonly audience: string;
   /**
@@ -256,6 +263,9 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
   const userId = payload[policy.subjectClaim ?? 'sub'];
   if (typeof userId !== 'string' || userId.trim() === '') {
     return { ok: false, refusedBecause: 'no_subject', detail: 'the token names no user' };
+  }
+  if (policy.subjectPrefix !== undefined && !userId.startsWith(policy.subjectPrefix)) {
+    return { ok: false, refusedBecause: 'subject_not_this_issuers', detail: 'the token names somebody this issuer does not sign for. A customer realm signs customers only' };
   }
   // The isolation boundary, taken from the signed payload and nowhere else (OB-01). A tenant read
   // off a header or a path is a tenant the caller chose.

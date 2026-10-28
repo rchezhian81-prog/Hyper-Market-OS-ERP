@@ -10,7 +10,7 @@
 // file written for the administrator to load. The next steps are printed, in order.
 
 import { planTenantBootstrap, type TenantBootstrapPlan } from '../../../packages/migration/src/tenant-bootstrap';
-import { shopRealmFile } from '../../identity/src/shop-realm-file';
+import { shopRealmFile, customerRealmFile } from '../../identity/src/shop-realm-file';
 
 export interface NewShopRequest {
   /** The shop's id (a UUID). */
@@ -36,6 +36,8 @@ export interface NewShopRequest {
   readonly ownerRoleId: string;
   /** The repository's realm (the parsed `realm-sre-store.json`). */
   readonly realmTemplate: Record<string, unknown>;
+  /** OB-510: the repository's CUSTOMER realm (the parsed `realm-sre-store-customers.json`) — the shop's customers' realm. */
+  readonly customerRealmTemplate?: Record<string, unknown>;
 }
 
 /** The shop's entry on the platform's own record: its name, realm and address, and who created it. */
@@ -53,6 +55,8 @@ export type NewShopPlan =
     readonly ok: true;
     readonly bootstrap: Extract<TenantBootstrapPlan, { ok: true }>;
     readonly realmFile: Record<string, unknown>;
+    /** OB-510: the shop's customer realm file (`<realm>-customers`), when the customer template was given. */
+    readonly customerRealmFile?: Record<string, unknown>;
     readonly shop: Omit<ShopRegistered, 'at'>;
   }
   | { readonly ok: false; readonly problems: readonly string[] };
@@ -72,21 +76,29 @@ export function planNewShop(req: NewShopRequest): NewShopPlan {
     ...(req.allowHttp === undefined ? {} : { allowHttp: req.allowHttp }),
   });
   if (!realm.ok) problems.push(...realm.problems.filter((p) => !/2 to 80/.test(p) && !/tenant id \(a UUID\)/.test(p)));
-  if (problems.length > 0 || !bootstrap.ok || !realm.ok) return { ok: false, problems: problems.length > 0 ? problems : ['Not readable as a new shop.'] };
+  const customers = req.customerRealmTemplate === undefined ? undefined
+    : customerRealmFile(req.customerRealmTemplate, { shopRealm: req.realm, tenantId: req.tenantId, displayName: name, audience: req.audience });
+  if (customers !== undefined && !customers.ok && realm.ok) problems.push(...customers.problems);
+  if (problems.length > 0 || !bootstrap.ok || !realm.ok || (customers !== undefined && !customers.ok)) return { ok: false, problems: problems.length > 0 ? problems : ['Not readable as a new shop.'] };
   return {
     ok: true,
     bootstrap,
     realmFile: realm.realm,
+    ...(customers === undefined || !customers.ok ? {} : { customerRealmFile: customers.realm }),
     shop: { tenantId: bootstrap.tenantId, name, realm: req.realm, webOrigin: req.webOrigin.replace(/\/+$/, ''), createdBy: bootstrap.operator },
   };
 }
 
 /** The steps after the command, in order, for the administrator. */
-export function nextSteps(shop: Omit<ShopRegistered, 'at'>, owner: string, realmFilePath: string): readonly string[] {
+export function nextSteps(shop: Omit<ShopRegistered, 'at'>, owner: string, realmFilePath: string, customerRealmFilePath?: string): readonly string[] {
   return [
     `Load the sign-in area: /auth/admin → the realm list (top left) → Create realm → Browse → ${realmFilePath} → Create.`,
     `Tell head office: in .env.pilot add  ${shop.realm}=${shop.tenantId}  to IDP_OIDC_SHOP_REALMS (comma-separated), then release.`,
     `Give the owner their sign-in, in their presence: realm ${shop.realm} → Users → Add user → their own name; Attributes → sre_user_id = ${owner}; Credentials → a temporary password; Role mapping → sre-privileged.`,
     `The shop's address (${shop.webOrigin}) and its front door come with the domain name.`,
+    // OB-510 · ADR-0031 (amended): the customers' realm, loaded the same way; off until an SMS provider is approved.
+    ...(customerRealmFilePath === undefined ? [] : [
+      `Load the customers' sign-in area the same way (Create realm → ${customerRealmFilePath}); copy realm ${shop.realm}-customers → Clients → sre-customer-sign-in → Credentials into the customer sign-in service's credential file; tell head office: add  ${shop.realm}-customers=${shop.tenantId}  to IDP_OIDC_CUSTOMER_REALMS. No code is sent to any customer until an SMS provider is approved (OB-222).`,
+    ]),
   ];
 }

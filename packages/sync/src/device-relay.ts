@@ -124,6 +124,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   EquipmentReadingRecorded: { surfaces: ['manager'] },
   WriteOffCaptured: { surfaces: ['manager'] },
   SopAcknowledged: { surfaces: ['manager'] },
+  // Round 7 · OB-507 (M25-FR-01 "attendance cache, sync on reconnect"): a person's own clock-in / clock-out on the self-service
+  // page the box serves (an ERP surface, so it rides as `manager`). Head office re-checks the person and their store.
+  AttendanceMarked: { surfaces: ['manager'] },
 });
 
 /**

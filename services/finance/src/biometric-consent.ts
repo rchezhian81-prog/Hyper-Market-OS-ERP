@@ -37,7 +37,14 @@ export interface AttendanceMark {
   readonly at: string;
   readonly date: string;
   readonly recordedBy: string;
+  /** OB-507: a mark made on the store computer with the line down and carried here — who carried it, from where. */
+  readonly relayed?: { readonly relayedBy: string; readonly source: string; readonly storeId: string };
+  /** OB-507 · hard rule #10: what head office found out of order about a relayed mark — recorded and shown, never hidden. */
+  readonly exceptions?: readonly AttendanceMarkException[];
 }
+
+/** A relayed mark that repeats the person's last mark (two "in"s), or an "out" with no "in" that day. */
+export type AttendanceMarkException = 'repeats_the_last_mark' | 'out_without_in';
 
 export interface BiometricConsentDeps {
   readonly now: () => string;
@@ -224,7 +231,7 @@ export function biometricConsentRoutes(deps: BiometricConsentDeps): readonly Rou
         const held = scopeOf(ctx);
         const branchOf = new Map((await deps.employees(ctx.tenantId)).map((e) => [e.employeeId, e.branchId] as const));
         const marks = (await deps.marks(ctx.tenantId, date)).filter((m) => { const br = branchOf.get(m.employeeId); return held === 'all' || (br !== undefined && held.includes(br)); });
-        return { status: 200, body: { date, marks, count: marks.length } };
+        return { status: 200, body: { date, marks, count: marks.length, withExceptions: marks.filter((m) => (m.exceptions ?? []).length > 0).length } };
       },
     },
   ];

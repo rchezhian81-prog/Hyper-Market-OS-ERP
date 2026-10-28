@@ -71,6 +71,11 @@ export interface LaneSyncStatus {
    * (the till reads this with the badge, every 10 seconds). Absent on a box with no clock check yet.
    */
   readonly offerHold?: { readonly held: boolean; readonly cutoffAt: string | null };
+  /**
+   * OB-501 (R7-A): the app version policy in this box's signed pack — the till re-reads it with the badge, so a build head
+   * office withdraws stops starting new bills without a reload (it finishes the bill in progress). `null` = none set.
+   */
+  readonly appVersionPolicy?: unknown;
   /** Verifier r19 OB87-1: the box's own check of its bill-number witness (absent on a box with no till). */
   readonly billNumbering?: {
     readonly witness: 'kept' | 'unavailable' | 'none'; readonly fault?: string; readonly restoreHeld: boolean; readonly restoreBecause?: string;

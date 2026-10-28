@@ -29,6 +29,7 @@ import {
 } from '../../../packages/receiving/src/index';
 import {
   DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, sayHandling, receivingChecklistGate, acceptCarriedChecklist, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder,
+  costFromOrder, costingFields, bookedUnitCostMinor, incompleteCode,
   type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag,
 } from './goods-receipt';
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
@@ -59,7 +60,7 @@ interface RelayedReceipt {
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
-  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null; readonly temperatureC?: number }[];
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null; readonly temperatureC?: number; readonly manufacturedOn?: string }[];
   readonly storeId: string | null;
   readonly source: string;
 }
@@ -79,7 +80,11 @@ function readRelayedReceipt(body: unknown): RelayedReceipt | undefined {
     // Wave 3 · SF-07 part 2: the manager's probed arrival temperature, °C — a number or absent, never anything else.
     const temperatureC = l['temperatureC'];
     if (!(temperatureC === undefined || (typeof temperatureC === 'number' && Number.isFinite(temperatureC)))) return undefined;
+    // B4 · OB-504: the manufacture date the manager typed off the pack — text (judged by the capture engine), or absent.
+    const manufacturedOn = l['manufacturedOn'];
+    if (!(manufacturedOn === undefined || manufacturedOn === null || typeof manufacturedOn === 'string')) return undefined;
     lines.push({
+      ...(typeof manufacturedOn === 'string' && manufacturedOn.trim() !== '' ? { manufacturedOn: manufacturedOn.trim() } : {}),
       productId: l['productId'], quantityMinor: l['quantityMinor'], uom: normaliseUom(l['uom'] as string) ?? l['uom'], batchId: isStr(batchId) ? batchId : null, // OB-31: one spelling
       ...(temperatureC === undefined ? {} : { temperatureC }),
     });
@@ -153,17 +158,8 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         // OB-164: booked at the store with no network — a chilled/frozen delivery with no receiving checklist on file is
         // booked (the goods are in the building, P-01) and FLAGGED `receiving_checklist_missing`, never silently passed.
         const checklist = await receivingChecklistGate(deps, ctx.tenantId, grnId, master.rules, r.lines.map((l) => l.productId), flags, 'flag');
-        const costByProduct = new Map<string, number>();
-        let costUnknown = false;
-        for (const productId of new Set(r.lines.map((l) => l.productId))) {
-          const cost = await deps.unitCostMinor(ctx.tenantId, productId);
-          if (cost === undefined) costUnknown = true; else costByProduct.set(productId, cost);
-        }
-        if (costUnknown) flags.push('cost_unknown');
-        const inForce = await policyInForce(deps, ctx.tenantId);
-        if (inForce.defaulted) flags.push('default_policy');
 
-        const captureLines: readonly CapturedLine[] = alignToOrder(r.lines.map((l, i): CapturedLine => ({
+        const aligned: readonly CapturedLine[] = alignToOrder(r.lines.map((l, i): CapturedLine => ({
           lineId: `${grnId}:${i + 1}`,
           productId: l.productId,
           // The manager's screen names no ordered figure: the order's stands in (alignToOrder), else counted (as-is).
@@ -171,12 +167,29 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           countedMinor: l.quantityMinor,
           uom: l.uom,
           batchId: l.batchId,
-          unitCost: { minor: costByProduct.get(l.productId) ?? 0, currency: 'INR' },
+          // The screen types no cost: what it is booked at is head office's (below), never the body's.
+          unitCost: { minor: 0, currency: 'INR' },
           // The manager's screen books goods in as delivered; damage and QC are the dock's capture (handheld / SP-6b).
           condition: 'good',
           // Wave 3 · SF-07 part 2: the reading the manager probed, judged against the product master's limits; absent → held.
           ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
+          // B4 · OB-504: the batch's month and year of manufacture, as typed off the pack (a packed product needs one).
+          ...(l.manufacturedOn === undefined ? {} : { manufacturedOn: l.manufacturedOn }),
         })), order.ordered, flags);
+        // Round 7 (M07-FR-01/02 · OB-509): booked at the cost the ISSUED order agreed for the product, like the direct receipt;
+        // with no issued order, or a product the order does not name, its cost is NOT KNOWN until the supplier's bill is matched.
+        // (A bare stub with no order-cost port keeps the cloud's own average, as before.)
+        const costed = await costFromOrder(deps, ctx.tenantId, order, aligned, flags, {
+          typed: false,
+          withoutPort: async (l) => {
+            const cost = await deps.unitCostMinor(ctx.tenantId, l.productId);
+            if (cost === undefined && !flags.includes('cost_unknown')) flags.push('cost_unknown');
+            return { ...l, unitCost: { minor: cost ?? 0, currency: 'INR' }, ...(cost === undefined ? { costNotKnown: true } : {}) };
+          },
+        });
+        const captureLines = costed.lines;
+        const inForce = await policyInForce(deps, ctx.tenantId);
+        if (inForce.defaulted) flags.push('default_policy');
 
         // The FR-02/03 gate — the SAME tested rule the handheld and the direct route run. A tracked item with no batch
         // cannot be received (you cannot recall what you cannot identify, M10): 422 → the box dead-letters it for a
@@ -190,10 +203,10 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         } catch (err) {
           if (err instanceof IncompleteCaptureError) {
             throw apiError(422, {
-              code: 'receipt_line_incomplete',
+              code: incompleteCode(err),
               whatHappened: `${err.message}. A line that cannot be identified cannot be received (M10 / M07-FR-02).`,
               wasItSaved: 'not_saved',
-              nextSafeAction: 'Book the delivery in again with the batch and expiry on that line. This one stays on the store computer for a person to see.',
+              nextSafeAction: 'Book the delivery in again with the missing detail on that line (a batch and expiry; a packed product\'s month and year of manufacture). This one stays on the store computer for a person to see.',
             });
           }
           throw err;
@@ -211,11 +224,13 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           governanceFlags: flags, relayedBy: ctx.userId, source: r.source, storeId: r.storeId,
           poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
           ...(order.position === undefined ? {} : { orderPosition: order.position }),
+          ...costingFields(costed),
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held excess are on the GRN but not on-hand.
+        // OB-509: a line whose cost is not known goes in UNVALUED.
         const movements = inboundMovements({
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
-          occurredAt: r.receivedAt, enteredBy: r.receivedBy, unitCostMinorOf: (l) => costByProduct.get(l.productId),
+          occurredAt: r.receivedAt, enteredBy: r.receivedBy, unitCostMinorOf: bookedUnitCostMinor,
         });
         const committed = await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order, isStr((ctx.body as Record<string, unknown> | null)?.['asnId']) ? { asnId: (ctx.body as Record<string, string>)['asnId']! } : {});
         await deps.recordAudit?.(ctx.tenantId, {

@@ -132,6 +132,8 @@ export interface PosSessionConfig {
    * behaves exactly as before.
    */
   readonly realTrading?: { readonly identity: TaxInvoiceIdentity | null };
+  /** OB-501 (R7-A): this till's own app build, reported on every sale record (head office judges it by its version policy). */
+  readonly appVersion?: string;
 }
 
 /** OB-271: the mirror pilot and real trading are never on together — the till refuses to sell rather than guess which. */
@@ -441,6 +443,17 @@ export class LocalCommitRefusedError extends Error {
 }
 
 /**
+ * OB-501 (R7-A · M33-FR-02): this till's app build is withdrawn or below the minimum supported version, so it may finish the
+ * bill in progress but may not START a new one until it is updated. Said in the cashier's words, English and Tamil.
+ */
+export class NewBillRefusedError extends Error {
+  constructor(public readonly laneMessage: string, public readonly laneMessageTa: string) {
+    super(laneMessage);
+    this.name = 'NewBillRefusedError';
+  }
+}
+
+/**
  * The till sent the sale to its store computer and did not hear back (audit A8 · roadmap §32 "zero duplicate business
  * effect"): the reply was lost, or the box did not answer after the till's own same-id retries. The sale MAY be saved.
  *
@@ -681,9 +694,21 @@ export class PosSession {
     return this.refusedOfferList.slice();
   }
 
+  /**
+   * OB-501 (R7-A): stop (words) or allow (null) STARTING new bills on this till — the build check, made by the caller from the
+   * signed pack. A bill already on the till is never stopped: only the first line of a new bill is refused.
+   */
+  barNewBills(words: { readonly en: string; readonly ta: string } | null): void {
+    this.newBillBar = words;
+  }
+
+  private newBillBar: { readonly en: string; readonly ta: string } | null = null;
+
   /** Scan an item onto the basket — 1 interaction (design bar). */
   scan(input: ScanInput): BasketEntry {
     this.notWhileAwaiting();
+    // OB-501: a new bill is refused on a withdrawn or too-old build; a bill in progress (any line on it) is finished.
+    if (this.newBillBar !== null && this.lines.length === 0) throw new NewBillRefusedError(this.newBillBar.en, this.newBillBar.ta);
     if (this.state === 'committed' || this.state === 'suspended') {
       throw new SessionStateError('scan', this.state);
     }
@@ -1439,6 +1464,8 @@ export class PosSession {
       // OB-279 · OB-285: what the bill is below its lines (0 or less, never above) — total = lines + round off.
       ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
       currency: totals.payable.currency,
+      // OB-501 (R7-A): the build that rang it — head office and the store computer judge it by the version policy.
+      ...(this.config.appVersion === undefined ? {} : { appVersion: this.config.appVersion }),
       // OB-264: the old ERP's bill number, on every mirror sale — so a mirror refund finds this sale by it.
       ...(extra.oldErpBillNumber === undefined || this.config.mirrorPilot !== true ? {} : { oldErpBillNumber: extra.oldErpBillNumber }),
       // Every answer to the age question on this bill, refusals included (PF-03 · M15 loss prevention).

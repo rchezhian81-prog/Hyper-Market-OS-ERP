@@ -23,7 +23,9 @@ export interface ScanProduct {
 
 export interface ScanLine { readonly productId: string; readonly name: string; readonly quantityMinor: number; readonly unitPriceMinor: number }
 
-export type ScanRefusal = 'unknown_barcode' | 'weighed_at_the_till' | 'not_on_sale' | 'too_many' | 'handed_to_the_till';
+export type ScanRefusal = 'unknown_barcode' | 'weighed_at_the_till' | 'not_on_sale' | 'too_many' | 'handed_to_the_till'
+  /** OB-521: the first scan of a new basket on a withdrawn or too-old build (a basket already started is finished). */
+  | 'app_version_too_old';
 export type ScanAdd = { readonly ok: true; readonly line: ScanLine } | { readonly ok: false; readonly why: ScanRefusal };
 
 /** Units a phone may count: one piece is one piece. Anything else (kg, g, l) is weighed or measured at the till. */
@@ -58,6 +60,8 @@ export function createScanAndGo(input: {
   readonly newBasketId: () => string;
   readonly storage?: Store | undefined;
   readonly key?: string;
+  /** OB-521: the words refusing NEW work on this build, or undefined when it may start (the app's version gate). */
+  readonly newWorkRefusal?: () => { readonly en: string; readonly ta: string } | undefined;
 }): ScanAndGo {
   const key = input.key ?? 'sre.shop.scan-and-go';
   type Saved = { basketId: string; lines: ScanLine[]; code?: string };
@@ -82,6 +86,8 @@ export function createScanAndGo(input: {
   return {
     add: (codeOrId) => {
       if (state.code !== undefined) return { ok: false, why: 'handed_to_the_till' };
+      // OB-521: the first scan STARTS a basket — refused on a withdrawn or too-old build; a basket already started is finished.
+      if (state.lines.length === 0 && input.newWorkRefusal?.() !== undefined) return { ok: false, why: 'app_version_too_old' };
       const p = find(codeOrId);
       if (p === undefined) return { ok: false, why: 'unknown_barcode' };
       if (p.status !== undefined && p.status !== 'active' && p.status !== 'clearance') return { ok: false, why: 'not_on_sale' };

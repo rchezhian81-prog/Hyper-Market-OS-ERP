@@ -34,6 +34,7 @@ import {
 } from './owner-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
+import { openNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
@@ -55,6 +56,8 @@ export interface OwnerData {
   readonly approvalLimitMinor?: number | null;
   /** Whether a decision on stale data needs an explicit acknowledgement. Per-tenant. */
   readonly acknowledgeStaleDecisions?: boolean;
+  /** OB-521: the app version policy, served with the payload (`null` = none is in force). */
+  readonly appVersionPolicy?: unknown;
 }
 
 /** Where decisions wait until they can be sent. Injectable so a host app can supply a better one. */
@@ -132,6 +135,8 @@ interface OwnerWindow {
    * made a decision that will not survive the app closing, and only they can act on that.
    */
   ownerQueueProblem?: string | null;
+  /** OB-521: this build's new-work gate — its words when a NEW decision is refused. */
+  ownerVersion?: NewWorkGate;
 }
 
 /**
@@ -145,6 +150,8 @@ export function bootOwner(
   data: OwnerData | undefined,
   queueStore: DecisionQueueStore,
   now: () => string = () => new Date().toISOString(),
+  /** OB-521: this build's new-work gate. Absent → nothing is enforced (no policy was given to it). */
+  gate?: Pick<NewWorkGate, 'refusal'>,
 ): OwnerSession | null {
   const branches = data?.branches;
   if (branches === undefined || branches.length === 0) return null;
@@ -175,7 +182,8 @@ export function bootOwner(
   };
   return {
     ...session,
-    decide: (input) => persist(session.decide(input)),
+    // OB-521: on a withdrawn or too-old build no NEW decision is made; the decisions already queued are kept and stand.
+    decide: (input) => (gate?.refusal() !== undefined ? { ok: false, refusal: 'app_version_too_old' } : persist(session.decide(input))),
     discardQueued: (requestId) => persist(session.discardQueued(requestId)),
   };
 }
@@ -195,7 +203,13 @@ if (browserWindow !== undefined) {
   const store = deviceQueueStore(`sre.owner.queue.${owner}`, storage, (why) => {
     browserWindow.ownerQueueProblem = why;
   });
-  const session = bootOwner(browserWindow.ownerData, store);
+  // OB-521: the policy as the payload carried it, else the last one this phone was told (a reload with no signal).
+  const gate = openNewWorkGate({
+    client: 'owner_app', ...(storage === undefined ? {} : { storage }), key: 'sre.owner.app-version-policy',
+    ...(browserWindow.ownerData !== undefined && 'appVersionPolicy' in browserWindow.ownerData ? { served: browserWindow.ownerData.appVersionPolicy } : {}),
+  });
+  browserWindow.ownerVersion = gate;
+  const session = bootOwner(browserWindow.ownerData, store, undefined, gate);
   if (session !== null) browserWindow.ownerSession = session;
   browserWindow.ownerBrief = buildBrief;
   browserWindow.ownerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };

@@ -365,7 +365,7 @@ describe('the refusal vocabulary is complete', () => {
   it('lists every refusal the session can actually return', () => {
     // The screen must have words for each of these; a guardrail walks this list against them.
     expect([...OWNER_DECIDE_REFUSALS].sort()).toEqual([
-      'exceeds_authority', 'no_data_at_all', 'out_of_scope', 'reason_required',
+      'app_version_too_old', 'exceeds_authority', 'no_data_at_all', 'out_of_scope', 'reason_required',
       'request_not_found', 'self_approval_forbidden', 'stale_data_not_acknowledged',
       'unknown_reason_code',
     ]);

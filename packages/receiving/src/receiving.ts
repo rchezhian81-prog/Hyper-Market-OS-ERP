@@ -20,6 +20,15 @@ export interface ReceiptLineInput {
    * taken: head office then holds a cold-chain line for a second person's check (owner decision 9 Oct 2026).
    */
   readonly temperatureC?: number;
+  /** B4 · OB-504: the batch's month and year (or date) of manufacture as printed on the pack — required for a packed product. */
+  readonly manufacturedOn?: string;
+}
+
+/** B4 · OB-504: the lines of PACKED products (by the store pack's list) with no readable manufacture date — refused offline. */
+export function linesMissingManufactureDate(packedProductIds: readonly string[] | undefined, lines: readonly Pick<ReceiptLineInput, 'productId' | 'manufacturedOn'>[]): readonly string[] {
+  if (packedProductIds === undefined) return [];
+  const packed = new Set(packedProductIds);
+  return [...new Set(lines.filter((l) => packed.has(l.productId) && !/^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/.test((l.manufacturedOn ?? '').trim())).map((l) => l.productId))];
 }
 
 export interface CommitReceiptInput {
@@ -112,6 +121,8 @@ export function commitReceipt(
           productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, batchId: l.batchId ?? null,
           // Wave 3 · SF-07 part 2: the reading travels with the line; head office judges it against the product's limits.
           ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
+          // B4 · OB-504: the batch's month and year of manufacture travels with the line; head office refuses a packed one without.
+          ...(l.manufacturedOn === undefined || l.manufacturedOn.trim() === '' ? {} : { manufacturedOn: l.manufacturedOn.trim() }),
         })),
         storeId: input.storeId ?? null,
         source: input.source ?? 'receiving',

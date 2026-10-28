@@ -21,6 +21,7 @@ import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../pack
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { PickSession, type PickLineInput } from './pick-session';
+import { openNewWorkGate, bindNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -48,6 +49,8 @@ export interface PickerData {
   readonly orderedBy?: string;
   /** Products the shop has no shelf address for. Named, because each is a walk back. */
   readonly unmapped?: readonly string[];
+  /** OB-521: the signed pack's app version policy, as the store computer served it (`null` = the pack carries none). */
+  readonly appVersionPolicy?: unknown;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -60,6 +63,8 @@ interface PickerWindow {
   /** The store computer's write base the box injected: `''` on the device socket (same origin), absent off it. */
   laneWriteBase?: string;
   pickerRelay?: PickerRelay;
+  /** OB-521: this build's new-work gate — the screen applies each policy the store computer reports. */
+  pickerVersion?: NewWorkGate;
 }
 
 export interface PickerRelay {
@@ -144,4 +149,10 @@ if (browserWindow !== undefined) {
     const relay = openPickerRelay(browserWindow.laneWriteBase, session, outbox, stamping?.clock);
     if (relay !== undefined) browserWindow.pickerRelay = relay;
   }
+  // OB-521: a withdrawn or too-old build finishes the wave it started and starts no new one — by the store computer's
+  // signed pack (served with the wave, then each badge refresh), kept on this device for a reload with no signal.
+  browserWindow.pickerVersion = bindNewWorkGate(openNewWorkGate({
+    client: 'picker', ...(storage === undefined ? {} : { storage }), key: 'sre.picker.app-version-policy',
+    ...(browserWindow.pickerData !== undefined && 'appVersionPolicy' in browserWindow.pickerData ? { served: browserWindow.pickerData.appVersionPolicy } : {}),
+  }), [session]);
 }

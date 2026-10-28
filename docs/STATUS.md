@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Rounds 7 and 8 (28 October 2026): the owner's decisions OB-500 to OB-531 built
+
+**What changed**
+- **Till price cuts:** every product carries its lowest allowed price (from its buying cost and margin rule) and each manager a rupee limit, in the signed store pack; the till and store computer refuse beyond either with no internet; head office re-checks every sale (OB-500). A store manager may take up to Rs 100 a line (OB-519); a product never bought at a known cost can be cut only with the owner's approval (OB-520).
+- **Old software:** a till, handheld or phone app on a too-old or stopped version finishes the work in hand and starts nothing new, saying why in English and Tamil (OB-501, OB-521).
+- **Receiving:** packed goods need their manufacture month (OB-504); every delivery problem names its owner (OB-508, OB-528); goods with no order are valued only once the supplier bill is matched (OB-509); price differences use the bill matched to that delivery (OB-517, OB-530); the opening-stock exemption ends at the cutover GO (OB-529).
+- **Prices and quality:** a future MRP can be replaced with a reason and a second person (OB-512); a held food batch needs a test sample before release (OB-513).
+- **New pages:** shelf tags with the price per kg/litre (OB-505); quotations made in the office and rung up at the till by number (OB-506) — head office checks each quoted price against the product's floor (OB-525) and cancelling the bill frees the quotation (OB-523); staff certificates, with FoSTaC counted as food handling (OB-522).
+- **Staff:** rosters and clock-in work on the store computer offline (OB-507); the manager's rota shows the store computer's copy read-only offline (OB-531); an expired food-handling certificate blocks kitchen and bakery work, offline too (OB-502).
+- **Customers:** customer sign-in tokens are signed by the shop's own identity server (OB-510); still off until an SMS provider is approved.
+- **Owner assistant:** compares with the same weekday last week (OB-516).
+
+**Tests that ran (this box, synthetic data)**
+- Rounds 7+8 joined: unit + guardrails + integration + contract + security + migration on real PostgreSQL — 15,364 passed; 4 PostgreSQL tests failed under load and passed alone. Full browser suite: 650 of 651 passed; the one (the till menu now offers "Quotation number") fixed and re-run. Guardrails on the rebuilt branch: 148 files, 1,849 passed.
+- Not run here: the new customer-realm suite against a real identity server (CI runs it); real hardware; live SMS provider.
+
+**What is next**
+- Round 9 (owner decisions OB-532 to OB-539): owner-only approval for a quotation with no known floor; a held basket frees its quotation; a "Match the bill" button on goods receipt; handheld records carry their version; the rota copy also when the store PC's head-office sign-in fails.
+
+**Needs an owner decision**
+- None open.
+
+---
+
 ## Re-audit follow-ups F-2, F-3 and F-4 (28 October 2026). F-1 waits on one owner answer
 - **What changed:**
   - **OB-436 (F-2):** the camera switch-on browser test no longer races itself.

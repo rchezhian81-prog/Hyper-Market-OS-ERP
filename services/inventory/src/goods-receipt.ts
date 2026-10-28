@@ -51,8 +51,8 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
-  captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError,
-  type CapturedLine, type CheckedLine, type ProductReceiptRules, type ReceiptPolicy, type CapturedReceipt,
+  captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError, MANUFACTURE_DATE_MISSING, MANUFACTURE_DATE_UNREADABLE,
+  type CapturedLine, type CheckedLine, type ProductReceiptRules, type ReceiptPolicy, type CapturedReceipt, type DiscrepancyKind,
 } from '../../../packages/receiving/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Movement } from './index';
@@ -153,6 +153,10 @@ export const RECEIPT_FLAGS = Object.freeze([
   // Round 6 (M07-FR-01/02 · hard rule #10): the receiver typed a unit cost that is not the one the issued order agreed. The
   // order's cost is booked; the typed figure is kept beside it as a valued cost discrepancy (`costDiscrepancies`).
   'cost_differs_from_order',
+  // OB-509: a line booked with its cost NOT KNOWN is `cost_unknown` (above). An OPENING-stock load (`opening-…`, the legacy
+  // system's stock at cutover — not a delivery) keeps the cost of its extract, and says so; a packed product's opening line
+  // with no manufacture date is taken as it is (B4 · OB-504 is about goods received) and SAID.
+  'opening_stock_cost_from_extract', 'manufacture_date_not_captured',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -193,6 +197,8 @@ export interface LineReturn {
   readonly movementIds: readonly string[];
   /** OB-194: the dispatch (and its e-way bill) the return followed, when one was recorded. */
   readonly dispatch?: ReturnDispatchLink;
+  /** OB-509: the line's cost is not known, so `valueMinor` is not a value — said, never 0. */
+  readonly valueNotKnown?: true;
 }
 
 /**
@@ -213,6 +219,8 @@ export interface ExcessReturn {
   readonly via: 'direct';
   /** OB-194: the dispatch (and its e-way bill) the return followed, when one was recorded. */
   readonly dispatch?: ReturnDispatchLink;
+  /** OB-509: a held line's cost is not known, so `valueMinor` is incomplete — said, never a silent 0. */
+  readonly valueNotKnown?: true;
 }
 
 /** A committed goods receipt — the durable GRN record, carrying the checked outcome. */
@@ -272,6 +280,13 @@ export interface GrnRecord {
    * cost is what was booked; the typed one is kept here, valued, never silently dropped and never booked. Absent when none.
    */
   readonly costDiscrepancies?: readonly ReceiptCostDiscrepancy[];
+  /**
+   * OB-509 (owner, 28 Oct 2026): every line booked with its cost NOT KNOWN — no issued order behind it, or a product the
+   * order does not name. Its stock is unvalued (never the typed figure) until the supplier's bill is matched (`billCosts`).
+   */
+  readonly costNotKnown?: readonly CostNotKnownLine[];
+  /** OB-509: the cost each such line took from the supplier's bill when a person matched the bill to this receipt. */
+  readonly billCosts?: readonly BillCost[];
   /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
   readonly relayedBy?: string;
   readonly source?: string;
@@ -320,25 +335,83 @@ const sameCost = (a: OrderLineCost, b: OrderLineCost): boolean =>
   a.currency === b.currency && a.minor * (b.per ?? 1) === b.minor * (a.per ?? 1);
 
 /**
- * Round 6 (M07-FR-01/02): on a receipt against an ISSUED order, each line is booked at the cost the ORDER agreed for its
- * product — head office's own record, never the receiver's typed figure (the handheld path already does this,
- * `orderUnitCost`). A typed cost that differs is kept as a valued `ReceiptCostDiscrepancy` and flagged
- * `cost_differs_from_order`. A line the order does not name, or a receipt with no issued order, keeps its line as sent
- * (unchanged behaviour). With no `orderLineCost` port (a bare stub) nothing changes.
+ * OB-509 (owner, 28 Oct 2026) — one receipt line booked with its cost NOT KNOWN: there was no issued order behind it, or the
+ * order does not name the product. The stock is in (sellable as checked) but UNVALUED — never at the receiver's typed
+ * figure and never at zero — until the supplier's bill is matched to the receipt (`billCosts`).
+ */
+export interface CostNotKnownLine {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly because: 'no_issued_order' | 'not_on_order';
+  /** What the receiver typed, when they typed a cost — kept beside the line, NOT booked. */
+  readonly typedUnitCost?: OrderLineCost;
+  readonly detail: string;
+}
+
+/** OB-509: the cost a cost-not-known line took from the supplier's bill a person matched to this receipt. */
+export interface BillCost {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly invoiceId: string;
+  readonly unitCost: OrderLineCost;
+  /** The units the bill's cost was put on (the line's sellable stock), and what they are worth at it. */
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
+  readonly matchedBy: string;
+  readonly matchedAt: string;
+  /**
+   * OB-530 (owner, 28 Oct 2026): the line's cost was already known (the issued order's) — the bill is matched to THIS receipt
+   * so its price-difference report can compare, and nothing is revalued (quantity and value 0 here).
+   */
+  readonly costWasKnown?: true;
+}
+
+/** The figures each receiving path books a receipt's lines at (Round 6 · OB-509). */
+export interface ReceiptCosting {
+  readonly lines: readonly CapturedLine[];
+  readonly costDiscrepancies: readonly ReceiptCostDiscrepancy[];
+  readonly costNotKnown: readonly CostNotKnownLine[];
+}
+
+/**
+ * Round 6 (M07-FR-01/02) · OB-509 — what each receipt line is booked at, from head office's own order register:
+ *   • a product on an ISSUED order → the cost the ORDER agreed (never the receiver's typed figure); a typed cost that differs
+ *     is kept as a valued `ReceiptCostDiscrepancy` and flagged `cost_differs_from_order`;
+ *   • no issued order behind the receipt (none, unknown, still a proposal), or a product the order does not name → cost NOT
+ *     KNOWN (OB-509): the line carries a placeholder cost and `costNotKnown`, its stock goes in unvalued, it is listed in
+ *     `costNotKnown` with what was typed (if anything) and flagged `cost_unknown` — until the supplier's bill is matched.
+ * `typed: false` is a path with no typed figure (the manager's screen, the handheld): nothing typed is kept. `withoutPort`
+ * prices a line on an issued order when no `orderLineCost` port is wired (a bare stub; main.ts always wires it).
  */
 export async function costFromOrder(
   deps: Pick<GoodsReceiptDeps, 'orderLineCost'>, tenantId: string, order: OrderForReceipt, lines: readonly CapturedLine[], flags: ReceiptFlag[],
-): Promise<{ readonly lines: readonly CapturedLine[]; readonly costDiscrepancies: readonly ReceiptCostDiscrepancy[] }> {
-  if (deps.orderLineCost === undefined || !order.folds || order.poId === null) return { lines, costDiscrepancies: [] };
-  const poId = order.poId;
+  opts: { readonly typed?: boolean; readonly withoutPort?: (l: CapturedLine) => Promise<CapturedLine> | CapturedLine } = {},
+): Promise<ReceiptCosting> {
+  const typedFigures = opts.typed ?? true;
   const out: CapturedLine[] = [];
   const costDiscrepancies: ReceiptCostDiscrepancy[] = [];
+  const costNotKnown: CostNotKnownLine[] = [];
+  const typedOf = (l: CapturedLine): OrderLineCost => ({ minor: l.unitCost.minor, currency: l.unitCost.currency, ...((l.unitCost as CostBasis).per === undefined ? {} : { per: (l.unitCost as CostBasis).per! }) });
+  const notKnown = (l: CapturedLine, because: CostNotKnownLine['because']): void => {
+    out.push({ ...l, unitCost: { minor: 0, currency: l.unitCost.currency }, costNotKnown: true });
+    costNotKnown.push({
+      lineId: l.lineId, productId: l.productId, quantityMinor: l.countedMinor, uom: l.uom, because,
+      ...(typedFigures ? { typedUnitCost: typedOf(l) } : {}),
+      detail: `${l.productId} is booked with its cost NOT KNOWN — ${because === 'no_issued_order' ? 'there is no issued purchase order behind this delivery' : `order ${order.poId ?? ''} does not name it`}; its stock is unvalued until the supplier's bill is matched to this receipt${typedFigures ? ' (the cost typed at the door is kept beside it, not booked)' : ''} (OB-509)`,
+    });
+  };
   for (const l of lines) {
-    const agreed = await deps.orderLineCost(tenantId, poId, l.productId);
-    if (agreed === undefined) { out.push(l); continue; }
-    const typed: OrderLineCost = { minor: l.unitCost.minor, currency: l.unitCost.currency, ...((l.unitCost as CostBasis).per === undefined ? {} : { per: (l.unitCost as CostBasis).per! }) };
+    if (!order.folds || order.poId === null) { notKnown(l, 'no_issued_order'); continue; }
+    if (order.ordered !== undefined && order.ordered[l.productId] === undefined) { notKnown(l, 'not_on_order'); continue; }
+    if (deps.orderLineCost === undefined) { out.push(opts.withoutPort === undefined ? l : await opts.withoutPort(l)); continue; }
+    const agreed = await deps.orderLineCost(tenantId, order.poId, l.productId);
+    if (agreed === undefined) { notKnown(l, 'not_on_order'); continue; }
     const booked = { minor: agreed.minor, currency: agreed.currency, ...(agreed.per === undefined || agreed.per === 1 ? {} : { per: agreed.per }) } as CapturedLine['unitCost'];
     out.push({ ...l, unitCost: booked });
+    if (!typedFigures) continue;
+    const typed = typedOf(l);
     if (sameCost(typed, agreed)) continue;
     const atOrder = valueAtCost(l.countedMinor, l.uom, agreed);
     const atTyped = valueAtCost(l.countedMinor, l.uom, typed);
@@ -346,12 +419,29 @@ export async function costFromOrder(
       lineId: l.lineId, productId: l.productId, quantityMinor: l.countedMinor, uom: l.uom,
       orderUnitCost: agreed, typedUnitCost: typed, valueMinor: Math.abs(atTyped - atOrder), differenceMinor: atTyped - atOrder,
       currency: agreed.currency,
-      detail: `${l.productId} was typed at ${typed.minor}${(typed.per ?? 1) > 1 ? ` per ${typed.per}` : ''} but order ${poId} agreed ${agreed.minor}${(agreed.per ?? 1) > 1 ? ` per ${agreed.per}` : ''} — booked at the order's cost; the difference is for the buyer to check with the supplier`,
+      detail: `${l.productId} was typed at ${typed.minor}${(typed.per ?? 1) > 1 ? ` per ${typed.per}` : ''} but order ${order.poId} agreed ${agreed.minor}${(agreed.per ?? 1) > 1 ? ` per ${agreed.per}` : ''} — booked at the order's cost; the difference is for the buyer to check with the supplier`,
     });
   }
   if (costDiscrepancies.length > 0 && !flags.includes('cost_differs_from_order')) flags.push('cost_differs_from_order');
-  return { lines: out, costDiscrepancies };
+  if (costNotKnown.length > 0 && !flags.includes('cost_unknown')) flags.push('cost_unknown');
+  return { lines: out, costDiscrepancies, costNotKnown };
 }
+
+/** OB-509: the cost a line's stock is valued at — none (unvalued) while its cost is not known. */
+export const bookedUnitCostMinor = (l: CheckedLine): number | undefined => (l.costNotKnown === true ? undefined : l.unitCost.minor);
+
+/** OB-509: the receipt fields a costing adds (absent when empty). */
+export const costingFields = (c: ReceiptCosting): Pick<GrnRecord, 'costDiscrepancies' | 'costNotKnown'> => ({
+  ...(c.costDiscrepancies.length === 0 ? {} : { costDiscrepancies: c.costDiscrepancies }),
+  ...(c.costNotKnown.length === 0 ? {} : { costNotKnown: c.costNotKnown }),
+});
+
+/** An opening-stock load's receipt id (`opening-<loadId>[-<location>]`, packages/migration `openingGrnId`). */
+export const isOpeningReceipt = (grnId: string): boolean => grnId.startsWith('opening-');
+
+/** B4 · OB-504: the code a refused capture is named by — a missing manufacture date has its own. */
+export const incompleteCode = (err: IncompleteCaptureError): 'manufacture_date_required' | 'receipt_line_incomplete' =>
+  err.missing === MANUFACTURE_DATE_MISSING || err.missing === MANUFACTURE_DATE_UNREADABLE ? 'manufacture_date_required' : 'receipt_line_incomplete';
 
 /**
  * What PHYSICALLY arrived per product on a checked receipt — sellable, quarantined, refused at the dock and held alike: the
@@ -393,6 +483,8 @@ export interface LineDisposition {
   /** The inbound movement an `accept` released — empty for return / claim. */
   readonly movementIds: readonly string[];
   readonly via: 'direct' | 'relayed';
+  /** OB-509: the line's cost is not known (no issued order / not on the order), so `valueMinor` is not a value — said, never 0. */
+  readonly valueNotKnown?: true;
 }
 
 /** SP-6b — how a GRN assembled from handheld scans came to be, and what the scans had already posted (see `GrnRecord.assembledFrom`). */
@@ -624,6 +716,19 @@ export interface GoodsReceiptDeps {
   readonly segregation?: Pick<SegregationPort, 'actorsOf'>;
   /** OB-288 P3 (M07-FR-01): the advance ship notice a buyer accepted for this order (the one named, else the latest). */
   readonly asnFor?: (tenantId: string, poId: string, asnId?: string) => Promise<Asn | undefined> | Asn | undefined;
+  /** OB-508: the buyer who raised an order (its `requisitionedBy`), or undefined when head office does not hold it. */
+  readonly orderRaisedBy?: (tenantId: string, poId: string) => Promise<string | undefined> | string | undefined;
+  /** OB-508: everyone granted the store manager role for a branch (by the role grants), possibly nobody. */
+  readonly storeManagersOf?: (tenantId: string, branchId: string) => Promise<readonly string[]> | readonly string[];
+  /**
+   * OB-529 (owner, 28 Oct 2026): when the shop's cutover GO was given (the first GO the gate recorded), undefined while there
+   * is none. After it, an `opening-` receipt with no order follows the full rules — cost not known, manufacture date — like
+   * any delivery. Absent on a bare stub (the exemption then stands as before; main.ts always wires it).
+   */
+  readonly cutoverGoAt?: (tenantId: string) => Promise<string | undefined> | string | undefined;
+  /** OB-509: the supplier's bill on head office's register, and the append that records its match to a receipt with its postings. */
+  readonly supplierBill?: (tenantId: string, invoiceId: string) => Promise<SupplierBillForReceipt | undefined> | SupplierBillForReceipt | undefined;
+  readonly commitBillMatch?: (tenantId: string, record: GrnRecord, postings: readonly BillCostPosting[], key: string) => Promise<void> | void;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -638,7 +743,9 @@ const isCapturedLine = (v: unknown): v is CapturedLine =>
   isObj(v) && isStr(v['lineId']) && isStr(v['productId']) && isNum(v['orderedMinor']) && isNum(v['countedMinor'])
   && isStr(v['uom']) && isMoney(v['unitCost']) && isStr(v['condition'])
   // Wave 3 · SF-07: a recorded temperature is judged against the product's limits, so only a number can be one.
-  && (v['temperatureC'] === undefined || isNum(v['temperatureC']));
+  && (v['temperatureC'] === undefined || isNum(v['temperatureC']))
+  // B4 · OB-504: the manufacture date as text (judged by the capture engine) — or absent.
+  && (v['manufacturedOn'] === undefined || v['manufacturedOn'] === null || typeof v['manufacturedOn'] === 'string');
 
 /**
  * The product master's rules for every product on a receipt — head office's, never the body's (F03). A product the
@@ -705,6 +812,8 @@ export function receiptRuleFor(
   published: { readonly batchTracked?: boolean; readonly handling?: string } | undefined,
   master: MasterHandling | undefined,
   classDefaults: readonly ColdClassDefault[],
+  /** B4 · OB-504: the regulated kinds of the product's department on head office's category list (`packed` → packaged). */
+  regulated?: readonly string[],
 ): ProductReceiptRules | undefined {
   if (published === undefined && master === undefined) return undefined;
   const handling = master?.handling ?? published?.handling;
@@ -720,6 +829,7 @@ export function receiptRuleFor(
     productId,
     batchTracked: published?.batchTracked ?? false,
     ...(handling === undefined ? {} : { handling }),
+    ...((regulated ?? []).includes('packed') ? { packaged: true } : {}),
     ...(coldChain ? {
       coldChain: true,
       ...(maxC === undefined ? {} : { coldChainMaxC: maxC }),
@@ -1133,6 +1243,7 @@ export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
     currency: held[0]?.unitCost.currency ?? 'INR',
     movementIds: movements.map((m) => m.movementId), via: 'direct',
     ...(followed.dispatch === undefined ? {} : { dispatch: followed.dispatch }),
+    ...(held.some((l) => l.costNotKnown === true) ? { valueNotKnown: true as const } : {}),
   };
   const returned: GrnRecord = {
     ...rec, excessReturn,
@@ -1193,6 +1304,7 @@ export async function returnDisposedLine(deps: GoodsReceiptDeps, input: {
     lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: valueAtCost(line.quarantinedMinor, line.uom, line.unitCost),
     currency: line.unitCost.currency, returnedBy: input.returnedBy, returnedAt, reason: input.reason, movementIds: [],
     ...(followed.dispatch === undefined ? {} : { dispatch: followed.dispatch }),
+    ...(line.costNotKnown === true ? { valueNotKnown: true as const } : {}),
   };
   const returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
   await deps.commitLineReturn(input.tenantId, returned, `${rec.grnId}:${line.lineId}`);
@@ -1401,6 +1513,7 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
     decidedBy: input.decidedBy, decidedAt, reason: input.reason,
     valueMinor: valueAtCost(quantity, line.uom, line.unitCost), currency: line.unitCost.currency, // OB-31
     movementIds: movements.map((m) => m.movementId), via: input.via,
+    ...(line.costNotKnown === true ? { valueNotKnown: true as const } : {}),
   };
   const released = movements.reduce((n, m) => n + m.quantityMinor, 0);
   const decided: GrnRecord = { ...rec, availableMinor: rec.availableMinor + released, dispositions: [...(rec.dispositions ?? []), disposition] };
@@ -1417,6 +1530,182 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
   });
   return { ok: true, record: decided, disposition, alreadyDecided: false };
 }
+
+// ── OB-508 (owner, 28 Oct 2026) · M07-FR-03 — every receipt discrepancy carries a NAMED owner ─────────────────────────────
+//
+// Short, excess and a cost difference are the BUYER's who raised the order (the order's `requisitionedBy`, head office's own
+// record); damaged, QC-failed, expired (refused) and temperature are the RECEIVING STORE's manager's — read from the role
+// grants for that store's branch. Nobody is ever invented: no order → "no order, so no buyer raised one"; no store manager
+// granted for the branch → "no store manager named", said on the receipt and its list (P-08). A kind OB-508 does not name
+// (near expiry, MRP mismatch) is shown as "owner not decided" rather than guessed.
+//
+// OB-528 (owner, 28 Oct 2026): near expiry, MRP mismatch and a difference from the supplier's advance ship notice (ASN) are
+// the BUYER's who raised the order too. An ASN difference has no receipt line of its own: it is one row per product, its
+// line id `asn:<productId>`.
+
+export type DiscrepancyOwnerRole = 'buyer' | 'store_manager';
+export type OwnedDiscrepancyKind = DiscrepancyKind | 'cost_difference' | 'asn_difference';
+
+/** OB-528: the line id an ASN difference's owner is matched by (an ASN difference is per product, not per receipt line). */
+export const asnDifferenceLineId = (productId: string): string => `asn:${productId}`;
+
+/** OB-508: whose each kind of receipt discrepancy is. `null` — a kind the owner's decision does not name. */
+export const DISCREPANCY_OWNER_ROLE: Readonly<Record<OwnedDiscrepancyKind, DiscrepancyOwnerRole | null>> = Object.freeze({
+  short: 'buyer', excess: 'buyer', cost_difference: 'buyer',
+  damaged: 'store_manager', qc_failed: 'store_manager', expired: 'store_manager',
+  temperature_breach: 'store_manager', temperature_not_recorded: 'store_manager',
+  // OB-528: the buyer who raised the order.
+  near_expiry: 'buyer', mrp_mismatch: 'buyer', asn_difference: 'buyer',
+});
+
+export interface DiscrepancyOwner {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly kind: OwnedDiscrepancyKind;
+  readonly role: DiscrepancyOwnerRole | null;
+  /** The named people — the one buyer, or every store manager granted the store's branch. Empty when nobody is named. */
+  readonly owners: readonly string[];
+  /** Why nobody is named, when nobody is — said, never filled in. */
+  readonly missing?: 'no_purchase_order' | 'order_not_held' | 'no_store_manager_named' | 'owner_not_decided';
+  readonly detail: string;
+}
+
+/** The facts the owners are read from: the order's raiser (`undefined` when head office does not hold the order). */
+export interface DiscrepancyOwnerFacts {
+  readonly buyer: string | null | undefined;
+  readonly storeManagers: readonly string[];
+}
+
+/** OB-508: the named owner of each discrepancy (and cost difference) on a receipt. Pure. */
+export function discrepancyOwners(rec: GrnRecord, facts: DiscrepancyOwnerFacts): readonly DiscrepancyOwner[] {
+  const rows: { lineId: string; productId: string; kind: OwnedDiscrepancyKind }[] = [
+    ...rec.captured.discrepancies.map((d) => ({ lineId: d.lineId, productId: d.productId, kind: d.kind as OwnedDiscrepancyKind })),
+    ...(rec.costDiscrepancies ?? []).map((d) => ({ lineId: d.lineId, productId: d.productId, kind: 'cost_difference' as const })),
+    ...(rec.asnCheck?.differences ?? []).map((d) => ({ lineId: asnDifferenceLineId(d.productId), productId: d.productId, kind: 'asn_difference' as const })),
+  ];
+  return rows.map((r) => {
+    const role = DISCREPANCY_OWNER_ROLE[r.kind] ?? null;
+    if (role === null) {
+      return { ...r, role, owners: [], missing: 'owner_not_decided' as const, detail: `the owner's decision (OB-508) names no owner for a ${r.kind.replace(/_/g, ' ')} — not decided` };
+    }
+    if (role === 'buyer') {
+      if (rec.poId === null) return { ...r, role, owners: [], missing: 'no_purchase_order' as const, detail: 'no purchase order behind this delivery, so no buyer raised one — no buyer named' };
+      if (facts.buyer === undefined || facts.buyer === null) return { ...r, role, owners: [], missing: 'order_not_held' as const, detail: `head office does not hold order ${rec.poId}, so the buyer who raised it cannot be named` };
+      return { ...r, role, owners: [facts.buyer], detail: `the buyer who raised order ${rec.poId}` };
+    }
+    if (facts.storeManagers.length === 0) return { ...r, role, owners: [], missing: 'no_store_manager_named' as const, detail: `no store manager named for ${rec.warehouseId} — nobody holds the store manager role for that store` };
+    return { ...r, role, owners: [...facts.storeManagers], detail: `the manager of the receiving store (${rec.warehouseId})` };
+  });
+}
+
+/** OB-508: the receipt with its discrepancy owners, read now from head office's own records — unchanged when not wired. */
+export async function withDiscrepancyOwners<T extends GrnRecord>(deps: Pick<GoodsReceiptDeps, 'orderRaisedBy' | 'storeManagersOf' | 'locationBranches'>, tenantId: string, rec: T): Promise<T & { readonly discrepancyOwners?: readonly DiscrepancyOwner[] }> {
+  if (deps.orderRaisedBy === undefined || deps.storeManagersOf === undefined) return rec;
+  if (rec.captured.discrepancies.length === 0 && (rec.costDiscrepancies ?? []).length === 0 && (rec.asnCheck?.differences ?? []).length === 0) return { ...rec, discrepancyOwners: [] };
+  const buyer = rec.poId === null ? null : await deps.orderRaisedBy(tenantId, rec.poId);
+  const branchOf = await (deps.locationBranches ?? locationIsItsOwnBranch)(tenantId);
+  const storeManagers = [...await deps.storeManagersOf(tenantId, branchOf(rec.warehouseId))].sort();
+  return { ...rec, discrepancyOwners: discrepancyOwners(rec, { buyer, storeManagers }) };
+}
+
+// ── OB-509 — a supplier's bill matched to a receipt makes a cost-not-known line's cost known ─────────────────────────────
+
+/** The supplier's bill as head office's register holds it — only what a receipt's cost is read from. */
+export interface SupplierBillForReceipt {
+  readonly invoiceId: string;
+  readonly supplierId: string;
+  readonly poId: string | null;
+  readonly currency: string;
+  readonly lines: readonly { readonly productId: string; readonly unitPriceMinor: number; readonly unitPricePer?: number }[];
+  /** The second person who checked the bill's capture; null when nobody has. */
+  readonly approvedBy: string | null;
+}
+
+/** The value a bill's cost puts on the units a cost-not-known line had brought in unvalued (a value-only posting). */
+export interface BillCostPosting {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly valueMinor: number;
+  readonly invoiceId: string;
+  readonly poId: string | null;
+}
+
+export type BillMatchOutcome =
+  | { readonly ok: true; readonly record: GrnRecord; readonly matched: readonly BillCost[]; readonly alreadyMatched: boolean }
+  | { readonly ok: false; readonly refusedBecause: 'receipt_unknown' | 'bill_unknown' | 'bill_for_another_order' | 'self_match' | 'nothing_waiting_for_a_bill' | 'bill_names_none_of_these_goods' | 'bill_match_not_available'; readonly detail: string };
+
+/**
+ * OB-509 — match the supplier's bill to a receipt's cost-not-known lines. Each line whose product the bill names takes the
+ * bill's price (per the bill's own `per`), once: the receipt's next state records it (append-only), and its SELLABLE units —
+ * which went in unvalued — are valued at it by a value-only posting at the receiving store. A line the bill does not name
+ * stays not known. Refused when the bill is for another order, or when the matcher is the person who received the goods (§28).
+ */
+export async function matchBillToReceipt(deps: GoodsReceiptDeps, input: {
+  readonly tenantId: string; readonly grnId: string; readonly invoiceId: string; readonly matchedBy: string; readonly branchId: string | null;
+}): Promise<BillMatchOutcome> {
+  if (deps.supplierBill === undefined || deps.commitBillMatch === undefined) return { ok: false, refusedBecause: 'bill_match_not_available', detail: 'Matching a supplier bill to a receipt is not wired here.' };
+  const rec = await deps.grn(input.tenantId, input.grnId);
+  if (rec === undefined) return { ok: false, refusedBecause: 'receipt_unknown', detail: `No goods receipt ${input.grnId} is on file here.` };
+  const bill = await deps.supplierBill(input.tenantId, input.invoiceId);
+  if (bill === undefined) return { ok: false, refusedBecause: 'bill_unknown', detail: `No supplier bill ${input.invoiceId} is on head office's register.` };
+  if ((bill.poId ?? null) !== (rec.poId ?? null)) {
+    return { ok: false, refusedBecause: 'bill_for_another_order', detail: `Bill ${bill.invoiceId} is for ${bill.poId === null ? 'no purchase order' : `order ${bill.poId}`}, but receipt ${rec.grnId} was received ${rec.poId === null ? 'with no purchase order' : `against order ${rec.poId}`}.` };
+  }
+  const billed = rec.billCosts ?? [];
+  const waiting = (rec.costNotKnown ?? []).filter((l) => !billed.some((b) => b.lineId === l.lineId));
+  // OB-530: a line whose cost WAS known (the order's) and that no bill is matched to yet — matched here so the price-difference
+  // report compares with the bill matched to this exact receipt. Nothing is revalued for it.
+  const notKnownIds = new Set((rec.costNotKnown ?? []).map((l) => l.lineId));
+  const knownUnbilled = rec.captured.lines.filter((l) => !notKnownIds.has(l.lineId) && !billed.some((b) => b.lineId === l.lineId));
+  const named = (productId: string): boolean => bill.lines.some((b) => b.productId === productId);
+  if (waiting.length === 0 && !knownUnbilled.some((l) => named(l.productId))) {
+    const mine = billed.filter((b) => b.invoiceId === bill.invoiceId);
+    if (mine.length > 0) return { ok: true, record: rec, matched: mine, alreadyMatched: true };
+    return { ok: false, refusedBecause: 'nothing_waiting_for_a_bill', detail: `Receipt ${rec.grnId} has no line waiting for a supplier bill that bill ${bill.invoiceId} names.` };
+  }
+  if (rec.receivedBy === input.matchedBy) {
+    return { ok: false, refusedBecause: 'self_match', detail: `${input.matchedBy} received this delivery and cannot also match its bill (§28 separation of duties).` };
+  }
+  const matchedAt = deps.now();
+  const matched: BillCost[] = [];
+  const postings: BillCostPosting[] = [];
+  for (const w of waiting) {
+    const bl = bill.lines.find((b) => b.productId === w.productId);
+    const line = rec.captured.lines.find((l) => l.lineId === w.lineId);
+    if (bl === undefined || line === undefined) continue;
+    const unitCost: OrderLineCost = { minor: bl.unitPriceMinor, currency: bill.currency, ...(bl.unitPricePer === undefined || bl.unitPricePer === 1 ? {} : { per: bl.unitPricePer }) };
+    const quantityMinor = line.sellableMinor;
+    const valueMinor = valueAtCost(quantityMinor, line.uom, unitCost);
+    matched.push({ lineId: w.lineId, productId: w.productId, invoiceId: bill.invoiceId, unitCost, quantityMinor, valueMinor, matchedBy: input.matchedBy, matchedAt });
+    if (quantityMinor > 0) postings.push({ lineId: w.lineId, productId: w.productId, locationId: rec.warehouseId, quantityMinor, uom: line.uom, valueMinor, invoiceId: bill.invoiceId, poId: rec.poId });
+  }
+  for (const line of knownUnbilled) {
+    const bl = bill.lines.find((b) => b.productId === line.productId);
+    if (bl === undefined) continue;
+    const unitCost: OrderLineCost = { minor: bl.unitPriceMinor, currency: bill.currency, ...(bl.unitPricePer === undefined || bl.unitPricePer === 1 ? {} : { per: bl.unitPricePer }) };
+    matched.push({ lineId: line.lineId, productId: line.productId, invoiceId: bill.invoiceId, unitCost, quantityMinor: 0, valueMinor: 0, matchedBy: input.matchedBy, matchedAt, costWasKnown: true });
+  }
+  if (matched.length === 0) {
+    return { ok: false, refusedBecause: 'bill_names_none_of_these_goods', detail: `Bill ${bill.invoiceId} names none of the products whose cost is not known on ${rec.grnId} (${waiting.map((w) => w.productId).join(', ')}).` };
+  }
+  const record: GrnRecord = { ...rec, billCosts: [...billed, ...matched] };
+  await deps.commitBillMatch(input.tenantId, record, postings, `${rec.grnId}:${bill.invoiceId}`);
+  await deps.recordAudit?.(input.tenantId, {
+    actorId: input.matchedBy, action: 'receipt.bill.match', objectType: 'goods_receipt', objectId: rec.grnId,
+    at: matchedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
+    before: { costNotKnown: waiting.map((w) => w.lineId).join(','), costKnownUnbilled: knownUnbilled.map((l) => l.lineId).join(',') },
+    after: { invoiceId: bill.invoiceId, lines: matched.map((m) => `${m.lineId}@${m.unitCost.minor}`).join(','), valuedMinor: String(postings.reduce((n, p) => n + p.valueMinor, 0)), billCheckedBy: bill.approvedBy ?? '' },
+    correlationId: rec.grnId,
+  });
+  return { ok: true, record, matched, alreadyMatched: false };
+}
+
+/** OB-509: lines whose cost is still not known (no bill matched to them yet). */
+export const stillCostNotKnown = (g: GrnRecord): readonly CostNotKnownLine[] =>
+  (g.costNotKnown ?? []).filter((l) => !(g.billCosts ?? []).some((b) => b.lineId === l.lineId));
 
 export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
   return [
@@ -1464,8 +1753,19 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const known = await withProductFacts(deps, ctx.tenantId, (lines as CapturedLine[]).map((l) => l.productId));
         for (const l of lines as CapturedLine[]) inUnits.push(await lineInProductUnit(known, ctx.tenantId, l, flags));
         const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags, b['warehouseId'] as string);
+        // An OPENING-stock load (the migration's `opening-<load>` receipts, no order): the stock already on the shelves at
+        // cutover, valued at the legacy system's cost the load reconciles to (MG-08) — not a delivery, so OB-509 does not apply.
+        // OB-529 (owner, 28 Oct 2026): ONLY before the cutover GO. Once the GO is on record, an `opening-` receipt with no order
+        // is a delivery like any other — its cost is not known until a bill is matched, and a packed line needs its date.
+        const goAt = isOpeningReceipt(grnId) && order.poId === null && deps.cutoverGoAt !== undefined ? await deps.cutoverGoAt(ctx.tenantId) : undefined;
+        const afterGo = goAt !== undefined && Date.parse(goAt) <= Date.parse(deps.now());
+        const openingLoad = isOpeningReceipt(grnId) && order.poId === null && !afterGo;
         // Round 6 (M07-FR-01/02): booked at the cost the ISSUED order agreed — a typed cost that differs is kept, valued, flagged.
-        const costed = await costFromOrder(deps, ctx.tenantId, order, alignToOrder(inUnits, order.ordered, flags), flags);
+        // OB-509: a line with no issued order, or not on the order, is booked with its cost NOT KNOWN — never the typed figure.
+        const costed: ReceiptCosting = openingLoad
+          ? { lines: alignToOrder(inUnits, order.ordered, flags), costDiscrepancies: [], costNotKnown: [] }
+          : await costFromOrder(deps, ctx.tenantId, order, alignToOrder(inUnits, order.ordered, flags), flags);
+        if (openingLoad) flags.push('opening_stock_cost_from_extract');
         const aligned = costed.lines;
         // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
         const master = await rulesFromMaster(known, ctx.tenantId, aligned.map((l) => l.productId));
@@ -1486,14 +1786,18 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             receivedOnDate: b['receivedOnDate'] as string,
             // Validated as a non-empty string above; the engine treats an unknown code as its own currency.
             currency: b['currency'] as CapturedReceipt['discrepancyValue']['currency'],
+            ...(openingLoad ? { manufactureDateRequired: false } : {}),
           });
+          if (openingLoad && aligned.some((l) => master.rules.find((r) => r.productId === l.productId)?.packaged === true && !(typeof l.manufacturedOn === 'string' && l.manufacturedOn.trim() !== ''))) {
+            flags.push('manufacture_date_not_captured');
+          }
         } catch (err) {
           if (err instanceof IncompleteCaptureError) {
             throw apiError(422, {
-              code: 'receipt_line_incomplete',
-              whatHappened: `${err.message}. A line that cannot be identified cannot be received (M10 / M07-FR-02).`,
+              code: incompleteCode(err),
+              whatHappened: `${err.message}. A line that cannot be identified cannot be received (M10 / M07-FR-02${incompleteCode(err) === 'manufacture_date_required' ? ' · B4 OB-504' : ''}).${afterGo ? ` The cutover GO was given at ${goAt}, so an opening-stock receipt now follows the full receiving rules (OB-529).` : ''}`,
               wasItSaved: 'not_saved',
-              nextSafeAction: 'Capture the missing detail (a batch-tracked item needs a batch AND an expiry; a cold-chain item needs a temperature) and receive again.',
+              nextSafeAction: 'Capture the missing detail (a batch-tracked item needs a batch AND an expiry; a packed product needs its month and year of manufacture; a cold-chain item needs a temperature) and receive again.',
             });
           }
           throw err;
@@ -1515,12 +1819,13 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
           governanceFlags: flags,
           poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
           ...(order.position === undefined ? {} : { orderPosition: order.position }),
-          ...(costed.costDiscrepancies.length === 0 ? {} : { costDiscrepancies: costed.costDiscrepancies }),
+          ...costingFields(costed),
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held are on the GRN but not on-hand.
+        // OB-509: a line whose cost is not known goes in UNVALUED (never at the typed figure, never at zero).
         const movements = inboundMovements({
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
-          occurredAt: receivedAt, enteredBy: ctx.userId, unitCostMinorOf: (l) => l.unitCost.minor,
+          occurredAt: receivedAt, enteredBy: ctx.userId, unitCostMinorOf: bookedUnitCostMinor,
         });
         const committed = await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order, isStr(b['asnId']) ? { asnId: b['asnId'] } : {});
         return { status: 201, body: { grn: committed, flags: committed.governanceFlags ?? flags, poReceipt: committed.poReceipt } };
@@ -1727,6 +2032,36 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
       },
     },
     {
+      // OB-509: match the supplier's bill (on head office's register) to this receipt's cost-not-known lines — each named on
+      // the bill takes its price and its sellable stock is valued at it. Body: { invoiceId }. Not the receiver (§28).
+      api: 'API-04', method: 'POST', path: '/v1/inventory/goods-receipt/:grnId/bill-match',
+      permission: 'purchase.invoice.match', idempotent: true,
+      handler: async (ctx) => {
+        const grnId = (ctx.params['grnId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (grnId === '' || !isStr(b['invoiceId']) || b['lines'] !== undefined || b['unitCost'] !== undefined || b['cost'] !== undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_bill_match',
+            whatHappened: 'Matching a supplier bill to a receipt needs the grnId in the path and { invoiceId } of a bill on head office\'s register — never a typed cost.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Send { invoiceId }. Nothing was changed.',
+          });
+        }
+        await assertReceiptInScope(ctx, deps, grnId); // PA-01-r1
+        const out = await matchBillToReceipt(deps, { tenantId: ctx.tenantId, grnId, invoiceId: (b['invoiceId'] as string).trim(), matchedBy: ctx.userId, branchId: ctx.branchId ?? null });
+        if (!out.ok) {
+          const status = out.refusedBecause === 'receipt_unknown' || out.refusedBecause === 'bill_unknown' ? 404
+            : out.refusedBecause === 'bill_match_not_available' ? 503 : out.refusedBecause === 'self_match' ? 403 : 409;
+          throw apiError(status, {
+            code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
+            nextSafeAction: out.refusedBecause === 'self_match' ? 'A different person (the buyer or the accountant) matches the bill. Nothing was changed.'
+              : out.refusedBecause === 'bill_unknown' ? 'Capture the supplier bill first (POST /v1/purchase/invoices/:invoiceId/capture), then match it. Nothing was changed.'
+                : 'Nothing was changed.',
+          });
+        }
+        return { status: out.alreadyMatched ? 200 : 201, body: { grnId, matched: out.matched, stillNotKnown: stillCostNotKnown(out.record), alreadyMatched: out.alreadyMatched } };
+      },
+    },
+    {
       // Read one GRN — the receipt and its checked outcome. 404 when the GRN id is unknown.
       api: 'API-04', method: 'GET', path: '/v1/inventory/goods-receipt/:grnId',
       permission: 'inventory.availability.read',
@@ -1735,7 +2070,9 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const record = await deps.grn(ctx.tenantId, grnId);
         if (record === undefined) throw notFound(`goods receipt ${grnId}`);
         await assertLocationInScope(ctx, record.warehouseId, deps.locationBranches); // PA-01-r1: a direct id stays outside
-        return { status: 200, body: { grn: record, awaitsDecision: awaitsDecision(record), awaitingDisposition: linesAwaitingDisposition(record).map((l) => l.lineId) } };
+        // OB-508: each discrepancy's named owner; OB-509: the lines whose cost still waits for the supplier's bill.
+        const grn = await withDiscrepancyOwners(deps, ctx.tenantId, record);
+        return { status: 200, body: { grn, awaitsDecision: awaitsDecision(record), awaitingDisposition: linesAwaitingDisposition(record).map((l) => l.lineId), costNotKnown: stillCostNotKnown(record) } };
       },
     },
     {
@@ -1750,7 +2087,9 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         // OB-204: each supplier return's dispatch state, so the screen can say it before anyone presses Dispatch.
         const receipts = await Promise.all(ordered.map(async (g) => {
           const returnDispatches = await supplierReturnDispatchStatuses(deps, ctx.tenantId, g);
-          return returnDispatches === undefined ? g : { ...g, returnDispatches };
+          // OB-508: each discrepancy's named owner, on the list too.
+          const owned = await withDiscrepancyOwners(deps, ctx.tenantId, g);
+          return returnDispatches === undefined ? owned : { ...owned, returnDispatches };
         }));
         return {
           status: 200,
@@ -1760,6 +2099,8 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             awaitingDispositionCount: all.filter((g) => linesAwaitingDisposition(g).length > 0).length,
             // Round 6 (M07-FR-01/02): receipts whose typed cost differed from the order's — listed, never hidden (P-08).
             costDiscrepancyCount: all.filter((g) => (g.costDiscrepancies ?? []).length > 0).length,
+            // OB-509: receipts with a line whose cost is NOT KNOWN until its supplier bill is matched.
+            costNotKnownCount: all.filter((g) => stillCostNotKnown(g).length > 0).length,
           },
         };
       },

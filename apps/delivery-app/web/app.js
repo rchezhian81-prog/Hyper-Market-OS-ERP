@@ -68,6 +68,8 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
+    // OB-521 (R8-A)
+    updateApp: 'Update this app',
     noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
     boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
     noCloud: 'store computer cannot reach head office', cloudLoginRefused: 'store computer\'s head office login needs renewing', cloudNotSetUp: 'no head office link set up',
@@ -121,6 +123,7 @@ const WORDS = {
     notRecorded: 'Not recorded', nothingTaken: 'You took nothing. Record it as “Not collected” instead.',
   },
   ta: {
+    updateApp: 'இந்தச் செயலியைப் புதுப்பிக்கவும்',
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
     noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudLoginRefused: 'கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
@@ -175,6 +178,15 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+
+// OB-521 (R8-A): on a withdrawn or too-old build the session refuses to START new work (the work in hand is finished) —
+// said in its own words, English or Tamil. The policy comes from the store computer's signed pack: with the page, then
+// every badge refresh (`/lane/sync-status`); the bundle keeps the last one on this device for a reload with no signal.
+function versionRefused(e) {
+  if (!e || e.name !== 'NewWorkRefusedError') return false;
+  tell(t('updateApp'), lang === 'ta' ? e.laneMessageTa : e.laneMessage);
+  return true;
+}
 
 /** What a stop's state is called, in both languages. Guarded against the model's own union. */
 const STATE_WORDS = {
@@ -585,6 +597,7 @@ async function atReturn(returnId) {
     }
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     // Refused by the session BY NAME — nothing was queued. Said in the reader's words, with the model's own detail beside.
     const name = e && e.name === 'CollectionLinesError' ? e.code : null;
     const words2 = name === 'more_than_booked' ? t('moreThanBooked') : name === 'nothing_collected' ? t('nothingTaken') : null;
@@ -857,6 +870,7 @@ el('deliver').addEventListener('click', async () => {
     tell(t('deliveredOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}${proof.kind === 'otp' ? ` — ${t('codeLater')}` : ''}`, true);
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     tell(t('read'), proofRefusal(e));
   }
   render();
@@ -915,6 +929,7 @@ el('delivered-partial').addEventListener('click', async () => {
     tell(t('partialOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}${proof.kind === 'otp' ? ` — ${t('codeLater')}` : ''}`, true);
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     tell(t('read'), proofRefusal(e));
   }
   render();
@@ -956,6 +971,7 @@ el('failed').addEventListener('click', async () => {
     tell(t('failedOk'), stop.area, true);
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     tell(t('read'), String(e && e.message ? e.message : e));
   }
   render();
@@ -1066,6 +1082,8 @@ async function refreshBadge() {
   try {
     const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
     box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+    // OB-521: the app version policy as the store computer's signed pack has it now (only an answer from the box changes it).
+    if (box.reachable && box.status && 'appVersionPolicy' in box.status) window.driverVersion?.apply(box.status.appVersionPolicy);
   } catch {
     box = { asked: true, reachable: false, status: null };
   } finally {

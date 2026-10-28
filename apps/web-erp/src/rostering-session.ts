@@ -27,6 +27,8 @@
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import type { Employee, ShiftRequirement, ShiftAssignment, RosterGap } from '../../../packages/workforce/src/workforce';
+import { wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 
 /** The roster worklist the shell last read: the gaps (from the cloud's `rosterGaps` fold) plus the roster
  *  CONTEXT the screen needs to offer who can fill each gap. Absent/`known:false` means the box was never told. */
@@ -58,9 +60,28 @@ export interface RosteringPorts {
   assignPort(): AssignPort;
 }
 
+/**
+ * Round 8 · OB-531: where the roster on screen came from.
+ *   • `head_office` — head office's live answer (the default; the only source the assign action is offered on);
+ *   • `loading` — head office has not answered yet: nothing is shown as "no gaps";
+ *   • `box_copy` — head office cannot be reached, and this is the STORE COMPUTER'S COPY from the signed pack, read-only,
+ *     said with when head office last sent it and how old it is (P-08); editing still needs head office;
+ *   • `unreachable` — head office cannot be reached and the store computer holds no copy: said, never an empty roster;
+ *   • `refused` — head office answered and refused this person the roster: said, never an empty roster (and no copy shown).
+ */
+export type RosterSource = 'head_office' | 'loading' | 'box_copy' | 'unreachable' | 'refused';
+
 export interface RosteringConfig {
   /** Who is looking. `null` means the store computer was not told who is at the screen. */
   readonly userId: string | null;
+  /** OB-531: where the roster came from (absent = head office's live answer, as before). */
+  readonly source?: RosterSource;
+  /** OB-531: when head office last sent the store computer's copy (only for `box_copy`). */
+  readonly heldAsAt?: string;
+  /** The moment "how old" is measured from (tests pass it; else the clock). */
+  readonly now?: () => string;
+  /** The shop's time zone for the times shown (default the shop calendar's). */
+  readonly timeZone?: string;
 }
 
 // ── the copy: ONE bilingual object for the whole screen ───────────────────────────────────────────────────
@@ -72,7 +93,9 @@ export type CopyKey =
   | 'assignHeading' | 'whoLabel' | 'assignBtn' | 'noEligible'
   | 'assignRecorded' | 'assignRefused' | 'assignLostLink'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noManage'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'loading' | 'heldCopy' | 'heldReadOnly' | 'unreachableNoCopy' | 'rotaHeading' | 'nobodyOnShift'
+  | 'ageMinutes' | 'ageHours' | 'ageDays' | 'ageJustNow' | 'hoRefused';
 
 export const ROSTERING_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -92,6 +115,13 @@ export const ROSTERING_COPY: BilingualCopy<CopyKey> = {
     noManage: 'You can see the gaps, but changing the roster needs manager permission.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    loading: 'Reading the roster from head office…',
+    heldCopy: 'Head office cannot be reached. This is the STORE COMPUTER\'S COPY of the roster, as head office last sent it at {time} ({age}). It may be out of date.',
+    heldReadOnly: 'Read-only: changing the roster needs head office. Try again when the connection is back.',
+    unreachableNoCopy: 'Head office cannot be reached, and this store computer holds no copy of the roster yet — so it cannot say what is short. Nothing is shown as covered.',
+    rotaHeading: 'The rota on the store computer\'s copy', nobodyOnShift: 'nobody on it yet',
+    ageMinutes: '{n} minute(s) old', ageHours: '{n} hour(s) old', ageDays: '{n} day(s) old', ageJustNow: 'just now',
+    hoRefused: 'Head office refused to show you the roster. Nothing is shown as covered.',
   },
   ta: {
     title: 'பணிப்பட்டியல் இடைவெளிகள்', langName: 'English',
@@ -110,6 +140,13 @@ export const ROSTERING_COPY: BilingualCopy<CopyKey> = {
     noManage: 'இடைவெளிகளைப் பார்க்கலாம், ஆனால் பணிப்பட்டியலை மாற்ற மேலாளர் அனுமதி தேவை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    loading: 'தலைமை அலுவலகத்திலிருந்து பணிப்பட்டியலைப் படிக்கிறது…',
+    heldCopy: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. இது பணிப்பட்டியலின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {time} அன்று அனுப்பியது ({age}). இது பழையதாக இருக்கலாம்.',
+    heldReadOnly: 'படிக்க மட்டும்: பணிப்பட்டியலை மாற்றத் தலைமை அலுவலகம் தேவை. இணைப்பு திரும்பியதும் மீண்டும் முயற்சிக்கவும்.',
+    unreachableNoCopy: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை; இந்தக் கடைக் கணினியில் பணிப்பட்டியல் நகல் இன்னும் இல்லை — எனவே என்ன குறைவு என்று சொல்ல முடியாது. எதுவும் நிரப்பப்பட்டதாகக் காட்டப்படவில்லை.',
+    rotaHeading: 'கடைக் கணினி நகலில் உள்ள பணி முறை', nobodyOnShift: 'இன்னும் யாரும் இல்லை',
+    ageMinutes: '{n} நிமிடம் பழையது', ageHours: '{n} மணி நேரம் பழையது', ageDays: '{n} நாள் பழையது', ageJustNow: 'இப்போதுதான்',
+    hoRefused: 'தலைமை அலுவலகம் உங்களுக்குப் பணிப்பட்டியலைக் காட்ட மறுத்தது. எதுவும் நிரப்பப்பட்டதாகக் காட்டப்படவில்லை.',
   },
 };
 
@@ -147,8 +184,16 @@ export interface RosteringView {
   readonly gaps: readonly PresentedGap[];
   readonly gapCount: number;
   readonly nobodyNamed: boolean;
-  /** Whether to offer the assign action — this user holds `workforce.roster.manage`. */
+  /** Whether to offer the assign action — this user holds `workforce.roster.manage` AND the roster is head office's live one. */
   readonly mayManage: boolean;
+  /** OB-531: where the roster came from. */
+  readonly source: RosterSource;
+  /** OB-531: for the store computer's copy — "Head office cannot be reached. This is the store computer's copy … at <time> (<age>)". */
+  readonly heldWords: string;
+  /** OB-531: why nothing can be changed from here right now ('' when head office answered). */
+  readonly readOnlyWords: string;
+  /** OB-531: the rota on the store computer's copy, from today on — each shift and who is on it (empty unless `box_copy`). */
+  readonly rota: readonly { readonly shiftId: string; readonly startsAt: string; readonly when: string; readonly people: string }[];
 }
 
 export interface RosteringSession {
@@ -162,9 +207,20 @@ export interface RosteringSession {
   presentAssignResult(lang: Lang, result: AssignResult): StatusPresentation;
 }
 
-const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayManage: boolean): RosteringView => ({
-  screenState, gaps: [], gapCount: 0, nobodyNamed, mayManage,
+const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayManage: boolean, source: RosterSource = 'head_office', readOnlyWords = ''): RosteringView => ({
+  screenState, gaps: [], gapCount: 0, nobodyNamed, mayManage, source, heldWords: '', readOnlyWords, rota: [],
 });
+
+/** OB-531: how old the store computer's copy is, in words. */
+export function rosterAgeWords(lang: Lang, asAt: string, nowIso: string): string {
+  const t = translator(ROSTERING_COPY, lang);
+  const minutes = Math.max(0, Math.floor((Date.parse(nowIso) - Date.parse(asAt)) / 60_000));
+  if (!Number.isFinite(minutes) || minutes < 1) return t('ageJustNow');
+  if (minutes < 120) return t('ageMinutes').replace('{n}', String(minutes));
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return t('ageHours').replace('{n}', String(hours));
+  return t('ageDays').replace('{n}', String(Math.floor(hours / 24)));
+}
 
 export function createRosteringSession(config: RosteringConfig, ports: RosteringPorts): RosteringSession {
   const text = (lang: Lang, key: CopyKey): string => translator(ROSTERING_COPY, lang)(key);
@@ -205,16 +261,27 @@ export function createRosteringSession(config: RosteringConfig, ports: Rostering
     };
   };
 
+  const source: RosterSource = config.source ?? 'head_office';
+  const live = source === 'head_office';
+  const now = config.now ?? (() => new Date().toISOString());
+  const zone = config.timeZone ?? DEFAULT_SHOP_CALENDAR.timeZone;
+  const shown = (iso: string): string => { try { return wallClockIn(iso, zone).replace('T', ' '); } catch { return iso; } };
+
   return {
     text,
     view: (lang) => {
       const t = translator(ROSTERING_COPY, lang);
       const nobodyNamed = config.userId === null;
-      const mayManage = ports.mayManage();
+      // OB-531: the assign action is offered ONLY on head office's live roster — the store computer's copy is read-only.
+      const mayManage = live && ports.mayManage();
 
       if (!ports.mayRead()) {
         return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('stateNotPermitted') }), nobodyNamed, mayManage);
       }
+      // OB-531 · P-08: never "no gaps" before head office answers, nor when it cannot be reached and there is no copy.
+      if (source === 'loading') return EMPTY_VIEW(presentScreenState({ state: 'loading', label: t('loading') }), nobodyNamed, false, source);
+      if (source === 'unreachable') return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('unreachableNoCopy') }), nobodyNamed, false, source, t('heldReadOnly'));
+      if (source === 'refused') return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('hoRefused') }), nobodyNamed, false, source);
 
       const data = ports.worklist();
       // Worst first: an unstaffed role (assigned 0) before a partial shortfall; then the larger shortfall; then
@@ -229,12 +296,27 @@ export function createRosteringSession(config: RosteringConfig, ports: Rostering
         )
         .map((gap) => present(lang, gap, data));
       const state = gaps.length === 0 ? 'empty' : 'ready';
+      const held = source === 'box_copy' && config.heldAsAt !== undefined;
+      const names = new Map(data.employees.map((e) => [e.employeeId, e.name.trim() === '' ? e.employeeId : e.name.trim()]));
+      const today = shown(now()).slice(0, 10);
+      const rota = !held ? [] : data.shifts
+        .filter((s) => shown(s.endsAt).slice(0, 10) >= today)
+        .slice()
+        .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.shiftId.localeCompare(b.shiftId))
+        .map((s) => {
+          const on = data.assignments.filter((a) => a.shiftId === s.shiftId).map((a) => `${names.get(a.employeeId) ?? a.employeeId} (${a.role})`);
+          return { shiftId: s.shiftId, startsAt: s.startsAt, when: `${shown(s.startsAt)} – ${shown(s.endsAt).slice(11)}`, people: on.length === 0 ? t('nobodyOnShift') : on.join(', ') };
+        });
       return {
         screenState: presentScreenState({ state, label: t(state === 'empty' ? 'scrEmpty' : 'scrReady') }),
         gaps,
         gapCount: gaps.length,
         nobodyNamed,
         mayManage,
+        source,
+        heldWords: held ? t('heldCopy').replace('{time}', shown(config.heldAsAt!)).replace('{age}', rosterAgeWords(lang, config.heldAsAt!, now())) : '',
+        readOnlyWords: live ? '' : t('heldReadOnly'),
+        rota,
       };
     },
 
@@ -242,7 +324,8 @@ export function createRosteringSession(config: RosteringConfig, ports: Rostering
     // lacks the role / already on the shift for that role) is a local refusal, not a round trip. The server
     // re-checks the permission and records the assignment in the manager's own name.
     assign: async (shiftId, employeeId, role) => {
-      if (!ports.mayManage()) return 'refused';
+      // OB-531: nothing is changed from the store computer's copy — editing the roster needs head office.
+      if (!live || !ports.mayManage()) return 'refused';
       const data = ports.worklist();
       const gap = data.gaps.find((g) => g.shiftId === shiftId && g.role === role);
       if (gap === undefined) return 'refused'; // not a shift/role the roster is short of

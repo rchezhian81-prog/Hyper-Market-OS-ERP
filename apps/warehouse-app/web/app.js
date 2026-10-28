@@ -77,6 +77,8 @@ const STATE_ICON = { saved_here: 'clock', retrying: 'refresh-cw', handed_to_box:
 
 const WORDS = {
   en: {
+    // OB-521 (R8-A): new work refused on a withdrawn or too-old build (the session's own words are the detail).
+    app_version_too_old: 'Update this handheld',
     noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
     boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
     noCloud: 'store computer cannot reach head office', cloudLoginRefused: 'store computer\'s head office login needs renewing', cloudNotSetUp: 'no head office link set up',
@@ -94,6 +96,10 @@ const WORDS = {
     tempTitle: 'Arrival temperature, °C', tempHint: 'Probe the goods and key the reading, for example 3.5 or -18. It goes with every scan until you change it.', tempNone: 'No reading',
     needTemp: 'The temperature must be a number of degrees',
     needTempDetail: 'Key the probe reading, for example 3.5 or -18, or choose No reading for goods that are not chilled or frozen. Nothing was set.',
+    // B4 · OB-504: the month and year of manufacture printed on a packed product's pack — it rides on every scan until changed.
+    mfgLabel: 'Month of manufacture (packed goods)', mfgNotEntered: 'not entered',
+    mfgTitle: 'Month of manufacture — key it as YYYYMM', mfgHint: 'From the pack, for example 202609 for September 2026. It goes with every scan until you change it. Key 0 to clear it.',
+    needMfg: 'The month of manufacture is not readable', needMfgDetail: 'Key the year and month as six digits, for example 202609. Nothing was set.',
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
@@ -123,6 +129,7 @@ const WORDS = {
     over_delivery_needs_approval: 'More than ordered — a second person must approve it',
     dsd_needs_approval: 'No purchase order — a second person must approve it',
     price_change_refused: 'The price cannot be changed at the door',
+    manufacture_date_required: 'Packed goods — enter the month of manufacture first',
     not_on_order: 'This is not on the purchase order',
     moved: 'Put away', duplicate_ignored: 'Already scanned — nothing changed',
     wrong_sku: 'That is not the item waiting to be put away',
@@ -166,6 +173,7 @@ const WORDS = {
     transfer_already_done: 'Already done on this handheld — nothing changed', count_incomplete: 'Every line needs its count',
   },
   ta: {
+    app_version_too_old: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
     noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudLoginRefused: 'கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
@@ -182,6 +190,9 @@ const WORDS = {
     tempTitle: 'வந்தபோது வெப்பநிலை, °C', tempHint: 'பொருளை அளந்து அளவை அழுத்தவும், உதாரணமாக 3.5 அல்லது -18. மாற்றும் வரை ஒவ்வொரு ஸ்கேனுடனும் செல்லும்.', tempNone: 'அளவு இல்லை',
     needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும்',
     needTempDetail: 'அளவை அழுத்தவும், உதாரணமாக 3.5 அல்லது -18; குளிர்/உறைந்த பொருள் இல்லையெனில் «அளவு இல்லை» என்பதைத் தேர்வு செய்யவும். எதுவும் அமைக்கப்படவில்லை.',
+    mfgLabel: 'தயாரிப்பு மாதம் (பொதி செய்த பொருட்கள்)', mfgNotEntered: 'உள்ளிடப்படவில்லை',
+    mfgTitle: 'தயாரிப்பு மாதம் — YYYYMM என உள்ளிடவும்', mfgHint: 'பொதியில் உள்ளபடி, உதாரணமாக செப்டம்பர் 2026க்கு 202609. மாற்றும் வரை ஒவ்வொரு ஸ்கேனுடனும் செல்லும். அழிக்க 0 அழுத்தவும்.',
+    needMfg: 'தயாரிப்பு மாதம் படிக்க முடியவில்லை', needMfgDetail: 'ஆண்டையும் மாதத்தையும் ஆறு இலக்கங்களாக அழுத்தவும், உதாரணமாக 202609. எதுவும் அமைக்கப்படவில்லை.',
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
@@ -208,6 +219,7 @@ const WORDS = {
     over_delivery_needs_approval: 'ஆர்டரை விட அதிகம் — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
     dsd_needs_approval: 'கொள்முதல் ஆர்டர் இல்லை — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
     price_change_refused: 'வாசலில் விலையை மாற்ற முடியாது',
+    manufacture_date_required: 'பொதி செய்த பொருள் — முதலில் தயாரிப்பு மாதத்தை உள்ளிடவும்',
     not_on_order: 'இது கொள்முதல் ஆர்டரில் இல்லை',
     moved: 'அடுக்கப்பட்டது', duplicate_ignored: 'ஏற்கனவே ஸ்கேன் செய்யப்பட்டது — எதுவும் மாறவில்லை',
     wrong_sku: 'இது அடுக்கக் காத்திருக்கும் பொருள் அல்ல',
@@ -301,6 +313,7 @@ const outbox = window.warehouseOutbox ?? null;
 const grnId = (data && data.grnId) || 'GRN';
 
 let arrivalTempC = null; // Wave 3 · SF-07 part 3: the keyed arrival reading, °C, or null (declared early: the first render reads it)
+let manufacturedOn = null; // B4 · OB-504: the keyed month of manufacture (YYYY-MM) for packed goods, or null
 let selected = null; // the goods-in item chosen to put away
 let selectedPick = null; // the pick-list line (by id) chosen by a tap; a bin scan from the list needs no tap
 let pickStep = null; // where a pick in progress is: 'bin' | 'item' | 'confirm' | null
@@ -406,6 +419,25 @@ el('recv-temp').addEventListener('click', () => {
   el('temp-entry').textContent = arrivalTempC === null ? '—' : String(arrivalTempC);
   el('temp').hidden = false;
 });
+// ── The month of manufacture (B4 · OB-504) ──────────────────────────────────
+// Keyed on the number pad as YYYYMM (no text box on the handheld). It rides on every receiving scan until changed or cleared
+// (key 0); a packed product scanned without it is refused here, offline, and by head office.
+function renderMfg() {
+  say(el('recv-mfg'), `${t('mfgLabel')}: ${manufacturedOn === null ? t('mfgNotEntered') : manufacturedOn}`, 'calendar');
+}
+el('recv-mfg').addEventListener('click', async () => {
+  const keyed = await awaitQty(t('mfgTitle'), t('mfgHint'), manufacturedOn === null ? '0' : manufacturedOn.replace('-', ''));
+  if (keyed === null) return;
+  if (keyed === 0) { manufacturedOn = null; renderMfg(); return; }
+  const text = String(keyed);
+  const month = Number(text.slice(4));
+  if (!/^\d{6}$/.test(text) || month < 1 || month > 12) {
+    feltResult({ feedback: 'reject', code: 'needMfg', detail: t('needMfgDetail'), sound: 'error', vibrateMs: 300 });
+    return;
+  }
+  manufacturedOn = `${text.slice(0, 4)}-${text.slice(4)}`;
+  renderMfg();
+});
 el('temp-cancel').addEventListener('click', () => { el('temp').hidden = true; });
 el('temp-none').addEventListener('click', () => { arrivalTempC = null; el('temp').hidden = true; renderTemp(); });
 el('temp-ok').addEventListener('click', () => {
@@ -481,7 +513,8 @@ function feltResult(signal) {
   const banner = el('banner');
   banner.className = 'banner' + (signal.feedback === 'accept' ? ' good' : signal.feedback === 'warn' ? ' warn' : '');
   el('banner-title').textContent = t(signal.code) ?? signal.detail;
-  el('banner-text').textContent = signal.detail;
+  // OB-521: where the session gave its own Tamil words (the app-version refusal), they are shown in Tamil.
+  el('banner-text').textContent = lang === 'ta' && signal.detailTa ? signal.detailTa : signal.detail;
   // OB-205: the outcome's shape beside its word — a tick, a warning, a stop — never the colour alone.
   const shape = mark(signal.feedback === 'accept' ? 'circle-check' : signal.feedback === 'warn' ? 'triangle-alert' : 'circle-alert', 28);
   el('banner-mark').replaceChildren(...(shape === null ? [] : [shape]));
@@ -524,6 +557,7 @@ function render() {
   say(el('receive'), t('receive'), 'truck');
   renderDeliveries();
   renderTemp();
+  renderMfg();
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
   say(el('done-receiving'), t('doneReceiving'), 'send');
   el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
@@ -812,6 +846,7 @@ el('receive').addEventListener('click', async () => {
   const out = real.receive({
     commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: 1, source: 'po',
     ...(arrivalTempC === null ? {} : { temperatureC: arrivalTempC }),
+    ...(manufacturedOn === null ? {} : { manufacturedOn }),
   });
   feltResult(out.signal);
   render();
@@ -1067,6 +1102,7 @@ const DSD_WORDS = {
     no_reason: 'Choose why it is handed back', hand_back_more_than_scanned: 'More handed back than came off the van',
     delivery_note_not_signed: 'Scan the delivery note first', no_cash_at_the_door: 'No cash at the door',
     dsd_not_started: 'Start the check-in first', dsd_already_closed: 'This delivery is already closed', dsd_needs_vendor: 'Choose the delivery and key the driver',
+    app_version_too_old: 'Update this handheld',
     expected: 'expected', scanned: 'scanned', back: 'handed back', kept: 'kept',
     // D-11: what is kept from a route sheet (no order) or beyond the order waits for a second person at head office.
     held: 'held for a second person',
@@ -1087,6 +1123,7 @@ const DSD_WORDS = {
     no_reason: 'ஏன் திருப்பி கொடுக்கப்படுகிறது என்பதைத் தேர்வு செய்யவும்', hand_back_more_than_scanned: 'வண்டியிலிருந்து வந்ததை விட அதிகம் திருப்பப்பட்டது',
     delivery_note_not_signed: 'முதலில் டெலிவரி குறிப்பை ஸ்கேன் செய்யவும்', no_cash_at_the_door: 'வாசலில் பணம் இல்லை',
     dsd_not_started: 'முதலில் சரிபார்ப்பைத் தொடங்கவும்', dsd_already_closed: 'இந்த டெலிவரி ஏற்கனவே முடிந்தது', dsd_needs_vendor: 'டெலிவரியைத் தேர்வு செய்து ஓட்டுநர் எண்ணை உள்ளிடவும்',
+    app_version_too_old: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
     expected: 'எதிர்பார்த்தது', scanned: 'ஸ்கேன்', back: 'திருப்பியது', kept: 'வைத்தது',
     held: 'இரண்டாம் நபர் முடிவுக்காக நிறுத்தப்பட்டது',
     short: 'குறைவு', over: 'அதிகம்', not_expected: 'ஆர்டரில் இல்லை', noDifferences: 'வேறுபாடு இல்லை',
@@ -1349,6 +1386,8 @@ async function refreshBadge() {
   try {
     const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
     box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+    // OB-521: the app version policy as the store computer's signed pack has it now (only an answer from the box changes it).
+    if (box.reachable && box.status && 'appVersionPolicy' in box.status) window.warehouseVersion?.apply(box.status.appVersionPolicy);
   } catch {
     box = { asked: true, reachable: false, status: null };
   } finally {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { certifyFoodHandler } from '../support/food-handler';
 
 // Weighed-department costing, end to end (M11-FR-02, API-04). A butcher/fish/deli counter takes weight in
 // and puts less weight out; the survivors must carry the whole input cost (so the shelf price isn't set
@@ -21,6 +22,7 @@ const priceByWeight = (h: ApiHarness, u: string, body: unknown, key = `pbw-${Mat
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');                // production.plan.commit + production.read
+  await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
   await h.provisionRole(A, 'u-cash', 'cashier');  // none
   return h;
 }

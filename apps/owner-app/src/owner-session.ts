@@ -121,7 +121,9 @@ export type DecideRefusal =
   /** The owner has no authority in this branch. */
   | 'out_of_scope'
   /** Above the owner's own approval limit — rare, but a limit that cannot bind is not a limit. */
-  | 'exceeds_authority';
+  | 'exceeds_authority'
+  /** OB-521 (R8-A): this app's build was withdrawn or is too old — no NEW decision; the ones already made are kept. */
+  | 'app_version_too_old';
 
 /** The full refusal vocabulary the screen must have words for, in every language it offers. */
 export const OWNER_DECIDE_REFUSALS: readonly DecideRefusal[] = Object.freeze([
@@ -133,6 +135,7 @@ export const OWNER_DECIDE_REFUSALS: readonly DecideRefusal[] = Object.freeze([
   'reason_required',
   'out_of_scope',
   'exceeds_authority',
+  'app_version_too_old',
 ]);
 
 export type OwnerDecisionOutcome =

@@ -12,6 +12,7 @@ import { writeHeldWorkFeeds } from '../../edge/store-edge/src/work-feeds-file';
 import { hmacSigner } from '../../services/catalogue/src/index';
 import { publishPack } from '../../services/catalogue/src/pack';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
+import { foodHandlerPackSections } from '../support/food-handler';
 
 /**
  * **The production screen works at the counter with the line down, in a real browser on the REAL store box (OB-288 lane 2
@@ -47,6 +48,8 @@ const PACK_JSON = JSON.stringify({
   version: 1, lossPreventionRules: [],
   policies: { tradingDayCutoff: '02:00', storeId: 'S1', branchId: 'S1' },
   productionPolicy: { userId: 'u-cook', permissions: ['production.read', 'production.plan.commit', 'production.release', 'production.recipe.manage'] },
+  // OB-502: the cook's food-handling certificate, as head office's signed pack carries it.
+  ...foodHandlerPackSections('S1', ['u-cook']),
 });
 
 async function boxWithHeldWork(dir: string): Promise<void> {

@@ -442,7 +442,9 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
     {
       // What is batch-tracked is the product master's word (rice, biscuit and oil are; soap and brush are not) — the
       // receipt carries the counted lines only, with batch + expiry where the item is tracked.
-      grnId: 'grn-demo-001', warehouseId: WAREHOUSE_ID, receivedOnDate: RECEIVED_ON, currency: INR,
+      // OB-509: the demo store's OPENING stock (an `opening-…` receipt keeps its cost) — a no-order DELIVERY would be booked
+      // with its cost not known until its supplier bill is matched.
+      grnId: 'opening-demo-001', warehouseId: WAREHOUSE_ID, receivedOnDate: RECEIVED_ON, currency: INR,
       lines: [
         { lineId: 'l1', productId: 'prod-soap', orderedMinor: 100_000, countedMinor: 100_000, uom: 'ea', unitCostMinor: 2000, condition: 'good' },
         { lineId: 'l2', productId: 'prod-brush', orderedMinor: 60_000, countedMinor: 60_000, uom: 'ea', unitCostMinor: 1500, condition: 'good' },

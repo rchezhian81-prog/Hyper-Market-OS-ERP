@@ -4,10 +4,13 @@
 // cause the records support, with the evidence it rests on and how far it can be trusted — and each is a HYPOTHESIS, said
 // as one ("likely because…"), never a finding. Read-only: nothing here writes, and nothing proposes an act (hard rule 5).
 //
-// Only when today's takings are DOWN against the last day do the rules look for a cause (a rise needs no explaining to an
+// OB-516 (owner, 28 Oct 2026): today is compared with the SAME WEEKDAY LAST WEEK, not the day before — a shop's Sunday is
+// not its Saturday, so a weekday-against-weekend "drop" is never explained as if it were one.
+//
+// Only when today's takings are DOWN against the same weekday last week do the rules look for a cause (a rise needs no explaining to an
 // owner who controls by exception, P-03):
 //   • DEPARTMENT FALL — the department whose takings fell most, when its fall is at least a quarter of the whole drop;
-//   • TOP SELLER OUT OF STOCK — one of the last day's top-selling products that head office's stock ledger shows out
+//   • TOP SELLER OUT OF STOCK — one of that day's top-selling products that head office's stock ledger shows out
 //     (on hand ≤ 0) where it sold, and that took less today;
 //   • SYNC GAP — today's sales are not all at head office yet (the figure is lagging or stale, or a store computer says it
 //     still holds records not sent), so part of the "drop" may simply not have arrived (P-08).
@@ -21,26 +24,28 @@ type Draft = Omit<Proposal, 'committed'>;
 const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (part: number, whole: number): string => `${Math.round((part * 100) / whole)}%`;
 
-/** How many of the last day's best-selling products the stock-out rule looks at. */
+/** How many of last week's same-weekday best-selling products the stock-out rule looks at. */
 export const TOP_SELLERS_CHECKED = 5;
 /** A department's fall must be at least this share of the whole drop to be named (basis points). */
 export const DEPARTMENT_SHARE_FLOOR_BPS = 2_500;
 
 export interface CauseInput {
   readonly today: string;
-  readonly yesterday: string;
+  /** OB-516: the SAME WEEKDAY LAST WEEK (today − 7 days) — the day today is compared with, so a Sunday is weighed
+   *  against a Sunday, never against a Saturday. */
+  readonly lastWeek: string;
   readonly now: string;
   readonly takenToday: number;
-  readonly takenYesterday: number | undefined;
+  readonly takenLastWeek: number | undefined;
   /** How current today's takings figure is, and as at when. */
   readonly staleness: 'live' | 'lagging' | 'stale';
   readonly asAt: string | null;
   /** Department → money taken (the governed units_by_category "<dept> — taken" figures). */
   readonly departmentsToday: ReadonlyMap<string, number>;
-  readonly departmentsYesterday: ReadonlyMap<string, number>;
+  readonly departmentsLastWeek: ReadonlyMap<string, number>;
   /** `product@location` → money its bill lines took that day (the sales ledger). */
   readonly productsToday: ReadonlyMap<string, number>;
-  readonly productsYesterday: ReadonlyMap<string, number>;
+  readonly productsLastWeek: ReadonlyMap<string, number>;
   /** `product@location` → on hand now (head office's stock ledger); absent = never moved there. */
   readonly onHand: ReadonlyMap<string, number>;
   /** What the store computers last said they hold unsent; `undefined` when no store computer has said. */
@@ -52,12 +57,12 @@ const READ_ONLY = 'nothing — A01 is read-only; this is a likely cause for a pe
 
 /** The "likely because…" lines for a day whose takings are down. Pure: records in, hypotheses out. */
 export function likelyCauses(c: CauseInput): Draft[] {
-  if (c.takenYesterday === undefined || c.takenYesterday <= 0 || c.takenToday >= c.takenYesterday) return [];
-  const drop = c.takenYesterday - c.takenToday;
+  if (c.takenLastWeek === undefined || c.takenLastWeek <= 0 || c.takenToday >= c.takenLastWeek) return [];
+  const drop = c.takenLastWeek - c.takenToday;
   const out: Draft[] = [];
   const takingsEvidence = [
     { source: 'report sales_by_day', reference: `/v1/reports/sales_by_day?day=${c.today}`, summary: `${rupees(c.takenToday)} taken on ${c.today} (${c.staleness}, as at ${c.asAt ?? 'never'})` },
-    { source: 'report sales_by_day', reference: `/v1/reports/sales_by_day?day=${c.yesterday}`, summary: `${rupees(c.takenYesterday)} taken on ${c.yesterday}` },
+    { source: 'report sales_by_day', reference: `/v1/reports/sales_by_day?day=${c.lastWeek}`, summary: `${rupees(c.takenLastWeek)} taken on ${c.lastWeek}` },
   ];
 
   // 1. Sync gap first: a drop that has not finished arriving is not a drop yet (P-08).
@@ -66,7 +71,7 @@ export function likelyCauses(c: CauseInput): Draft[] {
   if (lagging || unsent) {
     out.push({
       proposalId: `a01-cause-sync-${c.today}`, agent: 'A01', createdAt: c.now,
-      summary: `Takings are down ${rupees(drop)} on ${c.yesterday} — likely because not all of today's bills have reached head office yet: ${[
+      summary: `Takings are down ${rupees(drop)} on ${c.lastWeek} (the same weekday last week) — likely because not all of today's bills have reached head office yet: ${[
         ...(lagging ? [`today's figure is ${c.staleness} (newest sale held is from ${c.asAt ?? 'never'})`] : []),
         ...(unsent ? [`the store computers say they still hold ${c.unsentRecords} record(s) not sent`] : []),
       ].join('; ')}. Check the store computer's sync before reading anything into the drop`,
@@ -80,8 +85,8 @@ export function likelyCauses(c: CauseInput): Draft[] {
   }
 
   // 2. The department that fell most.
-  const depts = new Set([...c.departmentsToday.keys(), ...c.departmentsYesterday.keys()]);
-  const falls = [...depts].map((d) => ({ dept: d, before: c.departmentsYesterday.get(d) ?? 0, now: c.departmentsToday.get(d) ?? 0 }))
+  const depts = new Set([...c.departmentsToday.keys(), ...c.departmentsLastWeek.keys()]);
+  const falls = [...depts].map((d) => ({ dept: d, before: c.departmentsLastWeek.get(d) ?? 0, now: c.departmentsToday.get(d) ?? 0 }))
     .map((x) => ({ ...x, fall: x.before - x.now })).filter((x) => x.fall > 0)
     .sort((a, b) => b.fall - a.fall || a.dept.localeCompare(b.dept));
   const worst = falls[0];
@@ -89,20 +94,20 @@ export function likelyCauses(c: CauseInput): Draft[] {
     const share = Math.min(worst.fall, drop);
     out.push({
       proposalId: `a01-cause-department-${c.today}`, agent: 'A01', createdAt: c.now,
-      summary: `Takings are down ${rupees(drop)} on ${c.yesterday} — likely because ${worst.dept} took ${rupees(worst.fall)} less (${rupees(worst.before)} on ${c.yesterday}, ${rupees(worst.now)} today), ${pct(share, drop)} of the drop`,
+      summary: `Takings are down ${rupees(drop)} on ${c.lastWeek} (the same weekday last week) — likely because ${worst.dept} took ${rupees(worst.fall)} less (${rupees(worst.before)} on ${c.lastWeek}, ${rupees(worst.now)} today), ${pct(share, drop)} of the drop`,
       wouldRequire: READ_ONLY,
       evidence: [
         ...takingsEvidence,
         { source: 'report units_by_category', reference: `/v1/reports/units_by_category?day=${c.today}`, summary: `${worst.dept} — taken ${rupees(worst.now)} on ${c.today}` },
-        { source: 'report units_by_category', reference: `/v1/reports/units_by_category?day=${c.yesterday}`, summary: `${worst.dept} — taken ${rupees(worst.before)} on ${c.yesterday}` },
+        { source: 'report units_by_category', reference: `/v1/reports/units_by_category?day=${c.lastWeek}`, summary: `${worst.dept} — taken ${rupees(worst.before)} on ${c.lastWeek}` },
       ],
       confidence: hypothesis(worst.fall * 2 >= drop ? 'medium' : 'low',
         'A department falling on the same day as the takings is a pattern in the records, not a proof of why: weather, a festival, a price or a shelf gap can each be the real reason. Check the department before acting.'),
     });
   }
 
-  // 3. A top seller of the last day now out of stock where it sold, and selling less today.
-  const top = [...c.productsYesterday].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, TOP_SELLERS_CHECKED);
+  // 3. A top seller of the same weekday last week now out of stock where it sold, and selling less today.
+  const top = [...c.productsLastWeek].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, TOP_SELLERS_CHECKED);
   for (const [key, before] of top) {
     const held = c.onHand.get(key);
     const now = c.productsToday.get(key) ?? 0;
@@ -111,11 +116,11 @@ export function likelyCauses(c: CauseInput): Draft[] {
     const lost = before - now;
     out.push({
       proposalId: `a01-cause-stockout-${productId}-${locationId}-${c.today}`, agent: 'A01', createdAt: c.now,
-      summary: `Takings are down ${rupees(drop)} on ${c.yesterday} — likely in part because ${productId}, one of ${c.yesterday}'s top sellers at ${locationId} (${rupees(before)}), is out of stock there (on hand ${held}) and took ${rupees(now)} today`,
+      summary: `Takings are down ${rupees(drop)} on ${c.lastWeek} (the same weekday last week) — likely in part because ${productId}, one of ${c.lastWeek}'s top sellers at ${locationId} (${rupees(before)}), is out of stock there (on hand ${held}) and took ${rupees(now)} today`,
       wouldRequire: READ_ONLY,
       evidence: [
         ...takingsEvidence,
-        { source: 'sales ledger', reference: `SaleCommitted ${c.yesterday}..${c.today} ${productId}@${locationId}`, summary: `${productId} at ${locationId}: ${rupees(before)} on ${c.yesterday}, ${rupees(now)} on ${c.today}` },
+        { source: 'sales ledger', reference: `SaleCommitted ${c.lastWeek}..${c.today} ${productId}@${locationId}`, summary: `${productId} at ${locationId}: ${rupees(before)} on ${c.lastWeek}, ${rupees(now)} on ${c.today}` },
         { source: 'inventory availability', reference: `/v1/inventory/availability?productId=${productId}`, summary: `${productId} at ${locationId}: on hand ${held}` },
       ],
       confidence: hypothesis(lost * 4 >= drop ? 'medium' : 'low',
@@ -127,7 +132,7 @@ export function likelyCauses(c: CauseInput): Draft[] {
   if (out.length === 0) {
     out.push({
       proposalId: `a01-cause-unknown-${c.today}`, agent: 'A01', createdAt: c.now,
-      summary: `Takings are down ${rupees(drop)} on ${c.yesterday}, and no likely cause shows in the records: no department fell by a quarter of it, no top seller is out of stock, and today's figures are all at head office. Ask in the shop`,
+      summary: `Takings are down ${rupees(drop)} on ${c.lastWeek} (the same weekday last week), and no likely cause shows in the records: no department fell by a quarter of it, no top seller is out of stock, and today's figures are all at head office. Ask in the shop`,
       wouldRequire: READ_ONLY,
       evidence: takingsEvidence,
       confidence: hypothesis('low', 'The checks above found nothing; the cause may be something the records do not hold (footfall, weather, a competitor\'s offer).'),

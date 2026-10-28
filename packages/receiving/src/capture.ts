@@ -54,6 +54,11 @@ export interface ProductReceiptRules {
   readonly coldChainMinC?: number;
   /** Wave 3 · SF-07 — whose limits these are: the product's own, or the approved class default. */
   readonly coldChainSource?: 'product' | 'class_default';
+  /**
+   * B4 · OB-504 (owner, 28 Oct 2026): a PACKED product (its department is regulated `packed` on head office's category
+   * list) — every line of it needs the month and year (or date) of manufacture of the batch that arrived, or it is refused.
+   */
+  readonly packaged?: boolean;
 }
 
 /** One line as counted at the dock. */
@@ -76,7 +81,26 @@ export interface CapturedLine {
   readonly qc?: QcStatus;
   /** Recorded temperature, where cold-chain evidence is required. */
   readonly temperatureC?: number;
+  /**
+   * B4 · OB-504: the batch's month and year (YYYY-MM) or date (YYYY-MM-DD) of manufacture / packing, as printed on the pack —
+   * mandatory for a packed product.
+   */
+  readonly manufacturedOn?: string | null;
+  /**
+   * OB-509: head office does not know what this line cost — no issued order, or a product the order does not name — so it
+   * is booked UNVALUED until the supplier's bill is matched. `unitCost` then carries 0 only as a placeholder: every value
+   * worked from it is marked "not known" (`valueNotKnown`), never a fake zero (P-08).
+   */
+  readonly costNotKnown?: boolean;
 }
+
+/** B4 · OB-504: a manufacture date as a pack prints it — month and year, or a full date. */
+export const MANUFACTURE_DATE = /^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/;
+/** B4 · OB-504: what a refused line is missing, so every boundary can name the refusal (`manufacture_date_required`). */
+export const MANUFACTURE_DATE_MISSING = 'a manufacture date (month and year, YYYY-MM or YYYY-MM-DD — the item is a packed product, OB-504)';
+export const MANUFACTURE_DATE_UNREADABLE = 'a manufacture date it can read (YYYY-MM or YYYY-MM-DD)';
+/** True when a manufacture date is present and reads as one. */
+export const isManufactureDate = (v: unknown): v is string => typeof v === 'string' && MANUFACTURE_DATE.test(v.trim());
 
 /** Tolerances and thresholds — per tenant, chosen, never hard-coded. */
 export interface ReceiptPolicy {
@@ -115,6 +139,8 @@ export interface ReceiptDiscrepancy {
   readonly requiresApproval: boolean;
   /** Plain English, for the person who has to act on it. */
   readonly detail: string;
+  /** OB-509: the line's cost is not known yet (no issued order / not on the order), so `value` is not a value — said, never 0. */
+  readonly valueNotKnown?: true;
 }
 
 /** A line that could not be received at all — the capture is refused. */
@@ -150,6 +176,10 @@ export interface CheckedLine {
   readonly expiry: string | null;
   /** What the delivered unit cost — carried so a later release of the held excess is valued at what it cost. */
   readonly unitCost: Money;
+  /** B4 · OB-504: the batch's manufacture date as captured (a packed product always has one). */
+  readonly manufacturedOn?: string;
+  /** OB-509: booked with its cost NOT KNOWN until the supplier's bill is matched (`unitCost` is a placeholder). */
+  readonly costNotKnown?: true;
 }
 
 export interface CapturedReceipt {
@@ -160,6 +190,8 @@ export interface CapturedReceipt {
   readonly requiresApproval: boolean;
   /** Total value of everything that did not arrive as ordered. */
   readonly discrepancyValue: Money;
+  /** OB-509: some discrepancy's value is not known (its line's cost is not known), so the total is incomplete — said. */
+  readonly discrepancyValueIncomplete?: true;
 }
 
 const BP = 10_000;
@@ -210,6 +242,11 @@ export function captureReceipt(input: {
   readonly policy: ReceiptPolicy;
   readonly receivedOnDate: string;
   readonly currency: Money['currency'];
+  /**
+   * B4 · OB-504: false only for an OPENING-stock load (stock already on the shelves at cutover, not goods received from a
+   * supplier) — a packed line with no manufacture date is then taken as it is, and the boundary SAYS so. Default true.
+   */
+  readonly manufactureDateRequired?: boolean;
 }): CapturedReceipt {
   const ruleFor = new Map(input.rules.map((r) => [r.productId, r]));
   const discrepancies: ReceiptDiscrepancy[] = [];
@@ -233,6 +270,11 @@ export function captureReceipt(input: {
         throw new IncompleteCaptureError(line.lineId, 'an expiry date (the item is batch-tracked)');
       }
     }
+    // B4 · OB-504 (Legal Metrology, Packaged Commodities Rule 6): a packed product's batch carries its month and year of
+    // manufacture — without it the line is refused, whoever books it in and wherever (P-04). A date given is read strictly.
+    const mfg = typeof line.manufacturedOn === 'string' && line.manufacturedOn.trim() !== '' ? line.manufacturedOn.trim() : undefined;
+    if (mfg !== undefined && !MANUFACTURE_DATE.test(mfg)) throw new IncompleteCaptureError(line.lineId, MANUFACTURE_DATE_UNREADABLE);
+    if (rule.packaged === true && mfg === undefined && input.manufactureDateRequired !== false) throw new IncompleteCaptureError(line.lineId, MANUFACTURE_DATE_MISSING);
     // Wave 3 · SF-07 (owner decision 9 Oct 2026, option 3): a cold-chain line with no recorded temperature is no longer refused
     // at the dock — the goods are physically in the building and the store must keep trading (P-01). It is RECEIVED but HELD
     // in quarantine, never sellable, until a second person checks the goods and releases or returns them (below).
@@ -248,9 +290,10 @@ export function captureReceipt(input: {
         productId: line.productId,
         kind,
         quantityMinor,
-        value: valueOf(line.unitCost, quantityMinor, line.uom),
+        value: line.costNotKnown === true ? { minor: 0, currency: line.unitCost.currency } : valueOf(line.unitCost, quantityMinor, line.uom),
         requiresApproval,
         detail,
+        ...(line.costNotKnown === true ? { valueNotKnown: true as const } : {}),
       });
     };
 
@@ -366,6 +409,8 @@ export function captureReceipt(input: {
       batchId: line.batchId ?? null,
       expiry,
       unitCost: line.unitCost,
+      ...(mfg === undefined ? {} : { manufacturedOn: mfg }),
+      ...(line.costNotKnown === true ? { costNotKnown: true as const } : {}),
     });
   }
 
@@ -378,6 +423,7 @@ export function captureReceipt(input: {
       minor: discrepancies.reduce((sum, d) => sum + Math.abs(d.value.minor), 0),
       currency: input.currency,
     },
+    ...(discrepancies.some((d) => d.valueNotKnown === true) ? { discrepancyValueIncomplete: true as const } : {}),
   };
 }
 

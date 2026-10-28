@@ -14,13 +14,23 @@
 //     who quotes and never closes is worth seeing (the follow-up list surfaces expiring ones first).
 //
 // Event-sourced: each state change is an append-only fact and the current quotation is the latest fact.
-// Writes gated `pos.quotation.write`; the list and follow-up read `pos.quotation.read`.
+// Issue and withdraw are gated `pos.quotation.write`; convert `pos.quotation.convert` (OB-506 — the till's store computer
+// holds it, never the write); the list and follow-up read `pos.quotation.read`.
+//
+// Round 8 (owner, 28 Oct 2026):
+//   • OB-525 — head office reads each product's FLOOR itself when a quotation is issued (its buying cost at the quotation's
+//     store lifted by the store's margin floor — the till's own floor, OB-500); a line quoted below its floor needs a second
+//     person's approval through the maker-checker engine. The request carries no floor and no cost: one that does is refused.
+//     A product whose floor head office cannot read (never received at a cost) is said on the answer and kept on the record.
+//   • OB-523 — a bill that rang a quotation up and was then CANCELLED at the till frees the quotation again: the store
+//     computer relays the cancellation (`POST …/:quotationId/free/synced`, `pos.quotation.free` — the box's own narrow word)
+//     and the release is appended as a compensating fact with who cancelled the bill and why. A later bill may ring it up.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertBranchInScope } from '../../kernel/src/index';
 import {
-  issueQuotation, convertQuotation, withdrawQuotation, quotationsNeedingFollowUp,
-  type Quotation, type QuotationLine, type QuotationApproval,
+  issueQuotation, convertQuotation, withdrawQuotation, quotationsNeedingFollowUp, freeQuotation,
+  type Quotation, type QuotationLine, type QuotationApproval, type QuotationRelease,
 } from '../../../packages/suspended-sales/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
@@ -37,6 +47,16 @@ export interface QuotationsDeps {
   /** Head office's maker-checker engine (ADR-0024): a below-floor quote's approver gave it in their own session.
    *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
   readonly approvals?: ApprovalPort;
+  /**
+   * OB-525: each product's floor price per unit at a store, read by head office from its own records (buying cost × the
+   * store's margin floor) — `notKnown` for a product never received at a cost. Absent on a bare stub (no floor read).
+   */
+  readonly floorsAt?: (tenantId: string, storeId: string, productIds: readonly string[]) => Promise<{ readonly floors: Readonly<Record<string, number>>; readonly notKnown: readonly string[] }>;
+  /**
+   * OB-523: append a quotation freed from a cancelled bill — its own fact, keyed on the release, so a re-send collapses.
+   * Absent → `record` is used.
+   */
+  readonly recordFreed?: (tenantId: string, q: Quotation, release: QuotationRelease) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -87,6 +107,15 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
             nextSafeAction: 'Send the customer, the lines with their promised prices, and the date the price is held until.',
           });
         }
+        // OB-525: the floor and the cost are head office's own — a request that names either is refused, never believed.
+        if (deps.floorsAt !== undefined && (b['marginFloorBps'] !== undefined || lines.some((l) => l.unitCostMinor !== undefined))) {
+          throw apiError(400, {
+            code: 'quotation_carries_floor_or_cost',
+            whatHappened: 'This quotation names its own margin floor or buying cost. Head office reads each product\'s floor itself from its own records (OB-525) — never from the request.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the lines with their promised prices only. Nothing was quoted.',
+          });
+        }
         if (b['marginFloorBps'] !== undefined && (!isInt(b['marginFloorBps']) || (b['marginFloorBps'] as number) < 0)) {
           throw apiError(400, { code: 'margin_floor_not_a_number', whatHappened: 'marginFloorBps must be a whole number of basis points when given.', wasItSaved: 'not_saved', nextSafeAction: 'Send the margin floor in basis points, or leave it out.' });
         }
@@ -107,10 +136,14 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
         const approval: QuotationApproval | undefined = opened === undefined ? undefined
           : { subjectRef: quotationId, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason };
         const issuedAt = isStr(b['issuedAt']) ? (b['issuedAt'] as string) : deps.now();
+        // OB-525: each product's floor at THIS quotation's store, read here.
+        const floors = deps.floorsAt === undefined ? undefined
+          : await deps.floorsAt(ctx.tenantId, b['storeId'] as string, [...new Set(lines.map((l) => l.productId))]);
         const result = issueQuotation({
           quotationId, tenantId: ctx.tenantId, storeId: b['storeId'] as string, customerRef: b['customerRef'] as string,
           currency: b['currency'] as string, lines, issuedBy: ctx.userId, issuedAt, validUntil: b['validUntil'] as string,
           ...(isInt(b['marginFloorBps']) ? { marginFloorBps: b['marginFloorBps'] as number } : {}),
+          ...(floors === undefined ? {} : { lineFloorsMinor: floors.floors, floorNotKnown: floors.notKnown }),
           ...(approval !== undefined ? { approval } : {}),
         });
         if (!result.issued || result.quotation === undefined) {
@@ -121,14 +154,21 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
         // Every rule passed: the approval is spent — once — and only then is the quotation recorded.
         await opened?.spend();
         await deps.record(ctx.tenantId, result.quotation);
-        return { status: 201, body: { quotationId, state: 'issued', totalMinor: result.quotation.totalMinor, validUntil: result.quotation.validUntil } };
+        return { status: 201, body: {
+          quotationId, state: 'issued', totalMinor: result.quotation.totalMinor, validUntil: result.quotation.validUntil,
+          // OB-525: a product whose floor head office could not read is SAID — never taken as a floor of zero (P-08).
+          ...(result.quotation.floorNotKnown === undefined ? {} : { floorNotKnown: result.quotation.floorNotKnown }),
+        } };
       },
     },
     {
       // CONVERT — ring up the promised prices while the quote is still valid. Idempotent: a second convert
       // returns the sale that already exists. An expired / withdrawn quote is refused, not silently re-priced.
+      // OB-506 (owner, 28 Oct 2026): the cashier rings a quotation up at the till by its number — the till asks its store
+      // computer, which asks HERE under its own credential. So converting is its own narrow word (`pos.quotation.convert`):
+      // the store computer may convert, never issue or withdraw a quotation (least privilege, P-04).
       api: 'API-05', method: 'POST', path: '/v1/pos/quotations/:quotationId/convert',
-      permission: 'pos.quotation.write', idempotent: true,
+      permission: 'pos.quotation.convert', idempotent: true,
       handler: async (ctx) => {
         const quotationId = ctx.params['quotationId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -144,13 +184,59 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
 
         // Already converted → the quotation became one sale; return that sale rather than making another.
         if (!result.converted && result.outcome === 'already_converted') {
-          return { status: 200, body: { quotationId, converted: false, alreadyConverted: true, saleId: result.saleId } };
+          // OB-506: the SAME bill asking again (a till whose first answer was lost) gets the quoted lines back, so it can ring
+          // them; any other bill is told which bill already has it — never a second set of lines.
+          const sameSale = result.saleId === (b['saleId'] as string);
+          return { status: 200, body: { quotationId, converted: false, alreadyConverted: true, saleId: result.saleId, ...(sameSale ? { sameSale: true, saleLines: quotation.lines } : {}) } };
         }
         if (!result.converted) {
           throw apiError(422, { code: `quotation_${result.outcome}`, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was rung up. Re-quote if the price is to change.' });
         }
         await deps.record(ctx.tenantId, result.quotation);
         return { status: 200, body: { quotationId, converted: true, saleId: result.saleId, saleLines: result.saleLines } };
+      },
+    },
+    {
+      // OB-523 FREE — the bill that rang this quotation up was CANCELLED at the till: the store computer relays it (queued on
+      // its disk when head office was out of reach, sent once). The release is a compensating fact — who cancelled the bill
+      // (the person the box verified), why, at which till and when; the convert stays in the history. Only the bill the
+      // quotation is on frees it; a re-send of the same release is answered with it.
+      api: 'API-05', method: 'POST', path: '/v1/pos/quotations/:quotationId/free/synced',
+      permission: 'pos.quotation.free', idempotent: true,
+      handler: async (ctx) => {
+        const quotationId = ctx.params['quotationId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const isTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
+        if (b['quotationId'] !== quotationId || !isStr(b['freeId']) || !isStr(b['saleId']) || !isStr(b['freedBy']) || !isStr(b['reason'])
+          || !isStr(b['laneId']) || !isTime(b['at'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_quotation_release',
+            whatHappened: 'A quotation freed from a cancelled bill needs { quotationId (matching the address), freeId, saleId (the cancelled bill), freedBy, reason, laneId, at }.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep it in the store computer\'s queue and raise it. The quotation stays rung up on that bill until it is read.',
+          });
+        }
+        const quotation = await find(ctx.tenantId, quotationId);
+        if (quotation === undefined) {
+          throw apiError(404, { code: 'unknown_quotation', whatHappened: `There is no quotation '${quotationId}'.`, wasItSaved: 'not_saved', nextSafeAction: 'Kept in the store computer\'s queue for a person to check the number.' });
+        }
+        // The quotation's store as head office holds it — a box of another store never frees it.
+        assertBranchInScope(ctx, quotation.storeId);
+        const out = freeQuotation({
+          quotation, freeId: (b['freeId'] as string).trim(), saleId: (b['saleId'] as string).trim(), freedBy: (b['freedBy'] as string).trim(),
+          reason: b['reason'] as string, laneId: (b['laneId'] as string).trim(), at: new Date(Date.parse(b['at'] as string)).toISOString(),
+          relayedBy: ctx.userId, recordedAt: deps.now(),
+        });
+        if (out.outcome === 'already_freed') return { status: 200, body: { quotationId, freed: true, alreadyFreed: true, state: quotation.state, release: out.release } };
+        if (out.outcome !== 'freed' || out.release === undefined) {
+          throw apiError(422, {
+            code: out.outcome === 'not_on_this_bill' ? 'quotation_not_on_this_bill' : 'quotation_release_needs_a_reason',
+            whatHappened: out.detail, wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept in the store computer\'s queue for a person to check: the quotation was not changed.',
+          });
+        }
+        await (deps.recordFreed ?? ((t: string, q: Quotation) => deps.record(t, q)))(ctx.tenantId, out.quotation, out.release);
+        return { status: 201, body: { quotationId, freed: true, state: 'issued', release: out.release } };
       },
     },
     {

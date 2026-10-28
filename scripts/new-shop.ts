@@ -54,6 +54,7 @@ async function main(): Promise<void> {
     targetKind: env['MIGRATION_TARGET_KIND'], demoTenantIds: demoTenantIds(env, flags['demo-tenant']),
     knownRoleIds: ROLE_CATALOGUE.map((r) => r.id), ownerRoleId: OWNER_ROLE_ID,
     realmTemplate: JSON.parse(readFileSync(resolve(process.cwd(), 'infra/keycloak/realm-sre-store.json'), 'utf8')) as Record<string, unknown>,
+    customerRealmTemplate: JSON.parse(readFileSync(resolve(process.cwd(), 'infra/keycloak/realm-sre-store-customers.json'), 'utf8')) as Record<string, unknown>, // OB-510
   });
   if (!plan.ok) {
     out('NOT CREATED — nothing was written:');
@@ -63,6 +64,11 @@ async function main(): Promise<void> {
   const file = resolve(process.cwd(), str('out') || `realm-${plan.shop.realm}.json`);
   if (existsSync(file)) {
     out(`NOT CREATED — ${file} already exists. Move it away or name another --out. Nothing was written.`);
+    process.exit(1);
+  }
+  const customerFile = file.replace(/\.json$/, '') + '-customers.json'; // OB-510: the customers' realm beside it
+  if (existsSync(customerFile)) {
+    out(`NOT CREATED — ${customerFile} already exists. Move it away or name another --out. Nothing was written.`);
     process.exit(1);
   }
 
@@ -93,10 +99,11 @@ async function main(): Promise<void> {
       payload: { ...plan.shop, at },
     }));
     writeFileSync(file, `${JSON.stringify(plan.realmFile, null, 2)}\n`, { mode: 0o600 });
+    if (plan.customerRealmFile !== undefined) writeFileSync(customerFile, `${JSON.stringify(plan.customerRealmFile, null, 2)}\n`, { mode: 0o600 });
     out(`CREATED — the shop and its ${seeded.granted} first grant(s) recorded; its sign-in area file written to ${file}.`);
     out();
     out('Next, in order:');
-    nextSteps(plan.shop, plan.bootstrap.admins[0]!.userId, file).forEach((s, i) => out(`  ${i + 1}. ${s}`));
+    nextSteps(plan.shop, plan.bootstrap.admins[0]!.userId, file, plan.customerRealmFile === undefined ? undefined : customerFile).forEach((s, i) => out(`  ${i + 1}. ${s}`));
     process.exit(0);
   } catch (e) {
     out(`Could not write to the ledger: ${e instanceof Error ? e.message : String(e)}`);

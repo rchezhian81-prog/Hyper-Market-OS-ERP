@@ -8,7 +8,9 @@ import { approveSupplierWith, SUPPLIER_MAKER, SUPPLIER_CHECKER } from '../suppor
 
 /**
  * FG-4 · D03-FR-05 — the purchase-price variance on the Supplier scorecard page, in a real browser, on the PRODUCTION API
- * over real PostgreSQL. Rice was ordered at ₹5.00 and arrived at ₹5.50; dal arrived at its order price. The page shows the
+ * over real PostgreSQL. Rice was ordered at ₹5.00 and BILLED at ₹5.50; dal was billed at its order price. OB-517 (owner,
+ * 28 Oct 2026): before the supplier bill is matched every line says "not yet billed" (never the figure typed at the door,
+ * never a zero); once the bill is matched the page shows the
  * variance per product and per receipt (+₹5.00 on rice), opens the receipt lines behind a product (drill-through), says
  * "no contract price on file" where there is none (never a zero), and has a Tamil twin. Opening it writes nothing.
  *
@@ -22,6 +24,7 @@ const KEY = ['supplier', 'ppv', 'e2e', 'key'].join('-').padEnd(48, '0');
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the purchase-price variance on the Supplier scorecard page (D03-FR-05), in a real browser', () => {
   let browser: Browser;
   let shop: InboxShop;
+  let billIt: () => Promise<void>;
 
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
@@ -32,6 +35,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the purcha
         await cloud.grant(SUPPLIER_MAKER, 'store_manager');
         await cloud.grant(SUPPLIER_CHECKER, 'accountant');
         await cloud.grant('u-buyer', 'store_manager');
+        await cloud.grant('u-match', 'accountant');
         const call = (method: 'POST', path: string, userId: string, body: unknown, idempotencyKey: string) => cloud.request({ method, path, userId, idempotencyKey, body });
         await approveSupplierWith(call, 's-rice');
         const post = (path: string, body: unknown, key: string, userId = OWNER) => ok(cloud.request({ method: 'POST', path, userId, idempotencyKey: key, body }), key);
@@ -44,6 +48,16 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the purcha
             { lineId: 'L2', productId: 'p-dal', orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: { minor: 1000, currency: 'INR' }, condition: 'good' },
           ],
         }, 'grn-rice');
+        // The supplier's bill, captured as the paper says by the buyer and matched by the accountant — run mid-test.
+        billIt = async () => {
+          await post('/v1/purchase/invoices/INV-RICE/capture', {
+            supplierId: 's-rice', poId: 'po-rice', declaredTotalMinor: 10 * 550 + 10 * 1000,
+            lines: [{ productId: 'p-rice', quantity: 10, unitPriceMinor: 550, lineTotalMinor: 5_500 }, { productId: 'p-dal', quantity: 10, unitPriceMinor: 1000, lineTotalMinor: 10_000 }],
+          }, 'inv-capture', 'u-buyer');
+          await post('/v1/purchase/invoices/INV-RICE/match', {}, 'inv-match', 'u-match');
+          // OB-530 (round 8): the bill is matched to THIS receipt — the report reads only that.
+          await post('/v1/inventory/goods-receipt/grn-rice/bill-match', { invoiceId: 'INV-RICE' }, 'grn-bill-match', 'u-match');
+        };
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
@@ -71,6 +85,19 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the purcha
       await expect.poll(() => page.textContent('#ppv-status')).toMatch(/Type the supplier code first/);
 
       await page.fill('#supplier', 's-rice');
+      // OB-517: no bill matched yet — counted, "not yet billed", never compared at the typed ₹5.50.
+      await page.click('#ppv-show');
+      await page.locator('#ppv-products tr[data-key="p-rice"]').waitFor({ timeout: 15_000 });
+      await expect.poll(() => page.textContent('#ppv-nc')).toMatch(/2 — not yet billed/);
+      expect(await page.textContent('#ppv-total')).toMatch(/0\/2/);
+      await page.click('#ppv-products button[data-key="p-rice"]');
+      await page.locator('#ppv-drill:not([hidden])').waitFor({ timeout: 15_000 });
+      await expect.poll(() => page.textContent('#ppv-lines tbody tr')).toMatch(/not yet billed/);
+      expect(await page.textContent('#ppv-lines tbody tr')).not.toMatch(/₹5\.50/);
+      await page.click('#ppv-back');
+      await page.locator('#ppv-rollups:not([hidden])').waitFor({ timeout: 15_000 });
+
+      await billIt();
       await page.click('#ppv-show');
       await page.locator('#ppv-products tr[data-key="p-rice"]').waitFor({ timeout: 15_000 });
       await expect.poll(() => page.textContent('#ppv-products tr[data-key="p-rice"]')).toMatch(/\+₹5\.00/);
@@ -83,7 +110,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the purcha
       await page.click('#ppv-products button[data-key="p-rice"]');
       await page.locator('#ppv-drill:not([hidden])').waitFor({ timeout: 15_000 });
       await expect.poll(() => page.locator('#ppv-lines tbody tr').count()).toBe(1);
-      expect(await page.textContent('#ppv-lines tbody tr')).toMatch(/₹5\.50/);
+      expect(await page.textContent('#ppv-lines tbody tr')).toMatch(/₹5\.50 \(bill INV-RICE\)/);
       expect(await page.textContent('#ppv-lines tbody tr')).toMatch(/₹5\.00/);
       await page.click('#ppv-back');
       await page.locator('#ppv-rollups:not([hidden])').waitFor({ timeout: 15_000 });

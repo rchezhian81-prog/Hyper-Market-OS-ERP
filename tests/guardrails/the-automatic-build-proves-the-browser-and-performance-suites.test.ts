@@ -91,7 +91,8 @@ describe('the identity job (real Keycloak)', () => {
     expect(identity).toContain('bash scripts/identity-proof.sh');
     const proof = readFileSync('scripts/identity-proof.sh', 'utf8');
     // OB-388 · ADR-0029: and the store PC's own head-office sign-in through a real box.
-    for (const suite of ['keycloak-real', 'keycloak-shop-realms', 'keycloak-provisioning', 'identity-front-door', 'keycloak-store-computer']) {
+    // OB-510: and a shop's customer realm signing a customer's token through the customer sign-in service.
+    for (const suite of ['keycloak-real', 'keycloak-shop-realms', 'keycloak-provisioning', 'identity-front-door', 'keycloak-store-computer', 'keycloak-customer-realm']) {
       expect(proof, suite).toContain(`"${suite}:`);
       expect(readdirSync('tests/integration'), suite).toContain(`${suite}.test.ts`);
     }

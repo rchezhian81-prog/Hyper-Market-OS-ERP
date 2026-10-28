@@ -11,6 +11,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * **M10-FR-03 "traceability works backwards and forwards … customer→supplier", and "trace queries logged" (Lane 2 · P1)
@@ -70,6 +71,8 @@ describe.each(backings)('M10-FR-03: the trace runs backwards from a sale or a cu
     let h = harness();
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
+    await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+    await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
     await approvedSuppliers(h, T, 'sup-dairy');
     await deliveryPlaces(h, T, 'S1', 'WH');
     await h.provisionRole(T, 'u-mgr', 'store_manager');
@@ -156,6 +159,8 @@ describe.each(backings)('M10-FR-03: the trace runs backwards from a sale or a cu
     let h = harness();
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
+    await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+    await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
     await approvedSuppliers(h, T, 'sup-mill');
     await deliveryPlaces(h, T, 'S1');
     await h.provisionRole(T, 'u-baker', 'store_manager');

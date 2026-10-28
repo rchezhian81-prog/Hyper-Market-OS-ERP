@@ -54,6 +54,8 @@ const PULLS: readonly [Method, string][] = [
   ['GET', '/v1/warehouse/transfers'],
   // OB-350: a cashier recalls a customer's scan-and-go basket at the till (edge/store-edge/src/phone-baskets.ts).
   ['POST', '/v1/store/scan-and-go/123456/recall'],
+  // R7-C · OB-506: a cashier rings a retail quotation up at the till by its number (edge/store-edge/src/quotations-at-lane.ts).
+  ['POST', '/v1/pos/quotations/12345678/convert'],
   // OB-288 LP/workforce package: the monitored rooms (facilities page readings) and the help library (help page).
   ['GET', '/v1/facilities/equipment-feed'],
   ['GET', '/v1/hr/workforce/help-library'],

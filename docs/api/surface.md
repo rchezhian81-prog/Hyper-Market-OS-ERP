@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1621 | 940 | 940 | 178 | 430 |
+| 13 | 1625 | 943 | 943 | 178 | 433 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -384,6 +384,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/goods-receipt/:grnId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/assemble` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/assembled` | `inventory.receipt.sync` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/bill-match` | `purchase.invoice.match` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/dispatch` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/returned` | `inventory.movement.append` | core | yes |
@@ -560,7 +561,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/pos/no-receipt-returns` | `lp.case.read` | core | — |
 | GET | `/v1/pos/quotations` | `pos.quotation.read` | core | — |
 | POST | `/v1/pos/quotations/:quotationId` | `pos.quotation.write` | core | yes |
-| POST | `/v1/pos/quotations/:quotationId/convert` | `pos.quotation.write` | core | yes |
+| POST | `/v1/pos/quotations/:quotationId/convert` | `pos.quotation.convert` | core | yes |
+| POST | `/v1/pos/quotations/:quotationId/free/synced` | `pos.quotation.free` | core | yes |
 | POST | `/v1/pos/quotations/:quotationId/withdraw` | `pos.quotation.write` | core | yes |
 | GET | `/v1/pos/quotations/follow-up` | `pos.quotation.read` | core | — |
 | POST | `/v1/pos/refund-approvals` | `pos.return.approve` | core | yes |
@@ -1200,6 +1202,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/consolidation/contributions` | `reporting.consolidation.manage` | core | yes |
 | POST | `/v1/consolidation/export` | `reporting.report.read` | core | yes |
 | POST | `/v1/consolidation/memberships` | `reporting.consolidation.manage` | core | yes |
+| GET | `/v1/me/app-version-policy` | `identity.self.read` | core | — |
 | GET | `/v1/org/departments/:departmentId/report` | `reporting.report.read` | core | — |
 | GET | `/v1/platform/devices` | `platform.health.read` | core | — |
 | POST | `/v1/platform/devices/:deviceId/enrolment` | `platform.device.manage` | core | yes |
@@ -1376,6 +1379,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/hr/workforce/attendance` | `workforce.roster.read` | core | — |
 | GET | `/v1/hr/workforce/attendance-marks` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/attendance-marks/:markId` | `workforce.attendance.mark` | core | yes |
+| POST | `/v1/hr/workforce/attendance-marks/:markId/synced` | `workforce.attendance.sync` | core | yes |
 | POST | `/v1/hr/workforce/attendance/:employeeId/:date` | `workforce.roster.manage` | core | yes |
 | GET | `/v1/hr/workforce/biometric-consent` | `workforce.roster.read` | core | — |
 | GET | `/v1/hr/workforce/biometric-consent-notices` | `workforce.consent.self` | core | — |

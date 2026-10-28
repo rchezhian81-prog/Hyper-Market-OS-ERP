@@ -32,7 +32,8 @@ export interface LabelPort {
 /** OB-288 lane 2: the weigh-in / weigh-out the store computer carries (production-queue.ts). */
 export interface WeighPort {
   record(input: { readonly departmentId: string; readonly inputProductId: string; readonly inputGrams: string; readonly outputProductId: string; readonly outputGrams: string; readonly byproductProductId?: string; readonly byproductGrams?: string }):
-    { readonly outcome: 'saved'; readonly runId: string } | { readonly outcome: 'nobody' | 'no_store' | 'missing' | 'bad_weight' | 'more_out_than_in' };
+    { readonly outcome: 'saved'; readonly runId: string } | { readonly outcome: 'nobody' | 'no_store' | 'missing' | 'bad_weight' | 'more_out_than_in' }
+    | { readonly outcome: 'certificate'; readonly words: { readonly en: string; readonly ta: string } };
 }
 
 /** OB-288 lane 2: one piece of work this screen saved through the store computer, as the tasks session lists it. */
@@ -310,6 +311,8 @@ export function createProductionTasksSession(config: ProductionTasksConfig, port
         case 'missing': return result(lang, 'error', 'weighMissing');
         case 'bad_weight': return result(lang, 'error', 'weighBadWeight');
         case 'more_out_than_in': return result(lang, 'error', 'weighMoreOut');
+        // OB-502: the person's food-handling certificate expired or is missing — the store computer's own words.
+        case 'certificate': return presentStatus({ tone: 'error', icon: '✕', label: o.words[lang], needsAttention: true });
       }
     },
   };

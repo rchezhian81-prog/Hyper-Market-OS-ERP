@@ -225,10 +225,21 @@ async function syncSaved() {
   paintTasks();
 }
 
+// OB-502: an expired or missing food-handling certificate blocks recording food-handling work in this person's name — the
+// store computer's own judgement from the signed pack, said in the person's language before anything is saved.
+function foodHandlingBlocked() {
+  const food = window.productionFoodHandling;
+  if (!food || food.allowed !== false) return false;
+  const words = food.words ? (lang === 'ta' ? food.words.ta : food.words.en) : '';
+  paintResult({ tone: 'error', icon: '✕', label: words, announcement: words });
+  return true;
+}
+
 // RECORD A RUN — a human write on this click only; head office takes the ingredients off the shelf and holds the batch.
 el('run').addEventListener('click', () => {
   void (async () => {
     if (tasks === null) return;
+    if (foodHandlingBlocked()) return;
     const o = await tasks.recordRun({ recipeId: el('run-recipe').value, batches: el('run-batches').value, actualOutput: el('run-output').value, batchId: el('run-batch').value, locationId: el('run-location').value });
     paintResult(tasks.presentRun(lang, o));
     if (o.outcome === 'recorded') { for (const id of ['run-recipe', 'run-batches', 'run-output', 'run-batch']) el(id).value = ''; await refresh(); await syncSaved(); }
@@ -238,6 +249,7 @@ el('run').addEventListener('click', () => {
 // WEIGH IN, WEIGH OUT (OB-288 lane 2) — the grams only, saved through the store computer; head office costs them.
 el('weigh').addEventListener('click', () => {
   if (tasks === null) return;
+  if (foodHandlingBlocked()) return;
   const o = tasks.recordWeighed({ departmentId: el('weigh-dept').value, inputProductId: el('weigh-in').value, inputGrams: el('weigh-in-g').value, outputProductId: el('weigh-out').value, outputGrams: el('weigh-out-g').value, byproductProductId: el('weigh-by').value, byproductGrams: el('weigh-by-g').value });
   paintResult(tasks.presentWeighed(lang, o));
   if (o.outcome === 'saved') { for (const id of ['weigh-in-g', 'weigh-out-g', 'weigh-by-g']) el(id).value = ''; }

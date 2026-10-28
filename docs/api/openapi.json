@@ -41634,6 +41634,100 @@
         }
       }
     },
+    "/v1/hr/workforce/attendance-marks/{markId}/synced": {
+      "post": {
+        "operationId": "postHrWorkforceAttendanceMarksByMarkIdSynced",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.attendance.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "markId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostHrWorkforceAttendanceMarksByMarkIdSyncedRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceAttendanceMarksByMarkIdSyncedReply200"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceAttendanceMarksByMarkIdSyncedReply202"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.attendance.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/hr/workforce/attendance/{employeeId}/{date}": {
       "post": {
         "operationId": "postHrWorkforceAttendanceByEmployeeIdByDate",
@@ -55539,6 +55633,100 @@
         }
       }
     },
+    "/v1/inventory/goods-receipt/{grnId}/bill-match": {
+      "post": {
+        "operationId": "postInventoryGoodsReceiptByGrnIdBillMatch",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.invoice.match",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdBillMatchRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdBillMatchReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostInventoryGoodsReceiptByGrnIdBillMatchReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.invoice.match\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/goods-receipt/{grnId}/excess/decide": {
       "post": {
         "operationId": "postInventoryGoodsReceiptByGrnIdExcessDecide",
@@ -61674,6 +61862,50 @@
           },
           "403": {
             "description": "Not \"storefront.order.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/me/app-version-policy": {
+      "get": {
+        "operationId": "getMeAppVersionPolicy",
+        "tags": [
+          "API-10 Reporting"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.self.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMeAppVersionPolicyReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.self.read\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -85425,7 +85657,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "pos.quotation.write",
+        "x-permission": "pos.quotation.convert",
         "x-entitlement": null,
         "x-idempotent": true,
         "parameters": [
@@ -85477,7 +85709,101 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"pos.quotation.write\".",
+            "description": "Not \"pos.quotation.convert\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/pos/quotations/{quotationId}/free/synced": {
+      "post": {
+        "operationId": "postPosQuotationsByQuotationIdFreeSynced",
+        "tags": [
+          "API-05 POS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "pos.quotation.free",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "quotationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPosQuotationsByQuotationIdFreeSyncedRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPosQuotationsByQuotationIdFreeSyncedReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPosQuotationsByQuotationIdFreeSyncedReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"pos.quotation.free\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -115723,6 +116049,10 @@
               "anyOf": [
                 {
                   "type": "string",
+                  "const": "price_override"
+                },
+                {
+                  "type": "string",
                   "const": "purchase_order"
                 },
                 {
@@ -130355,7 +130685,8 @@
         "required": [
           "date",
           "marks",
-          "count"
+          "count",
+          "withExceptions"
         ],
         "properties": {
           "date": {
@@ -130368,6 +130699,9 @@
             }
           },
           "count": {
+            "type": "number"
+          },
+          "withExceptions": {
             "type": "number"
           }
         },
@@ -131417,32 +131751,7 @@
           "shifts": {
             "type": "array",
             "items": {
-              "type": "object",
-              "required": [
-                "shiftId",
-                "role",
-                "branchId",
-                "startsAt",
-                "endsAt"
-              ],
-              "properties": {
-                "shiftId": {
-                  "type": "string"
-                },
-                "role": {
-                  "type": "string"
-                },
-                "branchId": {
-                  "type": "string"
-                },
-                "startsAt": {
-                  "type": "string"
-                },
-                "endsAt": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": true
+              "$ref": "#/components/schemas/MyShift"
             }
           },
           "count": {
@@ -131454,31 +131763,7 @@
           "weeks": {
             "type": "array",
             "items": {
-              "type": "object",
-              "required": [
-                "branchId",
-                "weekStart",
-                "weekEnd",
-                "limitsNotChecked"
-              ],
-              "properties": {
-                "branchId": {
-                  "type": "string"
-                },
-                "weekStart": {
-                  "type": "string"
-                },
-                "weekEnd": {
-                  "type": "string"
-                },
-                "limitsNotChecked": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              },
-              "additionalProperties": true
+              "$ref": "#/components/schemas/PublishedWeek"
             }
           }
         },
@@ -135188,11 +135473,171 @@
         "required": [
           "grn",
           "awaitsDecision",
-          "awaitingDisposition"
+          "awaitingDisposition",
+          "costNotKnown"
         ],
         "properties": {
           "grn": {
-            "$ref": "#/components/schemas/GrnRecord"
+            "type": "object",
+            "required": [
+              "grnId",
+              "number",
+              "poId",
+              "warehouseId",
+              "receivedBy",
+              "receivedAt",
+              "captured",
+              "availableMinor",
+              "heldMinor"
+            ],
+            "properties": {
+              "grnId": {
+                "type": "string"
+              },
+              "receivingChecklist": {
+                "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+              },
+              "receivingChecklistNotAccepted": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string"
+              },
+              "poId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "warehouseId": {
+                "type": "string"
+              },
+              "receivedBy": {
+                "type": "string"
+              },
+              "receivedAt": {
+                "type": "string"
+              },
+              "captured": {
+                "$ref": "#/components/schemas/CapturedReceipt"
+              },
+              "availableMinor": {
+                "type": "number"
+              },
+              "heldMinor": {
+                "type": "number"
+              },
+              "excessDecision": {
+                "$ref": "#/components/schemas/ExcessDecision"
+              },
+              "excessReturn": {
+                "$ref": "#/components/schemas/ExcessReturn"
+              },
+              "lineReturns": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LineReturn"
+                }
+              },
+              "poReceipt": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "receiptId",
+                      "receivedByProduct"
+                    ],
+                    "properties": {
+                      "receiptId": {
+                        "type": "string"
+                      },
+                      "receivedByProduct": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "orderPosition": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OrderPosition"
+                }
+              },
+              "dispositions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LineDisposition"
+                }
+              },
+              "assembledFrom": {
+                "$ref": "#/components/schemas/AssembledFromScans"
+              },
+              "governanceFlags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "segregationConflict": {
+                "type": "string"
+              },
+              "asnCheck": {
+                "$ref": "#/components/schemas/AsnCheck"
+              },
+              "costDiscrepancies": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                }
+              },
+              "costNotKnown": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CostNotKnownLine"
+                }
+              },
+              "billCosts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BillCost"
+                }
+              },
+              "relayedBy": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "storeId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "discrepancyOwners": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DiscrepancyOwner"
+                }
+              }
+            },
+            "additionalProperties": true
           },
           "awaitsDecision": {
             "type": "boolean"
@@ -135201,6 +135646,12 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "costNotKnown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostNotKnownLine"
             }
           }
         },
@@ -135216,7 +135667,8 @@
           "needingApprovalCount",
           "heldExcessCount",
           "awaitingDispositionCount",
-          "costDiscrepancyCount"
+          "costDiscrepancyCount",
+          "costNotKnownCount"
         ],
         "properties": {
           "receipts": {
@@ -135224,7 +135676,166 @@
             "items": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/GrnRecord"
+                  "type": "object",
+                  "required": [
+                    "grnId",
+                    "number",
+                    "poId",
+                    "warehouseId",
+                    "receivedBy",
+                    "receivedAt",
+                    "captured",
+                    "availableMinor",
+                    "heldMinor"
+                  ],
+                  "properties": {
+                    "grnId": {
+                      "type": "string"
+                    },
+                    "receivingChecklist": {
+                      "$ref": "#/components/schemas/ReceivingChecklistOnFile"
+                    },
+                    "receivingChecklistNotAccepted": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "poId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "warehouseId": {
+                      "type": "string"
+                    },
+                    "receivedBy": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string"
+                    },
+                    "captured": {
+                      "$ref": "#/components/schemas/CapturedReceipt"
+                    },
+                    "availableMinor": {
+                      "type": "number"
+                    },
+                    "heldMinor": {
+                      "type": "number"
+                    },
+                    "excessDecision": {
+                      "$ref": "#/components/schemas/ExcessDecision"
+                    },
+                    "excessReturn": {
+                      "$ref": "#/components/schemas/ExcessReturn"
+                    },
+                    "lineReturns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineReturn"
+                      }
+                    },
+                    "poReceipt": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "receiptId",
+                            "receivedByProduct"
+                          ],
+                          "properties": {
+                            "receiptId": {
+                              "type": "string"
+                            },
+                            "receivedByProduct": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "orderPosition": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/OrderPosition"
+                      }
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LineDisposition"
+                      }
+                    },
+                    "assembledFrom": {
+                      "$ref": "#/components/schemas/AssembledFromScans"
+                    },
+                    "governanceFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "segregationConflict": {
+                      "type": "string"
+                    },
+                    "asnCheck": {
+                      "$ref": "#/components/schemas/AsnCheck"
+                    },
+                    "costDiscrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+                      }
+                    },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
+                    "relayedBy": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "storeId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
                 },
                 {
                   "type": "object",
@@ -135358,6 +135969,18 @@
                         "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
                       }
                     },
+                    "costNotKnown": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CostNotKnownLine"
+                      }
+                    },
+                    "billCosts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillCost"
+                      }
+                    },
                     "relayedBy": {
                       "type": "string"
                     },
@@ -135373,6 +135996,12 @@
                           "type": "string"
                         }
                       ]
+                    },
+                    "discrepancyOwners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscrepancyOwner"
+                      }
                     }
                   },
                   "additionalProperties": true
@@ -135393,6 +136022,9 @@
             "type": "number"
           },
           "costDiscrepancyCount": {
+            "type": "number"
+          },
+          "costNotKnownCount": {
             "type": "number"
           }
         },
@@ -136812,21 +137444,21 @@
                 "type": "object",
                 "required": [
                   "refund",
+                  "price_override",
                   "void",
-                  "no_sale",
-                  "price_override"
+                  "no_sale"
                 ],
                 "properties": {
                   "refund": {
+                    "type": "number"
+                  },
+                  "price_override": {
                     "type": "number"
                   },
                   "void": {
                     "type": "number"
                   },
                   "no_sale": {
-                    "type": "number"
-                  },
-                  "price_override": {
                     "type": "number"
                   }
                 },
@@ -138764,6 +139396,31 @@
         ],
         "x-body-schema": "derived",
         "x-derived-from": "services/ai/src/control.ts"
+      },
+      "GetMeAppVersionPolicyReply": {
+        "type": "object",
+        "required": [
+          "policy",
+          "asAt"
+        ],
+        "properties": {
+          "policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/r8a-client-version-adapters.ts"
       },
       "GetMeCartReply": {
         "type": "object",
@@ -150178,7 +150835,8 @@
                   "no_purchase_order",
                   "product_not_on_order",
                   "order_not_held",
-                  "currency_differs"
+                  "currency_differs",
+                  "not_yet_billed"
                 ],
                 "properties": {
                   "no_purchase_order": {
@@ -150191,6 +150849,9 @@
                     "type": "number"
                   },
                   "currency_differs": {
+                    "type": "number"
+                  },
+                  "not_yet_billed": {
                     "type": "number"
                   }
                 },
@@ -151612,7 +152273,8 @@
         "type": "object",
         "required": [
           "hold",
-          "samples"
+          "samples",
+          "sampleRule"
         ],
         "properties": {
           "hold": {
@@ -151623,6 +152285,9 @@
             "items": {
               "$ref": "#/components/schemas/StoredQualitySample"
             }
+          },
+          "sampleRule": {
+            "$ref": "#/components/schemas/SampleRule"
           }
         },
         "additionalProperties": true,
@@ -151675,7 +152340,8 @@
                 "reason",
                 "heldAt",
                 "heldBy",
-                "samples"
+                "samples",
+                "sampleRule"
               ],
               "properties": {
                 "batchId": {
@@ -151736,6 +152402,9 @@
                     },
                     "additionalProperties": true
                   }
+                },
+                "sampleRule": {
+                  "$ref": "#/components/schemas/SampleRule"
                 }
               },
               "additionalProperties": true
@@ -165350,6 +166019,9 @@
             },
             "additionalProperties": true
           },
+          "mrpReplacement": {
+            "$ref": "#/components/schemas/MrpReplacement"
+          },
           "taxClassChange": {
             "type": "object",
             "required": [
@@ -165463,6 +166135,18 @@
               },
               "additionalProperties": true
             }
+          },
+          "mrpReplacement": {
+            "type": "object",
+            "properties": {
+              "effectiveFrom": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           },
           "product": {
             "type": "object",
@@ -187257,6 +187941,86 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/biometric-consent.ts"
       },
+      "PostHrWorkforceAttendanceMarksByMarkIdSyncedReply200": {
+        "type": "object",
+        "required": [
+          "mark",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "mark": {
+            "$ref": "#/components/schemas/AttendanceMark"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/attendance-marks-synced.ts"
+      },
+      "PostHrWorkforceAttendanceMarksByMarkIdSyncedReply202": {
+        "type": "object",
+        "required": [
+          "mark",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "mark": {
+            "$ref": "#/components/schemas/AttendanceMark"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/attendance-marks-synced.ts"
+      },
+      "PostHrWorkforceAttendanceMarksByMarkIdSyncedRequest": {
+        "type": "object",
+        "required": [
+          "at",
+          "employeeId",
+          "kind",
+          "method",
+          "storeId"
+        ],
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "employeeId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "markId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "pin"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/attendance-marks-synced.ts"
+      },
       "PostHrWorkforceBiometricConsentByEmployeeIdByEventIdReply200": {
         "type": "object",
         "required": [
@@ -193718,6 +194482,9 @@
                     "lineId": {
                       "type": "string"
                     },
+                    "manufacturedOn": {
+                      "type": "string"
+                    },
                     "productId": {
                       "type": "string"
                     },
@@ -199770,6 +200537,96 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/goods-receipt-assembled.ts"
       },
+      "PostInventoryGoodsReceiptByGrnIdBillMatchReply200": {
+        "type": "object",
+        "required": [
+          "grnId",
+          "matched",
+          "stillNotKnown",
+          "alreadyMatched"
+        ],
+        "properties": {
+          "grnId": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillCost"
+            }
+          },
+          "stillNotKnown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostNotKnownLine"
+            }
+          },
+          "alreadyMatched": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdBillMatchReply201": {
+        "type": "object",
+        "required": [
+          "grnId",
+          "matched",
+          "stillNotKnown",
+          "alreadyMatched"
+        ],
+        "properties": {
+          "grnId": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillCost"
+            }
+          },
+          "stillNotKnown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostNotKnownLine"
+            }
+          },
+          "alreadyMatched": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt.ts"
+      },
+      "PostInventoryGoodsReceiptByGrnIdBillMatchRequest": {
+        "type": "object",
+        "required": [
+          "invoiceId"
+        ],
+        "properties": {
+          "cost": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "invoiceId": {
+            "type": "string"
+          },
+          "lines": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "unitCost": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt.ts"
+      },
       "PostInventoryGoodsReceiptByGrnIdExcessDecideReply": {
         "type": "object",
         "required": [
@@ -200747,6 +201604,10 @@
           "dispatch": {
             "$ref": "#/components/schemas/ReturnDispatchLink"
           },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
+          },
           "grnId": {
             "type": "string"
           }
@@ -200810,6 +201671,10 @@
           },
           "dispatch": {
             "$ref": "#/components/schemas/ReturnDispatchLink"
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           },
           "grnId": {
             "type": "string"
@@ -200947,6 +201812,9 @@
                 "condition": {
                   "type": "string"
                 },
+                "costNotKnown": {
+                  "type": "boolean"
+                },
                 "countedMinor": {
                   "type": "number"
                 },
@@ -200961,6 +201829,9 @@
                   ]
                 },
                 "lineId": {
+                  "type": "string"
+                },
+                "manufacturedOn": {
                   "type": "string"
                 },
                 "mrp": {
@@ -201163,6 +202034,9 @@
                       "type": "string"
                     }
                   ]
+                },
+                "manufacturedOn": {
+                  "type": "string"
                 },
                 "productId": {
                   "type": "string"
@@ -201710,6 +202584,9 @@
             ]
           },
           "grnId": {
+            "type": "string"
+          },
+          "manufacturedOn": {
             "type": "string"
           },
           "poId": {
@@ -221810,6 +222687,15 @@
               "alreadyConverted"
             ],
             "properties": {
+              "sameSale": {
+                "type": "boolean"
+              },
+              "saleLines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuotationLine"
+                }
+              },
               "quotationId": {
                 "type": "string"
               },
@@ -221885,6 +222771,105 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/pos/src/quotations.ts"
       },
+      "PostPosQuotationsByQuotationIdFreeSyncedReply200": {
+        "type": "object",
+        "required": [
+          "quotationId",
+          "freed",
+          "alreadyFreed",
+          "state"
+        ],
+        "properties": {
+          "quotationId": {
+            "type": "string"
+          },
+          "freed": {
+            "type": "boolean"
+          },
+          "alreadyFreed": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "converted",
+              "expired",
+              "issued",
+              "withdrawn"
+            ]
+          },
+          "release": {
+            "$ref": "#/components/schemas/QuotationRelease"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/pos/src/quotations.ts"
+      },
+      "PostPosQuotationsByQuotationIdFreeSyncedReply201": {
+        "type": "object",
+        "required": [
+          "quotationId",
+          "freed",
+          "state",
+          "release"
+        ],
+        "properties": {
+          "quotationId": {
+            "type": "string"
+          },
+          "freed": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/QuotationRelease"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/pos/src/quotations.ts"
+      },
+      "PostPosQuotationsByQuotationIdFreeSyncedRequest": {
+        "type": "object",
+        "required": [
+          "at",
+          "freeId",
+          "freedBy",
+          "laneId",
+          "reason",
+          "saleId"
+        ],
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "freeId": {
+            "type": "string"
+          },
+          "freedBy": {
+            "type": "string"
+          },
+          "laneId": {
+            "type": "string"
+          },
+          "quotationId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "saleId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/pos/src/quotations.ts"
+      },
       "PostPosQuotationsByQuotationIdReply": {
         "type": "object",
         "required": [
@@ -221894,6 +222879,12 @@
           "validUntil"
         ],
         "properties": {
+          "floorNotKnown": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "quotationId": {
             "type": "string"
           },
@@ -225339,6 +226330,7 @@
               "type": "string",
               "enum": [
                 "ingredient_short_at_head_office",
+                "producer_food_certificate_not_valid",
                 "producer_lacks_authority",
                 "producer_unknown"
               ]
@@ -225623,6 +226615,7 @@
             "items": {
               "type": "string",
               "enum": [
+                "weigher_food_certificate_not_valid",
                 "weigher_lacks_authority",
                 "weigher_unknown"
               ]
@@ -225734,6 +226727,7 @@
             "items": {
               "type": "string",
               "enum": [
+                "weigher_food_certificate_not_valid",
                 "weigher_lacks_authority",
                 "weigher_unknown"
               ]
@@ -249364,6 +250358,36 @@
           },
           "recordedBy": {
             "type": "string"
+          },
+          "relayed": {
+            "type": "object",
+            "required": [
+              "relayedBy",
+              "source",
+              "storeId"
+            ],
+            "properties": {
+              "relayedBy": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "storeId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "out_without_in",
+                "repeats_the_last_mark"
+              ]
+            }
           }
         },
         "additionalProperties": true
@@ -249747,6 +250771,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "price_override",
                   "purchase_order",
                   "refund",
                   "stock_adjustment"
@@ -251234,6 +252259,50 @@
           },
           "relayedBy": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "BillCost": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "productId",
+          "invoiceId",
+          "unitCost",
+          "quantityMinor",
+          "valueMinor",
+          "matchedBy",
+          "matchedAt"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "invoiceId": {
+            "type": "string"
+          },
+          "unitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "matchedBy": {
+            "type": "string"
+          },
+          "matchedAt": {
+            "type": "string"
+          },
+          "costWasKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -253963,6 +255032,10 @@
           },
           "discrepancyValue": {
             "$ref": "#/components/schemas/Money.code"
+          },
+          "discrepancyValueIncomplete": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -255378,6 +256451,13 @@
           },
           "unitCost": {
             "$ref": "#/components/schemas/Money.code"
+          },
+          "manufacturedOn": {
+            "type": "string"
+          },
+          "costNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -258191,6 +259271,45 @@
           },
           "per": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CostNotKnownLine": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "productId",
+          "quantityMinor",
+          "uom",
+          "because",
+          "detail"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "because": {
+            "type": "string",
+            "enum": [
+              "no_issued_order",
+              "not_on_order"
+            ]
+          },
+          "typedUnitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "detail": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -261638,6 +262757,74 @@
           },
           "countedRows": {
             "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "DiscrepancyOwner": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "productId",
+          "kind",
+          "role",
+          "owners",
+          "detail"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "asn_difference",
+              "cost_difference",
+              "damaged",
+              "excess",
+              "expired",
+              "mrp_mismatch",
+              "near_expiry",
+              "qc_failed",
+              "short",
+              "temperature_breach",
+              "temperature_not_recorded"
+            ]
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "buyer",
+                  "store_manager"
+                ]
+              }
+            ]
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing": {
+            "type": "string",
+            "enum": [
+              "no_purchase_order",
+              "no_store_manager_named",
+              "order_not_held",
+              "owner_not_decided"
+            ]
           },
           "detail": {
             "type": "string"
@@ -266076,6 +267263,10 @@
           },
           "dispatch": {
             "$ref": "#/components/schemas/ReturnDispatchLink"
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -269887,6 +271078,18 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
+            }
+          },
+          "costNotKnown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostNotKnownLine"
+            }
+          },
+          "billCosts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillCost"
             }
           },
           "relayedBy": {
@@ -275788,6 +276991,10 @@
               "direct",
               "relayed"
             ]
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -275910,6 +277117,10 @@
           },
           "dispatch": {
             "$ref": "#/components/schemas/ReturnDispatchLink"
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -278279,6 +279490,74 @@
             ]
           },
           "ownerId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "MrpReplacement": {
+        "type": "object",
+        "required": [
+          "effectiveFrom",
+          "replaced",
+          "replacedBy",
+          "reason",
+          "requestedBy",
+          "approvedBy",
+          "approvalId",
+          "at"
+        ],
+        "properties": {
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "replaced": {
+            "$ref": "#/components/schemas/Money.code"
+          },
+          "replacedBy": {
+            "$ref": "#/components/schemas/Money.code"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "MyShift": {
+        "type": "object",
+        "required": [
+          "shiftId",
+          "role",
+          "branchId",
+          "startsAt",
+          "endsAt"
+        ],
+        "properties": {
+          "shiftId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
             "type": "string"
           }
         },
@@ -283883,7 +285162,8 @@
           "uom",
           "currency",
           "receivedUnitCost",
-          "receivedValueMinor"
+          "receivedValueMinor",
+          "invoiceId"
         ],
         "properties": {
           "grnId": {
@@ -283947,10 +285227,34 @@
             ]
           },
           "receivedUnitCost": {
-            "$ref": "#/components/schemas/CostBasis"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostBasis"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "receivedValueMinor": {
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "invoiceId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
           },
           "order": {
             "type": "object",
@@ -283996,6 +285300,7 @@
             "enum": [
               "currency_differs",
               "no_purchase_order",
+              "not_yet_billed",
               "order_not_held",
               "product_not_on_order"
             ]
@@ -284716,6 +286021,12 @@
               "additionalProperties": true
             }
           },
+          "mrpReplacements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MrpReplacement"
+            }
+          },
           "attributes": {
             "type": "object",
             "additionalProperties": {
@@ -285401,6 +286712,33 @@
         },
         "additionalProperties": true
       },
+      "PublishedWeek": {
+        "type": "object",
+        "required": [
+          "branchId",
+          "weekStart",
+          "weekEnd",
+          "limitsNotChecked"
+        ],
+        "properties": {
+          "branchId": {
+            "type": "string"
+          },
+          "weekStart": {
+            "type": "string"
+          },
+          "weekEnd": {
+            "type": "string"
+          },
+          "limitsNotChecked": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
       "PurchaseBudget": {
         "type": "object",
         "required": [
@@ -285795,7 +287133,8 @@
               "not_held",
               "released",
               "sample_failed",
-              "sample_pending"
+              "sample_pending",
+              "sample_required"
             ]
           },
           "detail": {
@@ -285983,6 +287322,21 @@
           },
           "marginApprovedBy": {
             "type": "string"
+          },
+          "floorNotKnown": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuotationRelease"
+            }
+          },
+          "freedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -286050,6 +287404,46 @@
           },
           "unitCostMinor": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "QuotationRelease": {
+        "type": "object",
+        "required": [
+          "freeId",
+          "saleId",
+          "freedBy",
+          "reason",
+          "laneId",
+          "at",
+          "relayedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "freeId": {
+            "type": "string"
+          },
+          "saleId": {
+            "type": "string"
+          },
+          "freedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "laneId": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "relayedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -287271,6 +288665,10 @@
           },
           "detail": {
             "type": "string"
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -287508,6 +288906,9 @@
               "too_cold",
               "too_warm"
             ]
+          },
+          "manufacturedOn": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -292481,6 +293882,9 @@
               "loyalty_value_spent_twice",
               "medicine_sold",
               "perishable_sold_without_date_check",
+              "price_cut_above_approver_limit",
+              "price_cut_below_floor",
+              "price_cut_without_floor_not_by_owner",
               "price_differs_from_catalogue",
               "product_not_in_catalogue",
               "receipt_number_reused",
@@ -292492,6 +293896,7 @@
               "sold_above_mrp",
               "sold_expired_batch",
               "sold_on_a_stale_pack",
+              "sold_on_an_unsupported_app_version",
               "tender_does_not_sum_to_total",
               "tobacco_sold_below_pack",
               "unit_differs_from_catalogue",
@@ -292621,6 +294026,31 @@
             "const": false
           },
           "ask": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SampleRule": {
+        "type": "object",
+        "required": [
+          "required",
+          "because",
+          "detail"
+        ],
+        "properties": {
+          "required": {
+            "type": "boolean"
+          },
+          "because": {
+            "type": "string",
+            "enum": [
+              "food",
+              "food_not_known",
+              "not_food"
+            ]
+          },
+          "detail": {
             "type": "string"
           }
         },
@@ -298229,6 +299659,7 @@
               "type": "string",
               "enum": [
                 "ingredient_short_at_head_office",
+                "producer_food_certificate_not_valid",
                 "producer_lacks_authority",
                 "producer_unknown"
               ]

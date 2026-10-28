@@ -27,7 +27,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { MOVEMENT_KINDS, STOCK_STATES, assertBinsInScope, type WarehouseDeps } from './warehouse';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { Movement } from './index';
-import { coldChainVerdict, type ColdChainVerdict, type ProductReceiptRules, type ReceiptPolicy } from '../../../packages/receiving/src/index';
+import { coldChainVerdict, isManufactureDate, type ColdChainVerdict, type ProductReceiptRules, type ReceiptPolicy } from '../../../packages/receiving/src/index';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 
 export const WAREHOUSE_SYNC_FLAGS = Object.freeze([
@@ -196,6 +196,8 @@ export interface ReceivingScanRecord {
    * the scan was recorded but NOT put on-hand, and the assembled receipt holds that line for a second person. Absent otherwise.
    */
   readonly coldChainHeld?: Exclude<ColdChainVerdict, 'ok' | 'not_cold_chain'>;
+  /** B4 · OB-504: the batch's month and year (or date) of manufacture as the worker typed it off the pack. */
+  readonly manufacturedOn?: string;
 }
 
 export interface ReceivingScanDeps {
@@ -239,6 +241,7 @@ interface RelayedScan {
   readonly uom: string; readonly source: string; readonly poId: string | null; readonly state: string; readonly expiry: string | null;
   readonly receivedBy: string; readonly storeId: string; readonly at: string;
   readonly temperatureC?: number;
+  readonly manufacturedOn?: string;
 }
 
 function readRelayedScan(body: unknown, commandId: string, now: string): RelayedScan | undefined {
@@ -248,8 +251,12 @@ function readRelayedScan(body: unknown, commandId: string, now: string): Relayed
   // Wave 3 · SF-07 part 3: the probed arrival temperature, °C — a number or absent, never anything else.
   const temperatureC = body['temperatureC'];
   if (!(temperatureC === undefined || temperatureC === null || (typeof temperatureC === 'number' && Number.isFinite(temperatureC)))) return undefined;
+  // B4 · OB-504: the manufacture date as text (judged below against the product master), or absent.
+  const manufacturedOn = body['manufacturedOn'];
+  if (!(manufacturedOn === undefined || manufacturedOn === null || typeof manufacturedOn === 'string')) return undefined;
   return {
     ...(typeof temperatureC === 'number' ? { temperatureC } : {}),
+    ...(typeof manufacturedOn === 'string' && manufacturedOn.trim() !== '' ? { manufacturedOn: manufacturedOn.trim() } : {}),
     grnId: body['grnId'], productId: body['productId'], batchId: optStr(body['batchId']), quantityMinor: body['quantityMinor'],
     uom: isStr(body['uom']) ? body['uom'] : 'EA', source: isStr(body['source']) ? body['source'] : 'unknown',
     poId: optStr(body['poId']), state: isStr(body['state']) ? body['state'] : 'on_hand', expiry: isIso(body['expiry']) ? body['expiry'] : null,
@@ -279,6 +286,20 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           const prior = (await deps.scansOf(ctx.tenantId, s.grnId)).find((r) => r.commandId === commandId);
           return { status: 200, body: { commandId, grnId: s.grnId, recorded: true, alreadyRecorded: true, onHand: prior?.onHandMovementId !== null, flags: prior?.governanceFlags ?? [] } };
         }
+        // B4 · OB-504 (owner, 28 Oct 2026): a PACKED product's batch is not received without its month and year of manufacture —
+        // the product master's word (its department is regulated `packed`), never the phone's. Refused by name (422), so the box
+        // keeps the scan as a dead letter for a person (hard rule #6) and nothing is posted.
+        const rule = deps.productRule === undefined ? undefined : await deps.productRule(ctx.tenantId, s.productId);
+        if ((rule?.packaged === true && s.manufacturedOn === undefined) || (s.manufacturedOn !== undefined && !isManufactureDate(s.manufacturedOn))) {
+          throw apiError(422, {
+            code: 'manufacture_date_required',
+            whatHappened: s.manufacturedOn === undefined
+              ? `${s.productId} is a packed product, and this scan for ${s.grnId} carries no month and year of manufacture. A packed product's batch is not received without it (B4 · OB-504).`
+              : `The manufacture date "${s.manufacturedOn}" on this scan for ${s.grnId} cannot be read — it is written YYYY-MM (or YYYY-MM-DD), as printed on the pack (OB-504).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was posted. The scan stays on the store computer for a person: scan the item again with the month and year printed on the pack.',
+          });
+        }
         const flags = await verifyWorker(deps.permissionsOfUser, ctx.tenantId, s.receivedBy, 'receiver_unknown', 'receiver_lacks_authority');
         // SP-6b: the delivery was already assembled into its GRN — this scan is still the truth about goods in the building,
         // so it is recorded and posted exactly as before, and SAID, so the receipt is reviewed against its late scans.
@@ -294,7 +315,6 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
         // recorded but NOT put on-hand — the same limits the receipt is judged by; its assembled line is held for a second person.
         let coldChainHeld: ReceivingScanRecord['coldChainHeld'];
         if (ON_HAND_STATES.has(s.state) && deps.productRule !== undefined) {
-          const rule = await deps.productRule(ctx.tenantId, s.productId);
           const policy = deps.receiptPolicy === undefined ? undefined : await deps.receiptPolicy(ctx.tenantId);
           const verdict = coldChainVerdict(rule, { ...(policy?.coldChainMaxC === undefined ? {} : { coldChainMaxC: policy.coldChainMaxC }) }, s.temperatureC);
           if (verdict !== 'ok' && verdict !== 'not_cold_chain') { coldChainHeld = verdict; flags.push('cold_chain_held'); }
@@ -324,6 +344,7 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           storeId: s.storeId, at: s.at, onHandMovementId, governanceFlags: flags,
           ...(s.temperatureC === undefined ? {} : { temperatureC: s.temperatureC }),
           ...(coldChainHeld === undefined ? {} : { coldChainHeld }),
+          ...(s.manufacturedOn === undefined ? {} : { manufacturedOn: s.manufacturedOn }),
         };
         await deps.recordScan(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {

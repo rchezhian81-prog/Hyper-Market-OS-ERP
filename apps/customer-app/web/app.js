@@ -599,6 +599,8 @@ el('si-verify').addEventListener('click', async () => {
       void loadFavourites().then(() => render());
       // R4 Lane 2 (B23): every detail the shop must show before payment, read once signed in.
       void window.shopR4?.signedIn()?.then(() => render());
+      // OB-521 (R8-A): head office's app version policy, read as this customer — a too-old build starts no new order.
+      void shop.refreshVersionPolicy?.().catch(() => false);
       challengeId = null;
       el('si-code').value = '';
       paintSignIn();
@@ -635,7 +637,9 @@ function showOutcome(outcome) {
       : outcome.refusedBecause === 'no_slot_booked' ? t('chooseTime')
         : outcome.refusedBecause === 'review_is_out_of_date' ? t('priceChanged')
           : outcome.refusedBecause === 'not_signed_in' ? t('needSignIn')
-            : outcome.tellTheCustomer; // the session's or the shop's own sentence, never a cheerier one
+            // OB-521: the version refusal carries its own Tamil words.
+            : lang === 'ta' && outcome.tellTheCustomerTa ? outcome.tellTheCustomerTa
+              : outcome.tellTheCustomer; // the session's or the shop's own sentence, never a cheerier one
     if (outcome.refusedBecause === 'signed_out') { paintSignIn(); }
     tell(outcome.refusedBecause === 'the_shop_refused' ? t('shopSaidNo') : t('payAndPlace'), why, 'bad');
     render();

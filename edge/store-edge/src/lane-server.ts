@@ -72,6 +72,7 @@ import type { GrantOutcome, ReturnCheck } from './till-approvals';
 import type { IssueOutcome, ReceiptNumberStatus, UseCheck } from './receipt-numbers';
 import type { HoldOutcome, RecallOutcome, HeldSummary } from './held-bills';
 import type { PhoneBasketsPort } from './phone-baskets';
+import { QUOTATION_NEEDS_HEAD_OFFICE, type QuotationsAtLanePort } from './quotations-at-lane'; // R7-C · OB-506
 import type { QueueRecallAnswer } from './queue-baskets';
 import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
 import type { ReportAnswer } from './peripheral-health';
@@ -198,6 +199,12 @@ const LANE_PHONE_BASKETS_RECALL_ROUTE = '/lane/phone-baskets/recall';
  * back; the till rings each line through its own pack, exactly as a phone basket.
  */
 const LANE_QUEUE_BASKETS_RECALL_ROUTE = '/lane/queue-baskets/recall';
+/**
+ * R7-C · OB-506 (M12-FR-02): `POST /lane/quotations/convert` rings a retail quotation up at this till by its number — the box
+ * asks head office to convert it for the bill the signed-in cashier is ringing (once). Head office holds the promise, so with
+ * no head office the box says so and nothing is rung (`quotations-at-lane.ts`).
+ */
+const LANE_QUOTATIONS_CONVERT_ROUTE = '/lane/quotations/convert';
 
 /**
  * CARD AND UPI ATTEMPTS on this box (audit PF-06 · M12-FR-03): `POST /lane/payment-attempts` records the attempt BEFORE
@@ -278,6 +285,8 @@ export interface LaneApprovalPort {
   grant(input: {
     readonly token: string | undefined; readonly laneId: string; readonly managerId: string; readonly pin: string;
     readonly kind: unknown; readonly billRef: unknown; readonly valueMinor: unknown; readonly reason: unknown;
+    /** OB-500: for a price cut, the product and the new unit price. */
+    readonly productId?: unknown; readonly toUnitMinor?: unknown;
   }): Promise<GrantOutcome>;
   checkReturn(input: { readonly record: unknown; readonly requestedBy: string; readonly laneId: string; readonly returnId: string }): Promise<ReturnCheck>;
 }
@@ -554,6 +563,8 @@ export function startLaneServer(input: {
   readonly heldBills?: LaneHeldBillsPort;
   /** OB-350: head office's scan-and-go baskets, asked under this box's credential. Absent (no cloud) → said, never guessed. */
   readonly phoneBaskets?: PhoneBasketsPort;
+  /** R7-C · OB-506: head office's retail quotations, converted under this box's credential. Absent (no cloud) → said, never guessed. */
+  readonly quotations?: QuotationsAtLanePort;
   /** D04-FR-05: the queue baskets handheld staff handed to this box (`queue-baskets.ts`), behind its rollout switch. Absent → said. */
   readonly queueBaskets?: { recall(input: { readonly code: unknown; readonly laneId: string; readonly cashierId: string }): Promise<QueueRecallAnswer> };
   /** The card/UPI attempt register (audit PF-06). Wired beside `operators` on every store box. */
@@ -1056,6 +1067,32 @@ export function startLaneServer(input: {
       return;
     }
 
+    // ── R7-C · OB-506 — begin: a retail quotation rung up at this till by its number, for the person signed in here — once.
+    // The browser's preflight for it, answered as for every other lane POST: only for a loopback origin.
+    if (req.method === 'OPTIONS' && pathname === LANE_QUOTATIONS_CONVERT_ROUTE) {
+      res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
+      res.end();
+      return;
+    }
+    if (req.method === 'POST' && pathname === LANE_QUOTATIONS_CONVERT_ROUTE) {
+      const ops = input.operators;
+      const refused = (refusedBecause: string, laneMessage: string) => ({ converted: false, refusedBecause, laneMessage });
+      if (ops === undefined) { send(res, 404, refused('not_served', 'this box does not serve tills'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (m: string) => refused('request_not_readable', m));
+        if (body === undefined) return;
+        if (ops.laneId.trim() === '') { send(res, 200, refused('no_lane', 'This store computer has not been told which till it is. Nothing was done — tell the manager.'), cors); return; }
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); return; }
+        if (input.quotations === undefined) { send(res, 200, QUOTATION_NEEDS_HEAD_OFFICE, cors); return; }
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        send(res, 200, await input.quotations.convert({ quotationNumber: b['quotationNumber'], billRef: b['billRef'], laneId: ops.laneId, cashierId: check.userId }), { ...cors, 'cache-control': 'no-store' });
+      })();
+      return;
+    }
+    // ── R7-C · OB-506 — end
     // QUEUE-BUSTING (D04-FR-05): a basket a handheld handed to this box, brought up for the person signed in here — once.
     if (req.method === 'POST' && pathname === LANE_QUEUE_BASKETS_RECALL_ROUTE) {
       const ops = input.operators;
@@ -1136,6 +1173,7 @@ export function startLaneServer(input: {
             token: operatorTokenOf(req), laneId: ops.laneId,
             managerId: typeof b['managerId'] === 'string' ? b['managerId'] : '', pin: typeof b['pin'] === 'string' ? b['pin'] : '',
             kind: b['kind'], billRef: b['billRef'], valueMinor: b['valueMinor'], reason: b['reason'],
+            productId: b['productId'], toUnitMinor: b['toUnitMinor'], // OB-500
           });
           send(res, 200, outcome, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {

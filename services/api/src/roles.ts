@@ -315,6 +315,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // computer its bill-copy relay (no-escalation rule).
       'floor.settings.read', 'floor.settings.manage', 'pos.billcopy.sync',
       // ── OB-288 floor-device follow-ups — end
+      // ── Round 7 · R7-D (OB-507) — begin
+      // Held ONLY so the owner can approve granting the store computer its attendance-mark relay (no-escalation rule, OB-36).
+      'workforce.attendance.sync',
+      // ── Round 7 · R7-D — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       // ── OB-288 lane 4 · P2 (owner reporting and data in/out) — begin
@@ -332,6 +336,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
       'pos.quotation.write', 'pos.quotation.read',
+      // ── R7-C · OB-506 (quotations rung up at the till) — begin
+      'pos.quotation.convert',
+      // ── R7-C · OB-506 — end
+      // ── R8-B · OB-523 (a cancelled bill frees its quotation) — begin
+      // Held by the owner only so he may grant the store computer its role (no escalation); a person never relays with it.
+      'pos.quotation.free',
+      // ── R8-B · OB-523 — end
       'finance.einvoice.generate', 'finance.einvoice.read',
       'finance.gstr.generate', 'finance.gstr.read', 'finance.gstr.approve', 'finance.gstr.submit',
       'payroll.statutory.read', 'payroll.ess.self',
@@ -563,6 +574,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
       'pos.quotation.write', 'pos.quotation.read',
+      // ── R7-C · OB-506 (quotations rung up at the till) — begin
+      'pos.quotation.convert',
+      // ── R7-C · OB-506 — end
       'finance.einvoice.generate', 'finance.einvoice.read',
       'finance.gstr.generate', 'finance.gstr.read',
       // The migration operator PROPOSES a history exclusion (MG-07); only the OWNER approves it, and
@@ -1024,8 +1038,23 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // OB-373: the box relays each copy of a bill printed at its tills by number (head office re-checks the person it names).
       'pos.billcopy.sync',
       // ── OB-288 floor-device follow-ups — end
+      // ── Round 7 · R7-D (OB-507) — begin
+      // M25-FR-01: an attendance mark (clock-in / clock-out) a person made on the store computer's self-service page with the
+      // line down (head office re-checks that person's own right to mark, their store, and refuses a conflict by name).
+      'workforce.attendance.sync',
+      // ── Round 7 · R7-D — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
+      // ── R7-C · OB-506 (quotations rung up at the till) — begin
+      // The cashier keys a quotation's number at the till; the box asks head office to CONVERT it (once — a second bill is
+      // told which bill has it) and the till rings the lines. Convert only: the box never issues or withdraws a quotation.
+      'pos.quotation.convert',
+      // ── R7-C · OB-506 — end
+      // ── R8-B · OB-523 (a cancelled bill frees its quotation) — begin
+      // The till cancels a bill that rang a quotation up; the box relays the release (queued on its disk, sent once) and head
+      // office frees the quotation — only from the bill it is on. Free only: the box never issues or withdraws a quotation.
+      'pos.quotation.free',
+      // ── R8-B · OB-523 — end
     ],
   },
 ];

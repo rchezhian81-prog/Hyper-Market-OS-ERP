@@ -16,6 +16,8 @@ import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import type { SaleLookupResult } from '../../../edge/store-edge/src/receipt-lookup';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
+import { quotationAtTill, laneQuotations, barcodesByProduct, QUOTATION_TILL_WORDS, type QuotationsLanePort, type QuotationAtTill } from './quotation-at-till'; // R7-C · OB-506
+import { billCancelAtTill, BILL_CANCEL_WORDS, type BillCancelAnswer } from './bill-cancel-at-till'; // R8-B · OB-523
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import { PAID_ON_OLD_ERP_WORDS } from '../../../packages/tender/src/paid-on-old-erp';
@@ -45,6 +47,8 @@ import type { B2cDynamicQrSetting } from '../../../packages/receipt/src/b2c-dyna
 import { readMachineReference, type MachineRefReading } from '../../../packages/tender/src/machine-reference';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
+import { floorRefusal } from '../../../packages/price-guard/src/till-override'; // OB-500 (R7-A)
+import { APP_BUILD_VERSION, judgeClientVersion, readPackVersionPolicy, type ClientKind, type ClientVersionJudgement } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A) · OB-521 (R8-A)
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
@@ -180,6 +184,10 @@ export interface PosLane {
   readonly rollout?: unknown;
   /** OB-403 "A" · §31.1: the store computer's clock is 5+ minutes out — no offer starting after `cutoffAt` applies. */
   readonly offerHold?: { readonly held: boolean; readonly cutoffAt: string | null };
+  /** OB-500 (R7-A): each product's lowest allowed price, from the signed store pack. Null → the box was not told. */
+  readonly priceFloors?: Readonly<Record<string, number>> | null;
+  /** OB-501 (R7-A): the app version policy from the signed store pack. Null → none set, nothing enforced. */
+  readonly appVersionPolicy?: unknown;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -304,10 +312,13 @@ export interface TillApprovalRequest {
   readonly billRef?: string;
   readonly valueMinor: number;
   readonly reason: string;
+  /** OB-500 (R7-A): for a price cut — the product and the new unit price, judged by the store computer's floor and limits. */
+  readonly productId?: string;
+  readonly toUnitMinor?: number;
 }
 export type TillApprovalOutcome =
   | { readonly approved: true; readonly approvalId: string; readonly approvedBy: string; readonly displayName: string; readonly expiresAt: string }
-  | { readonly approved: false; readonly refusedBecause?: string; readonly laneMessage: string };
+  | { readonly approved: false; readonly refusedBecause?: string; readonly laneMessage: string; readonly laneMessageTa?: string };
 /** The till's approval call to its box (injectable for tests). */
 export interface TillApprovalPort {
   grant(request: TillApprovalRequest): Promise<TillApprovalOutcome>;
@@ -329,10 +340,13 @@ export function laneApprovals(port: number = DEFAULT_LANE_PORT): TillApprovalPor
         });
         const front = FRONT_REFUSED[response.status];
         if (front !== undefined) return { approved: false, ...front };
-        const body = await response.json() as { approved?: boolean; refusedBecause?: string; laneMessage?: string };
+        const body = await response.json() as { approved?: boolean; refusedBecause?: string; laneMessage?: string; laneMessageTa?: string };
         return body.approved === true
           ? body as unknown as TillApprovalOutcome
-          : { approved: false, ...(typeof body.refusedBecause === 'string' ? { refusedBecause: body.refusedBecause } : {}), laneMessage: body.laneMessage ?? UNREACHABLE_APPROVAL };
+          : {
+            approved: false, ...(typeof body.refusedBecause === 'string' ? { refusedBecause: body.refusedBecause } : {}), laneMessage: body.laneMessage ?? UNREACHABLE_APPROVAL,
+            ...(typeof body.laneMessageTa === 'string' ? { laneMessageTa: body.laneMessageTa } : {}), // OB-500: the box's Tamil words
+          };
       } catch {
         return { approved: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_APPROVAL };
       }
@@ -989,6 +1003,8 @@ export function bootPos(config?: {
   phoneBasketsPort?: PhoneBasketsLanePort;
   /** D04-FR-05: the till's queue-basket call to its box. Overridable for tests; production asks this till's own edge. */
   queueBasketsPort?: QueueBasketsLanePort;
+  /** R7-C · OB-506: the till's quotation call to its box. Overridable for tests; production asks this till's own edge. */
+  quotationsPort?: QuotationsLanePort;
   /** The till's card/UPI attempt calls to its box (audit PF-06). Overridable for tests; production asks this till's own edge. */
   paymentsPort?: PaymentAttemptsPort;
   /** The till's void-evidence call to its box (audit PF-07). Overridable for tests; production posts to this till's own edge. */
@@ -1018,6 +1034,14 @@ export function bootPos(config?: {
   shopState?: string;
   /** OB-299: the delivery-fee product from the store pack (absent → not set; the till refuses to mark a bill for delivery). */
   tillDeliveryFeeProductId?: string;
+  /** OB-500 (R7-A): each product's lowest allowed price from the signed pack (absent/null → not told). */
+  priceFloors?: Readonly<Record<string, number>> | null;
+  /** OB-501 (R7-A): the app version policy from the signed pack (absent/null → nothing enforced). */
+  appVersionPolicy?: unknown;
+  /** OB-501: this till's build (tests). Absent → the build this bundle was made from (`APP_BUILD_VERSION`). */
+  appVersion?: string;
+  /** OB-521 (R8-A): which till this is — the queue till's refusal names the basket, not the bill. Absent → a fixed till. */
+  clientKind?: ClientKind;
 }): PosView & {
   /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
   readonly guestSalesOnly: () => boolean;
@@ -1170,6 +1194,22 @@ export function bootPos(config?: {
    */
   readonly recallQueueBasketAtTill: (code: string) => Promise<PhoneBasketAtTill>;
   /**
+   * R7-C · OB-506 (M12-FR-02): ring a retail quotation up by its number (onto an EMPTY till) — head office converts it (once;
+   * expired or withdrawn refused), the till rings each line through its own pack and keeps the quoted price where it is
+   * lower. Needs head office: with it out of reach nothing is rung and the screen says so (`quotation-at-till.ts`).
+   */
+  readonly ringQuotationAtTill: (quotationNumber: string) => Promise<QuotationAtTill>;
+  readonly quotationWords: (lang: 'en' | 'ta') => (typeof QUOTATION_TILL_WORDS)['en' | 'ta'];
+  /**
+   * R8-B · OB-523: cancel the whole bill before it is paid, with a reason — the store computer keeps every line's void and
+   * frees each quotation this bill rang up (queued for head office, sent once), then the till starts a fresh bill. Nothing
+   * is cleared unless the box has it; a paid bill is refunded, never cancelled here.
+   */
+  readonly cancelBillAtTill: (reason: string) => Promise<BillCancelAnswer>;
+  readonly billCancelWords: (lang: 'en' | 'ta') => (typeof BILL_CANCEL_WORDS)['en' | 'ta'];
+  /** R8-B · OB-523: the quotations rung up on the bill in progress (what a cancel would free). */
+  readonly quotationsOnBill: () => readonly string[];
+  /**
    * Record a card or UPI payment on the store computer BEFORE the machine is asked (audit PF-06). The answer's
    * `attemptId` is the reference the machine is given. Refused while this bill has a payment that got no answer
    * (`unresolved_payment_on_this_bill` — check it with `checkCardPayment`), and when the bill already has a confirmed
@@ -1189,7 +1229,7 @@ export function bootPos(config?: {
    */
   readonly voidAtTill: (lineId: string, reason: string) => Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
   /** What lowering a line to `toUnitMinor` takes off it — the amount a manager approves (audit PF-07). */
-  readonly priceChangeValue: (lineId: string, toUnitMinor: number) => { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number } | { readonly ok: false; readonly laneMessage: string };
+  readonly priceChangeValue: (lineId: string, toUnitMinor: number) => { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly ownerOnly?: true } | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string };
   /**
    * Lower a line's price WITH a manager's approval issued on the store computer (audit PF-07 · M12-FR-04): the change, the
    * reason and the approval go to the box first; the price changes only once the box has them. Refused (price kept)
@@ -1211,6 +1251,13 @@ export function bootPos(config?: {
   readonly holdOffersStartingAfter: (cutoffAt: string | null) => void;
   /** OB-403: the loaded offers this till is not applying now, held while the store computer's clock is out. */
   readonly heldOffers: () => readonly string[];
+  /**
+   * OB-501 (R7-A): judge this till's build against a version policy (from the signed pack, re-read from the box's status) and
+   * stop or allow STARTING new bills — a bill in progress is always finished. Returns the judgement.
+   */
+  readonly applyVersionPolicy: (policy: unknown) => ClientVersionJudgement;
+  /** OB-501: the build this till runs. */
+  readonly appVersion: string;
 } {
   const outbox = new SyncOutbox();
   // The lane's catalogue, once indexed below — the session reads each product's pack flags from it (B14 · B19).
@@ -1266,6 +1313,8 @@ export function bootPos(config?: {
       ...(config?.mirrorPilot === true ? { mirrorPilot: true } : {}),
       // OB-271: real trading — the bill is the legal tax invoice, checked before the disk.
       ...(config?.realTrading === true ? { realTrading: { identity: config.taxInvoice ?? null } } : {}),
+      // OB-501 (R7-A): every sale names the build that rang it.
+      appVersion: config?.appVersion ?? APP_BUILD_VERSION,
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1278,6 +1327,14 @@ export function bootPos(config?: {
   session.loadPromotions(config?.catalogue?.promotions ?? []);
   // OB-403 "A": a till opened while the store computer's clock is 5+ minutes out starts with the box's hold on new offers.
   session.holdOffersStartingAfter(config?.offerHoldCutoff ?? null);
+  // OB-501 (R7-A): a withdrawn or too-old build starts no new bill (it finishes the one in progress) — from the signed pack.
+  const appVersion = config?.appVersion ?? APP_BUILD_VERSION;
+  const applyVersionPolicy = (policy: unknown): ClientVersionJudgement => {
+    const judged = judgeClientVersion(appVersion, readPackVersionPolicy(policy), config?.clientKind ?? 'till');
+    session.barNewBills(judged.mayStartBill || judged.words === undefined ? null : judged.words);
+    return judged;
+  };
+  applyVersionPolicy(config?.appVersionPolicy);
   const view = createPosView(session, 'INR', catalogue);
 
   // The till itself — money in and out of the drawer, refunds, closing the shift. A separate
@@ -1666,8 +1723,19 @@ export function bootPos(config?: {
     laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
   });
   /** What lowering a line to `toUnitMinor` takes off it — the amount the manager approves. */
-  const priceChangeValue = (lineId: string, toUnitMinor: number): { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number } | { readonly ok: false; readonly laneMessage: string } => {
-    try { return { ok: true, ...session.overrideValue(lineId, toUnitMinor) }; } catch (e) {
+  const priceChangeValue = (lineId: string, toUnitMinor: number): { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly ownerOnly?: true } | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string } => {
+    try {
+      const value = session.overrideValue(lineId, toUnitMinor);
+      const productId = session.basket().find((l) => l.lineId === lineId)?.productId ?? '';
+      // OB-500 (R7-A): never below the product's lowest allowed price — refused here, before a manager is asked, offline.
+      const floor = floorRefusal({ toUnitMinor, floorMinor: config?.priceFloors?.[productId] });
+      if (floor !== undefined) return { ok: false, laneMessage: floor.en, laneMessageTa: floor.ta };
+      // OB-520 (R8-A): a product the pack gives no floor for (never received at a cost) — only the owner may approve its cut.
+      // Said here so the cashier calls the owner; the store computer refuses anyone else's approval.
+      const floors = config?.priceFloors;
+      const ownerOnly = floors !== undefined && floors !== null && value.reductionMinor > 0 && floors[productId] === undefined;
+      return { ok: true, ...value, productId, ...(ownerOnly ? { ownerOnly: true as const } : {}) };
+    } catch (e) {
       // B19: a carry bag cannot be made free — said in the gate's own words.
       if (e instanceof TillRuleRefusedError) return { ok: false, laneMessage: e.laneMessage };
       return { ok: false, laneMessage: 'A price can only be lowered here, on a line that is on the bill.' };
@@ -2055,7 +2123,56 @@ export function bootPos(config?: {
   const realTrading = (): boolean => config?.realTrading === true;
   const readMachineRef = (typed: string): MachineRefReading => readMachineReference(typed);
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers() });
+  // ── R7-C · OB-506 — begin: a quotation rung up by its number (its own file; nothing on the sale path) ──
+  const barcodeOfProduct = barcodesByProduct(config?.catalogue);
+  const ringQuotationAtTill = quotationAtTill({
+    port: config?.quotationsPort ?? laneQuotations({ base: () => laneBase(config?.lanePort ?? DEFAULT_LANE_PORT), headers: operatorHeaders, frontRefused: FRONT_REFUSED }),
+    barcodeOf: (productId) => barcodeOfProduct.get(productId),
+    ops: {
+      signedIn: () => session.operator() !== undefined,
+      basketInProgress: () => session.currentState() !== 'committed' && session.basketToHold().lines.length > 0,
+      committed: () => session.currentState() === 'committed',
+      hasCatalogue: () => view.hasCatalogue(),
+      newSale: () => { view.newSale(); },
+      billRef: () => session.billRef(),
+      scanBarcode: (code) => view.scanBarcode(code),
+      setQuantity: (lineId, qty) => { view.setQuantity(lineId, qty); },
+      unitPriceOf: (lineId) => view.basket().find((l) => l.lineId === lineId)?.unitPriceMinor,
+      lowerPrice: (lineId, toUnitMinor, evidence) => { session.overridePrice(lineId, toUnitMinor, evidence); },
+    },
+  });
+  const quotedView = Object.assign(view, { ringQuotationAtTill, quotationWords: (lang: 'en' | 'ta') => QUOTATION_TILL_WORDS[lang] });
+  // ── R7-C · OB-506 — end ──
+  // ── R8-B · OB-523 — begin: cancel the whole bill (its own file); a quotation rung up on it is freed through the box ──
+  // The quotations rung up on the bill in progress — remembered against the bill's own reference, so a fresh bill has none.
+  const onBill: { billRef: string | undefined; ids: string[] } = { billRef: undefined, ids: [] };
+  const quotationsOnBill = (): readonly string[] => (onBill.billRef === session.billRef() ? [...onBill.ids] : []);
+  const ringQuotationRemembered = async (quotationNumber: string): Promise<QuotationAtTill> => {
+    const out = await ringQuotationAtTill(quotationNumber);
+    if (out.ok && out.quotationId !== undefined) {
+      const ref = session.billRef();
+      if (onBill.billRef !== ref) { onBill.billRef = ref; onBill.ids = []; }
+      if (!onBill.ids.includes(out.quotationId)) onBill.ids.push(out.quotationId);
+    }
+    return out;
+  };
+  const cancelBillAtTill = billCancelAtTill({
+    ops: {
+      signedIn: () => session.operator() !== undefined,
+      committed: () => session.currentState() === 'committed',
+      awaitingSave: () => session.pendingSale() !== undefined,
+      billRef: () => session.billRef(),
+      liveLines: () => view.basket().filter((l) => !l.voided).map((l) => ({ lineId: l.lineId, productId: l.productId, description: l.description, valueMinor: l.amountMinor })),
+      quotationsOnBill,
+      voidLine: (lineId, reason) => { view.voidLine(lineId, reason); },
+      newSale: () => { onBill.billRef = undefined; onBill.ids = []; view.newSale(); },
+      newActivityId: () => `BV-${newRequestKey().slice(3)}`,
+    },
+    post: (body) => sendTillActivity(body, 'This till cannot reach its store computer, so the bill was not cancelled. The bill stays as it is.'),
+  });
+  const cancellableView = Object.assign(quotedView, { ringQuotationAtTill: ringQuotationRemembered, cancelBillAtTill, quotationsOnBill, billCancelWords: (lang: 'en' | 'ta') => BILL_CANCEL_WORDS[lang] });
+  // ── R8-B · OB-523 — end ──
+  return Object.assign(cancellableView, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -2094,6 +2211,9 @@ if (browserWindow !== undefined && (globalThis as { sreQueueTill?: unknown }).sr
     // OB-348: the shop's state, and OB-299: the delivery-fee product — each from the box's store pack, absent when not set.
     ...(typeof lane?.shopState === 'string' && lane.shopState !== '' ? { shopState: lane.shopState } : {}),
     ...(typeof lane?.tillDeliveryFeeProductId === 'string' && lane.tillDeliveryFeeProductId !== '' ? { tillDeliveryFeeProductId: lane.tillDeliveryFeeProductId } : {}),
+    // OB-500 · OB-501 (R7-A): the floors and the app version policy, from the box's signed pack.
+    ...(lane?.priceFloors === undefined || lane.priceFloors === null ? {} : { priceFloors: lane.priceFloors }),
+    ...(lane?.appVersionPolicy === undefined || lane.appVersionPolicy === null ? {} : { appVersionPolicy: lane.appVersionPolicy }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

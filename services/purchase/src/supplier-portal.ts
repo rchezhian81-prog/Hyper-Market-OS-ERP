@@ -147,7 +147,7 @@ function documentProblem(kind: SubmissionKind, document: unknown, required: bool
     const lines = document['lines'];
     if (!isStr(document['asnId']) || !isStr(document['expectedAt']) || !Array.isArray(lines) || lines.length === 0
       || !lines.every((l) => isObjRec(l) && isStr(l['lineId']) && isStr(l['productId']) && isNonNegIntV(l['quantityMinor']) && isStr(l['uom']))) {
-      return 'an ASN document needs { asnId, expectedAt, lines: [{ lineId, productId, quantityMinor, uom, batchId?, expiry? }], poId? }';
+      return 'an ASN document needs { asnId, expectedAt, lines: [{ lineId, productId, quantityMinor, uom, batchId?, expiry?, manufacturedOn? }], poId? }';
     }
   }
   return undefined;
@@ -158,6 +158,8 @@ function asnFrom(document: Readonly<Record<string, unknown>>, partnerId: string)
   const lines = (document['lines'] as Record<string, unknown>[]).map((l): AsnLine => ({
     lineId: l['lineId'] as string, productId: l['productId'] as string, quantityMinor: l['quantityMinor'] as number, uom: l['uom'] as string,
     ...(isStr(l['batchId']) ? { batchId: l['batchId'] } : {}), ...(isStr(l['expiry']) ? { expiry: l['expiry'] } : {}),
+    // B4 · OB-504: the batch's month and year of manufacture, as the supplier declared it.
+    ...(isStr(l['manufacturedOn']) ? { manufacturedOn: (l['manufacturedOn'] as string).trim() } : {}),
   }));
   return { asnId: document['asnId'] as string, supplierId: partnerId, expectedAt: document['expectedAt'] as string, lines, ...(isStr(document['poId']) ? { poId: document['poId'] } : {}) };
 }
@@ -196,6 +198,11 @@ export interface SupplierPortalDeps {
   }) => Promise<{ readonly ok: true } | { readonly ok: false; readonly code: string; readonly detail: string }>;
   /** SF-09: record an accepted ASN on the ASN register the compare route reads. */
   readonly recordAsn?: (tenantId: string, asn: Asn, at: string) => Promise<void> | void;
+  /**
+   * B4 · OB-504: whether head office's category list makes a product PACKED — an ASN line of one with no readable month and
+   * year of manufacture is refused at acceptance, by name. undefined → head office does not hold the product (not judged).
+   */
+  readonly packedProduct?: (tenantId: string, productId: string) => Promise<boolean | undefined> | boolean | undefined;
   /**
    * OB-362: the supplier's OWN open orders on head office's register (issued, not yet all received or cancelled) — what its
    * "Delivery update" form may name. Undefined: this head office cannot list them (said, never an empty list).
@@ -442,6 +449,23 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
           } else {
             if (deps.recordAsn === undefined) throw apiError(503, { code: 'asn_register_unavailable', whatHappened: 'The ASN register is not wired here.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was decided.' });
             const asn = asnFrom(doc, partnerId);
+            // B4 · OB-504: every packed product's line names the month and year of manufacture of the batch it brings — an
+            // ASN without it is refused by name (the buyer rejects it with the reason; the supplier sends it again with dates).
+            if (deps.packedProduct !== undefined) {
+              const missing: string[] = [];
+              for (const l of asn.lines) {
+                const ok = typeof l.manufacturedOn === 'string' && /^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/.test(l.manufacturedOn);
+                if (!ok && (await deps.packedProduct(ctx.tenantId, l.productId)) === true) missing.push(`${l.lineId} (${l.productId})`);
+              }
+              if (missing.length > 0) {
+                throw apiError(422, {
+                  code: 'manufacture_date_required',
+                  whatHappened: `ASN ${asn.asnId} cannot be accepted: ${missing.join(', ')} ${missing.length === 1 ? 'is a packed product' : 'are packed products'} with no month and year of manufacture (B4 · OB-504).`,
+                  wasItSaved: 'not_saved',
+                  nextSafeAction: 'Reject it with this reason, so the supplier sends the ASN again with each packed line\'s month of manufacture (YYYY-MM). Nothing was accepted.',
+                });
+              }
+            }
             await deps.recordAsn(ctx.tenantId, asn, at);
             fed = { asnId: asn.asnId };
           }
