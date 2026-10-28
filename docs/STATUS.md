@@ -5,6 +5,15 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## GST answers OB-433 and OB-434 (28 October 2026)
+- **What changed:**
+  - **OB-433:** the owner confirmed the B2CL line: more than ₹1,00,000 for invoices from 1 Aug 2024, more than ₹2,50,000 before. Nothing to build.
+  - **OB-434 (option a):** in the GSTN GSTR-1 file, a B2B invoice's `val` now includes compensation cess, as B2CL's already did. Each rate line with cess carries `csamt`, so the lines add up to `val`. The return's taxable value and GST totals are unchanged.
+- **Tests:** `tests/unit/a-b2b-invoice-in-the-gstn-file-carries-its-cess.test.ts` (5 tests). The two cess tests fail on the old code.
+- **Next:** before the first live filing, the owner's accountant loads the GSTR-1 file into the GSTN offline tool.
+- **Blocked:** nothing.
+- **Owner decisions needed:** none.
+
 ## CI fix (28 October 2026): the store-day journeys failed "certificate is not yet valid" before 09:00 UTC
 
 **What changed**
