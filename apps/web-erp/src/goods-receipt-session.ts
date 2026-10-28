@@ -27,6 +27,12 @@
 // words (the list carries `returnDispatches`), offers Dispatch next to it, and offers "gone back" only once it has gone.
 // A refusal (`ewb_required`) is said in plain words and the return stays undispatched; with no connection the screen says
 // it needs one (P-08) — the dispatch is head office's record, so nothing is queued or pretended.
+//
+// R9-A · OB-534 (owner, 28 Oct 2026): a "Match the bill" button on each delivery with a line no supplier bill is matched to yet
+// — the existing `POST /v1/inventory/goods-receipt/:grnId/bill-match` (`purchase.invoice.match`), body `{ invoiceId }` of a bill
+// on head office's register (never a typed cost). It is refused for the person who RECEIVED the goods (§28 — said on the
+// screen, and head office refuses it too), and the matched bill is shown afterwards: which bill, at what cost, by whom. An
+// online write under the reader's session — with no connection the screen says it needs one; nothing is queued.
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -95,6 +101,34 @@ export interface GrnRecordView {
   readonly costNotKnown?: readonly { readonly lineId: string; readonly productId: string; readonly because: 'no_issued_order' | 'not_on_order' }[];
   /** OB-509: some difference has no value yet, so the total is incomplete. */
   readonly discrepancyValueIncomplete?: boolean;
+  /** OB-534: the supplier bills matched to THIS receipt's lines (head office's `billCosts`), as head office holds them. */
+  readonly billCosts?: readonly GrnBillCostView[];
+  /** OB-534: how many of the receipt's lines no supplier bill is matched to yet (head office's lines less `billCosts`). */
+  readonly unbilledLineCount?: number;
+}
+
+/** OB-534 — one receipt line costed from a matched supplier bill (OB-509 · OB-530), shown as-is. */
+export interface GrnBillCostView {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly invoiceId: string;
+  readonly unitCostMinor: number;
+  readonly currency: string;
+  readonly matchedBy: string;
+  readonly matchedAt: string;
+  /** OB-530: the line's cost was already known from the order — the bill is matched for the price comparison only. */
+  readonly costWasKnown?: boolean;
+}
+
+/** OB-534 — what head office answered "Match the bill". */
+export type BillMatchPostResult =
+  | { readonly result: 'matched' | 'already_matched'; readonly matched: readonly GrnBillCostView[] }
+  | { readonly result: 'self_match' | 'bill_unknown' | 'not_permitted' | 'refused'; readonly reason: string }
+  | { readonly result: 'lost_link' };
+
+/** OB-534 — the authenticated POST that matches a supplier bill to one receipt (body exactly `{ invoiceId }`). */
+export interface GrnBillMatchPort {
+  post(input: { readonly grnId: string; readonly invoiceId: string }): Promise<BillMatchPostResult>;
 }
 
 /** Batch 2 — one quarantined line disposed of as a return: waiting to go back to the supplier, or gone. */
@@ -171,6 +205,10 @@ export interface GoodsReceiptPorts {
   returnPort?(): GrnLineReturnPort | null;
   /** OB-204 · the dispatch write (the same `inventory.movement.append`), or `null` / absent when this page cannot reach head office. */
   dispatchPort?(): GrnLineDispatchPort | null;
+  /** OB-534 · `purchase.invoice.match` — matching a supplier bill to a receipt. Absent ⇒ not held. */
+  mayMatchBill?(): boolean;
+  /** OB-534 · the bill-match write, or `null` / absent when this page cannot reach head office. */
+  billMatchPort?(): GrnBillMatchPort | null;
 }
 
 export interface GoodsReceiptConfig {
@@ -198,6 +236,9 @@ export type CopyKey =
   | 'dkCostDifference' | 'dkAsnDifference' | 'ownerLabel' | 'ownerBuyer' | 'ownerStoreManager' | 'ownerNoPo' | 'ownerOrderNotHeld' | 'ownerNoStoreManager' | 'ownerNotDecided'
   | 'valueNotKnown' | 'valueIncomplete' | 'costNotKnownHeading' | 'costNotKnownNoOrder' | 'costNotKnownNotOnOrder'
   | 'scrReady' | 'scrEmpty' | 'scrNoReceipts' | 'stateNotPermitted'
+  | 'billMatchHeading' | 'billMatchLabel' | 'billMatchPlaceholder' | 'billMatchBtn' | 'billMatchNotYou' | 'billMatchedLine' | 'billMatchedKnown'
+  | 'billMatchDone' | 'billMatchAlready' | 'billMatchSelf' | 'billMatchUnknownBill' | 'billMatchRefused' | 'billMatchLostLink' | 'billMatchNoLink'
+  | 'billMatchNotPermitted' | 'billMatchReceiptUnknown' | 'billMatchNothingWaiting' | 'billMatchInvoiceMissing'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
 export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
@@ -262,6 +303,20 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     scrReady: 'Showing your deliveries', scrEmpty: 'This screen has not been given the delivery list yet.',
     scrNoReceipts: 'No deliveries have been recorded yet.',
     stateNotPermitted: 'You do not have permission to see goods receipts.',
+    billMatchHeading: 'Supplier bill', billMatchLabel: 'Supplier bill number (as captured at head office)', billMatchPlaceholder: 'e.g. INV-2026-0412',
+    billMatchBtn: 'Match the bill',
+    billMatchNotYou: 'You received these goods, so someone else (the buyer or the accountant) matches their supplier bill.',
+    billMatchedLine: 'Bill {bill} matched: {product} at {cost} each — by {who}', billMatchedKnown: '(cost already known from the order — matched to compare prices)',
+    billMatchDone: 'Bill matched to this delivery. The lines it names now carry the bill’s cost.', billMatchAlready: 'This bill was already matched to this delivery.',
+    billMatchSelf: 'Not matched — you received these goods, so someone else must match their bill. Head office said:',
+    billMatchUnknownBill: 'Not matched — head office has no such supplier bill. Capture the bill first, then match it. Head office said:',
+    billMatchRefused: 'Not matched — head office refused it:',
+    billMatchLostLink: 'Needs connection — head office could not be reached, so nothing was matched. Try again when connected.',
+    billMatchNoLink: 'Needs connection — this page cannot reach head office, so a bill cannot be matched from it.',
+    billMatchNotPermitted: 'You do not have permission to match supplier bills.',
+    billMatchReceiptUnknown: 'That delivery is not on the list.',
+    billMatchNothingWaiting: 'Every line of this delivery already has its supplier bill matched.',
+    billMatchInvoiceMissing: 'Write the supplier bill number.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
   },
@@ -326,6 +381,20 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     scrReady: 'உங்கள் டெலிவரிகளைக் காட்டுகிறது', scrEmpty: 'இந்தத் திரைக்கு இன்னும் டெலிவரி பட்டியல் தரப்படவில்லை.',
     scrNoReceipts: 'இன்னும் டெலிவரிகள் எதுவும் பதிவு செய்யப்படவில்லை.',
     stateNotPermitted: 'சரக்கு பெறுதல்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
+    billMatchHeading: 'சப்ளையர் பில்', billMatchLabel: 'சப்ளையர் பில் எண் (தலைமை அலுவலகத்தில் பதிந்தபடி)', billMatchPlaceholder: 'எ.கா. INV-2026-0412',
+    billMatchBtn: 'பில்லைப் பொருத்து',
+    billMatchNotYou: 'இந்தச் சரக்கை நீங்கள் பெற்றீர்கள், எனவே அதன் சப்ளையர் பில்லை வேறொருவர் (வாங்குநர் அல்லது கணக்காளர்) பொருத்த வேண்டும்.',
+    billMatchedLine: 'பில் {bill} பொருத்தப்பட்டது: {product} ஒன்றுக்கு {cost} — பொருத்தியவர் {who}', billMatchedKnown: '(விலை ஆர்டரிலிருந்தே தெரியும் — விலை ஒப்பிடப் பொருத்தப்பட்டது)',
+    billMatchDone: 'இந்த டெலிவரிக்கு பில் பொருத்தப்பட்டது. பில்லில் உள்ள வரிகள் இப்போது பில்லின் விலையைக் கொண்டுள்ளன.', billMatchAlready: 'இந்த பில் ஏற்கனவே இந்த டெலிவரிக்குப் பொருத்தப்பட்டுள்ளது.',
+    billMatchSelf: 'பொருத்தப்படவில்லை — இந்தச் சரக்கை நீங்கள் பெற்றீர்கள், எனவே வேறொருவர் பில்லைப் பொருத்த வேண்டும். தலைமை அலுவலகம் சொன்னது:',
+    billMatchUnknownBill: 'பொருத்தப்படவில்லை — அப்படி ஒரு சப்ளையர் பில் தலைமை அலுவலகத்தில் இல்லை. முதலில் பில்லைப் பதிந்து, பிறகு பொருத்தவும். தலைமை அலுவலகம் சொன்னது:',
+    billMatchRefused: 'பொருத்தப்படவில்லை — தலைமை அலுவலகம் மறுத்தது:',
+    billMatchLostLink: 'இணைப்பு தேவை — தலைமை அலுவலகத்தை அடைய முடியவில்லை, அதனால் எதுவும் பொருத்தப்படவில்லை. இணைந்ததும் மீண்டும் முயற்சிக்கவும்.',
+    billMatchNoLink: 'இணைப்பு தேவை — இந்தப் பக்கம் தலைமை அலுவலகத்தை அடைய முடியாது, அதனால் இங்கிருந்து பில்லைப் பொருத்த முடியாது.',
+    billMatchNotPermitted: 'சப்ளையர் பில்களைப் பொருத்த உங்களுக்கு அனுமதி இல்லை.',
+    billMatchReceiptUnknown: 'அந்த டெலிவரி பட்டியலில் இல்லை.',
+    billMatchNothingWaiting: 'இந்த டெலிவரியின் ஒவ்வொரு வரிக்கும் ஏற்கனவே சப்ளையர் பில் பொருத்தப்பட்டுள்ளது.',
+    billMatchInvoiceMissing: 'சப்ளையர் பில் எண்ணை எழுதுங்கள்.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
   },
@@ -390,6 +459,14 @@ export interface PresentedReceipt {
   readonly costNotKnown: readonly { readonly productId: string; readonly label: string }[];
   /** OB-509: some difference has no value yet — the total is said to be incomplete. */
   readonly valueIncomplete: boolean;
+  /** OB-534: the supplier bill(s) matched to this receipt, each line in words; and whether this reader may match one now. */
+  readonly billMatch: {
+    readonly matched: readonly { readonly invoiceId: string; readonly label: string }[];
+    /** A line still waits for its bill and this reader may press "Match the bill" (holds the right, has a link, did not receive it). */
+    readonly canMatch: boolean;
+    /** A line still waits, this reader holds the right, but RECEIVED these goods — the screen says someone else matches it. */
+    readonly receivedByYou: boolean;
+  };
 }
 
 export interface PresentedReturnLine extends GrnReturnLineView {
@@ -425,6 +502,11 @@ export type LineReturnOutcome =
   | { readonly outcome: 'returned' | 'already_returned' | 'lost_link' | 'not_permitted' | 'no_link' | 'line_unknown' | 'not_awaiting' | 'needs_count' | 'reason_missing' | 'needs_dispatch' }
   | { readonly outcome: 'refused'; readonly reason: string };
 
+export type BillMatchOutcome =
+  | { readonly outcome: 'matched' | 'already_matched'; readonly matched: readonly GrnBillCostView[] }
+  | { readonly outcome: 'self_match' | 'bill_unknown' | 'refused'; readonly reason: string }
+  | { readonly outcome: 'lost_link' | 'no_link' | 'not_permitted' | 'receipt_unknown' | 'nothing_waiting' | 'invoice_missing' | 'received_by_you' };
+
 export type LineDispatchOutcome =
   | { readonly outcome: 'dispatched' | 'already_dispatched'; readonly ewbNo: string | null }
   | { readonly outcome: 'ewb_required' | 'refused'; readonly reason: string }
@@ -439,6 +521,9 @@ export interface GoodsReceiptSession {
   /** OB-204 — record that a return's goods are leaving under their e-way bill: an online write under the reader's session. */
   dispatchReturn(input: { readonly grnId: string; readonly lineId: string; readonly reason: string }): Promise<LineDispatchOutcome>;
   presentDispatchOutcome(lang: Lang, outcome: LineDispatchOutcome): StatusPresentation;
+  /** OB-534 — match a supplier bill to one receipt: an online write under the reader's session; refused for the receiver. */
+  matchBill(input: { readonly grnId: string; readonly invoiceId: string }): Promise<BillMatchOutcome>;
+  presentBillMatchOutcome(lang: Lang, outcome: BillMatchOutcome): StatusPresentation;
 }
 
 /** OB-204: a return above the threshold that has not been dispatched (or whose state head office could not say). */
@@ -487,6 +572,20 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
     };
   };
   const noWrites = { canRecordReturn: false, awaitingReturn: [] } as const;
+  // OB-534: a bill head office matched on this screen shows at once (until the list is read again, which then carries it).
+  const matchedHere = new Map<string, GrnBillCostView[]>();
+  const mayMatchBill = (): boolean => config.userId !== null && ports.mayRead() && (ports.mayMatchBill?.() ?? false);
+  const billCostsOf = (g: GrnRecordView): GrnBillCostView[] => {
+    const here = matchedHere.get(g.grnId) ?? [];
+    const all = [...(g.billCosts ?? [])];
+    for (const m of here) if (!all.some((b) => b.lineId === m.lineId)) all.push(m);
+    return all;
+  };
+  const unbilledOf = (g: GrnRecordView): number => {
+    const extra = (matchedHere.get(g.grnId) ?? []).filter((m) => !(g.billCosts ?? []).some((b) => b.lineId === m.lineId)).length;
+    return Math.max(0, (g.unbilledLineCount ?? 0) - extra);
+  };
+  const money = (minor: number, currency: string): string => `${currency === 'INR' ? '₹' : `${currency} `}${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return {
     text,
@@ -542,6 +641,47 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
       }
       if ('reason' in posted) return { outcome: posted.result, reason: posted.reason };
       return { outcome: 'lost_link' };
+    },
+
+    matchBill: async (input) => {
+      if (!mayMatchBill()) return { outcome: 'not_permitted' };
+      const port = ports.billMatchPort?.() ?? null;
+      if (port === null) return { outcome: 'no_link' };
+      const grn = (ports.snapshot().receipts ?? []).find((g) => g.grnId === input.grnId.trim());
+      if (grn === undefined) return { outcome: 'receipt_unknown' };
+      // §28: the person who received the goods never matches their bill — said here; head office refuses it too.
+      if (grn.receivedBy === config.userId) return { outcome: 'received_by_you' };
+      if (unbilledOf(grn) === 0) return { outcome: 'nothing_waiting' };
+      const invoiceId = input.invoiceId.trim();
+      if (invoiceId === '') return { outcome: 'invoice_missing' };
+      const posted = await port.post({ grnId: grn.grnId, invoiceId });
+      if ('matched' in posted) {
+        const got = posted.matched;
+        matchedHere.set(grn.grnId, [...(matchedHere.get(grn.grnId) ?? []).filter((m) => !got.some((p) => p.lineId === m.lineId)), ...got]);
+        return { outcome: posted.result, matched: got };
+      }
+      if (!('reason' in posted)) return { outcome: 'lost_link' };
+      if (posted.result === 'not_permitted') return { outcome: 'not_permitted' };
+      return { outcome: posted.result, reason: posted.reason };
+    },
+
+    presentBillMatchOutcome: (lang, o) => {
+      const t = translator(GOODS_RECEIPT_COPY, lang);
+      const err = (key: CopyKey) => presentStatus({ tone: 'error', icon: '✕', label: t(key), needsAttention: true });
+      switch (o.outcome) {
+        case 'matched': return presentStatus({ tone: 'ok', icon: '✓', label: t('billMatchDone'), needsAttention: false });
+        case 'already_matched': return presentStatus({ tone: 'ok', icon: '✓', label: t('billMatchAlready'), needsAttention: false });
+        case 'self_match': return presentStatus({ tone: 'error', icon: '✕', label: `${t('billMatchSelf')} ${o.reason}`, needsAttention: true });
+        case 'bill_unknown': return presentStatus({ tone: 'error', icon: '✕', label: `${t('billMatchUnknownBill')} ${o.reason}`, needsAttention: true });
+        case 'refused': return presentStatus({ tone: 'error', icon: '✕', label: `${t('billMatchRefused')} ${o.reason}`, needsAttention: true });
+        case 'lost_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('billMatchLostLink'), needsAttention: true });
+        case 'no_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('billMatchNoLink'), needsAttention: true });
+        case 'not_permitted': return err('billMatchNotPermitted');
+        case 'receipt_unknown': return err('billMatchReceiptUnknown');
+        case 'nothing_waiting': return err('billMatchNothingWaiting');
+        case 'invoice_missing': return err('billMatchInvoiceMissing');
+        case 'received_by_you': return err('billMatchNotYou');
+      }
     },
 
     presentDispatchOutcome: (lang, o) => {
@@ -618,6 +758,19 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           returnLines: (g.returnLines ?? []).map((l) => presentReturnLine(lang, g.grnId, l)),
           costNotKnown: (g.costNotKnown ?? []).map((c) => ({ productId: c.productId, label: `${c.productId} — ${t('costNotKnownHeading')} (${t(c.because === 'no_issued_order' ? 'costNotKnownNoOrder' : 'costNotKnownNotOnOrder')})` })),
           valueIncomplete: g.discrepancyValueIncomplete === true,
+          // OB-534: the bills matched to this receipt, line by line, and whether this reader may match one now.
+          billMatch: ((): PresentedReceipt['billMatch'] => {
+            const waiting = unbilledOf(g) > 0;
+            const mine = g.receivedBy === config.userId;
+            return {
+              matched: billCostsOf(g).map((b) => ({
+                invoiceId: b.invoiceId,
+                label: `${t('billMatchedLine').replace('{bill}', b.invoiceId).replace('{product}', b.productId).replace('{cost}', money(b.unitCostMinor, b.currency)).replace('{who}', b.matchedBy)}${b.costWasKnown === true ? ` ${t('billMatchedKnown')}` : ''}`,
+              })),
+              canMatch: waiting && !mine && mayMatchBill() && (ports.billMatchPort?.() ?? null) !== null,
+              receivedByYou: waiting && mine && mayMatchBill(),
+            };
+          })(),
         };
       });
 

@@ -40,6 +40,8 @@ export interface BillCancelOps {
   readonly liveLines: () => readonly BillLineForCancel[];
   /** The quotations rung up on THIS bill (OB-506), which the cancel frees (OB-523). */
   readonly quotationsOnBill: () => readonly string[];
+  /** R9-A · OB-533: the bill a quotation was rung up on, where it is not this bill's reference (a recalled held basket's). */
+  readonly quotationBills?: () => Readonly<Record<string, string>>;
   /** Mark a line voided with the reason on the till's own bill (kept, struck through). */
   readonly voidLine: (lineId: string, reason: string) => void;
   /** Start a fresh bill. */
@@ -70,7 +72,12 @@ export function billCancelAtTill(input: {
     const lines = ops.liveLines();
     const quotationIds = [...new Set(ops.quotationsOnBill())];
     if (lines.length === 0 && quotationIds.length === 0) return { ok: false, refusedBecause: 'nothing_to_cancel', laneMessage: 'There is nothing on this bill to cancel.', laneMessageTa: 'இந்த பில்லில் ரத்து செய்ய எதுவும் இல்லை.' };
-    const body = { activityId: ops.newActivityId(), kind: 'bill_void', billRef: ops.billRef(), reason, lines, ...(quotationIds.length === 0 ? {} : { quotationIds }) };
+    const quotationBills = quotationIds.length === 0 ? {} : (ops.quotationBills?.() ?? {});
+    const body = {
+      activityId: ops.newActivityId(), kind: 'bill_void', billRef: ops.billRef(), reason, lines,
+      ...(quotationIds.length === 0 ? {} : { quotationIds }),
+      ...(Object.keys(quotationBills).length === 0 ? {} : { quotationBills }), // OB-533
+    };
     let r: Record<string, unknown> | undefined;
     // One retry with the SAME body (the box keys every part on its id): a lost reply never records the cancel twice.
     for (let attempt = 0; attempt < 2 && r === undefined; attempt += 1) {

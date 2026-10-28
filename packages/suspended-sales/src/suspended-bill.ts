@@ -53,8 +53,25 @@ export interface SuspendedLine {
   readonly batchExpiry?: string;
   /** B8 (OB-298): who confirmed a perishable's printed pack date, and when — the recalled line keeps its check. */
   readonly packDateCheck?: { readonly confirmedBy: string; readonly confirmedAt: string };
+  /**
+   * R9-A · OB-533: a line whose price was lowered on the till (a manager's approved cut, or a quotation's promised price —
+   * `approvedBy: "quotation N"`) keeps its evidence while parked, so the recalled line is the line that was parked: the
+   * price it was cut from, who approved it and the till activity that recorded it. Never a lower price without its reason.
+   */
+  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string };
   readonly voided: boolean;
   readonly voidReason?: string;
+}
+
+/**
+ * R9-A · OB-533 (owner, 28 Oct 2026): a retail quotation rung up on the bill before it was parked — its number and the bill
+ * it was rung up on (head office holds it converted to THAT bill). It travels with the parked basket: giving the basket up
+ * frees the quotation again (the same compensating release as a cancelled bill, OB-523); recalling it keeps it attached.
+ */
+export interface HeldQuotation {
+  readonly quotationId: string;
+  /** The bill the quotation was converted to at head office — the only bill that can free it. */
+  readonly saleId: string;
 }
 
 /** An answer to the age question given before the basket was parked (PF-03) — evidence, carried with the basket. */
@@ -84,6 +101,8 @@ export interface SuspendedBill {
   readonly customerRef?: string;
   /** The age answers already given for this basket (PF-03), so a recall does not lose them. */
   readonly ageAnswers?: readonly SuspendedAgeAnswer[];
+  /** R9-A · OB-533: the quotations rung up on this basket before it was parked (each with the bill it was rung up on). */
+  readonly quotations?: readonly HeldQuotation[];
   readonly state: SuspendedState;
   readonly resumedAt?: string;
   readonly resumedBy?: string;
@@ -205,6 +224,8 @@ export interface SuspendInput {
   readonly reason?: string;
   readonly customerRef?: string;
   readonly ageAnswers?: readonly SuspendedAgeAnswer[];
+  /** R9-A · OB-533: the quotations rung up on the basket, carried with it. */
+  readonly quotations?: readonly HeldQuotation[];
 }
 
 /**
@@ -271,6 +292,7 @@ export function suspendBill(
     ...(input.reason === undefined ? {} : { reason: input.reason }),
     ...(input.customerRef === undefined ? {} : { customerRef: input.customerRef }),
     ...(input.ageAnswers === undefined || input.ageAnswers.length === 0 ? {} : { ageAnswers: input.ageAnswers }),
+    ...(input.quotations === undefined || input.quotations.length === 0 ? {} : { quotations: input.quotations }),
     state: 'suspended',
   };
   store.put(bill);

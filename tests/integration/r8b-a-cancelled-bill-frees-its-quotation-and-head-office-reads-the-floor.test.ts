@@ -111,7 +111,9 @@ describe.each(backings)('quotations: head office\'s floor, and a cancelled bill 
     if (rice.result !== 'ok' || dal.result !== 'ok') throw new Error('lines');
     const form = { storeId: STORE, customerRef: 'Murugan Stores', validUntil: '2099-12-31', approvalId: '', lines: [rice.value, dal.value] };
     const refused = await page.make(form);
-    expect(refused).toMatchObject({ result: 'refused', status: 422, code: 'quotation_below_floor_unapproved' });
+    // R9-A · OB-532: the dal was never received at a cost, so the OWNER's approval is needed (it also stands for the rice).
+    expect(refused).toMatchObject({ result: 'refused', status: 422, code: 'quotation_floor_not_known_unapproved' });
+    expect(page.needsOwner()).toBe(true);
     expect(page.belowFloor()).toBe('48151623');
     const asked = await page.askApproval();
     expect(asked.result, JSON.stringify(asked)).toBe('ok');

@@ -86,11 +86,18 @@
       ul.returns .dispatcher label { flex-basis:100%; font-size:14px; color: var(--ink-2); font-weight:600; }
       ul.returns .dispatcher input { flex:1 1 220px; min-width:0; font-size:16px; }
       ul.returns .dispatcher button { font-size:16px; }
+      /* R9-A · OB-534: the supplier bill matched to the delivery, or "Match the bill". */
+      .bill-match { grid-column: 2 / -1; display:flex; gap:6px 12px; flex-wrap:wrap; align-items:flex-end; padding: var(--space-2) 0 0; border-top:1px dashed var(--line); font-size:14px; }
+      .bill-match .d-word { font-weight:600; flex-basis:100%; }
+      .bill-match .bill-matched, .bill-match .bill-not-you { flex-basis:100%; }
+      .bill-match label { flex-basis:100%; font-size:14px; color: var(--ink-2); font-weight:600; }
+      .bill-match input { flex:1 1 220px; min-width:0; font-size:16px; }
+      .bill-match button { font-size:16px; }
       @container (max-width: 760px) {
         .reg-head { display:none; }
         li.row { grid-template-columns:minmax(0, 1fr) auto; }
         .row .c-id { grid-column:1; } .row .c-val { grid-column:2; grid-row:1; }
-        .row .status, .row .facts, ul.diffs, ul.returns { grid-column:1 / -1; }
+        .row .status, .row .facts, ul.diffs, ul.returns, .bill-match { grid-column:1 / -1; }
       }
 
       /* An empty, not-permitted or not-known list: a shape and words, never a blank box. */

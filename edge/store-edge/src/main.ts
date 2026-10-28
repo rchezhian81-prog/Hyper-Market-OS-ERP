@@ -80,7 +80,7 @@ import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
 import { commitLocally } from './durability';
 import { selfCheckoutBasketRecorder } from './self-checkout-baskets'; // OB-288 P6 (R8-3 · R8-7)
-import { billVoidRecorder } from './bill-void-at-lane'; // R8-B · OB-523: a whole bill cancelled at the till frees its quotation
+import { billVoidRecorder, heldQuotationReleaser } from './bill-void-at-lane'; // R8-B · OB-523: a whole bill cancelled at the till frees its quotation · R9-A OB-533 a given-up held basket too
 import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '../../../packages/sync/src/device-relay';
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { watchStoreComputerStatus } from './store-computer-status-file';
@@ -115,12 +115,14 @@ import { createHeadOfficeLink, headOfficeLinkSettingsFrom } from './head-office-
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { withDeciderSeal } from './decision-seal';
+import { withBoxHandheldBuild, queueBasketBuildReporter } from './handheld-build-check'; // OB-537 (R9-B)
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { checkStaffPurchase, packStaffPurchaseOf } from './staff-purchase-gate'; // OB-301
 import { judgeClientVersion, readPackVersionPolicy } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A)
+import { storeComputerBuildOf } from '../../../packages/platform-admin/src/handheld-build'; // OB-537 (R9-B)
 import { SoldHuids } from './sold-huids';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
@@ -1071,7 +1073,10 @@ export async function startEdge(
         const vouched = stampedBy !== undefined ? stampedBy === named.userId : batch.phoneHolder !== undefined && named.userId === batch.phoneHolder;
         return vouched ? { userId: named.userId, via: 'phone_pin', laneId: deviceLaneOf(batch.deviceId) } : undefined;
       })();
-      const event = withDeciderSeal(sealKey, tenantId, read.item.event, verified);
+      // OB-537 (R9-B): a handheld's record carries the build that queued it, written AFTER the seal (the seal covers exactly
+      // the record the person made) and marked when this box's signed pack says that build should not have started new work.
+      const event = withBoxHandheldBuild(withDeciderSeal(sealKey, tenantId, read.item.event, verified), batch.source, read.item.appVersion,
+        pack.versionPolicy.known ? pack.versionPolicy.value : undefined, say);
       if (!isRelayable(event.type, batch.source)) {
         acks.push({ key, status: 'refused', reason: `${event.type} is not a record this box relays for ${batch.source}` });
         continue;
@@ -1124,6 +1129,8 @@ export async function startEdge(
   const recordSelfCheckoutBasket = selfCheckoutBasketRecorder({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => packTradingDay(pack, at) });
   // R8-B · OB-523: a whole bill cancelled at the till — each line's void and each quotation's release, on the same door.
   const recordBillVoid = billVoidRecorder({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => packTradingDay(pack, at) });
+  // R9-A · OB-533: a HELD basket given up frees the quotations it carried, on the same door's disk and queue (sent once).
+  const freeHeldQuotations = heldQuotationReleaser({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, now: () => new Date().toISOString(), tradingDayOf: (at) => packTradingDay(pack, at) });
   const recordTillActivity: LaneTillActivityHandler = async ({ laneId, cashierId, via, body }) => {
     if (body['kind'] === 'self_checkout_basket') return recordSelfCheckoutBasket({ laneId, cashierId, via, body });
     if (body['kind'] === 'bill_void') return recordBillVoid({ laneId, cashierId, via, body }); // R8-B · OB-523
@@ -1672,6 +1679,8 @@ export async function startEdge(
     policy: () => (pack.suspensionPolicy.known ? pack.suspensionPolicy.value : null),
     storeId: () => (pack.policies.known ? pack.policies.value.storeId : 'this-store'),
     tradingDayOf: (iso) => packTradingDay(pack, iso), // R1a: the shop's zone and cut-off, from the pack
+    // R9-A · OB-533: a held basket given up frees its quotations — the same release records as a cancelled bill (OB-523).
+    freeQuotations: freeHeldQuotations,
   });
   // CARD AND UPI ATTEMPTS (audit PF-06): recorded before the machine is asked; a no-answer settles only against the
   // provider's record — through the provider port, which no live provider fills yet.
@@ -1815,6 +1824,9 @@ export async function startEdge(
   // D04-FR-05: the baskets queue handhelds hand to this box, recalled once at its till — only where this box is a till.
   const queueBaskets = tillOperators === null ? null : await QueueBaskets.open({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    // OB-537 (R9-B): each basket keeps the build that made it, marked from this box's signed pack; its report goes to head office.
+    buildOf: (appVersion) => storeComputerBuildOf('queue_till', appVersion, pack.versionPolicy.known ? pack.versionPolicy.value : undefined),
+    onHandedOver: queueBasketBuildReporter({ tenantId, keys: deviceEventKeys, log: deviceEventsLog, outbox: deviceEventsOutbox, say }),
   });
   if (queueBaskets !== null && queueBaskets.unreadableRecords > 0) say(`${queueBaskets.unreadableRecords} queue-basket record(s) could not be read whole — kept, not repaired. Raise this.`);
   // OB-373: a copy of a bill by its number — any bill on this box's disk (a handheld queue till's above all), for the person

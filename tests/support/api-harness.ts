@@ -19,6 +19,7 @@ import type { SubjectKeyStore } from '../../packages/persistence/src/personal-da
 import type { NumberSeriesStore } from '../../packages/persistence/src/number-series-store';
 import { sessionChannelsOf } from '../../services/api/src/session-channels';
 import { storeComputerBinding } from '../../services/api/src/store-computer-binding';
+import { withHandheldBuildCheck } from '../../services/api/src/r9b-handheld-build-adapters';
 import { idempotencyConflictsAdapter } from '../../services/api/src/idempotency-conflicts';
 import type { OutboundTransport } from '../../services/platform/src/outbound-webhooks';
 import { buildSurface } from '../../services/api/src/main';
@@ -175,7 +176,8 @@ export function apiHarness(opts: {
     // Support/remote session binding (PA-10), composed exactly as main.ts does it.
     channels: sessionChannelsOf({ store, revocations, now: opts.now ?? (() => new Date().toISOString()) }),
     // OB-54: each store computer's credential locked to its own store, composed exactly as main.ts does it.
-    boundStore: storeComputerBinding({ store, now: opts.now ?? (() => new Date().toISOString()) }),
+    // OB-537 (R9-B): with a handheld record's build taken off before its handler, as main.ts composes it.
+    boundStore: withHandheldBuildCheck(storeComputerBinding({ store, now: opts.now ?? (() => new Date().toISOString()) }), { store, now: opts.now ?? (() => new Date().toISOString()) }),
     // Hard rule #10 · P-08: a key reused with different content is kept as a visible exception, as main.ts composes it.
     onIdempotencyConflict: idempotencyConflictsAdapter({ store, now: opts.now ?? (() => new Date().toISOString()) }).record,
     entitlements: tenantEntitlementResolver(store),
