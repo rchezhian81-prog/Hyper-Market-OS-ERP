@@ -4,37 +4,26 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
-import {
-  beginOtpChallenge,
-  verifyOtp,
-  evaluateStepUp,
-  decideTokenSession,
-  revokeSession,
-  type OtpChallenge,
-  type RevocationEntry,
-  type StepUpPolicy,
-} from '../../packages/identity/src/index';
-import { verifyToken, type TokenPolicy } from '../../services/identity/src/token';
-import { createLocalTestIdp } from '../support/local-idp';
-import { createOtpSimulator } from '../support/otp-simulator';
+import { startCustomerSignIn } from '../../services/identity/src/customer-sign-in-main';
+import { mountCustomerSignIn, testCustomerSigner, type MountedCustomerSignIn } from '../support/customer-sign-in-test-ports';
+import { TEST_IDP } from '../support/api-harness';
 
 /**
- * **The customer portal sign-in, end to end in a real browser (M02 / M20 / M22, Item 1 slice 1f).**
+ * **The customer portal sign-in, end to end in a real browser, on the REAL customer sign-in service (M20-FR-01 · WF-13 ·
+ * M02 · ADR-0031).**
  *
- * This is the piece unit tests cannot prove: that the thin-client login SCREEN, driven by a customer
- * at the actual page, completes the whole flow against an auth backend running the production engines.
- * The served page holds no minter and no key; the Node server here plays the auth backend the way the
- * real IdP / cloud API will, wiring the SAME production engines (`beginOtpChallenge`, `verifyOtp`,
- * `verifyToken`, `evaluateStepUp`, `decideTokenSession`, `revokeSession`) with the local/test IdP and
- * the OTP simulator — so a token-minter never enters the browser (hard rule #4).
+ * The page (apps/customer-app/web/login.html) is served by a small Node server that hands every `/auth/otp/*` call to
+ * the production handler (`services/identity/src/customer-sign-in.ts`) — the stand-in auth backend this test used to
+ * carry is gone. The handler runs with the recording SMS transport and the local test identity provider as its signer
+ * (both from tests/support; the page holds no minter and no key).
  *
  * It proves, through Chromium:
- *   • phone → the code that reached the "phone" (the OTP simulator) → a verified sign-in;
- *   • an ordinary action (view orders) is allowed;
- *   • a sensitive action (change bank details) is refused pending STEP-UP (the OTP session lacks the
- *     app-based factor the policy demands for money changes);
- *   • sign-out REVOKES the session server-side: the same still-unexpired token, replayed from the
- *     browser, is refused (`session_invalid`) — the revoke-before-expiry property, over the wire.
+ *   • phone → the code that reached the "phone" → signed in, the session cookie HttpOnly (the page cannot read it);
+ *   • an ordinary action (view orders) is allowed; a money change (change bank details) asks for more (step-up);
+ *   • sign-out ends the session on the service: the OLD session cookie, put back into the browser and replayed, is
+ *     refused (`session_invalid`);
+ *   • and the product as shipped — the very process `customer-sign-in-main` starts, with NO SMS provider (OB-222) —
+ *     refuses to send a code, and the page says so in plain words (English and Tamil).
  *
  * Self-skips where no browser is present, like every other e2e.
  */
@@ -42,199 +31,121 @@ import { createOtpSimulator } from '../support/otp-simulator';
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const HAVE_BROWSER = existsSync(CHROMIUM);
 const WEB_DIR = 'apps/customer-app/web';
-
 const TENANT = 't-sre';
-const SUBJECT = 'cust-1';
-const PHONE = '+919000000000';
-// Assembled from parts, never a literal — the secret scanner refuses a hard-coded credential.
-const SECRET = ['dev', 'portal', 'e2e', 'idp', 'secret'].join('-').padEnd(48, 'x');
-const policy: TokenPolicy = { secret: SECRET, issuer: 'https://idp.sre.local/', audience: 'sre-portal' };
-const stepUpPolicy: StepUpPolicy = {
-  // A money change needs the app-based factor ('mfa'); an SMS-OTP session ('otp') must step up.
-  secondFactorActions: ['change_bank_details'],
-  secondFactorAmr: ['mfa'],
-  maxAuthAgeSeconds: 3600,
-};
+const PHONE = '+91 90000 00000';
+const NUMBER = '9000000000';
 
-interface AuthBackend {
-  base: string;
-  stop: () => Promise<void>;
-  sms: ReturnType<typeof createOtpSimulator>;
-  lastIssued: () => { token: string; sessionId: string } | undefined;
-}
-
-/** A local Node server that serves the login page AND plays the auth backend with production engines. */
-async function startBackend(): Promise<AuthBackend> {
-  const idp = createLocalTestIdp({ providerId: 'local-test-idp', issuer: policy.issuer, audience: policy.audience, secret: SECRET });
-  const sms = createOtpSimulator();
-  const challenges = new Map<string, OtpChallenge>();
-  const sessions = new Map<string, { amr: readonly string[]; authTimeMs: number; tokenExpMs: number }>();
-  const revocations: RevocationEntry[] = [];
-  let issued: { token: string; sessionId: string } | undefined;
-
-  const readBody = (req: IncomingMessage): Promise<Record<string, unknown>> =>
-    new Promise((resolve) => {
-      let data = '';
-      req.on('data', (c) => { data += String(c); });
-      req.on('end', () => { try { resolve(JSON.parse(data || '{}') as Record<string, unknown>); } catch { resolve({}); } });
-    });
-  const sendJson = (res: ServerResponse, body: unknown): void => {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body));
-  };
-  const isoNow = (): string => new Date().toISOString();
-
+/** Serves the login page; `/auth/otp/*` goes to `auth` (the real handler), or is proxied to `upstream`. */
+async function startPage(auth: MountedCustomerSignIn | { upstream: string }): Promise<{ base: string; stop: () => Promise<void> }> {
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       const [path = '/'] = (req.url ?? '/').split('?');
-
-      if (req.method === 'POST' && path === '/auth/otp/begin') {
-        const body = await readBody(req);
-        const challengeId = `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const begun = beginOtpChallenge({
-          challengeId, tenantId: TENANT, phoneNumber: String(body['phoneNumber'] ?? ''), purpose: 'login', now: isoNow(),
-        });
-        challenges.set(challengeId, begun.challenge);
-        // "Send" the code to the phone — the simulator, which the test reads like a customer reads SMS.
-        sms.send({ phoneNumber: begun.challenge.phoneNumber, code: begun.code, purpose: 'login', tenantId: TENANT });
-        sendJson(res, { ok: true, challengeId });
+      if ('handle' in auth) {
+        if (await auth.handle(req, res)) return;
+      } else if (path.startsWith('/auth/otp/')) {
+        const body = await new Promise<string>((r) => { let d = ''; req.on('data', (c) => { d += String(c); }); req.on('end', () => r(d)); });
+        const out = await fetch(`${auth.upstream}${path}`, { method: req.method ?? 'POST', headers: { 'content-type': req.headers['content-type'] ?? '' }, body });
+        res.writeHead(out.status, { 'content-type': 'application/json' });
+        res.end(await out.text());
         return;
       }
-
-      if (req.method === 'POST' && path === '/auth/otp/verify') {
-        const body = await readBody(req);
-        const challenge = challenges.get(String(body['challengeId'] ?? ''));
-        if (challenge === undefined) { sendJson(res, { ok: false, reason: 'unknown_challenge' }); return; }
-        const v = verifyOtp({ challenge, tenantId: TENANT, submittedCode: String(body['code'] ?? ''), now: isoNow() });
-        if (!v.verified) { sendJson(res, { ok: false, reason: v.outcome }); return; }
-        challenges.set(challenge.challengeId, v.challenge); // consume (single-use)
-        const nowMs = Date.now();
-        const authTimeSec = Math.floor(nowMs / 1000);
-        const minted = idp.issue(
-          { subject: SUBJECT, tenantId: TENANT, phoneNumber: challenge.phoneNumber, amr: ['otp'], authTime: authTimeSec },
-          { issuedAtMs: nowMs, ttlSeconds: 900 },
-        );
-        const sessionId = `s-${nowMs}`;
-        sessions.set(sessionId, { amr: ['otp'], authTimeMs: authTimeSec * 1000, tokenExpMs: (authTimeSec + 900) * 1000 });
-        issued = { token: minted.token, sessionId };
-        sendJson(res, { ok: true, token: minted.token, sessionId });
-        return;
-      }
-
-      if (req.method === 'POST' && path === '/auth/action') {
-        const body = await readBody(req);
-        const token = String(body['token'] ?? '');
-        const sessionId = String(body['sessionId'] ?? '');
-        const action = String(body['action'] ?? '');
-        const verdict = verifyToken(token, policy, Date.now());
-        const sess = sessions.get(sessionId);
-        if (!verdict.ok || sess === undefined) { sendJson(res, { outcome: 'session_invalid' }); return; }
-        const decision = decideTokenSession({ sessionId, tenantId: TENANT, tokenExpMs: sess.tokenExpMs, nowMs: Date.now(), revocations });
-        if (decision.verdict !== 'active') { sendJson(res, { outcome: 'session_invalid' }); return; }
-        const step = evaluateStepUp({ action, amr: sess.amr, authTimeMs: sess.authTimeMs, nowMs: Date.now(), policy: stepUpPolicy });
-        sendJson(res, { outcome: step.outcome });
-        return;
-      }
-
-      if (req.method === 'POST' && path === '/auth/signout') {
-        const body = await readBody(req);
-        revocations.push(revokeSession({ sessionId: String(body['sessionId'] ?? ''), tenantId: TENANT, reason: 'signed_out', revokedBy: SUBJECT, now: isoNow() }));
-        sendJson(res, { ok: true });
-        return;
-      }
-
-      // Otherwise serve a static file from the web dir.
       const file = path === '/' || path === '/login' ? 'login.html' : path.replace(/^\//, '');
       try {
         const buf = await readFile(join(WEB_DIR, file));
         const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'application/octet-stream';
         res.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
         res.end(buf);
-      } catch {
-        res.writeHead(404);
-        res.end('not found');
-      }
+      } catch { res.writeHead(404); res.end('not found'); }
     })();
   });
-
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    // `localhost`, not a bare IP: the browser treats it as a secure context, so the service's Secure cookie is kept.
+    server.listen(0, 'localhost', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
-      resolve({
-        base: `http://127.0.0.1:${port}`,
-        stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
-        sms,
-        lastIssued: () => issued,
-      });
+      resolve({ base: `http://localhost:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }) });
     });
   });
 }
 
-describe.skipIf(!HAVE_BROWSER)('customer portal sign-in, end to end in a real browser (M02 / M20 / M22)', () => {
+describe.skipIf(!HAVE_BROWSER)('customer portal sign-in, end to end in a real browser, on the real service (M20-FR-01)', () => {
   let browser: Browser;
+  beforeAll(async () => { browser = await chromium.launch({ headless: true, executablePath: CHROMIUM }); }, 60_000);
+  afterAll(async () => { await browser?.close(); });
 
-  beforeAll(async () => {
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
-  }, 60_000);
-
-  afterAll(async () => {
-    await browser?.close();
-  });
-
-  it('signs in by OTP, allows an ordinary action, steps up a sensitive one, and revokes on sign-out', async () => {
-    const backend = await startBackend();
+  it('signs in by a code, allows an ordinary action, steps up a money change, and ends the session on sign-out', async () => {
+    const signer = testCustomerSigner({ idp: TEST_IDP, subjectFor: (n) => `cust-${n.slice(-4)}` });
+    const auth = mountCustomerSignIn({ tenantId: TENANT, signer });
+    const site = await startPage(auth);
     const context = await browser.newContext();
     const page: Page = await context.newPage();
     try {
-      await page.goto(`${backend.base}/login`, { waitUntil: 'load' });
-
-      // 1) Enter phone, request a code.
+      await page.goto(`${site.base}/login`, { waitUntil: 'load' });
       await page.fill('#phone', PHONE);
       await page.click('#send-code');
       await page.waitForSelector('#step-code:not([hidden])', { timeout: 10_000 });
 
-      // 2) The customer reads the code off their phone (the simulator) and submits it.
-      const code = backend.sms.codeFor(PHONE);
-      expect(code).toBeTruthy();
+      const code = auth.sms.codeFor(NUMBER);
+      expect(code).toMatch(/^\d{6}$/);
       await page.fill('#code', code ?? '');
       await page.click('#verify');
       await page.waitForSelector('#step-account:not([hidden])', { timeout: 10_000 });
-      expect(await page.locator('#status').textContent()).toContain('Signed in');
+      await page.locator('#status', { hasText: 'Signed in' }).waitFor({ timeout: 10_000 });
+      expect(signer.signedIn).toEqual(['cust-0000']);
 
-      // 3) An ordinary action is allowed.
+      // The session cookie is the service's, HttpOnly: the page's own script cannot see it.
+      const cookies = await context.cookies();
+      const session = cookies.find((c) => c.name === 'sre_customer_session');
+      expect(session).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Strict', path: '/auth/otp/' });
+      expect(await page.evaluate(() => (globalThis as unknown as { document: { cookie: string } }).document.cookie)).not.toContain('sre_customer_session');
+
       await page.click('#view-orders');
       await page.locator('#result', { hasText: 'orders are shown' }).waitFor({ timeout: 10_000 });
-
-      // 4) A sensitive action prompts step-up (OTP session lacks the app-based factor for money changes).
       await page.click('#change-bank');
       await page.locator('#result', { hasText: 'Extra verification needed' }).waitFor({ timeout: 10_000 });
 
-      // Capture the still-unexpired token BEFORE sign-out, to prove server-side revocation next.
-      const issued = backend.lastIssued();
-      expect(issued).toBeTruthy();
-
-      // 5) Sign out.
       await page.click('#sign-out');
       await page.locator('#status', { hasText: 'Signed out' }).waitFor({ timeout: 10_000 });
+      expect((await context.cookies()).find((c) => c.name === 'sre_customer_session')).toBeUndefined();
 
-      // 6) The SAME token, replayed from the browser after sign-out, is refused server-side — revoked
-      //    before it expired. This is the property a client-side "forget the token" cannot prove.
-      const replayedOutcome = await page.evaluate(async (args: { t: string; s: string }) => {
-        const g = globalThis as unknown as {
-          fetch(input: string, init: unknown): Promise<{ json(): Promise<{ outcome?: string }> }>;
-        };
-        const r = await g.fetch('/auth/action', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ token: args.t, sessionId: args.s, action: 'view_orders' }),
-        });
+      // Put the OLD cookie back and replay: the service ended that session, so it is refused.
+      await context.addCookies([session!]);
+      const replayed = await page.evaluate(async () => {
+        const g = globalThis as unknown as { fetch(input: string, init: unknown): Promise<{ json(): Promise<{ outcome?: string }> }> };
+        const r = await g.fetch('/auth/otp/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'view_orders' }) });
         return (await r.json()).outcome;
-      }, { t: issued?.token ?? '', s: issued?.sessionId ?? '' });
-      expect(replayedOutcome).toBe('session_invalid');
+      });
+      expect(replayed).toBe('session_invalid');
+      // And no line the service logged carries the number or the code.
+      expect(JSON.stringify(auth.audit)).not.toContain(NUMBER);
+      expect(JSON.stringify(auth.audit)).not.toContain(code);
     } finally {
       await context.close();
-      await backend.stop();
+      await site.stop();
+    }
+  }, 60_000);
+
+  it('as shipped — no SMS provider connected (OB-222) — the real process refuses to send a code and the page says so', async () => {
+    const lines: string[] = [];
+    const svc = startCustomerSignIn({ env: { CUSTOMER_SIGN_IN_ORIGIN: 'https://shop.example.test', CUSTOMER_SIGN_IN_TENANT_ID: TENANT }, port: 0, log: (l) => { lines.push(l); } });
+    await new Promise<void>((r) => { if (svc.listening) r(); else svc.once('listening', () => r()); });
+    const port = (svc.address() as { port: number }).port;
+    const site = await startPage({ upstream: `http://127.0.0.1:${port}` });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto(`${site.base}/login`, { waitUntil: 'load' });
+      await page.fill('#phone', PHONE);
+      await page.click('#send-code');
+      await page.locator('#status', { hasText: 'no SMS provider is connected' }).waitFor({ timeout: 10_000 });
+      expect(await page.textContent('#status')).toContain('குறியீடு அனுப்பப்படவில்லை');
+      expect(await page.isHidden('#step-code')).toBe(true);
+      expect(lines.join('\n')).toContain('NO PROVIDER CONNECTED');
+      expect(lines.join('\n')).not.toContain(NUMBER);
+    } finally {
+      await context.close();
+      await site.stop();
+      await new Promise((r) => svc.close(r));
     }
   }, 60_000);
 });

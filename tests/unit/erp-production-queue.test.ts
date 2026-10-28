@@ -65,8 +65,8 @@ describe('the production queue (device → store computer → head office)', () 
     const sent: unknown[] = [];
     const fetchFn = (async (_url: string, init: RequestInit) => { sent.push(JSON.parse(String(init.body))); return answers.shift()!; }) as unknown as typeof fetch;
     const port = openBoxLabelPort(fetchFn);
-    expect(await port.post({ runId: 'run-1', netQuantity: '1', packerDetails: 'SRE', allergens: [], weightGrams: 450 })).toEqual({ result: 'done', value: { lines: ['Plum cake', 'Batch B-1'] } });
-    expect(sent[0]).toEqual({ runId: 'run-1', netQuantity: '1', packerDetails: 'SRE', allergens: [], weightGrams: 450 });
+    expect(await port.post({ runId: 'run-1', netQuantity: '1', packerDetails: 'SRE', allergens: [], vegClass: 'veg', weightGrams: 450 })).toEqual({ result: 'done', value: { lines: ['Plum cake', 'Batch B-1'] } });
+    expect(sent[0]).toEqual({ runId: 'run-1', netQuantity: '1', packerDetails: 'SRE', allergens: [], weightGrams: 450, vegClass: 'veg' });
     expect(await port.post({ runId: 'run-1', netQuantity: '1', packerDetails: 'SRE' })).toEqual({ result: 'refused', reason: 'needs an allergen declaration' });
     expect(await openBoxLabelPort(undefined).post({ runId: 'r', netQuantity: '', packerDetails: '' })).toEqual({ result: 'lost_link' });
   });

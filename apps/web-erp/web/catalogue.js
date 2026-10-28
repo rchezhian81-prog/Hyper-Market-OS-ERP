@@ -203,6 +203,17 @@ const PUBLISH_REFUSAL_WORDS = {
     en: 'That barcode already belongs to another item. One barcode rings up one product.',
     ta: 'அந்த பார்கோடு ஏற்கனவே வேறு பொருளுக்கு உரியது. ஒரு பார்கோடு ஒரு பொருளையே காட்ட வேண்டும்.',
   },
+  // B2: a pack carries one printed MRP at a time — two different MRPs from the same date are refused, never saved.
+  two_mrps_on_one_date: {
+    en: 'Refused: this item has two different MRPs starting on the same date. A pack may carry only one MRP at a time. Keep the MRP already on record, or give the new MRP its own later date.',
+    ta: 'மறுக்கப்பட்டது: இந்தப் பொருளுக்கு ஒரே தேதியில் தொடங்கும் இரண்டு வெவ்வேறு MRP-கள் உள்ளன. ஒரு பொட்டலத்தில் ஒரே நேரத்தில் ஒரு MRP மட்டுமே இருக்கலாம். பதிவில் உள்ள MRP-யை வைத்திருங்கள், அல்லது புதிய MRP-க்குப் பிந்தைய தனித் தேதியைக் கொடுங்கள்.',
+  },
+};
+
+/** B2 · B4: the names of the checks added for the statutory pack rules, in both languages (others read as the engine says). */
+const CHECK_LABEL_WORDS = {
+  mrpHistory: { en: 'one MRP per date', ta: 'ஒரு தேதிக்கு ஒரே MRP' },
+  'safety.consumerCareContact': { en: 'a consumer-care contact', ta: 'வாடிக்கையாளர் புகார் தொடர்பு (பெயர், தொலைபேசி அல்லது மின்னஞ்சல்)' },
 };
 
 /** Why a shelf could not be set — one entry per `ShelfRefusal`, in both languages. */
@@ -578,7 +589,7 @@ function scoreParts(score) {
       const item = document.createElement('li');
       const field = document.createElement('span');
       field.className = 'field-name';
-      field.textContent = `${check.label}: `;
+      field.textContent = `${CHECK_LABEL_WORDS[check.field] === undefined ? check.label : words(CHECK_LABEL_WORDS, check.field)}: `;
       item.append(field, document.createTextNode(check.missing ?? ''));
       list.append(item);
     }

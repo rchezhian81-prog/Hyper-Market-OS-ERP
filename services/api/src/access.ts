@@ -18,7 +18,8 @@ import { dutiesSetRefusal } from '../../identity/src/separation-of-duties';
 import { ownerAndCommitteeRefusal } from '../../identity/src/committee-membership';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import { STREAM, effectiveGrants } from './adapters';
+import { STREAM, effectiveGrants, streamName } from './adapters';
+import { emergencyAccessActive, type EmergencyGrant } from '../../../packages/identity/src/index';
 import { ROLE_CATALOGUE } from './roles';
 
 /**
@@ -33,12 +34,37 @@ import { ROLE_CATALOGUE } from './roles';
 export function tenantAccessResolver(
   store: EventStore,
   roleCatalogue: readonly Role[],
+  now: () => string = () => new Date().toISOString(),
 ): (tenantId: string) => Promise<AccessControl> {
   return async (tenantId) => {
     // Grants MINUS revocations (Wave 2b · PA-02): a leaver's or a mover's old authority is gone on the next request.
     const grants = await effectiveGrants(store, tenantId);
-    return new AccessControl(roleCatalogue, grants);
+    // M02-FR-04 · SEC-03 · SEC-11 (round 6): an emergency grant the owner approved is REAL access — its role, inside its
+    // own branch scope — for exactly as long as it is live. Read on every request against the clock, so it stops the
+    // moment it expires or is revoked; never written into the role ledger, so it can never quietly become permanent.
+    return new AccessControl(roleCatalogue, [...grants, ...await liveEmergencyAssignments(store, tenantId, now())]);
   };
+}
+
+/** The `identity` ledger stream the emergency-access routes record on (the same name `emergencyAccessAdapter` writes). */
+const EMERGENCY_ACCESS_STREAM = (): string => streamName(STREAM.identity, 'emergency-access');
+
+/**
+ * Every emergency grant still LIVE at `at` (M02-FR-04): folded latest-per-grantId (a revocation re-records the grant
+ * with `revokedAt`, superseding it), then kept only while `emergencyAccessActive` (not revoked, not yet expired). Each becomes an ordinary
+ * role assignment with the grant's own branch scope — never wider.
+ */
+export async function liveEmergencyAssignments(store: EventStore, tenantId: string, at: string): Promise<readonly RoleAssignment[]> {
+  const recorded = await store.readStream(tenantId, EMERGENCY_ACCESS_STREAM(), { type: 'EmergencyAccessRecorded' });
+  const latest = new Map<string, EmergencyGrant>();
+  for (const e of recorded) {
+    const g = e.event.payload as unknown as EmergencyGrant;
+    latest.set(g.grantId, g);
+  }
+  // The tested engine's own rule (@sre/identity) — the same one the owner's review marks "active" with.
+  return [...latest.values()]
+    .filter((g) => emergencyAccessActive(g, at))
+    .map((g) => ({ userId: g.userId, roleId: g.roleId, branchScope: g.branchScope }));
 }
 
 /**

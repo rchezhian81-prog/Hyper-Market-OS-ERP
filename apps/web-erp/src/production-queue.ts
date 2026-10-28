@@ -164,7 +164,7 @@ export function openBoxLabelPort(fetchFn: typeof fetch | undefined, door: string
       try {
         const res = await fetchFn(door, {
           method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', accept: 'application/json' },
-          body: JSON.stringify({ runId: input.runId, netQuantity: input.netQuantity, packerDetails: input.packerDetails, ...(input.weightGrams === undefined ? {} : { weightGrams: input.weightGrams }), ...(input.allergens === undefined ? {} : { allergens: input.allergens }) }),
+          body: JSON.stringify({ runId: input.runId, netQuantity: input.netQuantity, packerDetails: input.packerDetails, ...(input.weightGrams === undefined ? {} : { weightGrams: input.weightGrams }), ...(input.allergens === undefined ? {} : { allergens: input.allergens }), ...(input.vegClass === undefined ? {} : { vegClass: input.vegClass }) }),
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; lines?: unknown; detail?: unknown };
         if (res.status === 200 && body.ok === true) return { result: 'done', value: { lines: Array.isArray(body.lines) ? body.lines.filter((l): l is string => typeof l === 'string') : [] } };

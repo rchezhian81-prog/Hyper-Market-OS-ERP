@@ -168,8 +168,8 @@ function paintTasks() {
   labeller.hidden = !v.canLabel;
   if (!v.canLabel && !v.nobodyNamed) { el('no-label').hidden = false; el('no-label').textContent = tt('noLabel'); }
   el('label-heading').textContent = tt('labelHeading');
-  for (const [id, key] of [['label-run-label', 'labelRunLabel'], ['label-name-label', 'labelNameLabel'], ['label-net-label', 'labelNetLabel'], ['label-packer-label', 'labelPackerLabel'], ['label-price-label', 'labelPriceLabel'], ['label-allergens-label', 'labelAllergensLabel']]) el(id).textContent = tt(key);
-  el('label-allergens').placeholder = tt('labelAllergensHint');
+  for (const [id, key] of [['label-run-label', 'labelRunLabel'], ['label-name-label', 'labelNameLabel'], ['label-net-label', 'labelNetLabel'], ['label-packer-label', 'labelPackerLabel'], ['label-price-label', 'labelPriceLabel'], ['label-allergens-label', 'labelAllergensLabel'], ['label-allergens-hint', 'labelAllergensHint'], ['label-allergen-none-word', 'labelAllergenNone'], ['label-veg-legend', 'labelVegLabel'], ['label-veg-veg-word', 'labelVeg'], ['label-veg-non-word', 'labelNonVeg']]) el(id).textContent = tt(key);
+  for (const w of document.querySelectorAll('#label-allergens .ag-word')) w.textContent = tt(w.dataset.key);
   el('label').textContent = tt('labelBtn');
   // OB-288 lane 2: on the store computer the box prints the label — the name and price are its catalogue's (not typed), a
   // weighed pack gives its weight, and a run saved on this screen may be labelled before head office has it.
@@ -245,11 +245,26 @@ el('weigh').addEventListener('click', () => {
   void syncSaved();
 });
 
+// B9: the ticks become the declaration — the groups ticked, "none" when only "None of these" is ticked, blank when nothing
+// is ticked (which is NOT a declaration: head office refuses it by name). Ticking a group clears "none", and the other way.
+function allergenTicks() {
+  if (el('label-allergen-none').checked) return 'none';
+  return [...document.querySelectorAll('#label-allergens input.ag')].filter((c) => c.checked).map((c) => c.value).join(',');
+}
+function vegTick() {
+  const ticked = document.querySelector('input[name="label-veg"]:checked');
+  return ticked === null ? '' : ticked.value;
+}
+el('label-allergen-none').addEventListener('change', () => {
+  if (el('label-allergen-none').checked) for (const c of document.querySelectorAll('#label-allergens input.ag')) c.checked = false;
+});
+for (const c of document.querySelectorAll('#label-allergens input.ag')) c.addEventListener('change', () => { if (c.checked) el('label-allergen-none').checked = false; });
+
 // PRINT THE LABEL — the use-by and batch are the run's own; head office refuses a label missing a required field.
 el('label').addEventListener('click', () => {
   void (async () => {
     if (tasks === null) return;
-    const o = await tasks.printLabel({ runId: el('label-run').value, productName: el('label-name').value, netQuantity: el('label-net').value, packerDetails: el('label-packer').value, price: el('label-price').value, allergens: el('label-allergens').value, weightGrams: el('label-weight').value });
+    const o = await tasks.printLabel({ runId: el('label-run').value, productName: el('label-name').value, netQuantity: el('label-net').value, packerDetails: el('label-packer').value, price: el('label-price').value, allergens: allergenTicks(), vegClass: vegTick(), weightGrams: el('label-weight').value });
     paintResult(tasks.presentLabel(lang, o));
     const out = el('label-out');
     out.hidden = o.outcome !== 'printed';

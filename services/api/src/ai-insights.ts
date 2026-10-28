@@ -5,7 +5,9 @@
 // here appends an event, and every proposal names the human endpoint that would act on it (hard rule #5).
 //
 //   • A01 (read-only): today's takings against the last day traded, how current that figure is (EA-01 source freshness),
-//     and the department doing the most — each an insight with its evidence, proposing no action at all.
+//     and the department doing the most — each an insight with its evidence, proposing no action at all; and, when the
+//     takings are DOWN, the "likely because…" lines (roadmap §7 "causal hypotheses", ai-owner-causes.ts) — each with its
+//     evidence and a confidence, read-only.
 //   • A02 (drafts, a buyer commits): a product that has stocked out at a location while it sold in the last seven days.
 //     No reorder policy is stored at head office, so NO quantity is invented — the buyer decides how many, and raises the
 //     order through the normal two-person purchase-order route.
@@ -17,12 +19,13 @@ import { STREAM, inventoryAdapter, orgStructureAdapter } from './adapters';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import type { ReportProducers } from './report-producers';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { likelyCauses } from './ai-owner-causes';
 
 type Draft = Omit<Proposal, 'committed'>;
 const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** A01 — the owner's insights for today, from the governed reports (read-only; proposes nothing to do). */
-export async function ownerInsights(producers: ReportProducers, tenantId: string, now: string, today: string): Promise<Draft[]> {
+export async function ownerInsights(producers: ReportProducers, tenantId: string, now: string, today: string, ledgers?: { readonly store: EventStore }): Promise<Draft[]> {
   const out: Draft[] = [];
   const day = await producers.produce(tenantId, 'sales_by_day', { scope: 'all' });
   const taken = day.figures.find((f) => f.name === 'Taken');
@@ -67,7 +70,44 @@ export async function ownerInsights(producers: ReportProducers, tenantId: string
       evidence: [{ source: 'report units_by_category', reference: `/v1/reports/units_by_category?day=${today}`, summary: money.map((f) => `${f.name} ${rupees(f.valueMinor!)}`).join('; ') }],
     });
   }
+  // Roadmap §7 "causal hypotheses": when the takings are down, the likely causes the governed records support.
+  if (prior !== undefined && prior > taken.valueMinor) {
+    const deptMoney = (figures: readonly { name: string; valueMinor?: number }[]): Map<string, number> =>
+      new Map(figures.filter((f) => f.name.endsWith(' — taken') && f.valueMinor !== undefined).map((f) => [f.name.replace(' — taken', ''), f.valueMinor!] as const));
+    const deptsBefore = await producers.produce(tenantId, 'units_by_category', { tradingDay: yesterday, scope: 'all' });
+    const sync = await producers.produce(tenantId, 'sync_health', { scope: 'all' });
+    const unsent = sync.figures.find((f) => f.name === 'Records not yet sent')?.valueMinor;
+    const products = ledgers === undefined ? { today: new Map<string, number>(), yesterday: new Map<string, number>(), onHand: new Map<string, number>() } : await productTakings(ledgers.store, tenantId, now, today, yesterday);
+    out.push(...likelyCauses({
+      today, yesterday, now, takenToday: taken.valueMinor, takenYesterday: prior, staleness: taken.staleness, asAt: taken.asAt,
+      departmentsToday: deptMoney(depts.figures), departmentsYesterday: deptMoney(deptsBefore.figures),
+      productsToday: products.today, productsYesterday: products.yesterday, onHand: products.onHand, unsentRecords: unsent,
+    }));
+  }
   return out;
+}
+
+/** What each product took at each location on the two trading days (the sales ledger), and what the stock ledger holds now. */
+async function productTakings(store: EventStore, tenantId: string, now: string, today: string, yesterday: string): Promise<{ today: Map<string, number>; yesterday: Map<string, number>; onHand: Map<string, number> }> {
+  // A bounded read: from two days before the last day (a late-synced bill is still found by its trading day) to now.
+  const from = new Date(Date.parse(`${yesterday}T00:00:00Z`) - 2 * 86_400_000).toISOString();
+  const events = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to: now });
+  const byDay = { [today]: new Map<string, number>(), [yesterday]: new Map<string, number>() } as Record<string, Map<string, number>>;
+  for (const e of events) {
+    const s = e.event.payload as IncomingSale;
+    const into = byDay[s.tradingDay];
+    if (into === undefined || s.locationId === undefined) continue;
+    for (const line of s.lines) {
+      const key = `${line.productId}@${s.locationId}`;
+      into.set(key, (into.get(key) ?? 0) + line.lineTotalMinor);
+    }
+  }
+  const onHand = new Map<string, number>();
+  for (const r of await inventoryAdapter({ store, now: () => now }).availability(tenantId)) {
+    const key = `${r.productId}@${r.locationId}`;
+    onHand.set(key, (onHand.get(key) ?? 0) + r.onHandMinor);
+  }
+  return { today: byDay[today]!, yesterday: byDay[yesterday]!, onHand };
 }
 
 /** A02 — stock-outs with recent demand: a DRAFT for a buyer, never a quantity it cannot justify, never an order. */

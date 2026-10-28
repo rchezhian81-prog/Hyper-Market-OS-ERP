@@ -63,6 +63,8 @@ export interface ExtractProduct {
     readonly storageConditions?: string;
     readonly netQuantity?: string;
     readonly packerDetails?: string;
+    /** B4: who a customer complains to — required for a packed product. */
+    readonly consumerCareContact?: string;
     readonly minimumAge?: number;
   };
   readonly barcodes: readonly { readonly code: string; readonly kind: BarcodeKind }[];

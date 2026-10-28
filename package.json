@@ -34,6 +34,7 @@
     "demo:publish-pack": "node scripts/demo-publish-pack.mjs",
     "build:demo-login": "node scripts/build-service.mjs demo-login",
     "build:sign-in": "node scripts/build-service.mjs sign-in",
+    "build:customer-sign-in": "node scripts/build-service.mjs customer-sign-in",
     "build:keycloak-theme": "node scripts/build-keycloak-theme.mjs",
     "demo-login:add": "node infra/pilot/demo-login/dist/demo-login.mjs add",
     "check:browser": "node scripts/pilot-browser-check.mjs",

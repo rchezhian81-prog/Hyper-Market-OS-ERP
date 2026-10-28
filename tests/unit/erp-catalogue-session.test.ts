@@ -364,7 +364,7 @@ describe('publishing a product', () => {
   });
 
   it('has words defined for every publish refusal it can return', () => {
-    expect(PUBLISH_REFUSAL_KINDS).toHaveLength(3);
+    expect(PUBLISH_REFUSAL_KINDS).toHaveLength(4);
   });
 });
 

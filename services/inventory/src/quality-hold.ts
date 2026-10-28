@@ -42,6 +42,51 @@ export interface QualityHoldDeps {
   readonly now: () => string;
 }
 
+// ── Round 6 · M10-FR-02 "sampling": each quality sample is RECORDED on the hold ─────────────────────────────────────────
+//
+// Before this round a release carried the samples in its own body — the QC's word, judged and then forgotten. Now each
+// sample (what was tested, pass / fail / pending, who took it and when, who recorded it) is its own append-only fact on
+// its own stream, retained beside the hold; a pending sample's result is a NEW version of it (pending → pass or fail),
+// and a final result is never changed — a failed sample stands, and a re-test is a new sample. A release reads the
+// STORED samples of the hold it releases: any failed or still-pending sample refuses it. A release body that sends its own
+// samples is refused — they are recorded on the hold first, never typed into a release.
+
+/** One sample on a hold, as recorded — the latest version of it is its current result; every version is kept. */
+export interface StoredQualitySample extends QualitySample {
+  /** The hold this sample belongs to (its `heldAt`) — a batch held again later starts with no samples. */
+  readonly holdHeldAt: string;
+  readonly version: number;
+  readonly recordedBy: string;
+  readonly recordedAt: string;
+}
+
+export interface QualitySampleDeps {
+  /** Every recorded version of every sample on this batch (oldest first). */
+  readonly sampleVersions: (tenantId: string, batchId: string) => Promise<readonly StoredQualitySample[]> | readonly StoredQualitySample[];
+  /** Append one version of a sample (one fact per sample per version). */
+  readonly recordSample: (tenantId: string, sample: StoredQualitySample) => Promise<void> | void;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}
+
+/** The current version of each sample on the hold now in force (the hold placed at `holdHeldAt`). */
+export function currentSamples(versions: readonly StoredQualitySample[], hold: Pick<QualityHold, 'batchId' | 'heldAt'>): readonly StoredQualitySample[] {
+  const latest = new Map<string, StoredQualitySample>();
+  for (const v of versions) {
+    if (v.batchId !== hold.batchId || v.holdHeldAt !== hold.heldAt) continue;
+    const held = latest.get(v.sampleId);
+    if (held === undefined || v.version > held.version) latest.set(v.sampleId, v);
+  }
+  return [...latest.values()].sort((a, b) => a.takenAt.localeCompare(b.takenAt) || a.sampleId.localeCompare(b.sampleId));
+}
+
+const SAMPLE_RESULTS: readonly QualitySample['result'][] = ['pass', 'fail', 'pending'];
+const sentSamples = (v: unknown): boolean => Array.isArray(v) && v.length > 0;
+const SAMPLES_NOT_IN_A_RELEASE = {
+  code: 'samples_are_recorded_on_the_hold',
+  whatHappened: 'A release no longer carries its own samples: each sample is recorded on the hold first (POST /v1/quality/holds/:batchId/samples/:sampleId), and the release is judged on the samples recorded there.',
+  wasItSaved: 'not_saved' as const,
+};
+
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 // A held batch first (nothing more urgent than stock that must not be sold), then most-recently held.
@@ -66,8 +111,86 @@ const REFUSAL: Readonly<Record<Exclude<ReleaseRefusal, 'released'>, { status: nu
 
 const usable = (s: string | undefined): s is string => typeof s === 'string' && s.trim().length >= 10;
 
-export function qualityHoldRoutes(deps: QualityHoldDeps): readonly Route[] {
+export function qualityHoldRoutes(deps: QualityHoldDeps & QualitySampleDeps): readonly Route[] {
+  const samplesOf = async (tenantId: string, hold: QualityHold): Promise<readonly StoredQualitySample[]> =>
+    currentSamples(await deps.sampleVersions(tenantId, hold.batchId), hold);
   return [
+    {
+      // M10-FR-02: record a quality sample on a held batch — or the result of one that was pending. Body: { test, result,
+      // takenAt?, notes? }. The recorder is the signed-in person; the sample is taken by them unless it was already on
+      // record. Append-only: pending → pass / fail is a new version; a final result never changes (a re-test is a new id).
+      api: 'API-04', method: 'POST', path: '/v1/quality/holds/:batchId/samples/:sampleId',
+      permission: 'quality.hold.manage', idempotent: true,
+      handler: async (ctx) => {
+        const batchId = (ctx.params['batchId'] ?? '').trim();
+        const sampleId = (ctx.params['sampleId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const result = b['result'] as QualitySample['result'];
+        const takenAt = b['takenAt'];
+        if (batchId === '' || sampleId === '' || !SAMPLE_RESULTS.includes(result)
+          || (b['test'] !== undefined && !isStr(b['test'])) || (takenAt !== undefined && !(isStr(takenAt) && !Number.isNaN(Date.parse(takenAt))))
+          || (b['notes'] !== undefined && typeof b['notes'] !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_quality_sample',
+            whatHappened: 'A quality sample needs the batch and sample id in the address and { test, result: pass | fail | pending } in the body (takenAt and notes optional).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send what was tested and its result. Nothing was saved.',
+          });
+        }
+        const hold = await deps.hold(ctx.tenantId, batchId);
+        if (hold === undefined) throw notFound(`quality hold for batch ${batchId}`);
+        if (hold.status === 'released') {
+          throw apiError(409, { code: 'not_held', whatHappened: `Batch ${batchId} has already been released, so no sample can be added to its hold.`, wasItSaved: 'not_saved', nextSafeAction: 'Place a new hold first if the batch must be checked again. Nothing was saved.' });
+        }
+        const current = (await samplesOf(ctx.tenantId, hold)).find((s) => s.sampleId === sampleId);
+        const test = isStr(b['test']) ? (b['test'] as string).trim() : current?.test;
+        if (test === undefined) {
+          throw apiError(400, { code: 'not_readable_as_a_quality_sample', whatHappened: 'A new sample needs what was tested (test).', wasItSaved: 'not_saved', nextSafeAction: 'Send the test name. Nothing was saved.' });
+        }
+        if (current !== undefined) {
+          if (current.result === result && current.test === test) return { status: 200, body: { sample: current, alreadyRecorded: true } };
+          if (current.test !== test) {
+            throw apiError(409, { code: 'sample_is_another_test', whatHappened: `Sample ${sampleId} on batch ${batchId} is the "${current.test}" test, not "${test}".`, wasItSaved: 'not_saved', nextSafeAction: 'Record a different test under its own sample id. Nothing was changed.' });
+          }
+          if (current.result !== 'pending') {
+            throw apiError(409, {
+              code: 'sample_result_final',
+              whatHappened: `Sample ${sampleId} on batch ${batchId} already came back ${current.result.toUpperCase()} (recorded by ${current.recordedBy} at ${current.recordedAt}); a final result is never changed.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Take a new sample and record it under its own id — the first result stays on record. Nothing was changed.',
+            });
+          }
+        }
+        const at = deps.now();
+        const sample: StoredQualitySample = {
+          sampleId, batchId, holdHeldAt: hold.heldAt, test, result,
+          takenBy: current?.takenBy ?? ctx.userId,
+          takenAt: current?.takenAt ?? (isStr(takenAt) ? new Date(Date.parse(takenAt)).toISOString() : at),
+          ...(typeof b['notes'] === 'string' && b['notes'].trim() !== '' ? { notes: b['notes'].trim() } : current?.notes === undefined ? {} : { notes: current.notes }),
+          version: (current?.version ?? 0) + 1, recordedBy: ctx.userId, recordedAt: at,
+        };
+        await deps.recordSample(ctx.tenantId, sample);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'quality.sample.record', objectType: 'quality_sample', objectId: `${batchId}/${sampleId}`, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: current === undefined ? null : { result: current.result, version: String(current.version) },
+          after: { test, result, version: String(sample.version) }, correlationId: `quality-hold:${batchId}`,
+        });
+        return { status: current === undefined ? 201 : 200, body: { sample } };
+      },
+    },
+    {
+      // The samples recorded on a batch's current hold (each one's current result), and every version ever recorded.
+      api: 'API-04', method: 'GET', path: '/v1/quality/holds/:batchId/samples',
+      permission: 'quality.hold.manage',
+      handler: async (ctx) => {
+        const batchId = (ctx.params['batchId'] ?? '').trim();
+        const hold = await deps.hold(ctx.tenantId, batchId);
+        if (hold === undefined) throw notFound(`quality hold for batch ${batchId}`);
+        const versions = (await deps.sampleVersions(ctx.tenantId, batchId)).filter((v) => v.holdHeldAt === hold.heldAt);
+        return { status: 200, body: { batchId, samples: currentSamples(versions, hold), history: versions } };
+      },
+    },
     {
       // Place a quality hold on a batch. Body: { productId, reason }. The holder is the authenticated caller.
       // Idempotent: a batch already held is one effect (the hold is already in force).
@@ -114,7 +237,9 @@ export function qualityHoldRoutes(deps: QualityHoldDeps): readonly Route[] {
         const hold = await deps.hold(ctx.tenantId, batchId);
         if (hold === undefined) throw notFound(`quality hold for batch ${batchId}`);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const samples = Array.isArray(b['samples']) ? (b['samples'] as QualitySample[]) : [];
+        if (sentSamples(b['samples'])) throw apiError(400, { ...SAMPLES_NOT_IN_A_RELEASE, nextSafeAction: 'Record each sample on the hold, then release with no samples in the body. Nothing was released.' });
+        // M10-FR-02: the release is judged on the samples RECORDED on this hold — never on a list the releaser sends.
+        const samples = await samplesOf(ctx.tenantId, hold);
         const coldChain = (b['coldChain'] ?? undefined) as ColdChainAssessment | undefined;
         const expiresOn = isStr(b['expiresOn']) ? (b['expiresOn'] as string) : undefined;
 
@@ -132,7 +257,7 @@ export function qualityHoldRoutes(deps: QualityHoldDeps): readonly Route[] {
           });
         }
         await deps.recordReleased(ctx.tenantId, result.hold, ctx.idempotencyKey ?? `${batchId}:release`);
-        return { status: 200, body: { release: result } };
+        return { status: 200, body: { release: result, samples } };
       },
     },
     {
@@ -155,7 +280,7 @@ export function qualityHoldRoutes(deps: QualityHoldDeps): readonly Route[] {
         const batchId = (ctx.params['batchId'] ?? '').trim();
         const hold = await deps.hold(ctx.tenantId, batchId);
         if (hold === undefined) throw notFound(`quality hold for batch ${batchId}`);
-        return { status: 200, body: { hold } };
+        return { status: 200, body: { hold, samples: await samplesOf(ctx.tenantId, hold) } };
       },
     },
   ];
@@ -172,7 +297,7 @@ export function qualityHoldRoutes(deps: QualityHoldDeps): readonly Route[] {
 // exception (hard rules #6, #10). The box can NEVER place a hold: there is no synced hold route, and the store computer
 // holds neither `quality.hold.manage` nor `quality.hold.release`. A re-sent release by the same person is ONE release.
 
-export interface SyncedQualityHoldDeps extends QualityHoldDeps {
+export interface SyncedQualityHoldDeps extends QualityHoldDeps, QualitySampleDeps {
   /** The permissions a person holds now, from their own grants — undefined for someone head office does not know. */
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -201,6 +326,8 @@ export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly R
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
           });
         }
+        // M10-FR-02: a relayed release never carries its own samples — they are recorded on the hold at head office.
+        if (sentSamples(b['samples'])) throw apiError(422, { ...SAMPLES_NOT_IN_A_RELEASE, nextSafeAction: 'Kept at the store for a person to look at. Nothing was released.' });
         const releasedBy = (b['releasedBy'] as string).trim();
         const at = new Date(Date.parse(b['at'] as string)).toISOString();
         const hold = await deps.hold(ctx.tenantId, batchId);
@@ -234,7 +361,7 @@ export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly R
         }
         const result: QualityReleaseResult = releaseFromQualityHold({
           hold,
-          samples: Array.isArray(b['samples']) ? (b['samples'] as QualitySample[]) : [],
+          samples: currentSamples(await deps.sampleVersions(ctx.tenantId, batchId), hold),
           coldChain: (b['coldChain'] ?? undefined) as ColdChainAssessment | undefined,
           expiresOn: isStr(b['expiresOn']) ? (b['expiresOn'] as string) : undefined,
           releasedBy, at,
@@ -261,8 +388,13 @@ export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly R
       api: 'API-04', method: 'GET', path: '/v1/quality/holds-for-release',
       permission: 'quality.hold.release.sync',
       handler: async (ctx) => {
-        const held = [...(await deps.holds(ctx.tenantId))].filter((h) => h.status !== 'released').sort(byUrgency)
-          .map((h) => ({ batchId: h.batchId, productId: h.productId, reason: h.reason, heldAt: h.heldAt, heldBy: h.heldBy }));
+        const open = [...(await deps.holds(ctx.tenantId))].filter((h) => h.status !== 'released').sort(byUrgency);
+        // M10-FR-02: each held batch carries its recorded samples, so the screen that releases it shows what was found.
+        const held = await Promise.all(open.map(async (h) => ({
+          batchId: h.batchId, productId: h.productId, reason: h.reason, heldAt: h.heldAt, heldBy: h.heldBy,
+          samples: currentSamples(await deps.sampleVersions(ctx.tenantId, h.batchId), h)
+            .map((s) => ({ sampleId: s.sampleId, test: s.test, result: s.result, takenBy: s.takenBy, takenAt: s.takenAt, recordedBy: s.recordedBy, recordedAt: s.recordedAt })),
+        })));
         return { status: 200, body: { holds: held, count: held.length, asAt: deps.now() } };
       },
     },

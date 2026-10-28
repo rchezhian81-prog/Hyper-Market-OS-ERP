@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createB2BDeskSession, contractBodyOf, quoteLinesOf, pricesOf, paiseOfRupees, B2B_DESK_COPY, b2bDeskOutcomeWords } from '../../apps/web-erp/src/b2b-desk-session';
+import { createB2BDeskSession, contractBodyOf, quoteLinesOf, pricesOf, paiseOfRupees, recurringBodyOf, B2B_DESK_COPY, b2bDeskOutcomeWords } from '../../apps/web-erp/src/b2b-desk-session';
 import { createSupplierSubmissionsSession, documentLine, SUPPLIER_SUBMISSIONS_COPY } from '../../apps/web-erp/src/supplier-submissions-session';
 import { createConcessionSession, concessionContractOf, CONCESSION_COPY, concessionOutcomeWords } from '../../apps/web-erp/src/concession-session';
 import { actionDetails } from '../../services/identity/src/approval-requests';
@@ -66,6 +66,38 @@ describe('Business customers (M22)', () => {
     expect(pricesOf('rice=10\nbad line')).toBeUndefined();
     expect(contractBodyOf({ customerId: 'C', contractId: '', validFrom: '2026-12-01', validTo: '2026-11-01', onExpiry: 'block', prices: 'a=1', limitRupees: '', termsDays: '', note: '' })).toBe('needDates');
     expect(quoteLinesOf([{ productId: 'a', description: 'A', qty: '2', taxPercent: '' }])).toBeUndefined();
+  });
+  it('M22-FR-03: sets up a recurring order from a quotation, approves, pauses with a reason and retries a day — exact paths and bodies', async () => {
+    const { asked, fetch } = recorder({ schedules: [{ scheduleId: 'REC-a', customerId: 'SCHOOL', runs: [] }, { scheduleId: 'REC-b', customerId: 'OTHER', runs: [] }] });
+    const s = createB2BDeskSession({ viewer: { ...DESK, permissions: [...DESK.permissions, 'b2b.recurring.approve'] }, fetch, makeId });
+    expect(s.may.approveRecurring).toBe(true);
+    expect(createB2BDeskSession({ viewer: DESK, fetch }).may.approveRecurring).toBe(false);
+    await s.proposeRecurring({ customerId: ' SCHOOL ', quotationId: 'Q-1', cadence: 'weekly', dayOf: '1', startsOn: '2026-11-02', salespersonId: '' });
+    expect(asked[0]).toMatchObject({ method: 'POST', path: expect.stringMatching(/^\/v1\/b2b\/recurring\/REC-\d+$/), body: { customerId: 'SCHOOL', fromQuotationId: 'Q-1', cadence: 'weekly', dayOf: 1, startsOn: '2026-11-02' } });
+    expect(asked[0]!.body).not.toHaveProperty('salespersonId');
+    await s.approveRecurring('REC-a');
+    expect(asked[1]).toMatchObject({ method: 'POST', path: '/v1/b2b/recurring/REC-a/approve' });
+    await s.pauseRecurring('REC-a', ' school closed ');
+    expect(asked[2]).toMatchObject({ method: 'POST', path: '/v1/b2b/recurring/REC-a/pause', body: { reason: 'school closed' } });
+    await s.runRecurringDay('2026-11-02');
+    expect(asked[3]).toMatchObject({ method: 'POST', path: '/v1/b2b/recurring-runs', body: { on: '2026-11-02' } });
+    const mine = await s.readRecurring('SCHOOL');
+    expect(asked[4]).toMatchObject({ method: 'GET', path: '/v1/b2b/recurring' });
+    expect(mine.result === 'ok' ? mine.value.map((r) => r.scheduleId) : mine).toEqual(['REC-a']); // only this customer's
+  });
+  it('M22-FR-03: refuses a recurring order before any request — no quotation, a bad day or date, a pause with no reason, nobody', async () => {
+    const { asked, fetch } = recorder();
+    const s = createB2BDeskSession({ viewer: DESK, fetch, makeId });
+    const base = { customerId: 'C', quotationId: 'Q', cadence: 'weekly', dayOf: '1', startsOn: '2026-11-02', salespersonId: '' };
+    expect(await s.proposeRecurring({ ...base, quotationId: '' })).toEqual({ result: 'invalid', why: 'needQuotation' });
+    expect(await s.proposeRecurring({ ...base, dayOf: '8' })).toEqual({ result: 'invalid', why: 'needSchedule' });
+    expect(recurringBodyOf({ ...base, cadence: 'monthly', dayOf: '29' })).toBe('needSchedule');
+    expect(recurringBodyOf({ ...base, cadence: 'monthly', dayOf: '28' })).toMatchObject({ cadence: 'monthly', dayOf: 28 });
+    expect(await s.proposeRecurring({ ...base, startsOn: '2/11/2026' })).toEqual({ result: 'invalid', why: 'needSchedule' });
+    expect(await s.pauseRecurring('REC-a', '  ')).toEqual({ result: 'invalid', why: 'needReason' });
+    expect(await s.readRecurring(' ')).toEqual({ result: 'invalid', why: 'needCustomer' });
+    expect(await createB2BDeskSession({ viewer: undefined, fetch }).approveRecurring('REC-a')).toEqual({ result: 'invalid', why: 'nobody' });
+    expect(asked).toEqual([]);
   });
   it('says a switched-off feature in plain words, and every English word has a Tamil twin', () => {
     expect(b2bDeskOutcomeWords('en', { result: 'refused', status: 403, code: 'feature_not_entitled', whatHappened: 'x' })).toBe(B2B_DESK_COPY.en.offFeature);

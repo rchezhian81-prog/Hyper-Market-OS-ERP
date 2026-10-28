@@ -12,7 +12,7 @@ import { validateBundle } from '../../packages/migration/src/load';
  */
 
 const DEPT: SliceDepartment = { categoryId: 'staples', name: 'Staples', regulated: ['food', 'packed'] };
-const FOOD = 'none,India,1 kg,Synthetic Packers Pvt Ltd Chennai';
+const FOOD = 'none,India,1 kg,Synthetic Packers Pvt Ltd Chennai,Care desk 1800-000-0000';
 const tax = ['hsn_code,effective_from,rate_percent', '1006,2017-07-01,5', '0713,2017-07-01,0'].join('\n');
 const products = [
   SLICE_TEMPLATES['products.csv'].columns.join(','),
@@ -20,7 +20,7 @@ const products = [
   `R-002,,Synthetic dal 1kg,each,staples,0713,,active,${FOOD},,,`,
   `R-003,,Synthetic oil 1L,each,oils,1006,,active,${FOOD},,,`,             // outside the department
   `R-004,,Synthetic salt 1kg,each,staples,2501,,active,${FOOD},,,`,        // no tax class
-  `R-005,,Synthetic sugar 1kg,each,staples,1006,,active,,India,1 kg,Synthetic Packers,,,`, // food with no allergen declaration
+  `R-005,,Synthetic sugar 1kg,each,staples,1006,,active,,India,1 kg,Synthetic Packers,Care desk 1800-000-0000,,,`, // food with no allergen declaration
   `R-001,,Duplicate rice,each,staples,1006,,active,${FOOD},,,`,            // duplicate item code
   `R-006,,"Synthetic "atta, 1kg",each,staples,1006,,active,${FOOD},,,`,     // a broken line
   `R-007,,Synthetic poha 500g,each,staples,1006,,active,${FOOD},,,`,       // will have no price

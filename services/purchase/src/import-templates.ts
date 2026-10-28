@@ -282,6 +282,8 @@ export const PRODUCT_SPEC: TemplateSpec = Object.freeze({
     { name: 'countryOfOrigin', type: 'text' },
     { name: 'netQuantity', type: 'text' },
     { name: 'packerDetails', type: 'text' },
+    // B4: who a customer complains to (a name with a phone or email) — a packed product cannot be published without it.
+    { name: 'consumerCareContact', type: 'text' },
     { name: 'minimumAge', type: 'integer' },
   ],
   keyColumns: ['productId'],
@@ -308,6 +310,7 @@ export function productOfRow(row: Readonly<Record<string, string>>, tenantId: st
     ...(opt(row['countryOfOrigin']) === undefined ? {} : { countryOfOrigin: opt(row['countryOfOrigin'])! }),
     ...(opt(row['netQuantity']) === undefined ? {} : { netQuantity: opt(row['netQuantity'])! }),
     ...(opt(row['packerDetails']) === undefined ? {} : { packerDetails: opt(row['packerDetails'])! }),
+    ...(opt(row['consumerCareContact']) === undefined ? {} : { consumerCareContact: opt(row['consumerCareContact'])! }),
     ...(opt(row['minimumAge']) === undefined ? {} : { minimumAge: Number(row['minimumAge']) }),
   };
   return {
@@ -393,6 +396,8 @@ export const PRODUCT_UPDATE_SPEC: TemplateSpec = Object.freeze({
     { name: 'countryOfOrigin', type: 'text' },
     { name: 'netQuantity', type: 'text' },
     { name: 'packerDetails', type: 'text' },
+    // B4: who a customer complains to (a name with a phone or email) — a packed product cannot be published without it.
+    { name: 'consumerCareContact', type: 'text' },
     { name: 'minimumAge', type: 'integer' },
   ],
   keyColumns: ['productId'],
@@ -417,7 +422,7 @@ export function updatedProduct(current: ProductRecord, row: Readonly<Record<stri
   const safety: Record<string, unknown> = { ...(current.safety ?? {}) };
   const allergens = opt(row['allergens']);
   if (allergens !== undefined) safety['allergens'] = allergens.toLowerCase() === 'none' ? [] : allergens.split('|').map((a) => a.trim()).filter((a) => a !== '');
-  for (const k of ['countryOfOrigin', 'netQuantity', 'packerDetails'] as const) { const v = opt(row[k]); if (v !== undefined) safety[k] = v; }
+  for (const k of ['countryOfOrigin', 'netQuantity', 'packerDetails', 'consumerCareContact'] as const) { const v = opt(row[k]); if (v !== undefined) safety[k] = v; }
   const age = opt(row['minimumAge']);
   if (age !== undefined) safety['minimumAge'] = Number(age);
   return {
@@ -434,7 +439,7 @@ export function updatedProduct(current: ProductRecord, row: Readonly<Record<stri
 function changesBetween(a: ProductRecord, b: ProductRecord): { field: string; from: string; to: string }[] {
   const out: { field: string; from: string; to: string }[] = [];
   for (const f of ['name', 'brand', 'primaryCategoryId', 'taxClass'] as const) if (shown(a[f]) !== shown(b[f])) out.push({ field: f, from: shown(a[f]), to: shown(b[f]) });
-  for (const f of ['allergens', 'countryOfOrigin', 'netQuantity', 'packerDetails', 'minimumAge'] as const) {
+  for (const f of ['allergens', 'countryOfOrigin', 'netQuantity', 'packerDetails', 'consumerCareContact', 'minimumAge'] as const) {
     const from = shown((a.safety as Record<string, unknown> | undefined)?.[f]);
     const to = shown((b.safety as Record<string, unknown> | undefined)?.[f]);
     if (from !== to) out.push({ field: f, from, to });

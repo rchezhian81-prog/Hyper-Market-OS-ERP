@@ -18,7 +18,7 @@ import type { ScreenInput } from './screen-data';
 import type { HeldWorkFeed } from './work-feeds-file';
 import type { FeedRecipe, FeedRun } from '../../sync-agent/src/store-work-feeds';
 import { workFeedAgeMinutes } from '../../sync-agent/src/store-work-feeds';
-import { buildPackLabel, renderLabel, IncompleteLabelError, type PackLabel } from '../../../packages/production/src/packing';
+import { buildPackLabel, renderLabel, IncompleteLabelError, LabelTooSmallError, readLabelTemplate, labelPrintFacts, type PackLabel, type LabelTemplate } from '../../../packages/production/src/packing';
 import { requireDepartment, DepartmentNotOperatedError, UnknownDepartmentError } from '../../../packages/production/src/departments';
 import { buildScaleBarcode, ScaleLabelError } from '../../../packages/production/src/scale-label';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
@@ -130,12 +130,16 @@ export interface CounterLabelRequest {
   readonly weightGrams?: number;
   readonly netQuantity?: string;
   readonly packerDetails?: string;
-  /** The allergen declaration: the groups present, or [] for "none" (silence is not a declaration). */
+  /** The allergen declaration: the groups present (the eight FSSAI groups, B9), or [] for "none" (silence is not a declaration). */
   readonly allergens?: readonly string[];
+  /** B9: the veg / non-veg mark. */
+  readonly vegClass?: 'veg' | 'non_veg';
+  /** B24: the counter printer's own label stock, when it is not the standard counter label. */
+  readonly template?: LabelTemplate;
 }
 
 export type CounterLabel =
-  | { readonly ok: true; readonly runId: string; readonly batchId: string; readonly useBy: string; readonly productName: string; readonly priceMinor: number; readonly barcode?: string; readonly lines: readonly string[]; readonly from: 'head_office_board' | 'captured_here'; readonly asAt: string | null }
+  | ({ readonly ok: true; readonly runId: string; readonly batchId: string; readonly useBy: string; readonly productName: string; readonly priceMinor: number; readonly barcode?: string; readonly lines: readonly string[]; readonly from: 'head_office_board' | 'captured_here'; readonly asAt: string | null } & ReturnType<typeof labelPrintFacts>)
   | { readonly ok: false; readonly refusedBecause: string; readonly detail: string };
 
 /** Read the counter's request strictly; anything else is not a label request. */
@@ -144,12 +148,17 @@ export function readCounterLabelRequest(v: unknown): CounterLabelRequest | undef
   if (v['weightGrams'] !== undefined && (!Number.isSafeInteger(v['weightGrams']) || (v['weightGrams'] as number) <= 0)) return undefined;
   for (const k of ['netQuantity', 'packerDetails'] as const) if (v[k] !== undefined && typeof v[k] !== 'string') return undefined;
   if (v['allergens'] !== undefined && !(Array.isArray(v['allergens']) && (v['allergens'] as unknown[]).every((a) => typeof a === 'string'))) return undefined;
+  if (v['vegClass'] !== undefined && v['vegClass'] !== 'veg' && v['vegClass'] !== 'non_veg') return undefined;
+  const template = v['template'] === undefined ? undefined : readLabelTemplate(v['template']);
+  if (v['template'] !== undefined && template === undefined) return undefined;
   return {
     runId: (v['runId'] as string).trim(),
     ...(v['weightGrams'] === undefined ? {} : { weightGrams: v['weightGrams'] as number }),
     ...(typeof v['netQuantity'] === 'string' ? { netQuantity: v['netQuantity'] } : {}),
     ...(typeof v['packerDetails'] === 'string' ? { packerDetails: v['packerDetails'] } : {}),
     ...(Array.isArray(v['allergens']) ? { allergens: v['allergens'] as string[] } : {}),
+    ...(v['vegClass'] === undefined ? {} : { vegClass: v['vegClass'] as 'veg' | 'non_veg' }),
+    ...(template === undefined ? {} : { template }),
   };
 }
 
@@ -217,18 +226,22 @@ export function counterLabelFor(input: ScreenInput, req: CounterLabelRequest): C
     ...(req.weightGrams === undefined ? {} : { weightMinor: req.weightGrams }),
     ...(barcode === undefined ? {} : { barcode }),
     ...(req.allergens === undefined ? {} : { allergens: req.allergens }),
+    ...(req.vegClass === undefined ? {} : { vegClass: req.vegClass }),
+    ...(req.template === undefined ? {} : { template: req.template }),
     producedAt: run.at,
   };
+  let prepared: ReturnType<typeof buildPackLabel>;
   try {
-    buildPackLabel(label, department);
+    prepared = buildPackLabel(label, department);
   } catch (e) {
     if (e instanceof IncompleteLabelError) return refuse('incomplete_label', `${e.message}. Nothing was printed.`);
+    if (e instanceof LabelTooSmallError) return refuse('label_print_too_small', `${e.message}. Nothing was printed.`);
     throw e;
   }
   if (Date.parse(run.expiresAt) <= Date.parse(input.now)) return refuse('already_expired', `Batch ${run.outputBatchId} was good until ${run.expiresAt}; a label is never printed for food past its use-by. Nothing was printed.`);
   return {
     ok: true, runId: req.runId, batchId: run.outputBatchId, useBy: run.expiresAt, productName: product.name, priceMinor,
-    ...(barcode === undefined ? {} : { barcode }), lines: renderLabel(label),
+    ...(barcode === undefined ? {} : { barcode }), lines: renderLabel(prepared), ...labelPrintFacts(prepared),
     from: onBoard !== undefined ? 'head_office_board' : 'captured_here', asAt: held?.feed.asAt ?? null,
   };
 }

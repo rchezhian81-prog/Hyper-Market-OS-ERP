@@ -244,11 +244,16 @@ describe.skipIf(!HAVE_BROWSER)('the QC operator releases a batch for sale, end t
       await page.fill('#label-net', '400 g');
       await page.fill('#label-packer', 'SRE Hyper Market, TN');
       await page.fill('#label-price', '45.50');
-      await page.fill('#label-allergens', 'wheat, milk');
+      // B9: the eight allergen groups and the veg mark are ticks, never free text.
+      await page.check('#label-allergens input.ag[value="cereals_gluten"]');
+      await page.check('#label-allergens input.ag[value="milk"]');
+      await page.check('#label-veg-veg');
+      expect(await page.textContent('#label-veg-legend')).toBe('Veg or non-veg mark');
+      expect(await page.locator('#label-allergens input.ag').count()).toBe(8);
       await page.click('#label');
       await page.waitForSelector('#label-out:not([hidden])', { timeout: 10_000 });
       const sent = rec.requests.find((r) => r.method === 'POST' && r.path === '/v1/production/runs/run-loaf/label')!;
-      expect(sent.body).toEqual({ productName: 'Brown loaf', netQuantity: '400 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 4_550, allergens: ['wheat', 'milk'] });
+      expect(sent.body).toEqual({ productName: 'Brown loaf', netQuantity: '400 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 4_550, allergens: ['cereals_gluten', 'milk'], vegClass: 'veg' });
       const printed = (await page.textContent('#label-out')) ?? '';
       expect(printed).toContain('Brown loaf');
       expect(printed).toContain('B-run-loaf');
@@ -258,6 +263,10 @@ describe.skipIf(!HAVE_BROWSER)('the QC operator releases a batch for sale, end t
       await page.click('#label');
       await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('result-text')?.textContent ?? '').includes('allergen declaration'), undefined, { timeout: 10_000 });
       expect(await page.isHidden('#label-out')).toBe(true);
+      // B9: the mark and the eight groups are named in Tamil too.
+      await page.click('#lang');
+      await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('label-veg-legend')?.textContent ?? '') === 'சைவம் / அசைவம் குறி', undefined, { timeout: 10_000 });
+      expect(await page.textContent('#label-allergen-none-word')).toBe('இந்த 8-இல் எதுவும் இல்லை');
     } finally {
       await teardown();
     }

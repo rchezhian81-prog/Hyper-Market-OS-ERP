@@ -26,7 +26,7 @@ export interface RunCommitPort {
  *  renders it instead, from the catalogue it holds — then no name or price is sent (they are the catalogue's), and a
  *  weighed pack sends its weight. */
 export interface LabelPort {
-  post(input: { readonly runId: string; readonly productName?: string; readonly netQuantity: string; readonly packerDetails: string; readonly priceMinor?: number; readonly allergens?: readonly string[]; readonly weightGrams?: number }): Promise<TaskPostResult<{ readonly lines: readonly string[] }>>;
+  post(input: { readonly runId: string; readonly productName?: string; readonly netQuantity: string; readonly packerDetails: string; readonly priceMinor?: number; readonly allergens?: readonly string[]; readonly vegClass?: 'veg' | 'non_veg'; readonly weightGrams?: number }): Promise<TaskPostResult<{ readonly lines: readonly string[] }>>;
 }
 
 /** OB-288 lane 2: the weigh-in / weigh-out the store computer carries (production-queue.ts). */
@@ -67,6 +67,8 @@ export type CopyKey =
   | 'runHeading' | 'runRecipeLabel' | 'runBatchesLabel' | 'runOutputLabel' | 'runBatchIdLabel' | 'runLocationLabel' | 'runBtn' | 'runHint'
   | 'runRecorded' | 'runRefused' | 'runLostLink' | 'runNotPermitted' | 'runNobody' | 'runMissing' | 'runBadNumber' | 'runNoLink'
   | 'labelHeading' | 'labelRunLabel' | 'labelNameLabel' | 'labelNetLabel' | 'labelPackerLabel' | 'labelPriceLabel' | 'labelAllergensLabel' | 'labelAllergensHint' | 'labelBtn'
+  | 'labelAllergenNone' | 'labelVegLabel' | 'labelVeg' | 'labelNonVeg'
+  | 'agCerealsGluten' | 'agCrustaceans' | 'agEggs' | 'agFish' | 'agPeanutsTreeNuts' | 'agMilk' | 'agSoybeans' | 'agSulphites'
   | 'labelPrinted' | 'labelRefused' | 'labelLostLink' | 'labelNotPermitted' | 'labelNobody' | 'labelNoRun' | 'labelMissingName' | 'labelBadPrice' | 'labelNoLink' | 'labelNoRuns'
   | 'noRun' | 'noLabel'
   | 'runSaved' | 'labelFromBoxHint' | 'labelWeightLabel' | 'labelBadWeight'
@@ -83,7 +85,9 @@ export const PRODUCTION_TASKS_COPY: BilingualCopy<CopyKey> = {
     runMissing: 'Fill in the recipe, the batch id and where it was made.', runBadNumber: 'Batches and what came out are whole numbers above zero.',
     runNoLink: 'This page cannot reach head office, so nothing can be recorded from it.',
     labelHeading: 'Print the label', labelRunLabel: 'Which batch', labelNameLabel: 'Name on the label', labelNetLabel: 'Net quantity', labelPackerLabel: 'Packed by',
-    labelPriceLabel: 'Price (₹)', labelAllergensLabel: 'Allergens', labelAllergensHint: 'comma separated, e.g. wheat, milk — or "none"', labelBtn: 'Print the label',
+    labelPriceLabel: 'Price (₹)', labelAllergensLabel: 'Allergens it contains (tick each one)', labelAllergensHint: 'Tick every group this food contains, or tick "None of these". Leaving all blank is not a declaration — the label will not print.', labelBtn: 'Print the label',
+    labelAllergenNone: 'None of these 8', labelVegLabel: 'Veg or non-veg mark', labelVeg: 'Veg (green dot)', labelNonVeg: 'Non-veg (brown triangle)',
+    agCerealsGluten: 'Cereals with gluten (wheat, barley, oats)', agCrustaceans: 'Crustaceans (prawn, crab)', agEggs: 'Eggs', agFish: 'Fish', agPeanutsTreeNuts: 'Peanuts and tree nuts', agMilk: 'Milk', agSoybeans: 'Soybeans', agSulphites: 'Sulphites',
     labelPrinted: 'Label ready — the batch and use-by are the run\'s own.', labelRefused: 'Head office refused the label:', labelLostLink: 'No connection — no label was made. Try again.',
     labelNotPermitted: 'You do not have permission to print production labels.', labelNobody: 'This store computer has not been told who is using this screen.',
     labelNoRun: 'That batch is not on the board.', labelMissingName: 'A label needs the name to print.', labelBadPrice: 'The price is rupees and paise, e.g. 120 or 120.50.',
@@ -109,7 +113,9 @@ export const PRODUCTION_TASKS_COPY: BilingualCopy<CopyKey> = {
     runMissing: 'செய்முறை, தொகுதி எண், செய்த இடம் ஆகியவற்றை நிரப்புங்கள்.', runBadNumber: 'தொகுதிகளும் வந்ததும் பூஜ்ஜியத்திற்கு மேல் முழு எண்கள்.',
     runNoLink: 'இந்தப் பக்கம் தலைமை அலுவலகத்தை அடைய முடியாது, அதனால் இங்கிருந்து பதிவு செய்ய முடியாது.',
     labelHeading: 'லேபிளை அச்சிடு', labelRunLabel: 'எந்தத் தொகுதி', labelNameLabel: 'லேபிளில் பெயர்', labelNetLabel: 'நிகர அளவு', labelPackerLabel: 'பொதி செய்தவர்',
-    labelPriceLabel: 'விலை (₹)', labelAllergensLabel: 'ஒவ்வாமைப் பொருட்கள்', labelAllergensHint: 'காற்புள்ளியால் பிரிக்கவும், எ.கா. கோதுமை, பால் — அல்லது "none"', labelBtn: 'லேபிளை அச்சிடு',
+    labelPriceLabel: 'விலை (₹)', labelAllergensLabel: 'இதில் உள்ள ஒவ்வாமைப் பொருட்கள் (ஒவ்வொன்றையும் குறியிடுங்கள்)', labelAllergensHint: 'இந்த உணவில் உள்ள ஒவ்வொரு வகையையும் குறியிடுங்கள், அல்லது "இவற்றில் எதுவும் இல்லை" என்பதைக் குறியிடுங்கள். எதையும் குறியிடாவிட்டால் அது அறிவிப்பு அல்ல — லேபிள் அச்சாகாது.', labelBtn: 'லேபிளை அச்சிடு',
+    labelAllergenNone: 'இந்த 8-இல் எதுவும் இல்லை', labelVegLabel: 'சைவம் / அசைவம் குறி', labelVeg: 'சைவம் (பச்சைப் புள்ளி)', labelNonVeg: 'அசைவம் (பழுப்பு முக்கோணம்)',
+    agCerealsGluten: 'பசையம் உள்ள தானியங்கள் (கோதுமை, பார்லி, ஓட்ஸ்)', agCrustaceans: 'ஓட்டுமீன்கள் (இறால், நண்டு)', agEggs: 'முட்டை', agFish: 'மீன்', agPeanutsTreeNuts: 'நிலக்கடலை மற்றும் கொட்டைகள்', agMilk: 'பால்', agSoybeans: 'சோயா', agSulphites: 'சல்பைட்டுகள்',
     labelPrinted: 'லேபிள் தயார் — தொகுதியும் காலாவதியும் உற்பத்தியினுடையவை.', labelRefused: 'தலைமை அலுவலகம் லேபிளை மறுத்தது:', labelLostLink: 'இணைப்பு இல்லை — லேபிள் உருவாகவில்லை. மீண்டும் முயற்சிக்கவும்.',
     labelNotPermitted: 'உற்பத்தி லேபிள்களை அச்சிட உங்களுக்கு அனுமதி இல்லை.', labelNobody: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     labelNoRun: 'அந்தத் தொகுதி பலகையில் இல்லை.', labelMissingName: 'லேபிளுக்கு அச்சிட பெயர் தேவை.', labelBadPrice: 'விலை ரூபாய் மற்றும் பைசா, எ.கா. 120 அல்லது 120.50.',
@@ -132,7 +138,9 @@ export const PRODUCTION_TASKS_COPY: BilingualCopy<CopyKey> = {
 export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(PRODUCTION_TASKS_COPY.en) as CopyKey[]);
 
 export interface RunInput { readonly runId?: string; readonly recipeId: string; readonly batches: string; readonly actualOutput: string; readonly batchId: string; readonly locationId: string }
-export interface LabelInput { readonly runId: string; readonly productName: string; readonly netQuantity: string; readonly packerDetails: string; readonly price: string; readonly allergens: string; readonly weightGrams?: string }
+/** `allergens`: the major allergen groups ticked, comma-separated (B9's eight), "none" for none of them, blank for not
+ *  declared. `vegClass`: "veg", "non_veg", or blank for not marked — head office refuses a food label with either gap. */
+export interface LabelInput { readonly runId: string; readonly productName: string; readonly netQuantity: string; readonly packerDetails: string; readonly price: string; readonly allergens: string; readonly vegClass?: string; readonly weightGrams?: string }
 export type WeighInput = Parameters<WeighPort['record']>[0];
 export type WeighOutcome = ReturnType<WeighPort['record']> | { readonly outcome: 'no_link' };
 
@@ -239,12 +247,15 @@ export function createProductionTasksSession(config: ProductionTasksConfig, port
       // it is sent as no declaration, and head office refuses a label that needs one. "none" declares none.
       const typed = input.allergens.trim();
       const allergens = typed === '' ? undefined : typed.toLowerCase() === 'none' ? [] : typed.split(',').map((a) => a.trim()).filter((a) => a !== '');
+      // B9: the veg / non-veg mark is the person's own tick; an unticked one is sent as nothing and refused by name.
+      const veg = (input.vegClass ?? '').trim();
+      const vegClass = veg === 'veg' || veg === 'non_veg' ? veg : undefined;
       if (fromBox) {
         // The store computer renders it: the name and price are its catalogue's, never typed here.
         const w = (input.weightGrams ?? '').trim();
         const weightGrams = w === '' ? undefined : whole(w);
         if (w !== '' && (weightGrams === undefined || weightGrams <= 0)) return { outcome: 'bad_weight' };
-        const boxed = await port.post({ runId: input.runId.trim(), netQuantity: input.netQuantity.trim(), packerDetails: input.packerDetails.trim(), ...(allergens === undefined ? {} : { allergens }), ...(weightGrams === undefined ? {} : { weightGrams }) });
+        const boxed = await port.post({ runId: input.runId.trim(), netQuantity: input.netQuantity.trim(), packerDetails: input.packerDetails.trim(), ...(allergens === undefined ? {} : { allergens }), ...(vegClass === undefined ? {} : { vegClass }), ...(weightGrams === undefined ? {} : { weightGrams }) });
         if (boxed.result === 'done') return { outcome: 'printed', lines: boxed.value.lines };
         if (boxed.result === 'refused') return { outcome: 'refused', reason: boxed.reason };
         return { outcome: 'lost_link' };
@@ -252,7 +263,7 @@ export function createProductionTasksSession(config: ProductionTasksConfig, port
       if (input.productName.trim() === '') return { outcome: 'missing_name' };
       const priceMinor = rupeesToPaise(input.price);
       if (priceMinor === undefined) return { outcome: 'bad_price' };
-      const posted = await port.post({ runId: input.runId, productName: input.productName.trim(), netQuantity: input.netQuantity.trim(), packerDetails: input.packerDetails.trim(), priceMinor, ...(allergens === undefined ? {} : { allergens }) });
+      const posted = await port.post({ runId: input.runId, productName: input.productName.trim(), netQuantity: input.netQuantity.trim(), packerDetails: input.packerDetails.trim(), priceMinor, ...(allergens === undefined ? {} : { allergens }), ...(vegClass === undefined ? {} : { vegClass }) });
       if (posted.result === 'done') return { outcome: 'printed', lines: posted.value.lines };
       if (posted.result === 'refused') return { outcome: 'refused', reason: posted.reason };
       return { outcome: 'lost_link' };

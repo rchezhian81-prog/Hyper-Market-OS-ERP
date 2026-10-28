@@ -124,7 +124,7 @@ describe.each(backings)('FUL-01 — production moves ordinary stock — on $name
     const k = await kitchen(h, t);
     expect((await k.run('run-L', 2)).status).toBe(201);
     // Before release a label prints but the batch is not sellable (quarantine) — the label never makes stock.
-    const label = await k.call('POST', '/v1/production/runs/run-L/label', 'u-owner', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 12_000, allergens: ['wheat', 'milk'] }, 'lbl-L');
+    const label = await k.call('POST', '/v1/production/runs/run-L/label', 'u-owner', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 12_000, allergens: ['cereals_gluten', 'milk'], vegClass: 'veg' }, 'lbl-L');
     expect(label.status, JSON.stringify(label.body)).toBe(200);
     const lines = (label.body as { batchId: string; lines: string[] }).lines.join('\n');
     expect(label.body).toMatchObject({ runId: 'run-L', batchId: 'CAKE-run-L' });

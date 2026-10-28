@@ -236,14 +236,17 @@ describe('production departments & labels: build only for a department the store
     expect((await commitRun(h, A, 'u-owner', 'run-1', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C1', locationId: 'KITCHEN' })).status).toBe(201);
     // The cafe is food-safety + Legal Metrology (not weighed): the label needs net quantity, packer
     // details and an allergen declaration.
-    const ok = await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 120_00, allergens: ['wheat', 'milk'] });
+    const ok = await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 120_00, allergens: ['cereals_gluten', 'milk'], vegClass: 'veg' });
     expect(ok.status).toBe(200);
     expect((ok.body as { lines: string[] }).lines.some((l) => l.includes('Coffee cake'))).toBe(true);
+    // B3 · B9 · B24: the unit sale price (₹120 for 180 g = ₹666.67 per kg — shown although a ≤ 100 cm² label is exempt), the veg mark, the print sizes.
+    expect(ok.body).toMatchObject({ vegClass: 'veg', unitPrice: { unitPriceMinor: 666_67, per: 'kg', exempt: true }, print: { templateId: 'counter-58x40', minHeightMm: 1 } });
+    expect((ok.body as { lines: string[] }).lines).toEqual(expect.arrayContaining(['[●] VEG', 'Contains: Cereals containing gluten, Milk', 'Unit price ₹666.67 per kg']));
 
     // Missing the net quantity (Legal Metrology) → refused before it prints.
-    expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', packerDetails: 'SRE', priceMinor: 120_00, allergens: [] }, 'lbl-noqty'))).toBe('incomplete_label');
+    expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', packerDetails: 'SRE', priceMinor: 120_00, allergens: [], vegClass: 'veg' }, 'lbl-noqty'))).toBe('incomplete_label');
     // Missing the allergen declaration (food safety) → refused.
-    expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE', priceMinor: 120_00 }, 'lbl-noallergen'))).toBe('incomplete_label');
+    expect(codeOf(await label(h, A, 'u-owner', 'run-1', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE', priceMinor: 120_00, vegClass: 'veg' }, 'lbl-noallergen'))).toBe('incomplete_label');
   });
 });
 

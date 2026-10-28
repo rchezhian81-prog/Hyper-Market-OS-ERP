@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Packaging and crates</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Packaging and crates (M28-FR-03 "Carry bags, reusable packaging and packaging inventory" · P-08). A THIN CLIENT over head
+      office's own packaging back office: register an item (kind, returnable, charge, tax, deposit — the item master the till's
+      price pack carries; the bag charge itself is the till's, offline), record its movements (a write-off is a compensating
+      movement), and read its position at a branch (negative shown negative; crates still out; loss rate). Its session is
+      apps/web-erp/src/packaging-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: .6; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .acts input { flex: 1 1 160px; }
+      #doc { border: 2px solid var(--ink); }
+      .draft { font-weight: 700; }
+      [hidden] { display: none !important; }
+    </style>
+    <style>
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .figures { display: flex; gap: 16px; flex-wrap: wrap; }
+      .figures span { display: grid; }
+      .figures b { font-size: 20px; }
+      .warn { color: var(--degraded); font-weight: 700; }
+      .table-wrap { overflow-x: auto; }
+      label.check { display: flex; gap: 8px; align-items: center; min-height: var(--tap); }
+      label.check input { min-height: 0; width: 24px; height: 24px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Packaging and crates</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Packaging and crates</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="position" hidden aria-labelledby="position-h">
+        <h3 id="position-h"></h3>
+        <div class="row-form">
+          <label for="q-item"><span id="q-item-l"></span><input id="q-item" autocomplete="off" /></label>
+          <label for="q-branch"><span id="q-branch-l"></span><input id="q-branch" autocomplete="off" /></label>
+        </div>
+        <button id="q-show" type="button"><span id="q-show-text"></span></button>
+        <p class="status" id="q-status" role="status" aria-live="polite"></p>
+        <p class="warn" id="q-negative" hidden></p>
+        <div class="figures" id="q-figures"></div>
+      </section>
+      <section id="register" hidden aria-labelledby="register-h">
+        <h3 id="register-h"></h3>
+        <div class="row-form">
+          <label for="i-item"><span id="i-item-l"></span><input id="i-item" autocomplete="off" /></label>
+          <label for="i-name"><span id="i-name-l"></span><input id="i-name" autocomplete="off" /></label>
+          <label for="i-kind"><span id="i-kind-l"></span><select id="i-kind"></select></label>
+          <label for="i-charge"><span id="i-charge-l"></span><input id="i-charge" inputmode="decimal" autocomplete="off" /></label>
+          <label for="i-tax"><span id="i-tax-l"></span><input id="i-tax" inputmode="decimal" autocomplete="off" /></label>
+          <label for="i-deposit"><span id="i-deposit-l"></span><input id="i-deposit" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <label class="check" for="i-returnable"><input id="i-returnable" type="checkbox" /><span id="i-returnable-l"></span></label>
+        <button id="i-save" type="button"><span id="i-save-text"></span></button>
+        <p class="status" id="i-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="move" hidden aria-labelledby="move-h">
+        <h3 id="move-h"></h3>
+        <div class="row-form">
+          <label for="m-item"><span id="m-item-l"></span><input id="m-item" autocomplete="off" /></label>
+          <label for="m-branch"><span id="m-branch-l"></span><input id="m-branch" autocomplete="off" /></label>
+          <label for="m-kind"><span id="m-kind-l"></span><select id="m-kind"></select></label>
+          <label for="m-qty"><span id="m-qty-l"></span><input id="m-qty" inputmode="numeric" autocomplete="off" /></label>
+          <label for="m-ref"><span id="m-ref-l"></span><input id="m-ref" autocomplete="off" /></label>
+        </div>
+        <button id="m-record" type="button"><span id="m-record-text"></span></button>
+        <p class="status" id="m-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./packaging.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

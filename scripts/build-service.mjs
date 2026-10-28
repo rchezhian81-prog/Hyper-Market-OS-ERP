@@ -17,7 +17,7 @@
 // from `node_modules` at run time rather than inlined. The output is one plain `.js` file with the
 // types stripped and every extension resolved.
 //
-// Usage:  node scripts/build-service.mjs <api|edge|demo-login|sign-in|tools> [--quiet]
+// Usage:  node scripts/build-service.mjs <api|edge|demo-login|sign-in|customer-sign-in|tools> [--quiet]
 //         --quiet leaves out the one "written" line on standard output (esbuild's own lines and every error still show).
 //         The package scripts use it instead of `>/dev/null`, which Windows' command shell cannot run (gap G-RD-7).
 // Output: <service>/dist/start.js  (git-ignored — `dist/` is in .gitignore)
@@ -39,6 +39,8 @@ const SERVICES = {
   'demo-login': { entry: 'infra/pilot/demo-login/main.ts', outfile: 'infra/pilot/demo-login/dist/demo-login.mjs' },
   // The product's sign-in service (OB-15-b · ADR-0019): the front door's "who is this?", answered from the identity server.
   'sign-in': { entry: 'services/identity/src/sign-in-main.ts', outfile: 'services/identity/dist/sign-in.mjs' },
+  // The customer sign-in service (M20-FR-01 · ADR-0031): a code to the customer's phone, behind /auth/otp/ on the public proxy.
+  'customer-sign-in': { entry: 'services/identity/src/customer-sign-in-main.ts', outfile: 'services/identity/dist/customer-sign-in.mjs' },
 };
 
 /** Operator commands a person runs on the box; bundled together, each to its own file. */
