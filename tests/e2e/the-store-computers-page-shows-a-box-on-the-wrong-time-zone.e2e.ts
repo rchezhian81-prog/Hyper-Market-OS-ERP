@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { alertText, alertWords, renderAlert } from '../../packages/ops/src/alert-words';
 
 /**
  * **R3 · P-08 — the Store computers page shows a store computer whose machine keeps another time zone than the shop's, in a
@@ -22,9 +23,14 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const WEB_DIR = 'apps/web-erp/web';
 const VIEWER = { userId: 'u-owner', permissions: ['platform.health.read', 'platform.alert.manage'] };
 
+// OB-435 · OB-439: a refused report, with its words in both languages exactly as head office's observed read sends them
+// (proved on the real API in tests/integration/a-box-cannot-hide-lost-bills-and-only-head-office-clears-a-refusal.test.ts).
+const REFUSED_TEXT = alertText('box.refused', { head: alertText('box.refused.anotherStore', { storeId: 'br-1', by: 'u-box-br1', prefix: 'R-9-', through: 40 }), prefix: 'R-9-', others: [] });
+const REFUSED = { kind: 'report_refused', prefix: 'R-9-', through: 40, since: '2026-10-26T05:00:00.000Z', detail: renderAlert(REFUSED_TEXT, 'en'), text: REFUSED_TEXT, words: alertWords(REFUSED_TEXT, '') };
+
 const OBSERVED = { observed: { boxes: [
   { storeId: 'br-2', computer: 'u-box-br2', lastReportAt: '2026-10-26T04:59:00.000Z', stale: true, zoneCheck: { verdict: 'in_step', shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'store_pack', machineTimeZone: 'Asia/Kolkata' } },
-  { storeId: 'br-1', computer: 'u-box-br1', lastReportAt: '2026-10-26T05:00:00.000Z', stale: false, zoneCheck: { verdict: 'differs', shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'store_pack', machineTimeZone: 'UTC' } },
+  { storeId: 'br-1', computer: 'u-box-br1', lastReportAt: '2026-10-26T05:00:00.000Z', stale: false, billNumberFindings: [REFUSED], zoneCheck: { verdict: 'differs', shopTimeZone: 'Asia/Kolkata', shopTimeZoneFrom: 'store_pack', machineTimeZone: 'UTC' } },
   { storeId: 'br-3', state: 'never_reported', zoneCheck: null },
 ] } };
 
@@ -85,12 +91,17 @@ describe.skipIf(!existsSync(CHROMIUM))('R3 · P-08: the Store computers page sho
       await says(page, '#zone-rows tr[data-store="br-2"]', 'Keeps the shop\'s zone.');
       await says(page, '#zone-rows tr[data-store="br-2"]', 'Old news');
       await says(page, '#zones-h', 'Time zone');
+      // OB-435: the "Needs a person" finding reads in English…
+      await says(page, '#finding-rows', 'but head office issued R-9- to a till of ANOTHER store');
       expect(writes, 'nothing is written on open').toEqual([]);
       const sideways = await page.evaluate(() => { const d = (globalThis as unknown as { document: { documentElement: { scrollWidth: number; clientWidth: number } } }).document.documentElement; return d.scrollWidth - d.clientWidth; });
       expect(sideways).toBeLessThanOrEqual(0);
       await page.click('#lang');
       await says(page, '#zones-h', 'நேர மண்டலம்');
       await says(page, '#zone-rows tr[data-store="br-1"]', 'கடையின் மண்டலம் அல்ல');
+      // …and in Tamil after the language button (OB-439).
+      await says(page, '#finding-rows', 'R-9- ஐ வேறு கடையின் கவுண்டருக்கு வழங்கியுள்ளது');
+      expect(await page.textContent('#finding-rows')).not.toContain('ANOTHER store');
       expect(errors).toEqual([]);
     } finally { await context.close(); }
   }, 60_000);
