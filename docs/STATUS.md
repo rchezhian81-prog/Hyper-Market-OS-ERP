@@ -19,6 +19,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - Clean runs: the full CI identity job (`scripts/identity-proof.sh`, all 5 suites) passed 3 of 3, and the store-computer suite alone passed 10 of 10.
 - Type check and lint were clean.
 
+- **Also fixed here (28 October):** the "Stage gate suites" check went red on main for `store-acceptance-journey`, with "certificate is not yet valid". The journey tests set their clock to 10:00 UTC today. Before 09:00 UTC that is ahead of the real clock, so the store computer's handheld-door certificate (OB-422) started in the future. The test clock now uses the most recent 10:00 UTC that has already passed; this is the same change as in #821. Reproduced at 01:31 UTC, then passing with the change.
+
 **What is next / blocked / owner decision**
 - Nothing blocked and no owner decision needed. Watch the next few CI runs on main for this check.
 
