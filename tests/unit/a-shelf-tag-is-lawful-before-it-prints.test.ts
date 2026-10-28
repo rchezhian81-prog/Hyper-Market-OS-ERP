@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildShelfTag, fontSizeMmFor, SHELF_TAG_TEMPLATES, CAP_HEIGHT_OF_FONT, type ShelfTagProduct, type ShelfTagTemplate } from '../../packages/product/src/shelf-tag';
 import { minLabelHeightMm } from '../../packages/product/src/label-height';
-import { createShelfTagsSession, shelfTagsOutcomeWords, packRowsOf, rowFor, tagWords, SHELF_TAGS_COPY } from '../../apps/web-erp/src/shelf-tags-session';
+import { createShelfTagsSession, shelfTagsOutcomeWords, packRowsOf, rowFor, tagWords, SHELF_TAGS_COPY, PRINT_MODES, shelfTagPrintCss, tagsThatOverflow, overflowWords, printHint, type TagMeasure } from '../../apps/web-erp/src/shelf-tags-session';
+import { wireShelfTagsAndQuotations } from '../../apps/web-erp/src/shelf-quotes-browser-wiring';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { HEAD_OFFICE_PAGE_SCREENS, HEAD_OFFICE_PAGE_GLOBALS } from '../../edge/store-edge/src/head-office-pages';
 import { buildSurface } from '../../services/api/src/main';
@@ -169,5 +170,64 @@ describe('the Shelf tags session', () => {
     expect(Object.keys(SHELF_TAGS_COPY.ta).sort()).toEqual(Object.keys(SHELF_TAGS_COPY.en).sort());
     for (const [k, v] of Object.entries(SHELF_TAGS_COPY.ta)) expect(v, k).toMatch(/[஀-௿]/);
     expect(tagWords('ta').per.kg).toBe('ஒரு கிலோ');
+  });
+});
+
+describe('printing on the label printer (OB-505) — and never a price cut off (P-08)', () => {
+  const pageRule = (css: string): string | undefined => /@page\s*\{([^}]*)\}/.exec(css)?.[1]?.trim();
+
+  it('the label printer is the default; its paper is each template\'s own label size with no margin, one tag per label, no cut line', () => {
+    expect(PRINT_MODES).toEqual(['label', 'sheet']);
+    expect(SHELF_TAG_TEMPLATES.map((t) => [t.templateId, t.widthMm, t.heightMm])).toEqual([['shelf-70x38', 70, 38], ['shelf-100x60', 100, 60]]);
+    for (const t of SHELF_TAG_TEMPLATES) {
+      const css = shelfTagPrintCss(t, 'label');
+      expect(css.startsWith('@media print {')).toBe(true);
+      expect(pageRule(css)).toBe(`size: ${t.widthMm}mm ${t.heightMm}mm; margin: 0;`);
+      expect(css).toMatch(/#sheet \.tag \{ border: 0 !important; margin: 0 !important; break-after: page; page-break-after: always; \}/);
+      expect(css).toMatch(/#sheet \.tag:last-child \{ break-after: auto; page-break-after: auto; \}/);
+      // The screen around the tags is taken out of the print — no blank label is fed for it.
+      expect(css).toContain('body *:not(:has(#sheet)):not(#sheet):not(#sheet *) { display: none !important; }');
+    }
+  });
+
+  it('an ordinary printer keeps the sheet to cut: an 8 mm margin, the paper\'s own size, no page per tag, the cut lines left on', () => {
+    const css = shelfTagPrintCss(STD, 'sheet');
+    expect(pageRule(css)).toBe('margin: 8mm;');
+    expect(css).not.toMatch(/size:|break-after|\.tag \{ border/);
+    expect(css).toContain('display: none !important;');
+  });
+
+  it('says what to load and choose, for the printer and the tag size, in English and Tamil', () => {
+    expect(printHint('en', 'label', STD)).toBe('Load 70 × 38 mm labels in the label printer. In the print window choose the label printer and 100% scale.');
+    expect(printHint('ta', 'label', SHELF_TAG_TEMPLATES[1]!)).toMatch(/^லேபிள் அச்சுப்பொறியில் 100 × 60 மி\.மீ லேபிள்களை/);
+    expect(printHint('en', 'sheet', STD)).toMatch(/cut along the dashed lines/);
+    expect(printHint('ta', 'sheet', STD)).toMatch(/வெட்டுங்கள்/);
+  });
+
+  it('a tag whose content does not fit its label is found — taller, wider, or a part drawn outside — and named; rounding is not', () => {
+    const fits: TagMeasure = { productId: 'P-DAL', name: 'Toor dal 500 g', boxWidth: 263, boxHeight: 142, contentWidth: 263, contentHeight: 142, partsOutside: [] };
+    const rounding: TagMeasure = { ...fits, productId: 'P-R', name: 'Rounded', contentHeight: 143, contentWidth: 264 };
+    const tall: TagMeasure = { ...fits, productId: 'P-LONG', name: 'A very long name', contentHeight: 179 };
+    const wide: TagMeasure = { ...fits, productId: 'P-RICE', name: 'Ponni rice 25 kg', contentWidth: 300 };
+    const outside: TagMeasure = { ...fits, productId: 'P-OIL', name: 'Oil', partsOutside: ['mrp', 'unit'] };
+    expect(tagsThatOverflow([fits, rounding])).toEqual([]);
+    expect(tagsThatOverflow([fits, tall, wide, outside, rounding])).toEqual([
+      { productId: 'P-LONG', name: 'A very long name', partsOutside: [] },
+      { productId: 'P-RICE', name: 'Ponni rice 25 kg', partsOutside: [] },
+      { productId: 'P-OIL', name: 'Oil', partsOutside: ['mrp', 'unit'] },
+    ]);
+  });
+
+  it('the refusal names every product and says how to fix it, in English and Tamil', () => {
+    const en = overflowWords('en', ['A very long name', 'Ponni rice 25 kg']);
+    expect(en).toBe('Not printed — these tags do not fit their label, so the price, MRP or price per kg would be cut off: A very long name, Ponni rice 25 kg. Shorten the product name, or choose the larger tag size, then make the tags again.');
+    const ta = overflowWords('ta', ['A very long name']);
+    expect(ta).toMatch(/^அச்சிடப்படவில்லை — .*: A very long name\. பொருளின் பெயரைச் சுருக்குங்கள்/);
+  });
+
+  it('the page is handed the print choices, the print rules and the fit check with its session', () => {
+    const win: Record<string, unknown> = { shelfTagsData: { userId: 'u', permissions: ['catalogue.pack.read'] } };
+    wireShelfTagsAndQuotations(win, (raw) => raw as { userId?: string; permissions: readonly string[] });
+    expect(win['shelfTags']).toMatchObject({ printModes: PRINT_MODES, printCss: shelfTagPrintCss, tagsThatOverflow, overflowWords, printHint });
   });
 });
