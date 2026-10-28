@@ -97,7 +97,8 @@ function paintFindings() {
     const head = document.createElement('strong');
     head.textContent = `${api.findingWords(lang, f)} — ${f.storeId} · ${f.prefix}`;
     const detail = document.createElement('span');
-    detail.textContent = f.detail;
+    // OB-435 · OB-439: in this page's language (a finding head office sent in English only reads in English).
+    detail.textContent = (f.words && f.words[lang]) || f.detail;
     li.append(head, detail);
     if (you().mayAcknowledge && api.acknowledgeable(f)) {
       const reason = document.createElement('input');

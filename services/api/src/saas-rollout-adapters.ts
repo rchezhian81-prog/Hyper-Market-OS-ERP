@@ -34,6 +34,7 @@ import { consentManagerRoutes, type ConsentImportException } from '../../custome
 import { dataVolumeWatchRoutes, runVolumeWatch, VOLUME_ALERT_PREFIX, type DataVolumeDeps, type VolumeThreshold } from '../../customer/src/data-volume-watch';
 import type { ConsentRecord } from '../../customer/src/index';
 import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { alertText } from '../../../packages/ops/src/alert-words';
 import type { MemberRecord } from '../../customer/src/loyalty-members';
 import { MACHINE_ROLE_IDS } from '../../identity/src/separation-of-duties';
 import {
@@ -217,16 +218,19 @@ function volumeAdapter(input: Base): DataVolumeDeps {
       if (live !== undefined && live.state !== 'cleared') return false;
       const event: AlertLifecycleEvent = {
         alertId: a.alertId, change: 'raised', by: 'system:data-volume-watch', at: a.at,
-        alert: { alertId: a.alertId, component: 'Customer data volume (DPDP)', status: 'degraded', ownerUserId: owners[0]!, ownerName: owners[0]!, detail: a.detail, raisedAt: a.at, ackDueBy: a.at, ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}) },
+        alert: {
+          alertId: a.alertId, component: 'Customer data volume (DPDP)', componentText: alertText('dpdp.component'), status: 'degraded', ownerUserId: owners[0]!, ownerName: owners[0]!,
+          detail: a.detail, ...(a.text === undefined ? {} : { text: a.text }), raisedAt: a.at, ackDueBy: a.at, ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
+        },
       };
       await lifecycle.recordAlertEvent(tenantId, event, `${a.alertId}|${live?.clearedAt ?? 'first'}`);
       return true;
     },
-    clearOwnerAlert: async (tenantId, prefix, at, detail) => {
+    clearOwnerAlert: async (tenantId, prefix, at, detail, text) => {
       let cleared = 0;
       for (const x of await lifecycle.alerts(tenantId)) {
         if (!x.alert.alertId.startsWith(prefix) || x.state === 'cleared') continue;
-        await lifecycle.recordAlertEvent(tenantId, { alertId: x.alert.alertId, change: 'cleared', by: 'system:data-volume-watch', at, detail }, `${x.alert.alertId}|cleared|${at}`);
+        await lifecycle.recordAlertEvent(tenantId, { alertId: x.alert.alertId, change: 'cleared', by: 'system:data-volume-watch', at, detail, ...(text === undefined ? {} : { detailText: text }) }, `${x.alert.alertId}|cleared|${at}`);
         cleared += 1;
       }
       return cleared;

@@ -49,7 +49,7 @@ import {
   type HealthSignals, type HealthThresholds, type AlertRule, type SystemHealth, type RaisedAlert,
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
-import { raiseKey, isReservedAlertId, reservedAlertIdRefusal, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
+import { raiseKey, isReservedAlertId, reservedAlertIdRefusal, eventWords, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   judgeBoxes, boxHistoryComponents, doorRefusalComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES, STORE_COMPUTER_CLOCK_HELD_COMPONENT, type DoorRefusalLine,
@@ -57,6 +57,7 @@ import {
   type BoxHistoryState, type UnusedCheckCapped,
 } from './box-health';
 import type { ComponentHealth } from '../../../packages/ops/src/index';
+import { told, alertText, partOf, renderAlert, alertWords, type AlertText } from '../../../packages/ops/src/index';
 
 export interface ConnectorQueueDepth {
   readonly connectorId: string;
@@ -171,16 +172,20 @@ export interface BuiltInRuleState {
   /** The rule in force for it (`on` / `edited`). */
   readonly rule?: AlertRule;
   readonly description: string;
+  /** OB-435: the description, structured (rendered in English into `description`, and in Tamil for the owner's notice). */
+  readonly descriptionText?: AlertText;
   /** Round 32 · OB-115: who last changed a built-in rule, and when (absent: never changed — as it came). */
   readonly lastChangedBy?: string;
   readonly lastChangedAt?: string;
 }
 
-function builtInRules(owners: ShopOwners): readonly { readonly alertId: string; readonly rule?: AlertRule; readonly description: string }[] {
+function builtInRules(owners: ShopOwners): readonly { readonly alertId: string; readonly rule?: AlertRule; readonly description: string; readonly descriptionText: AlertText }[] {
   const all = shopOwnersSorted(owners);
+  const checks = alertText('rules.desc.checks', { owners: ownersText(all), minutes: STORE_COMPUTER_CHECKS_STUCK_MINUTES });
+  const clock = alertText('rules.desc.clock', { owners: ownersText(all) });
   return [{
     alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID,
-    description: `tells ${ownersInWords(all)} when the store computer checks stay "being prepared" (or the saved history cannot be sealed) for more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (owner decisions OB-114, OB-124)`,
+    description: renderAlert(checks, 'en'), descriptionText: checks,
     ...(all.length === 0 ? {} : { rule: toEveryOwner({
       alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down' as const,
       ownerUserId: EVERY_OWNER, ownerName: 'every owner', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
@@ -188,7 +193,7 @@ function builtInRules(owners: ShopOwners): readonly { readonly alertId: string; 
   }, {
     // §31.1 · OB-409 "C": every store, at the 5-minute flag only (never the 2-minute warning).
     alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID,
-    description: `tells ${ownersInWords(all)} when any store computer's clock is 5 minutes or more out, so new prices and offers are held there — which store, by how many minutes, and what is held; not at the 2-minute warning; cleared when its clock is back in step (owner decisions OB-403, OB-409)`,
+    description: renderAlert(clock, 'en'), descriptionText: clock,
     ...(all.length === 0 ? {} : { rule: toEveryOwner({
       alertId: BUILT_IN_STORE_COMPUTER_CLOCK_RULE_ID, component: STORE_COMPUTER_CLOCK_HELD_COMPONENT, firesAt: 'degraded' as const,
       ownerUserId: EVERY_OWNER, ownerName: 'every owner', ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CLOCK_ACK_MINUTES,
@@ -211,10 +216,9 @@ function builtInRules(owners: ShopOwners): readonly { readonly alertId: string; 
  *     goes to and the owners who no longer get it.
  */
 export const EVERY_OWNER = 'role:owner';
-function ownersInWords(all: readonly ShopOwner[]): string {
-  return all.length === 0 ? 'the owner (nobody holds the owner role now)'
-    : all.length === 1 ? `the owner (${all[0]!.userId})`
-    : `every owner (all ${all.length}: ${all.map((o) => o.userId).join(', ')})`;
+/** OB-435: who a built-in rule reaches, structured ("the owner (u-1)", "every owner (all 2: u-1, u-2)"). */
+function ownersText(all: readonly ShopOwner[]): AlertText {
+  return alertText('rules.owners', { ids: all.map((o) => o.userId) });
 }
 /**
  * Round 35 · NEW-1: does this edit of a built-in rule, AS SENT in a save, leave it with the owners (rather than redirect it,
@@ -320,13 +324,16 @@ export function builtInEditShownUnchanged(current: StoredAlertRules | undefined,
  * returns by itself when that person is given a role that may see alerts again; only the owner removing the edit stops that.
  */
 export function redirectGoneWords(r: AlertRule): string {
-  return `the owner's edit redirects it to ${r.ownerName} (${r.ownerUserId}) only, but ${r.ownerUserId} no longer holds any role that may see alerts, so it goes to the owners instead — until the owner removes this edit, or ${r.ownerUserId} is given a role that may see alerts again, when it goes back to ${r.ownerName} by itself (OB-115, OB-134). Saving the rule as shown here ("every owner") keeps the edit; to stop it going back, the owner removes the edit (sends the rules without it)`;
+  return renderAlert(redirectGoneText(r), 'en');
+}
+function redirectGoneText(r: AlertRule): AlertText {
+  return alertText('rules.redirectGone', { name: r.ownerName, id: r.ownerUserId });
 }
 /** Round 35 · NEW-1, round 36: who an edited built-in rule really reaches, in words (`saved`: as saved; else as sent). */
-function editRecipientsInWords(r: AlertRule, owners: readonly ShopOwner[], saved: boolean, mayReceive?: ReadonlySet<string>): string {
-  if (saved ? !savedEditIsRedirect(r) : editGoesToEveryOwner(r, owners)) return ownersInWords(owners);
-  if (saved && mayReceive !== undefined && !mayReceive.has(r.ownerUserId)) return `${ownersInWords(owners)} — ${redirectGoneWords(r)}`;
-  return `${r.ownerName} (${r.ownerUserId}) ONLY — redirected by the owner's edit (OB-115); ${owners.length === 0 ? 'nobody holds the owner role now' : `${owners.map((o) => o.userId).join(', ')} ${owners.length === 1 ? 'does' : 'do'} NOT get it`}`;
+function editRecipientsText(r: AlertRule, owners: readonly ShopOwner[], saved: boolean, mayReceive?: ReadonlySet<string>): AlertText {
+  if (saved ? !savedEditIsRedirect(r) : editGoesToEveryOwner(r, owners)) return ownersText(owners);
+  if (saved && mayReceive !== undefined && !mayReceive.has(r.ownerUserId)) return alertText('rules.recipients.ownersRedirectGone', { owners: ownersText(owners), gone: redirectGoneText(r) });
+  return alertText('rules.recipients.redirect', { name: r.ownerName, id: r.ownerUserId, owners: owners.map((o) => o.userId) });
 }
 
 /**
@@ -350,7 +357,11 @@ function editRecipientsInWords(r: AlertRule, owners: readonly ShopOwner[], saved
  * Returns what a save changes about the built-in rules, in words (empty: nothing).
  */
 export function builtInRuleChanges(current: StoredAlertRules | undefined, rules: readonly AlertRule[], offAfter: readonly string[] | undefined, owners: ShopOwners = undefined, mayReceive?: ReadonlySet<string>): string[] {
-  const out: string[] = [];
+  return builtInRuleChangeTexts(current, rules, offAfter, owners, mayReceive).map((t) => renderAlert(t, 'en'));
+}
+/** OB-435: the same changes, structured (the owner's notice says them in his language). */
+export function builtInRuleChangeTexts(current: StoredAlertRules | undefined, rules: readonly AlertRule[], offAfter: readonly string[] | undefined, owners: ShopOwners = undefined, mayReceive?: ReadonlySet<string>): AlertText[] {
+  const out: AlertText[] = [];
   const all = shopOwnersSorted(owners);
   const offBefore = new Set(current?.builtInOff ?? []);
   const offNow = new Set(offAfter ?? []);
@@ -360,19 +371,21 @@ export function builtInRuleChanges(current: StoredAlertRules | undefined, rules:
     const toOwners = saved ? !savedEditIsRedirect(r) : editGoesToEveryOwner(r, all);
     return JSON.stringify([r.alertId, r.component, r.firesAt, toOwners ? EVERY_OWNER : r.ownerUserId, toOwners ? EVERY_OWNER : r.ownerName, r.ackWithinMinutes, r.escalatesToUserId ?? null, r.branchId ?? null]);
   };
-  const words = (r: AlertRule, saved: boolean): string => `to ${editRecipientsInWords(r, all, saved, saved ? mayReceive : undefined)}, at ${r.firesAt}, answered within ${r.ackWithinMinutes} minutes${r.escalatesToUserId === undefined ? '' : `, escalating to ${r.escalatesToUserId}`}`;
+  const words = (r: AlertRule, saved: boolean): AlertText => alertText('rules.editWords', {
+    recipients: editRecipientsText(r, all, saved, saved ? mayReceive : undefined), firesAt: r.firesAt, ackWithinMinutes: r.ackWithinMinutes, escalatesTo: r.escalatesToUserId ?? null,
+  });
   for (const id of BUILT_IN_ALERT_RULE_IDS) {
-    if (!offBefore.has(id) && offNow.has(id)) out.push(`turned ${id} OFF`);
-    if (offBefore.has(id) && !offNow.has(id)) out.push(`turned ${id} back on`);
+    if (!offBefore.has(id) && offNow.has(id)) out.push(alertText('rules.change.off', { id }));
+    if (offBefore.has(id) && !offNow.has(id)) out.push(alertText('rules.change.on', { id }));
     const before = current?.rules.filter((r) => r.alertId === id).map((r) => key(r, true)).join('|') ?? '';
     const after = rules.filter((r) => r.alertId === id);
     if (before === after.map((r) => key(r, false)).join('|')) continue;
     // Round 37 · verifier r36 NEW-1: sent back exactly as GET shows it — unchanged, whatever the saved form names.
     if (after.length === 1 && builtInEditShownUnchanged(current, after[0]!, mayReceive) !== undefined) continue;
     const was = current?.rules.find((r) => r.alertId === id);
-    out.push(after.length === 0 ? `removed the owner's edit of ${id} (it goes back to the built-in rule, to ${ownersInWords(all)})`
-      : was === undefined ? `edited ${id}: it would go ${words(after[0]!, false)}`
-      : `changed the edit of ${id}: from ${words(was, true)} to ${words(after[0]!, false)}`);
+    out.push(after.length === 0 ? alertText('rules.change.removedEdit', { id, owners: ownersText(all) })
+      : was === undefined ? alertText('rules.change.edited', { id, words: words(after[0]!, false) })
+      : alertText('rules.change.changedEdit', { id, from: words(was, true), to: words(after[0]!, false) }));
   }
   return out;
 }
@@ -392,9 +405,11 @@ export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOw
     const i = rules.indexOf(from);
     if (i >= 0) { if (to === undefined) rules.splice(i, 1); else rules[i] = to; }
   };
+  // OB-435: each description structured (descriptionText) and rendered in English (description), word for word as before.
+  const said = (t: AlertText): { readonly description: string; readonly descriptionText: AlertText } => ({ description: renderAlert(t, 'en'), descriptionText: t });
   for (const b of builtInRules(owner)) {
     const edited = own.find((r) => r.alertId === b.alertId);
-    if (off.has(b.alertId)) builtIn.push({ alertId: b.alertId, state: 'off', description: `${b.description} — TURNED OFF${stored?.builtInChangedBy === undefined ? '' : ` (last changed by ${stored.builtInChangedBy} at ${stored.builtInChangedAt})`}`, ...changed });
+    if (off.has(b.alertId)) builtIn.push({ alertId: b.alertId, state: 'off', ...said(alertText('rules.desc.off', { base: b.descriptionText, by: stored?.builtInChangedBy ?? null, at: stored?.builtInChangedAt ?? null })), ...changed });
     else if (edited !== undefined && (!savedEditIsRedirect(edited) || (mayReceive !== undefined && !mayReceive.has(edited.ownerUserId)))) {
       // Round 35 · NEW-1: the owner's edit kept with the owners — addressed by the server to every owner holding the role NOW.
       // Round 36 · NEW-1: so is an edit saved before round 36 (no redirect marker), and a redirect whose person may no longer
@@ -404,16 +419,16 @@ export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOw
       void _m;
       const inForce = toEveryOwner(unmarked, all);
       swap(edited, inForce);
-      const why = gone ? `; ${redirectGoneWords(edited)}`
-        : legacyNamedEdit(edited) ? `; this edit was saved before round 36 naming ${edited.ownerUserId} — it is read as going to every owner (to send it to one person only, the owner saves the edit again naming that person)`
+      const why: AlertText | '' = gone ? alertText('rules.why.gone', { gone: redirectGoneText(edited) })
+        : legacyNamedEdit(edited) ? alertText('rules.why.legacy', { id: edited.ownerUserId })
         : '';
-      if (inForce === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — the owner's edit is NOT in force: nobody holds the owner role${why}`, ...changed });
-      else builtIn.push({ alertId: b.alertId, state: 'edited', rule: inForce, description: `${b.description} — edited: answered within ${inForce.ackWithinMinutes} minutes, at ${inForce.firesAt}${inForce.escalatesToUserId === undefined ? '' : `, escalating to ${inForce.escalatesToUserId}`}${why}`, ...changed });
+      if (inForce === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', ...said(alertText('rules.desc.editNoOwner', { base: b.descriptionText, why })), ...changed });
+      else builtIn.push({ alertId: b.alertId, state: 'edited', rule: inForce, ...said(alertText('rules.desc.edited', { base: b.descriptionText, ackWithinMinutes: inForce.ackWithinMinutes, firesAt: inForce.firesAt, escalatesTo: inForce.escalatesToUserId ?? null, why })), ...changed });
     } else if (edited !== undefined) {
       // OB-115: the owner redirected it to somebody who is not an owner — kept, and said in words (round 35 · NEW-1).
-      builtIn.push({ alertId: b.alertId, state: 'edited', rule: edited, description: `the owner's edit of this rule sends it to ${editRecipientsInWords(edited, all, true)}, when the store computer checks stay "being prepared" (or the saved history cannot be sealed) for more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (owner decisions OB-114, OB-115)`, ...changed });
-    } else if (b.rule === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — NOT in force: nobody holds the owner role`, ...changed });
-    else { rules.push(b.rule); builtIn.push({ alertId: b.alertId, state: 'on', rule: b.rule, description: b.description, ...changed }); }
+      builtIn.push({ alertId: b.alertId, state: 'edited', rule: edited, ...said(alertText('rules.desc.redirected', { recipients: editRecipientsText(edited, all, true), minutes: STORE_COMPUTER_CHECKS_STUCK_MINUTES })), ...changed });
+    } else if (b.rule === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', ...said(alertText('rules.desc.noOwner', { base: b.descriptionText })), ...changed });
+    else { rules.push(b.rule); builtIn.push({ alertId: b.alertId, state: 'on', rule: b.rule, description: b.description, descriptionText: b.descriptionText, ...changed }); }
   }
   // An owner's version of a built-in rule he also turned off is not in force either.
   return { rules: rules.filter((r) => !off.has(r.alertId)), builtIn };
@@ -522,7 +537,7 @@ export function separationOfDutiesComponent(people: readonly { readonly userId: 
   if (people.length === 0) return [];
   return [{
     name: 'access_separation_of_duties', status: 'degraded',
-    detail: `separation of duties (owner decision OB-95): ${people.map((p) => `${p.userId} holds the IT/platform role (${p.itRoles.join(', ')}) AND business role(s) (${p.businessRoles.join(', ')})`).join('; ')} — given before head office refused it. Head office now refuses any grant that would do this; end the mix by removing one side (a joiner/mover change, or a leaver and a new sign-in for the other work), so the person who looks after the computers never also runs the shop`,
+    ...told('access.sod', { people: people.map((p) => alertText('access.sod.person', { userId: p.userId, itRoles: [...p.itRoles], businessRoles: [...p.businessRoles] })) }),
     evidence: { people: people.map((p) => p.userId).join(','), count: people.length },
   }];
 }
@@ -649,7 +664,7 @@ export function highWaterComponent(w: { readonly since: string; readonly waiting
   const mins = Math.floor(w.waitingSeconds / 60);
   return [{
     name: 'bill_number_high_water', status: 'degraded',
-    detail: `bill-number high-water is waiting on an open database transaction since ${w.since} (${mins} min): head office still counts every bill number correctly, but each count re-reads every bill since then and gets slower until that transaction ends. Ask the database administrator to find it — a session "idle in transaction" or a prepared transaction anywhere on the database server (pg_stat_activity, pg_prepared_xacts) — and end it`,
+    ...told('box.highWater', { since: w.since, minutes: mins }),
     evidence: { waitingSince: w.since, waitingSeconds: w.waitingSeconds, streams: w.streams.join(','), warnAfterSeconds: HIGH_WATER_WAIT_WARN_SECONDS },
   }];
 }
@@ -667,10 +682,10 @@ const RANK: Readonly<Record<string, number>> = { ok: 0, unknown: 1, degraded: 2,
  */
 export function withFailedBackup(health: SystemHealth, latest: BackupRecord | null): SystemHealth {
   if (latest === null || goodBackup(latest)) return health;
-  const why = [...(latest.ok ? [] : ['did not complete']), ...(latest.encrypted ? [] : ['is not encrypted']), ...(latest.offsite ? [] : ['has no off-site copy'])].join(', ');
+  const why = [...(latest.ok ? [] : [alertText('backup.why.notCompleted')]), ...(latest.encrypted ? [] : [alertText('backup.why.notEncrypted')]), ...(latest.offsite ? [] : [alertText('backup.why.noOffsite')])];
   const components = health.components.map((c) => (c.name !== 'backup' || (RANK[c.status] ?? 0) >= RANK['degraded']!
     ? c
-    : { ...c, status: 'degraded' as const, detail: `the latest backup (${latest.backupId}, ${latest.at}) ${why}; ${c.detail}` }));
+    : { ...c, status: 'degraded' as const, ...told('backup.latestFailed', { backupId: latest.backupId, at: latest.at, why, then: partOf(c.text, c.detail) }) }));
   const status = components.reduce<SystemHealth['status']>((w, c) => ((RANK[c.status] ?? 0) > (RANK[w] ?? 0) ? c.status : w), health.status);
   return { ...health, components, status };
 }
@@ -689,11 +704,11 @@ export function withMissedBackup(health: SystemHealth, backups: readonly BackupR
   const dueMs = Date.parse(since) + maxMs;
   if (!(Date.parse(at) > dueMs)) return health;
   const due = new Date(dueMs).toISOString();
-  const detail = good === undefined
-    ? `MISSED — no good backup has reported since backups became expected (${since}); one was due by ${due}. A backup that does not report is treated as not taken`
-    : `MISSED — the next good backup was due by ${due} (the last good one was ${good.backupId} at ${good.at})`;
+  const missed = good === undefined
+    ? told('backup.missed.never', { since, due })
+    : told('backup.missed.due', { due, lastId: good.backupId, lastAt: good.at });
   const components = health.components.map((c) => (c.name !== 'backup' ? c
-    : { ...c, status: 'down' as const, detail: c.status === 'down' ? `${detail}; ${c.detail}` : detail }));
+    : { ...c, status: 'down' as const, ...(c.status === 'down' ? told('backup.missed.withPrevious', { missed: missed.text, then: partOf(c.text, c.detail) }) : missed) }));
   const status = components.reduce<SystemHealth['status']>((w, c) => ((RANK[c.status] ?? 0) > (RANK[w] ?? 0) ? c.status : w), health.status);
   return { ...health, components, status };
 }
@@ -793,7 +808,7 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
       const revision = (live.revision ?? 0) + 1;
       await deps.recordAlertEvent(tenantId, {
         alertId: alert.alertId, change: 'updated', by, at, alert, origin: 'built-in-rule',
-        detail: `now about ${alert.members.length === 0 ? 'nothing' : alert.members.join(', ')} (was ${live.alert.members.join(', ')})`,
+        ...eventWords(told('alert.updated.members', { now: [...alert.members], was: [...live.alert.members] })),
       }, `update-${alert.alertId}-o${live.occurrence}-r${revision}`);
       updated += 1;
       continue;
@@ -815,7 +830,8 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
       // "checks not ready" alert (`store_computer_checks_stuck`) is NOT one of them — it is about the preparing itself,
       // judged on every pass (raised while preparing, cleared when ready).
       if (preparing !== null && STORE_COMPUTER_COMPONENT.test(a.alert.component)) { keptWhilePreparing += 1; continue; }
-      await deps.recordAlertEvent(tenantId, { alertId: a.alert.alertId, change: 'cleared', by, at, detail: `${a.alert.component} is no longer at ${a.alert.status} or worse` }, `clear-${a.alert.alertId}-o${a.occurrence}`);
+      const words = eventWords(told('alert.cleared.notFiring', { component: alertText('alert.component', { component: a.alert.component }), status: alertText('alert.status', { status: a.alert.status }) }));
+      await deps.recordAlertEvent(tenantId, { alertId: a.alert.alertId, change: 'cleared', by, at, ...words }, `clear-${a.alert.alertId}-o${a.occurrence}`);
       cleared += 1;
     }
   }
@@ -950,7 +966,8 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
         // Round 35 · NEW-1: who a built-in rule reaches is the server's (the owner role now), never the body's.
         const ownersAtSave = shopOwnersSorted(await ownersNow(deps, ctx.tenantId));
         const receiversAtSave = await redirectReceivers(deps, ctx.tenantId, current);
-        const builtInChanges = builtInRuleChanges(current, rules, offAfter, ownersAtSave, receiversAtSave);
+        const builtInChangeTexts = builtInRuleChangeTexts(current, rules, offAfter, ownersAtSave, receiversAtSave);
+        const builtInChanges = builtInChangeTexts.map((t) => renderAlert(t, 'en'));
         const recipientsIgnored = (b['rules'] as unknown[]).some((r) => typeof r === 'object' && r !== null && BUILT_IN_ALERT_RULE_IDS.includes(String((r as Record<string, unknown>)['alertId'])) && (r as Record<string, unknown>)['alsoToUserIds'] !== undefined);
         if (builtInChanges.length > 0) {
           const who = deps.builtInRuleAuthorityOf === undefined ? { owner: false, platformAdministration: false } : await deps.builtInRuleAuthorityOf(ctx.tenantId, ctx.userId);
@@ -1002,7 +1019,10 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             alertId, component: 'alert_rules_built_in', status: 'degraded', ownerUserId: owner.userId, ownerName: owner.name,
             // Round 34 · OB-124 (2): every owner is told of a change to a built-in rule, as every owner gets the rule's alert.
             ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1).map((o) => o.userId) } : {}),
-            detail: `a built-in alert rule was changed by ${ctx.userId} at ${definedAt} (rules version ${stored.version}): ${builtInChanges.join('; ')}. Now: ${builtIn.map((b) => `${b.alertId} is ${b.state}: ${b.description}`).join('; ')}. If you did not make this change, check GET /v1/platform/alert-rules and ask who did (owner decision OB-115)`,
+            ...told('rules.notice', {
+              by: ctx.userId, at: definedAt, version: stored.version, changes: builtInChangeTexts,
+              now: builtIn.map((b) => alertText('rules.notice.now', { id: b.alertId, state: b.state, description: partOf(b.descriptionText, b.description) })),
+            }),
             raisedAt: definedAt,
             ackDueBy: new Date(Date.parse(definedAt) + BUILT_IN_RULE_CHANGED_NOTICE_ACK_MINUTES * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
           };
@@ -1036,9 +1056,11 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
       handler: async (ctx) => {
         const at = deps.now();
         const { stored, observed, health, alerts } = await judge(ctx.tenantId, at);
+        // OB-435 · OB-439: each store computer's findings carry their words in both languages, for the screens' language button.
+        const boxes = observed.boxes.map((b) => (b.billNumberFindings === undefined ? b : { ...b, billNumberFindings: b.billNumberFindings.map((f) => ({ ...f, words: alertWords(f.text, f.detail) })) }));
         return {
           status: 200,
-          body: { observed, health, wouldRaise: alerts, rulesVersion: stored?.version ?? null, asAt: at },
+          body: { observed: { ...observed, boxes }, health, wouldRaise: alerts, rulesVersion: stored?.version ?? null, asAt: at },
         };
       },
     },

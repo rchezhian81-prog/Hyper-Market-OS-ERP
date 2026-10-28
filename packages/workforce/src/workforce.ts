@@ -36,7 +36,17 @@ export interface Employee {
    * hours count to in sales per labour hour (OB-317). Absent = none recorded: their hours are shown "not attributed".
    */
   readonly homeDepartmentId?: string;
+  /**
+   * OB-439 (owner, 28 Oct 2026, in writing): the language this person's alert text messages go in — 'ta' (Tamil) or 'en'
+   * (English). Set by the owner or a manager (`POST /v1/hr/workforce/employees/:employeeId/language`), on the audit trail.
+   * Absent = English.
+   */
+  readonly language?: StaffLanguage;
 }
+
+/** OB-439: the two languages a staff member may choose for their alert messages. */
+export type StaffLanguage = 'en' | 'ta';
+export const STAFF_LANGUAGES: readonly StaffLanguage[] = ['en', 'ta'];
 
 export interface Certification {
   readonly certificationId: string;

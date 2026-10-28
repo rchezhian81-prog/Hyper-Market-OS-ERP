@@ -23,6 +23,7 @@ import type { IssuedPayslip } from '../../finance/src/payslip-store';
 import { foldAssets, type FixedAssetFact } from '../../finance/src/budgets-assets';
 import { eprRoutes, type EprDeps } from '../../compliance/src/epr-store';
 import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { alertText } from '../../../packages/ops/src/alert-words';
 import type { Movement } from '../../inventory/src/index';
 import { STREAM, streamName, rosterStoreAdapter, auditTrailAdapter, alertLifecycleAdapter, effectiveGrants, allIssuedPayslips } from './adapters';
 import { hrComplianceAdapter } from './r2-hr-adapters';
@@ -69,7 +70,8 @@ async function raiseLatePayslipAlerts(store: EventStore, now: () => string, t: s
         alertId, change: 'raised', by, at,
         alert: {
           alertId, component: `Payslip ${e.period} — ${e.employeeId}`, status: 'degraded',
-          ownerUserId: owners[0]!, ownerName: owners[0]!, detail: e.detail, raisedAt: at, ackDueBy: at,
+          componentText: alertText('payslip.component', { period: e.period, employee: e.employeeId }),
+          ownerUserId: owners[0]!, ownerName: owners[0]!, detail: e.detail, ...(e.text === undefined ? {} : { text: e.text }), raisedAt: at, ackDueBy: at,
           ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
         },
       };

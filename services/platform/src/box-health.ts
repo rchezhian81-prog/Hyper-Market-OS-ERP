@@ -27,6 +27,7 @@ import type { RequestContext } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { approvalNamedIn, actionDetails, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { ComponentHealth, HealthStatus, HealthThresholds } from '../../../packages/ops/src/index';
+import { told, alertText, partOf, renderAlert, flatRanges, BOX_STAYS_ENGLISH, type AlertText } from '../../../packages/ops/src/index';
 import { STORE_COMPUTER_REPORT, assertStoreComputerOf, type StoreComputerScopeOf } from './store-computer-identity';
 
 export const BOX_HEALTH_PATH = '/v1/store-computers/health-reports';
@@ -247,6 +248,8 @@ export interface BillNumberFinding {
   readonly count?: number;
   readonly since: string;
   readonly detail: string;
+  /** OB-435: `detail`, structured (rendered in English into `detail`, and in Tamil for a Tamil reader). */
+  readonly text?: AlertText;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -563,12 +566,24 @@ export function sparseHolding(x: Pick<IssuedReport, 'unsent' | 'deadLettered'>, 
  * the ones it gave up on and `queue.deadLettered`. Returns the contradiction in words, or undefined.
  */
 export function queueContradiction(queue: BoxHealthRecord['queue'], issued: readonly IssuedReport[]): string | undefined {
+  const t = queueContradictionText(queue, issued);
+  return t === undefined ? undefined : renderAlert(t, 'en');
+}
+/** OB-435: the same contradiction, structured. */
+export function queueContradictionText(queue: BoxHealthRecord['queue'], issued: readonly IssuedReport[]): AlertText | undefined {
   const unsent = issued.reduce((n, x) => n + (x.unsent?.count ?? 0), 0);
   const dead = issued.reduce((n, x) => n + (x.deadLettered?.count ?? 0), 0);
-  const parts: string[] = [];
-  if (unsent > queue.unsent) parts.push(`its bills still to send under each prefix add up to ${unsent}, more than the ${queue.unsent} item(s) its whole queue holds`);
-  if (dead > queue.deadLettered) parts.push(`its bills given up on under each prefix add up to ${dead}, more than the ${queue.deadLettered} item(s) it says it gave up on`);
-  return parts.length === 0 ? undefined : parts.join('; ');
+  if (!(unsent > queue.unsent) && !(dead > queue.deadLettered)) return undefined;
+  return alertText('box.queueContradiction', { unsentOver: unsent > queue.unsent, unsent, queueUnsent: queue.unsent, deadOver: dead > queue.deadLettered, dead, queueDead: queue.deadLettered });
+}
+/**
+ * OB-435: a report's contradiction as words — the one recorded on it when the report was taken (English), with its Tamil
+ * twin when the record's own queue says the same thing word for word (always, for a report head office judged itself).
+ */
+export function contradictionWords(r: Pick<BoxHealthRecord, 'queue' | 'receiptNumbersIssued' | 'queueContradiction'>): string | AlertText | undefined {
+  const t = r.receiptNumbersIssued === undefined ? undefined : queueContradictionText(r.queue, r.receiptNumbersIssued);
+  if (r.queueContradiction === undefined) return t;
+  return t !== undefined && renderAlert(t, 'en') === r.queueContradiction ? t : r.queueContradiction;
 }
 
 /**
@@ -636,7 +651,7 @@ export function billsWaitingOnTheBox(input: {
       if (hours < warnHours) continue;
       out.push({
         kind: 'bills_waiting_on_box', prefix, count: last.queue.unsent, since,
-        detail: `bills may be waiting on the store computer for ${Math.floor(hours)} hours: store ${input.storeId}'s computer has said since ${since} that its queue holds item(s) still to send (${last.queue.unsent} now), and it does not say which bills under ${prefix} they are (an older or altered store computer) — longer than the ${warnHours}-hour line. Head office no longer takes that as a reason to hold back: any bill under ${prefix} it has not received is checked as never received. Check that store computer's connection and its "waiting to send" count, and call support. Do NOT re-enter bills from paper until support has checked the store computer`,
+        ...told('box.waiting.unsaid', { hours: Math.floor(hours), storeId: input.storeId, since, unsent: last.queue.unsent, prefix, warnHours }),
       });
       continue;
     }
@@ -656,11 +671,11 @@ export function billsWaitingOnTheBox(input: {
     // Round 32 (verifier r31, cosmetic): a JOINED range (OB-110) can cover numbers no list ever named, so it is not named as
     // "first seen" — the words say the clock runs from the earliest sight of the numbers kept together with these.
     const firstWords = first.joined === true
-      ? `head office's clock for them runs from ${observedSince}, the first time a waiting list reached these numbers or the ones it keeps together with them (keeping them together keeps the earliest time, so this can only be a little early, never late)`
-      : `head office first saw ${rangeWords(prefix, [[lo, hi]])} said to be waiting at ${observedSince}`;
+      ? alertText('box.waiting.firstJoined', { observedSince })
+      : alertText('box.waiting.firstSeen', { prefix, ranges: flatRanges([[lo, hi]]), observedSince });
     out.push({
       kind: 'bills_waiting_on_box', prefix, ranges: [[u.from, u.to]], count: u.count, since,
-      detail: `bills waiting on the store computer for ${Math.floor(hours)} hours: store ${input.storeId}'s computer has held ${u.count} bill(s) under ${prefix} (between ${rangeWords(prefix, [[u.from, u.to]])}) unsent since ${since}; ${firstWords}, and they are still said to be waiting — longer than the ${warnHours}-hour line. Head office has not received them. Check that store computer's connection and its "waiting to send" count; if the count is not going down, call support. Do NOT re-enter these bills from paper until support has checked the store computer`,
+      ...told('box.waiting.list', { hours: Math.floor(hours), storeId: input.storeId, count: u.count, prefix, ranges: flatRanges([[u.from, u.to]]), since, first: firstWords, warnHours }),
     });
   }
   return out;
@@ -2034,7 +2049,7 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
   if (input.preparing !== undefined) {
     out.push({
       name: 'box_history', status: 'unknown',
-      detail: `being prepared — store computer checks not yet available: head office is building the store computers' saved history (since ${input.preparing.since}, because ${input.preparing.why}). Until it is ready, the store computers' disks, queues, tills and bill numbers are NOT judged here — not known, never "all fine". It is built in the background; the tills keep selling and nothing is lost. If this lasts more than an hour, call support`,
+      ...told('box.history.preparing', { since: input.preparing.since, why: input.preparing.why }),
       evidence: { preparingSince: input.preparing.since, why: input.preparing.why },
     });
   } else if (h !== undefined && h.sizeBytes !== null) {
@@ -2042,30 +2057,28 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
     const over = h.sizeBytes > BOX_HISTORY_SIZE_WARN_BYTES;
     out.push({
       name: 'box_history', status: over ? 'degraded' : 'ok',
-      detail: over
-        ? `the store computers' saved history is ${kb} KB — above the ${BOX_HISTORY_SIZE_WARN_BYTES / 1_048_576} MB line (an honest busy store stays well under 2 MB). Something is making it grow — a store computer sending many refused counts or long lists, say. Head office still answers correctly, but each health check gets slower: call support to find which store computer`
-        : `the store computers' saved history is ${kb} KB (the alarm is above ${BOX_HISTORY_SIZE_WARN_BYTES / 1_048_576} MB)`,
+      ...told(over ? 'box.history.size.over' : 'box.history.size.ok', { kb, warnMb: BOX_HISTORY_SIZE_WARN_BYTES / 1_048_576 }),
       evidence: { sizeBytes: h.sizeBytes, warnAboveBytes: BOX_HISTORY_SIZE_WARN_BYTES },
     });
   }
   if (h?.saveHeld !== null && h?.saveHeld !== undefined && h.saveHeld.waitingSeconds >= BOX_HISTORY_SAVE_HELD_WARN_SECONDS) {
     out.push({
       name: 'box_history_saving', status: 'degraded',
-      detail: `the store computers' saved history has not been saved since ${h.saveHeld.since} (${Math.floor(h.saveHeld.waitingSeconds / 60)} min): an open database transaction holds it back, so head office keeps it in memory, and each health check reads again every store-computer report above the last saved position — if nothing could be saved since the history was built, that is EVERY report (the ones already counted are skipped, never counted twice) — still correct, but slower. Ask the database administrator to find it — a session "idle in transaction" or a prepared transaction anywhere on the database server (pg_stat_activity, pg_prepared_xacts) — and end it`,
+      ...told('box.history.saving', { since: h.saveHeld.since, minutes: Math.floor(h.saveHeld.waitingSeconds / 60) }),
       evidence: { heldSince: h.saveHeld.since, waitingSeconds: h.saveHeld.waitingSeconds, warnAfterSeconds: BOX_HISTORY_SAVE_HELD_WARN_SECONDS },
     });
   }
   if (h?.noSealKey === true) {
     out.push({
       name: 'box_history_seal', status: 'degraded',
-      detail: 'head office was started without the key that seals the store computers\' saved history, so it trusts no saved history and saves none: every health check re-reads every store-computer report (correct, but slow, and a big store stays "being prepared"). This should never happen in a real deployment (the key comes from BOX_HISTORY_SEAL_KEY, head office\'s own secret, which the API needs to start) — call support',
+      ...told('box.history.seal'),
       evidence: { sealKey: 'missing' },
     });
   }
   if (h?.lastBuildFailed !== null && h?.lastBuildFailed !== undefined) {
     out.push({
       name: 'box_history_build', status: 'degraded',
-      detail: `building the store computers' saved history failed at ${h.lastBuildFailed.at} (${h.lastBuildFailed.error}); the next health check tries again. If this stays, call support`,
+      ...told('box.history.build', { at: h.lastBuildFailed.at, error: h.lastBuildFailed.error }),
       evidence: { failedAt: h.lastBuildFailed.at, error: h.lastBuildFailed.error },
     });
   }
@@ -2076,18 +2089,19 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
     const offMs = h.headOfficeOffMs ?? 0;
     const minutes = Math.floor(countedMs / 60_000);
     const stuck = countedMs > STORE_COMPUTER_CHECKS_STUCK_MINUTES * 60_000;
-    const what = input.preparing !== undefined ? 'being prepared' : 'running without the seal key, so the saved history cannot be sealed';
-    const off = offMs < 60_000 ? '' : `; head office was off for ${durationInWords(offMs)} in that time — not counted`;
-    const reason = h.notReadyReasonChanged === undefined ? '' : `; until ${h.notReadyReasonChanged.at} the reason was ${h.notReadyReasonChanged.from === 'no_seal_key' ? 'that head office had no seal key' : 'that they were being prepared'} — the time is counted from the start, whatever the reason`;
+    const what = alertText(input.preparing !== undefined ? 'box.checks.what.preparing' : 'box.checks.what.noSeal');
     // Round 36 · NEW-3 / NEW-4: said, never silent — a note from a clock ahead set aside, and time from before the notes.
-    const ahead = h.notReadyClockAhead === undefined ? '' : `; a running note stamped ${h.notReadyClockAhead.stamped} (ahead of head office's clock) was set aside at ${h.notReadyClockAhead.noticedAt} — a head-office clock is wrong, call support`;
-    const before = (h.notReadyBeforeNotesMs ?? 0) < 60_000 ? '' : `; ${durationInWords(h.notReadyBeforeNotesMs!)} of it is from before head office noted its running time (an earlier version) — counted as running`;
-    const after = `${reason}${ahead}${before}`;
+    const extras: AlertText[] = [
+      ...(offMs < 60_000 ? [] : [alertText('box.checks.off', { ms: offMs })]),
+      ...(h.notReadyReasonChanged === undefined ? [] : [alertText('box.checks.reasonWas', { at: h.notReadyReasonChanged.at, from: h.notReadyReasonChanged.from })]),
+      ...(h.notReadyClockAhead === undefined ? [] : [alertText('box.checks.ahead', { stamped: h.notReadyClockAhead.stamped, noticedAt: h.notReadyClockAhead.noticedAt })]),
+      ...((h.notReadyBeforeNotesMs ?? 0) < 60_000 ? [] : [alertText('box.checks.before', { ms: h.notReadyBeforeNotesMs! })]),
+    ];
     out.push({
       name: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, status: stuck ? 'down' : 'ok',
-      detail: stuck
-        ? `the store computer checks have not been ready for ${minutes} minutes of head office running (since ${h.notReadySince}; now ${what}${off}${after}) — more than the ${STORE_COMPUTER_CHECKS_STUCK_MINUTES}-minute line. Head office cannot check the store computers' disks, queues, tills and bill numbers meanwhile (the tills keep selling and nothing is lost). Call support today`
-        : `the store computer checks are not ready yet (${what}, for ${minutes} minutes of head office running so far${off}${after}); the owner is told if this lasts more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes of head office running`,
+      ...(stuck
+        ? told('box.checks.stuck', { minutes, since: h.notReadySince, what, extras, limit: STORE_COMPUTER_CHECKS_STUCK_MINUTES })
+        : told('box.checks.notReady', { what, minutes, extras, limit: STORE_COMPUTER_CHECKS_STUCK_MINUTES })),
       evidence: {
         notReadySince: h.notReadySince, minutes, alertAfterMinutes: STORE_COMPUTER_CHECKS_STUCK_MINUTES, why: input.preparing !== undefined ? 'being_prepared' : 'no_seal_key',
         headOfficeOffMinutes: Math.floor(offMs / 60_000), ...(h.notReadyReasonChanged === undefined ? {} : { reasonWas: h.notReadyReasonChanged.from, reasonChangedAt: h.notReadyReasonChanged.at }),
@@ -2868,23 +2882,26 @@ export function billNumberFindingsFor(input: {
     // Verifier r23 NEW-1 · OB-89: some of them the box said it no longer held, and now claims again — never "enter the paper
     // bills" while the box claims them: a person checks the store computer first.
     const back = u.reclaimed === undefined || u.reclaimed.numbers.length === 0 ? undefined : { ...u.reclaimed, ranges: countRanges(u.reclaimed.numbers) };
+    const tail = back !== undefined
+      ? alertText('box.unreceived.tail.reclaimed', { saidGoneAt: back.saidGoneAt, prefix: u.prefix, ranges: flatRanges(back.ranges), byList: back.byList })
+      : u.sparse !== undefined
+      ? alertText('box.unreceived.tail.sparse', { count: u.sparse.count, prefix: u.prefix, spans: flatRanges(u.sparse.spans), missing: u.numbers.length })
+      : u.wholeQueue !== undefined
+      ? alertText('box.unreceived.tail.wholeQueue', { items: u.wholeQueue.items, since: u.wholeQueue.since })
+      : maybeGivenUp
+      ? alertText('box.unreceived.tail.maybeGivenUp', { dead: latestRecord.queue.deadLettered })
+      : alertText('box.unreceived.tail.restore');
     out.push({
       kind: 'issued_never_received', prefix: u.prefix, ranges, since: u.since,
-      detail: `bills issued but never received: store ${input.storeId}'s computer gave ${rangeWords(u.prefix, ranges)} (on a bill, or after the backup it was restored from) and head office has not received ${them} ${UNRECEIVED_GRACE_MINUTES} minutes or more after ${notTaken ? `it stopped taking the store computer's word that it still held ${them}` : `the store computer said it no longer held ${them} to send`} (${u.since})${u.capped ? `; only the newest ${UNRECEIVED_CHECK_CAP} were checked` : ''}. `
-        + (back !== undefined
-          ? `The store computer said at ${back.saidGoneAt} that it no longer held ${rangeWords(u.prefix, back.ranges)}, and its latest report says ${back.byList ? 'they are in its list of bills still to send, given up on, or given and never used' : 'its queue holds item(s) still to send, without saying which'} again. A store computer keeps a bill until head office takes it and never takes back one it has let go, so head office no longer waits on that word. Do NOT re-enter any of them from paper until a person has checked the store computer's "waiting to send" and "gave up sending" lists`
-          : u.sparse !== undefined
-          ? `The store computer says it still holds ${u.sparse.count} bill(s) somewhere between ${rangeWords(u.prefix, u.sparse.spans)} (to send, or given up on) — fewer than the ${u.numbers.length} head office has not received there, so at least ${u.numbers.length - u.sparse.count} of them are not on it, and which ones cannot be told. Do NOT re-enter any of them from paper until a person has checked the store computer's "waiting to send" and "gave up sending" lists`
-          : u.wholeQueue !== undefined
-          ? `The store computer still says its queue holds ${u.wholeQueue.items} item(s) to send, as it has since ${u.wholeQueue.since}, but not which bills — past the owner's line head office no longer waits on that. These may be among them: do NOT re-enter them from paper until a person has checked the store computer's "waiting to send" count`
-          : maybeGivenUp
-          ? `The store computer also says it holds ${latestRecord.queue.deadLettered} item(s) it gave up sending, and does not say which bills they are — these may be among them: do NOT re-enter them from paper until a person has checked the store computer's "gave up sending" list`
-          : 'If the store computer was restored from a backup, these sales are lost from head office\'s books: find the paper bills and enter them, or write them off with the reason'),
+      ...told('box.unreceived', {
+        storeId: input.storeId, prefix: u.prefix, ranges: flatRanges(ranges), many: them === 'them', grace: UNRECEIVED_GRACE_MINUTES, notTaken, since: u.since,
+        capped: u.capped, cap: UNRECEIVED_CHECK_CAP, tail,
+      }),
     });
     if (back !== undefined && back.byList) {
       out.push({
         kind: 'report_contradicts_earlier_report', prefix: u.prefix, ranges: back.ranges, since: back.saidGoneAt,
-        detail: `store ${input.storeId}'s computer contradicts its own earlier report: at ${back.saidGoneAt} it said it no longer held ${rangeWords(u.prefix, back.ranges)} (head office has not received ${back.numbers.length === 1 ? 'it' : 'them'}), and its latest report${latestRecord === undefined ? '' : ` (${latestRecord.receivedAt})`} lists ${back.numbers.length === 1 ? 'it' : 'them'} as still on it (to send, given up on, or given and never used). A store computer keeps a bill until head office takes it and never takes back one it has let go, so head office does not believe the later list for ${back.numbers.length === 1 ? 'it' : 'them'}: ${back.numbers.length === 1 ? 'it is' : 'they are'} named as never received. The store computer or head office lost track of these bills — call support (owner decision OB-92: no blame is placed; rarely head office lost a sale it accepted). Do NOT re-enter any of them from paper until a person has checked the store computer's "waiting to send" and "gave up sending" lists`,
+        ...told('box.contradictsEarlier', { storeId: input.storeId, saidGoneAt: back.saidGoneAt, prefix: u.prefix, ranges: flatRanges(back.ranges), one: back.numbers.length === 1, latestAt: latestRecord?.receivedAt ?? null }),
       });
     }
   }
@@ -2895,7 +2912,7 @@ export function billNumberFindingsFor(input: {
     if (d === undefined || d.count === 0 || d.from === undefined || d.to === undefined) continue;
     out.push({
       kind: 'bills_dead_lettered_on_box', prefix, ranges: [[d.from, d.to]], count: d.count, since: d.oldestAt ?? receivedAt,
-      detail: `needs a person (the store computer gave up sending; do NOT re-enter from paper): store ${input.storeId}'s computer holds ${d.count} bill(s) under ${prefix} (between ${rangeWords(prefix, [[d.from, d.to]])}) that it stopped trying to send to head office. They are on the store computer, not lost. Support checks why head office did not take them and releases them from the store computer's "gave up sending" list; entering them from paper as well would book them twice`,
+      ...told('box.deadLettered', { storeId: input.storeId, count: d.count, prefix, ranges: flatRanges([[d.from, d.to]]) }),
     });
   }
   // Round 25 · OB-96: numbers the latest report cannot vouch for, beyond the newest UNRECEIVED_CHECK_CAP head office checks
@@ -2907,16 +2924,15 @@ export function billNumberFindingsFor(input: {
     const below = checked[0]![0];
     out.push({
       kind: 'at_risk_not_checked', prefix, count: unchecked, ranges: atRiskNotChecked(x.atRisk), since: receivedAt,
-      detail: `not checked: store ${input.storeId}'s computer says it cannot vouch for ${unchecked + checked.reduce((n, [a, z]) => n + z - a + 1, 0)} bill number(s) under ${prefix} (given after the backup it was restored from); head office checks the newest ${UNRECEIVED_CHECK_CAP} of them one by one on each report, so ${unchecked} older one(s), below ${prefix}${pad6(below)}, were NOT checked. Ask support to compare that store computer's restore record with head office's bills; any of them head office does not hold may be a sale lost by the restore. Do NOT re-enter bills from paper until support has checked. ${NOT_CHECKED_STAYS_WORDS}`,
+      ...told('box.atRisk', { storeId: input.storeId, total: unchecked + checked.reduce((n, [a, z]) => n + z - a + 1, 0), prefix, cap: UNRECEIVED_CHECK_CAP, unchecked, below }),
     });
   }
   // Verifier r21 UNSENT-CEILING (a): the latest report's per-prefix lists do not fit its own queue — said, and not believed.
-  const contradiction = latestRecord === undefined || latestRecord.receiptNumbersIssued === undefined ? undefined
-    : latestRecord.queueContradiction ?? queueContradiction(latestRecord.queue, latestRecord.receiptNumbersIssued);
+  const contradiction = latestRecord === undefined || latestRecord.receiptNumbersIssued === undefined ? undefined : contradictionWords(latestRecord);
   if (latestRecord !== undefined && contradiction !== undefined) {
     out.push({
       kind: 'report_contradicts_its_queue', prefix: '', since: latestRecord.receivedAt,
-      detail: `store ${input.storeId}'s computer's report contradicts itself — ${contradiction}. Head office does not believe its list of bills still to send: any bill it has not received is named as never received after ${UNRECEIVED_GRACE_MINUTES} minutes. Check that store computer (its software may be faulty or altered)`,
+      ...told('box.contradictsQueue', { storeId: input.storeId, contradiction, grace: UNRECEIVED_GRACE_MINUTES }),
     });
   }
   // Round 27 · OB-100 (verifier r26 NEW-1, probes U1/U4): a number the store computer listed as given and never used AFTER
@@ -2935,12 +2951,16 @@ export function billNumberFindingsFor(input: {
     const one = sorted.length === 1;
     // Round 29 · OB-108: whose clock the bill's time is (the store computer's, or — an older store computer — the till's).
     const tillClock = sorted.filter((u) => u.clock === 'till').length;
-    const clockWords = tillClock === 0
-      ? !sorted.every((u) => u.clock === 'store_computer') ? '' : ' (both times by the store computer\'s own clock: when it said so, and when it took the bill from the till)'
-      : ` (${tillClock === sorted.length ? '' : `for ${tillClock} of them, `}the bill's time is the TILL's own clock — this store computer did not stamp when it took the bill, so a till clock that is slow can make an honest number look like this: check the till's clock first)`;
+    const clockWords: AlertText | '' = tillClock === 0
+      ? !sorted.every((u) => u.clock === 'store_computer') ? '' : alertText('box.clock.storeComputer')
+      : alertText('box.clock.till', { some: tillClock === sorted.length ? null : tillClock });
     out.push({
       kind: 'unused_number_received', prefix, ranges, count: sorted.length, since: first.heldAt,
-      detail: `does not fit: store ${input.storeId}'s computer said (last at ${said}) that it gave ${rangeWords(prefix, ranges)} and never put ${one ? 'it' : 'them'} on a bill, but head office holds ${sales === sorted.length ? (one ? 'a sale' : 'sales') : sales === 0 ? (one ? 'a return' : 'returns') : 'sales and returns'} under ${one ? 'that number' : 'those numbers'}, made before that (the first at ${first.heldAt}, ${prefix}${pad6(first.number)})${clockWords}. A number put on a bill is never "unused" afterwards. Nothing is missing — head office has ${one ? 'the bill' : 'the bills'}, so do NOT look for paper bills — but the store computer's list of unused numbers under ${prefix} cannot be relied on: call support to check that store computer (the store computer or head office lost track; no blame is placed, as owner decision OB-92).${cappedWords(input.unusedCapped?.find((c) => c.prefix === prefix))} ${UNUSED_RECEIVED_STAYS_WORDS}`,
+      ...told('box.unusedReceived', {
+        storeId: input.storeId, said, prefix, ranges: flatRanges(ranges), one,
+        heldAs: sales === sorted.length ? 'sales' : sales === 0 ? 'returns' : 'mixed', firstAt: first.heldAt, firstNumber: first.number,
+        clock: clockWords, capped: cappedText(input.unusedCapped?.find((c) => c.prefix === prefix), false),
+      }),
     });
   }
   out.push(...refusedFindingsFrom(input.storeId, facts.refusedOpen));
@@ -2950,13 +2970,13 @@ export function billNumberFindingsFor(input: {
     if (n.prefix !== undefined) {
       out.push({
         kind: 'report_refused_not_kept', prefix: n.prefix, count: n.count, since: n.first,
-        detail: `${n.count} more refused bill count(s) under ${n.prefix} not kept: store ${input.storeId}'s computer ${n.computer} reported more NEW bill counts under ${n.prefix} that head office refused (a count too far ahead of what head office has received, or a till that belongs to another store computer) than head office keeps — at most ${REFUSED_OWN_NEW_PER_DAY_MAX} new ones a day per store computer per till — between ${n.first} and ${n.last}; the highest of them was ${n.prefix}${pad6(n.highest ?? 0)}. The ones above that are counted here, never kept, so they are not listed one by one (the refused counts that were kept are listed above). A store computer that keeps reporting impossible counts for its own till is faulty or has been altered: call support the same day, and ask them to block that store computer's sign-in if it goes on. This line stays for ${REFUSED_NOT_KEPT_SHOWN_DAYS} days after the last one`,
+        ...told('box.refusedNotKept.own', { count: n.count, prefix: n.prefix, storeId: input.storeId, computer: n.computer, max: REFUSED_OWN_NEW_PER_DAY_MAX, first: n.first, last: n.last, highest: n.highest ?? 0, days: REFUSED_NOT_KEPT_SHOWN_DAYS }),
       });
       continue;
     }
     out.push({
       kind: 'report_refused_not_kept', prefix: '', count: n.count, since: n.first,
-      detail: `${n.count} more refused bill-number prefix(es) not kept: store ${input.storeId}'s computer ${n.computer} named more new bill-number prefixes that are not this store's (or new counts under them) than head office keeps — at most ${REFUSED_NEW_PER_DAY_MAX} new ones a day per store computer — between ${n.first} and ${n.last}. The ones above that are counted here, never kept, so they are not listed one by one. A store computer that names many prefixes that are not its store's is faulty or has been altered: call support the same day, and ask them to block that store computer's sign-in if it goes on. This line stays for ${REFUSED_NOT_KEPT_SHOWN_DAYS} days after the last one`,
+      ...told('box.refusedNotKept.other', { count: n.count, storeId: input.storeId, computer: n.computer, max: REFUSED_NEW_PER_DAY_MAX, first: n.first, last: n.last, days: REFUSED_NOT_KEPT_SHOWN_DAYS }),
     });
   }
   return out;
@@ -3021,7 +3041,7 @@ export function storeBillFacts(input: {
 }
 
 /** Round 27 · OB-100: how long an "unused but received" finding stays (the health page's words). */
-export const UNUSED_RECEIVED_STAYS_WORDS = 'This stays until the owner or head office staff (all-stores authority — a store\'s own manager cannot, and neither can the IT/platform administrator) acknowledge it with a reason, after support has checked the store computer. The acknowledgement holds while head office finds this same set of numbers; a new number needs a new acknowledgement';
+export const UNUSED_RECEIVED_STAYS_WORDS: string = BOX_STAYS_ENGLISH.unused;
 
 /** Round 28 · OB-103: acknowledging a "said unused, but head office has the bill" line. */
 export const UNUSED_RECEIVED_ACKNOWLEDGEMENTS_PATH = '/v1/store-computers/unused-numbers-received/acknowledgements';
@@ -3106,11 +3126,9 @@ export function unusedButReceived(
  */
 export interface UnusedCheckCapped { readonly prefix: string; readonly notChecked: number; readonly notTimed: number }
 export const UNUSED_HELD_TIMED_MAX = 50;
-const cappedWords = (c: UnusedCheckCapped | undefined): string => (c === undefined || (c.notChecked === 0 && c.notTimed === 0) ? ''
-  : ` Not every number was looked at: ${[
-    c.notChecked > 0 ? `${c.notChecked} older number(s) said unused, beyond the newest ${UNRECEIVED_CHECK_CAP}, were not checked against head office's bills` : '',
-    c.notTimed > 0 ? `${c.notTimed} more number(s) head office holds a bill for, beyond the newest ${UNUSED_HELD_TIMED_MAX}, did not have their bill's time read` : '',
-  ].filter((x) => x !== '').join('; ')} — so there may be more than this line names.`);
+/** OB-435: what the check did not look at, structured ('' when it looked at everything); `noDot` drops the closing full stop. */
+const cappedText = (c: UnusedCheckCapped | undefined, noDot: boolean): AlertText | '' => (c === undefined || (c.notChecked === 0 && c.notTimed === 0) ? ''
+  : alertText('box.capped', { notChecked: c.notChecked, cap: UNRECEIVED_CHECK_CAP, notTimed: c.notTimed, timedMax: UNUSED_HELD_TIMED_MAX, noDot }));
 
 /** Round 27 · OB-100: one prefix's unused numbers, as the store's people read them — per day, how many and which. */
 export interface UnusedNumbersDay {
@@ -3148,7 +3166,7 @@ export function unusedNumbersByDay(list: readonly UnusedNumbers[]): UnusedNumber
 }
 
 /** Round 26 · OB-98: what the owner reads about how a not-checked line stops being a warning (the health page's words). */
-export const NOT_CHECKED_STAYS_WORDS = 'This stays until the owner or head office staff (all-stores authority — a store\'s own manager cannot, and neither can the IT/platform administrator) acknowledge it with a reason, after support has compared the restore record. The acknowledgement holds while the store computer keeps reporting this same set of not-checked numbers; a different set needs a new acknowledgement';
+export const NOT_CHECKED_STAYS_WORDS: string = BOX_STAYS_ENGLISH.notChecked;
 
 /**
  * Round 26 · OB-98: the at-risk numbers ONE report names that head office does NOT check one by one — every count in its
@@ -3461,15 +3479,14 @@ function refusedFindingsFrom(storeId: string, refusedOpen: RefusedOpen): BillNum
     const top = open.get(counts[0]!)!;
     const r = top.latest.refused!;
     const others = counts.slice(1);
+    const head = r.because === 'prefix_of_another_store_computer'
+      ? twoComputersText(storeId, prefix, r, top.latest.by)
+      : r.because === 'prefix_of_another_store'
+      ? alertText('box.refused.anotherStore', { storeId, by: top.latest.by, prefix, through: r.through })
+      : alertText('box.refused.farAhead', { storeId, by: top.latest.by, prefix, through: r.through, banked: r.bankedThrough, plausible: r.plausibleThrough ?? r.bankedThrough + PLAUSIBLE_ISSUED_AHEAD, ahead: PLAUSIBLE_ISSUED_AHEAD });
     out.push({
       kind: 'report_refused', prefix, through: r.through, since: top.first,
-      detail: (r.because === 'prefix_of_another_store_computer'
-        ? twoComputersWords(storeId, prefix, r, top.latest.by)
-        : r.because === 'prefix_of_another_store'
-        ? `store ${storeId}'s computer (${top.latest.by}) reported giving bill numbers under ${prefix} through ${r.through}, but head office issued ${prefix} to a till of ANOTHER store — not counted, so no till is affected; check that store computer`
-        : `store ${storeId}'s computer (${top.latest.by}) reported giving bill numbers under ${prefix} through ${r.through}, far beyond the ${r.bankedThrough} head office holds banked (at most ${r.plausibleThrough ?? r.bankedThrough + PLAUSIBLE_ISSUED_AHEAD} is believed, ${PLAUSIBLE_ISSUED_AHEAD} ahead) — not counted, so the till keeps selling; check that store computer's bill numbers`)
-        + (others.length === 0 ? '' : `. It also reported ${others.length === 1 ? 'another count' : 'other counts'} head office refused under ${prefix}, still to be looked at: ${others.slice(0, 5).join(', ')}${others.length > 5 ? ` and ${others.length - 5} more` : ''}`)
-        + `. ${REFUSAL_STAYS_WORDS}`,
+      ...told('box.refused', { head, prefix, others }),
     });
   }
   return out;
@@ -3480,16 +3497,15 @@ function refusedFindingsFrom(storeId: string, refusedOpen: RefusedOpen): BillNum
  * which one head office uses and why (it reported the prefix first, or the owner approved moving the prefix to it), and what
  * that means for the lost-bill checks. Neither machine is called the wrong one: a person checks both.
  */
-function twoComputersWords(storeId: string, prefix: string, r: RefusedIssued, other: string): string {
-  const used = r.boundTo ?? '?';
-  const why = r.boundVia === 'replacement'
-    ? `the owner approved moving ${prefix} to it${r.boundSince === undefined ? '' : ` at ${r.boundSince}`}${r.boundReplacementId === undefined ? '' : ` (act ${r.boundReplacementId})`}`
-    : `it was the first to report ${prefix}${r.boundSince === undefined ? '' : `, at ${r.boundSince}`}`;
-  return `two store computers report bill numbers under ${prefix} for store ${storeId}: ${used} and ${other}. Head office uses ${used}'s reports for ${prefix} because ${why}; it keeps ${other}'s report (through ${r.through}) as evidence and does not use it. One store computer per bill-number prefix (owner decision OB-94), so until a person has checked both machines, head office checks ${prefix}'s bills for loss only on ${used}'s word — bills sold on ${other}, if that is the till's real store computer, are not checked. Check both machines: if ${other} is the till's store computer now, record a replaced store computer on the Store computers page (the owner approves it); if it is a stand-by or a copy, switch it off or give its till a new prefix`;
+function twoComputersText(storeId: string, prefix: string, r: RefusedIssued, other: string): AlertText {
+  return alertText('box.refused.twoComputers', {
+    prefix, storeId, used: r.boundTo ?? '?', other, through: r.through, via: r.boundVia === 'replacement' ? 'replacement' : 'first',
+    since: r.boundSince ?? null, replacementId: r.boundReplacementId ?? null,
+  });
 }
 
 /** Verifier r22 D2 · OB-88: what the owner reads about how a refused report stops being a warning (the health page's words). */
-export const REFUSAL_STAYS_WORDS = 'This stays until head office has banked that many, or the owner or head office staff (all-stores authority — a store\'s own manager cannot, and neither can the IT/platform administrator) acknowledge this count with a reason. The acknowledgement holds while the store computer keeps reporting this same count; a different count needs a new acknowledgement';
+export const REFUSAL_STAYS_WORDS: string = BOX_STAYS_ENGLISH.refusal;
 
 /** Verifier r21 BOX-2 / r22 D2: a person's acknowledgement of a refused report (kept append-only; each one: who, when, why). */
 export interface RefusalAcknowledgement {
@@ -3548,7 +3564,7 @@ export const DISK_ESTIMATE_MIN_TRADING_MINUTES = 60;
 
 export type TradingHoursEstimate =
   | { readonly known: true; readonly hoursLeft: number; readonly bytesPerTradingHour: number; readonly roomLeftBytes: number; readonly tradingMinutesCounted: number; readonly growingGaps: number; readonly from: string; readonly to: string }
-  | { readonly known: false; readonly why: string; readonly tradingMinutesCounted: number; readonly growingGaps: number };
+  | { readonly known: false; readonly why: string; readonly tradingMinutesCounted: number; readonly growingGaps: number; readonly whyText?: AlertText };
 
 export function estimateTradingHoursLeft(storeRecords: readonly BoxHealthRecord[], latest: BoxHealthRecord): TradingHoursEstimate {
   const since = Date.parse(latest.observedAt) - DISK_ESTIMATE_LOOKBACK_HOURS * 3_600_000;
@@ -3580,10 +3596,8 @@ export function estimateOverPoints(ordered: readonly DiskPoint[], latest: BoxHea
   }
   const tradingMinutesCounted = Math.floor(minutes);
   if (gaps < DISK_ESTIMATE_MIN_GROWING_GAPS || minutes < DISK_ESTIMATE_MIN_TRADING_MINUTES) {
-    return {
-      known: false, tradingMinutesCounted, growingGaps: gaps,
-      why: `hours of trading left: not yet known — the store computer's reports show the sales log growing over ${gaps} gap(s) of at most ${DISK_ESTIMATE_MAX_GAP_MINUTES} minutes and ${tradingMinutesCounted} minute(s) of trading; at least ${DISK_ESTIMATE_MIN_GROWING_GAPS} gaps and ${DISK_ESTIMATE_MIN_TRADING_MINUTES} minutes are needed before it can be estimated (never guessed)`,
-    };
+    const why = told('box.estimate.unknown', { gaps, maxGap: DISK_ESTIMATE_MAX_GAP_MINUTES, minutes: tradingMinutesCounted, minGaps: DISK_ESTIMATE_MIN_GROWING_GAPS, minMinutes: DISK_ESTIMATE_MIN_TRADING_MINUTES });
+    return { known: false, tradingMinutesCounted, growingGaps: gaps, why: why.detail, whyText: why.text };
   }
   const bytesPerTradingHour = bytes / (minutes / 60);
   const d = latest.disk;
@@ -3644,10 +3658,8 @@ export interface BoxHealthView {
   }[];
 }
 
-const mb = (bytes: number): string => `${Math.floor(bytes / 1_048_576)} MB`;
 /** How bad a status is (the worse of two decides — OB-107). */
 const RANK_OF: Readonly<Record<string, number>> = { ok: 0, unknown: 1, degraded: 2, down: 3 };
-const ago = (s: number): string => (s < 3_600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3_600)}h ${Math.floor((s % 3_600) / 60)}m`);
 
 /** The box's own rule (commitLocally): the next sale fits only when the log plus the reserve fits, and the disk has the reserve free. */
 export const boxCanRecordSales = (d: BoxDisk): boolean =>
@@ -3740,7 +3752,7 @@ export function judgeBoxes(input: {
   let anyFreshCannot = false;
   let allFreshCan = latest.size > 0;
   // §31.1 · OB-409: the stores whose computer holds new prices and offers (its clock 5+ minutes out), for `box_clock_held`.
-  const clockHeld: { storeId: string; computer: string; says: string; offsetSeconds: number | null; heldPromotions: readonly string[]; heldPrices: readonly string[]; stale: boolean }[] = [];
+  const clockHeld: { storeId: string; computer: string; says: AlertText; offsetSeconds: number | null; heldPromotions: readonly string[]; heldPrices: readonly string[]; stale: boolean }[] = [];
   for (const storeId of ids) {
     const r = latest.get(storeId);
     const unusedDays = unusedNumbersByDay(unusedOf.get(storeId) ?? []);
@@ -3748,7 +3760,10 @@ export function judgeBoxes(input: {
       computer: o.reportedBy, lastReportAt: o.observedAt, stale: Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(o.observedAt)) / 1000)) >= input.thresholds.syncLagWarnSeconds,
       canRecordSales: boxCanRecordSales(o.disk), bindsNoTill: true as const,
     }));
-    const othersSay = otherComputers.length === 0 ? '' : ` (${otherComputers.length === 1 ? 'another store computer' : 'other store computers'}, ${otherComputers.map((o) => o.computer).join(', ')}, also ${otherComputers.length === 1 ? 'reports' : 'report'} for this store but ${otherComputers.length === 1 ? 'holds' : 'hold'} none of its tills' bill numbers, so head office takes the store's health only from ${r?.reportedBy ?? 'the store computer that does'}; ${otherComputers.map((o) => `${o.computer} last reported ${o.lastReportAt}${o.canRecordSales ? '' : ', its own disk full'}`).join('; ')})`;
+    const othersSay: AlertText | '' = otherComputers.length === 0 ? '' : alertText('box.othersSay', {
+      computers: otherComputers.map((o) => o.computer), reportedBy: r?.reportedBy ?? null,
+      lines: otherComputers.map((o) => alertText('box.othersSay.line', { computer: o.computer, at: o.lastReportAt, full: !o.canRecordSales })),
+    });
     if (r === undefined) {
       allFreshCan = false;
       boxes.push({
@@ -3758,7 +3773,7 @@ export function judgeBoxes(input: {
       if (otherComputers.length > 0) {
         components.push({
           name: `box_disk:${storeId}`, status: 'unknown',
-          detail: `the store computer that holds store ${storeId}'s tills' bill numbers (${[...(boundTo.get(storeId) ?? [])].join(', ')}) has not reported its disk, queue or tills${othersSay}. Not known — never read from another machine`,
+          ...told('box.disk.notReported', { storeId, computers: [...(boundTo.get(storeId) ?? [])], others: othersSay }),
         });
       }
       continue;
@@ -3776,10 +3791,15 @@ export function judgeBoxes(input: {
     // OB-101: the disk's growth from THIS store computer's own reports only.
     const estimateOf = (h: BoxHealthRecord): TradingHoursEstimate => (view === undefined ? estimateTradingHoursLeft(input.records.filter((x) => x.reportedBy === h.reportedBy), h) : view.estimate(h));
     const estimate = estimateOf(r);
-    const estimateSays = estimate.known
-      ? `about ${estimate.hoursLeft} hours of trading left before it would refuse a sale (the sales log grew ${mb(estimate.bytesPerTradingHour)} per trading hour over ${estimate.tradingMinutesCounted} minutes of trading in its reports since ${estimate.from}; ${mb(estimate.roomLeftBytes)} of room left above the reserve)`
-      : estimate.why;
-    const staleNote = `STALE — store ${storeId}'s computer last reported ${ago(ageSeconds)} ago (${r.observedAt}); it has not been heard from since, so this is old news, not the state now`;
+    const estimateText = (e: TradingHoursEstimate): string | AlertText => (e.known
+      ? alertText('box.estimate.known', { hours: e.hoursLeft, perHour: e.bytesPerTradingHour, minutes: e.tradingMinutesCounted, from: e.from, room: e.roomLeftBytes })
+      : partOf(e.whyText, e.why));
+    const estimateWords = estimateText(estimate);
+    const estimateSays = typeof estimateWords === 'string' ? estimateWords : renderAlert(estimateWords, 'en');
+    const staleNoteOf = (agoSeconds: number, at: string): AlertText => alertText('box.staleNote', { storeId, agoSeconds, at });
+    const staleNote = staleNoteOf(ageSeconds, r.observedAt);
+    /** "STALE — …. Then: <words>" (old news, said so). */
+    const staleThen = (note: AlertText, then: AlertText | string): { readonly detail: string; readonly text: AlertText } => told('box.stale.then', { stale: note, then });
     // Verifier r21 UNSENT-CEILING (b): bills held on the box past the owner's line are a finding of their own.
     const waiting = billsWaitingOnTheBox({
       records: input.records, storeId, at: input.at, ...(input.unsentWarnHours === undefined ? {} : { warnHours: input.unsentWarnHours }),
@@ -3809,7 +3829,11 @@ export function judgeBoxes(input: {
     if (unusedDays.length > 0) {
       components.push({
         name: `box_unused_numbers:${storeId}`, status: 'ok',
-        detail: `taken but never used (information — nothing to look for): store ${storeId}'s computer says these bill numbers were given and never put on a bill — ${unusedDays.map((d) => `till ${d.prefix} on ${d.day}: ${d.count} number(s), ${rangeWords(d.prefix, d.ranges)}${d.moreRanges > 0 ? ` and ${d.moreRanges} more range(s)` : ''}`).join('; ')}. A bill abandoned at the till or a card declined after the number was taken keeps its number; if one day shows many, ask the store why${(input.unusedCapped?.get(storeId) ?? []).map((c) => (cappedWords(c) === '' ? '' : `. Under ${c.prefix}:${cappedWords(c).replace(/\.$/, '')}`)).join('')}`,
+        ...told('box.unusedNumbers', {
+          storeId,
+          days: unusedDays.map((d) => alertText('box.unusedNumbers.day', { prefix: d.prefix, day: d.day, count: d.count, ranges: flatRanges(d.ranges), more: d.moreRanges })),
+          capped: (input.unusedCapped?.get(storeId) ?? []).flatMap((c) => { const t = cappedText(c, true); return t === '' ? [] : [alertText('box.unusedNumbers.capped', { prefix: c.prefix, capped: t })]; }),
+        }),
         evidence: { days: unusedDays.length, numbers: unusedDays.reduce((n, d) => n + d.count, 0), byTillAndDay: unusedDays.map((d) => `${d.prefix}@${d.day}:${d.count}`).join(',') },
       });
     }
@@ -3818,12 +3842,12 @@ export function judgeBoxes(input: {
     if (r.zoneCheck !== undefined) {
       const z = r.zoneCheck;
       const says = z.verdict === 'differs'
-        ? `store ${storeId}'s computer (${r.reportedBy}) keeps the time zone ${z.machineTimeZone}, not the shop's (${z.shopTimeZone}${z.shopTimeZoneFrom === 'shop_default' ? ', the shop default — its store pack names none' : ''}). Bills, shifts and the day close are still dated by the shop's zone; ask IT to set that computer to ${z.shopTimeZone}`
-        : `store ${storeId}'s computer keeps the shop's time zone (${z.shopTimeZone})`;
+        ? told('box.zone.differs', { storeId, computer: r.reportedBy, machine: z.machineTimeZone, shop: z.shopTimeZone, shopDefault: z.shopTimeZoneFrom === 'shop_default' })
+        : told('box.zone.same', { storeId, shop: z.shopTimeZone });
       components.push({
         name: `box_time_zone:${storeId}`,
         status: stale ? 'unknown' : z.verdict === 'differs' ? 'degraded' : 'ok',
-        detail: stale ? `${staleNote}. Then: ${says}` : says,
+        ...(stale ? staleThen(staleNote, says.text) : says),
         evidence: { verdict: z.verdict, shopTimeZone: z.shopTimeZone, shopTimeZoneFrom: z.shopTimeZoneFrom, machineTimeZone: z.machineTimeZone, computer: r.reportedBy, reportedAt: r.observedAt, ageSeconds },
       });
     }
@@ -3833,19 +3857,21 @@ export function judgeBoxes(input: {
     // rule naming `box_clock:<store>` raises it to that person (the ops-alert worker). Stale: old news, `unknown`.
     if (r.clockCheck !== undefined) {
       const c = r.clockCheck;
-      const out = c.offsetSeconds === null ? '' : `${Math.max(1, Math.round(Math.abs(c.offsetSeconds) / 60))} min ${c.offsetSeconds < 0 ? 'AHEAD of' : 'BEHIND'} head office`;
-      const heldList = [...c.hold.heldPromotions.map((id) => `offer ${id}`), ...c.hold.heldPrices.map((id) => `price ${id}`)];
+      const out = alertText('box.clock.out', { offsetSeconds: c.offsetSeconds });
       const says = c.verdict === 'flag_bills' || c.hold.held
-        ? `store ${storeId}'s computer (${r.reportedBy}): price change held — its clock is ${out || 'out'} (${Math.round(c.flagSeconds / 60)} min or more, since ${c.hold.since ?? c.lastCheckedAt ?? '?'}). Prices and offers already running stay; no new price, offer or bill-number year starts on it until its clock is back in step, and every bill taken meanwhile is marked for checking. Selling goes on. ${heldList.length === 0 ? 'Nothing new has been due yet' : `Held now: ${heldList.join(', ')}`}. Ask IT to correct that computer's clock`
+        ? told('box.clock.held', {
+          storeId, computer: r.reportedBy, out, flagMinutes: Math.round(c.flagSeconds / 60), since: c.hold.since ?? c.lastCheckedAt ?? '?',
+          offers: [...c.hold.heldPromotions], prices: [...c.hold.heldPrices],
+        })
         : c.verdict === 'warning'
-          ? `store ${storeId}'s computer (${r.reportedBy}): its clock is ${out} (${Math.round(c.warnSeconds / 60)} min or more). Correct it before ${Math.round(c.flagSeconds / 60)} min, when bills are marked and new prices and offers are held (OB-403)`
+          ? told('box.clock.warning', { storeId, computer: r.reportedBy, out, warnMinutes: Math.round(c.warnSeconds / 60), flagMinutes: Math.round(c.flagSeconds / 60) })
           : c.verdict === 'not_checked'
-            ? `store ${storeId}'s computer has not compared its clock with head office since it started`
-            : `store ${storeId}'s computer's clock agrees with head office`;
+            ? told('box.clock.notChecked', { storeId })
+            : told('box.clock.ok', { storeId });
       components.push({
         name: `box_clock:${storeId}`,
         status: stale ? 'unknown' : c.verdict === 'warning' || c.verdict === 'flag_bills' || c.hold.held ? 'degraded' : c.verdict === 'not_checked' ? 'unknown' : 'ok',
-        detail: stale ? `${staleNote}. Then: ${says}` : says,
+        ...(stale ? staleThen(staleNote, says.text) : says),
         evidence: {
           verdict: c.verdict, offsetSeconds: c.offsetSeconds ?? 'not measured', held: String(c.hold.held), heldPromotions: c.hold.heldPromotions.join(','), heldPrices: c.hold.heldPrices.join(','),
           computer: r.reportedBy, reportedAt: r.observedAt, ageSeconds,
@@ -3853,12 +3879,12 @@ export function judgeBoxes(input: {
       });
       if (c.verdict === 'flag_bills' || c.hold.held) {
         const minutes = c.offsetSeconds === null ? null : Math.max(1, Math.round(Math.abs(c.offsetSeconds) / 60));
-        const outBy = minutes === null || c.offsetSeconds === null ? 'out (by how much was not measured)'
-          : `${minutes} minute${minutes === 1 ? '' : 's'}${minutes >= 60 ? ` (${durationInWords(minutes * 60_000)})` : ''} ${c.offsetSeconds < 0 ? 'AHEAD of' : 'BEHIND'} head office`;
-        const held = [...c.hold.heldPromotions.map((id) => `offer ${id}`), ...c.hold.heldPrices.map((id) => `price ${id}`)];
         clockHeld.push({
           storeId, computer: r.reportedBy, offsetSeconds: c.offsetSeconds, heldPromotions: c.hold.heldPromotions, heldPrices: c.hold.heldPrices, stale,
-          says: `store ${storeId} (computer ${r.reportedBy}): its clock is ${outBy}, since ${c.hold.since ?? c.lastCheckedAt ?? '?'}; new prices and offers are HELD there — ${held.length === 0 ? 'nothing new has been due yet' : `held now: ${held.join(', ')}`}${stale ? ` (STALE — it last reported ${ago(ageSeconds)} ago, ${r.observedAt}; not heard from since, so this is its last word, not known to be the state now)` : ''}`,
+          says: alertText('box.clockHeld.store', {
+            storeId, computer: r.reportedBy, minutes, ahead: c.offsetSeconds !== null && c.offsetSeconds < 0, since: c.hold.since ?? c.lastCheckedAt ?? '?',
+            offers: [...c.hold.heldPromotions], prices: [...c.hold.heldPrices], stale, agoSeconds: ageSeconds, at: r.observedAt,
+          }),
         });
       }
     }
@@ -3867,18 +3893,18 @@ export function judgeBoxes(input: {
     // witness folder, when bills were issued and never received, or when a report was refused; a held restore is said too.
     if (r.billNumbering !== undefined || findings.length > 0) {
       const bn = r.billNumbering;
-      const parts: string[] = [];
-      if (bn?.witness === 'unavailable') parts.push(`store ${storeId}'s computer CANNOT keep its bill-number witness (${bn.fault ?? 'the witness folder could not be opened'}), so it treats every restart as a possible restore and numbers under a brand-new prefix until head office answers — no bill number is ever repeated, but fix its witness folder (EDGE_WITNESS_DIR)`);
-      if (bn !== undefined && bn.sharedWith.length > 0) parts.push(`store ${storeId}'s computer shares its witness folder with ${bn.sharedWith.length} other store computer(s) (${bn.sharedWith.map((x) => `${x.box}, last written ${x.lastWrittenAt}`).join('; ')}) — give each its own`);
-      if (bn?.restoreHeld === true) parts.push(`store ${storeId}'s computer is numbering under a brand-new prefix since ${bn.restoreSince ?? '?'} because it may have been restored from a backup (${bn.restoreBecause ?? 'possible restore'}), until head office's setup reaches it`);
-      for (const f of findings) parts.push(f.detail);
+      const parts: (AlertText | string)[] = [];
+      if (bn?.witness === 'unavailable') parts.push(alertText('box.bn.witnessUnavailable', { storeId, fault: bn.fault ?? null }));
+      if (bn !== undefined && bn.sharedWith.length > 0) parts.push(alertText('box.bn.sharedWitness', { storeId, others: bn.sharedWith.map((x) => alertText('box.bn.sharedWith', { box: x.box, at: x.lastWrittenAt })) }));
+      if (bn?.restoreHeld === true) parts.push(alertText('box.bn.restoreHeld', { storeId, since: bn.restoreSince ?? null, because: bn.restoreBecause ?? null }));
+      for (const f of findings) parts.push(partOf(f.text, f.detail));
       const bad = bn?.witness === 'unavailable' || (bn?.sharedWith.length ?? 0) > 0 || findings.length > 0;
-      const bnSays = parts.length > 0 ? parts.join('. ') : `store ${storeId}'s computer keeps its bill-number witness; nothing to look at`;
+      const bnSays = parts.length > 0 ? told('words.joined', { parts, by: '. ' }) : told('box.bn.ok', { storeId });
       components.push({
         name: `box_bill_numbers:${storeId}`,
         // A stale report never clears a finding: findings stand on head office's own ledger; the witness state is old news.
         status: bad ? 'degraded' : stale ? 'unknown' : bn?.restoreHeld === true ? 'degraded' : 'ok',
-        detail: stale && findings.length === 0 ? `${staleNote}. Then: ${bnSays}` : bnSays,
+        ...(stale && findings.length === 0 ? staleThen(staleNote, bnSays.text) : bnSays),
         evidence: {
           witness: bn?.witness ?? 'not said', restoreHeld: String(bn?.restoreHeld ?? false), sharedWitnessFolder: bn?.sharedWith.length ?? 0,
           neverReceived: findings.filter((f) => f.kind === 'issued_never_received').map((f) => `${f.prefix}:${(f.ranges ?? []).map(([a, z]) => `${a}-${z}`).join('/')}`).join(','),
@@ -3888,57 +3914,55 @@ export function judgeBoxes(input: {
       });
     }
     // One store computer's disk and queue, judged on its own report (OB-107: each bound computer; one, as before: `r`).
-    const diskOf = (h: BoxHealthRecord): { status: HealthStatus; says: string; evidence: Record<string, string | number> } => {
+    const diskOf = (h: BoxHealthRecord): { status: HealthStatus; says: AlertText; evidence: Record<string, string | number> } => {
       const hAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.observedAt)) / 1000));
       const hStale = hAge >= input.thresholds.syncLagWarnSeconds;
       const hCan = boxCanRecordSales(h.disk);
       const e = h === r ? estimate : estimateOf(h);
-      const eSays = h === r ? estimateSays : e.known
-        ? `about ${e.hoursLeft} hours of trading left before it would refuse a sale (the sales log grew ${mb(e.bytesPerTradingHour)} per trading hour over ${e.tradingMinutesCounted} minutes of trading in its reports since ${e.from}; ${mb(e.roomLeftBytes)} of room left above the reserve)`
-        : e.why;
+      const eSays = h === r ? estimateWords : estimateText(e);
       const hRunningOut = hCan && e.known && e.hoursLeft < warnHours;
-      const hStaleNote = `STALE — store ${storeId}'s computer last reported ${ago(hAge)} ago (${h.observedAt}); it has not been heard from since, so this is old news, not the state now`;
+      const hStaleNote = staleNoteOf(hAge, h.observedAt);
       const headroom = Math.max(0, h.disk.salesLogCapacityBytes - h.disk.salesLogUsedBytes - h.disk.reserveBytes);
       const diskSays = hRunningOut
-        ? `store ${storeId}'s computer will run out of room for sales soon — ${eSays}, below the owner's warning line of ${warnHours} hours. Make room on it (or give it a bigger disk) before the tills have to refuse sales`
+        ? alertText('box.disk.runningOut', { storeId, estimate: eSays, warnHours })
         : hCan
-        ? `store ${storeId}'s computer can record sales: ${mb(h.disk.freeBytes)} free of ${mb(h.disk.totalBytes)}, ${mb(headroom)} of sales-log room left above the reserve; ${eSays}`
-        : `store ${storeId}'s computer CANNOT record another sale — its disk is full (${mb(h.disk.freeBytes)} free; sales log ${mb(h.disk.salesLogUsedBytes)} of ${mb(h.disk.salesLogCapacityBytes)} with a ${mb(h.disk.reserveBytes)} reserve). Its tills refuse sales until room is made`;
+        ? alertText('box.disk.can', { storeId, free: h.disk.freeBytes, total: h.disk.totalBytes, headroom, estimate: eSays })
+        : alertText('box.disk.full', { storeId, free: h.disk.freeBytes, used: h.disk.salesLogUsedBytes, capacity: h.disk.salesLogCapacityBytes, reserve: h.disk.reserveBytes });
       return {
         // OB-78: a fresh report whose hours of trading left are under the owner's line is `degraded` (the early warning); a
         // stale report stays `unknown` (old news never raises or clears the warning); a full disk is `down` as before.
         // Round 14 (verifier G8 · P-08): a disk that can record sales but whose hours left are not yet known reads `unknown`
         // with the reason — not a plain "ok", and not the warning either.
         status: hStale ? 'unknown' : !hCan ? 'down' : hRunningOut ? 'degraded' : e.known ? 'ok' : 'unknown',
-        says: hStale ? `${hStaleNote}. Then: ${diskSays}` : diskSays,
+        says: hStale ? alertText('box.stale.then', { stale: hStaleNote, then: diskSays }) : diskSays,
         evidence: {
           freeBytes: h.disk.freeBytes, totalBytes: h.disk.totalBytes, salesLogHeadroomBytes: headroom, reportedAt: h.observedAt, ageSeconds: hAge,
           tradingHoursLeft: e.known ? e.hoursLeft : 'not yet known', warnBelowTradingHours: warnHours,
         },
       };
     };
-    const queueOf = (h: BoxHealthRecord, pastLine: readonly BillNumberFinding[]): { status: HealthStatus; says: string; evidence: Record<string, string | number> } => {
+    const queueOf = (h: BoxHealthRecord, pastLine: readonly BillNumberFinding[]): { status: HealthStatus; says: AlertText; evidence: Record<string, string | number> } => {
       const hAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.observedAt)) / 1000));
       const hStale = hAge >= input.thresholds.syncLagWarnSeconds;
-      const hStaleNote = `STALE — store ${storeId}'s computer last reported ${ago(hAge)} ago (${h.observedAt}); it has not been heard from since, so this is old news, not the state now`;
+      const hStaleNote = staleNoteOf(hAge, h.observedAt);
       const q = h.queue;
       // Verifier r21 UNSENT-CEILING: the box's per-prefix lists count too — a report whose lists say bills are waiting never
       // reads "has sent everything", and one that contradicts its own queue, or holds bills past the owner's line, is a warning.
       const issued = h.receiptNumbersIssued ?? [];
       const billsWaiting = issued.reduce((n, x) => n + (x.unsent?.count ?? 0), 0);
       const billsGivenUp = issued.reduce((n, x) => n + (x.deadLettered?.count ?? 0), 0);
-      const contradiction = h.queueContradiction ?? (h.receiptNumbersIssued === undefined ? undefined : queueContradiction(q, h.receiptNumbersIssued));
+      const contradictionSaid = contradictionWords(h);
+      const contradiction = contradictionSaid === undefined ? undefined : typeof contradictionSaid === 'string' ? contradictionSaid : renderAlert(contradictionSaid, 'en');
       const qStatus: HealthStatus = q.deadLettered >= input.thresholds.deadLetterCritical && q.deadLettered > 0 ? 'down'
         : q.unsent >= input.thresholds.queueDepthCritical ? 'down'
           : q.unsent >= input.thresholds.queueDepthWarn || q.deadLettered > 0 || pastLine.length > 0 || contradiction !== undefined ? 'degraded' : 'ok';
-      const waitingSays = pastLine.map((f) => f.detail).join('. ');
-      const qSays = contradiction !== undefined
-        ? `store ${storeId}'s computer's report contradicts itself — ${contradiction}; head office does not believe its list of bills still to send`
-        : q.unsent === 0 && q.deadLettered === 0 && billsWaiting === 0 && billsGivenUp === 0 ? `store ${storeId}'s computer has sent everything`
-          : `store ${storeId}'s computer holds ${q.unsent} item(s) still to send${billsWaiting > 0 ? ` (${billsWaiting} of them bills)` : ''}${q.deadLettered > 0 ? ` and ${q.deadLettered} item(s) it gave up sending, waiting for a person (do NOT re-enter those bills from paper)` : ''}${waitingSays === '' ? '' : `. ${waitingSays}`}`;
+      const qSays = contradictionSaid !== undefined
+        ? alertText('box.queue.contradicts', { storeId, contradiction: contradictionSaid })
+        : q.unsent === 0 && q.deadLettered === 0 && billsWaiting === 0 && billsGivenUp === 0 ? alertText('box.queue.empty', { storeId })
+          : alertText('box.queue.holds', { storeId, unsent: q.unsent, bills: billsWaiting, dead: q.deadLettered, waiting: pastLine.map((f) => partOf(f.text, f.detail)) });
       return {
         status: hStale ? (pastLine.length > 0 || contradiction !== undefined ? 'degraded' : 'unknown') : qStatus,
-        says: hStale ? `${hStaleNote}. Then: ${qSays}` : qSays,
+        says: hStale ? alertText('box.stale.then', { stale: hStaleNote, then: qSays }) : qSays,
         evidence: { unsent: q.unsent, deadLettered: q.deadLettered, billsWaiting, billsGivenUp, waitingPastLine: pastLine.length, contradicts: contradiction ?? '', reportedAt: h.observedAt, ageSeconds: hAge },
       };
     };
@@ -3946,36 +3970,36 @@ export function judgeBoxes(input: {
       const d = diskOf(r);
       components.push({
         name: `box_disk:${storeId}`, status: d.status,
-        detail: `${d.says}${othersSay}`, evidence: { ...d.evidence, computer: r.reportedBy, otherComputers: otherComputers.map((o) => o.computer).join(',') },
+        ...told('box.disk.withOthers', { says: d.says, others: othersSay }), evidence: { ...d.evidence, computer: r.reportedBy, otherComputers: otherComputers.map((o) => o.computer).join(',') },
       });
       const qv = queueOf(r, waiting);
-      components.push({ name: `box_queue:${storeId}`, status: qv.status, detail: qv.says, evidence: qv.evidence });
+      components.push({ name: `box_queue:${storeId}`, status: qv.status, ...told('words.joined', { parts: [qv.says], by: '' }), evidence: qv.evidence });
     } else {
       // OB-107: each store computer holding the store's tills on its own; the WORSE decides, every one named.
-      const holding = heads.map((h) => `${h.reportedBy} (${prefixesOf(storeId, h.reportedBy).join(', ')})`).join(' and ');
+      const holding = heads.map((h) => alertText('box.several.holding', { computer: h.reportedBy, prefixes: prefixesOf(storeId, h.reportedBy) }));
       const ds = heads.map((h) => ({ h, ...diskOf(h) }));
       const worstD = ds.reduce((a, b) => ((RANK_OF[b.status] ?? 0) > (RANK_OF[a.status] ?? 0) ? b : a));
       components.push({
         name: `box_disk:${storeId}`, status: worstD.status,
-        detail: `store ${storeId} has ${heads.length} store computers holding its tills' bill numbers — ${holding}; head office judges each on its own and the worse decides: ${ds.map((d) => `${d.h.reportedBy}: ${d.says}`).join(' | ')}${othersSay}`,
+        ...told('box.disk.several', { storeId, holding, each: ds.map((d) => alertText('box.several.each', { computer: d.h.reportedBy, says: d.says })), others: othersSay }),
         evidence: {
           ...worstD.evidence, computer: worstD.h.reportedBy, computers: heads.map((h) => h.reportedBy).join(','),
           statuses: ds.map((d) => `${d.h.reportedBy}:${d.status}`).join(','), otherComputers: otherComputers.map((o) => o.computer).join(','),
         },
       });
       const qs = heads.map((h) => ({ h, ...queueOf(h, []) }));
-      const pastLine = waiting.map((f) => f.detail).join('. ');
+      const pastLine = waiting.map((f) => partOf(f.text, f.detail));
       const worstQ = qs.reduce((a, b) => ((RANK_OF[b.status] ?? 0) > (RANK_OF[a.status] ?? 0) ? b : a));
       const qStatus: HealthStatus = waiting.length > 0 && (RANK_OF[worstQ.status] ?? 0) < (RANK_OF['degraded'] ?? 0) ? 'degraded' : worstQ.status;
       components.push({
         name: `box_queue:${storeId}`, status: qStatus,
-        detail: `store ${storeId} has ${heads.length} store computers holding its tills' bill numbers — ${holding}; each judged on its own, the worse decides: ${qs.map((q) => `${q.h.reportedBy}: ${q.says}`).join(' | ')}${pastLine === '' ? '' : `. ${pastLine}`}`,
+        ...told('box.queue.several', { storeId, holding, each: qs.map((q) => alertText('box.several.each', { computer: q.h.reportedBy, says: q.says })), pastLine }),
         evidence: { ...worstQ.evidence, waitingPastLine: waiting.length, computer: worstQ.h.reportedBy, computers: heads.map((h) => h.reportedBy).join(','), statuses: qs.map((q) => `${q.h.reportedBy}:${q.status}`).join(',') },
       });
     }
 
     if (r.tills.length === 0) {
-      components.push({ name: `till_devices:${storeId}`, status: 'unknown', detail: `no till at store ${storeId} has reported its scanner, printer, scale, drawer or card machine yet — not known, never "all fine"` });
+      components.push({ name: `till_devices:${storeId}`, status: 'unknown', ...told('box.tills.none', { storeId }) });
     } else {
       // Round 13 (verifier B5, probe P3 · P-08): each till is judged by ITS OWN report time, not the box's. The box relays
       // each till's LAST report; a till that stopped reporting (switched off, cable out) keeps its last "ok" on the box, so
@@ -3987,7 +4011,7 @@ export function judgeBoxes(input: {
         const laneAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(judgedAt)) / 1000));
         const tillAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(t.reportedAt)) / 1000));
         const bad = t.devices.filter((d) => d.state !== 'ok')
-          .map((d) => `${t.laneId}: ${d.kind.replace('_', ' ')} ${d.state === 'failed' ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`);
+          .map((d) => alertText('box.tills.device', { lane: t.laneId, kind: d.kind, failed: d.state === 'failed', detail: d.detail ?? null }));
         const stale = laneAge >= input.thresholds.syncLagWarnSeconds;
         // The till is fresh but its adapter's own observation is old: the adapter has stopped looking — say so.
         const adapterQuiet = stale && t.adapterObservedAt !== undefined && tillAge < input.thresholds.syncLagWarnSeconds;
@@ -3997,20 +4021,18 @@ export function judgeBoxes(input: {
       const staleLanes = lanes.filter((l) => l.stale);
       const oldest = r.tills.map((t) => t.adapterObservedAt ?? t.reportedAt).sort()[0]!;
       // P-08: say WHY a lane may be quiet, from the box's own sessions — never a reason to read it ok.
-      const whyQuiet = (l: (typeof lanes)[number]): string => (l.adapterQuiet
-        ? ' — the till is still re-sending, but its device adapter has not observed the devices since then: the adapter may have hung, check that till'
-        : l.attended === false
-        ? ' — nobody is signed in at that till, so it has stopped re-sending (expected when it is closed or unattended)'
-        : l.attended === true ? ' — a cashier IS signed in there, so it should still be re-sending every few minutes: check that till' : '');
-      const staleSays = staleLanes.length === 0 ? '' : `STALE — ${staleLanes.map((l) => `till ${l.laneId} last ${l.adapterQuiet ? 'had its devices observed by its device adapter' : 'reported its devices'} ${ago(l.ageSeconds)} ago (${l.reportedAt})${l.bad.length === 0 ? '' : `, then saying ${l.bad.join('; ')}`}${whyQuiet(l)}`).join('; ')}: not heard from since, so its devices are not known now`;
-      const freshSays = freshBad.length > 0 ? `store ${storeId}: ${freshBad.join('; ')} — the till still sells; a person should fix it`
-        : staleLanes.length === lanes.length ? '' : `every till device at store ${storeId} that reported recently said it was working`;
-      const says = [freshSays, staleSays].filter((x) => x !== '').join('. ');
+      const whyQuiet = (l: (typeof lanes)[number]): string => (l.adapterQuiet ? 'adapter' : l.attended === false ? 'unattended' : l.attended === true ? 'attended' : '');
+      const staleSays: AlertText | '' = staleLanes.length === 0 ? '' : alertText('box.tills.stale', {
+        lanes: staleLanes.map((l) => alertText('box.tills.staleLane', { lane: l.laneId, why: whyQuiet(l), agoSeconds: l.ageSeconds, at: l.reportedAt, bad: l.bad })),
+      });
+      const freshSays: AlertText | '' = freshBad.length > 0 ? alertText('box.tills.freshBad', { storeId, bad: freshBad })
+        : staleLanes.length === lanes.length ? '' : alertText('box.tills.allOk', { storeId });
+      const says = told('words.joined', { parts: [freshSays, staleSays].filter((x): x is AlertText => x !== ''), by: '. ' });
       // A fresh failure is known now (degraded); a stale lane with nothing failing fresh is unknown — never ok.
       const tillStatus: HealthStatus = freshBad.length > 0 ? 'degraded' : staleLanes.length > 0 ? 'unknown' : 'ok';
       components.push({
         name: `till_devices:${storeId}`, status: stale ? 'unknown' : tillStatus,
-        detail: stale ? `${staleNote}. Then: ${says}` : says,
+        ...(stale ? staleThen(staleNote, says.text) : says),
         evidence: {
           notWorking: freshBad.length, tills: r.tills.length, staleTills: staleLanes.length, oldestTillReportAt: oldest, ageSeconds,
           staleLanes: staleLanes.map((l) => `${l.laneId}@${l.reportedAt}`).join(','),
@@ -4020,10 +4042,9 @@ export function judgeBoxes(input: {
   }
   // §31.1 · OB-409 "C": one line for the shop while any store computer holds new prices and offers (raised to every owner).
   if (clockHeld.length > 0) {
-    const one = clockHeld.length === 1;
     components.push({
       name: STORE_COMPUTER_CLOCK_HELD_COMPONENT, status: 'degraded',
-      detail: `price change held — ${one ? "a store computer's clock is" : `${clockHeld.length} store computers' clocks are`} 5 minutes or more out: ${clockHeld.map((x) => x.says).join('; ')}. Prices and offers already running stay, selling goes on, and every bill taken meanwhile is marked for checking. Ask IT to correct ${one ? "that computer's clock" : "those computers' clocks"}; this clears by itself when ${one ? 'it reports its clock' : 'each reports its clock'} back in step, and the held changes then start (owner decisions OB-403, OB-409)`,
+      ...told('box.clockHeld', { stores: clockHeld.map((x) => x.says) }),
       evidence: {
         stores: clockHeld.map((x) => x.storeId).join(','), computers: clockHeld.map((x) => x.computer).join(','),
         offsetSeconds: clockHeld.map((x) => `${x.storeId}:${x.offsetSeconds ?? 'not measured'}`).join(','),
@@ -4255,11 +4276,12 @@ export function doorRefusalComponents(lines: readonly DoorRefusalLine[], at: str
   for (const l of shown) byStore.set(l.storeId, [...(byStore.get(l.storeId) ?? []), l]);
   return [...byStore].sort(([a], [b]) => a.localeCompare(b)).map(([storeId, ls]) => ({
     name: `box_prefixes_refused:${storeId}`, status: 'degraded' as const,
-    detail: ls.sort((a, b) => a.computer.localeCompare(b.computer) || a.day.localeCompare(b.day)).map((l) =>
-      `store ${storeId}'s computer ${l.computer} sent ${l.count} report(s) on ${l.day} naming bill-number prefixes head office never issued to this store's tills or registered for this computer (e.g. ${l.examples.join(', ')}; first ${l.first}, last ${l.last}) — refused at the door and not kept (owner decision OB-121)`).join('; ')
-      + '. If these are this store computer\'s own tills, have the IT administrator register its lanes (POST /v1/store-computers/lane-prefixes — docs/runbooks/in-store-install.md, "Register the store computer\'s own lanes"); if not, check that store computer'
+    ...told('box.door', {
+      lines: ls.sort((a, b) => a.computer.localeCompare(b.computer) || a.day.localeCompare(b.day)).map((l) =>
+        alertText('box.door.line', { storeId, computer: l.computer, count: l.count, day: l.day, examples: [...l.examples], first: l.first, last: l.last })),
       // A store-coded ZZ… prefix is an honest box's fallback for a till with no prefix issued — the fix is to issue one.
-      + (ls.some((l) => l.examples.some((p) => p.startsWith('ZZ'))) ? '. ZZ… is a store computer\'s own fallback numbering for a till head office has not issued a prefix to (each such bill is also flagged) — issue that till its prefix (Receipt prefixes)' : ''),
+      zz: ls.some((l) => l.examples.some((p) => p.startsWith('ZZ'))),
+    }),
     evidence: { computers: [...new Set(ls.map((l) => l.computer))].join(','), reports: ls.reduce((n, l) => n + l.count, 0) },
   }));
 }

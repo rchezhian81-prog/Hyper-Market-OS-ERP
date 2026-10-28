@@ -7,6 +7,7 @@
 // is a new alert, never an old one reopened. Only an approved, active contract is watched: an unapproved one cannot trade.
 
 import type { ConcessionContract } from './concession';
+import { told, type AlertText } from '../../ops/src/alert-words';
 
 export type ExpiringDocument = 'agreement' | 'insurance' | 'licence';
 export type ExpiryLevel = 'within_30_days' | 'within_7_days' | 'lapsed';
@@ -24,6 +25,8 @@ export interface ConcessionExpiryAlert {
   readonly daysLeft: number;
   readonly level: ExpiryLevel;
   readonly detail: string;
+  /** OB-435: `detail`, structured (rendered in English into `detail`, and in Tamil for a Tamil reader). */
+  readonly text?: AlertText;
 }
 
 export const CONCESSION_WARN_DAYS = 30;
@@ -47,7 +50,7 @@ export function concessionExpiryAlerts(contracts: readonly ConcessionContract[],
           out.push({
             alertId: `concession-expiry:${c.contractId}:insurance:none:lapsed`, contractId: c.contractId, name: c.name, branchId: c.branchId,
             document, on: '', daysLeft: -1, level: 'lapsed',
-            detail: `${c.name}: no insurance is on record, so the counter cannot take new sales. Record the insurance date on the contract.`,
+            ...told('concession.noInsurance', { name: c.name }),
           });
         }
         continue;
@@ -59,9 +62,9 @@ export function concessionExpiryAlerts(contracts: readonly ConcessionContract[],
       out.push({
         alertId: `concession-expiry:${c.contractId}:${document}:${on}:${level}`,
         contractId: c.contractId, name: c.name, branchId: c.branchId, document, on, daysLeft, level,
-        detail: level === 'lapsed'
-          ? `${c.name}: the ${what} ended on ${on}. The counter cannot take new sales until it is renewed.`
-          : `${c.name}: the ${what} ends on ${on} (${daysLeft} day(s) left). Renew it before then, or the counter stops taking new sales.`,
+        ...(level === 'lapsed'
+          ? told('concession.lapsed', { name: c.name, document: what, on })
+          : told('concession.ending', { name: c.name, document: what, on, days: daysLeft })),
       });
     }
   }
