@@ -142,7 +142,10 @@ describe.each(backings)('OB-502 · OB-507 at head office — on $name', ({ harne
     expect(words(conflict)).toContain('The two cannot both be right');
     // A second "in" with no "out" between: booked (it happened) and flagged for the manager.
     expect(((await ok(relay('M-2', markOf('M-2', { at: at(200) })), 'second in')).body as { mark: { exceptions?: string[] } }).mark.exceptions).toEqual(['repeats_the_last_mark']);
-    expect(((await ok(relay('M-3', markOf('M-3', { kind: 'out', at: at(10) })), 'out')).body as { mark: { exceptions?: string[] } }).mark.exceptions).toBeUndefined();
+    // In the first four hours after the shop's midnight the "in" marks fall on the shop's previous day, so this "out"
+    // has no "in" on its own day — flagged as such, rightly.
+    const sameShopDay = shopDateIn(FIRST_IN) === shopDateIn(at(10));
+    expect(((await ok(relay('M-3', markOf('M-3', { kind: 'out', at: at(10) })), 'out')).body as { mark: { exceptions?: string[] } }).mark.exceptions).toEqual(sameShopDay ? undefined : ['out_without_in']);
 
     h = harness(h); // ── COLD RESTART ──
     const day = shopDateIn(FIRST_IN);

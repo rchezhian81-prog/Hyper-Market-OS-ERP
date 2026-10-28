@@ -4,6 +4,7 @@ import { useRestartableBackings } from '../support/p3-backings';
 import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '../support/p3-purchase';
 import { askForApproval, decide, sentWithApproval } from '../support/approval-request';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **D03-FR-03 · §28 "Finance approves rebate claims" · OB-404 (owner, 27 Oct 2026, option A): a supplier rebate CLAIM is
@@ -25,7 +26,8 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 
 const backings = useRestartableBackings();
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-const TODAY = new Date().toISOString().slice(0, 10);
+// The shop's own date (Asia/Kolkata): from 18:30 UTC it is already tomorrow in the shop, and the claim's dates are shop dates.
+const TODAY = shopDateIn(new Date().toISOString());
 const inDays = (n: number): string => new Date(Date.parse(`${TODAY}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const leg = (account: string, side: 'debit' | 'credit') => ({ account, side, component: 'amount' });
 const MAP = { rules: [...DEFAULT_RETAIL_POSTING_MAP.rules, { kind: 'supplier_rebate', legs: [leg('bank_clearing', 'debit'), leg('supplier_rebate_income', 'credit')] }] };

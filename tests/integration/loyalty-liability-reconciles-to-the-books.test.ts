@@ -4,6 +4,7 @@ import { withApprovals } from '../support/refund-approval';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { ownerApprovedSetting } from '../support/owner-approved-setting';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 // PF-09 step 3 · M17-FR-01 ("points earned/burned reconcile to the liability"), M17-FR-03 ("balances reconcile to
 // finance"), M23: the loyalty liability is in the books, and reconciles exactly to what the members hold.
@@ -17,7 +18,7 @@ const MOBILE = '98400 31313';
 const MEMBER = memberRefFor(loyaltyMemberKey(TEST_PACK_KEY), MOBILE)!;
 // The trading day and the moment of each sale are TODAY and NOW: a member earns only on a sale made after they joined
 // (`wasMemberAt`), and the member is enrolled at run time — a fixed clock time made this pass only before 06:00 UTC.
-const DAY = new Date().toISOString().slice(0, 10);
+const DAY = shopDateIn(new Date().toISOString()); // the shop's own date (Asia/Kolkata) — from 18:30 UTC it is already tomorrow there
 
 async function shop(): Promise<ApiHarness> {
   const h = apiHarness();
