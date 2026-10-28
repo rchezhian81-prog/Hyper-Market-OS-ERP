@@ -7,9 +7,11 @@ import { addDays } from '../../packages/workforce/src/working-time';
 // Round 7 · R7-D — head office's side, through the real API, in memory and (with DATABASE_URL) on real PostgreSQL, with
 // cold restarts. Synthetic people only.
 //   • OB-502 (M25-FR-03): recording a production / bakery run or a counter-food (weighed) run in the name of a person whose
-//     food-handling certificate EXPIRED, or who has NONE (or only an unverified one), is refused in plain words naming the
-//     certificate and its expiry; a renewed certificate lets it through; a run relayed from the store by such a person is
-//     recorded (the food exists) and FLAGGED; the till and other work are untouched.
+//     food-handling certificate EXPIRED is refused in plain words naming the certificate and its expiry; a renewed
+//     certificate lets it through; a run relayed from the store by such a person is recorded (the food exists) and FLAGGED;
+//     the till and other work are untouched. A person with NO verified certificate on file (none, or only an unverified
+//     one — the owner too) is NOT blocked (owner, 28 Oct 2026: only an expired certificate blocks), at head office or
+//     relayed.
 //   • OB-507 (M25-FR-01): the synced attendance-mark route — only the store computer relays; a mark it cannot read, for a
 //     person not on the roster / not at its store / without the right, or dated in the future is refused by name; the same
 //     mark again is one mark; a different mark under the same id is a conflict refused by name; an out-of-order mark is
@@ -22,13 +24,14 @@ const words = (r: Res): string => (r.body as { error?: { whatHappened?: string }
 const TODAY = shopDateIn(new Date().toISOString());
 
 describe.each(backings)('OB-502 · OB-507 at head office — on $name', ({ harness }) => {
-  it('an expired or missing food-handling certificate blocks recording food work, by name; a renewal lets it through; a relayed run is flagged', async () => {
+  it('an EXPIRED food-handling certificate blocks recording food work, by name; none on file does not; a renewal lets it through; a relayed run by an expired name is flagged', async () => {
     let h = harness();
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-mgr', 'store_manager');
     await h.provisionRole(T, 'u-kumar', 'store_manager');
     await h.provisionRole(T, 'u-new', 'store_manager');
+    await h.provisionRole(T, 'u-mani', 'store_manager');
     await h.provisionRole(T, 'u-cash', 'cashier');
     await h.provisionRole(T, 'u-box', 'store_computer', ['br-1']);
     const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string): Promise<Res> =>
@@ -41,9 +44,11 @@ describe.each(backings)('OB-502 · OB-507 at head office — on $name', ({ harne
     await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'seed-flour', productId: 'FLOUR', locationId: 'br-1', kind: 'received', quantityMinor: 5_000, uom: 'g', occurredAt: new Date(Date.now() - 86_400_000).toISOString(), enteredBy: 'u-owner' }), 'flour');
     await ok(call('POST', '/v1/hr/workforce/employees/u-kumar', 'u-mgr', { name: 'Kumar', branchId: 'br-1', roles: ['cook'], active: true }), 'kumar');
     await ok(call('POST', '/v1/hr/workforce/employees/u-new', 'u-mgr', { name: 'Devi', branchId: 'br-1', roles: ['cook'], active: true }), 'devi');
+    await ok(call('POST', '/v1/hr/workforce/employees/u-mani', 'u-mgr', { name: 'Mani', branchId: 'br-1', roles: ['cook'], active: true }), 'mani');
     const expired = addDays(TODAY, -3);
     await ok(call('POST', '/v1/hr/workforce/certifications/C-K1', 'u-mgr', { employeeId: 'u-kumar', kind: 'food_handling', issuedOn: '2025-01-01', validUntil: expired, verifiedBy: 'u-mgr' }), 'kumar cert');
-    // Devi's certificate was typed in but nobody verified it: it is not cover.
+    await ok(call('POST', '/v1/hr/workforce/certifications/C-M1', 'u-mgr', { employeeId: 'u-mani', kind: 'fostac', issuedOn: '2025-01-01', validUntil: expired, verifiedBy: 'u-mgr' }), 'mani cert (stays expired)');
+    // Devi's certificate was typed in but nobody verified it: it does not count — she has none on file (not blocked).
     await ok(call('POST', '/v1/hr/workforce/certifications/C-D1', 'u-mgr', { employeeId: 'u-new', kind: 'food-handling', issuedOn: '2026-01-01', validUntil: addDays(TODAY, 300) }), 'devi unverified');
     const runBody = (id: string) => ({ recipeId: 'r-cake', batches: 1, actualOutputMinor: 1, outputBatchId: `CAKE-${id}`, locationId: 'br-1' });
 
@@ -52,16 +57,20 @@ describe.each(backings)('OB-502 · OB-507 at head office — on $name', ({ harne
     expect([k.status, codeOf(k)]).toEqual([422, 'food_handling_certificate_expired']);
     expect(words(k)).toContain(`Kumar's food-handling certificate expired on ${expired}`);
     expect(words(k)).toContain('Nothing was saved');
-    // ── Devi: an UNVERIFIED certificate is no certificate; the owner, with no staff record at all, has none either ──
-    expect(codeOf(await call('POST', '/v1/production/runs/run-d', 'u-new', runBody('d')))).toBe('food_handling_certificate_missing');
+    // ── Devi: an UNVERIFIED certificate is none on file; the owner, with no staff record at all, has none either — and
+    //    NEITHER is blocked (owner, 28 Oct 2026: only an EXPIRED certificate blocks) ──
+    const devi = await call('POST', '/v1/production/runs/run-d', 'u-new', runBody('d'));
+    expect(devi.status, JSON.stringify(devi.body)).toBe(201);
     const owner = await call('POST', '/v1/production/runs/run-o', 'u-owner', runBody('o'));
-    expect(codeOf(owner)).toBe('food_handling_certificate_missing');
-    expect(words(owner)).toContain('There is no verified food-handling certificate on file for u-owner');
+    expect(owner.status, JSON.stringify(owner.body)).toBe(201);
     // ── counter food (a weighed run) is refused the same way ──
     const weigh = (id: string, userId: string) => call('POST', `/v1/production/weighed-runs/${id}`, userId, { departmentId: 'meat_fish', inputs: [{ productId: 'CHICKEN', weightGrams: 2_000, costPerKg: { minor: 18_000, currency: 'INR' } }], outputs: [{ productId: 'CUTS', weightGrams: 1_900 }] });
     expect(codeOf(await weigh('w-k', 'u-kumar'))).toBe('food_handling_certificate_expired');
-    // Nothing was recorded for any refused run.
-    expect(((await call('GET', '/v1/production/runs', 'u-owner')).body as { runs: unknown[] }).runs).toHaveLength(0);
+    expect(codeOf(await weigh('w-m', 'u-mani'))).toBe('food_handling_certificate_expired'); // an expired FoSTaC, the same
+    // … and counter food by someone with no certificate on file goes through.
+    { const w = await weigh('w-o', 'u-owner'); expect(w.status, JSON.stringify(w.body)).toBe(201); }
+    // Nothing was recorded for any refused run: only Devi's and the owner's are on the board.
+    expect(((await call('GET', '/v1/production/runs', 'u-owner')).body as { runs: { runId: string }[] }).runs.map((r) => r.runId).sort()).toEqual(['run-d', 'run-o']);
     // A cashier is still refused by permission first (403), as before — the till and other work are untouched.
     expect((await call('POST', '/v1/production/runs/run-c', 'u-cash', runBody('c'))).status).toBe(403);
 
@@ -72,12 +81,17 @@ describe.each(backings)('OB-502 · OB-507 at head office — on $name', ({ harne
     expect((await call('POST', '/v1/production/runs/run-k', 'u-kumar', runBody('k'))).status).toBe(201);
     expect((await weigh('w-k', 'u-kumar')).status).toBe(201);
 
-    // ── a run RELAYED from the store by Devi (unverified certificate): recorded — the food exists — and FLAGGED ──
-    const relayed = await call('POST', '/v1/production/runs/run-r/synced', 'u-box', { runId: 'run-r', storeId: 'br-1', ...runBody('r'), producedBy: 'u-new', at: new Date(Date.now() - 60_000).toISOString(), source: 'production-screen' }, 'relay-r');
+    // ── a run RELAYED from the store by Mani (EXPIRED certificate): recorded — the food exists — and FLAGGED ──
+    const relayed = await call('POST', '/v1/production/runs/run-r/synced', 'u-box', { runId: 'run-r', storeId: 'br-1', ...runBody('r'), producedBy: 'u-mani', at: new Date(Date.now() - 60_000).toISOString(), source: 'production-screen' }, 'relay-r');
     expect(relayed.status, JSON.stringify(relayed.body)).toBe(202);
+    // … and one by Devi (none on file): recorded and NOT flagged for the certificate.
+    const relayedD = await call('POST', '/v1/production/runs/run-rd/synced', 'u-box', { runId: 'run-rd', storeId: 'br-1', ...runBody('rd'), producedBy: 'u-new', at: new Date(Date.now() - 60_000).toISOString(), source: 'production-screen' }, 'relay-rd');
+    expect(relayedD.status, JSON.stringify(relayedD.body)).toBe(202);
     h = harness(h); // ── COLD RESTART ──
     const board = ((await call('GET', '/v1/production/runs', 'u-owner')).body as { runs: { runId: string; syncFlags?: string[] }[] }).runs;
     expect(board.find((r) => r.runId === 'run-r')?.syncFlags).toContain('producer_food_certificate_not_valid');
+    expect(board.find((r) => r.runId === 'run-rd')).toBeDefined();
+    expect(board.find((r) => r.runId === 'run-rd')?.syncFlags ?? []).not.toContain('producer_food_certificate_not_valid');
     expect(board.find((r) => r.runId === 'run-k')?.syncFlags ?? []).not.toContain('producer_food_certificate_not_valid');
   });
 

@@ -11620,12 +11620,16 @@ export function platformAdapter(input: {
     /** An entitlement change is append-only and audited — who turned a module on, and when. */
     setEntitlement: async (tenantId, feature, enabled, by) => {
       const at = input.now();
+      // Turning a feature off and back on are two facts worth keeping — even inside one millisecond. The key carries how
+      // many changes of this feature were already on record and the new value, not the moment alone: keyed by time only,
+      // an "on" landing in the same millisecond as the "off" before it collapsed into it and was silently dropped (P-08).
+      const prior = (await allOf<{ feature: string }>(input.store, tenantId, STREAM.platform, 'TenantEntitlementSet')).filter((c) => c.feature === feature).length;
+      const key = `entitlement-${tenantId}-${feature}-${at}-${prior}-${enabled ? 'on' : 'off'}`;
       await input.store.append(tenantId, STREAM.platform, makeEvent({
-        id: keyedEventId('entitlement', `entitlement-${tenantId}-${feature}-${at}`),
+        id: keyedEventId('entitlement', key),
         type: 'TenantEntitlementSet',
         occurredAt: at,
-        // Time is in the key: turning a feature off and back on are two facts worth keeping.
-        idempotencyKey: `entitlement-${tenantId}-${feature}-${at}`,
+        idempotencyKey: key,
         source: 'api/platform',
         payload: { feature, enabled, at, by },
       }));

@@ -115,7 +115,8 @@ export function weighedCostingRoutes(deps: WeighedCostingDeps): readonly Route[]
           throw apiError(400, { code: 'tolerance_not_bps', whatHappened: 'toleranceBp, if given, is whole basis points.', wasItSaved: 'not_saved', nextSafeAction: 'Send the tolerance in basis points, or leave it out.' });
         }
 
-        // OB-502: counter-food work is refused in the name of a person whose food-handling certificate expired or is missing.
+        // OB-502: counter-food work is refused in the name of a person whose food-handling certificate EXPIRED (owner, 28 Oct
+        // 2026: only an expired one — a person with no certificate on file is not blocked).
         if (deps.foodHandling !== undefined && handlesFood(b['departmentId'] as string)) {
           const verdict = await deps.foodHandling(ctx.tenantId, ctx.userId, 'weighed_run', deps.now());
           if (!verdict.allowed) foodHandlingRefusal(verdict);

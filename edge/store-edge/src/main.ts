@@ -1080,8 +1080,8 @@ export async function startEdge(
         acks.push({ key, status: 'duplicate' });
         continue;
       }
-      // OB-502 (M25-FR-03): food-handling work in the name of someone whose food-handling certificate expired or is missing is
-      // refused BEFORE the disk, from the certificates in the signed pack — the same rule as head office, with the line down.
+      // OB-502 (M25-FR-03): food-handling work in the name of someone whose food-handling certificate the pack shows EXPIRED is
+      // refused BEFORE the disk (only an expired one — owner, 28 Oct 2026; none on file is not blocked), from the certificates in the signed pack — the same rule as head office, with the line down.
       const foodRefusal = foodHandlingRefusalAtTheDoor({
         pack, event, handlesFood, now: new Date().toISOString(), dateOf: (at) => packCalendarDate(pack, at),
         departmentOfRecipe: (recipeId) => {

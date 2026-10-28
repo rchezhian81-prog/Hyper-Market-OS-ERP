@@ -21,7 +21,7 @@ export { CERTIFICATE_KINDS };
 
 export const CERTIFICATES_COPY = {
   en: {
-    title: 'Staff certificates', lead: 'Record, verify and renew each person\'s certificates. A food-handling certificate (or FoSTaC, which counts as the same) must be verified and in date before production, bakery or counter-food work can be recorded in that person\'s name. Only a certificate someone has seen counts, and nobody verifies their own.',
+    title: 'Staff certificates', lead: 'Record, verify and renew each person\'s certificates. When a person\'s food-handling certificate (or FoSTaC, which counts as the same) has expired, production, bakery or counter-food work cannot be recorded in their name until a renewed one is recorded. A person with no certificate on file is not blocked. Only a certificate someone has seen counts, and nobody verifies their own.',
     recordH: 'Record a certificate', person: 'Person', kind: 'Certificate', issuedOn: 'Issued on', validUntil: 'Valid until (last day)',
     seen: 'I have seen the original certificate — verify it in my name', record: 'Record the certificate', renewing: 'Renewing — the old certificate stays on file.',
     listH: 'People and their certificates', reload: 'Read again from head office', none: 'No certificate on file.', nobodyOnRoster: 'Head office has nobody on the roster for you to see.',
@@ -35,7 +35,7 @@ export const CERTIFICATES_COPY = {
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.', reading: 'Reading from head office…',
   },
   ta: {
-    title: 'பணியாளர் சான்றிதழ்கள்', lead: 'ஒவ்வொருவரின் சான்றிதழ்களைப் பதிவு செய்யவும், சரிபார்க்கவும், புதுப்பிக்கவும். ஒருவர் பெயரில் உற்பத்தி, பேக்கரி அல்லது கவுண்டர் உணவு வேலை பதிய, அவரது உணவு கையாளும் சான்றிதழ் (அல்லது அதற்குச் சமமான FoSTaC) சரிபார்க்கப்பட்டு, காலாவதியாகாமல் இருக்க வேண்டும். யாராவது பார்த்துச் சரிபார்த்த சான்றிதழ் மட்டுமே கணக்கில்; தன் சான்றிதழை யாரும் தானே சரிபார்க்க முடியாது.',
+    title: 'பணியாளர் சான்றிதழ்கள்', lead: 'ஒவ்வொருவரின் சான்றிதழ்களைப் பதிவு செய்யவும், சரிபார்க்கவும், புதுப்பிக்கவும். ஒருவரின் உணவு கையாளும் சான்றிதழ் (அல்லது அதற்குச் சமமான FoSTaC) காலாவதியானால், புதுப்பித்த சான்றிதழ் பதியும் வரை அவர் பெயரில் உற்பத்தி, பேக்கரி அல்லது கவுண்டர் உணவு வேலை பதிய முடியாது. பதிவில் சான்றிதழ் இல்லாதவருக்குத் தடை இல்லை. யாராவது பார்த்துச் சரிபார்த்த சான்றிதழ் மட்டுமே கணக்கில்; தன் சான்றிதழை யாரும் தானே சரிபார்க்க முடியாது.',
     recordH: 'சான்றிதழைப் பதிவு செய்', person: 'நபர்', kind: 'சான்றிதழ்', issuedOn: 'வழங்கிய தேதி', validUntil: 'செல்லுபடி கடைசி நாள்',
     seen: 'அசல் சான்றிதழை நான் பார்த்தேன் — என் பெயரில் சரிபார்', record: 'சான்றிதழைப் பதிவு செய்', renewing: 'புதுப்பித்தல் — பழைய சான்றிதழ் பதிவில் இருக்கும்.',
     listH: 'நபர்களும் அவர்களின் சான்றிதழ்களும்', reload: 'தலைமை அலுவலகத்திலிருந்து மீண்டும் படி', none: 'பதிவில் சான்றிதழ் இல்லை.', nobodyOnRoster: 'நீங்கள் பார்க்க வேண்டிய யாரும் தலைமை அலுவலகப் பணிப்பட்டியலில் இல்லை.',
@@ -72,7 +72,10 @@ export interface CertificateRow extends Certification { readonly standing: Stand
 export interface PersonRow {
   readonly employeeId: string; readonly name: string; readonly active: boolean;
   /** May food-handling work be recorded in this person's name today (OB-502), with the reason in both languages if not. */
-  readonly food: { readonly allowed: true; readonly validUntil: string } | { readonly allowed: false; readonly words: { readonly en: string; readonly ta: string } };
+  readonly food: { readonly allowed: true; readonly validUntil: string }
+    /** No verified certificate on file: allowed (only an expired one blocks); `validUntil` is a dash, the words say why. */
+    | { readonly allowed: true; readonly validUntil: '—'; readonly noCertificateOnFile: true; readonly words: { readonly en: string; readonly ta: string } }
+    | { readonly allowed: false; readonly words: { readonly en: string; readonly ta: string } };
   readonly certificates: readonly CertificateRow[];
 }
 export interface RecordForm { readonly employeeId: string; readonly kind: string; readonly issuedOn: string; readonly validUntil: string; readonly seen: boolean }
@@ -136,7 +139,10 @@ export function createCertificatesSession(input: {
           const v = foodHandlingVerdict({ personId: e.employeeId, employee: e, certifications: mine, today, task: 'production_run' });
           return {
             employeeId: e.employeeId, name: e.name, active: e.active,
-            food: v.allowed ? { allowed: true as const, validUntil: v.validUntil } : { allowed: false as const, words: v.words },
+            // OB-502 (owner, 28 Oct 2026): only an EXPIRED certificate blocks; none on file is allowed and said so.
+            food: !v.allowed ? { allowed: false as const, words: v.words }
+              : 'validUntil' in v ? { allowed: true as const, validUntil: v.validUntil }
+                : { allowed: true as const, validUntil: '—', noCertificateOnFile: true as const, words: v.words },
             certificates: mine
               .map((c) => ({ ...c, standing: standingOf(c, today), foodHandling: isFoodHandlingKind(c.kind) }))
               .sort((a, b) => b.validUntil.localeCompare(a.validUntil) || a.certificationId.localeCompare(b.certificationId)),

@@ -1650,6 +1650,7 @@ export function buildSurface(deps: {
       quoteRequests: empty([]), recordQuoteRequest: () => {}, schedules: empty([]), recordSchedule: () => {}, runs: empty([]), recordRun: () => {}, now,
     } : {
       ...b2bRecurringOrdersAdapter({ store, now }), // M22-FR-03: every record of a recurring order kept (proposed, approved, paused)
+      calendar: shopCalendar, // OB-514: the date each record fell on is the shop's date
       documents: b2bDocumentDeps(store),
       customerForUser: b2bPortalAdapter({ store, now }).customerForUser,
       recordAccessRefusal: b2bPortalAdapter({ store, now }).recordAccessRefusal,

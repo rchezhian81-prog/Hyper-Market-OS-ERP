@@ -401,7 +401,8 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             nextSafeAction: 'Use a new run id. Nothing was changed.',
           });
         }
-        // OB-502: food-handling work is refused in the name of a person whose food-handling certificate expired or is missing.
+        // OB-502: food-handling work is refused in the name of a person whose food-handling certificate EXPIRED (owner, 28 Oct
+        // 2026: only an expired one — a person with no certificate on file is not blocked).
         const gatedRecipe = deps.foodHandling === undefined ? undefined : await deps.recipe(ctx.tenantId, b.recipeId);
         if (deps.foodHandling !== undefined && gatedRecipe !== undefined && handlesFood(gatedRecipe.departmentId)) {
           const verdict = await deps.foodHandling(ctx.tenantId, ctx.userId, 'production_run', deps.now());

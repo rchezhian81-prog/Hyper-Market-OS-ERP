@@ -17,7 +17,10 @@
 // The schedule GENERATES ON ITS OWN: head office's alert worker runs each approved schedule once on each due day
 // (`runRecurringOrders` with `oncePerDay`), across restarts, because what it has run is read back from the record. A
 // schedule in force may be PAUSED, with a reason; it then makes nothing until it is approved again — by someone other
-// than its maker, the same rule as the first approval. Days missed while paused are not made up.
+// than its maker, the same rule as the first approval. Days missed while paused are not made up (OB-514): a day is judged
+// AS OF ITS OWN DATE from the schedule's append-only history — an order is never made for a date on which the schedule
+// was not in force (not yet approved, or paused at the end of that day), even when someone runs that past date by hand
+// after it was approved again; and nothing is made while the schedule is not in force now.
 
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError, ApiError, notFound } from '../../kernel/src/index';
@@ -26,6 +29,7 @@ import { scopeToCustomer, type B2BGrant } from '../../../packages/b2b/src/collec
 import type { B2BPortalRefusal } from '../../../packages/b2b/src/portal-access';
 import { convertToSalesOrder, issueQuotationDocument, type B2BDocumentsDeps, type StoredB2BDocument } from './b2b-documents';
 import type { B2BLoginBinding } from './b2b-portal';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** What a customer asked to be quoted for, on its own login. Staff price it; the customer never does. */
 export interface B2BQuoteRequest {
@@ -97,6 +101,8 @@ export interface B2BOrderingDeps {
   readonly runs: (tenantId: string) => Promise<readonly RecurringRun[]> | readonly RecurringRun[];
   readonly recordRun: (tenantId: string, r: RecurringRun) => Promise<void> | void;
   readonly now: () => string;
+  /** The shop's calendar — the date each record of a schedule fell on is the SHOP's date (the shop default if omitted). */
+  readonly calendar?: ShopCalendarOf;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -120,22 +126,67 @@ export function isDue(s: RecurringSchedule, on: string): boolean {
 /** Who the automatic daily run is, on the record. */
 export const RECURRING_RUNNER = 'system:b2b-recurring';
 
+/** The moment one record of a schedule happened: its pause, its approval (round), or its proposal. */
+const recordedAt = (s: RecurringSchedule): string => s.pausedAt ?? s.approvedAt ?? s.proposedAt;
+
 /**
- * Run the recurring orders due on `on` (M22-FR-03). Each schedule IN FORCE and due that day makes its order through the
- * ordinary credit and stock checks; what cannot go through is an EXCEPTION on record. A day already generated is never
- * run again. `oncePerDay` (the automatic run): a day that has ANY run on record — made, or an exception — is not tried
- * again by the automatic run, so a shelf that cannot supply raises one exception a day, not one a minute; a person may
- * still retry it from the desk.
+ * Was a schedule in force ON a date (OB-514)? Judged from its append-only history (records in the order they were made),
+ * as it stood at the end of that shop date — the latest record made on or before it — never from how it stands now. Not
+ * yet approved by then, or paused by then and not approved again that day → not in force, and the reason, said plainly.
  */
-export async function runRecurringOrders(
-  deps: Pick<B2BOrderingDeps, 'documents' | 'schedules' | 'runs' | 'recordRun' | 'now'>,
+export async function inForceOn(
+  history: readonly RecurringSchedule[], on: string, dateOf: (isoInstant: string) => Promise<string> | string,
+): Promise<{ readonly inForce: boolean; readonly why?: string }> {
+  let standing: RecurringSchedule | undefined;
+  for (const r of history) if ((await dateOf(recordedAt(r))) <= on) standing = r;
+  if (standing !== undefined && inForce(standing)) return { inForce: true };
+  const id = history[0]?.scheduleId ?? '';
+  if (standing?.pausedAt !== undefined) {
+    return { inForce: false, why: `Recurring order ${id} was paused on ${on} (by ${standing.pausedBy ?? 'someone'}: ${standing.pauseReason ?? 'no reason given'}). Days missed while paused are not made up, so nothing was ordered for that day.` };
+  }
+  return { inForce: false, why: `Recurring order ${id} was not yet approved on ${on}. An order is never made for a day before its approval, so nothing was ordered for that day.` };
+}
+
+/** A due day that made nothing because the schedule was not in force — said, not skipped quietly (P-08). */
+export interface RecurringNotMade {
+  readonly scheduleId: string;
+  readonly customerId: string;
+  readonly on: string;
+  readonly why: string;
+}
+
+/**
+ * Run the recurring orders due on `on` (M22-FR-03). Each schedule IN FORCE now AND in force on that date (OB-514, from
+ * its history) and due that day makes its order through the ordinary credit and stock checks; what cannot go through is
+ * an EXCEPTION on record. A due schedule not in force makes nothing and is listed in `notMade` with why. A day already
+ * generated is never run again. `oncePerDay` (the automatic run): a day that has ANY run on record — made, or an
+ * exception — is not tried again by the automatic run, so a shelf that cannot supply raises one exception a day, not one
+ * a minute; a person may still retry it from the desk.
+ */
+export async function runRecurringDay(
+  deps: Pick<B2BOrderingDeps, 'documents' | 'schedules' | 'runs' | 'recordRun' | 'now' | 'calendar'>,
   input: { readonly tenantId: string; readonly on: string; readonly ranBy: string; readonly oncePerDay?: boolean },
-): Promise<RecurringRun[]> {
+): Promise<{ readonly runs: RecurringRun[]; readonly notMade: RecurringNotMade[] }> {
   const { tenantId, on } = input;
   const runs = await deps.runs(tenantId);
+  const clock = shopClock(deps.calendar);
+  const dateOf = (iso: string): Promise<string> => clock.dateOf(tenantId, iso);
+  const all = await deps.schedules(tenantId);
   const results: RecurringRun[] = [];
-  for (const s of latestSchedules(await deps.schedules(tenantId))) {
-    if (!inForce(s) || !isDue(s, on)) continue;
+  const notMade: RecurringNotMade[] = [];
+  for (const s of latestSchedules(all)) {
+    if (!isDue(s, on)) continue;
+    if (!inForce(s)) {
+      notMade.push({ scheduleId: s.scheduleId, customerId: s.customerId, on, why: s.pausedAt !== undefined
+        ? `Recurring order ${s.scheduleId} is paused (by ${s.pausedBy ?? 'someone'}: ${s.pauseReason ?? 'no reason given'}). It makes nothing until someone other than its maker approves it again.`
+        : `Recurring order ${s.scheduleId} is not approved yet. It makes nothing until someone other than its maker approves it.` });
+      continue;
+    }
+    const onThatDay = await inForceOn(all.filter((r) => r.scheduleId === s.scheduleId), on, dateOf);
+    if (!onThatDay.inForce) {
+      notMade.push({ scheduleId: s.scheduleId, customerId: s.customerId, on, why: onThatDay.why ?? `Recurring order ${s.scheduleId} was not in force on ${on}.` });
+      continue;
+    }
     const dayRuns = runs.filter((r) => r.scheduleId === s.scheduleId && r.on === on);
     if (dayRuns.some((r) => r.outcome === 'generated')) continue;
     if (input.oncePerDay === true && dayRuns.length > 0) continue;
@@ -158,7 +209,15 @@ export async function runRecurringOrders(
     await deps.recordRun(tenantId, run);
     results.push(run);
   }
-  return results;
+  return { runs: results, notMade };
+}
+
+/** The runs made on `on` — `runRecurringDay` without the list of what made nothing (head office's automatic run). */
+export async function runRecurringOrders(
+  deps: Pick<B2BOrderingDeps, 'documents' | 'schedules' | 'runs' | 'recordRun' | 'now' | 'calendar'>,
+  input: { readonly tenantId: string; readonly on: string; readonly ranBy: string; readonly oncePerDay?: boolean },
+): Promise<RecurringRun[]> {
+  return (await runRecurringDay(deps, input)).runs;
 }
 
 export function b2bOrderingRoutes(deps: B2BOrderingDeps): readonly Route[] {
@@ -324,14 +383,16 @@ export function b2bOrderingRoutes(deps: B2BOrderingDeps): readonly Route[] {
       // Run the recurring orders due on a date (head office's alert worker runs each day's by itself — `runRecurringOrders`
       // in commercialDesksSweep; a person may run or retry one here). Each approved
       // schedule due that day makes its order ONCE through the ordinary credit and stock checks; what cannot go through is
-      // an EXCEPTION on record. Body: { on: YYYY-MM-DD }.
+      // an EXCEPTION on record. A schedule due that day but not in force ON that day (OB-514: not yet approved, or paused —
+      // judged from its history, so a past day inside a pause is never made up) makes nothing and is listed in `notMade`
+      // with why. Body: { on: YYYY-MM-DD }.
       api: 'API-09', method: 'POST', path: '/v1/b2b/recurring-runs',
       permission: 'b2b.document.issue', idempotent: true, entitlement: 'b2b',
       handler: async (ctx) => {
         const on = ((ctx.body ?? {}) as { on?: unknown }).on;
         if (!isDate(on)) throw apiError(400, { code: 'run_needs_a_date', whatHappened: 'A run is for a date: { on: YYYY-MM-DD }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the date. Nothing was run.' });
-        const results = await runRecurringOrders(deps, { tenantId: ctx.tenantId, on, ranBy: ctx.userId });
-        return { status: 200, body: { on, runs: results, generated: results.filter((r) => r.outcome === 'generated').length, exceptions: results.filter((r) => r.outcome === 'exception').length } };
+        const { runs: results, notMade } = await runRecurringDay(deps, { tenantId: ctx.tenantId, on, ranBy: ctx.userId });
+        return { status: 200, body: { on, runs: results, generated: results.filter((r) => r.outcome === 'generated').length, exceptions: results.filter((r) => r.outcome === 'exception').length, notMade } };
       },
     },
     {

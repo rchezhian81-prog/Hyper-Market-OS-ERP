@@ -1466,8 +1466,9 @@ export interface StorePack {
   readonly roster?: Register<unknown>;
   /**
    * Round 7 · OB-502 (M25-FR-03) — the food-handling certificates of the store's people. The box refuses food-handling work
-   * (a production, bakery or counter-food run) in the name of someone whose certificate expired or is missing, offline.
-   * Absent → the box cannot show a certificate is valid, so it refuses that work and says why (fail closed).
+   * (a production, bakery or counter-food run) in the name of someone whose certificate EXPIRED, offline (only an expired
+   * one — owner, 28 Oct 2026). Absent → the box cannot show anyone's certificate expired, so it does not refuse and says
+   * so; head office judges the relayed run against its own register.
    */
   readonly certifications?: Register<unknown>;
   /** Minimum versions this tenant enforces. **Absent means nothing is being enforced.** */
