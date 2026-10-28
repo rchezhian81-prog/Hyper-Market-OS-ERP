@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-547
+## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-548
 
 **What happened**
 - An independent check of round 7 (OB-500 to OB-518) against the owner's wording found five places where a rule could be walked around, and two places where the build went beyond the decision. #830 was merged before the fixes were ready, so they come in this follow-up.
@@ -14,7 +14,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Till price cuts (OB-500):** repeated cuts on one line now count together against the manager's limit; a quantity change on a cut line is refused (void and re-ring); a held basket keeps its cut; the store computer works out the cut itself and refuses a figure that does not match.
 - **MRP on record (OB-512):** an MRP head office holds can no longer be dropped and re-sent with another figure; only the approved correction (reason + second person) changes a future MRP.
 - **Second person for risky new products (OB-503, OB-546):** a new age-limited or tobacco product needs another person's approval before it reaches the tills. Other products (milk, gold, BIS goods, carry bags) are published by one person, as the owner chose.
-- **Goods without an order (OB-509, OB-517, OB-547):** a "Deliveries waiting for their bill" section on the Supplier bills page matches a registered supplier bill to a delivery; units released later are valued at the bill; the accountant reaches it from the menu.
+- **Goods without an order (OB-509, OB-517, OB-547, OB-548):** a "Deliveries waiting for their bill" section on the Supplier bills page matches a registered supplier bill to a delivery; units released later are valued at the bill; the accountant reaches it from the menu.
 - **Paused business orders (OB-514):** no order is made for a day the order was paused or not yet approved.
 - **Certificates (OB-502, OB-544):** only an expired food-handling certificate blocks food work; none on file does not.
 - **Quotations (OB-506, OB-545):** a quotation above today's till price is charged at the quoted price, never above the MRP.
