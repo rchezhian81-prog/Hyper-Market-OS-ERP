@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **Recalls and trace (P-07 · M10-FR-03 · M10-FR-04 · WF-09 · OB-297 · OB-328 · OB-329) — in a real browser, on the
@@ -28,7 +29,10 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['recall', 'trace', 'e2e', 'key'].join('-').padEnd(48, '0');
 const STORE = 'br-1';
-const TODAY = new Date().toISOString().slice(0, 10);
+// The shop's own date, at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+// proven whenever this runs: the price and the sales are dated by the shop's day, never the UTC date.
+const EVENING = theEvening();
+const TODAY = EVENING.shopDate;
 
 interface Doc { querySelectorAll(s: string): { length: number } }
 const rowsAtLeast = (page: Page, selector: string, n: number) =>
@@ -40,6 +44,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
   let member = '';
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
@@ -75,10 +80,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
   afterAll(async () => {
     await browser?.close();
     await shop?.stop();
+    vi.useRealTimers();
   });
 
   it('the owner starts a recall, traces both ways, reads the call list, switches SMS — refused with no provider; Tamil; a restart keeps it', async () => {
     const context = await browser.newContext();
+    await pinThePageClock(context);
     await shop.signIn(context, OWNER);
     const page = await context.newPage();
     try {
@@ -155,6 +162,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
     // ── a restart: the recall is what head office kept ──
     await shop.restart();
     const context2 = await browser.newContext();
+    await pinThePageClock(context2);
     await shop.signIn(context2, OWNER);
     const page2 = await context2.newPage();
     try {
@@ -167,6 +175,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
 
   it('a store manager reads the call list but is not offered the owner\'s SMS switch', async () => {
     const context = await browser.newContext();
+    await pinThePageClock(context);
     await shop.signIn(context, MGR, 'br-1');
     const page = await context.newPage();
     try {

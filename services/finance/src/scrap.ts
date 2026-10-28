@@ -8,6 +8,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, assertBranchInScope } from '../../kernel/src/index';
+import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import {
   reviewScrap,
   type ScrapSale, type ScrapCategory, type ScrapDisposal,
@@ -24,6 +25,8 @@ export interface ScrapDeps {
   readonly recordScrapSale: (tenantId: string, sale: ScrapSale) => Promise<void> | void;
   readonly recordPosted: (tenantId: string, scrapId: string, at: string) => Promise<void> | void;
   readonly now: () => string;
+  /** The tenant's calendar (its zone): the review window's days are the shop's days (M01-FR-02). */
+  readonly calendar?: ShopCalendarOf;
 }
 
 export function scrapRoutes(deps: ScrapDeps): readonly Route[] {
@@ -86,7 +89,8 @@ export function scrapRoutes(deps: ScrapDeps): readonly Route[] {
           throw apiError(400, { code: 'review_needs_a_branch_and_window', whatHappened: 'A scrap review needs ?branchId=&from=YYYY-MM-DD&to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send the branch and window. A review reads, it never writes.' });
         }
         assertBranchInScope(ctx, branchId); // PA-01-r1: another branch's scrap is refused by name
-        const review = reviewScrap({ branchId, sales: await deps.scrapSales(ctx.tenantId), from, to });
+        const { timeZone } = await shopClock(deps.calendar).calendar(ctx.tenantId);
+        const review = reviewScrap({ branchId, sales: await deps.scrapSales(ctx.tenantId), from, to, timeZone });
         return { status: 200, body: { ...review, asAt: deps.now() } };
       },
     },

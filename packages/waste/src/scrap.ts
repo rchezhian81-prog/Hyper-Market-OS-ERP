@@ -20,6 +20,8 @@
 //
 // Exact integer money (§29.1). Pure and deterministic: the clock is injected, no I/O.
 
+import { shopDateIn } from '../../calendar/src/shop-clock';
+
 export type ScrapCategory =
   | 'cardboard'
   | 'plastic'
@@ -106,12 +108,15 @@ export function reviewScrap(input: {
   readonly rateToleranceBps?: number;
   /** Sales needed before an average means anything. Default 3. */
   readonly minimumForAverage?: number;
+  /** The shop's IANA zone: `from`/`to` are the SHOP's days, so each sale is placed on the day its moment falls on in the
+   *  shop (default Asia/Kolkata — never the UTC date: from 18:30 UTC a sale's UTC date is the shop's yesterday). */
+  readonly timeZone?: string;
 }): ScrapReview {
   const tolerance = input.rateToleranceBps ?? 3_000;
   const minimum = input.minimumForAverage ?? 3;
 
   const window = input.sales.filter(
-    (s) => s.branchId === input.branchId && s.at >= input.from && s.at <= `${input.to}T23:59:59Z`,
+    (s) => s.branchId === input.branchId && shopDateIn(s.at, input.timeZone) >= input.from && shopDateIn(s.at, input.timeZone) <= input.to,
   );
 
   // Rates from the shop's own history, category by category.

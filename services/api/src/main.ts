@@ -1704,7 +1704,7 @@ export function buildSurface(deps: {
     ...calendared(concessionTradingRoutes)(store === undefined ? {
       contract: empty(undefined), tags: empty([]), appendTag: () => {}, rolesOf: empty([]), contractsFor: empty([]), now,
     } : concessionTagsAdapter({ store, now })),
-    ...scrapRoutes(store === undefined ? {
+    ...calendared(scrapRoutes)(store === undefined ? {
       scrapSales: empty([]), recordScrapSale: () => {}, recordPosted: () => {}, now,
     } : scrapAdapter({ store, now })),
     ...calendared(facilitiesRoutes)(store === undefined ? {

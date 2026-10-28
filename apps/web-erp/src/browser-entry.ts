@@ -326,6 +326,7 @@ import {
   bandWords as storeOpsBandWords, surfaceWords as storeOpsSurfaceWords, kindWords as storeOpsKindWords, reasonWords as storeOpsReasonWords,
   splitToday as storeOpsSplitToday, rupees as storeOpsRupees, percent as storeOpsPercent, OB163_BANDS, type StoreOpsSession,
   endOfTodayField as storeOpsEndOfTodayField,
+  todayAtShop as storeOpsTodayAtShop,
 } from './store-ops-session';
 // R3 Lane 4 · D-9: the Staff schedule page (labour-demand forecast, draft roster a manager commits, actuals).
 import { createScheduleSession, scheduleWords, scheduleOutcomeWords, scheduleRupees, type ScheduleSession } from './schedule-session';
@@ -340,7 +341,7 @@ import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateSta
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
 // OB-288 P2 (M04-FR-04 · OB-308): the Floor heat map page.
-import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees as heatRupees, type HeatMapSession } from './floor-heat-map-session';
+import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees as heatRupees, todayAtShop as heatMapTodayAtShop, type HeatMapSession } from './floor-heat-map-session';
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
@@ -5304,6 +5305,8 @@ interface ManagerWindow {
     readonly bands: typeof OB163_BANDS;
     /** OB-390: a new task's default deadline — the end of today, in the deadline field's shape. */
     readonly endOfTodayField: typeof storeOpsEndOfTodayField;
+    /** Today in the shop's own zone — the waste-analytics window's default last day. */
+    readonly todayAtShop: typeof storeOpsTodayAtShop;
   };
   /** R3 D-9: the Staff schedule page — who is looking; head office answers the rest. */
   scheduleData?: ViewerIdentity;
@@ -5327,6 +5330,8 @@ interface ManagerWindow {
   floorHeatMap?: {
     readonly session: HeatMapSession; readonly words: typeof heatMapWords; readonly outcomeWords: typeof heatMapOutcomeWords; readonly heatBand: typeof heatBand;
     readonly areaName: typeof areaName; readonly figureWords: typeof figureWords; readonly areaNotes: typeof areaNotes; readonly rupees: typeof heatRupees;
+    /** Today in the shop's own zone — the reading window's default last day. */
+    readonly todayAtShop: typeof heatMapTodayAtShop;
   };
   accessReviewData?: ViewerIdentity;
   accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
@@ -7211,7 +7216,7 @@ if (browserWindow !== undefined) {
     words: storeOpsWords, outcomeWords: storeOpsOutcomeWords, slotWords: storeOpsSlotWords, taskWords: storeOpsTaskWords,
     bandWords: storeOpsBandWords, surfaceWords: storeOpsSurfaceWords, kindWords: storeOpsKindWords, reasonWords: storeOpsReasonWords,
     splitToday: storeOpsSplitToday, rupees: storeOpsRupees, percent: storeOpsPercent, bands: OB163_BANDS,
-    endOfTodayField: storeOpsEndOfTodayField,
+    endOfTodayField: storeOpsEndOfTodayField, todayAtShop: storeOpsTodayAtShop,
   };
   // R3 D-9: the Staff schedule page — its session is the tested model in schedule-session.ts; nothing is written on open,
   // and the draft rosters nobody until a manager commits it (P-05).
@@ -7234,7 +7239,7 @@ if (browserWindow !== undefined) {
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
   // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
   browserWindow.floorHeatMapData = viewerIdentity(browserWindow.floorHeatMapData);
-  browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees };
+  browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees, todayAtShop: heatMapTodayAtShop };
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
   // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.
