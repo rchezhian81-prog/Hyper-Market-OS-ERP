@@ -10,7 +10,10 @@
   "duplicateEmailsAllowed": true,
   "editUsernameAllowed": false,
   "internationalizationEnabled": true,
-  "supportedLocales": ["en", "ta"],
+  "supportedLocales": [
+    "en",
+    "ta"
+  ],
   "defaultLocale": "en",
   "passwordPolicy": "length(32) and maxLength(128) and notUsername",
   "bruteForceProtected": true,
@@ -33,7 +36,7 @@
     {
       "clientId": "sre-customer-sign-in",
       "name": "The customer sign-in service",
-      "description": "OB-510 · ADR-0031 (amended): the product's customer sign-in service checks the code sent to the customer's phone; this realm signs the customer's token. Confidential: its credential is generated here when the realm is loaded and given to the service from a file — never written in this file. Manages this realm's users (customers only) and exchanges a one-time credential it set a moment before for the customer's token. No browser flow.",
+      "description": "OB-510 · ADR-0031: the customer sign-in service checks the code sent to the phone, then exchanges a one-time credential here for the customer's own token. Manages customer accounts only; holds no phone number.",
       "enabled": true,
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
@@ -107,7 +110,7 @@
         "subComponents": {},
         "config": {
           "kc.user.profile.config": [
-            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"sre_user_id\", \"displayName\": \"Product customer id\", \"validations\": {\"length\": {\"min\": 1, \"max\": 128}}, \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"multivalued\": false}], \"groups\": [], \"unmanagedAttributePolicy\": \"ADMIN_VIEW\"}"
+            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {\"email\": {}, \"length\": {\"max\": 255}}, \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"sre_user_id\", \"displayName\": \"Product customer id\", \"validations\": {\"length\": {\"min\": 1, \"max\": 128}}, \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"multivalued\": false}], \"groups\": [], \"unmanagedAttributePolicy\": \"ADMIN_VIEW\"}"
           ]
         }
       }
@@ -119,8 +122,24 @@
       "enabled": true,
       "serviceAccountClientId": "sre-customer-sign-in",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users", "query-users"]
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users"
+        ]
       }
     }
-  ]
+  ],
+  "clientScopeMappings": {
+    "realm-management": [
+      {
+        "client": "sre-customer-sign-in",
+        "roles": [
+          "manage-users",
+          "view-users",
+          "query-users"
+        ]
+      }
+    ]
+  }
 }
