@@ -3091,7 +3091,7 @@ export async function startEdge(
   const pass = async (): Promise<void> => {
     // OB-429: head office refused the box's own login — no call is made at all until the box is restarted with a renewed one.
     if (boxLogin.state().refused) {
-      if (!stopping) timer = setTimeout(() => { void pass(); }, MAX_INTERVAL_MS);
+      if (!stopping) { timer = setTimeout(() => { void pass(); }, MAX_INTERVAL_MS); }
       return;
     }
     // Sequential by construction: the next pass is scheduled only after this one returns, so two
