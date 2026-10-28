@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Quotations</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Quotations (OB-506 · M12-FR-02). A THIN CLIENT over head office's own retail-quotation routes: make a quotation (counted
+      items from the signed price pack, a promised price each, held until a date — no stock set aside; a below-floor price
+      needs a second person's approval id), list them and the follow-up list, and void one with a reason (kept on record).
+      The cashier rings one up at the till by its eight-digit number. Its session is apps/web-erp/src/quotations-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .acts input { flex: 1 1 200px; }
+      .number { font-size: 22px; font-weight: 800; letter-spacing: 1px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Quotations</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Quotations</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="make" hidden aria-labelledby="make-h">
+        <h3 id="make-h"></h3>
+        <div class="row-form">
+          <label for="q-store"><span id="q-store-l"></span><input id="q-store" autocomplete="off" /></label>
+          <label for="q-customer"><span id="q-customer-l"></span><input id="q-customer" autocomplete="off" /></label>
+          <label for="q-until"><span id="q-until-l"></span><input id="q-until" type="date" /></label>
+        </div>
+        <div class="row-form">
+          <label for="l-code"><span id="l-code-l"></span><input id="l-code" autocomplete="off" /></label>
+          <label for="l-qty"><span id="l-qty-l"></span><input id="l-qty" inputmode="numeric" autocomplete="off" /></label>
+          <label for="l-price"><span id="l-price-l"></span><input id="l-price" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <button id="l-add" type="button" class="quiet"><span id="l-add-text"></span></button>
+        <p class="status" id="l-status" role="status" aria-live="polite"></p>
+        <h4 id="lines-h"></h4>
+        <ul class="rows" id="lines"></ul>
+        <p class="meta" id="lines-total"></p>
+        <label for="q-approval"><span id="q-approval-l"></span><input id="q-approval" autocomplete="off" /></label>
+        <button id="q-make" type="button"><span id="q-make-text"></span></button>
+        <p class="status" id="q-status" role="status" aria-live="polite"></p>
+        <!-- R8-B · OB-525: shown only when head office refused a price below its floor — asks a second person for exactly it. -->
+        <button id="q-ask" type="button" class="quiet" hidden><span id="q-ask-text"></span></button>
+        <p class="status" id="q-ask-status" role="status" aria-live="polite"></p>
+        <p class="number" id="q-number" hidden></p>
+      </section>
+      <section id="list" hidden aria-labelledby="list-h">
+        <h3 id="list-h"></h3>
+        <div class="row-form">
+          <label for="s-state"><span id="s-state-l"></span><select id="s-state"></select></label>
+        </div>
+        <div class="acts">
+          <button id="s-show" type="button"><span id="s-show-text"></span></button>
+          <button id="s-follow" type="button" class="quiet"><span id="s-follow-text"></span></button>
+        </div>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="rows"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./quotations.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

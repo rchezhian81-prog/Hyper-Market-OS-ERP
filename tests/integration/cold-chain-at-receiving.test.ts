@@ -91,7 +91,7 @@ describe('SF-07 — the cold-chain rule comes from the product master', () => {
     expect(g.availableMinor).toBe(0);
     expect(g.captured.lines[0]).toMatchObject({ disposition: 'quarantine', sellableMinor: 0, quarantinedMinor: 10 });
     expect(g.captured.discrepancies).toEqual([expect.objectContaining({ kind: 'temperature_not_recorded', requiresApproval: true })]);
-    expect(g.governanceFlags).toEqual(['no_purchase_order']);
+    expect(g.governanceFlags).toEqual(['no_purchase_order', 'cost_unknown']); // OB-509
     expect(await onHand(h, 'p-paneer')).toBe(0);
     // It waits on the review list for a disposition.
     expect(((await req(h, 'GET', '/v1/inventory/goods-receipt/g-audit', 'u-owner')).body as { awaitingDisposition: string[] }).awaitingDisposition).toEqual(['L1']);
@@ -138,9 +138,9 @@ describe('SF-07 — the cold-chain rule comes from the product master', () => {
   it('an ambient product needs no temperature; a product whose master names no handling class is received normally and the record SAYS handling_unknown', async () => {
     const h = await seeded();
     const dal = await receive(h, 'g-dal', [line('p-dal')]);
-    expect(grnOf(dal)).toMatchObject({ availableMinor: 10, governanceFlags: ['no_purchase_order'] });
+    expect(grnOf(dal)).toMatchObject({ availableMinor: 10, governanceFlags: ['no_purchase_order', 'cost_unknown'] });
     const mystery = await receive(h, 'g-mystery', [line('p-mystery')]);
-    expect(grnOf(mystery)).toMatchObject({ availableMinor: 10, governanceFlags: ['no_purchase_order', 'handling_unknown'] });
+    expect(grnOf(mystery)).toMatchObject({ availableMinor: 10, governanceFlags: ['no_purchase_order', 'cost_unknown', 'handling_unknown'] });
     expect(await onHand(h, 'p-mystery')).toBe(10);
   });
 

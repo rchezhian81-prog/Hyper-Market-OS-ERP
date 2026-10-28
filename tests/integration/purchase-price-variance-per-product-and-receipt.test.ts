@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { useRestartableBackings, dayFromToday } from '../support/p3-backings';
-import { P3, p3Shop, caller, issuedOrder, received } from '../support/p3-purchase';
+import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '../support/p3-purchase';
 
 /**
  * **FG-4 · D03-FR-05 "landed cost, freight and purchase-price variance" — the PPV report: each goods-receipt line's cost as
@@ -14,6 +14,8 @@ import { P3, p3Shop, caller, issuedOrder, received } from '../support/p3-purchas
  *   • drilling by product or by receipt returns exactly the lines behind that figure;
  *   • a cashier cannot read it; a period that runs backwards is refused; a branch-limited reader sees only their branches
  *     and is told how many receipts were outside them;
+ *   • OB-517 (owner, 28 Oct 2026): the cost "as received" is the price on the MATCHED SUPPLIER BILL — never the figure typed
+ *     at the door (the receipt books the order's cost); a receipt with no matched bill yet shows "not yet billed";
  *   • a cold restart reads the same.
  * Synthetic data only.
  */
@@ -21,7 +23,7 @@ import { P3, p3Shop, caller, issuedOrder, received } from '../support/p3-purchas
 const backings = useRestartableBackings();
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 interface Rollup { key: string; lines: number; comparedLines: number; varianceMinor: number; contractLines: number; contractVarianceMinor: number }
-interface Report { lines: { grnId: string; productId: string; order?: { varianceMinor: number; basis: string }; contract?: { agreementId: string; varianceMinor: number } }[]; byProduct: Rollup[]; byReceipt: Rollup[]; totals: Rollup & { notCompared: Record<string, number> }; outsideYourBranches?: number }
+interface Report { lines: { grnId: string; productId: string; notCompared?: string; receivedUnitCost: { minor: number } | null; receivedValueMinor: number | null; invoiceId: string | null; order?: { varianceMinor: number; basis: string }; contract?: { agreementId: string; varianceMinor: number } }[]; byProduct: Rollup[]; byReceipt: Rollup[]; totals: Rollup & { notCompared: Record<string, number> }; outsideYourBranches?: number }
 
 describe.each(backings)('D03-FR-05 — purchase-price variance — on $name', ({ harness }) => {
   it('per product and per receipt, against the order and the contract, with the lines behind each figure', async () => {
@@ -47,12 +49,26 @@ describe.each(backings)('D03-FR-05 — purchase-price variance — on $name', ({
       expect(r.status, JSON.stringify(r.body)).toBe(200);
       return r.body as Report;
     };
+    // OB-517: no bill matched yet — every line is "not yet billed": counted, never compared at the typed ₹52 / ₹49.
+    const unbilled = await read('?supplierId=sup-1');
+    expect(unbilled.totals).toMatchObject({ lines: 3, comparedLines: 0, varianceMinor: 0, notCompared: { not_yet_billed: 3 } });
+    expect(unbilled.lines.every((l) => l.notCompared === 'not_yet_billed' && l.receivedUnitCost === null && l.receivedValueMinor === null && l.invoiceId === null)).toBe(true);
+    // The supplier's bills, captured as the paper says and matched by the accountant: rice ₹52 on po-1, ₹49 on po-2.
+    await capturedAndMatched(call, 'INV-1', 'po-1', [{ productId: 'rice', qty: 10, unitMinor: 5_200 }, { productId: 'dal', qty: 5, unitMinor: 3_000 }]);
+    await capturedAndMatched(call, 'INV-2', 'po-2', [{ productId: 'rice', qty: 4, unitMinor: 4_900 }]);
+    // OB-530 (round 8): the report reads only the bill matched to THAT receipt — matched to the order alone, still unbilled.
+    expect((await read('?supplierId=sup-1')).totals).toMatchObject({ comparedLines: 0, notCompared: { not_yet_billed: 3 } });
+    for (const [grnId, invoiceId] of [['grn-1', 'INV-1'], ['grn-2', 'INV-2']] as const) {
+      const m = await call('POST', `/v1/inventory/goods-receipt/${grnId}/bill-match`, P3.MATCHER, { invoiceId });
+      expect(m.status, JSON.stringify(m.body)).toBe(201);
+    }
     const all = await read('?supplierId=sup-1');
+    expect(all.lines.find((l) => l.grnId === 'grn-1' && l.productId === 'rice')).toMatchObject({ receivedUnitCost: { minor: 5_200 }, invoiceId: 'INV-1' });
     // Rice: grn-1 10 × (52 − 50) = +₹20.00; grn-2 4 × (49 − 50) = −₹4.00 → +₹16.00 net. Dal: on the order's price.
     expect(all.byProduct.find((p) => p.key === 'rice')).toMatchObject({ lines: 2, comparedLines: 2, varianceMinor: 1_600, contractLines: 2, contractVarianceMinor: 4_000 + 400 });
     expect(all.byProduct.find((p) => p.key === 'dal')).toMatchObject({ lines: 1, comparedLines: 1, varianceMinor: 0, contractLines: 0 });
     expect(all.byReceipt.map((r) => [r.key, r.varianceMinor])).toEqual([['grn-1', 2_000], ['grn-2', -400]]);
-    expect(all.totals).toMatchObject({ lines: 3, comparedLines: 3, varianceMinor: 1_600, notCompared: { no_purchase_order: 0, order_not_held: 0, product_not_on_order: 0, currency_differs: 0 } });
+    expect(all.totals).toMatchObject({ lines: 3, comparedLines: 3, varianceMinor: 1_600, notCompared: { no_purchase_order: 0, order_not_held: 0, product_not_on_order: 0, currency_differs: 0, not_yet_billed: 0 } });
     const dal = all.lines.find((l) => l.productId === 'dal')!;
     expect(dal.contract).toBeUndefined(); // no contract price on file — absent, never zero
     expect(all.lines.find((l) => l.grnId === 'grn-1' && l.productId === 'rice')).toMatchObject({ order: { varianceMinor: 2_000, basis: 'purchase_order' }, contract: { agreementId: 'bpo-1', varianceMinor: 4_000 } });

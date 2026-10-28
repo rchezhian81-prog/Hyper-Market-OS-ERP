@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { certifyFoodHandler } from '../support/food-handler';
 
 // In-store production durability — the run/release/department truth rebuilds from the event store after a
 // restart (M11-FR-01/03/04, API-04, P-04 "tested recovery", P-08, FND-01 append-only).
@@ -50,6 +51,7 @@ describe('production durability: runs, releases and departments rebuild from the
   it('a released batch, the enabled department and the depleted shelf all survive a restart, and appends continue', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, 'u-owner');
     await seedOnHand(h, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, 'u-owner', 'SUGAR', 300);

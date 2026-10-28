@@ -18,6 +18,7 @@ import {
 } from '../../apps/web-erp/src/browser-entry';
 import { createIndentsSession } from '../../apps/web-erp/src/indents-session';
 import { createGoodsReceiptSession } from '../../apps/web-erp/src/goods-receipt-session';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * **Batch 2 · the two new screen writes, driven through the browser's OWN read and write functions against the REAL routes
@@ -124,6 +125,7 @@ describe.each(backings)('Batch 2 · the screens drive the real routes — on $na
     const post = (u: string, path: string, body: Body, key: string) => h.request({ method: 'POST', path, userId: u, tenantId: t, idempotencyKey: key, body });
     await h.seedOwner(t, 'u-owner');
     await h.provisionRole(t, 'u-chef', 'store_manager');
+    await certifyFoodHandler(h.store, t, 'u-chef'); // OB-502: food-handling work needs a valid certificate
     for (const [p, q] of [['FLOUR', 500], ['SUGAR', 300]] as const) {
       expect((await post('u-owner', '/v1/inventory/movements', { movementId: `rcv-${p}`, productId: p, locationId: 'KITCHEN', kind: 'received', quantityMinor: q, uom: 'g', occurredAt: AT, enteredBy: 'u-owner', unitCostMinor: 5 }, `rcv-${p}`)).status).toBeLessThan(300);
     }
@@ -195,7 +197,8 @@ describe.each(backings)('Batch 2 · the screens drive the real routes — on $na
     const mgr = await screenFor('u-mgr');
     const waiting = mgr.view('en').awaitingReturn;
     expect(waiting.map((a) => `${a.grnId}|${a.line.lineId}`)).toEqual(['g-ret|L1']);
-    expect(waiting[0]!.line).toMatchObject({ productId: 'p-paneer', quantityMinor: 10, uom: 'ea', valueMinor: 40_000, decidedBy: 'u-boss', state: 'awaiting_return', needsCount: false });
+    // OB-509: a delivery with no order behind it has its cost NOT KNOWN — the return's value is said to be not known (never ₹0).
+    expect(waiting[0]!.line).toMatchObject({ productId: 'p-paneer', quantityMinor: 10, uom: 'ea', valueNotKnown: true, decidedBy: 'u-boss', state: 'awaiting_return', needsCount: false });
     expect(await mgr.recordReturn({ grnId: 'g-ret', lineId: 'L1', reason: 'the supplier driver collected it' })).toEqual({ outcome: 'returned' });
     expect(await mgr.recordReturn({ grnId: 'g-ret', lineId: 'L1', reason: 'again' })).toEqual({ outcome: 'already_returned' });
 

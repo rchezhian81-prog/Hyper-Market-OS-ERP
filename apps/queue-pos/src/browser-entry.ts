@@ -47,6 +47,10 @@ export function bootQueuePos(w: QueueWindow, options: { readonly base?: string }
     ...(lane?.fssaiLicence === undefined || lane.fssaiLicence === null ? {} : { fssaiLicence: lane.fssaiLicence }),
     ...(typeof lane?.shopState === 'string' && lane.shopState !== '' ? { shopState: lane.shopState } : {}),
     ...(w.posReceiptTemplate === undefined ? {} : { receiptTemplate: w.posReceiptTemplate }),
+    // OB-521 (R8-A): the queue till judges its OWN build by the store computer's signed pack, like a fixed till (OB-501):
+    // the basket on screen is finished; a new basket is not started on a withdrawn or too-old build.
+    ...(lane?.appVersionPolicy === undefined ? {} : { appVersionPolicy: lane.appVersionPolicy }),
+    clientKind: 'queue_till',
   });
   const session = createQueueSession(till, httpQueueBaskets(base), { payments: w.queuePos?.payments === true });
   // Ask the box whether the person it signed in on this handheld is still live, and name them in the model if so.

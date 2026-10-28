@@ -10,6 +10,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * **OB-68 "A" (owner, 11 Oct 2026, in writing, "Production run's cost") — goods made in the store (FUL-13 · M11-FR-01/02 ·
@@ -48,6 +49,8 @@ async function bakery(harness: () => ApiHarness) {
   const h = harness();
   const T = randomUUID();
   await h.seedOwner(T, 'u-owner');
+  await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+  await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
   await h.provisionRole(T, 'u-baker', 'store_manager');
   await h.provisionRole(T, 'u-qc', 'store_manager');
   await h.provisionRole(T, 'u-acct', 'accountant');

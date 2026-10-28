@@ -118,7 +118,9 @@ describe('the stack', () => {
   });
 
   it('the sign-in service is opt-in with it, holds no secret, publishes no port and runs read-only', () => {
-    const block = compose.slice(compose.indexOf('\n  sign-in:'), compose.indexOf('\nvolumes:'));
+    // The staff sign-in service's own block (up to the next service — the customer sign-in service is guarded on its own).
+    const from = compose.indexOf('\n  sign-in:');
+    const block = compose.slice(from, compose.indexOf('\n  customer-sign-in:', from) > from ? compose.indexOf('\n  customer-sign-in:', from) : compose.indexOf('\nvolumes:'));
     expect(block).toMatch(/profiles: \['identity'\]/);
     expect(block).not.toMatch(/\n\s+ports:/);
     expect(block).not.toMatch(/SECRET|PASSWORD|SIGNING_KEY/);

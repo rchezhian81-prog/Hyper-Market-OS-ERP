@@ -123,6 +123,8 @@ services:
       # One realm per shop (OB-15-d · OB-19): the shop the first realm signs for, and every further shop's realm=tenant.
       IDP_OIDC_TENANT_ID: ${IDP_OIDC_TENANT_ID:-}
       IDP_OIDC_SHOP_REALMS: ${IDP_OIDC_SHOP_REALMS:-}
+      # OB-510: each shop's customer realm=tenant (customers only, pinned to their shop). Empty: none believed.
+      IDP_OIDC_CUSTOMER_REALMS: ${IDP_OIDC_CUSTOMER_REALMS:-}
       # Head office's provisioner at the identity server (OB-15-c): the secret that server generated for sre-provisioner,
       # copied by the administrator. Empty = people's sign-ins are given at the identity server by hand.
       IDP_PROVISIONER_SECRET: ${IDP_PROVISIONER_SECRET:-}
@@ -314,6 +316,9 @@ services:
       SRE_API_AUDIENCE: ${IDP_AUDIENCE:-sre-retail-os-api}
     volumes:
       - ../keycloak/realm-sre-store.json:/opt/keycloak/data/import/realm-sre-store.json:ro
+      # OB-510 · ADR-0031 (amended): the shop's CUSTOMER realm (customers sign in by a code to their phone; the realm signs
+      # their token). Imported beside the staff realm, never inside it. No person and no secret in the file.
+      - ../keycloak/realm-sre-store-customers.json:/opt/keycloak/data/import/realm-sre-store-customers.json:ro
       # The sign-in page in the owner's look (OB-18), English and Tamil — the realm's loginTheme. Read-only; no script inline.
       - ../keycloak/themes/sre:/opt/keycloak/themes/sre:ro
     security_opt:
@@ -356,8 +361,9 @@ services:
   # public proxy (SRE_CUSTOMER_SIGN_IN_ROUTE=customer-sign-in-upstream). OPT-IN (`--profile customer-sign-in`), wired the
   # way the staff sign-in service above is: its program is built on the box first (`pnpm run build:customer-sign-in` →
   # services/identity/dist/customer-sign-in.mjs), it runs read-only as an unprivileged user, holds no secret, writes
-  # nothing to disk and publishes no port. In this build NO SMS provider is connected (OB-222) and no signer is chosen
-  # (ADR-0031), so every request for a code is refused in plain words and nothing is sent — its start-up line says so.
+  # nothing to disk and publishes no port. In this build NO SMS provider is connected (OB-222), so every request for a
+  # code is refused in plain words and nothing is sent — its start-up line says so. The signer (OB-510) is the customer
+  # realm at the identity server, composed only when it is configured below.
   # Sessions and waiting codes live in memory: a restart signs every customer out (runbook: customer sign-in).
   # ---------------------------------------------------------------------------
   customer-sign-in:
@@ -372,8 +378,19 @@ services:
       # The one shop this public address serves.
       CUSTOMER_SIGN_IN_TENANT_ID: ${EDGE_TENANT_ID}
       PORT: '8093'
+      # OB-510: the signer is the shop's customer realm at our identity server. Empty (the default) = no signer composed.
+      # Set CUSTOMER_SIGN_IN_SIGNER=keycloak, the realm's public issuer, and the path of the file holding the client
+      # credential the administrator copied from the identity server (runbook: customer sign-in). Even then nothing is
+      # sent until an SMS provider is approved (OB-222).
+      CUSTOMER_SIGN_IN_SIGNER: ${CUSTOMER_SIGN_IN_SIGNER:-}
+      CUSTOMER_REALM_ISSUER: ${CUSTOMER_REALM_ISSUER:-}
+      CUSTOMER_REALM_INTERNAL_ISSUER: ${CUSTOMER_REALM_INTERNAL_ISSUER:-http://idp:8080/auth/realms/sre-store-customers}
+      CUSTOMER_SIGN_IN_CLIENT_SECRET_FILE: /run/sre/customer-realm-client
+      IDP_AUDIENCE: ${IDP_AUDIENCE:-sre-retail-os-api}
     volumes:
       - ../../services/identity/dist:/app:ro
+      # The client credential file, given at deploy time by the custodian — never in the repository or an image.
+      - ${CUSTOMER_REALM_CLIENT_FILE:-/dev/null}:/run/sre/customer-realm-client:ro
     read_only: true
     security_opt:
       - no-new-privileges:true

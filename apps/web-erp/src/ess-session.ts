@@ -51,6 +51,8 @@ export interface EssPorts {
   roster(): EssRoster | null;
   /** The employee's own latest payslip (null when not loaded yet). */
   payslip(): EssPayslip | null;
+  /** OB-507: when the rota shown is the store computer's held copy (internet down), when head office last said it. */
+  rosterAsOf?(): string | null;
 }
 
 export interface EssConfig {
@@ -66,7 +68,7 @@ export type CopyKey =
   | 'rostered' | 'noShifts' | 'notOnRoster' | 'leaver'
   | 'netPay' | 'deduction' | 'employer' | 'employerNote' | 'noPayslip' | 'period'
   | 'stateReady' | 'stateEmpty' | 'stateNotPermitted'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData' | 'heldAsOf';
 
 export const ESS_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -79,6 +81,7 @@ export const ESS_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'You do not have permission to use self-service.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your record.',
+    heldAsOf: 'Your rota as the store computer last heard it from head office, at',
   },
   ta: {
     title: 'எனது சுய-சேவை', langName: 'English',
@@ -90,6 +93,7 @@ export const ESS_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'சுய-சேவையைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் பதிவு அல்ல.',
+    heldAsOf: 'தலைமை அலுவலகத்திடமிருந்து கடைக் கணினி கடைசியாகக் கேட்ட உங்கள் அட்டவணை, நேரம்',
   },
 };
 
@@ -109,6 +113,8 @@ export interface EssView {
   readonly screenState: StatusPresentation;
   readonly rows: readonly PresentedRow[];
   readonly nobodyNamed: boolean;
+  /** OB-507: "Your rota as the store computer last heard it …, at <time>" when the rota is the box's held copy; else ''. */
+  readonly rosterAsOfWords?: string;
 }
 
 export interface EssSession {
@@ -204,10 +210,12 @@ export function createEssSession(config: EssConfig, ports: EssPorts): EssSession
       // "empty" when the only rows are the not-yet placeholders (no real shift and no issued payslip).
       const onlyEmpties = rows.every((r) => r.id === 'rota-none' || r.id === 'rota-empty' || r.id === 'pay-none' || r.id === 'rota-leaver');
       const state = onlyEmpties ? 'empty' : 'ready';
+      const asOf = ports.rosterAsOf?.() ?? null;
       return {
         screenState: presentScreenState({ state, label: t(state === 'empty' ? 'stateEmpty' : 'stateReady') }),
         rows,
         nobodyNamed: config.userId === null,
+        rosterAsOfWords: asOf === null ? '' : `${t('heldAsOf')} ${asOf.slice(0, 16).replace('T', ' ')}`,
       };
     },
   };

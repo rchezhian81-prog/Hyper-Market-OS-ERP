@@ -31,8 +31,11 @@ const holdOf = async (h: ApiHarness, batchId: string) =>
   (await h.request({ method: 'GET', path: `/v1/quality/holds/${batchId}`, userId: 'u-owner', tenantId: A })) as { status: number; body: { hold: Hold } };
 const register = async (h: ApiHarness) =>
   (await h.request({ method: 'GET', path: '/v1/quality/holds', userId: 'u-owner', tenantId: A })).body as { holds: Hold[]; heldCount: number };
-const release = (h: ApiHarness, batchId: string, key: string) =>
-  h.request({ method: 'POST', path: `/v1/quality/holds/${batchId}/release`, userId: 'u-qc', tenantId: A, idempotencyKey: key, body: {} });
+const release = async (h: ApiHarness, batchId: string, key: string) => {
+  // OB-513: a held food batch (chicken, paneer) is released only once a sample is recorded on its hold.
+  await h.request({ method: 'POST', path: `/v1/quality/holds/${batchId}/samples/s-${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `s-${key}`, body: { test: 'core temperature and smell', result: 'pass' } });
+  return h.request({ method: 'POST', path: `/v1/quality/holds/${batchId}/release`, userId: 'u-qc', tenantId: A, idempotencyKey: key, body: {} });
+};
 
 interface Hold {
   batchId: string; productId: string; status: string; reason: string; heldBy: string;

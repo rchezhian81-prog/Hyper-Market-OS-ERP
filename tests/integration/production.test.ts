@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { certifyFoodHandler } from '../support/food-handler';
 
 // In-store production (M11-FR-01, API-04) end to end through the real API. A production run is two
 // halves on one stock truth: ingredients consumed (stock out) and a finished batch created (stock in,
@@ -50,6 +51,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('commits a run that consumes raw materials and yields a finished batch with its own id and expiry', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
@@ -76,6 +78,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('refuses a run that would issue more than is on hand — nothing is consumed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 150); // only enough for 1 batch (needs 100/batch)
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
@@ -91,6 +94,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('depletes the shelf across runs — a second run sees what the first consumed', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 250);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
@@ -105,6 +109,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('refuses an unknown recipe and is idempotent on the run id', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
@@ -120,12 +125,14 @@ describe('production: consume ingredients, create a finished batch in quarantine
   it('is authorized (cashier may neither produce nor read), per-tenant isolated, and validates input', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, 'u-owner');
     await h.provisionRole(A, 'u-mgr', 'store_manager');
     await h.provisionRole(A, 'u-cash', 'cashier');
     await seedOnHand(h, A, 'u-mgr', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-mgr', 'SUGAR', 300);
     await registerRecipe(h, A, 'u-mgr', 'r1');
+    await certifyFoodHandler(h.store, A, 'u-mgr'); // OB-502
 
     expect((await commitRun(h, A, 'u-mgr', 'run-m', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'M1', locationId: 'KITCHEN' })).status).toBe(201);
     expect((await commitRun(h, A, 'u-cash', 'run-c', { recipeId: 'r1', batches: 1, actualOutputMinor: 1, outputBatchId: 'C', locationId: 'KITCHEN' })).status).toBe(403);
@@ -137,6 +144,7 @@ describe('production: consume ingredients, create a finished batch in quarantine
 
     // Per-tenant: tenant B sees none of A's runs.
     await h.seedOwner(B, 'u-owner-b');
+    await certifyFoodHandler(h.store, B, 'u-owner-b'); // OB-502: food-handling work needs a valid certificate
     expect(((await readRuns(h, B, 'u-owner-b')).body as { runs: unknown[] }).runs).toHaveLength(0);
   });
 });
@@ -147,6 +155,7 @@ const release = (h: ApiHarness, t: string, u: string, runId: string, qcPassed: b
 describe('production quality release: nothing sellable until a named person passes it (M11-FR-03)', () => {
   const setup = async (h: ApiHarness, u = 'u-owner') => {
     await h.seedOwner(A, u);
+    await certifyFoodHandler(h.store, A, u); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, u);
     await seedOnHand(h, A, u, 'FLOUR', 500);
     await seedOnHand(h, A, u, 'SUGAR', 300);
@@ -203,6 +212,7 @@ describe('production departments & labels: build only for a department the store
   it('refuses to produce for a department the store does not operate, naming what it does', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
     // Recipe registered, but the cafe is NOT enabled → committing a run is refused.
@@ -219,6 +229,7 @@ describe('production departments & labels: build only for a department the store
   it('refuses enabling a department the product does not run, and lists what it operates', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     expect(codeOf(await enableDept(h, A, 'u-owner', 'nuclear_reactor', 'dept-bad'))).toBe('unknown_department');
     await enableDept(h, A, 'u-owner', 'cafe');
     const body = (await h.request({ method: 'GET', path: '/v1/production/departments', userId: 'u-owner', tenantId: A })).body as { operated: { departmentId: string }[]; available: string[] };
@@ -229,6 +240,7 @@ describe('production departments & labels: build only for a department the store
   it('issues a complete pack label, and refuses one missing a legally required field', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
@@ -264,6 +276,7 @@ describe('a specialised department is a paid feature — off until the shop enab
   it('refuses enabling the bakery for a shop whose plan does not include it — even a full owner', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner'); // a real owner, but this shop never bought the bakery module
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     const res = await enableDept(h, A, 'u-owner', 'bakery', 'dept-bakery');
     expect(res.status).toBe(403);
     expect(codeOf(res)).toBe('feature_not_entitled');
@@ -274,6 +287,7 @@ describe('a specialised department is a paid feature — off until the shop enab
   it('refuses producing for the bakery without the feature — naming the plan, before the "not operated" check', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await registerBakeryRecipe(h, A, 'u-owner', 'rb'); // registering a recipe is not producing — allowed
     const out = await commitRun(h, A, 'u-owner', 'run-b', { recipeId: 'rb', batches: 1, actualOutputMinor: 1, outputBatchId: 'L1', locationId: 'KITCHEN' });
@@ -284,6 +298,7 @@ describe('a specialised department is a paid feature — off until the shop enab
   it('lets the same shop enable and produce once the bakery feature is on', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await h.enableFeature(A, 'dept.bakery'); // this shop's plan now includes the bakery
     expect((await enableDept(h, A, 'u-owner', 'bakery', 'dept-bakery')).status).toBe(201);
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
@@ -297,8 +312,10 @@ describe('a specialised department is a paid feature — off until the shop enab
   it('is per-tenant: enabling the bakery for one shop never turns it on for another', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await h.enableFeature(A, 'dept.bakery');
     await h.seedOwner(B, 'u-owner-b'); // B has an owner but no bakery feature
+    await certifyFoodHandler(h.store, B, 'u-owner-b'); // OB-502: food-handling work needs a valid certificate
     expect((await enableDept(h, A, 'u-owner', 'bakery', 'dept-bakery')).status).toBe(201);
     expect(codeOf(await enableDept(h, B, 'u-owner-b', 'bakery', 'dept-bakery-b'))).toBe('feature_not_entitled');
   });
@@ -307,6 +324,7 @@ describe('a specialised department is a paid feature — off until the shop enab
 describe('production costing is authoritative — from the cost register, never faked as zero (M11-FR-02)', () => {
   const base = async (h: ApiHarness) => {
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await enableDept(h, A, 'u-owner');
     await seedOnHand(h, A, 'u-owner', 'FLOUR', 500);
     await seedOnHand(h, A, 'u-owner', 'SUGAR', 300);
@@ -340,6 +358,7 @@ describe('production costing is authoritative — from the cost register, never 
   it('refuses a malformed cost and is authorized', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await certifyFoodHandler(h.store, A, 'u-owner'); // OB-502: food-handling work needs a valid certificate
     await h.provisionRole(A, 'u-cash', 'cashier');
     expect(codeOf(await h.request({ method: 'POST', path: '/v1/production/costs/FLOUR', userId: 'u-owner', tenantId: A, idempotencyKey: 'cost-bad', body: { unitCostMinor: -5 } }))).toBe('not_readable_as_a_cost');
     expect((await setCost(h, A, 'u-cash', 'FLOUR', 5, 'cost-cash')).status).toBe(403);

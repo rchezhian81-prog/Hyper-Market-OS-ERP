@@ -22,6 +22,7 @@ import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { wireLpWorkforcePages } from './lpw-browser-wiring';
+import { wireR7dPages } from './r7d-browser-wiring'; // Round 7 · OB-507 attendance, OB-502 food-handling check
 import { wireCommercialDeskPages } from './commercial-desks-browser-wiring'; // OB-288 commercial desks
 import { createFreeSampleSession, freeSampleWords, freeSampleOutcomeWords } from './free-sample-session'; // FG-4 · OB-386 free samples
 import { createContractExpirySession, contractExpiryWords, contractExpiryOutcomeWords, windowWords as contractWindowWords, dueWords as contractDueWords } from './contract-expiry-session'; // FG-4 · M04-FR-04 / M06-FR-03
@@ -58,7 +59,7 @@ import {
   createCatalogueSession, priceChangeRequestBody, promotionLaunchBody,
   type CataloguePorts, type CatalogueSession,
   type PromotionLaunchPort, type PromotionLaunchOutcome,
-  type PriceChangeCloudPort, type PriceChangeCloudOutcome,
+  type PriceChangeCloudPort, type PriceChangeCloudOutcome, type MrpReplacePort, type MrpReplaceOutcome,
 } from './catalogue-session';
 import { bootWarehouseSupervisor, type SupervisorData, type WarehouseSupervisorSession } from './warehouse-supervisor-session';
 import type { Category, ProductRecord } from '../../../packages/product/src/index';
@@ -107,6 +108,8 @@ import {
 } from './payroll-session';
 import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
 import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring'; // M28-FR-02 · M28-FR-03 · M29-FR-02
+import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
+import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -167,7 +170,7 @@ import {
 } from './return-governance-session';
 import {
   createRosteringSession,
-  type RosteringPorts, type RosteringSession, type RosteringData, type AssignPort, type AssignResult,
+  type RosteringPorts, type RosteringSession, type RosteringData, type AssignPort, type AssignResult, type RosteringConfig,
 } from './rostering-session';
 import {
   createChecklistSession,
@@ -225,7 +228,7 @@ import {
 import {
   createGoodsReceiptSession, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
   type GrnLineDispatchPort, type LineDispatchPostResult, type GrnReturnDispatchView,
-  type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
+  type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView, type GrnDiscrepancyOwnerView,
 } from './goods-receipt-session';
 import {
   createSuppliersSession,
@@ -345,12 +348,12 @@ import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approved
 import { createLoyaltyDeskSession, loyaltyDeskWords, loyaltyDeskOutcomeWords, rupees as loyaltyRupees, multiplierWords as loyaltyMultiplierWords, type LoyaltyDeskSession } from './loyalty-desk-session';
 import { createOrderRefundsSession, orderRefundsWords, orderRefundsOutcomeWords, rupees as orderRefundsRupees, REFUND_BASES, type OrderRefundsSession } from './order-refunds-session';
 // OB-288 wave 3 — end
-import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
+import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, LIMIT_KINDS as APPROVAL_MONEY_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
 // ── P3 procure-to-pay (OB-288) — the Requisitions and quotes page's session.
 import { createRequisitionsSession, requisitionsWords, requisitionsOutcomeWords, offerRows as requisitionOfferRows, rupees as requisitionRupees, type RequisitionsSession } from './requisitions-session';
-import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, signedRupees as ppvSignedRupees, costWords as ppvCostWords, notComparedWords as ppvNotComparedWords, type ScorecardSession } from './supplier-scorecard-session';
+import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, signedRupees as ppvSignedRupees, costWords as ppvCostWords, receivedCostWords as ppvReceivedCostWords, notComparedWords as ppvNotComparedWords, type ScorecardSession } from './supplier-scorecard-session';
 import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
 import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type BaysSession } from './planogram-bays-session';
 // ── R4 Lane 4 — end
@@ -395,6 +398,8 @@ export interface ManagerData {
   readonly warehouseId?: string;
   /** OB-172: the receiving checklist and cold-chain products head office sent this store (absent = not told). */
   readonly receivingChecklist?: unknown;
+  /** B4 · OB-504: the products head office makes PACKED (absent = not told). */
+  readonly packedProductIds?: unknown;
 }
 
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
@@ -812,16 +817,23 @@ export function bootCategoryPolicy(data: CategoryPolicyData | undefined): Catego
 export interface EssData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
+  /** OB-507: the person's own rota as the store computer holds it (from the signed pack), or null when it was not told. */
+  readonly myRoster?: (EssRoster & { readonly asAt: string }) | null;
+  readonly storeId?: string;
 }
 
 const ESS_PERMISSION = 'payroll.ess.self';
 
 export function essPortsFromData(data: EssData | undefined, roster: EssRoster | null, payslip: EssPayslip | null): EssPorts {
   const held = new Set(data?.permissions ?? []);
+  // OB-507: head office's live answer when there is one; otherwise the store computer's held copy, said with its age.
+  const boxRoster = data?.myRoster ?? null;
+  const shown = roster ?? boxRoster;
   return {
     mayRead: () => held.has(ESS_PERMISSION),
-    roster: () => roster,
+    roster: () => shown,
     payslip: () => payslip,
+    rosterAsOf: () => (roster === null && boxRoster !== null ? boxRoster.asAt : null),
   };
 }
 
@@ -1652,6 +1664,28 @@ export interface RosteringScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: RosteringData;
+  /** Round 8 · OB-531: the store computer's copy of the roster from the signed pack (with when head office last sent it);
+   *  shown read-only ONLY when head office cannot be reached. `null`/absent = the box holds none. */
+  readonly boxRoster?: (RosteringData & { readonly asAt: string; readonly storeId?: string }) | null;
+}
+
+/** Round 8 · OB-531: what the live roster read came back as — head office's answer, a lost link, or a refusal. */
+export type RosteringRead =
+  | { readonly kind: 'live'; readonly worklist: RosteringData }
+  | { readonly kind: 'unreachable' }
+  | { readonly kind: 'refused'; readonly status: number };
+
+/** Round 8 · OB-531: the roster source and copy to show for a read — head office's live answer; else, ONLY when head office
+ *  cannot be reached, the store computer's copy (read-only, with its age); else said plainly, never an empty roster. */
+export function rosteringViewFor(data: RosteringScreenData | undefined, read: RosteringRead): { readonly worklist: RosteringData; readonly config: Omit<RosteringConfig, 'userId'> } {
+  if (read.kind === 'live') return { worklist: read.worklist, config: { source: 'head_office' } };
+  if (read.kind === 'refused') return { worklist: EMPTY_ROSTERING, config: { source: 'refused' } };
+  const copy = data?.boxRoster;
+  if (copy === undefined || copy === null || typeof copy.asAt !== 'string') return { worklist: EMPTY_ROSTERING, config: { source: 'unreachable' } };
+  return {
+    worklist: { gaps: Array.isArray(copy.gaps) ? copy.gaps : [], employees: Array.isArray(copy.employees) ? copy.employees : [], shifts: Array.isArray(copy.shifts) ? copy.shifts : [], assignments: Array.isArray(copy.assignments) ? copy.assignments : [] },
+    config: { source: 'box_copy', heldAsAt: copy.asAt },
+  };
 }
 
 const ROSTER_READ_PERMISSION = 'workforce.roster.read';
@@ -1681,8 +1715,10 @@ export function bootRostering(
   assignPort?: AssignPort,
 ): RosteringSession | null {
   if (data === undefined) return null;
+  // OB-531 · P-08: with no roster in hand yet, the screen says it is reading head office — never "no gaps".
+  const known = worklist !== undefined || data.worklist !== undefined;
   return createRosteringSession(
-    { userId: data.userId === undefined ? null : data.userId },
+    { userId: data.userId === undefined ? null : data.userId, ...(known ? {} : { source: 'loading' as const }) },
     rosteringPortsFromData(data, worklist, assignPort),
   );
 }
@@ -1719,24 +1755,35 @@ function openAssignPort(): AssignPort {
  *  gaps engine. Two GETs (both read-only, `workforce.roster.read`); returns null offline/refused so the shell
  *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
 export async function fetchRosteringWorklist(): Promise<RosteringData | null> {
-  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-  if (fetchFn === undefined) return null;
+  const read = await readRosteringWorklist();
+  return read.kind === 'live' ? read.worklist : null;
+}
+
+/** Round 8 · OB-531: the same two GETs, saying WHY when there is no answer: a lost link or a head-office outage (5xx) is
+ *  "cannot be reached" (the screen may then show the store computer's copy); any other refusal is a refusal. */
+export async function readRosteringWorklist(fetchFn: typeof fetch | undefined = (globalThis as { fetch?: typeof fetch }).fetch): Promise<RosteringRead> {
+  if (fetchFn === undefined) return { kind: 'unreachable' };
   try {
     const [rosterRes, gapsRes] = await Promise.all([
       fetchFn('/v1/hr/workforce/roster', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' }),
       fetchFn('/v1/hr/workforce/roster-gaps', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' }),
     ]);
-    if (rosterRes.status >= 400 || gapsRes.status >= 400) return null;
+    const worst = Math.max(rosterRes.status, gapsRes.status);
+    if (worst >= 500) return { kind: 'unreachable' };
+    if (worst >= 400) return { kind: 'refused', status: worst };
     const roster = (await rosterRes.json()) as { employees?: unknown; shifts?: unknown; assignments?: unknown };
     const gapsBody = (await gapsRes.json()) as { gaps?: unknown };
     return {
-      gaps: Array.isArray(gapsBody.gaps) ? (gapsBody.gaps as RosteringData['gaps']) : [],
-      employees: Array.isArray(roster.employees) ? (roster.employees as RosteringData['employees']) : [],
-      shifts: Array.isArray(roster.shifts) ? (roster.shifts as RosteringData['shifts']) : [],
-      assignments: Array.isArray(roster.assignments) ? (roster.assignments as RosteringData['assignments']) : [],
+      kind: 'live',
+      worklist: {
+        gaps: Array.isArray(gapsBody.gaps) ? (gapsBody.gaps as RosteringData['gaps']) : [],
+        employees: Array.isArray(roster.employees) ? (roster.employees as RosteringData['employees']) : [],
+        shifts: Array.isArray(roster.shifts) ? (roster.shifts as RosteringData['shifts']) : [],
+        assignments: Array.isArray(roster.assignments) ? (roster.assignments as RosteringData['assignments']) : [],
+      },
     };
   } catch {
-    return null;
+    return { kind: 'unreachable' };
   }
 }
 
@@ -1843,6 +1890,8 @@ export interface ProductionScreenData {
   readonly storeId?: string;
   /** OB-288 lane 2: head office's board and recipes as the store computer last heard them (null: never told). */
   readonly board?: { readonly asAt: string; readonly ageMinutes: number; readonly runs: readonly ProductionRun[]; readonly recipes: readonly unknown[]; readonly enabledDepartments: readonly string[] } | null;
+  /** Round 7 · OB-502: the store computer's judgement of the signed-in person's food-handling certificate (null: nobody named). */
+  readonly foodHandling?: { readonly allowed: boolean; readonly words?: { readonly en: string; readonly ta: string }; readonly validUntil?: string; readonly expiredOn?: string } | null;
 }
 
 /** The last problem the production screen's device queue hit with this device's storage — shown, never silent (P-08). */
@@ -3178,6 +3227,7 @@ function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string
       valueMinor: num(gone?.['valueMinor'] ?? d['valueMinor']), currency: String(gone?.['currency'] ?? money(line['unitCost']).currency ?? 'INR'),
       decidedBy: String(d['decidedBy'] ?? ''), state: gone === undefined ? 'awaiting_return' : 'returned',
       returnedBy: gone === undefined ? null : String(gone['returnedBy'] ?? ''), needsCount: gone === undefined && needsCount,
+      ...(d['valueNotKnown'] === true || gone?.['valueNotKnown'] === true ? { valueNotKnown: true } : {}), // OB-509
       ...((): { dispatch?: GrnReturnDispatchView } => { const dispatch = dispatchOf(g, lineId); return dispatch === undefined ? {} : { dispatch }; })(),
     }];
   });
@@ -3195,15 +3245,57 @@ export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
     const captured = (g['captured'] ?? {}) as Record<string, unknown>;
     const lines = Array.isArray(captured['lines']) ? captured['lines'] as Record<string, unknown>[] : [];
     const dv = money(captured['discrepancyValue']);
-    const discrepancies: GrnDiscrepancyView[] = (Array.isArray(captured['discrepancies']) ? captured['discrepancies'] as Record<string, unknown>[] : []).map((d) => {
-      const val = money(d['value']);
+    // OB-508: head office's named owner of each difference (matched by line and kind), carried as-is — never filled in here.
+    const owners = Array.isArray(g['discrepancyOwners']) ? g['discrepancyOwners'] as Record<string, unknown>[] : [];
+    const ownerOf = (lineId: string, kind: string): GrnDiscrepancyOwnerView | undefined => {
+      const o = owners.find((x) => x['lineId'] === lineId && x['kind'] === kind);
+      if (o === undefined) return undefined;
+      const missing = ['no_purchase_order', 'order_not_held', 'no_store_manager_named', 'owner_not_decided'].find((m) => m === o['missing']) as GrnDiscrepancyOwnerView['missing'];
       return {
-        kind: String(d['kind']) as GrnDiscrepancyView['kind'],
-        productId: String(d['productId'] ?? ''), quantityMinor: num(d['quantityMinor']),
-        valueMinor: val.minor, currency: val.currency,
-        requiresApproval: d['requiresApproval'] === true, detail: String(d['detail'] ?? ''),
+        role: o['role'] === 'buyer' || o['role'] === 'store_manager' ? o['role'] : null,
+        owners: Array.isArray(o['owners']) ? (o['owners'] as unknown[]).filter((x): x is string => typeof x === 'string') : [],
+        ...(missing === undefined ? {} : { missing }),
       };
-    });
+    };
+    const withOwner = (lineId: string, kind: string): { owner?: GrnDiscrepancyOwnerView } => { const owner = ownerOf(lineId, kind); return owner === undefined ? {} : { owner }; };
+    const discrepancies: GrnDiscrepancyView[] = [
+      ...(Array.isArray(captured['discrepancies']) ? captured['discrepancies'] as Record<string, unknown>[] : []).map((d) => {
+        const val = money(d['value']);
+        const lineId = String(d['lineId'] ?? '');
+        return {
+          kind: String(d['kind']) as GrnDiscrepancyView['kind'], lineId,
+          productId: String(d['productId'] ?? ''), quantityMinor: num(d['quantityMinor']),
+          valueMinor: val.minor, currency: val.currency,
+          requiresApproval: d['requiresApproval'] === true, detail: String(d['detail'] ?? ''),
+          ...(d['valueNotKnown'] === true ? { valueNotKnown: true } : {}), // OB-509
+          ...withOwner(lineId, String(d['kind'])),
+        };
+      }),
+      // Round 6 · OB-508: a cost typed at the door that differed from the order's — valued, owned by the buyer.
+      ...(Array.isArray(g['costDiscrepancies']) ? g['costDiscrepancies'] as Record<string, unknown>[] : []).map((d): GrnDiscrepancyView => {
+        const lineId = String(d['lineId'] ?? '');
+        return {
+          kind: 'cost_difference', lineId, productId: String(d['productId'] ?? ''), quantityMinor: num(d['quantityMinor']),
+          valueMinor: num(d['valueMinor']), currency: String(d['currency'] ?? 'INR'), requiresApproval: false, detail: String(d['detail'] ?? ''),
+          ...withOwner(lineId, 'cost_difference'),
+        };
+      }),
+      // OB-528: each product that differs from the supplier's advance ship notice — valued, owned by the buyer (line `asn:<id>`).
+      ...(Array.isArray((g['asnCheck'] as Record<string, unknown> | undefined)?.['differences']) ? (g['asnCheck'] as { differences: Record<string, unknown>[] }).differences : []).map((d): GrnDiscrepancyView => {
+        const productId = String(d['productId'] ?? '');
+        const lineId = `asn:${productId}`;
+        return {
+          kind: 'asn_difference', lineId, productId, quantityMinor: Math.abs(num(d['differenceMinor'])),
+          valueMinor: num(d['valueMinor']), currency: dv.currency, requiresApproval: false, detail: String(d['detail'] ?? ''),
+          ...withOwner(lineId, 'asn_difference'),
+        };
+      }),
+    ];
+    // OB-509: the lines booked with their cost NOT KNOWN that no matched bill has costed yet.
+    const billed = new Set((Array.isArray(g['billCosts']) ? g['billCosts'] as Record<string, unknown>[] : []).map((b) => String(b['lineId'] ?? '')));
+    const costNotKnown = (Array.isArray(g['costNotKnown']) ? g['costNotKnown'] as Record<string, unknown>[] : [])
+      .filter((c) => !billed.has(String(c['lineId'] ?? '')))
+      .map((c) => ({ lineId: String(c['lineId'] ?? ''), productId: String(c['productId'] ?? ''), because: c['because'] === 'not_on_order' ? 'not_on_order' as const : 'no_issued_order' as const }));
     return {
       grnId: String(g['grnId'] ?? ''), number: String(g['number'] ?? ''),
       poId: typeof g['poId'] === 'string' ? g['poId'] : null,
@@ -3216,6 +3308,8 @@ export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
       rejectedMinor: lines.reduce((s, l) => s + num(l['rejectedMinor']), 0),
       discrepancies,
       returnLines: returnLinesOf(g, lines),
+      ...(costNotKnown.length === 0 ? {} : { costNotKnown }),
+      ...(captured['discrepancyValueIncomplete'] === true ? { discrepancyValueIncomplete: true } : {}),
     };
   });
 
@@ -5216,7 +5310,7 @@ interface ManagerWindow {
   approvalRules?: {
     readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
     readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
-    readonly paiseFromRupees: typeof approvalPaiseFromRupees; readonly kinds: typeof APPROVAL_LIMIT_KINDS; readonly rolesShown: typeof APPROVAL_ROLES_SHOWN;
+    readonly paiseFromRupees: typeof approvalPaiseFromRupees; readonly kinds: typeof APPROVAL_LIMIT_KINDS; readonly limitKinds: typeof APPROVAL_MONEY_LIMIT_KINDS; readonly rolesShown: typeof APPROVAL_ROLES_SHOWN;
   };
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
   // ── R4 Lane 4 — begin
@@ -5225,7 +5319,7 @@ interface ManagerWindow {
   requisitions?: { readonly session: RequisitionsSession; readonly words: typeof requisitionsWords; readonly outcomeWords: typeof requisitionsOutcomeWords; readonly offerRows: typeof requisitionOfferRows; readonly rupees: typeof requisitionRupees };
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
   supplierScorecardData?: ViewerIdentity;
-  supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES; readonly signedRupees: typeof ppvSignedRupees; readonly costWords: typeof ppvCostWords; readonly notComparedWords: typeof ppvNotComparedWords };
+  supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES; readonly signedRupees: typeof ppvSignedRupees; readonly costWords: typeof ppvCostWords; readonly receivedCostWords: typeof ppvReceivedCostWords; readonly notComparedWords: typeof ppvNotComparedWords };
   /** R4 D-21: the "Seen together" panel on the Investigations page (reads who is looking from the inbox's own payload). */
   lpCorrelation?: { readonly session: CorrelationSession; readonly words: typeof correlationWords; readonly outcomeWords: typeof correlationOutcomeWords; readonly rupees: typeof correlationRupees };
   /** R4 D-13: the Shelf compliance by bay page — who is looking; head office answers the rest. */
@@ -5260,8 +5354,8 @@ interface ManagerWindow {
   rosteringSession?: RosteringSession;
   /** The shell reads the live roster worklist through this and re-presents it — GET reads, never a write. */
   rostering?: {
-    refresh(): Promise<RosteringData | null>;
-    present(worklist: RosteringData): RosteringSession;
+    refresh(): Promise<RosteringRead>;
+    present(read: RosteringRead): RosteringSession;
   };
   checklistData?: ChecklistScreenData;
   checklistSession?: ChecklistSession;
@@ -5587,6 +5681,8 @@ export function bootManager(config?: {
         const setup = readReceivingChecklistSetup(data?.receivingChecklist);
         return setup === undefined ? {} : { receivingChecklist: setup };
       })(),
+      // B4 · OB-504: read strictly — only a list of product ids counts as being told.
+      ...(Array.isArray(data?.packedProductIds) ? { packedProductIds: (data.packedProductIds as unknown[]).filter((p): p is string => typeof p === 'string') } : {}),
     },
     // The read registers come from the last-synced payload; the one WRITE port (day close) is added
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
@@ -6047,6 +6143,37 @@ export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?:
     ...(launchPromotion === undefined ? {} : { launchPromotion: () => launchPromotion }),
     ...(changePrice === undefined ? {} : { changePrice: () => changePrice }),
     ...(approvals === undefined ? {} : { askApproval: approvals.askApproval, approvalInbox: approvals.approvalInbox }),
+    // OB-512: replacing an MRP not yet in force goes to head office with its approval — only when connected to it.
+    ...(approvals === undefined ? {} : { replaceMrp: () => openMrpReplacePort() }),
+  };
+}
+
+/**
+ * OB-512 — the authenticated POST that replaces an MRP not yet in force: the product's publish at head office under the
+ * operator's OWN session, carrying `mrpReplacement { effectiveFrom, reason }` and the approval it names (built by the same
+ * function the approval's details come from). A refusal comes back in head office's own words with its code; a dropped
+ * link is a lost link, never a replacement (P-08).
+ */
+export function openMrpReplacePort(): MrpReplacePort {
+  return {
+    post: async (productId, body): Promise<MrpReplaceOutcome> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { saved: false, reason: 'no connection to head office — the MRP was not replaced', code: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `mrp-replace-${productId}`;
+      try {
+        const res = await fetchFn(`/v1/catalogue/products/${encodeURIComponent(productId)}/publish`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        });
+        if (res.status >= 200 && res.status < 300) return { saved: true };
+        const refusal = await refusalOf(res);
+        return { saved: false, reason: refusal.whatHappened === '' ? 'head office did not replace the MRP' : refusal.whatHappened, code: refusal.code };
+      } catch {
+        return { saved: false, reason: 'no connection to head office — the MRP was not replaced', code: 'lost_link' };
+      }
+    },
   };
 }
 
@@ -6508,12 +6635,17 @@ if (browserWindow !== undefined) {
   const rostering = bootRostering(rosteringData, undefined, assignPort);
   if (rostering !== null) {
     browserWindow.rosteringSession = rostering;
+    // OB-531: the read says whether head office answered; when it cannot be reached the screen shows the store computer's
+    // copy READ-ONLY (with its age), and says so — editing still needs head office.
     browserWindow.rostering = {
-      refresh: fetchRosteringWorklist,
-      present: (worklist) => createRosteringSession(
-        { userId: rosteringData?.userId === undefined ? null : rosteringData.userId },
-        rosteringPortsFromData(rosteringData, worklist, assignPort),
-      ),
+      refresh: () => readRosteringWorklist(),
+      present: (read) => {
+        const shown = rosteringViewFor(rosteringData, read);
+        return createRosteringSession(
+          { userId: rosteringData?.userId === undefined ? null : rosteringData.userId, ...shown.config },
+          rosteringPortsFromData(rosteringData, shown.worklist, assignPort),
+        );
+      },
     };
   }
   // The manager checklist screen (M25-FR-02): boots from the box's policy (who + what they hold), then the shell
@@ -6546,7 +6678,7 @@ if (browserWindow !== undefined) {
   const productionBoxServed = browserWindow.laneWriteBase !== undefined && productionData?.storeId !== undefined;
   const productionOutbox = productionBoxServed ? openProductionOutbox(productionData!.storeId!) : undefined;
   const productionQueue = productionOutbox === undefined ? undefined : createProductionQueue(
-    { userId: productionData?.userId ?? null, storeId: productionData?.storeId ?? null, now: () => new Date().toISOString() }, productionOutbox,
+    { userId: productionData?.userId ?? null, storeId: productionData?.storeId ?? null, now: () => new Date().toISOString(), ...(productionData?.foodHandling === undefined ? {} : { foodHandling: productionData.foodHandling }) /* OB-502 */ }, productionOutbox,
   );
   const releasePort = productionQueue?.releasePort() ?? openReleasePort();
   const production = bootProduction(productionData, productionData?.board === undefined || productionData.board === null ? undefined : { runs: productionData.board.runs }, releasePort);
@@ -7082,12 +7214,12 @@ if (browserWindow !== undefined) {
   browserWindow.approvalRules = {
     session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,
     limitWords: approvalLimitWords, waitWords: approvalWaitWords, limitsFromForm: approvalLimitsFromForm, paiseFromRupees: approvalPaiseFromRupees,
-    kinds: APPROVAL_LIMIT_KINDS, rolesShown: APPROVAL_ROLES_SHOWN,
+    kinds: APPROVAL_LIMIT_KINDS, limitKinds: APPROVAL_MONEY_LIMIT_KINDS, rolesShown: APPROVAL_ROLES_SHOWN, // OB-500 (R7-A): the price-cut column
   };
   // ── R4 Lane 4 — begin
   // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
   browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
-  browserWindow.supplierScorecard = { session: createScorecardSession({ viewer: browserWindow.supplierScorecardData }), words: scorecardWords, outcomeWords: scorecardOutcomeWords, ratingWords: scorecardRatingWords, figures: SCORECARD_FIGURES, signedRupees: ppvSignedRupees, costWords: ppvCostWords, notComparedWords: ppvNotComparedWords };
+  browserWindow.supplierScorecard = { session: createScorecardSession({ viewer: browserWindow.supplierScorecardData }), words: scorecardWords, outcomeWords: scorecardOutcomeWords, ratingWords: scorecardRatingWords, figures: SCORECARD_FIGURES, signedRupees: ppvSignedRupees, costWords: ppvCostWords, receivedCostWords: ppvReceivedCostWords, notComparedWords: ppvNotComparedWords };
   // R4 D-21: "Seen together" — only where the Investigations page was given who is looking; it opens nothing on read.
   if (browserWindow.lossPreventionInboxData !== undefined) {
     browserWindow.lpCorrelation = { session: createCorrelationSession({ viewer: viewerIdentity(browserWindow.lossPreventionInboxData) }), words: correlationWords, outcomeWords: correlationOutcomeWords, rupees: correlationRupees };
@@ -7105,6 +7237,7 @@ if (browserWindow !== undefined) {
   // write-offs and relabel tasks — each page's tested session, attached in its own file (lpw-browser-wiring.ts).
   // The help page's window.helpData (the box writes it: screen-data GLOBAL_FOR.help) is read there, with the rest.
   wireLpWorkforcePages(browserWindow as unknown as Record<string, unknown> & { laneWriteBase?: string }, viewerIdentity);
+  wireR7dPages(browserWindow as unknown as Record<string, unknown> & { laneWriteBase?: string });
   // OB-288 commercial desks: Business customers, Supplier submissions and Concessions (commercial-desks-browser-wiring.ts).
   wireCommercialDeskPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   wireOwnerReportingPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // OB-288 lane 4 · P2 — owner alerts and schedules
@@ -7124,4 +7257,8 @@ if (browserWindow !== undefined) {
   wireR4Screens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 6: Scrap and recycling, Packaging and crates, Compare side by side.
   wireSalvageAndCompareScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // Round 7 (R7-C): Shelf tags (OB-505) and Quotations (OB-506).
+  wireShelfTagsAndQuotations(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // Round 8 (R8-C): Staff certificates (OB-522).
+  wireCertificates(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
 }

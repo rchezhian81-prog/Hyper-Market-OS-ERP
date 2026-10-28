@@ -47,6 +47,8 @@ async function cloudAndBox(harness: () => ApiHarness) {
     expect((await call('POST', `/v1/org/nodes/${id}`, 'u-owner', body)).status).toBe(201);
   }
   for (const b of ['B-1', 'B-2', 'B-3']) expect((await call('POST', `/v1/quality/holds/${b}`, 'u-owner', { productId: 'CURD', reason: 'chiller ran warm overnight' })).status).toBe(201);
+  // OB-513: curd is food (and not on this shop's master, so head office cannot say otherwise) — B-1's sample is recorded on its hold.
+  expect((await call('POST', '/v1/quality/holds/B-1/samples/s-1', 'u-owner', { test: 'probe and smell', result: 'pass' })).status).toBe(201);
 
   const dir = await mkdtemp(join(tmpdir(), 'sre-ob333-box-'));
   cleanups.push(async () => { await rm(dir, { recursive: true, force: true }); });

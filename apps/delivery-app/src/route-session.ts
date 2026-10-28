@@ -37,6 +37,7 @@
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { NewWorkRefusedError } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 import { deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 import {
   transitionDelivery,
@@ -293,6 +294,8 @@ export class RouteSession {
   private readonly boxWord = new Map<string, BoxItemStatus>();
   /** WF-16 (driver): the return collections on this route. */
   private readonly pickups: Collection[];
+  /** OB-521: set while this build may not START a new route (withdrawn or too old) — the words to refuse it with. */
+  private newWorkBar: { readonly en: string; readonly ta: string } | null = null;
 
   constructor(
     readonly routeId: string,
@@ -330,6 +333,24 @@ export class RouteSession {
     });
   }
 
+  /**
+   * OB-521: bar (or, with `null`, lift the bar on) STARTING a new route on this build. A route this phone has already
+   * started — a stop moved here, or anything of it in the device queue — is always finished, cash and hand-over included.
+   */
+  barNewWork(words: { readonly en: string; readonly ta: string } | null): void {
+    this.newWorkBar = words;
+  }
+
+  /** OB-521: has this phone already started this route? */
+  started(): boolean {
+    return this.stops.some((s) => s.state !== 'assigned') || this.pickups.some((c) => c.state !== 'booked')
+      || this.outbox.all().some((item) => item.event.source === this.routeId);
+  }
+
+  private assertMayWork(): void {
+    if (this.newWorkBar !== null && !this.started()) throw new NewWorkRefusedError(this.newWorkBar.en, this.newWorkBar.ta);
+  }
+
   /** WF-16 (driver): the online returns to collect on this route, as the phone lists them. */
   collections(): readonly Collection[] {
     return this.pickups.slice();
@@ -356,6 +377,7 @@ export class RouteSession {
    * was booked, a line named twice, or nothing at all (that is "nothing handed over"). Once per return.
    */
   collect(returnId: string, lines: readonly { readonly productId: string; readonly collectedMinor: number }[]): Collection {
+    this.assertMayWork(); // OB-521
     const c = this.collectionOrThrow(returnId);
     if (c.state === 'collected') throw new CollectionDoneError(returnId);
     const booked = new Map(c.lines.map((l) => [l.productId, l.quantityMinor] as const));
@@ -378,6 +400,7 @@ export class RouteSession {
 
   /** "Customer not available" / "nothing handed over": the visit is recorded with its reason; the booking stands. */
   notCollected(returnId: string, reason: CollectionMissReason): Collection {
+    this.assertMayWork(); // OB-521
     const c = this.collectionOrThrow(returnId);
     if (c.state === 'collected') throw new CollectionDoneError(returnId);
     if (!(COLLECTION_MISS_REASONS as readonly string[]).includes(reason)) throw new ReasonRequiredError();
@@ -433,6 +456,8 @@ export class RouteSession {
    * only on a hand-over, for head office to compare with the stored address and then discard.
    */
   private replace(next: Stop, door: { readonly code?: string; readonly deviceFix?: DeviceFix } = {}): void {
+    // OB-521: the first step of a route STARTS it — refused on a barred build, before anything changes.
+    this.assertMayWork();
     const index = this.stops.findIndex((s) => s.stopId === next.stopId);
     this.stops[index] = next;
     this.outbox.enqueue(

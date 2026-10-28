@@ -89,6 +89,8 @@ export interface AsnLine {
   readonly uom: string;
   readonly batchId?: string;
   readonly expiry?: string;
+  /** B4 · OB-504: the batch's month and year (or date) of manufacture — required on a packed product's line. */
+  readonly manufacturedOn?: string;
 }
 
 export interface Asn {
@@ -122,6 +124,8 @@ export interface ReceiveCommand {
   readonly scannedQuantity: number;
   readonly batchId?: string;
   readonly expiry?: string;
+  /** B4 · OB-504: the batch's month and year (or date) of manufacture — head office refuses a packed product's scan without it. */
+  readonly manufacturedOn?: string;
   /** Present only for DSD, where there is no PO price to match against. */
   readonly declaredUnitCost?: Money;
 }
@@ -140,7 +144,11 @@ export type ReceiveOutcome =
   | 'not_on_order'
   | 'dsd_needs_approval'
   | 'over_delivery_needs_approval'
-  | 'price_change_refused';
+  | 'price_change_refused'
+  /** B4 · OB-504: a packed product's batch scanned with no (readable) month and year of manufacture. */
+  | 'manufacture_date_required'
+  /** OB-521: the handheld's app is withdrawn or too old, and this scan would START receiving a delivery. */
+  | 'app_version_too_old';
 
 export interface ReceiveResult {
   readonly commandId: string;
@@ -203,6 +211,12 @@ export function receiveScan(input: {
   readonly receivedSoFar?: Readonly<Record<string, number>>;
   readonly policy?: ReceivingPolicy;
   readonly approval?: ReceiveApproval;
+  /**
+   * B4 · OB-504: the products head office's category list makes PACKED (the store pack's `packedProductIds`). A scan of one
+   * with no readable manufacture date is refused here, offline, before it is queued. Absent → the handheld was not told;
+   * head office still refuses such a scan by name when it arrives.
+   */
+  readonly packagedProductIds?: readonly string[];
 }): ReceiveResult {
   const { command } = input;
   const policy = input.policy ?? DEFAULT_RECEIVING_POLICY;
@@ -249,6 +263,19 @@ export function receiveScan(input: {
     unitsPerScan = unitsPerLevel(pack, resolution.level);
   }
   const quantityMinor = command.scannedQuantity * unitsPerScan;
+
+  // 3b. B4 · OB-504: a packed product's batch is not received without its month and year of manufacture.
+  const mfg = command.manufacturedOn?.trim() ?? '';
+  if ((input.packagedProductIds ?? []).includes(resolution.productId) && !/^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/.test(mfg)) {
+    return {
+      commandId: command.commandId,
+      outcome: 'manufacture_date_required',
+      accepted: false,
+      productId: resolution.productId,
+      quantityMinor: 0,
+      detail: `${resolution.productId} is a packed product — enter the month and year of manufacture printed on the pack (YYYY-MM) before it is received (OB-504)`,
+    };
+  }
 
   // 4. The price edited at the door.
   if (command.source !== 'dsd' && command.declaredUnitCost !== undefined) {

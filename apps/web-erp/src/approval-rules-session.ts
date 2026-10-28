@@ -13,8 +13,12 @@ import type { Outcome } from './r4-insight-call';
 
 export type Lang = 'en' | 'ta';
 export type RuleName = 'limits' | 'escalation-waits' | 'price-check';
+/** The kinds that wait and escalate by age — the escalation-waits form. */
 export const KINDS = Object.freeze(['refund', 'purchase_order', 'stock_adjustment'] as const);
-export type LimitKind = (typeof KINDS)[number];
+/** OB-500 (R7-A): the money-limit columns — the escalating kinds and a price cut at the till (approved on the spot, no wait). */
+export const LIMIT_KINDS = Object.freeze([...KINDS, 'price_override'] as const);
+export type LimitKind = (typeof LIMIT_KINDS)[number];
+export type WaitKind = (typeof KINDS)[number];
 
 export interface RuleView<T> {
   readonly rule: RuleName; readonly value: T; readonly version: number;
@@ -23,7 +27,7 @@ export interface RuleView<T> {
   readonly heldAtLastKnownGood?: { readonly unreadableVersion: number; readonly why: string };
 }
 export interface LimitsValue { readonly byRole: Readonly<Record<string, Readonly<Partial<Record<LimitKind, number | null>>>>> }
-export type WaitsValue = Readonly<Record<LimitKind, number>>;
+export type WaitsValue = Readonly<Record<WaitKind, number>>;
 export interface PriceCheckValue { readonly percentBps: number; readonly amountMinor: number }
 
 /** A change this person asked for, with where it stands. */
@@ -51,7 +55,7 @@ export const APPROVAL_RULES_COPY = {
     version: 'Version', decided: 'The owner\'s figures of 23 Oct 2026 — not changed since', changedBy: 'Changed by',
     held: 'The newest saved version could not be read; the last good one is in force:',
     limitsH: 'Money limits', limitsLead: 'The most each role may approve, in rupees. Anything above a person\'s limit goes to the owner. A role with no figure has no money authority until a figure is set.',
-    role: 'Role', k_refund: 'Refund', k_purchase_order: 'Purchase order', k_stock_adjustment: 'Stock adjustment',
+    role: 'Role', k_refund: 'Refund', k_purchase_order: 'Purchase order', k_stock_adjustment: 'Stock adjustment', k_price_override: 'Price cut at the till',
     notSet: 'Not set', unlimited: 'Unlimited',
     r_owner: 'Owner', r_store_manager: 'Store manager', r_cashier: 'Cashier', r_accountant: 'Accountant',
     waitsH: 'Escalation waits', waitsLead: 'How long an approval may wait for a decision before it is sent to the owner, in minutes.',
@@ -76,7 +80,7 @@ export const APPROVAL_RULES_COPY = {
     version: 'பதிப்பு', decided: '23 அக் 2026 அன்று உரிமையாளர் கொடுத்த அளவுகள் — அதன்பின் மாற்றப்படவில்லை', changedBy: 'மாற்றியவர்',
     held: 'புதிதாகச் சேமித்த பதிப்பைப் படிக்க முடியவில்லை; கடைசியாகச் சரியாக இருந்தது நடைமுறையில் உள்ளது:',
     limitsH: 'பண வரம்புகள்', limitsLead: 'ஒவ்வொரு பங்கும் ஒப்புதல் தரக்கூடிய அதிகபட்சம், ரூபாயில். ஒருவரின் வரம்புக்கு மேல் உள்ளது உரிமையாளரிடம் செல்லும். அளவு இல்லாத பங்குக்கு, அளவு வைக்கும் வரை பண அதிகாரம் இல்லை.',
-    role: 'பங்கு', k_refund: 'பணத்திருப்பம்', k_purchase_order: 'கொள்முதல் ஆணை', k_stock_adjustment: 'சரக்குத் திருத்தம்',
+    role: 'பங்கு', k_refund: 'பணத்திருப்பம்', k_purchase_order: 'கொள்முதல் ஆணை', k_stock_adjustment: 'சரக்குத் திருத்தம்', k_price_override: 'கல்லாவில் விலைக் குறைப்பு',
     notSet: 'அமைக்கப்படவில்லை', unlimited: 'வரம்பு இல்லை',
     r_owner: 'உரிமையாளர்', r_store_manager: 'கடை மேலாளர்', r_cashier: 'காசாளர்', r_accountant: 'கணக்காளர்',
     waitsH: 'மேல்நிலைக்கு அனுப்பும் காத்திருப்பு', waitsLead: 'ஒரு ஒப்புதல் முடிவுக்காக, உரிமையாளருக்கு அனுப்பப்படும் முன் எவ்வளவு நேரம் காத்திருக்கலாம் — நிமிடங்களில்.',
@@ -138,7 +142,7 @@ export function limitsFromForm(current: LimitsValue, typed: Readonly<Record<stri
   for (const roleId of [...new Set([...Object.keys(current.byRole), ...Object.keys(typed)])]) {
     if (roleId === 'owner') { byRole[roleId] = { ...current.byRole[roleId] }; continue; }
     const row: Partial<Record<LimitKind, number | null>> = {};
-    for (const k of KINDS) {
+    for (const k of LIMIT_KINDS) {
       const t = typed[roleId]?.[k];
       if (t === undefined) { const cur = current.byRole[roleId]?.[k]; if (cur !== undefined) row[k] = cur; continue; }
       const p = paiseFromRupees(t);

@@ -5,6 +5,7 @@ import { useBackings } from '../support/backings';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM } from '../../services/api/src/adapters';
 import { lane2ExpirySweep } from '../../services/api/src/lane2-offline-adapters';
+import { certifyFoodHandler } from '../support/food-handler';
 
 // OB-288 lane 2 · P2 (§31 · P-01 · hard rules #2 #6 #10) — head office's half of the store's offline queues, on the REAL API
 // with REAL RBAC, in memory and (with DATABASE_URL) on real PostgreSQL. Each relayed record:
@@ -30,6 +31,8 @@ async function shop(h: ApiHarness) {
   await h.provisionRole(T, 'u-cook', 'store_manager', [S1]);
   await h.provisionRole(T, 'u-qc', 'store_manager', [S1]);
   await h.provisionRole(T, 'u-cash', 'cashier', [S1]);
+  // OB-502: the cooks hold a valid food-handling certificate (the lapsed-certificate case is proven in r7d's own suite).
+  for (const cook of ['u-cook', 'u-cash']) await certifyFoodHandler(h.store, T, cook, { branchId: S1 });
   const BRANCH: Record<string, string> = { 'u-box': S1, 'u-box-2': S2, 'u-cook': S1, 'u-qc': S1, 'u-cash': S1 };
   const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string, query?: Record<string, string>): Promise<Res> =>
     h.request({ method, path, userId, tenantId: T, ...(BRANCH[userId] === undefined ? {} : { branchId: BRANCH[userId] }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
@@ -145,7 +148,7 @@ describe.each(backings)('M11-FR-02 offline: a weigh-in / weigh-out, costed at he
     expect(codeOf(await call('POST', '/v1/production/weighed-runs/w1/synced', 'u-box', weighed('w1', { inputs: [{ productId: 'CHICKEN', weightGrams: 2_100 }] })))).toBe('weighed_run_conflicts_with_record');
     // Mutton head office has never bought: weighed and recorded, its cost NOT KNOWN — never priced at zero as if free.
     const m = await call('POST', '/v1/production/weighed-runs/w2/synced', 'u-box', weighed('w2', { inputs: [{ productId: 'MUTTON', weightGrams: 1_000 }], outputs: [{ productId: 'MUTTON-CUTS', weightGrams: 800 }], weighedBy: 'u-nobody' }), 'w2');
-    expect(m.body).toMatchObject({ costKnown: false, uncostedProducts: ['MUTTON'], syncFlags: ['weigher_unknown'] });
+    expect(m.body).toMatchObject({ costKnown: false, uncostedProducts: ['MUTTON'], syncFlags: ['weigher_unknown', 'weigher_food_certificate_not_valid'] }); // OB-502: nobody known holds no certificate either
     const boardRuns = ((await call('GET', '/v1/production/weighed-runs', 'u-owner')).body as { runs: { runId: string }[] }).runs;
     expect(boardRuns.map((r) => r.runId).sort()).toEqual(['w1', 'w2']);
     expect((await call('POST', '/v1/production/weighed-runs/w3/synced', 'u-cook', weighed('w3'))).status).toBe(403);

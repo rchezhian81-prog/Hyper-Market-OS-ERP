@@ -42,6 +42,7 @@
 import { laneScalesFor } from './lane-scales';
 import { HEAD_OFFICE_PAGE_SCREENS, HEAD_OFFICE_PAGE_GLOBALS, HEAD_OFFICE_PAGE_BUILDERS } from './head-office-pages'; // OB-380
 import { laneRollout } from '../../../packages/platform/src/rollout'; // OB-288 P4 (R8-9 · OB-316)
+import { readTillControls } from '../../../packages/price-guard/src/till-override'; // OB-500 (R7-A)
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { wallClockIn } from '../../../packages/calendar/src/trading-day'; // OB-392: a time shown in the shop's own clock
 import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
@@ -69,6 +70,7 @@ import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
 import { packTimeZone } from './shop-zone';
+import { myRosterOnBox, foodHandlingForViewer, rosterCopyOnBox } from './workforce-pack'; // Round 7 · OB-507 · OB-502 · Round 8 · OB-531
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -807,6 +809,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   }
   // OB-172: the receiving checklist the Receive form offers, offline. Absent stays absent (the screen says it was not told).
   Object.assign(payload, receivingChecklistFor(input));
+  // B4 · OB-504: which products are PACKED — the Receive form refuses a packed line with no month of manufacture, offline.
+  Object.assign(payload, packedProductIdsFor(input));
   // OB-288 lane 2 · §31.1: this box's clock against head office's, in words (P-08). Absent when the box has no clock check.
   if (input.clock !== undefined) payload['clock'] = input.clock;
   // OB-327: bills still commit when the clock is 5+ minutes out (hard rule #1) — and are listed here to be checked.
@@ -859,6 +863,13 @@ export function cardPaymentsList(day: NonNullable<ScreenInput['cardPayments']>):
  * OB-172 · D-6 — the receiving checklists head office has in force for this store and its cold-chain products, as the store
  * setup carried them, for the manager's Receive form and the warehouse handheld. Read strictly; absent when not told.
  */
+export function packedProductIdsFor(input: ScreenInput): Record<string, unknown> {
+  // B4 · OB-504: head office's list of PACKED products, read strictly (only product ids); absent when not told.
+  const register = input.pack.packedProductIds;
+  if (register === undefined || !register.known || !Array.isArray(register.value)) return {};
+  return { packedProductIds: (register.value as readonly unknown[]).filter((p): p is string => typeof p === 'string' && p.trim() !== '') };
+}
+
 export function receivingChecklistFor(input: ScreenInput): Record<string, unknown> {
   const register = input.pack.receivingChecklist;
   if (register === undefined || !register.known) return {};
@@ -1096,6 +1107,8 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...indentLinesFor(input),
     // OB-172: the receiving checklist "Delivery complete" asks for a chilled/frozen delivery, offline.
     ...receivingChecklistFor(input),
+    // B4 · OB-504: the packed products — a scan of one with no month of manufacture is refused on the handheld, offline.
+    ...packedProductIdsFor(input),
     // OB-288 lane 2 · WF-07 offline: the transfers to send from this store and to count in at it, as head office last said.
     ...transferWork(input),
   };
@@ -2253,6 +2266,12 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     // OB-403 "A" · §31.1: while this box's clock is 5+ minutes out, the till applies no offer that starts after the cut-off
     // (the offers stay in its signed catalogue, so they apply the moment the hold lifts — the till re-reads it every 10 s).
     offerHold: { held: input.activationHold?.held === true, cutoffAt: input.activationHold?.cutoffAt ?? null },
+    // OB-500 (R7-A): each product's lowest allowed price from the signed pack — the till refuses a cut below it before a
+    // manager is asked (the box judges it again with the manager's limit). `null` = the box was not told.
+    priceFloors: (() => { const c = readTillControls(input.pack.tillControls?.known === true ? input.pack.tillControls.value : undefined); return c === undefined ? null : c.floors; })(),
+    // OB-501 (R7-A): the app version policy from the signed pack — the till starts no new bill on a withdrawn or too-old
+    // build (it finishes the bill in progress). `null` = none set, nothing enforced.
+    appVersionPolicy: input.pack.versionPolicy.known ? input.pack.versionPolicy.value : null,
   };
 }
 
@@ -2568,6 +2587,12 @@ export function essPayload(input: ScreenInput): Record<string, unknown> | null {
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // Round 7 · OB-507 (M25-FR-01): the person's OWN rota from the committed roster in the signed pack, with when head office
+  // last said so — staff see their shift with the line down. Null when the box was not told the roster (said, never empty).
+  // (Always present, so the box re-folds it for whoever signs in — `asSignedInPerson`.)
+  payload['myRoster'] = policy.userId === undefined ? null : myRosterOnBox(input.pack, policy.userId);
+  const essStore = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
+  if (essStore !== undefined) payload['storeId'] = essStore;
 
   return payload;
 }
@@ -2582,6 +2607,9 @@ export function rosteringPayload(input: ScreenInput): Record<string, unknown> | 
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // Round 8 · OB-531: the store computer's copy of the roster (from the signed pack), with when head office last sent it —
+  // the screen shows it READ-ONLY only when head office cannot be reached, and says so. Null = the box was not told one.
+  payload['boxRoster'] = rosterCopyOnBox(input.pack);
 
   return payload;
 }
@@ -2614,6 +2642,10 @@ export function productionPayload(input: ScreenInput): Record<string, unknown> |
   const store = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
   if (store !== undefined) payload['storeId'] = store;
   if (input.clock !== undefined) payload['clock'] = input.clock;
+  // Round 7 · OB-502 (M25-FR-03): may food-handling work be recorded in this person's name today — from the certificates in
+  // the signed pack, on the shop's own date. The screen refuses before saving, in these words; the box's door refuses too.
+  // (Always present, so the box re-judges it for whoever signs in — `asSignedInPerson`.)
+  payload['foodHandling'] = policy.userId === undefined ? null : foodHandlingForViewer(input.pack, policy.userId, input.now);
 
   return payload;
 }
@@ -2993,7 +3025,14 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */
 export function payloadFor(screen: ScreenName, input: ScreenInput, personId?: string): Record<string, unknown> | null {
   // DF-3-c: the picker's and driver's work is chosen for the person signed in on the phone, when the box knows who that is.
-  if (personId !== undefined && screen === 'picker') return pickerPayload(input, personId);
-  if (personId !== undefined && screen === 'driver') return driverPayload(input, personId);
-  return BUILDERS[screen](input);
+  const built = personId !== undefined && screen === 'picker' ? pickerPayload(input, personId)
+    : personId !== undefined && screen === 'driver' ? driverPayload(input, personId)
+      : BUILDERS[screen](input);
+  // OB-521 (R8-A): each handheld and phone app this box serves judges its OWN build by the signed pack's app version
+  // policy — served with its work so the rule holds with no network (`null` = the pack carries none: nothing enforced).
+  if (built === null || !VERSION_GATED_SCREENS.has(screen)) return built;
+  return { ...built, appVersionPolicy: input.pack.versionPolicy.known ? input.pack.versionPolicy.value : null };
 }
+
+/** OB-521: the screens whose app refuses to START new work on a withdrawn or too-old build (the till rides `posLane`). */
+export const VERSION_GATED_SCREENS: ReadonlySet<ScreenName> = new Set<ScreenName>(['picker', 'driver', 'warehouse', 'owner', 'customer']);

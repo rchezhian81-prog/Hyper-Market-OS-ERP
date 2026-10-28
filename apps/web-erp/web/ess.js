@@ -64,6 +64,11 @@ function paint() {
   nobody.textContent = view.nobodyNamed ? t('nobodyNamed') : '';
 
   el('rows').replaceChildren(...view.rows.map(rowNode));
+  // OB-507: the rota shown is the store computer's held copy when head office cannot be reached — said, with its age.
+  const asof = el('asof');
+  asof.hidden = !view.rosterAsOfWords;
+  asof.textContent = view.rosterAsOfWords || '';
+  paintAttendance();
 
   const state = el('state');
   if (view.rows.length === 0) {
@@ -75,6 +80,52 @@ function paint() {
     state.hidden = true;
   }
 }
+
+// OB-507: clock in / clock out through the store computer (apps/web-erp/src/attendance-queue.ts — the rules live there).
+const att = window.essAttendance;
+let attSaid = '';
+function paintAttendance() {
+  const box = el('att');
+  if (!att) { box.hidden = true; return; }
+  const w = (key) => att.words(lang, key);
+  box.hidden = false;
+  el('att-title').textContent = w('title');
+  el('att-lead').textContent = att.attendance.may ? w('lead') : w('notAllowed');
+  el('att-in-text').textContent = w('clockIn');
+  el('att-out-text').textContent = w('clockOut');
+  el('att-in').disabled = !att.attendance.may;
+  el('att-out').disabled = !att.attendance.may;
+  el('att-said').textContent = attSaid;
+  const marks = att.attendance.marks(lang);
+  if (marks.length === 0) {
+    const li = document.createElement('li'); li.textContent = w('none'); el('att-marks').replaceChildren(li); return;
+  }
+  el('att-marks').replaceChildren(...marks.map((m) => {
+    const li = document.createElement('li');
+    li.dataset.state = m.state;
+    const icon = document.createElement('span'); icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = m.state === 'posted' ? '✓' : m.state === 'refused' ? '✕' : m.state === 'handed_to_box' ? '⇡' : '•';
+    const what = document.createElement('span'); what.textContent = `${w(m.kind)} · ${m.at.slice(11, 16)}`;
+    const state = document.createElement('span'); state.className = 'state'; state.textContent = m.stateWord;
+    li.append(icon, what, state);
+    if (m.reason) { const why = document.createElement('span'); why.className = 'why'; why.textContent = m.reason; li.append(why); }
+    return li;
+  }));
+}
+async function syncAttendance() {
+  if (att && att.relay) { try { await att.relay.syncNow(); } catch { /* kept on this device; tried again next time */ } }
+  paintAttendance();
+}
+function markAttendance(kind) {
+  if (!att) return;
+  const o = att.attendance.mark(kind);
+  attSaid = o.outcome === 'saved' ? att.words(lang, 'saved') : att.words(lang, o.outcome === 'nobody' ? 'nobody' : o.outcome === 'no_store' ? 'noStore' : 'notAllowed');
+  paintAttendance();
+  void syncAttendance();
+}
+el('att-in').addEventListener('click', () => markAttendance('in'));
+el('att-out').addEventListener('click', () => markAttendance('out'));
+if (att) { void syncAttendance(); setInterval(() => { void syncAttendance(); }, 15000); }
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 

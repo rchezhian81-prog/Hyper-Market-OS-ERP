@@ -43,7 +43,7 @@ import type {
   RefusalReason,
 } from '../../../packages/approvals/src/approvals';
 import {
-  commitReceipt,
+  commitReceipt, linesMissingManufactureDate,
   type CommittedReceipt,
   type ReceiptLineInput,
 } from '../../../packages/receiving/src/receiving';
@@ -415,6 +415,19 @@ export interface ManagerConfig {
    * chilled/frozen delivery flagged `receiving_checklist_missing` (P-08).
    */
   readonly receivingChecklist?: ReceivingChecklistSetup;
+  /**
+   * B4 · OB-504: the products head office's category list makes PACKED, as the store computer was told them. A delivery line of
+   * one with no month and year of manufacture is refused here, offline. Absent = not told (head office still refuses it).
+   */
+  readonly packedProductIds?: readonly string[];
+}
+
+/** B4 · OB-504: a delivery line of a packed product carries no month and year of manufacture — refused, nothing saved. */
+export class ManufactureDateRequiredError extends Error {
+  constructor(readonly productIds: readonly string[]) {
+    super(`${productIds.join(', ')}: a packed product needs the month and year of manufacture printed on the pack before the delivery is saved (OB-504).`);
+    this.name = 'ManufactureDateRequiredError';
+  }
 }
 
 export interface ReceiveInput {
@@ -546,6 +559,8 @@ export interface ManagerSession {
   receivingChecklist(): ReceivingChecklistSetup | undefined;
   /** OB-172: which of these products are chilled / frozen / raw meat by head office's master (they need the checklist). */
   coldChainAmong(productIds: readonly string[]): readonly string[];
+  /** B4 · OB-504: which of these products are PACKED by head office's list (they need a month and year of manufacture). */
+  packedAmong(productIds: readonly string[]): readonly string[];
   /** Capture a blind count and queue it for head office to reconcile (M09-FR-04). Nothing here reveals — or computes — the expected. */
   countStock(input: CountInput): CountAttempt;
   /** Everything standing between this store and a closed day — enumerated, never just counted. */
@@ -798,9 +813,13 @@ export function createManagerSession(
 
     receivingChecklist: () => config.receivingChecklist,
     coldChainAmong: (productIds) => coldChainAmong(config.receivingChecklist, productIds),
+    packedAmong: (productIds) => (config.packedProductIds === undefined ? [] : [...new Set(productIds)].filter((p) => config.packedProductIds!.includes(p)).sort()),
 
     receive: (input) => {
       if (config.manager === null) throw new NobodyNamedError('book a delivery in');
+      // B4 · OB-504 (offline): a packed product's batch is not booked in without its month and year of manufacture.
+      const missing = linesMissingManufactureDate(config.packedProductIds, input.lines);
+      if (missing.length > 0) throw new ManufactureDateRequiredError(missing);
       // OB-172 (OB-164 at the door, offline): a chilled/frozen delivery is not saved without its receiving checklist, judged
       // by the same rule head office applies; it is done by — and travels in the name of — the manager booking it in.
       const verdict = judgeDockChecklist({

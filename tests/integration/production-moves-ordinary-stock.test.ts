@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * **FUL-01 — production moves ORDINARY stock (audit HIGH · M11-FR-01/02/03 · M08-FR-01/02/04 · hard rule #2).**
@@ -28,6 +29,8 @@ async function kitchen(h: ApiHarness, t: string) {
   const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string, query?: Readonly<Record<string, string>>) =>
     h.request({ method, path, userId, tenantId: t, ...(body === undefined ? {} : { body }), ...(key === undefined ? {} : { idempotencyKey: key }), ...(query === undefined ? {} : { query }) });
   await h.seedOwner(t, 'u-owner');
+  await certifyFoodHandler(h.store, t, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+  await certifyFoodHandler(h.store, t, 'u-chef'); // OB-502: food-handling work needs a valid certificate
   await h.provisionRole(t, 'u-chef', 'store_manager');
   await h.provisionRole(t, 'u-qc', 'store_manager');
   const receive = async (productId: string, qty: number, unitCostMinor: number) => expect((await call('POST', '/v1/inventory/movements', 'u-owner', {

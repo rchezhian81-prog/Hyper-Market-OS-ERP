@@ -12,6 +12,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * **M10-FR-04 "identify affected customers (notify per consent)"; "affected customer contact respects consent (M16)";
@@ -71,6 +72,8 @@ describe.each(backings)('M10-FR-04 · OB-297 · OB-328 · OB-329: a recall reach
     let h = harness();
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
+    await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+    await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
     await h.provisionRole(T, 'u-mgr', 'store_manager');
     await h.provisionRole(T, 'u-baker', 'store_manager');
     await h.provisionRole(T, 'u-cash', 'cashier');
@@ -210,6 +213,8 @@ describe('OB-329: the name given at enrolment is sealed with the member, and era
     const h = apiHarness({ store: raw, personalDataKeys: keys });
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
+    await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+    await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
     const req = (method: 'GET' | 'POST', path: string, body?: unknown): Promise<Res> =>
       h.request({ method, path, userId: 'u-owner', tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
     const enrolled = (await req('POST', '/v1/loyalty/members', { mobile: '9876543210', consent: true, verifiedHow: 'seen_on_phone', name: 'Meena Sundaram' })).body as { memberRef: string };

@@ -291,6 +291,14 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'hsn_class_change', label: 'Change the tax (HSN) class of a published product',
     makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
   },
+  // OB-512 (owner, 28 Oct 2026): an MRP that is NOT YET IN FORCE may be replaced with a reason and a second person's approval;
+  // both versions stay on record. Asked by the person who keeps the catalogue (`catalogue.pack.publish`); approved by a
+  // second person who approves catalogue changes (`catalogue.tax.approve`: the accountant or the owner) — the OB-347 pair,
+  // because today only the owner may publish the catalogue, so "another publisher" would leave nobody to approve.
+  mrp_replacement: {
+    kind: 'mrp_replacement', label: 'Replace an MRP that is not yet in force',
+    makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
+  },
   // ── OB-288 till side — end
   // ── OB-288 commercial desks (M22 · M24 · M27) — begin
   // M22-FR-01 "contract/credit changes approved": a B2B contract (its price list, dates, terms, credit limit, expiry policy)

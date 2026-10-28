@@ -31,6 +31,7 @@ import {
 } from '../../../packages/receiving/src/index';
 import {
   rulesFromMaster, sayHandling, receivingChecklistGate, acceptCarriedChecklist, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
+  costFromOrder, costingFields, incompleteCode,
   type GrnRecord, type ReceiptFlag, type AssembledFromScans,
 } from './goods-receipt';
 import type { SyncedGoodsReceiptDeps } from './goods-receipt-synced';
@@ -80,15 +81,16 @@ export function linesFromScans(input: {
 }): readonly AssembledLine[] {
   // Wave 3 · SF-07 part 3: a cold-chain scan head office HELD (no reading, or out of range) is its own line, so a good scan of the
   // same product that went on-hand is never judged by — or blamed for — the held one; each line carries its readings.
-  interface Group { productId: string; batchId: string | null; posture: ScanPosture; coldHeld: boolean; uom: string; expiry: string | null; counted: number; onHand: number; commandIds: string[]; onHandMovementIds: string[]; temps: (number | undefined)[] }
+  interface Group { productId: string; batchId: string | null; posture: ScanPosture; coldHeld: boolean; uom: string; expiry: string | null; manufacturedOn: string | null; counted: number; onHand: number; commandIds: string[]; onHandMovementIds: string[]; temps: (number | undefined)[] }
   const groups = new Map<string, Group>();
   const productOrder: string[] = [];
   for (const s of input.scans) {
     const posture = postureOf(s.state);
     const coldHeld = s.coldChainHeld !== undefined;
-    const key = `${s.productId}|${s.batchId ?? ''}|${posture}|${coldHeld ? 'cold-held' : ''}`;
+    // B4 · OB-504: a batch's manufacture date is part of what it IS — two dates on one batch number stay two lines, never merged.
+    const key = `${s.productId}|${s.batchId ?? ''}|${posture}|${coldHeld ? 'cold-held' : ''}|${s.manufacturedOn ?? ''}`;
     if (!productOrder.includes(s.productId)) productOrder.push(s.productId);
-    const g = groups.get(key) ?? { productId: s.productId, batchId: s.batchId, posture, coldHeld, uom: s.uom, expiry: null, counted: 0, onHand: 0, commandIds: [], onHandMovementIds: [], temps: [] };
+    const g = groups.get(key) ?? { productId: s.productId, batchId: s.batchId, posture, coldHeld, uom: s.uom, expiry: null, manufacturedOn: s.manufacturedOn ?? null, counted: 0, onHand: 0, commandIds: [], onHandMovementIds: [], temps: [] };
     g.counted += s.quantityMinor;
     g.temps.push(s.temperatureC);
     g.commandIds.push(s.commandId);
@@ -118,6 +120,7 @@ export function linesFromScans(input: {
       if (g.posture === 'expired' && expiry === null) { expiry = input.receivedOnDate; say('expiry_date_assumed'); }
       const line: CapturedLine = {
         lineId: `${input.grnId}:${n}`, productId, orderedMinor, countedMinor: g.counted, uom: g.uom, batchId: g.batchId, expiry,
+        ...(g.manufacturedOn === null ? {} : { manufacturedOn: g.manufacturedOn }),
         unitCost: { minor: input.unitCostMinorOf(productId) ?? 0, currency: 'INR' },
         condition: g.posture === 'damaged' ? 'damaged' : 'good',
         ...(g.posture === 'held' ? { qc: 'failed' as const } : {}),
@@ -140,7 +143,7 @@ function lineTemperature(temps: readonly (number | undefined)[], coldHeld: boole
 
 export type AssembleOutcome =
   | { readonly ok: true; readonly record: GrnRecord; readonly alreadyReceived: boolean }
-  | { readonly ok: false; readonly refusedBecause: 'no_scans_for_receipt' | 'receipt_line_incomplete'; readonly detail: string };
+  | { readonly ok: false; readonly refusedBecause: 'no_scans_for_receipt' | 'receipt_line_incomplete' | 'manufacture_date_required'; readonly detail: string };
 
 /**
  * Assemble a delivery's scans into ONE goods receipt — the one code path for the relayed completion and a person's direct
@@ -188,26 +191,32 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   // OB-164: the scans already put the goods on-hand, so a chilled/frozen delivery with no receiving checklist on file is
   // assembled and FLAGGED `receiving_checklist_missing` for the review — never silently passed.
   const checklist = await receivingChecklistGate(deps, input.tenantId, input.grnId, master.rules, productIds, flags, 'flag');
+  // Without an order-cost port (a bare stub) the cloud's own average stands, as before; main.ts wires the order's cost.
   const costByProduct = new Map<string, number>();
-  let costUnknown = false;
-  for (const productId of productIds) {
-    const cost = await deps.unitCostMinor(input.tenantId, productId);
-    if (cost === undefined) costUnknown = true; else costByProduct.set(productId, cost);
+  if (deps.orderLineCost === undefined) {
+    let costUnknown = false;
+    for (const productId of productIds) {
+      const cost = await deps.unitCostMinor(input.tenantId, productId);
+      if (cost === undefined) costUnknown = true; else costByProduct.set(productId, cost);
+    }
+    if (costUnknown) flags.push('cost_unknown');
   }
-  if (costUnknown) flags.push('cost_unknown');
-  const inForce = await policyInForce(deps, input.tenantId);
-  if (inForce.defaulted) flags.push('default_policy');
 
   const receivedOnDate = await shopClock(deps.calendar).dateOf(input.tenantId, input.completedAt); // R1b: the shop's date
   const assembled = linesFromScans({ grnId: input.grnId, scans, ordered: order.ordered, receivedOnDate, unitCostMinorOf: (p) => costByProduct.get(p), flags });
-  const captureLines = alignToOrder(assembled.map((a) => a.line), order.ordered, flags);
+  // Round 7 (M07-FR-01/02 · OB-509): each line at the cost the ISSUED order agreed — the cost the scans already posted their
+  // stock at — and, with no issued order or a product the order does not name, its cost NOT KNOWN until the bill is matched.
+  const costed = await costFromOrder(deps, input.tenantId, order, alignToOrder(assembled.map((a) => a.line), order.ordered, flags), flags, { typed: false });
+  const captureLines = costed.lines;
+  const inForce = await policyInForce(deps, input.tenantId);
+  if (inForce.defaulted) flags.push('default_policy');
 
   let captured: CapturedReceipt;
   try {
     captured = captureReceipt({ receiptId: input.grnId, lines: captureLines, rules: master.rules, policy: inForce.policy, receivedOnDate, currency: 'INR' });
   } catch (err) {
     if (err instanceof IncompleteCaptureError) {
-      return { ok: false, refusedBecause: 'receipt_line_incomplete', detail: `${err.message}. A line that cannot be identified cannot be received (M10 / M07-FR-02) — the scans stay on the register for a person.` };
+      return { ok: false, refusedBecause: incompleteCode(err), detail: `${err.message}. A line that cannot be identified cannot be received (M10 / M07-FR-02) — the scans stay on the register for a person.` };
     }
     throw err;
   }
@@ -244,6 +253,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
     ...(input.relayedBy === undefined ? {} : { relayedBy: input.relayedBy }),
     poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
     ...(order.position === undefined ? {} : { orderPosition: order.position }),
+    ...costingFields(costed),
     assembledFrom: {
       scanCount: scans.length, commandIds: scans.map((s) => s.commandId), scannedBy: [...new Set(scans.map((s) => s.receivedBy))],
       completedBy: input.completedBy, completedAt: input.completedAt, onHandByLine,
@@ -287,7 +297,7 @@ const refusal = (out: Extract<AssembleOutcome, { ok: false }>, relayed: boolean)
   code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
   nextSafeAction: out.refusedBecause === 'no_scans_for_receipt'
     ? (relayed ? 'Nothing was changed. Check the delivery\'s scans reached head office, then assemble the receipt from head office.' : 'Scan the delivery in first, or capture the receipt directly. Nothing was changed.')
-    : 'Capture the missing detail on the scan register (a batch-tracked item needs a batch AND an expiry) or capture the receipt directly. Nothing was changed.',
+    : 'Capture the missing detail on the scan register (a batch-tracked item needs a batch AND an expiry; a packed product needs its month and year of manufacture) or capture the receipt directly. Nothing was changed.',
 });
 
 const body = (record: GrnRecord, alreadyReceived: boolean) => ({

@@ -28,6 +28,19 @@ import { medicineReason, MEDICINE_NOT_SOLD } from '../../../packages/restricted-
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import type { MrpReplacement } from '../../../packages/product/src/product';
+
+/** OB-512: `mrpReplacement: { effectiveFrom, reason }` off a publish body — undefined when absent; 'invalid' when unreadable. */
+function readMrpReplacement(v: unknown): { readonly effectiveFrom: string; readonly reason: string } | undefined | 'invalid' {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'object' || Array.isArray(v)) return 'invalid';
+  const r = v as Record<string, unknown>;
+  const effectiveFrom = typeof r['effectiveFrom'] === 'string' ? r['effectiveFrom'].trim() : '';
+  const reason = typeof r['reason'] === 'string' ? r['reason'].trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) || Number.isNaN(Date.parse(`${effectiveFrom}T00:00:00Z`)) || reason.length < 10) return 'invalid';
+  return { effectiveFrom, reason };
+}
+const rupeesOf = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
 
 export interface ProductMasterDeps {
   /**
@@ -160,15 +173,74 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         // overwritten (hard rule #2), so the MRPs head office already holds for this product are judged TOGETHER with the
         // ones sent: a second, different MRP taking effect on a date that already has one is refused at commit, by name —
         // whether the screen sent both, or sent only the new one. A later-dated MRP is a normal price move and passes.
-        const dual = dualMrpConflict([...(current?.mrpHistory ?? []), ...(record.mrpHistory ?? [])]);
-        if (dual !== undefined) {
-          throw apiError(422, {
-            code: 'dual_mrp_rejected',
-            whatHappened: `"${record.name}" cannot be published: ${dualMrpMessage(dual)}.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Keep the MRP already on record for that date, or give the new MRP the date it really takes effect from (a later date), and publish again. Nothing was saved.',
+        // OB-512 (owner, 28 Oct 2026): an MRP head office holds that is NOT YET IN FORCE (its date is after the shop's today) may be
+        // REPLACED — the body names it (`mrpReplacement: { effectiveFrom, reason }`) and a second person approved exactly this
+        // record through the maker-checker engine (kind `mrp_replacement`). Both versions stay on record (`mrpReplacements`,
+        // and the product's earlier version on its stream). An MRP already in force, or any clash not approved this way, is
+        // still refused by name below (B2).
+        const today = shopDateIn(deps.now?.() ?? new Date().toISOString()); // R1c: the shop's date
+        const held = current?.mrpHistory ?? [];
+        const sent = record.mrpHistory ?? [];
+        const asked = readMrpReplacement(b['mrpReplacement']);
+        if (asked === 'invalid') {
+          throw apiError(400, {
+            code: 'not_readable_as_an_mrp_replacement',
+            whatHappened: 'Replacing an MRP needs mrpReplacement: { effectiveFrom: YYYY-MM-DD (the date of the MRP on record being replaced), reason (at least 10 characters) }.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Send the date and the reason, with the approvalId of the second person\'s approval. Nothing was saved.',
           });
         }
+        let mrpApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
+        let replacement: MrpReplacement | undefined;
+        if (asked !== undefined) {
+          const was = held.find((h) => h.effectiveFrom === asked.effectiveFrom);
+          const now = sent.find((s) => s.effectiveFrom === asked.effectiveFrom);
+          if (was === undefined || now === undefined || Number(now.value?.minor) === Number(was.value?.minor)) {
+            throw apiError(422, {
+              code: 'no_mrp_to_replace',
+              whatHappened: `There is no MRP on record for ${asked.effectiveFrom} that this publish changes — an MRP replacement names the date of an MRP head office holds and sends the new MRP for that same date.`,
+              wasItSaved: 'not_saved', nextSafeAction: 'Check the date of the MRP being replaced and send the new MRP for it. Nothing was saved.',
+            });
+          }
+          if (asked.effectiveFrom <= today) {
+            throw apiError(422, {
+              code: 'mrp_already_in_force',
+              whatHappened: `The MRP of ${rupeesOf(Number(was.value.minor))} for "${record.name}" took effect on ${asked.effectiveFrom} — it is already in force (today is ${today}), so it cannot be replaced; only an MRP not yet in force can (OB-512).`,
+              wasItSaved: 'not_saved', nextSafeAction: 'Give the new MRP its own later date (a normal price move). Nothing was saved.',
+            });
+          }
+          mrpApproval = await approvalNamedIn(deps.approvals, {
+            tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+            kind: 'mrp_replacement', subjectRef: `product:${productId}:mrp:${asked.effectiveFrom}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
+            maker: ctx.userId, usedBy: `mrp-replacement:${productId}:${asked.effectiveFrom}`, now: deps.now?.() ?? new Date().toISOString(),
+          });
+          if (mrpApproval === undefined) {
+            throw apiError(422, {
+              code: 'mrp_replacement_needs_approval',
+              whatHappened: `Replacing the MRP of ${rupeesOf(Number(was.value.minor))} for ${asked.effectiveFrom} with ${rupeesOf(Number(now.value.minor))} needs a second person's approval of exactly this record (OB-512).`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind mrp_replacement, subjectRef product:${productId}:mrp:${asked.effectiveFrom}, with exactly this product record and reason); once a second person who approves catalogue changes (the accountant or the owner) approves it, send it again with the approvalId. Nothing was changed.`,
+            });
+          }
+          replacement = {
+            effectiveFrom: asked.effectiveFrom, replaced: was.value, replacedBy: now.value, reason: asked.reason,
+            requestedBy: ctx.userId, approvedBy: mrpApproval.decision.decidedBy, approvalId: mrpApproval.decision.requestId, at: deps.now?.() ?? new Date().toISOString(),
+          };
+        }
+        const dual = dualMrpConflict([...held.filter((h) => h.effectiveFrom !== replacement?.effectiveFrom), ...sent]);
+        if (dual !== undefined) {
+          const notYet = dual.conflict !== undefined && dual.conflict.effectiveFrom > today && held.some((h) => h.effectiveFrom === dual.conflict!.effectiveFrom);
+          throw apiError(422, {
+            code: 'dual_mrp_rejected',
+            whatHappened: `"${record.name}" cannot be published: ${dualMrpMessage(dual)}.${notYet ? ` The MRP on record for ${dual.conflict!.effectiveFrom} is not yet in force, so it may be REPLACED with a reason and a second person's approval (OB-512).` : ''}`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: notYet
+              ? `Keep the MRP on record, give the new one a later date — or replace it: ask for approval (kind mrp_replacement, subjectRef product:${productId}:mrp:${dual.conflict!.effectiveFrom}) and publish again with mrpReplacement { effectiveFrom: "${dual.conflict!.effectiveFrom}", reason } and the approvalId. Nothing was saved.`
+              : 'Keep the MRP already on record for that date, or give the new MRP the date it really takes effect from (a later date), and publish again. Nothing was saved.',
+          });
+        }
+        // OB-512: every replacement ever made is carried forward from head office's record (append-only), never from a body.
+        const replacements = [...(current?.mrpReplacements ?? []), ...(replacement === undefined ? [] : [replacement])];
+        const toPublish: ProductRecord = replacements.length === 0 ? record : { ...record, mrpReplacements: replacements };
         // OB-347 (owner, 24 Oct 2026, in writing): a PUBLISHED product's tax (HSN) class changes only with a Finance approver's
         // approval of exactly this record — the accountant or the owner, never the person asking (kind `hsn_class_change`).
         // A draft never published, or a first class on a product that had none, is not a change and needs none.
@@ -208,7 +280,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         let published: ProductRecord;
         let activationRefused: ReturnType<typeof warningStanding> | undefined;
         try {
-          published = publishProduct(record, categories); // draft → 'new' on first publish
+          published = publishProduct(toPublish, categories); // draft → 'new' on first publish
         } catch (err) {
           if (err instanceof NotPublishableError) {
             throw apiError(422, {
@@ -270,6 +342,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
           try {
             // OB-347: the Finance approval is spent once, after every rule passed and before the record is written.
             if (attempt === 0) await hsnApproval?.spend();
+            if (attempt === 0) await mrpApproval?.spend(); // OB-512: spent once, after every rule passed, before the write
             await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId, held?.version);
           } catch (err) {
             if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
@@ -277,6 +350,15 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
               throw apiError(409, { code: 'sku_changed_meanwhile', whatHappened: `The SKU "${published.sku}" kept changing while this product was being saved.`, wasItSaved: 'not_saved', nextSafeAction: 'Read the product master and publish again. Nothing was saved.' });
             }
             throw err;
+          }
+          if (replacement !== undefined) {
+            await deps.recordAudit?.(ctx.tenantId, {
+              actorId: ctx.userId, action: 'catalogue.product.mrp.replace', objectType: 'product', objectId: productId,
+              at: replacement.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+              before: { effectiveFrom: replacement.effectiveFrom, mrpMinor: String(replacement.replaced.minor) },
+              after: { effectiveFrom: replacement.effectiveFrom, mrpMinor: String(replacement.replacedBy.minor), approvedBy: replacement.approvedBy },
+              reason: replacement.reason, approvalId: replacement.approvalId, correlationId: `mrp-replacement:${productId}:${replacement.effectiveFrom}`,
+            });
           }
           if (classChange !== undefined && hsnApproval !== undefined) {
             await deps.recordAudit?.(ctx.tenantId, {
@@ -291,6 +373,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             body: {
               product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}),
               ...(classChange === undefined || hsnApproval === undefined ? {} : { taxClassChange: { from: classChange.from, to: classChange.to, approvedBy: hsnApproval.decision.decidedBy } }),
+              ...(replacement === undefined ? {} : { mrpReplacement: replacement }), // OB-512
               // B16: said, never silent — the product is saved as a draft and is NOT on sale until its warning is confirmed.
               ...(activationRefused === undefined || activationRefused.sellable ? {} : {
                 activation: {

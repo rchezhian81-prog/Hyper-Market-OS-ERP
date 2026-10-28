@@ -22,6 +22,9 @@ import {
 } from '../../../packages/production/src/catch-weight';
 import { isCurrencyCode, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { FoodHandlingTask, FoodHandlingVerdict } from '../../../packages/workforce/src/food-handling';
+import { handlesFood } from '../../../packages/production/src/departments';
+import { foodHandlingRefusal } from './production';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -44,6 +47,8 @@ export interface WeighedCostingDeps {
   readonly weighedRun: (tenantId: string, runId: string) => Promise<StoredWeighedRun | undefined> | StoredWeighedRun | undefined;
   /** Persist a costed run, append-only. Idempotent on the run id. */
   readonly recordWeighedRun: (tenantId: string, run: StoredWeighedRun) => Promise<void> | void;
+  /** OB-502 · M25-FR-03: may counter-food work be recorded in this person's name at this moment (see production.ts). */
+  readonly foodHandling?: (tenantId: string, personId: string, task: FoodHandlingTask, at: string) => Promise<FoodHandlingVerdict> | FoodHandlingVerdict;
   readonly now: () => string;
 }
 
@@ -110,6 +115,11 @@ export function weighedCostingRoutes(deps: WeighedCostingDeps): readonly Route[]
           throw apiError(400, { code: 'tolerance_not_bps', whatHappened: 'toleranceBp, if given, is whole basis points.', wasItSaved: 'not_saved', nextSafeAction: 'Send the tolerance in basis points, or leave it out.' });
         }
 
+        // OB-502: counter-food work is refused in the name of a person whose food-handling certificate expired or is missing.
+        if (deps.foodHandling !== undefined && handlesFood(b['departmentId'] as string)) {
+          const verdict = await deps.foodHandling(ctx.tenantId, ctx.userId, 'weighed_run', deps.now());
+          if (!verdict.allowed) foodHandlingRefusal(verdict);
+        }
         const existing = await deps.weighedRun(ctx.tenantId, runId);
         if (existing !== undefined) {
           // A weighed run is costed once — a re-post returns what was recorded, never a second figure.
@@ -197,7 +207,7 @@ export interface SyncedWeighedRunDeps extends WeighedCostingDeps {
 }
 
 /** What head office found about a relayed weighed run — said on the record. */
-export type WeighedSyncFlag = 'weigher_unknown' | 'weigher_lacks_authority';
+export type WeighedSyncFlag = 'weigher_unknown' | 'weigher_lacks_authority' | 'weigher_food_certificate_not_valid'; // OB-502: recorded (it happened) and said
 
 /** A relayed weighed run: the engine's result plus who carried it and what head office could not cost. */
 export interface RelayedWeighedRun extends StoredWeighedRun {
@@ -277,6 +287,8 @@ export function syncedWeighedCostingRoutes(deps: SyncedWeighedRunDeps): readonly
         }
         const held = await deps.permissionsOfUser?.(ctx.tenantId, weighedBy);
         const flags: WeighedSyncFlag[] = held === undefined ? ['weigher_unknown'] : held.includes('production.plan.commit') ? [] : ['weigher_lacks_authority'];
+        // OB-502: judged as at the moment it was weighed, on head office's certificate register.
+        if (deps.foodHandling !== undefined && handlesFood(run.departmentId) && !(await deps.foodHandling(ctx.tenantId, weighedBy, 'weighed_run', at)).allowed) flags.push('weigher_food_certificate_not_valid');
         const stored: RelayedWeighedRun = {
           runId, departmentId: run.departmentId, costedBy: ctx.userId, at, result,
           weighedBy, costKnown: uncosted.length === 0, uncostedProducts: uncosted, syncFlags: flags,

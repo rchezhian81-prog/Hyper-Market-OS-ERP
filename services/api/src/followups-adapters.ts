@@ -12,6 +12,7 @@ import type { PackSigner } from '../../catalogue/src/pack';
 import { republishWithExpired } from '../../catalogue/src/recall-republish';
 import { catalogueAdapter, saleBlocksAdapter, qualityHoldAdapter, permissionsHeldBy } from './adapters';
 import { syncedQualityHoldRoutes } from '../../inventory/src/quality-hold';
+import { r7bQualityHooks } from './r7b-receiving-adapters';
 import { qualitySampleAdapter } from './r6b-quality-scale-adapters';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { lane2ExpirySweep, shopDateOf } from './lane2-offline-adapters';
@@ -92,6 +93,7 @@ export function followupsSurface(surface: Route[], input: {
   surface.push(...syncedQualityHoldRoutes({
     ...qualityHoldAdapter({ store, now: input.now }),
     ...qualitySampleAdapter({ store }), // M10-FR-02: the relayed release is judged on the samples recorded on the hold
+    ...r7bQualityHooks({ store, now: input.now }), // R7 OB-513: a held food batch needs a recorded sample first
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(store, tenantId, userId),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   }));

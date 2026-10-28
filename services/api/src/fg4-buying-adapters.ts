@@ -40,6 +40,7 @@ import {
 } from './adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
 import { foldBlanketAgreements } from './p3-procure-adapters';
+import { billedCostOf } from './r7b-receiving-adapters'; // OB-517
 import { freeSampleRoutes, FREE_SAMPLE_REASON, type FreeSampleIssue, type FreeSampleCheck, type FreeSampleRequest, type FreeSampleDecision } from '../../inventory/src/free-samples';
 import { frozenBy as countPlanFreezing } from '../../inventory/src/count-plans';
 import type { PurchaseTaxLine } from '../../../packages/input-tax/src/free-sample-itc';
@@ -242,11 +243,12 @@ function priceVarianceRoutes(input: Base): Route[] {
         const supplierId = isStr(ctx.query['supplierId']) ? ctx.query['supplierId'].trim() : undefined;
         const productId = isStr(ctx.query['productId']) ? ctx.query['productId'].trim() : undefined;
         const grnId = isStr(ctx.query['grnId']) ? ctx.query['grnId'].trim() : undefined;
-        const [grns, orders, agreements, nodes] = await Promise.all([
+        const [grns, orders, agreements, nodes, billed] = await Promise.all([
           goodsReceiptAdapter({ store: input.store, now: input.now }).all(ctx.tenantId),
           foldPurchaseOrders(input.store, ctx.tenantId),
           foldBlanketAgreements(input.store, ctx.tenantId),
           orgStructureAdapter({ store: input.store, now: input.now }).nodes(ctx.tenantId),
+          billedCostOf(), // OB-517 · OB-530: the received cost is the bill matched to that exact receipt
         ]);
         const branchOf = branchOfLocationIn(nodes);
         const inScope = (locationId: string): boolean => branchInScope(ctx, branchOf(locationId));
@@ -263,14 +265,19 @@ function priceVarianceRoutes(input: Base): Route[] {
           const sup = g.poId === null ? null : (orders.get(g.poId)?.supplierId ?? null);
           if (supplierId !== undefined && sup !== supplierId) continue;
           if (!inScope(g.warehouseId)) { outsideScope += 1; continue; }
-          // Round 6 (M07-FR-01/02): a line typed at a cost other than its order's is BOOKED at the order's cost; the cost it
-          // was received at is kept on the receipt's cost discrepancy, so the variance report still measures it (unchanged).
-          const typedCost = new Map((g.costDiscrepancies ?? []).map((d) => [d.lineId, d.typedUnitCost] as const));
+          // OB-517 (owner, 28 Oct 2026): the cost "as received" is the price on the SUPPLIER BILL matched to the goods — never
+          // the figure typed at the door, never the order's own price. A line with no matched bill yet is "not yet billed".
           receipts.push({
             grnId: g.grnId, number: g.number, poId: g.poId, supplierId: sup, receivedOn, locationId: g.warehouseId,
             lines: g.captured.lines
               .filter((l) => productId === undefined || l.productId === productId)
-              .map((l) => ({ lineId: l.lineId, productId: l.productId, keptMinor: l.sellableMinor + l.quarantinedMinor + l.heldMinor, uom: l.uom, unitCost: (typedCost.get(l.lineId) as typeof l.unitCost | undefined) ?? l.unitCost })),
+              .map((l) => {
+                const bill = billed(g, l.lineId, l.productId);
+                return {
+                  lineId: l.lineId, productId: l.productId, keptMinor: l.sellableMinor + l.quarantinedMinor + l.heldMinor, uom: l.uom,
+                  ...(bill === undefined ? {} : { unitCost: bill.unitCost as PpvReceipt['lines'][number]['unitCost'] & object, invoiceId: bill.invoiceId }),
+                };
+              }),
           });
         }
         const ppvAgreements: PpvAgreement[] = [...agreements.values()].map((a) => ({
@@ -285,7 +292,7 @@ function priceVarianceRoutes(input: Base): Route[] {
             ...report, receipts: receipts.length,
             // P-08: receipts the reader's branches do not cover are counted, never silently left out.
             ...(ctx.scope === 'all' ? {} : { outsideYourBranches: outsideScope }),
-            sources: ['goods receipts', 'purchase orders', 'blanket agreements'], typedFigures: false, asAt: input.now(),
+            sources: ['goods receipts', 'matched supplier bills', 'purchase orders', 'blanket agreements'], typedFigures: false, asAt: input.now(),
           },
         };
       },

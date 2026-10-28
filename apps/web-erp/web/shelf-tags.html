@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Shelf tags</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Shelf tags (OB-505 · roadmap addendum B3 · Legal Metrology). A THIN CLIENT over head office's own catalogue reads: the
+      signed price pack the tills charge from (the selling price, the MRP, the unit, the barcode) and each product's master
+      record (its net quantity and Tamil name). The tested packages/product/src/shelf-tag.ts makes each tag lawful — never
+      above the MRP, the price per kg / litre / piece worked out, every character at least as tall as Rule 9 asks for the tag
+      stock — or refuses it by name. Printed with the browser's own print (no printer driver here). Its session is
+      apps/web-erp/src/shelf-tags-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      ul.rows li.attention { border-left: 6px solid var(--degraded); }
+      .meta { font-size: 14px; color: var(--muted); }
+      [hidden] { display: none !important; }
+    </style>
+    <style>
+      /* The tags: real millimetres, so a printed tag is the size of its stock and every character at least its judged height. */
+      #sheet { display: flex; flex-wrap: wrap; gap: 4mm; align-content: start; }
+      .tag { box-sizing: border-box; border: 0.3mm dashed #000; background: #fff; color: #000; padding: 1.5mm 2mm; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; font-family: "Noto Sans", "Noto Sans Tamil", Arial, sans-serif; line-height: 1.15; page-break-inside: avoid; break-inside: avoid; }
+      .tag .name { font-weight: 700; }
+      .tag .price { font-weight: 800; }
+      .tag .row { display: flex; justify-content: space-between; gap: 2mm; align-items: baseline; }
+      .tag .code { letter-spacing: 0.2mm; }
+      /* Printing: only the tags show, from the top-left of the paper — whatever the shared chrome wraps the page in. */
+      @media print {
+        @page { margin: 8mm; }
+        body { background: #fff; }
+        body * { visibility: hidden; }
+        #sheet, #sheet * { visibility: visible; }
+        #sheet { position: absolute; left: 0; top: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Shelf tags</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Shelf tags</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="choose" hidden aria-labelledby="choose-h">
+        <h3 id="choose-h"></h3>
+        <div class="row-form">
+          <label for="f-text"><span id="f-text-l"></span><input id="f-text" autocomplete="off" /></label>
+        </div>
+        <button id="f-find" type="button" class="quiet"><span id="f-find-text"></span></button>
+        <p class="status" id="f-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="f-rows"></ul>
+        <label for="t-codes"><span id="t-codes-l"></span><textarea id="t-codes" rows="5" autocomplete="off"></textarea></label>
+        <div class="row-form">
+          <label for="t-lang"><span id="t-lang-l"></span><select id="t-lang"></select></label>
+          <label for="t-size"><span id="t-size-l"></span><select id="t-size"></select></label>
+        </div>
+        <button id="t-make" type="button"><span id="t-make-text"></span></button>
+        <p class="status" id="t-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="refused" hidden aria-labelledby="refused-h">
+        <h3 id="refused-h"></h3>
+        <ul class="rows" id="refused-rows"></ul>
+      </section>
+      <section id="notes" hidden aria-labelledby="notes-h">
+        <h3 id="notes-h"></h3>
+        <ul class="rows" id="notes-rows"></ul>
+      </section>
+      <section id="sheet-section" hidden aria-label="Tags">
+        <p class="meta" id="sheet-meta"></p>
+        <button id="t-print" type="button"><span id="t-print-text"></span></button>
+        <div id="sheet"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./shelf-tags.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

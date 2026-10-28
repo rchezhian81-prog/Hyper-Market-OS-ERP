@@ -33,6 +33,7 @@ import { expiryStateRoutes, sweepExpiredBatches, type ExpiryStateDeps, type Expi
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import { frozenBy as countPlanFreezing } from '../../inventory/src/count-plans';
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { foodHandlingGateOf } from './r7d-workforce-adapters';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }
@@ -98,6 +99,7 @@ export function syncedProductionAdapter(input: Base): SyncedProductionDeps {
     ingredientBatchesAt: ingredientBatchesAt({ store: input.store, now: input.now }),
     recipes: productionPlanAdapter({ store: input.store, now: input.now, locationBranches }).recipes,
     permissionsOfUser: people(input),
+    foodHandling: foodHandlingGateOf(input), // OB-502: a relayed run by a producer whose certificate was not valid is flagged
     ...withAudit(input),
   };
 }
@@ -119,6 +121,7 @@ export function syncedWeighedRunAdapter(input: Base): SyncedWeighedRunDeps {
       return row === undefined || row.receivedMinor <= 0 ? undefined : { minor: Math.round((row.receivedValueMinor * 1000) / row.receivedMinor), currency: 'INR' };
     },
     permissionsOfUser: people(input),
+    foodHandling: foodHandlingGateOf(input), // OB-502
     ...withAudit(input),
   };
 }

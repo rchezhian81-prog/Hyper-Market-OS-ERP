@@ -12,14 +12,14 @@
 // moves time forward instead of waiting.
 
 import type { Route } from '../../kernel/src/index';
-import { escalationDue, LIMITED_SUBJECTS, type EscalationWaits, type LimitedSubject } from '../../../packages/approvals/src/authority-rules';
+import { escalationDue, ESCALATING_SUBJECTS, type EscalationWaits, type EscalatingSubject } from '../../../packages/approvals/src/authority-rules';
 
 /** An approval still waiting for a decision, from wherever it waits (the engine's inbox, a proposed purchase order). */
 export interface PendingApproval {
   readonly requestId: string;
   readonly source: 'approval_engine' | 'purchase_order';
   readonly kind: string;
-  readonly limitedAs: LimitedSubject;
+  readonly limitedAs: EscalatingSubject;
   readonly requestedAt: string;
   readonly requestedBy: string;
   readonly valueMinor: number | null;
@@ -31,7 +31,7 @@ export interface ApprovalEscalation {
   readonly requestId: string;
   readonly source: PendingApproval['source'];
   readonly kind: string;
-  readonly limitedAs: LimitedSubject;
+  readonly limitedAs: EscalatingSubject;
   readonly requestedAt: string;
   readonly requestedBy: string;
   readonly valueMinor: number | null;
@@ -102,7 +102,7 @@ export function approvalEscalationRoutes(deps: ApprovalEscalationDeps & { readon
           const due = escalationDue({ requestedAt: p.requestedAt, waitMinutes: waits.value[p.limitedAs], now });
           return { ...p, waitMinutes: waits.value[p.limitedAs], waitedMinutes: due.waitedMinutes, escalatesAt: due.dueAt, escalated: done.has(p.requestId) };
         });
-        return { status: 200, body: { asAt: now, waits: waits.value, waitsVersion: waits.version, kinds: LIMITED_SUBJECTS, waiting, escalations } };
+        return { status: 200, body: { asAt: now, waits: waits.value, waitsVersion: waits.version, kinds: ESCALATING_SUBJECTS, waiting, escalations } };
       },
     },
   ];

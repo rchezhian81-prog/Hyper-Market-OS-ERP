@@ -449,6 +449,12 @@
           <input id="grn-temp" type="text" inputmode="decimal" autocomplete="off" aria-describedby="grn-temp-hint" />
           <p class="hint" id="grn-temp-hint">Probe the goods and type the reading, for example 3.5 or -18. Without it, chilled and frozen goods wait for a manager's check before they can be sold.</p>
         </div>
+        <!-- B4 · OB-504: the month and year of manufacture printed on a packed product's pack — required for packed goods. -->
+        <div class="field">
+          <label for="grn-mfg" id="grn-mfg-label">Month and year of manufacture (packed goods)</label>
+          <input id="grn-mfg" type="text" inputmode="numeric" autocomplete="off" placeholder="2026-09" aria-describedby="grn-mfg-hint" />
+          <p class="hint" id="grn-mfg-hint">As printed on the pack, for example 2026-09. A packed product cannot be saved without it.</p>
+        </div>
         <button id="add-line" type="button" class="wide">Add this item</button>
         <div class="lines" id="receive-lines"></div>
         <p class="empty" id="receive-empty">No items added yet.</p>

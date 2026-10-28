@@ -50,7 +50,9 @@ import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
 import { weighingScalesSectionFor } from './r2-till-adapters';
 import { receivingChecklistSectionFor } from './r2-ops-adapters';
+import { packedProductIdsFor } from './r7b-receiving-adapters'; // B4 · OB-504
 import { dsdCheckInAdapter } from './r3-ops-adapters';
+import { rosterPackSection, certificationsPackSection } from './r7d-workforce-adapters'; // Round 7 · OB-507 · OB-502
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -91,6 +93,14 @@ export interface StorePackBuildInput {
    * dates every bill, shift and day close by it — never by its container's own zone (UTC). Absent: the shop default.
    */
   readonly calendar?: ShopCalendarOf;
+  /**
+   * OB-500 (R7-A): the till's price-cut rules for this store — each product's floor price (never its buying cost) and each
+   * manager's price-cut limit — so the till and the store computer refuse a cut beyond either with no network. Absent →
+   * never sent, and the store computer then approves no price cut (it was not told the rules).
+   */
+  readonly tillControls?: (tenantId: string, storeId: string) => Promise<unknown>;
+  /** OB-501 (R7-A): head office's app version policy (minimum supported, withdrawn builds). Sent only when one is set. */
+  readonly versionPolicy?: (tenantId: string) => Promise<unknown>;
 }
 
 /**
@@ -438,6 +448,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // OB-172 (D-6 · OB-164): the receiving checklist the dock offers with no network, and which products need it.
   const receiving = await receivingChecklistSectionFor(store, now, tenantId, storeId);
   if (receiving !== undefined) sections['receivingChecklist'] = receiving;
+  // B4 · OB-504: the PACKED products — always sent, so a screen tells "none are packed" from "not told".
+  sections['packedProductIds'] = await packedProductIdsFor({ store, now }, tenantId);
   const range = await assortmentAdapter({ store, now }).entries(tenantId, storeId);
   if (range.length > 0) sections['assortment'] = range;
   const contracts = (await spacePerformanceAdapter({ store, now }).contracts(tenantId)).filter((c) => c.storeId === storeId);
@@ -449,5 +461,18 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
 
   // OB-288 P4 (R8-9 · OB-316): the rollout switches — always sent once wired, so a till tells "nothing on" from "not told".
   if (input.rollout !== undefined) sections['rollout'] = await input.rollout(tenantId, storeId);
+  // OB-500 · OB-501 (R7-A): the till's price-cut rules and the app version policy, signed with everything else.
+  if (input.tillControls !== undefined) sections['tillControls'] = await input.tillControls(tenantId, storeId);
+  if (input.versionPolicy !== undefined) {
+    const policy = await input.versionPolicy(tenantId);
+    if (policy !== undefined) sections['versionPolicy'] = policy;
+  }
+  // ── Round 7 · OB-507 · OB-502 (M25-FR-01/03): the store's committed roster (staff see their shift with the line down) and
+  // its people's food-handling certificates (the box refuses food-handling work in a lapsed certificate's name, offline).
+  // Each left out when head office holds no roster for the store — the box then says it was not told.
+  const roster = await rosterPackSection(store, now, tenantId, storeId);
+  if (roster !== undefined) sections['roster'] = roster;
+  const certificates = await certificationsPackSection(store, now, tenantId, storeId);
+  if (certificates !== undefined) sections['certifications'] = certificates;
   return sections;
 }

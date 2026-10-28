@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { ApiHarness } from '../support/api-harness';
 import { r3OpsBackings, tenantClient } from '../support/r3-ops-backings';
 import { productionInputsForOutputBatch } from '../../services/api/src/r3-ops-adapters';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * D-25 (R3) — on the real API, in memory and on PostgreSQL, with a cold restart: "for an operated department, the plan
@@ -18,6 +19,8 @@ describe.each(backings)('the production plan follows the forecast and runs recor
     let h: ApiHarness = harness();
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
+    await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+    await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
     await h.provisionRole(T, 'u-baker', 'store_manager');
     await h.provisionRole(T, 'u-qc', 'store_manager');
     await h.provisionRole(T, 'u-till', 'cashier');

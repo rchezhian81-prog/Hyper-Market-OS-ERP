@@ -104,6 +104,8 @@ const REFUSAL_WORDS = {
   reason_required: { en: 'A reason has to be recorded with every decision.', ta: 'ஒவ்வொரு முடிவுக்கும் ஒரு காரணம் பதிவு செய்யப்பட வேண்டும்.' },
   out_of_scope: { en: 'This shop is not yours to decide for.', ta: 'இந்தக் கடைக்கு நீங்கள் முடிவு செய்ய முடியாது.' },
   exceeds_authority: { en: 'This is above your own approval limit.', ta: 'இது உங்கள் ஒப்புதல் வரம்பைத் தாண்டியது.' },
+  // OB-521 (R8-A): the gate's own words (with the version) are shown when it has them; these are the fallback.
+  app_version_too_old: { en: 'This app is too old or was withdrawn. Update it before making a new decision — the decisions already made are kept.', ta: 'இந்தச் செயலி மிகப் பழையது அல்லது திரும்பப் பெறப்பட்டது. புதிய முடிவு எடுப்பதற்கு முன் புதுப்பிக்கவும் — ஏற்கனவே எடுத்த முடிவுகள் வைக்கப்பட்டுள்ளன.' },
 };
 
 /** Words for each reason code the model offers. Guarded against the model's own catalogue. */
@@ -492,7 +494,8 @@ function submit(request, decision, reasonCode, acknowledgeStale) {
   } else {
     // The refusal names a rule, so it is shown in words. A screen that quietly did nothing would
     // have the owner tapping the same button harder.
-    tell(t('read'), words(REFUSAL_WORDS, outcome.refusal));
+    const gateSaid = outcome.refusal === 'app_version_too_old' ? window.ownerVersion?.refusal() : undefined;
+    tell(t('read'), gateSaid ? (lang === 'ta' ? gateSaid.ta : gateSaid.en) : words(REFUSAL_WORDS, outcome.refusal));
   }
   render();
 }

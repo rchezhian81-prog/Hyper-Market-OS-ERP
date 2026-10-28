@@ -14,6 +14,7 @@
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { ERP_NAVIGATION, NAV_GROUP_LABELS, navigationFor, type NavItem } from '../../../apps/web-erp/src/navigation';
 import type { StorePack } from './store-pack';
+import { myRosterOnBox, foodHandlingForViewer } from './workforce-pack'; // Round 7 · OB-507 · OB-502
 import type { ScreenName } from './screen-data';
 
 export interface Bilingual { readonly en: string; readonly ta: string }
@@ -124,6 +125,10 @@ export function asSignedInPerson(payload: Record<string, unknown> | null, userId
   for (const [key, value] of Object.entries(payload)) {
     if (isRecord(value) && typeof value['userId'] === 'string' && Array.isArray(value['permissions'])) out[key] = readdress(value);
   }
+  // Round 7 · OB-507 · OB-502: the self-service rota and the production screen's certificate check are the signed-in
+  // person's OWN — folded again for them here, never left as whoever the pack named.
+  if ('myRoster' in payload) out['myRoster'] = myRosterOnBox(pack, userId);
+  if ('foodHandling' in payload) out['foodHandling'] = foodHandlingForViewer(pack, userId, new Date().toISOString());
   // PA-06 part 3b: the buying screen's buyer is the signed-in person, and never one of their own approvers (§28) — the
   // buyer is removed here, on the box, not trusted to leave themselves alone on the screen.
   if ('buyerId' in payload) {

@@ -64,6 +64,35 @@ export interface Quotation {
   readonly withdrawReason?: string;
   /** The approval that authorised a below-floor price, where one was needed. */
   readonly marginApprovedBy?: string;
+  /**
+   * OB-525 (owner, 28 Oct 2026): the products whose floor head office could not read when the quotation was issued (never
+   * received at a cost) — said on the record, never taken as a floor of zero (P-08).
+   */
+  readonly floorNotKnown?: readonly string[];
+  /**
+   * OB-523 (owner, 28 Oct 2026): every time a bill that rang this quotation up was CANCELLED and the quotation freed again —
+   * an append-only history of compensating facts (who, why, which bill, when). Never removed (hard rule #2, #6).
+   */
+  readonly releases?: readonly QuotationRelease[];
+  /** OB-523: when the quotation was last freed from a cancelled bill (the state is `issued` again). */
+  readonly freedAt?: string;
+}
+
+/** OB-523: one cancelled bill's release of a quotation — the compensating fact for its convert. */
+export interface QuotationRelease {
+  /** The box's own id for this release (one per cancelled bill and quotation) — a re-send is the same release. */
+  readonly freeId: string;
+  /** The bill the quotation had been rung up on, and that was cancelled. */
+  readonly saleId: string;
+  /** The person the store computer verified at the till that cancelled the bill. */
+  readonly freedBy: string;
+  readonly reason: string;
+  readonly laneId: string;
+  /** When the bill was cancelled at the till. */
+  readonly at: string;
+  /** The identity that carried it to head office (the store computer). */
+  readonly relayedBy: string;
+  readonly recordedAt: string;
 }
 
 /** The approval shape a below-floor quotation needs (mirrors `packages/approvals`). */
@@ -115,6 +144,13 @@ export function issueQuotation(
     readonly validUntil: string;
     /** Minimum margin in basis points the tenant requires (M05-FR-02). */
     readonly marginFloorBps?: number;
+    /**
+     * OB-525: each product's FLOOR price per unit at the quotation's store, as head office reads it itself (its buying cost
+     * lifted by the store's margin floor) — a line quoted below its product's floor needs the approval.
+     */
+    readonly lineFloorsMinor?: Readonly<Record<string, number>>;
+    /** OB-525: the products whose floor head office could not read — kept on the quotation, said, never a zero floor. */
+    readonly floorNotKnown?: readonly string[];
     readonly approval?: QuotationApproval;
   },
 ): IssueResult {
@@ -163,6 +199,22 @@ export function issueQuotation(
     }
   }
 
+  // OB-525: line by line against each product's own floor — a loss-making line cannot hide inside a healthy quotation.
+  if (input.lineFloorsMinor !== undefined) {
+    const floors = input.lineFloorsMinor;
+    const below = input.lines.filter((l) => floors[l.productId] !== undefined && l.unitPriceMinor < floors[l.productId]!);
+    if (below.length > 0) {
+      const a = input.approval;
+      const said = below.map((l) => `${l.description} at ${(l.unitPriceMinor / 100).toFixed(2)} (floor ${(floors[l.productId]! / 100).toFixed(2)})`).join('; ');
+      if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId) {
+        return { ...base, issued: false, outcome: 'below_floor_unapproved', detail: `quoted below the product's floor price: ${said} — it needs a second person's approval before the price is promised` };
+      }
+      if (a.decidedBy === input.issuedBy) {
+        return { ...base, issued: false, outcome: 'self_approved', detail: 'the person quoting cannot approve their own below-floor price (§28)' };
+      }
+    }
+  }
+
   const quotation: Quotation = {
     quotationId: input.quotationId,
     tenantId: input.tenantId,
@@ -176,6 +228,7 @@ export function issueQuotation(
     state: 'issued',
     totalMinor: totalOf(input.lines),
     ...(input.approval?.status === 'approved' ? { marginApprovedBy: input.approval.decidedBy } : {}),
+    ...(input.floorNotKnown === undefined || input.floorNotKnown.length === 0 ? {} : { floorNotKnown: [...input.floorNotKnown].sort() }),
   };
 
   return {
@@ -286,6 +339,53 @@ export function convertQuotation(
     saleLines,
     saleId: input.saleId,
     detail: `converted to sale ${input.saleId} at the quoted prices`,
+  };
+}
+
+export type FreeRefusal = 'freed' | 'already_freed' | 'not_on_this_bill' | 'needs_a_reason';
+
+/**
+ * OB-523 (owner, 28 Oct 2026): a bill that rang this quotation up was CANCELLED at the till — free the quotation again, so a
+ * later bill can ring it up. A compensating fact, never an erasure: the convert stays in the history, the release is added
+ * with who cancelled the bill, why, at which till and when, and the quotation is `issued` again (its validity unchanged — an
+ * expired one is still refused at the next convert). Only the bill it was rung up on can free it; a re-send of the same
+ * release (`freeId`) is answered with the release already on record.
+ */
+export function freeQuotation(input: {
+  readonly quotation: Quotation;
+  readonly freeId: string;
+  readonly saleId: string;
+  readonly freedBy: string;
+  readonly reason: string;
+  readonly laneId: string;
+  readonly at: string;
+  readonly relayedBy: string;
+  readonly recordedAt: string;
+}): { readonly outcome: FreeRefusal; readonly detail: string; readonly quotation: Quotation; readonly release?: QuotationRelease } {
+  const q = input.quotation;
+  const prior = (q.releases ?? []).find((r) => r.freeId === input.freeId);
+  if (prior !== undefined) return { outcome: 'already_freed', detail: `already freed from bill ${prior.saleId}`, quotation: q, release: prior };
+  if (input.reason.trim() === '') return { outcome: 'needs_a_reason', detail: 'freeing a quotation needs the reason the bill was cancelled', quotation: q };
+  if (q.state !== 'converted' || q.convertedSaleId !== input.saleId) {
+    return {
+      outcome: 'not_on_this_bill',
+      detail: q.state === 'converted'
+        ? `quotation ${q.quotationId} is rung up on bill ${q.convertedSaleId ?? 'unknown'}, not on bill ${input.saleId} — only the bill it is on can free it`
+        : `quotation ${q.quotationId} is ${q.state}, not rung up on bill ${input.saleId}`,
+      quotation: q,
+    };
+  }
+  const release: QuotationRelease = {
+    freeId: input.freeId, saleId: input.saleId, freedBy: input.freedBy, reason: input.reason.trim(), laneId: input.laneId,
+    at: input.at, relayedBy: input.relayedBy, recordedAt: input.recordedAt,
+  };
+  // The convert's own fields leave the CURRENT state (its history is in the log and in `releases`); everything else stays.
+  const rest = Object.fromEntries(Object.entries(q).filter(([k]) => k !== 'convertedSaleId' && k !== 'convertedAt')) as unknown as Quotation;
+  return {
+    outcome: 'freed',
+    detail: `freed from cancelled bill ${input.saleId} by ${input.freedBy}: ${release.reason}`,
+    release,
+    quotation: { ...rest, state: 'issued', freedAt: input.recordedAt, releases: [...(q.releases ?? []), release] },
   };
 }
 

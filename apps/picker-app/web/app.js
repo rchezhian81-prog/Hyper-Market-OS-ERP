@@ -70,6 +70,8 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
+    // OB-521 (R8-A)
+    updateApp: 'Update this handheld',
     noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
     boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
     noCloud: 'store computer cannot reach head office', cloudLoginRefused: 'store computer\'s head office login needs renewing', cloudNotSetUp: 'no head office link set up',
@@ -111,6 +113,7 @@ const WORDS = {
     substituteFirst: 'Mark the item unavailable first, then record the swap.',
   },
   ta: {
+    updateApp: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
     noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudLoginRefused: 'கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
@@ -154,6 +157,15 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+
+// OB-521 (R8-A): on a withdrawn or too-old build the session refuses to START new work (the work in hand is finished) —
+// said in its own words, English or Tamil. The policy comes from the store computer's signed pack: with the page, then
+// every badge refresh (`/lane/sync-status`); the bundle keeps the last one on this device for a reload with no signal.
+function versionRefused(e) {
+  if (!e || e.name !== 'NewWorkRefusedError') return false;
+  tell(t('updateApp'), lang === 'ta' ? e.laneMessageTa : e.laneMessage);
+  return true;
+}
 
 /** What a line's state is called, in both languages. Guarded against the model's own union. */
 const STATE_WORDS = {
@@ -571,6 +583,7 @@ async function startLine(line, binCode = null) {
     tell(t('pickedOk'), line.description, true);
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     // The model's rule, translated into what to do about it in an aisle.
     const name = e && e.name;
     tell(t('read'),
@@ -611,6 +624,7 @@ async function substituteLine(line) {
     tell(t('swapDone'), `${line.description} → ${substituteCode}`, true);
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     const name = e && e.name;
     tell(t('read'),
       name === 'SubstitutionEvidenceRequiredError' || name === 'SubstitutionNotConfirmedError'
@@ -649,6 +663,7 @@ async function reportProblem(line) {
     }
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     tell(t('read'), String(e && e.message ? e.message : e));
   }
   render();
@@ -684,6 +699,7 @@ el('pack').addEventListener('click', async () => {
       true);
     void syncToBox();
   } catch (e) {
+    if (versionRefused(e)) { render(); return; }
     tell(t('read'), String(e && e.message ? e.message : e));
   }
   render();
@@ -794,6 +810,8 @@ async function refreshBadge() {
   try {
     const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
     box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+    // OB-521: the app version policy as the store computer's signed pack has it now (only an answer from the box changes it).
+    if (box.reachable && box.status && 'appVersionPolicy' in box.status) window.pickerVersion?.apply(box.status.appVersionPolicy);
   } catch {
     box = { asked: true, reachable: false, status: null };
   } finally {

@@ -13,6 +13,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { traceDueAt } from '../../packages/quality/src/lot-trace-chain';
+import { certifyFoodHandler } from '../support/food-handler';
 
 /**
  * **D-26 (roadmap v2.1 · FSMA 204 / GS1 "one-up, one-down" · M10-FR-03) through the real API — in memory and on real
@@ -58,6 +59,8 @@ describe.each(backings)('D-26: a lot trace reaches supplier to customer from sto
     let h = harness();
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
+    await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+    await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
     await approvedSuppliers(h, T, 'sup-dairy');
     await deliveryPlaces(h, T, 'S1', 'WH');
     for (const u of ['u-mgr', 'u-boss', 'u-store', 'u-po-buyer']) await h.provisionRole(T, u, 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
@@ -147,6 +150,8 @@ describe.each(backings)('D-26: a lot trace reaches supplier to customer from sto
     let h = harness();
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
+    await certifyFoodHandler(h.store, T, 'u-owner'); // OB-502: food-handling work needs a valid certificate
+    await certifyFoodHandler(h.store, T, 'u-baker'); // OB-502: food-handling work needs a valid certificate
     await h.provisionRole(T, 'u-baker', 'store_manager');
     await h.provisionRole(T, 'u-qc', 'store_manager');
     await h.enableFeature(T, 'dept.bakery');

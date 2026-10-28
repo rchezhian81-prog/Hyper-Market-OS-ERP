@@ -113,6 +113,9 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     ...(isOldErpBillNumber(r['oldErpBillNumber']) ? { oldErpBillNumber: r['oldErpBillNumber'] } : {}),
     // OB-299: a bill the till marked for delivery — the fee product and what it charged. Head office books it once.
     ...((d) => (d === undefined ? {} : { delivery: d }))(deliveryOf(r['delivery'])),
+    // OB-501 (R7-A): the till's app build, and the store computer's own mark on it — both records, judged at head office.
+    ...(str(r['appVersion']) === undefined ? {} : { appVersion: str(r['appVersion'])! }),
+    ...(isObject(r['storeComputerVersionCheck']) ? { storeComputerVersionCheck: r['storeComputerVersionCheck'] as IncomingSale['storeComputerVersionCheck'] } : {}),
   };
 }
 

@@ -33,12 +33,14 @@ function roleIds() {
 }
 
 function paintLimits() {
-  $('limits-head').replaceChildren(text('th', t('role')), ...api.kinds.map((k) => text('th', t(`k_${k}`))));
+  // OB-500 (R7-A): the money-limit columns include a price cut at the till (an older bundle without them shows the three).
+  const limitKinds = api.limitKinds ?? api.kinds;
+  $('limits-head').replaceChildren(text('th', t('role')), ...limitKinds.map((k) => text('th', t(`k_${k}`))));
   $('limits-body').replaceChildren(...roleIds().map((roleId) => {
     const tr = document.createElement('tr');
     tr.dataset.role = roleId;
     tr.append(text('th', t(`r_${roleId}`) === `r_${roleId}` ? roleId : t(`r_${roleId}`)));
-    for (const k of api.kinds) {
+    for (const k of limitKinds) {
       const td = document.createElement('td');
       const v = rules.limits.value.byRole[roleId]?.[k];
       const now = text('span', `${v === undefined ? '○' : v === null ? '∞' : '✓'} ${api.limitWords(lang, v)}`, 'now');

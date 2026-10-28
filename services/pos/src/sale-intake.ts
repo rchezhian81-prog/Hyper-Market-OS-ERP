@@ -28,6 +28,9 @@ import { productRuleRefusals, lineIsWeighed, isWeighedUom } from '../../../packa
 import { weighingScaleVerification, InvalidScaleVerification } from '../../../packages/facilities/src/weighing-verification';
 import type { CardTokenReference } from '../../../packages/tender/src/card-token';
 import { withoutCardData, cardDataRemovalWords } from '../../../packages/tender/src/tender-card-data';
+import { overrideReductionMinor, type OverrideLimit } from '../../../packages/price-guard/src/till-override';
+import { judgeClientVersion } from '../../../packages/platform-admin/src/client-version';
+import type { VersionPolicy } from '../../../packages/platform-admin/src/devices';
 
 export interface IncomingSaleLine {
   readonly productId: string;
@@ -183,6 +186,13 @@ export interface IncomingSale {
   readonly oldErpBillNumber?: string;
   /** OB-264: an old bill number was sent but not kept, and why (written by head office; one sent in the body is dropped). */
   readonly oldErpBillNumberIgnored?: { readonly why: 'not_an_old_bill_number' };
+  /** OB-501: the app build the till that rang this bill reported. A record — judged against head office's version policy. */
+  readonly appVersion?: string;
+  /**
+   * OB-501: the store computer's own judgement of that build against the policy in ITS signed pack, written when it took the
+   * bill (only when the build should not have started a bill, or reported none). Untrusted as it arrives; a record.
+   */
+  readonly storeComputerVersionCheck?: { readonly verdict?: unknown; readonly reported?: unknown; readonly minimumSupportedVersion?: unknown };
 }
 
 export type SaleExceptionKind =
@@ -270,7 +280,17 @@ export type SaleExceptionKind =
   | 'loyalty_value_spent_twice'
   /** Verifier r20 IC-3: a bill head office did NOT bank (a different bill already holds its sale id) carried a member, points
    *  or store credit. Loyalty follows only the banked bill; this one's is raised for a person to settle when it is banked. */
-  | 'loyalty_on_a_bill_not_banked';
+  | 'loyalty_on_a_bill_not_banked'
+  /** OB-500: a line was lowered at the till BELOW the product's floor price at that store (margin floor over its buying cost).
+   *  The till and its store computer refuse this; head office's backstop for an old till or a floor that changed. */
+  | 'price_cut_below_floor'
+  /** OB-500: a line was lowered at the till by more than the approving manager's price-cut limit (or one with none set). */
+  | 'price_cut_above_approver_limit'
+  /** OB-520: a product with no known floor (never received at a cost) was lowered at the till with someone other than the
+   *  owner approving. Only the owner may approve a cut on such a product. */
+  | 'price_cut_without_floor_not_by_owner'
+  /** OB-501: the bill was rung on an app build head office withdrew, or one below the minimum supported version. */
+  | 'sold_on_an_unsupported_app_version';
 
 /** How fast a person has to act, which is not the same as how large the number is. */
 export type ExceptionSeverity = 'critical' | 'material' | 'informational';
@@ -349,6 +369,17 @@ export interface IntakeContext {
   readonly huidsSoldElsewhere?: ReadonlyMap<string, string>;
   /** OB-348 (B17): the shop's state from store setup — liquor is judged by its rule. Absent → "not set" (still refused). */
   readonly shopState?: string;
+  /**
+   * OB-500: head office's own rules for the lowered lines on this sale — each lowered product's floor at the store it was rung
+   * at, and each approving manager's price-cut limit. Absent when nobody looked (no lowered line, or not wired): no finding.
+   */
+  readonly tillOverrideRules?: {
+    readonly floors: ReadonlyMap<string, number>; readonly limits: ReadonlyMap<string, OverrideLimit>;
+    /** OB-520: lowered products with no known floor at the store, and the people who hold the owner role there. */
+    readonly floorsNotKnown?: ReadonlySet<string>; readonly owners?: ReadonlySet<string>;
+  };
+  /** OB-501: head office's app version policy — `null` when none is set (nothing enforced); absent when nobody looked. */
+  readonly versionPolicy?: VersionPolicy | null;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -728,6 +759,9 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     }
   }
 
+  // OB-500 · OB-501: the till's own controls, re-checked by head office (a record each — the sale stands).
+  exceptions.push(...tillOverrideFindings(sale, ctx), ...clientVersionFindings(sale, ctx));
+
   // ── The lane's own state ───────────────────────────────────────────────────
   const behind = ctx.currentPackVersion - sale.packVersion;
   if (behind > staleAfter) {
@@ -773,6 +807,84 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
         ? `sale ${sale.saleId} banked, nothing to report`
         : `sale ${sale.saleId} banked with ${exceptions.length} exception(s) — the sale stands; the findings are work`,
   };
+}
+
+const rupeesOf = (paise: number): string => `₹${(paise / 100).toFixed(2)}`;
+
+/**
+ * OB-500 (M02-FR-02 · M05-FR-02): every line lowered at the till, judged again against head office's own rules — the
+ * product's floor at the store, and the approving manager's price-cut limit for what the cut took off the line (priced as
+ * the till prices it). The till and its store computer refuse both before the money; this is the visible backstop.
+ */
+function tillOverrideFindings(sale: IncomingSale, ctx: IntakeContext): SaleException[] {
+  const rules = ctx.tillOverrideRules;
+  if (rules === undefined) return [];
+  const out: SaleException[] = [];
+  for (const line of sale.lines) {
+    const o = line.priceOverride;
+    if (o === undefined || typeof line.unitPriceMinor !== 'number' || !Number.isSafeInteger(line.unitPriceMinor)) continue;
+    const floor = rules.floors.get(line.productId);
+    if (floor !== undefined && line.unitPriceMinor < floor) {
+      out.push({
+        kind: 'price_cut_below_floor', severity: 'material', saleId: sale.saleId, productId: line.productId, differenceMinor: line.unitPriceMinor - floor,
+        detail: `${line.productId} was lowered at the till to ${rupeesOf(line.unitPriceMinor)} a unit, below its lowest allowed price at this store of ${rupeesOf(floor)}${typeof o.approvedBy === 'string' ? ` (approved by ${o.approvedBy})` : ''}`,
+        ownerAction: 'The till and the store computer should have refused this price. Ask the manager who approved it, and check that till and its store computer are on the current version and pack. The sale stands.',
+      });
+    }
+    const approver = typeof o.approvedBy === 'string' ? o.approvedBy.trim() : '';
+    const from = typeof o.fromUnitPriceMinor === 'number' && Number.isSafeInteger(o.fromUnitPriceMinor) ? o.fromUnitPriceMinor : undefined;
+    if (from === undefined || approver === '') continue;
+    const cut = overrideReductionMinor(from, line.unitPriceMinor, line.quantityMinor, line.uom);
+    if (cut > 0 && rules.floorsNotKnown?.has(line.productId) === true && rules.owners?.has(approver) !== true) {
+      out.push({
+        kind: 'price_cut_without_floor_not_by_owner', severity: 'material', saleId: sale.saleId, productId: line.productId, differenceMinor: cut,
+        detail: `${line.productId} has no known lowest price at this store (never received at a cost), and was lowered at the till by ${rupeesOf(cut)} with ${approver}'s approval; only the owner may approve a cut on it`,
+        ownerAction: 'The store computer should have refused this approval. Ask the manager who approved it, and check that till and its store computer are on the current version and pack. The sale stands.',
+      });
+      continue;
+    }
+    const limit = rules.limits.get(approver) ?? { state: 'not_set', limitMinor: null };
+    const over = cut > 0 && (limit.state === 'not_set' || (limit.state === 'limit' && cut > (limit.limitMinor ?? 0)));
+    if (over) {
+      out.push({
+        kind: 'price_cut_above_approver_limit', severity: 'material', saleId: sale.saleId, productId: line.productId,
+        differenceMinor: limit.state === 'limit' ? cut - (limit.limitMinor ?? 0) : cut,
+        detail: `${line.productId} was lowered at the till by ${rupeesOf(cut)} with ${approver}'s approval; ${approver}'s price-cut limit is ${limit.state === 'limit' ? rupeesOf(limit.limitMinor ?? 0) : 'not set (only the owner may approve)'}`,
+        ownerAction: 'A price cut beyond the approving manager\'s limit went through. Ask the manager, and check that till and its store computer are on the current version and pack. The sale stands.',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * OB-501 (M33-FR-02 · D12-FR-03): a bill rung on a build that should not have STARTED a bill — withdrawn, or below the
+ * minimum supported version — by head office's own policy, or as the store computer marked it. The sale stands (it
+ * happened, and the till finishes a bill in progress by design); the client is named so it is updated.
+ */
+function clientVersionFindings(sale: IncomingSale, ctx: IntakeContext): SaleException[] {
+  const box = sale.storeComputerVersionCheck;
+  const boxVerdict = box !== undefined && typeof box.verdict === 'string' ? box.verdict : undefined;
+  const judged = ctx.versionPolicy === undefined ? undefined : judgeClientVersion(sale.appVersion, ctx.versionPolicy ?? undefined);
+  const headOffice = judged !== undefined && !judged.mayStartBill ? judged.verdict : undefined;
+  const marked = boxVerdict === 'version_killed' || boxVerdict === 'upgrade_required' ? boxVerdict : undefined;
+  const verdict = headOffice ?? marked;
+  if (verdict === undefined) {
+    // A bill from a till that reported no build while the store computer holds a policy: said, not raised as a fault —
+    // a till older than the version rule (OB-501) cannot report one.
+    if (boxVerdict !== 'no_version_reported' || (typeof sale.appVersion === 'string' && sale.appVersion.trim() !== '')) return [];
+    return [{
+      kind: 'sold_on_an_unsupported_app_version', severity: 'informational', saleId: sale.saleId,
+      detail: `lane ${sale.laneId} rang this bill on a till that did not report its app version (the store computer marked it)`,
+      ownerAction: 'That till is older than the version rule. Update it to the current version so it can be held to the rule.',
+    }];
+  }
+  const build = typeof sale.appVersion === 'string' && sale.appVersion.trim() !== '' ? sale.appVersion.trim() : 'an unreported version';
+  return [{
+    kind: 'sold_on_an_unsupported_app_version', severity: 'material', saleId: sale.saleId,
+    detail: `lane ${sale.laneId} rang this bill on app ${build}, which ${verdict === 'version_killed' ? 'head office has withdrawn' : `is below the minimum supported version${judged?.minimumSupportedVersion ? ` ${judged.minimumSupportedVersion}` : ''}`}${marked !== undefined ? ' (the store computer marked it too)' : ''}`,
+    ownerAction: 'Update that till to the current version. A till on such a build finishes the bill it was on and then refuses new bills, so a bill started after the change means the till did not get the rule — check its store computer has the current pack. The sale stands.',
+  }];
 }
 
 export interface IntakeSummary {

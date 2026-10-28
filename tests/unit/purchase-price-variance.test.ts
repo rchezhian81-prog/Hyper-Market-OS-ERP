@@ -47,9 +47,25 @@ describe('purchase-price variance (D03-FR-05)', () => {
       ],
       orders: new Map([['po1', order()]]), agreements: [],
     });
-    expect(r.totals.notCompared).toEqual({ no_purchase_order: 1, order_not_held: 1, product_not_on_order: 1, currency_differs: 1 });
+    expect(r.totals.notCompared).toEqual({ no_purchase_order: 1, order_not_held: 1, product_not_on_order: 1, currency_differs: 1, not_yet_billed: 0 });
     expect(r.totals).toMatchObject({ lines: 4, comparedLines: 0, varianceMinor: 0, varianceBps: null });
     expect(r.lines.every((l) => l.order === undefined)).toBe(true);
+  });
+
+  it('OB-517: a line with no matched supplier bill is "not yet billed" — counted, no cost, no value, never compared at a guess', () => {
+    const r = priceVariance({
+      receipts: [
+        receipt({ grnId: 'billed', lines: [{ lineId: 'L1', productId: 'rice', keptMinor: 10, uom: 'ea', unitCost: { minor: 5_200, currency: INR }, invoiceId: 'INV-1' }] }),
+        receipt({ grnId: 'unbilled', lines: [{ lineId: 'L1', productId: 'rice', keptMinor: 7, uom: 'ea' }] }),
+      ],
+      orders: new Map([['po1', order()]]), agreements: [agreement()],
+    });
+    expect(r.lines.find((l) => l.grnId === 'billed')).toMatchObject({ invoiceId: 'INV-1', receivedValueMinor: 52_000, order: { varianceMinor: 2_000 } });
+    const u = r.lines.find((l) => l.grnId === 'unbilled')!;
+    expect(u).toMatchObject({ notCompared: 'not_yet_billed', receivedUnitCost: null, receivedValueMinor: null, invoiceId: null, keptMinor: 7 });
+    expect(u.order).toBeUndefined();
+    expect(u.contract).toBeUndefined();
+    expect(r.totals).toMatchObject({ lines: 2, comparedLines: 1, receivedValueMinor: 52_000, varianceMinor: 2_000, notCompared: { not_yet_billed: 1 } });
   });
 
   it('rolls up per product (netting receipts) and per receipt (keeping them apart), worst first', () => {

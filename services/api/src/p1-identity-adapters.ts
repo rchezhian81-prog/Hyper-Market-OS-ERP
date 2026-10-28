@@ -28,7 +28,7 @@ import { AccessControl, type RoleAssignment } from '../../../packages/rbac/src/r
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { resolvePrice, type PriceEntry } from '../../../packages/price-list/src/price-list';
 import { departmentOfCategory, withinDepartmentScope } from '../../../packages/org/src/departments';
-import { limitedSubjectOf, mayApproveValue, authorityWords, priceChangeSize, type Authority } from '../../../packages/approvals/src/authority-rules';
+import { limitedSubjectOf, isEscalatingSubject, mayApproveValue, authorityWords, priceChangeSize, type Authority } from '../../../packages/approvals/src/authority-rules';
 import { setupItem, validateSetupAnswer } from '../../../packages/tenant/src/setup';
 import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
 import type { IncomingSale } from '../../pos/src/index';
@@ -162,7 +162,8 @@ export function escalationDeps(input: Base): ApprovalEscalationDeps {
       const out: PendingApproval[] = [];
       for (const s of await approvalRequestsAdapter({ store, now }).allRequests(tenantId)) {
         const limitedAs = limitedSubjectOf(s.request.kind);
-        if (s.decision !== undefined || limitedAs === undefined) continue;
+        // OB-500: a till price cut is approved on the spot at the till and never waits here, so it has no escalation wait.
+        if (s.decision !== undefined || limitedAs === undefined || !isEscalatingSubject(limitedAs)) continue;
         out.push({ requestId: s.request.requestId, source: 'approval_engine', kind: s.request.kind, limitedAs, requestedAt: s.request.requestedAt, requestedBy: s.request.requestedBy, valueMinor: s.request.valueMinor, summary: s.request.summary });
       }
       for (const po of await purchaseOrdersAdapter({ store, now }).all(tenantId)) {

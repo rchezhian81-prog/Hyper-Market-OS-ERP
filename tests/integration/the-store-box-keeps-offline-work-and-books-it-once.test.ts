@@ -10,6 +10,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { GLOBAL_FOR } from '../../edge/store-edge/src/screen-data';
 import { makeEvent, type DomainEvent } from '../../packages/contracts/src/event';
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
+import { certifyFoodHandler, foodHandlerPackSections } from '../support/food-handler';
 
 // OB-288 lane 2 · P2 — THE PROOF, through the REAL store box (`startEdge`) and the REAL head office (the API harness behind
 // a `fetch` this test can cut, make lose a reply, or put a clock skew on). For every kind of offline store work — a
@@ -39,6 +40,7 @@ async function headOffice(harness: () => ApiHarness): Promise<{ h: ApiHarness; T
   await h.seedOwner(T, 'u-owner');
   await h.provisionRole(T, 'u-box', 'store_computer', [S1]);
   for (const [u, r, b] of [['u-cook', 'store_manager', S1], ['u-qc', 'store_manager', S1], ['u-wh', 'store_manager', S1], ['u-wh2', 'store_manager', S2]] as const) await h.provisionRole(T, u, r, [b]);
+  await certifyFoodHandler(h.store, T, 'u-cook', { branchId: S1 }); // OB-502
   let n = 0;
   const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, query?: Record<string, string>) =>
     h.request({ method, path, userId, tenantId: T, ...(method === 'GET' ? {} : { idempotencyKey: `ho-${n++}` }), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
@@ -73,6 +75,8 @@ async function cloudAndBox(harness: () => ApiHarness) {
     productionPolicy: { userId: 'u-cook', permissions: ['production.read', 'production.plan.commit', 'production.release'] },
     facilitiesPolicy: { userId: 'u-cook', permissions: ['facilities.overdue.read', 'facilities.task.record'] },
     warehouse: { assignmentId: 'a-1', workerId: 'u-wh', storeId: S1, bins: [] },
+    // OB-502: the cook's food-handling certificate, as head office's pack carries it (the box refuses a run without one).
+    ...foodHandlerPackSections(S1, ['u-cook']),
   }), 'utf8');
   const net = { up: true, loseNext: false, skewMs: 0, posts: 0 };
   globalThis.fetch = (async (url: string, init: RequestInit = {}): Promise<Response> => {

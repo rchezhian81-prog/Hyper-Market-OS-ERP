@@ -141,10 +141,11 @@ describe.each(backings)('OB-31 — weighed goods in grams, cost per kg — on $n
     const h = harness();
     const t = randomUUID();
     const { call } = await shop(h, t);
-    const got = await call('POST', '/v1/inventory/goods-receipt/g-soap', 'u-recv', {
+    // OB-509: opening stock keeps its cost (a no-order DELIVERY would be booked with its cost not known).
+    const got = await call('POST', '/v1/inventory/goods-receipt/opening-g-soap', 'u-recv', {
       warehouseId: 'S1-BACK', receivedOnDate: '2026-10-10', currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'p-soap', orderedMinor: 12, countedMinor: 12, uom: 'EACH', unitCost: { minor: 1_800, currency: 'INR' }, condition: 'good' }],
-    }, 'g-soap');
+    }, 'opening-g-soap');
     expect(got.status).toBe(201);
     expect((got.body as { grn: { captured: { lines: { uom: string }[] } } }).grn.captured.lines[0]!.uom).toBe('ea');
     const val = (await call('GET', '/v1/inventory/valuation', 'u-owner', undefined, undefined, { productId: 'p-soap' })).body as { rows: { value: { minor: number }; unitCostMinor: number }[] };

@@ -177,6 +177,7 @@ import { peopleRoutes } from '../../identity/src/people';
 import { outsidePartyLoginRoutes } from '../../identity/src/outside-party-logins';
 import { outboundTransportFromEnv } from '../../platform/src/https-outbound-transport';
 import { shopRealmsFrom, type ShopRealm } from '../../identity/src/shop-realms';
+import { customerRealmsFrom, type CustomerRealm } from '../../identity/src/customer-realms'; // OB-510 · ADR-0031 amended
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
 import { sessionChannelsOf } from './session-channels';
 import { delegationRoutes } from '../../identity/src/delegation';
@@ -312,6 +313,7 @@ import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGate
 // R4 Lane 3 (customer insight, offers and demand): M16 · M17-FR-02 · D-23 · D-22 · D-24 · EA-07 sending off (r4-insight-adapters).
 import { r4InsightRoutes, demandCalendarFor, type BriefSendingLink } from './r4-insight-adapters';
 import { r4OnlineRoutes, onlineListedAdapter, onlineReturnViewOf } from './r4-online-adapters'; // R4 Lane 2 · B23 · A26 · D-28 · WF-16 · M20-FR-04 · D01-FR-06 · D08 · M16-FR-01
+import { r7bReceiptHooks, r7bScanHooks, r7bAsnHooks, r7bQualityHooks } from './r7b-receiving-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -339,6 +341,7 @@ import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
 import { recallWithdrawSurface } from './recall-withdraw-adapters'; // FG-3 · OB-383
 import { lane2OfflineRoutes } from './lane2-offline-adapters'; // OB-288 lane 2 · P2 — store-box offline queues, expiry move
+import { r7dWorkforceRoutes, withFoodHandlingGate } from './r7d-workforce-adapters'; // Round 7 · OB-507 attendance relay, OB-502 food-handling gate
 // OB-288 P3 (procure-to-pay completion): M06-FR-02/03/04 · M07-FR-01/04 · WF-03 · WF-05 (p3-procure-adapters).
 import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks, p3Segregation, p3RebateHooks } from './p3-procure-adapters';
 import { receiptCostHooks } from './receipt-cost-adapters';
@@ -356,6 +359,9 @@ import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
 import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
+import { tillControlsPackSectionOf, versionPolicyPackSectionOf, tillOverrideRulesForSale, clientVersionPolicyOf } from './r7a-till-controls-adapters'; // OB-500 · OB-501 (R7-A)
+import { appVersionPolicyRoutes } from './r8a-client-version-adapters'; // OB-521 (R8-A)
+import { r8bQuotationHooks, r8bReceiptHooks } from './r8b-quotes-receiving-adapters'; // OB-523 · OB-525 · OB-529 (R8-B)
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
 import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters';
@@ -643,18 +649,18 @@ export function buildSurface(deps: {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
     purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {}, commitLineReturn: () => {},
-  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...receiptCostHooks({ store }) /* R6 M07-FR-01 */ };
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...receiptCostHooks({ store }) /* R6 M07-FR-01 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */, ...r8bReceiptHooks({ store }) /* R8 OB-529 */ };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
   } : { ...syncedGoodsReceiptAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
     // OB-172: a checklist done at the dock, carried inside the relayed receipt and sealed with it by the store computer.
-    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
+    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */ };
   // SP-6b: the handheld's receiving scans assembled into ONE GRN against the order — the relayed receipt's deps plus the
   // SP-3a scan register; the assembly appends no stock movement of its own (the scans did).
   const assembledGoodsReceiptDeps = store === undefined ? {
     ...syncedGoodsReceiptDeps, scansOf: empty([]),
   } : { ...assembledGoodsReceiptAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
-    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
+    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */, ...r7bReceiptHooks({ store, now }) /* R7 OB-504/508/509 */ };
   // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
   // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the
   // direct routes run).
@@ -1047,7 +1053,7 @@ export function buildSurface(deps: {
       partner: empty(undefined), partnerForUser: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
       recordAudit: () => {}, auditEntries: empty([]), now,
-    } : withSupplierRebateClaims(withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now, calendar: shopCalendar }), { store, now }), { store, now }), { store, now, calendar: shopCalendar })), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders · OB-404 the rebate claims sent to it
+    } : { ...withSupplierRebateClaims(withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now, calendar: shopCalendar }), { store, now }), { store, now }), { store, now, calendar: shopCalendar }), ...r7bAsnHooks({ store, now }) /* R7 OB-504 */ }), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders · OB-404 the rebate claims sent to it
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
@@ -1117,7 +1123,7 @@ export function buildSurface(deps: {
     } : { ...syncedWarehouseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) }),
     ...receivingScanRoutes(store === undefined ? {
       permissionsOfUser: empty(undefined), appendMovement: () => {}, isKnown: empty(false), scanExists: empty(false), recordScan: () => {}, scansOf: empty([]), now,
-    } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) }),
+    } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), ...r7bScanHooks({ store, now }) /* R7 OB-504 */ }),
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {},
       unitCostAt: empty(undefined), knownLocation: empty(true), now,
@@ -1156,11 +1162,11 @@ export function buildSurface(deps: {
       onHand: empty(0), priorConsumption: empty({}),
       runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
       enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, entitledFeatures: empty([]), now,
-    } : { ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now), ingredientBatchesAt: ingredientBatchesAt({ store, now }) /* D-25 (R3) */ }),
+    } : withFoodHandlingGate({ ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now), ingredientBatchesAt: ingredientBatchesAt({ store, now }) /* D-25 (R3) */ }, store, now, shopCalendar) /* OB-502 */),
     // Weighed-department costing (M11-FR-02) — recipe-less weigh-in/weigh-out cost + yield exceptions.
     ...weighedCostingRoutes(store === undefined ? {
       weighedRuns: empty([]), weighedRun: empty(undefined), recordWeighedRun: () => {}, now,
-    } : weighedCostingAdapter({ store, now })),
+    } : withFoodHandlingGate(weighedCostingAdapter({ store, now }), store, now, shopCalendar) /* OB-502 */),
     ...packagingRoutes(store === undefined ? {
       item: empty(undefined), movements: empty([]), registerItem: () => {}, recordMovement: () => {}, now,
     } : packagingAdapter({ store, now })),
@@ -1218,6 +1224,7 @@ export function buildSurface(deps: {
         rollout: rolloutPackSection({ store }), // OB-288 P4 (R8-9 · OB-316): this store's rollout switches, read by the till offline
         floorDevices: floorDevicePackPoliciesOf({ store, now }), // OB-375 · OB-378: the kiosk's minutes and the self-checkout watch
         calendar: shopCalendar, // R1a: the shop's zone rides the pack, so the store box dates by it
+        tillControls: tillControlsPackSectionOf({ store, now, settings, signer }), versionPolicy: versionPolicyPackSectionOf({ store, now }), // OB-500 · OB-501 (R7-A)
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1287,6 +1294,7 @@ export function buildSurface(deps: {
       // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
       huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
       shopStateOf: shopStateOf({ store, now }), deliveryOnSale: tillDeliveryOnSale({ store, now }), // OB-288 till side: OB-348 · OB-299
+      tillOverrideRulesFor: tillOverrideRulesForSale({ store, now, settings, signer }), clientVersionPolicy: clientVersionPolicyOf({ store, now }), // OB-500 · OB-501 (R7-A)
     }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
@@ -1770,7 +1778,7 @@ export function buildSurface(deps: {
     // (idempotent), and a withdrawn/expired quote is kept as a lost-sale signal. Event-sourced, restart-safe.
     ...quotationsRoutes(store === undefined
       ? { quotations: () => [], record: () => {}, now }
-      : { ...quotationsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+      : { ...quotationsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...r8bQuotationHooks({ store, now, settings, signer }) /* R8 OB-523 · OB-525 */ }),
     // Restricted-sale gate (B14 / COTPA 2003) — the till's age-18 gate on tobacco and its refusal of a
     // loose single-stick quantity; a decision, not a write, so stateless and offline-safe.
     ...restrictedSalesRoutes(),
@@ -1806,6 +1814,7 @@ export function buildSurface(deps: {
     ...r3TaxPayRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r4SupplyLpRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
     ...lane2OfflineRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
+    ...r7dWorkforceRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // Round 7 · OB-507
     ...p3ProcureRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
     ...rebateClaimRoutesFor({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // D03-FR-03 · OB-404 supplier rebate claims
     ...p2CatalogueRoutes({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
@@ -1929,7 +1938,7 @@ export function buildSurface(deps: {
     // signed pack (SF-08, `saleBlocksAdapter` → `assembleCatalogueSnapshot`).
     ...qualityHoldRoutes(store === undefined
       ? { hold: empty(undefined), holds: empty([]), recordHeld: () => {}, recordReleased: () => {}, now, ...inMemoryQualitySamples() }
-      : { ...qualityHoldAdapter({ store, now }), ...qualitySampleAdapter({ store }), recordAudit: auditTrail?.recordAudit }),
+      : { ...qualityHoldAdapter({ store, now }), ...qualitySampleAdapter({ store }), recordAudit: auditTrail?.recordAudit, ...r7bQualityHooks({ store, now }) /* R7 OB-513 */ }),
     // SF-08: what must not be sold (open recalls + held batches, by product) and whether each is on the tills' pack yet.
     ...saleBlockRoutes(store === undefined
       ? { blocks: empty([]), currentPack: empty(undefined) }
@@ -2100,6 +2109,7 @@ export function buildSurface(deps: {
     ...versionPolicyRoutes(store === undefined
       ? { policy: () => undefined, recordPolicyEvent: () => {}, now }
       : versionPolicyAdapter({ store, now })),
+    ...appVersionPolicyRoutes({ store, now }), // OB-521 (R8-A): my app's version policy, for the phone apps
     // Durable partner-credential registry + access-check (M36-FR-04, hard rule #7) — an admin registers a
     // partner credential scoped to the tenants that engaged it, and the access-check decides a partner call
     // against the STORED credential (sandbox-in-production, out-of-scope tenant, revoked/expired, unversioned
@@ -2347,6 +2357,19 @@ export async function startApi(
     out(`identity server: ${held} signing key(s) held for ${realm.issuer}${realm.tenantId === undefined ? '' : ` — signs for shop ${realm.tenantId} only`}\n`);
     realmPolicies.push({ realm, keyring });
   }
+  // OB-510 · ADR-0031 (amended): each shop's CUSTOMER realm, pinned to its shop and to customers only (`customer-…`).
+  const customerRealms = customerRealmsFrom(settings, shopRealms.realms);
+  if (customerRealms.problems.length > 0) {
+    for (const p of customerRealms.problems) err(`\n${p}\n`);
+    err('\n');
+    return undefined;
+  }
+  const customerRealmPolicies: { readonly realm: CustomerRealm; readonly keyring: ReturnType<typeof jwksKeyring> }[] = [];
+  for (const realm of customerRealms.realms) {
+    const keyring = jwksKeyring({ url: realm.jwksUrl, fetch: globalThis.fetch, onProblem: (detail) => { err(`identity server (${realm.realm}): ${detail}\n`); } });
+    out(`identity server: ${await keyring.refresh()} signing key(s) held for ${realm.issuer} — signs CUSTOMERS of shop ${realm.tenantId} only\n`);
+    customerRealmPolicies.push({ realm, keyring });
+  }
 
   // 2 — Persistence, before the surface, because the surface is built around it.
   //
@@ -2556,6 +2579,11 @@ export async function startApi(
           ...(realm.tenantId === undefined ? {} : { tenantId: realm.tenantId }),
           audience: settings['IDP_AUDIENCE']!,
           maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
+        })),
+        // OB-510: a shop's customer realm — its own keys and issuer, our audience, its one shop, and customers only.
+        ...customerRealmPolicies.map(({ realm, keyring }) => ({
+          algorithm: 'RS256' as const, secret: '', keyring, subjectClaim: 'sre_user_id', issuer: realm.issuer, tenantId: realm.tenantId,
+          subjectPrefix: realm.subjectPrefix, audience: settings['IDP_AUDIENCE']!, maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
         })),
       ],
       revocations,

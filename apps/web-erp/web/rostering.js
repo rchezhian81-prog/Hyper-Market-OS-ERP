@@ -122,7 +122,29 @@ function paint() {
   el('whoami').textContent = window.rosteringData?.userId ?? '';
   el('lang').textContent = t('langName');
 
-  el('gap-count').textContent = view.gapCount === 0 ? t('allStaffed') : `${view.gapCount} ${t('gapCount')}`;
+  // OB-531 · P-08: "no gaps" only when a roster is in hand (head office's, or the store computer's copy) — never while
+  // reading, nor when head office cannot be reached with no copy, nor when it refused.
+  const source = view.source ?? 'head_office';
+  const inHand = source === 'head_office' || source === 'box_copy';
+  el('gap-count').textContent = !inHand ? '' : view.gapCount === 0 ? t('allStaffed') : `${view.gapCount} ${t('gapCount')}`;
+
+  // OB-531: the store computer's copy, said plainly with its age; read-only.
+  const held = el('held');
+  held.hidden = (view.heldWords ?? '') === '';
+  el('held-text').textContent = view.heldWords ?? '';
+  const readOnly = el('read-only');
+  readOnly.hidden = (view.readOnlyWords ?? '') === '';
+  el('read-only-text').textContent = view.readOnlyWords ?? '';
+  const rota = view.rota ?? [];
+  el('rota').hidden = rota.length === 0;
+  el('rota-heading').textContent = t('rotaHeading');
+  el('rota-rows').replaceChildren(...rota.map((s) => {
+    const li = document.createElement('li'); li.className = 'row tone-idle'; li.dataset.shift = s.shiftId;
+    const when = document.createElement('span'); when.className = 'headline'; when.textContent = s.when;
+    const who = document.createElement('span'); who.className = 'facts'; who.textContent = s.people;
+    li.append(when, who);
+    return li;
+  }));
 
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
@@ -195,8 +217,8 @@ paint();
 async function refresh() {
   const api = window.rostering;
   if (!api || typeof api.refresh !== 'function') return;
-  const data = await api.refresh();
-  if (data) { session = api.present(data); paint(); }
+  const read = await api.refresh();
+  if (read) { session = api.present(read); paint(); }
 }
 refresh();
 

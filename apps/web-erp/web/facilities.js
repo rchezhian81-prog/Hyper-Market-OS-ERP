@@ -351,6 +351,8 @@ function paintQualityHolds() {
       }
       li.append(ul);
     }
+    // OB-513: why this hold does, or does not, need a recorded sample before release — head office's word, in words.
+    if (row.sampleRuleWords) { const rw = document.createElement('div'); rw.className = 'saved qh-sample-rule'; rw.textContent = row.sampleRuleWords; li.append(rw); }
     if (row.blockedWords) { const bw = document.createElement('div'); bw.className = 'exc qh-blocked'; bw.textContent = row.blockedWords; li.append(bw); }
     if (row.saved !== undefined) {
       const s = document.createElement('div'); s.className = 'saved'; s.textContent = row.saved.stateWord; li.append(s);

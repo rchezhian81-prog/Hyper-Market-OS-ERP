@@ -515,7 +515,8 @@ export async function postLandedCostOf(input: Base, tenantId: string, a: Paramet
   }
   const payable = !a.match.blocked && a.order !== undefined && a.order.status === 'issued';
   const desired = payable ? apportionLandedCharges(total, a.match.lines.map((l) => ({ productId: l.productId, valueMinor: l.payableMinor })), [...targets.values()]) : [];
-  const posted = (await stockCostAdjustments(input.store, tenantId)).filter((x) => x.invoiceId === a.invoice.invoiceId);
+  // OB-509: a bill's cost put on unvalued stock (cost not known) is not one of its landed charges — never compensated here.
+  const posted = (await stockCostAdjustments(input.store, tenantId)).filter((x) => x.invoiceId === a.invoice.invoiceId && x.costKnown !== true);
   const deltas = landedCostDeltas(desired, posted.map((x) => ({ productId: x.productId, locationId: x.locationId, quantityMinor: x.quantityMinor, valueMinor: x.valueMinor })));
   const at = input.now();
   const events = deltas.map((d) => {

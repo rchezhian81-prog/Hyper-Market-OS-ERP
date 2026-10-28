@@ -70,7 +70,8 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenant, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
     CLOUD_API_URL: cloud?.baseUrl ?? 'https://cloud.example.test',
     CLOUD_API_TOKEN: cloud !== undefined ? cloud.token(BOX) : TEST_IDP.issue({ sub: BOX, tenantId: tenant, branchId: 'S1' }),
-    ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
+    // OB-500 (R7-A): the signed pack carries the floors and the price-cut limits the box judges a price change by.
+    ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE, pack: { tillControls: { floors: { P1: 45_000 }, floorsNotKnown: [], overrideLimits: { [MANAGER]: { state: 'limit', limitMinor: 20_000 } }, limitsVersion: 1 } } }),
   }, () => {}))!;
 
   beforeAll(async () => {
@@ -122,7 +123,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
     await signInTill(till, CASHIER);
     return till;
   };
-  const approve = async (till: Awaited<ReturnType<typeof tillOn>>, managerId: string, r: { kind: 'no_sale' | 'price_override'; billRef?: string; valueMinor: number }) =>
+  const approve = async (till: Awaited<ReturnType<typeof tillOn>>, managerId: string, r: { kind: 'no_sale' | 'price_override'; billRef?: string; valueMinor: number; productId?: string; toUnitMinor?: number }) =>
     till.approveAtTill({ managerId, pin: pinOf(managerId), reason: r.kind === 'no_sale' ? 'change_for_customer' : 'damaged_pack', ...r });
   const boxEvents = async () => (await readLog(edge.deviceEventsLog.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { type: string; payload: Record<string, unknown> }] : []))
     .filter((e) => e.type === 'TillActivityRecorded');
@@ -140,7 +141,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
     expect(await approve(till, CASHIER, { kind: 'no_sale', valueMinor: 0 })).toMatchObject({ approved: false, refusedBecause: 'self_approval' });
     expect(await approve(till, NOT_A_MANAGER, { kind: 'no_sale', valueMinor: 0 })).toMatchObject({ approved: false, refusedBecause: 'no_approval_authority' });
     // An approval for ₹100 off does not cover ₹140 off.
-    const small = await approve(till, MANAGER, { kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 10_000 });
+    const small = await approve(till, MANAGER, { kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 10_000, productId: 'P1', toUnitMinor: 54_000 });
     expect(small.approved).toBe(true);
     expect(await till.priceChangeAtTill(line!, 50_000, 'damaged_pack', { approvalId: (small as { approvalId: string }).approvalId })).toMatchObject({ ok: false, refusedBecause: 'approval_does_not_match' });
     // A price change only LOWERS a price.
@@ -158,7 +159,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
     const line = till.basket()[0]!.lineId;
     const value = till.priceChangeValue(line, 50_000);
     expect(value).toMatchObject({ ok: true, reductionMinor: 14_000, fromUnitMinor: 64_000 });
-    const ok = await approve(till, MANAGER, { kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 14_000 });
+    const ok = await approve(till, MANAGER, { kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 14_000, productId: 'P1', toUnitMinor: 50_000 });
     expect(ok.approved, JSON.stringify(ok)).toBe(true);
     const approvalId = (ok as { approvalId: string }).approvalId;
     const changed = await till.priceChangeAtTill(line, 50_000, 'damaged_pack', { approvalId });

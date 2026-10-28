@@ -356,7 +356,7 @@ el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; })
  */
 function tellApproval(kind, presented, subject) {
   if (kind === 'done') {
-    tell(subject === 'price' ? t('priceSaved') : t('offerStarted'), presented.label, true);
+    tell(subject === 'price' ? t('priceSaved') : subject === 'mrp' ? mw('replaced') : t('offerStarted'), presented.label, true);
   } else if (kind === 'asked' || kind === 'waiting') {
     tell(t('waitingTitle'), presented.label, 'pending');
   } else {
@@ -655,6 +655,7 @@ function renderLimits() {
     .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
     .at(-1);
   el('mrp-value').textContent = mrp === undefined ? '—' : inr(mrp.value.minor);
+  renderMrpReplace(view.product.productId);
 
   // The floor is derived from the cost and the tenant's own margin policy. Absent a cost there is
   // no floor to show, and a dash is the honest answer — not a zero that would read as "anything
@@ -666,6 +667,57 @@ function renderLimits() {
     : inr(Math.ceil((costMinor * 10_000) / (10_000 - floorBps)));
 }
 el('price-item').addEventListener('input', renderLimits);
+
+// ── OB-512: replacing an MRP that is not yet in force ───────────────────────
+const MRP_REPLACE_WORDS = {
+  en: { title: 'Replace an MRP that is not yet in force', lead: 'Only an MRP whose start date has not come yet can be replaced. Write why and ask for approval; once a second person approves it, press “Replace it”. The old MRP stays on record beside the new one.', date: 'Which MRP (its start date)', newMrp: 'New MRP (in rupees)', why: 'Why it is replaced (the person approving reads it)', ask: 'Ask for approval', save: 'Replace it', from: 'from', replaced: 'MRP replaced' },
+  ta: { title: 'இன்னும் நடைமுறைக்கு வராத MRP-ஐ மாற்றுதல்', lead: 'தொடக்கத் தேதி இன்னும் வராத MRP-ஐ மட்டுமே மாற்ற முடியும். காரணத்தை எழுதி அனுமதி கேளுங்கள்; இரண்டாம் நபர் அனுமதித்ததும் “மாற்று” அழுத்துங்கள். பழைய MRP புதியதன் அருகில் பதிவில் இருக்கும்.', date: 'எந்த MRP (அதன் தொடக்கத் தேதி)', newMrp: 'புதிய MRP (ரூபாயில்)', why: 'ஏன் மாற்றப்படுகிறது (அனுமதிப்பவர் படிப்பார்)', ask: 'அனுமதி கேள்', save: 'மாற்று', from: 'முதல்', replaced: 'MRP மாற்றப்பட்டது' },
+};
+const mw = (key) => (MRP_REPLACE_WORDS[lang] ?? MRP_REPLACE_WORDS.en)[key];
+let mrpReplaceProduct = null;
+function renderMrpReplace(productId) {
+  const future = typeof session.mrpsNotYetInForce === 'function' ? session.mrpsNotYetInForce(productId) : [];
+  mrpReplaceProduct = future.length === 0 ? null : productId;
+  el('mrp-replace').hidden = future.length === 0;
+  el('mrp-replace-title').textContent = mw('title');
+  el('mrp-replace-lead').textContent = mw('lead');
+  el('mrp-replace-date-label').textContent = mw('date');
+  el('mrp-replace-new-label').textContent = mw('newMrp');
+  el('mrp-replace-why-label').textContent = mw('why');
+  const withIcon = (id, icon, word) => {
+    if (window.sreIcon && typeof window.sreIcon.withWord === 'function') el(id).replaceChildren(window.sreIcon.withWord(icon, word));
+    else el(id).textContent = word;
+  };
+  withIcon('mrp-replace-ask', 'send', mw('ask'));
+  withIcon('mrp-replace-save', 'refresh-cw', mw('save'));
+  const chosen = el('mrp-replace-date').value;
+  el('mrp-replace-date').replaceChildren(...future.map((m) => {
+    const o = document.createElement('option');
+    o.value = m.effectiveFrom;
+    o.textContent = `${inr(m.mrpMinor)} ${mw('from')} ${m.effectiveFrom}`;
+    return o;
+  }));
+  if (future.some((m) => m.effectiveFrom === chosen)) el('mrp-replace-date').value = chosen;
+}
+const mrpReplaceInput = () => ({
+  productId: mrpReplaceProduct ?? '', effectiveFrom: el('mrp-replace-date').value,
+  newMrpMinor: toMinor(el('mrp-replace-new').value), why: el('mrp-replace-why').value,
+});
+el('mrp-replace-ask').addEventListener('click', () => {
+  void busy('mrp-replace-ask', async () => {
+    if (mrpReplaceProduct === null) return;
+    const outcome = await session.askMrpReplacement(lang, mrpReplaceInput());
+    tellApproval(outcome.kind, session.presentAskOutcome(lang, 'mrp', outcome), 'mrp');
+  });
+});
+el('mrp-replace-save').addEventListener('click', () => {
+  void busy('mrp-replace-save', async () => {
+    if (mrpReplaceProduct === null) return;
+    const input = mrpReplaceInput();
+    const outcome = await session.replaceMrpWithApproval(input);
+    tellApproval(outcome.kind, session.presentUseOutcome(lang, 'mrp', outcome, inr(input.newMrpMinor)), 'mrp');
+  });
+});
 
 /**
  * Check the price against the MRP and the margin floor (the model's own `proposePrice`, which writes nothing). Pressed,
@@ -1265,6 +1317,7 @@ el('lang').addEventListener('click', () => {
   if (lastSimulation !== null) renderSimulation(lastSimulation);
   renderRivals();
   renderDrafts(); // R4 D-18
+  if (!el('view-price').hidden) renderLimits(); // OB-512: the replace-an-MRP panel speaks the chosen language
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────

@@ -1544,6 +1544,9 @@
                     "batchId"
                   ],
                   "properties": {
+                    "manufacturedOn": {
+                      "type": "string"
+                    },
                     "temperatureC": {
                       "type": "number"
                     },
@@ -2668,6 +2671,50 @@
         },
         "additionalProperties": true
       },
+      "BillCost": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "productId",
+          "invoiceId",
+          "unitCost",
+          "quantityMinor",
+          "valueMinor",
+          "matchedBy",
+          "matchedAt"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "invoiceId": {
+            "type": "string"
+          },
+          "unitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "matchedBy": {
+            "type": "string"
+          },
+          "matchedAt": {
+            "type": "string"
+          },
+          "costWasKnown": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "additionalProperties": true
+      },
       "CapturedReceipt": {
         "type": "object",
         "required": [
@@ -2698,6 +2745,10 @@
           },
           "discrepancyValue": {
             "$ref": "#/components/schemas/Money.code"
+          },
+          "discrepancyValueIncomplete": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -2887,6 +2938,13 @@
           },
           "unitCost": {
             "$ref": "#/components/schemas/Money.code"
+          },
+          "manufacturedOn": {
+            "type": "string"
+          },
+          "costNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -3253,6 +3311,45 @@
         },
         "additionalProperties": true
       },
+      "CostNotKnownLine": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "productId",
+          "quantityMinor",
+          "uom",
+          "because",
+          "detail"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "because": {
+            "type": "string",
+            "enum": [
+              "no_issued_order",
+              "not_on_order"
+            ]
+          },
+          "typedUnitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "DayCloseRecord": {
         "type": "object",
         "required": [
@@ -3484,6 +3581,10 @@
           },
           "dispatch": {
             "$ref": "#/components/schemas/ReturnDispatchLink"
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -3688,6 +3789,18 @@
               "$ref": "#/components/schemas/ReceiptCostDiscrepancy"
             }
           },
+          "costNotKnown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostNotKnownLine"
+            }
+          },
+          "billCosts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillCost"
+            }
+          },
           "relayedBy": {
             "type": "string"
           },
@@ -3843,6 +3956,24 @@
               "why": {
                 "type": "string",
                 "const": "not_an_old_bill_number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "appVersion": {
+            "type": "string"
+          },
+          "storeComputerVersionCheck": {
+            "type": "object",
+            "properties": {
+              "verdict": {
+                "x-untyped": "unknown"
+              },
+              "reported": {
+                "x-untyped": "unknown"
+              },
+              "minimumSupportedVersion": {
+                "x-untyped": "unknown"
               }
             },
             "additionalProperties": true
@@ -4177,6 +4308,10 @@
               "direct",
               "relayed"
             ]
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -4227,6 +4362,10 @@
           },
           "dispatch": {
             "$ref": "#/components/schemas/ReturnDispatchLink"
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true
@@ -4515,6 +4654,10 @@
           },
           "detail": {
             "type": "string"
+          },
+          "valueNotKnown": {
+            "type": "boolean",
+            "const": true
           }
         },
         "additionalProperties": true

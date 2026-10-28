@@ -21,6 +21,16 @@ export interface StockCostAdjustment {
   readonly postedBy: string;
   /** Which match verdict caused it. */
   readonly matchedAt: string;
+  /**
+   * OB-509: this posting is the cost of units that came in UNVALUED (cost not known) — the supplier's bill matched to their
+   * receipt — not a landed charge on valued stock. The valuation brings those units into value at it.
+   */
+  readonly costKnown?: true;
+  /** OB-509: the receipt (and line) whose cost became known. */
+  readonly grnId?: string;
+  readonly lineId?: string;
+  /** OB-509: the unit those units are counted in (their smallest steps), so an average can be stated per whole unit. */
+  readonly uom?: string;
 }
 
 /**
@@ -44,5 +54,5 @@ export function withLandedCost(
 
 const asValuation = (a: StockCostAdjustment): ValuationMovement => ({
   productId: a.productId, locationId: a.locationId, effect: 1, quantityMinor: a.quantityMinor, isPurchaseReceipt: false,
-  isCostAdjustment: true, adjustmentMinor: a.valueMinor,
+  isCostAdjustment: true, adjustmentMinor: a.valueMinor, ...(a.costKnown === true ? { isCostKnown: true } : {}),
 });

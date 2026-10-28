@@ -25,7 +25,7 @@ const POLICY = { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDay
 const cost = (minor: number) => ({ minor, currency: INR });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-const grnOf = (res: { body: unknown }): { availableMinor?: number; heldMinor?: number; governanceFlags?: string[]; captured?: { requiresApproval?: boolean; discrepancies?: { kind: string }[]; lines?: { disposition: string; sellableMinor: number; quarantinedMinor: number; heldMinor: number }[] } } =>
+const grnOf = (res: { body: unknown }): { availableMinor?: number; heldMinor?: number; governanceFlags?: string[]; costNotKnown?: unknown[]; captured?: { requiresApproval?: boolean; discrepancies?: { kind: string }[]; lines?: { disposition: string; sellableMinor: number; quarantinedMinor: number; heldMinor: number }[] } } =>
   (res.body as { grn?: Record<string, unknown> }).grn ?? {};
 
 const receive = (h: ApiHarness, u: string, grnId: string, body: unknown, key: string) =>
@@ -96,14 +96,14 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
     const ok = await receive(h, 'u-mgr', 'grn-2', body([line({ productId: 'p2', batchId: 'B1', expiry: '2027-01-01' })]), 'k3');
     expect(ok.status).toBe(201);
     // nothing unverified about the batch; no order is behind them (SP-6); and the master names no handling class for paneer (SF-07, said)
-    expect(grnOf(ok).governanceFlags).toEqual(['no_purchase_order', 'handling_unknown']);
+    expect(grnOf(ok).governanceFlags).toEqual(['no_purchase_order', 'cost_unknown', 'handling_unknown']); // OB-509: no order → cost not known
   });
 
   it('a product the master does not know is received — goods in the building are never refused for paperwork — and the record SAYS the rule was unverified', async () => {
     const h = await cast();
     const res = await receive(h, 'u-mgr', 'grn-unknown', body([line({ productId: 'p-not-on-master' })]), 'k1');
     expect(res.status).toBe(201);
-    expect(grnOf(res).governanceFlags).toEqual(['no_purchase_order', 'product_rules_unverified', 'handling_unknown']);
+    expect(grnOf(res).governanceFlags).toEqual(['no_purchase_order', 'cost_unknown', 'product_rules_unverified', 'handling_unknown']);
     expect(await onHand(h, 'u-mgr', 'p-not-on-master')).toBe(100);
   });
 
@@ -228,7 +228,8 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
     expect((await orderOf(h, 'po-f2')).openCommitment).toMatchObject({ totalOpenValue: { minor: 40 * 5000 } });
     // A product the order never named is received as-is and said.
     const extra = await receive(h, 'u-mgr', 'grn-f4', { ...body([line({ productId: 'p3', unitCost: cost(200) })]), poId: 'po-f2' }, 'k2');
-    expect(grnOf(extra).governanceFlags).toEqual(['product_not_on_order']);
+    expect(grnOf(extra).governanceFlags).toEqual(['product_not_on_order', 'cost_unknown']); // OB-509: not on the order → cost not known
+    expect(grnOf(extra).costNotKnown).toEqual([expect.objectContaining({ productId: 'p3', because: 'not_on_order', typedUnitCost: { minor: 200, currency: 'INR' } })]);
     expect(grnOf(extra).captured?.discrepancies).toEqual([]);
     expect((await orderOf(h, 'po-f2')).order.receivedByProduct).toEqual({ p1: 60, p3: 100 }); // visible over-receipt of what nobody ordered
   });
@@ -262,14 +263,14 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
       body: { supplierId: 'sup-1', deliverToLocationId: 'wh1', lines: [{ productId: 'p1', orderedQty: 100, unitCost: cost(5000) }] } })).status).toBe(201);
     const draft = await receive(h, 'u-mgr', 'grn-d', { ...body([line()]), poId: 'po-draft' }, 'k1');
     expect(draft.status).toBe(201);
-    expect(grnOf(draft).governanceFlags).toEqual(['order_not_issued']);
+    expect(grnOf(draft).governanceFlags).toEqual(['order_not_issued', 'cost_unknown']);
     expect((draft.body as { poReceipt: unknown }).poReceipt).toBeNull();
     expect((await orderOf(h, 'po-draft')).order.receivedByProduct).toEqual({});
     expect(await onHand(h, 'u-mgr', 'p1')).toBe(100); // the goods are in the building either way
     const ghost = await receive(h, 'u-mgr', 'grn-g', { ...body([line()]), poId: 'po-nobody-raised' }, 'k2');
-    expect(grnOf(ghost).governanceFlags).toEqual(['order_unknown']);
+    expect(grnOf(ghost).governanceFlags).toEqual(['order_unknown', 'cost_unknown']);
     const none = await receive(h, 'u-mgr', 'grn-n', body([line()]), 'k3');
-    expect(grnOf(none).governanceFlags).toEqual(['no_purchase_order']);
+    expect(grnOf(none).governanceFlags).toEqual(['no_purchase_order', 'cost_unknown']);
     expect((none.body as { poReceipt: unknown }).poReceipt).toBeNull();
   });
 });

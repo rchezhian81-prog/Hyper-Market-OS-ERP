@@ -68,6 +68,8 @@ export type PromotionSimulationInput = Parameters<typeof simulatePromotion>[0];
 /** The approval kinds this screen asks under (head office's maker-checker engine, ADR-0024). */
 export const PRICE_APPROVAL_KIND = 'price_change';
 export const PROMOTION_APPROVAL_KIND = 'promotion_launch';
+/** OB-512: replacing an MRP not yet in force — approved by a second person who approves catalogue changes (accountant / owner). */
+export const MRP_REPLACEMENT_KIND = 'mrp_replacement';
 
 /**
  * A promotion launch to record at head office (M05-FR-03/04) — the simulation INPUT (the cloud re-simulates
@@ -170,6 +172,37 @@ export function promotionLaunchDetails(input: PromotionSimulationInput): Record<
   return detailsOfBody(promotionLaunchBody({ input }), { promotionId: input.promotionId });
 }
 
+/** OB-512: what replacing an MRP not yet in force names — the product, the date of the MRP on record, the new MRP and why. */
+export interface MrpReplacementInput {
+  readonly productId: string;
+  readonly effectiveFrom: string;
+  readonly newMrpMinor: number;
+  readonly why: string;
+}
+
+/** OB-512: EXACTLY the body `POST /v1/catalogue/products/:productId/publish` receives to replace the MRP (less approvalId):
+ *  head office's record as this screen holds it, that one date's MRP changed, and `mrpReplacement { effectiveFrom, reason }`. */
+export function mrpReplacementBody(held: ProductRecord, input: MrpReplacementInput, approvalId?: string): Record<string, unknown> {
+  const mrpHistory = (held.mrpHistory ?? []).map((e) => (e.effectiveFrom === input.effectiveFrom ? { ...e, value: { minor: input.newMrpMinor, currency: e.value.currency } } : e));
+  return {
+    product: { ...held, mrpHistory },
+    mrpReplacement: { effectiveFrom: input.effectiveFrom, reason: input.why.trim() },
+    ...(approvalId === undefined ? {} : { approvalId }),
+  };
+}
+
+/** OB-512: what an `mrp_replacement` approval is for: exactly that body, plus the product id from the route's path. */
+export function mrpReplacementDetails(held: ProductRecord, input: MrpReplacementInput): Record<string, unknown> {
+  return detailsOfBody(mrpReplacementBody(held, input), { productId: held.productId });
+}
+
+/** OB-512: head office's word on a publish that replaced an MRP. */
+export type MrpReplaceOutcome = { readonly saved: true } | { readonly saved: false; readonly reason: string; readonly code?: string };
+/** OB-512: the authenticated POST of that publish, naming the approval — the screen's only write for it. */
+export interface MrpReplacePort {
+  post(productId: string, body: Record<string, unknown>): Promise<MrpReplaceOutcome>;
+}
+
 /** A stable text for any JSON value (object keys sorted, undefined dropped) — the engine's own canonical form. */
 function canonical(v: unknown): string {
   if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
@@ -186,7 +219,7 @@ export function sameDetails(a: unknown, b: unknown): boolean {
 // ── The two-person flow's outcomes, and their words ─────────────────────────────────────────────────────────
 
 /** Which governed action an approval is for: a price change, or an offer's launch. */
-export type ApprovalSubject = 'price' | 'offer';
+export type ApprovalSubject = 'price' | 'offer' | 'mrp';
 
 /** The outcome of pressing "Ask for approval". Nothing is saved by asking. */
 export type ApprovalAskOutcome =
@@ -229,7 +262,8 @@ export type ApprovalCopyKey =
   | 'noMrp' | 'noCost' | 'askRefused' | 'askRefusedNoWords' | 'askLostLink'
   | 'savedPrice' | 'startedOffer'
   | 'notAsked' | 'waiting' | 'rejected' | 'rejectedNoName' | 'expired' | 'used' | 'changed'
-  | 'checkerMayNot' | 'namedNotApproved' | 'refused' | 'refusedNoWords' | 'lostLink';
+  | 'checkerMayNot' | 'namedNotApproved' | 'refused' | 'refusedNoWords' | 'lostLink'
+  | 'summaryMrp' | 'askedMrp' | 'notConnectedMrp' | 'savedMrp' | 'waitingMrp' | 'mrpInForce' | 'mrpNoneToReplace' | 'mrpSame';
 
 /** Every word the two-person flow says, in English and Tamil. `{not}` is "Not saved" / "Not started". */
 export const CATALOGUE_APPROVAL_COPY: BilingualCopy<ApprovalCopyKey> = {
@@ -260,6 +294,15 @@ export const CATALOGUE_APPROVAL_COPY: BilingualCopy<ApprovalCopyKey> = {
     namedNotApproved: '{not} — naming a person is not their approval. Ask for approval, and wait for a second person to approve it on their Approvals page.',
     refused: '{not}: {words}', refusedNoWords: '{not} — head office refused it.',
     lostLink: '{not} — no connection to head office. Try again.',
+    // OB-512: an MRP not yet in force replaced, with a reason and a second person's approval; both stay on record.
+    summaryMrp: 'Replace the MRP of {product} starting {date}: {old} → {new} (not yet in force)',
+    askedMrp: 'Asked. Waiting for a second person who approves catalogue changes (the accountant or the owner) to approve it on the Approvals page. The MRP on record is unchanged until then.',
+    notConnectedMrp: 'Not replaced — replacing an MRP needs a second person’s approval at head office, and this screen is not connected to head office. Nothing was saved.',
+    savedMrp: 'MRP replaced: {price}. The MRP it replaced stays on record beside it, with the reason and both people.',
+    waitingMrp: '{not} — still waiting for a second person who approves catalogue changes (the accountant or the owner, not you) to approve it on their Approvals page.',
+    mrpInForce: 'Nothing was sent — that MRP is already in force, so it cannot be replaced. Give the new MRP its own later date.',
+    mrpNoneToReplace: 'Nothing was sent — there is no MRP on record for that date that is not yet in force.',
+    mrpSame: 'Nothing was sent — the new MRP is the same as the one on record.',
   },
   ta: {
     notSaved: 'சேமிக்கப்படவில்லை', notStarted: 'தொடங்கப்படவில்லை',
@@ -288,6 +331,14 @@ export const CATALOGUE_APPROVAL_COPY: BilingualCopy<ApprovalCopyKey> = {
     namedNotApproved: '{not} — ஒருவரின் பெயரைக் குறிப்பிடுவது அவரது அனுமதி ஆகாது. அனுமதி கேட்டு, இரண்டாம் நபர் தனது அனுமதிகள் பக்கத்தில் அனுமதிக்கும் வரை காத்திருங்கள்.',
     refused: '{not}: {words}', refusedNoWords: '{not} — தலைமை அலுவலகம் ஏற்கவில்லை.',
     lostLink: '{not} — தலைமை அலுவலகத்துடன் இணைப்பு இல்லை. மீண்டும் முயற்சிக்கவும்.',
+    summaryMrp: '{date} முதல் {product} MRP-ஐ மாற்றுதல்: {old} → {new} (இன்னும் நடைமுறைக்கு வரவில்லை)',
+    askedMrp: 'கேட்கப்பட்டது. பட்டியல் மாற்றங்களை அனுமதிக்கும் இரண்டாம் நபர் (கணக்காளர் அல்லது உரிமையாளர்) அனுமதிகள் பக்கத்தில் அனுமதிக்கக் காத்திருக்கிறது. அதுவரை பதிவில் உள்ள MRP மாறாது.',
+    notConnectedMrp: 'மாற்றப்படவில்லை — MRP-ஐ மாற்ற தலைமை அலுவலகத்தில் இரண்டாம் நபரின் அனுமதி தேவை, இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை. எதுவும் சேமிக்கப்படவில்லை.',
+    savedMrp: 'MRP மாற்றப்பட்டது: {price}. மாற்றப்பட்ட MRP காரணத்துடனும் இருவரின் பெயருடனும் பதிவில் அருகிலேயே இருக்கும்.',
+    waitingMrp: '{not} — பட்டியல் மாற்றங்களை அனுமதிக்கும் இரண்டாம் நபர் (கணக்காளர் அல்லது உரிமையாளர், நீங்கள் அல்ல) தனது அனுமதிகள் பக்கத்தில் அனுமதிக்க இன்னும் காத்திருக்கிறது.',
+    mrpInForce: 'எதுவும் அனுப்பப்படவில்லை — அந்த MRP ஏற்கனவே நடைமுறையில் உள்ளது, அதனால் மாற்ற முடியாது. புதிய MRP-க்குப் பிந்தைய தனித் தேதியைக் கொடுங்கள்.',
+    mrpNoneToReplace: 'எதுவும் அனுப்பப்படவில்லை — அந்தத் தேதிக்கு, இன்னும் நடைமுறைக்கு வராத MRP பதிவில் இல்லை.',
+    mrpSame: 'எதுவும் அனுப்பப்படவில்லை — புதிய MRP பதிவில் உள்ளதைப் போலவே உள்ளது.',
   },
 };
 
@@ -348,11 +399,14 @@ export function presentAskOutcome(lang: Lang, subject: ApprovalSubject, o: Appro
   const err = (label: string): StatusPresentation => presentStatus({ tone: 'error', icon: '✕', label, needsAttention: true });
   switch (o.kind) {
     // Waiting is a pending state — a person has to come back to it — with its own icon and words.
-    case 'asked': return presentScreenState({ state: 'pending', label: `${t(subject === 'price' ? 'askedPrice' : 'askedOffer')} ${o.request.summary}` });
+    case 'asked': return presentScreenState({ state: 'pending', label: `${t(subject === 'price' ? 'askedPrice' : subject === 'mrp' ? 'askedMrp' : 'askedOffer')} ${o.request.summary}` });
     case 'needs_why': return err(t('needsWhy'));
-    case 'not_connected': return err(t(subject === 'price' ? 'notConnectedPrice' : 'notConnectedOffer'));
+    case 'not_connected': return err(t(subject === 'price' ? 'notConnectedPrice' : subject === 'mrp' ? 'notConnectedMrp' : 'notConnectedOffer'));
     case 'cannot_check': return err(t(o.missing === 'mrp' ? 'noMrp' : 'noCost'));
-    case 'refused': return err(o.whatHappened.trim() === '' ? t('askRefusedNoWords') : `${t('askRefused')} ${o.whatHappened.trim()}`);
+    case 'refused':
+      // OB-512: the screen's own refusals of an MRP replacement, in the reader's language.
+      if (o.code === 'mrp_already_in_force' || o.code === 'no_mrp_to_replace' || o.code === 'mrp_same') return err(t(o.code === 'mrp_already_in_force' ? 'mrpInForce' : o.code === 'mrp_same' ? 'mrpSame' : 'mrpNoneToReplace'));
+      return err(o.whatHappened.trim() === '' ? t('askRefusedNoWords') : `${t('askRefused')} ${o.whatHappened.trim()}`);
     case 'lost_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('askLostLink'), needsAttention: true });
   }
 }
@@ -360,18 +414,18 @@ export function presentAskOutcome(lang: Lang, subject: ApprovalSubject, o: Appro
 /** Where using an approval stands, in words. `figure` is the price (₹) or the offer's name, for the "done" line. */
 export function presentUseOutcome(lang: Lang, subject: ApprovalSubject, o: ApprovalUseOutcome, figure = ''): StatusPresentation {
   const t = translator(CATALOGUE_APPROVAL_COPY, lang);
-  const not = t(subject === 'price' ? 'notSaved' : 'notStarted');
+  const not = t(subject === 'offer' ? 'notStarted' : 'notSaved');
   const say = (key: ApprovalCopyKey, values: Readonly<Record<string, string>> = {}): string => fill(t(key), { not, ...values });
   const err = (label: string): StatusPresentation => presentStatus({ tone: 'error', icon: '✕', label, needsAttention: true });
   const warn = (label: string): StatusPresentation => presentStatus({ tone: 'degraded', icon: '⚠', label, needsAttention: true });
   switch (o.kind) {
     case 'done':
       return presentStatus({ tone: 'ok', icon: '✓', needsAttention: false,
-        label: subject === 'price' ? say('savedPrice', { price: figure }) : say('startedOffer', { offer: figure }) });
-    case 'not_connected': return err(t(subject === 'price' ? 'notConnectedPrice' : 'notConnectedOffer'));
+        label: subject === 'price' ? say('savedPrice', { price: figure }) : subject === 'mrp' ? say('savedMrp', { price: figure }) : say('startedOffer', { offer: figure }) });
+    case 'not_connected': return err(t(subject === 'price' ? 'notConnectedPrice' : subject === 'mrp' ? 'notConnectedMrp' : 'notConnectedOffer'));
     case 'cannot_check': return err(t(o.missing === 'mrp' ? 'noMrp' : 'noCost'));
     case 'not_asked': return warn(say('notAsked'));
-    case 'waiting': return presentScreenState({ state: 'pending', label: say('waiting') });
+    case 'waiting': return presentScreenState({ state: 'pending', label: say(subject === 'mrp' ? 'waitingMrp' : 'waiting') });
     case 'rejected':
       return err(o.decidedBy === null || o.decidedBy.trim() === ''
         ? say('rejectedNoName', { reason: o.reason.trim() === '' ? '—' : o.reason.trim() })
@@ -437,6 +491,8 @@ export interface CataloguePorts {
   askApproval?(ask: ApprovalAsk): Promise<AskResult>;
   /** The caller's approvals inbox (GET /v1/approvals/requests) — read only. Absent when not connected. */
   approvalInbox?(): Promise<InboxRead>;
+  /** OB-512: the publish that replaces an MRP not yet in force, naming its approval. Absent when not connected. */
+  replaceMrp?(): MrpReplacePort;
 }
 
 export interface CatalogueConfig {
@@ -674,6 +730,13 @@ export interface CatalogueSession {
   /** Launch a margin-losing offer naming the caller's OWN approved `promotion_launch` request for exactly this
    *  input; otherwise says plainly why not, and sends nothing. */
   launchWithApproval(input: PromotionSimulationInput): Promise<ApprovalUseOutcome>;
+
+  /** OB-512: the MRPs on record for this product that are NOT YET IN FORCE (dated after today) — the ones that may be replaced. */
+  mrpsNotYetInForce(productId: string): readonly { readonly effectiveFrom: string; readonly mrpMinor: number }[];
+  /** OB-512: ask a second person to approve EXACTLY this MRP replacement (`mrpReplacementDetails`). Saves nothing. */
+  askMrpReplacement(lang: Lang, input: MrpReplacementInput): Promise<ApprovalAskOutcome>;
+  /** OB-512: replace the MRP naming the caller's OWN approved `mrp_replacement` request for exactly this; otherwise says why not. */
+  replaceMrpWithApproval(input: MrpReplacementInput): Promise<ApprovalUseOutcome>;
 
   /** An ask's outcome in plain words, in the reader's language (`presentAskOutcome`). */
   presentAskOutcome(lang: Lang, subject: ApprovalSubject, outcome: ApprovalAskOutcome): StatusPresentation;
@@ -1064,6 +1127,44 @@ export function createCatalogueSession(
         details: promotionLaunchDetails(input), valueMinor: null,
         summary, reason: why.trim(),
       });
+    },
+
+    // OB-512: the MRPs on record not yet in force (dated after the shop's today) — only these may be replaced.
+    mrpsNotYetInForce: (productId) => (ports.products().find((p) => p.productId === productId)?.mrpHistory ?? [])
+      .filter((e) => e.effectiveFrom > config.today)
+      .map((e) => ({ effectiveFrom: e.effectiveFrom, mrpMinor: e.value.minor }))
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom)),
+
+    // OB-512 — the MAKER's step: ask for exactly the publish that will replace the MRP. Nothing changes until it is approved.
+    askMrpReplacement: async (lang, input) => {
+      if (!connected() || ports.replaceMrp === undefined) return { kind: 'not_connected' };
+      if (!hasReason(input.why)) return { kind: 'needs_why' };
+      const held = ports.products().find((p) => p.productId === input.productId);
+      const was = held?.mrpHistory?.find((e) => e.effectiveFrom === input.effectiveFrom);
+      if (held === undefined || was === undefined) return { kind: 'refused', code: 'no_mrp_to_replace', whatHappened: '' };
+      if (input.effectiveFrom <= config.today) return { kind: 'refused', code: 'mrp_already_in_force', whatHappened: '' };
+      if (!(Number.isSafeInteger(input.newMrpMinor) && input.newMrpMinor > 0) || input.newMrpMinor === was.value.minor) return { kind: 'refused', code: 'mrp_same', whatHappened: '' };
+      const t = translator(CATALOGUE_APPROVAL_COPY, lang);
+      return ask({
+        kind: MRP_REPLACEMENT_KIND, subjectRef: `product:${held.productId}:mrp:${input.effectiveFrom}`,
+        // EXACTLY the publish body plus the product id from the route's path — what head office fingerprints.
+        details: mrpReplacementDetails(held, input), valueMinor: null,
+        summary: fill(t('summaryMrp'), { product: held.name.trim() === '' ? held.productId : held.name, date: input.effectiveFrom, old: rupees(was.value.minor), new: rupees(input.newMrpMinor) }),
+        reason: input.why.trim(),
+      });
+    },
+
+    // OB-512 — the replacement, naming the caller's own APPROVED request for exactly it. Never a typed approver.
+    replaceMrpWithApproval: async (input) => {
+      const port = ports.replaceMrp;
+      if (!connected() || port === undefined) return { kind: 'not_connected' };
+      const held = ports.products().find((p) => p.productId === input.productId);
+      if (held === undefined) return { kind: 'not_asked' };
+      const found = await findApproval(MRP_REPLACEMENT_KIND, `product:${held.productId}:mrp:${input.effectiveFrom}`, mrpReplacementDetails(held, input), null);
+      if (!('requestId' in found)) return found;
+      const r = await port().post(held.productId, mrpReplacementBody(held, input, found.requestId));
+      if (r.saved) return { kind: 'done', verdict: 'replaced', approvedBy: found.decidedBy };
+      return useOutcomeOfRefusal(r.code, r.reason);
     },
 
     // The launch, naming the caller's own APPROVED request for exactly this offer. Never a typed approver.

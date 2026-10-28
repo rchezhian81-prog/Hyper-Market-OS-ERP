@@ -75,6 +75,12 @@ export interface ValuationMovement {
    */
   readonly isCostAdjustment?: boolean;
   readonly adjustmentMinor?: number;
+  /**
+   * OB-509: with `isCostAdjustment`, the cost of units that came in UNVALUED (cost not known) has become known — the supplier's
+   * bill was matched. `adjustmentMinor` is the value of `quantityMinor` such units: those still on hand move from unvalued into
+   * the valued pool at it; the share of them already issued goes to cost of goods sold (they were sold at no recorded cost).
+   */
+  readonly isCostKnown?: boolean;
 }
 
 export interface ProductValuation {
@@ -137,6 +143,19 @@ export function weightedAverageValuation(
     const acc = byKey.get(key)
       ?? { productId: m.productId, locationId: m.locationId, qty: 0, valuedQty: 0, valueMinor: 0, cogsMinor: 0, transferredOutMinor: 0, unvaluedMinor: 0, scale: m.minorPerUnit ?? 1 };
 
+    if (m.isCostAdjustment === true && m.isCostKnown === true) {
+      // OB-509: the unvalued units this cost belongs to — those still on hand join the valued pool at it; the rest were issued.
+      const v = m.adjustmentMinor ?? 0;
+      const base = Math.max(1, m.quantityMinor);
+      const onHand = Math.min(acc.unvaluedMinor, base);
+      const toStock = onHand <= 0 ? 0 : share(v, onHand, base);
+      acc.unvaluedMinor -= onHand;
+      acc.valuedQty += onHand;
+      acc.valueMinor += toStock;
+      acc.cogsMinor += v - toStock;
+      byKey.set(key, acc);
+      continue;
+    }
     if (m.isCostAdjustment === true) {
       // Value only: the on-hand (valued) share of the units it belongs to carries it; the rest was sold — to COGS.
       const v = m.adjustmentMinor ?? 0;

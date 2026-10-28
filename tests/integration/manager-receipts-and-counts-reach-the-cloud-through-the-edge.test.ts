@@ -119,7 +119,7 @@ async function cloud(): Promise<{
     } },
   }));
   expect((await h.request({
-    method: 'POST', path: '/v1/inventory/goods-receipt/grn-seed', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-seed',
+    method: 'POST', path: '/v1/inventory/goods-receipt/opening-seed' /* OB-509: opening stock keeps its cost; a no-order delivery is unvalued */, userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-seed',
     body: {
       warehouseId: WH, receivedOnDate: '2026-09-01', currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'p1', orderedMinor: 100, countedMinor: 100, uom: 'ea', unitCost: { minor: 5000, currency: 'INR' }, condition: 'good' }],

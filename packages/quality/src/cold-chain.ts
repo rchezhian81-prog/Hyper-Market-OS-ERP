@@ -193,6 +193,8 @@ export type ReleaseRefusal =
   | 'released'
   | 'sample_failed'
   | 'sample_pending'
+  /** OB-513: a FOOD batch released with no sample recorded on its hold. */
+  | 'sample_required'
   | 'cold_chain_breach'
   | 'expired'
   | 'no_releaser'
@@ -218,6 +220,11 @@ export function releaseFromQualityHold(input: {
   readonly expiresOn?: string;
   readonly releasedBy: string;
   readonly at: string;
+  /**
+   * OB-513 (owner, 28 Oct 2026): set when this hold needs at least one recorded sample before release (a FOOD batch) — the
+   * plain-English reason why. Absent → the hold may be released without one (other holds).
+   */
+  readonly sampleRequired?: string;
 }): QualityReleaseResult {
   const { hold } = input;
   const base = { batchId: hold.batchId, hold };
@@ -235,6 +242,10 @@ export function releaseFromQualityHold(input: {
   }
 
   const samples = input.samples.filter((s) => s.batchId === hold.batchId);
+  // OB-513: a food batch is never released on nobody's test — at least one sample is on record first.
+  if (input.sampleRequired !== undefined && samples.length === 0) {
+    return { ...base, released: false, outcome: 'sample_required', detail: input.sampleRequired };
+  }
   const failed = samples.find((s) => s.result === 'fail');
   if (failed) {
     return {

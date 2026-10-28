@@ -79,7 +79,7 @@ async function seeded(): Promise<ApiHarness> {
   }));
   // The cloud's own cost for p1: an earlier direct GRN at ₹50.00 a unit (the weighted average the route will read).
   const seed = await h.request({
-    method: 'POST', path: '/v1/inventory/goods-receipt/grn-seed', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-seed',
+    method: 'POST', path: '/v1/inventory/goods-receipt/opening-seed' /* OB-509: opening stock keeps its cost; a no-order delivery is unvalued */, userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-seed',
     body: {
       warehouseId: WH, receivedOnDate: '2026-09-01', currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'p1', orderedMinor: 40, countedMinor: 40, uom: 'ea', unitCost: { minor: 5000, currency: 'INR' }, condition: 'good' }],
@@ -148,11 +148,11 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     const h = await seeded();
     const noOrder = await relay(h, receipt({ grnId: 'g2', poId: null }), 'k-g2');
     expect(noOrder.status).toBe(202);
-    expect((noOrder.body as GrnBody).flags).toEqual(['no_purchase_order', 'default_policy']);
+    expect((noOrder.body as GrnBody).flags).toEqual(['no_purchase_order', 'cost_unknown', 'default_policy']); // OB-509
 
     const badOrder = await relay(h, receipt({ grnId: 'g3', poId: 'po-nobody-raised' }), 'k-g3');
     expect(badOrder.status).toBe(202);
-    expect((badOrder.body as GrnBody).flags).toEqual(['order_unknown', 'default_policy']);
+    expect((badOrder.body as GrnBody).flags).toEqual(['order_unknown', 'cost_unknown', 'default_policy']);
     // Ordered is unknown, so the delivery is received as-is — no invented shortage against an order nobody holds.
     expect((badOrder.body as GrnBody).grn.captured.discrepancies).toEqual([]);
     expect((badOrder.body as { poReceipt: unknown }).poReceipt).toBeNull(); // and it folds into nothing (SP-6)
@@ -160,7 +160,7 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     await h.request({ method: 'POST', path: '/v1/purchase/orders/po-draft', userId: 'u-po-buyer', tenantId: A, idempotencyKey: 'k-po-draft',
       body: { supplierId: 'sup-1', deliverToLocationId: 'wh-store', lines: [{ productId: 'p1', orderedQty: 100, unitCost: { minor: 5000, currency: 'INR' } }] } });
     const draft = await relay(h, receipt({ grnId: 'g3b', poId: 'po-draft' }), 'k-g3b');
-    expect((draft.body as GrnBody).flags).toEqual(['order_not_issued', 'default_policy']);
+    expect((draft.body as GrnBody).flags).toEqual(['order_not_issued', 'cost_unknown', 'default_policy']);
     expect((await orderOf(h, 'po-draft')).order.receivedByProduct).toEqual({});
 
     // A product not on the published master: received untracked and UNVALUED (said), never refused at the back door.

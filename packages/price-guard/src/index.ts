@@ -4,3 +4,4 @@
 // Grows one reviewed, tested unit at a time.
 
 export * from './price-guard';
+export * from './till-override'; // OB-500: the till's price-cut floor and manager limit

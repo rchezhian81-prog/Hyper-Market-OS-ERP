@@ -44,6 +44,10 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   // Round 6 (OB-380: the store computer serves every office page head office answers): Scrap and recycling (M28-FR-02),
   // Packaging and crates (M28-FR-03) and Compare side by side (M29-FR-02 · §27 Owner "branch comparison").
   'scrap', 'packaging', 'branch-compare',
+  // Round 7 (R7-C · OB-380): Shelf tags (OB-505 · B3) and Quotations (OB-506 · M12-FR-02).
+  'shelf-tags', 'quotations',
+  // Round 8 (R8-C · OB-522 · OB-380): Staff certificates.
+  'certificates',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -111,6 +115,9 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   scrap: 'scrapData',
   packaging: 'packagingData',
   'branch-compare': 'branchCompareData',
+  'shelf-tags': 'shelfTagsData',
+  quotations: 'quotationsData',
+  certificates: 'certificatesData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({

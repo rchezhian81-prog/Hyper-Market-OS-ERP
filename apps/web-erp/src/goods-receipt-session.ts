@@ -35,9 +35,30 @@ import { minorPerUnitOf, normaliseUom } from '../../../packages/contracts/src/qu
 
 // ── what the screen was last told (the GRN list, one snapshot) ──────────────────────────────────────────────
 
+/**
+ * OB-508 (owner, 28 Oct 2026): whose a discrepancy is, as head office named it — the buyer who raised the order (short, excess,
+ * cost difference) or the receiving store's managers (damaged, QC failed, expired, temperature). Nobody is ever filled in here:
+ * an empty list comes with head office's reason (no order, no store manager named, a kind the decision names no owner for).
+ */
+export interface GrnDiscrepancyOwnerView {
+  readonly role: 'buyer' | 'store_manager' | null;
+  readonly owners: readonly string[];
+  readonly missing?: 'no_purchase_order' | 'order_not_held' | 'no_store_manager_named' | 'owner_not_decided';
+}
+
+/** The kinds a receipt's difference can be: the capture engine's, (Round 6) a cost that differed from the order's, and
+ *  (OB-528) a difference from the supplier's advance ship notice — per product, owned by the buyer. */
+export type GrnDifferenceKind = DiscrepancyKind | 'cost_difference' | 'asn_difference';
+
 /** One valued discrepancy on a delivery line — data, shown as-is. */
 export interface GrnDiscrepancyView {
-  readonly kind: DiscrepancyKind;
+  readonly kind: GrnDifferenceKind;
+  /** The receipt line it is on (head office's line id) — what its owner is matched by. */
+  readonly lineId?: string;
+  /** OB-509: the line's cost is not known yet, so this difference has no value yet — said, never ₹0. */
+  readonly valueNotKnown?: boolean;
+  /** OB-508: its named owner, when head office said (absent → head office did not say). */
+  readonly owner?: GrnDiscrepancyOwnerView;
   readonly productId: string;
   /** Quantity affected, in the UOM's smallest unit (×100). */
   readonly quantityMinor: number;
@@ -70,6 +91,10 @@ export interface GrnRecordView {
   readonly discrepancies: readonly GrnDiscrepancyView[];
   /** Batch 2: the held lines a second person disposed of as a RETURN to the supplier, and whether each has gone back. */
   readonly returnLines?: readonly GrnReturnLineView[];
+  /** OB-509: the lines booked with their cost NOT KNOWN that still wait for the supplier's bill. */
+  readonly costNotKnown?: readonly { readonly lineId: string; readonly productId: string; readonly because: 'no_issued_order' | 'not_on_order' }[];
+  /** OB-509: some difference has no value yet, so the total is incomplete. */
+  readonly discrepancyValueIncomplete?: boolean;
 }
 
 /** Batch 2 — one quarantined line disposed of as a return: waiting to go back to the supplier, or gone. */
@@ -88,6 +113,8 @@ export interface GrnReturnLineView {
   readonly needsCount: boolean;
   /** OB-204: where the return stands on its dispatch, as head office said; absent when no dispatch step applies here. */
   readonly dispatch?: GrnReturnDispatchView;
+  /** OB-509: the line's cost is not known, so its value is not known yet. */
+  readonly valueNotKnown?: boolean;
 }
 
 /** OB-204 — head office's word on a return's dispatch (`returnDispatches` on the GRN list), shown as-is. */
@@ -168,6 +195,8 @@ export type CopyKey =
   | 'dispatchBtn' | 'dispatchReasonLabel' | 'dispatchReasonPlaceholder' | 'dispatchDone' | 'dispatchDoneNoEwb' | 'dispatchAlready'
   | 'dispatchEwbRequired' | 'dispatchRefused' | 'dispatchLostLink' | 'dispatchNoLink' | 'dispatchNotPermitted' | 'dispatchLineUnknown'
   | 'dispatchNotNeeded' | 'dispatchReasonMissing' | 'returnNeedsDispatch' | 'returnWaitsForDispatch'
+  | 'dkCostDifference' | 'dkAsnDifference' | 'ownerLabel' | 'ownerBuyer' | 'ownerStoreManager' | 'ownerNoPo' | 'ownerOrderNotHeld' | 'ownerNoStoreManager' | 'ownerNotDecided'
+  | 'valueNotKnown' | 'valueIncomplete' | 'costNotKnownHeading' | 'costNotKnownNoOrder' | 'costNotKnownNotOnOrder'
   | 'scrReady' | 'scrEmpty' | 'scrNoReceipts' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -189,6 +218,15 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     dkNearExpiry: 'Close to its expiry date', dkMrpMismatch: 'Printed price differs from the master',
     dkTemperatureBreach: 'Cold chain broken (temperature)',
     dkTemperatureNotRecorded: 'Chilled or frozen — no temperature recorded (held for a check)',
+    dkCostDifference: 'Cost typed at the door differs from the order (booked at the order’s cost)',
+    dkAsnDifference: 'Differs from the supplier’s delivery note (ASN)',
+    ownerLabel: 'Owner', ownerBuyer: 'the buyer who raised the order', ownerStoreManager: 'the store manager',
+    ownerNoPo: 'No purchase order — no buyer named', ownerOrderNotHeld: 'The order is not on file — no buyer named',
+    ownerNoStoreManager: 'No store manager named', ownerNotDecided: 'Owner not decided yet',
+    valueNotKnown: 'Value not known — waiting for the supplier bill',
+    valueIncomplete: 'Some differences have no value yet (cost not known)',
+    costNotKnownHeading: 'Cost not known until the supplier bill is matched',
+    costNotKnownNoOrder: 'no purchase order', costNotKnownNotOnOrder: 'not on the order',
     returnsHeading: 'Going back to the supplier', returnAwaiting: 'Waiting to go back to the supplier', returnGone: 'Gone back to the supplier',
     returnNeedsCount: 'Count it first — handheld scans may have put it on the shelf', returnChoiceLabel: 'Which held line went back',
     returnReasonLabel: 'How it went back', returnReasonPlaceholder: 'e.g. the supplier’s driver collected it, van KA-01', returnBtn: 'Record it as gone back',
@@ -244,6 +282,15 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     dkNearExpiry: 'காலாவதி தேதி நெருங்கியது', dkMrpMismatch: 'அச்சிட்ட விலை மாஸ்டரிலிருந்து வேறுபடுகிறது',
     dkTemperatureBreach: 'குளிர்ச்சி சங்கிலி உடைந்தது (வெப்பநிலை)',
     dkTemperatureNotRecorded: 'குளிர்/உறைந்த பொருள் — வெப்பநிலை பதிவு செய்யப்படவில்லை (சரிபார்ப்புக்கு நிறுத்தப்பட்டது)',
+    dkCostDifference: 'வாசலில் உள்ளிட்ட விலை ஆர்டரிலிருந்து வேறுபடுகிறது (ஆர்டர் விலையில் பதிவானது)',
+    dkAsnDifference: 'சப்ளையரின் டெலிவரி அறிவிப்பிலிருந்து (ASN) வேறுபடுகிறது',
+    ownerLabel: 'பொறுப்பாளர்', ownerBuyer: 'ஆர்டர் செய்த வாங்குநர்', ownerStoreManager: 'கடை மேலாளர்',
+    ownerNoPo: 'கொள்முதல் ஆர்டர் இல்லை — வாங்குநர் பெயர் இல்லை', ownerOrderNotHeld: 'ஆர்டர் பதிவில் இல்லை — வாங்குநர் பெயர் இல்லை',
+    ownerNoStoreManager: 'கடை மேலாளர் பெயரிடப்படவில்லை', ownerNotDecided: 'பொறுப்பாளர் இன்னும் முடிவாகவில்லை',
+    valueNotKnown: 'மதிப்பு தெரியவில்லை — சப்ளையர் பில்லுக்காகக் காத்திருக்கிறது',
+    valueIncomplete: 'சில வேறுபாடுகளுக்கு இன்னும் மதிப்பு இல்லை (விலை தெரியவில்லை)',
+    costNotKnownHeading: 'சப்ளையர் பில் பொருத்தப்படும் வரை விலை தெரியாது',
+    costNotKnownNoOrder: 'கொள்முதல் ஆர்டர் இல்லை', costNotKnownNotOnOrder: 'ஆர்டரில் இல்லை',
     returnsHeading: 'சப்ளையருக்குத் திரும்புபவை', returnAwaiting: 'சப்ளையருக்குத் திரும்பக் காத்திருக்கிறது', returnGone: 'சப்ளையருக்குத் திரும்பியது',
     returnNeedsCount: 'முதலில் எண்ணுங்கள் — கைக்கருவி ஸ்கேன்கள் அதை அடுக்கில் வைத்திருக்கலாம்', returnChoiceLabel: 'எந்தத் தடுத்த வரி திரும்பியது',
     returnReasonLabel: 'எப்படித் திரும்பியது', returnReasonPlaceholder: 'எ.கா. சப்ளையரின் ஓட்டுநர் எடுத்துச் சென்றார், வண்டி KA-01', returnBtn: 'திரும்பியதாகப் பதிவு செய்',
@@ -288,13 +335,31 @@ export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(GOODS_REC
 
 // ── the presented shapes the view renders ────────────────────────────────────────────────────────────────
 
-const DISCREPANCY_COPY: Readonly<Record<DiscrepancyKind, CopyKey>> = Object.freeze({
+const DISCREPANCY_COPY: Readonly<Record<GrnDifferenceKind, CopyKey>> = Object.freeze({
   short: 'dkShort', excess: 'dkExcess', damaged: 'dkDamaged', qc_failed: 'dkQcFailed',
   expired: 'dkExpired', near_expiry: 'dkNearExpiry', mrp_mismatch: 'dkMrpMismatch', temperature_breach: 'dkTemperatureBreach', temperature_not_recorded: 'dkTemperatureNotRecorded',
+  cost_difference: 'dkCostDifference', asn_difference: 'dkAsnDifference',
 });
 
+const OWNER_MISSING_COPY: Readonly<Record<NonNullable<GrnDiscrepancyOwnerView['missing']>, CopyKey>> = Object.freeze({
+  no_purchase_order: 'ownerNoPo', order_not_held: 'ownerOrderNotHeld', no_store_manager_named: 'ownerNoStoreManager', owner_not_decided: 'ownerNotDecided',
+});
+
+/** OB-508: the owner in words — the named people and their role, or head office's reason nobody is named. Never invented. */
+export function ownerWords(lang: Lang, owner: GrnDiscrepancyOwnerView | undefined): string | null {
+  if (owner === undefined) return null;
+  const t = translator(GOODS_RECEIPT_COPY, lang);
+  if (owner.owners.length === 0) return `${t('ownerLabel')}: ${t(owner.missing === undefined ? 'ownerNotDecided' : OWNER_MISSING_COPY[owner.missing])}`;
+  const role = owner.role === 'buyer' ? t('ownerBuyer') : owner.role === 'store_manager' ? t('ownerStoreManager') : '';
+  return `${t('ownerLabel')}: ${owner.owners.join(', ')}${role === '' ? '' : ` (${role})`}`;
+}
+
 export interface PresentedDiscrepancy {
-  readonly kind: DiscrepancyKind;
+  readonly kind: GrnDifferenceKind;
+  /** OB-508: the owner in words (or why nobody is named); null when head office did not say. */
+  readonly ownerLabel: string | null;
+  /** True when the line's cost is not known yet: the value is shown as "not known", never ₹0 (OB-509). */
+  readonly valueNotKnown: boolean;
   readonly label: string;
   readonly productId: string;
   readonly quantityMinor: number;
@@ -321,6 +386,10 @@ export interface PresentedReceipt {
   readonly discrepancies: readonly PresentedDiscrepancy[];
   /** Batch 2: the disposed-for-return lines, each with its state in words and its quantity in the line's unit. */
   readonly returnLines: readonly PresentedReturnLine[];
+  /** OB-509: the lines whose cost waits for the supplier's bill, in words. */
+  readonly costNotKnown: readonly { readonly productId: string; readonly label: string }[];
+  /** OB-509: some difference has no value yet — the total is said to be incomplete. */
+  readonly valueIncomplete: boolean;
 }
 
 export interface PresentedReturnLine extends GrnReturnLineView {
@@ -535,9 +604,10 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           .slice()
           .sort((x, y) => y.valueMinor - x.valueMinor)
           .map((d) => ({
-            kind: d.kind, label: t(DISCREPANCY_COPY[d.kind]),
+            kind: d.kind, label: t(DISCREPANCY_COPY[d.kind] ?? 'dkShort'),
             productId: d.productId, quantityMinor: d.quantityMinor, valueMinor: d.valueMinor, currency: d.currency,
             requiresApproval: d.requiresApproval, detail: d.detail,
+            ownerLabel: ownerWords(lang, d.owner), valueNotKnown: d.valueNotKnown === true,
           }));
         return {
           status, grnId: g.grnId, number: g.number, poId: g.poId, warehouseId: g.warehouseId,
@@ -546,6 +616,8 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,
           discrepancies,
           returnLines: (g.returnLines ?? []).map((l) => presentReturnLine(lang, g.grnId, l)),
+          costNotKnown: (g.costNotKnown ?? []).map((c) => ({ productId: c.productId, label: `${c.productId} — ${t('costNotKnownHeading')} (${t(c.because === 'no_issued_order' ? 'costNotKnownNoOrder' : 'costNotKnownNotOnOrder')})` })),
+          valueIncomplete: g.discrepancyValueIncomplete === true,
         };
       });
 

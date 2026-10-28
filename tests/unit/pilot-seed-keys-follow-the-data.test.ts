@@ -64,7 +64,7 @@ describe('the pilot seed\'s idempotency keys follow the data', () => {
 describe('a step under a fixed key whose dataset text changed after it landed', () => {
   const refusing = (code: string): SeedClient => ({
     async request(req) {
-      const aboutTheReceipt = req.path.includes('grn-demo-001') || JSON.stringify(req.body ?? '').includes('grn-demo-001');
+      const aboutTheReceipt = req.path.includes('opening-demo-001') || JSON.stringify(req.body ?? '').includes('opening-demo-001');
       if (aboutTheReceipt) return { status: 409, body: { error: { code, whatHappened: 'refused' } } };
       return { status: 201, body: {} };
     },
@@ -75,7 +75,7 @@ describe('a step under a fixed key whose dataset text changed after it landed', 
 
   it('is reported as landed earlier and left as it is — history is never re-done, and the seed stays re-runnable', async () => {
     const report = await applyPilotTradingPartners(refusing('idempotency_key_reused'), PILOT_TRADING_PARTNERS, 'pilot-owner');
-    const receipt = report.steps.find((s) => s.what.includes('grn-demo-001'))!;
+    const receipt = report.steps.find((s) => s.what.includes('opening-demo-001'))!;
     expect(receipt.ok).toBe(true);
     expect(receipt.status).toBe(409);
     expect(receipt.detail).toContain('landed earlier');
@@ -84,7 +84,7 @@ describe('a step under a fixed key whose dataset text changed after it landed', 
 
   it('any other refusal of the same step stays a failure', async () => {
     const report = await applyPilotTradingPartners(refusing('receipt_already_posted_differently'), PILOT_TRADING_PARTNERS, 'pilot-owner');
-    const receipt = report.steps.find((s) => s.what.includes('grn-demo-001'))!;
+    const receipt = report.steps.find((s) => s.what.includes('opening-demo-001'))!;
     expect(receipt.ok).toBe(false);
     expect(report.ok).toBe(false);
   });

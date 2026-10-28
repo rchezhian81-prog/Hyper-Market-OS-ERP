@@ -80,6 +80,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Approv
       expect(await cell('owner', 'refund')).toBe('∞ Unlimited');
       expect(await cell('store_manager', 'stock_adjustment')).toBe('✓ ₹2,000.00');
       expect(await cell('accountant', 'refund')).toBe('○ Not set');
+      // OB-500 (R7-A): a price cut at the till — unlimited for the owner; OB-519 (R8-A): ₹100 a line for a store manager.
+      expect(await s.page.locator('#limits-head th').allInnerTexts()).toContain('Price cut at the till');
+      expect(await cell('owner', 'price_override')).toBe('∞ Unlimited');
+      expect(await cell('store_manager', 'price_override')).toBe('✓ ₹100.00');
       expect(await s.page.textContent('#limits-meta')).toMatch(/Version 0 · The owner's figures of 23 Oct 2026/);
       // No reason → refused on the screen, nothing sent.
       await s.page.fill('#limit-store_manager-stock_adjustment', '3000');
@@ -87,6 +91,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Approv
       await s.page.click('#limits-ask');
       expect(await s.page.textContent('#limits-status')).toBe('Say, in writing, why.');
       expect(s.writes.length).toBe(before);
+      await s.page.fill('#limit-store_manager-price_override', '150');
       await s.page.fill('#limits-reason', 'more write-offs at Diwali');
       await s.page.click('#limits-ask');
       await waitStatus(s.page, 'limits-status', /Asked\./);
@@ -94,9 +99,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Approv
       await ownerApproves();
       await applyApproved(s.page);
       expect(await cell('store_manager', 'stock_adjustment')).toBe('✓ ₹3,000.00');
+      expect(await cell('store_manager', 'price_override')).toBe('✓ ₹150.00');
       expect(await s.page.textContent('#limits-meta')).toMatch(/Version 1 · Changed by u-acc/);
       await s.page.click('#lang');
       expect(await s.page.textContent('#limits-h')).toBe('பண வரம்புகள்');
+      expect(await s.page.locator('#limits-head th').allInnerTexts()).toContain('கல்லாவில் விலைக் குறைப்பு');
       expect(await cell('accountant', 'refund')).toBe('○ அமைக்கப்படவில்லை');
       expect(await cell('owner', 'refund')).toBe('∞ வரம்பு இல்லை');
       expect(s.errors).toEqual([]);

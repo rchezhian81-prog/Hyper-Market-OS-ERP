@@ -57,7 +57,7 @@ function sampleSession() {
         status: { tone: 'ok', icon: '✓', label: l === 'ta' ? 'ஆர்டர் செய்தபடி பெறப்பட்டது' : 'Received as ordered', announcement: 'received clean', needsAttention: false },
         grnId: 'sample', number: 'GRN-SAMPLE', poId: 'PO-1', warehouseId: 'W1', receivedBy: '—', receivedAt: '',
         needsApproval: false, discrepancyValueMinor: 0, currency: 'INR',
-        sellableMinor: 100_00, quarantinedMinor: 0, rejectedMinor: 0, discrepancies: [], returnLines: [],
+        sellableMinor: 100_00, quarantinedMinor: 0, rejectedMinor: 0, discrepancies: [], returnLines: [], costNotKnown: [], valueIncomplete: false,
       }],
       count: 1, needingApprovalCount: 0, nobodyNamed: false, canRecordReturn: false, awaitingReturn: [],
     }),
@@ -146,6 +146,12 @@ function receiptNode(r) {
   fact(`${t('sellableLabel')}: ${qty(r.sellableMinor)} ${t('unitsWord')}`);
   if (r.quarantinedMinor > 0) fact(`${t('quarantinedLabel')}: ${qty(r.quarantinedMinor)} ${t('unitsWord')}`);
   if (r.rejectedMinor > 0) fact(`${t('rejectedLabel')}: ${qty(r.rejectedMinor)} ${t('unitsWord')}`);
+  // OB-509: a line booked with its cost NOT KNOWN says so until its supplier bill is matched — never a ₹0 figure.
+  for (const c of r.costNotKnown ?? []) {
+    const s = document.createElement('span'); s.className = 'cost-not-known'; s.dataset.productId = c.productId;
+    worded(s, 'circle-alert', c.label); facts.append(s);
+  }
+  if (r.valueIncomplete) { const s = document.createElement('span'); s.className = 'value-incomplete'; s.textContent = t('valueIncomplete'); facts.append(s); }
   li.append(facts);
 
   // The valued difference, right-aligned in tabular figures; a delivery with none says so in words.
@@ -168,9 +174,14 @@ function receiptNode(r) {
       const item = document.createElement('li');
       item.className = 'diff';
       const word = document.createElement('span'); word.className = 'd-word'; word.textContent = d.label;
-      const val = document.createElement('span'); val.className = 'd-val'; val.textContent = money(d.valueMinor, d.currency);
+      const val = document.createElement('span'); val.className = 'd-val';
+      // OB-509: a difference on a line whose cost is not known has no value yet — said in words, never ₹0.
+      val.textContent = d.valueNotKnown ? t('valueNotKnown') : money(d.valueMinor, d.currency);
+      item.dataset.kind = d.kind;
       item.append(word, val);
       if (d.detail) { const det = document.createElement('span'); det.className = 'd-detail'; det.textContent = d.detail; item.append(det); }
+      // OB-508: whose it is — the named buyer or store manager, or head office's reason nobody is named.
+      if (d.ownerLabel) { const own = document.createElement('span'); own.className = 'd-owner'; worded(own, 'user-round', d.ownerLabel); item.append(own); }
       diffs.append(item);
     }
     li.append(diffs);
@@ -184,7 +195,7 @@ function receiptNode(r) {
       item.dataset.lineId = l.lineId;
       item.dataset.state = l.state;
       const word = document.createElement('span'); word.className = 'r-word'; word.textContent = l.stateLabel;
-      const what = document.createElement('span'); what.textContent = `${l.productId} × ${l.quantityLabel} · ${money(l.valueMinor, l.currency)}`;
+      const what = document.createElement('span'); what.textContent = `${l.productId} × ${l.quantityLabel} · ${l.valueNotKnown ? t('valueNotKnown') : money(l.valueMinor, l.currency)}`;
       const who = document.createElement('span'); who.className = 'd-detail';
       who.textContent = `${t('decidedByLabel')} ${l.decidedBy}` + (l.returnedBy ? ` · ${t('returnedByLabel')} ${l.returnedBy}` : '');
       item.append(word, what, who);

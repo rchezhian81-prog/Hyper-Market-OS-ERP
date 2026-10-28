@@ -90,6 +90,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Data quality — the A08 steward inbox (missing barcodes, duplicate records, missing prices). Gated on the
   // SAME permission the worklist route checks (`ai.proposal.read`), so the menu never offers a screen the
   // server would refuse (A08 · API-13).
+  // Round 7 · OB-505 (roadmap addendum B3): shelf tags printed from the office — the till's price from the signed pack, the
+  // MRP, the price per kg / litre / piece and Rule 9 character heights, English and Tamil. Gated on the pack read the page
+  // makes (`catalogue.pack.read`). A head-office page, served by the store computer (OB-380).
+  { id: 'shelf-tags', label: 'Shelf tags', labelTa: 'அலமாரி விலைச் சீட்டுகள்', path: '/shelf-tags', requires: 'catalogue.pack.read', group: 'Products' },
   { id: 'data-quality', label: 'Data quality', labelTa: 'தரவுத் தரம்', path: '/data-quality', requires: 'ai.proposal.read', group: 'Products' },
 
   // Buying — the buyer's one screen: supplier invoices, matching against the order, raising an order (M06).
@@ -220,6 +224,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // assigning a shift needs `workforce.roster.manage`, which the route enforces.
   { id: 'rostering', label: 'Rota', labelTa: 'பணி முறை', path: '/rostering/', requires: 'workforce.roster.read', group: 'People' },
   // Checklists — the day's opening, closing and hygiene checks (M25-FR-02). Gated on `workforce.checklist.read`.
+  // Round 8 · OB-522 (M25-FR-03 · OB-502): staff certificates — record, verify and renew each person's certificates (food
+  // handling; FoSTaC counts as the same). Gated on the certificate read (`workforce.roster.read`); recording and verifying need
+  // `workforce.roster.manage`, which head office's route enforces. A head-office page, served by the store computer (OB-380).
+  { id: 'certificates', label: 'Staff certificates', labelTa: 'பணியாளர் சான்றிதழ்கள்', path: '/certificates', requires: 'workforce.roster.read', group: 'People' },
   { id: 'checklist', label: 'Checklists', labelTa: 'சரிபார்ப்புப் பட்டியல்கள்', path: '/checklist/', requires: 'workforce.checklist.read', group: 'People' },
   { id: 'users', label: 'Users & roles', labelTa: 'பயனர்களும் பங்குகளும்', path: '/admin/?tab=people', requires: 'identity.role.read', group: 'Administration' },
   // Round 10 (M01-FR-01 · M02-FR-03): the organisation hierarchy and approval delegation — thin clients over head office's
@@ -329,6 +337,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // M22-FR-01/02/04: the B2B selling desk — contracts, quotation → order → proforma → challan → tax invoice, credit and money
   // owed — a head-office page behind the shop's `b2b` switch (OB-280: business bills stay on the old system for real
   // trading). Gated on the read its routes check (`b2b.document.read`).
+  // Round 7 · OB-506 (M12-FR-02): retail quotations — make, list, follow up and void; the cashier rings one up at the till by
+  // its number. Gated on the list read (`pos.quotation.read`); making and voiding need `pos.quotation.write`. A head-office
+  // page, served by the store computer (OB-380).
+  { id: 'quotations', label: 'Quotations', labelTa: 'விலைப்புள்ளிகள்', path: '/quotations', requires: 'pos.quotation.read', group: 'Sales' },
   { id: 'b2b', label: 'Business customers', labelTa: 'வணிக வாடிக்கையாளர்கள்', path: '/b2b', requires: 'b2b.document.read', group: 'Sales' },
   // ── OB-288 commercial desks — end
   // Store credit and vouchers — liability, velocity, double spends (M17). Gated on the SAME permission its three

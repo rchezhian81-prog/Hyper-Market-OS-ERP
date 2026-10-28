@@ -16,6 +16,10 @@
 // not hold, the product not on the order, or a different currency — each is named and counted separately from the lines
 // that agree.
 //
+// OB-517 (owner, 28 Oct 2026): the cost "as received" is the price on the SUPPLIER'S BILL matched to the goods — what the
+// shop is actually charged — never the figure typed at the door. A receipt line with no matched bill yet shows "not yet
+// billed" (`not_yet_billed`): counted, never compared at a guessed cost.
+//
 // Two roll-ups — per product and per receipt — sum ONLY the compared lines, and every figure keeps the receipt lines behind
 // it (the drill-through). Pure and deterministic.
 
@@ -28,7 +32,10 @@ export interface PpvReceiptLine {
   /** Received and kept, in the unit's smallest steps (sellable + quarantined + held excess; refused excluded). */
   readonly keptMinor: number;
   readonly uom: string;
-  readonly unitCost: CostBasis & { readonly currency: CurrencyCode };
+  /** OB-517: the price on the matched supplier bill — absent while no bill has been matched to these goods. */
+  readonly unitCost?: CostBasis & { readonly currency: CurrencyCode };
+  /** OB-517: the matched bill the cost came from. */
+  readonly invoiceId?: string;
 }
 
 export interface PpvReceipt {
@@ -60,7 +67,7 @@ export interface PpvAgreement {
   readonly lines: readonly { readonly productId: string; readonly agreedUnitCost: CostBasis }[];
 }
 
-export type NotCompared = 'no_purchase_order' | 'order_not_held' | 'product_not_on_order' | 'currency_differs';
+export type NotCompared = 'no_purchase_order' | 'order_not_held' | 'product_not_on_order' | 'currency_differs' | 'not_yet_billed';
 
 export interface PpvLine {
   readonly grnId: string;
@@ -74,9 +81,11 @@ export interface PpvLine {
   readonly keptMinor: number;
   readonly uom: string;
   readonly currency: CurrencyCode;
-  /** The cost per unit as it was received (and per how many units, OB-46). */
-  readonly receivedUnitCost: CostBasis;
-  readonly receivedValueMinor: number;
+  /** OB-517: the cost per unit on the matched supplier bill (and per how many units, OB-46); null — not yet billed. */
+  readonly receivedUnitCost: CostBasis | null;
+  readonly receivedValueMinor: number | null;
+  /** OB-517: the supplier bill the received cost is from; null — not yet billed. */
+  readonly invoiceId: string | null;
   /** Against the order: absent when the line could not be compared (`notCompared` says why). */
   readonly order?: { readonly unitCost: CostBasis; readonly valueMinor: number; readonly varianceMinor: number; readonly varianceBps: number | null; readonly basis: 'purchase_order' | 'blanket_release' };
   readonly notCompared?: NotCompared;
@@ -129,14 +138,24 @@ export function priceVariance(input: {
     const order = r.poId === null ? undefined : input.orders.get(r.poId);
     const supplierId = order?.supplierId ?? r.supplierId;
     for (const l of r.lines) {
-      const currency = l.unitCost.currency;
-      const receivedValueMinor = valueAtCost(l.keptMinor, l.uom, l.unitCost);
+      const poLine = order?.lines.find((x) => x.productId === l.productId);
+      if (l.unitCost === undefined) {
+        // OB-517: no supplier bill matched to these goods yet — "not yet billed", counted and never compared at a guess.
+        lines.push({
+          grnId: r.grnId, receiptNumber: r.number, lineId: l.lineId, productId: l.productId, supplierId, poId: r.poId, poNumber: order?.number ?? null,
+          receivedOn: r.receivedOn, keptMinor: l.keptMinor, uom: l.uom, currency: poLine?.unitCost.currency ?? 'INR', receivedUnitCost: null, receivedValueMinor: null,
+          invoiceId: null, notCompared: 'not_yet_billed',
+        });
+        continue;
+      }
+      const unitCost = l.unitCost;
+      const currency = unitCost.currency;
+      const receivedValueMinor = valueAtCost(l.keptMinor, l.uom, unitCost);
       const base = {
         grnId: r.grnId, receiptNumber: r.number, lineId: l.lineId, productId: l.productId, supplierId, poId: r.poId, poNumber: order?.number ?? null,
-        receivedOn: r.receivedOn, keptMinor: l.keptMinor, uom: l.uom, currency, receivedUnitCost: basisOf(l.unitCost), receivedValueMinor,
+        receivedOn: r.receivedOn, keptMinor: l.keptMinor, uom: l.uom, currency, receivedUnitCost: basisOf(unitCost), receivedValueMinor, invoiceId: l.invoiceId ?? null,
       };
       let compared: Pick<PpvLine, 'order' | 'notCompared'>;
-      const poLine = order?.lines.find((x) => x.productId === l.productId);
       if (r.poId === null) compared = { notCompared: 'no_purchase_order' };
       else if (order === undefined) compared = { notCompared: 'order_not_held' };
       else if (poLine === undefined) compared = { notCompared: 'product_not_on_order' };
@@ -157,7 +176,7 @@ export function priceVariance(input: {
   const roll = (key: string, of: readonly PpvLine[]): PpvRollup => {
     const cmp = of.filter((l) => l.order !== undefined);
     const orderValueMinor = cmp.reduce((s, l) => s + l.order!.valueMinor, 0);
-    const receivedValueMinor = cmp.reduce((s, l) => s + l.receivedValueMinor, 0);
+    const receivedValueMinor = cmp.reduce((s, l) => s + (l.receivedValueMinor ?? 0), 0);
     const varianceMinor = receivedValueMinor - orderValueMinor;
     const withContract = of.filter((l) => l.contract !== undefined);
     return {
@@ -172,7 +191,7 @@ export function priceVariance(input: {
     // Worst first: the largest overpayment against the order leads; ties by key.
     return [...by].map(([k, ls]) => roll(k, ls)).sort((a, b) => b.varianceMinor - a.varianceMinor || a.key.localeCompare(b.key));
   };
-  const notCompared: Record<NotCompared, number> = { no_purchase_order: 0, order_not_held: 0, product_not_on_order: 0, currency_differs: 0 };
+  const notCompared: Record<NotCompared, number> = { no_purchase_order: 0, order_not_held: 0, product_not_on_order: 0, currency_differs: 0, not_yet_billed: 0 };
   for (const l of lines) if (l.notCompared !== undefined) notCompared[l.notCompared] += 1;
   const all = roll('all', lines);
   const totals: Omit<PpvRollup, 'key'> = { lines: all.lines, comparedLines: all.comparedLines, receivedValueMinor: all.receivedValueMinor, orderValueMinor: all.orderValueMinor, varianceMinor: all.varianceMinor, varianceBps: all.varianceBps, linesAboveOrder: all.linesAboveOrder, linesBelowOrder: all.linesBelowOrder, contractLines: all.contractLines, contractVarianceMinor: all.contractVarianceMinor };

@@ -15,9 +15,10 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  * **A01 says WHY the takings fell — "likely because…", with evidence and a confidence, and commits nothing (roadmap §7
  * "causal hypotheses" · A01 · AI-NFR-04 · hard rule 5).**
  *
- * Through the real API (in memory and, with DATABASE_URL, on real PostgreSQL with a cold restart): yesterday the shop took
- * ₹1,200 (milk ₹1,000 in Dairy, rice ₹200 in Grocery) and sold the milk out; today it took ₹300 (rice only). A01's run:
- *   • still states what changed (down ₹900);
+ * Through the real API (in memory and, with DATABASE_URL, on real PostgreSQL with a cold restart): on the same weekday last
+ * week the shop took ₹1,200 (milk ₹1,000 in Dairy, rice ₹200 in Grocery) and sold the milk out; yesterday it took ₹5,000
+ * (a busier day that must NOT be the comparison — OB-516); today it took ₹300 (rice only). A01's run:
+ *   • states what changed against the same weekday last week (down ₹900), never against yesterday;
  *   • adds "likely because Dairy took ₹1,000 less" and "likely in part because P-MILK … is out of stock there", each with
  *     its governed evidence and a confidence that is never "high", proposing nothing to do;
  *   • spends nothing, calls no model, and writes nothing but its own run record — no price, stock or order changed;
@@ -50,6 +51,7 @@ describe.each(backings)('A01 says the likely cause of a takings drop, on $name',
     const now = new Date();
     const today = shopDateIn(now.toISOString(), 'UTC');
     const yesterday = shopDateIn(new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString(), 'UTC');
+    const lastWeek = shopDateIn(new Date(Date.parse(`${today}T00:00:00Z`) - 7 * 86_400_000).toISOString(), 'UTC'); // OB-516
     await h.seedOwner(T, OWNER);
     await h.provisionRole(T, TILL, 'cashier');
     expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' })).status).toBe(200);
@@ -58,7 +60,7 @@ describe.each(backings)('A01 says the likely cause of a takings drop, on $name',
     for (const [id, cat] of [['P-MILK', 'dairy'], ['P-RICE', 'grocery']] as const) {
       await ok(owner('POST', `/v1/catalogue/products/${id}/publish`, { product: { sku: `SKU-${id}`, name: id, baseUom: 'ea', primaryCategoryId: cat, taxClass: '1006', lifecycle: 'active', handling: 'ambient' }, categories: [{ categoryId: cat, name: cat, parentId: null }] }), `publish ${id}`);
     }
-    await ok(owner('POST', '/v1/inventory/movements', { movementId: 'mv-milk', productId: 'P-MILK', locationId: 'S1', kind: 'received', quantityMinor: 2, uom: 'ea', occurredAt: `${yesterday}T03:00:00.000Z`, enteredBy: OWNER, unitCostMinor: 8_000 }), 'receive milk');
+    await ok(owner('POST', '/v1/inventory/movements', { movementId: 'mv-milk', productId: 'P-MILK', locationId: 'S1', kind: 'received', quantityMinor: 2, uom: 'ea', occurredAt: `${lastWeek}T03:00:00.000Z`, enteredBy: OWNER, unitCostMinor: 8_000 }), 'receive milk');
     const sale = (saleId: string, day: string, at: string, lines: { productId: string; qty: number; unit: number }[]) => {
       const total = lines.reduce((t, l) => t + l.qty * l.unit, 0);
       return ok(h.request({ method: 'POST', path: '/v1/sales', userId: TILL, tenantId: T, idempotencyKey: `sale-${saleId}`, body: {
@@ -66,7 +68,9 @@ describe.each(backings)('A01 says the likely cause of a takings drop, on $name',
         lines: lines.map((l) => ({ productId: l.productId, quantityMinor: l.qty, uom: 'ea', unitPriceMinor: l.unit, lineTotalMinor: l.qty * l.unit })), tenders: [{ kind: 'cash', amountMinor: total }],
       } }), `sale ${saleId}`);
     };
-    await sale('Y-1', yesterday, `${yesterday}T10:00:00.000Z`, [{ productId: 'P-MILK', qty: 10, unit: 10_000 }, { productId: 'P-RICE', qty: 4, unit: 5_000 }]);
+    await sale('W-1', lastWeek, `${lastWeek}T10:00:00.000Z`, [{ productId: 'P-MILK', qty: 10, unit: 10_000 }, { productId: 'P-RICE', qty: 4, unit: 5_000 }]);
+    // Yesterday: a busier day in another department (no milk) — the old "against yesterday" comparison would read this.
+    await sale('Y-1', yesterday, `${yesterday}T10:00:00.000Z`, [{ productId: 'P-RICE', qty: 100, unit: 5_000 }]);
     await sale('T-1', today, new Date(now.getTime() - 1_000).toISOString(), [{ productId: 'P-RICE', qty: 6, unit: 5_000 }]);
     await ok(owner('PUT', '/v1/ai/kill-switch', { on: false }), 'kill switch off');
     await ok(owner('PUT', '/v1/ai/agents/enabled', { agents: ['A01'] }), 'A01 on');
@@ -80,9 +84,9 @@ describe.each(backings)('A01 says the likely cause of a takings drop, on $name',
     const body = res.body as { proposals: Proposal[]; costMinor: number; calledAModel: boolean; committedAnything: false };
     expect(body).toMatchObject({ costMinor: 0, calledAModel: false, committedAnything: false });
     const byId = new Map(body.proposals.map((p) => [p.proposalId, p]));
-    expect(byId.get(`a01-takings-${today}`)?.summary).toMatch(/Taken so far today: ₹300\.00 against ₹1,200\.00 .* \(down ₹900\.00\)/);
+    expect(byId.get(`a01-takings-${today}`)?.summary).toMatch(new RegExp(`Taken so far today: ₹300\\.00 against ₹1,200\\.00 on ${lastWeek}, the same weekday last week \\(down ₹900\\.00\\)`));
     const dept = byId.get(`a01-cause-department-${today}`);
-    expect(dept?.summary).toBe(`Takings are down ₹900.00 on ${yesterday} — likely because dairy took ₹1,000.00 less (₹1,000.00 on ${yesterday}, ₹0.00 today), 100% of the drop`);
+    expect(dept?.summary).toBe(`Takings are down ₹900.00 on ${lastWeek} (the same weekday last week) — likely because dairy took ₹1,000.00 less (₹1,000.00 on ${lastWeek}, ₹0.00 today), 100% of the drop`);
     expect(dept?.evidence.map((e) => e.source)).toEqual(expect.arrayContaining(['report sales_by_day', 'report units_by_category']));
     const out = byId.get(`a01-cause-stockout-P-MILK-S1-${today}`);
     expect(out?.summary).toMatch(/likely in part because P-MILK, one of .*'s top sellers at S1 \(₹1,000\.00\), is out of stock there \(on hand -8\) and took ₹0\.00 today/);

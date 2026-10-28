@@ -1440,12 +1440,36 @@ export interface StorePack {
    */
   readonly rollout?: Register<unknown>;
   /**
+   * OB-500 (R7-A) — the till's price-cut rules head office signed for this store: each product's floor price and each
+   * manager's price-cut limit (`packages/price-guard/src/till-override.ts` `readTillControls`). Absent → the box was not
+   * told, and it approves no price cut. Optional in the type only so an older pack still type-checks.
+   */
+  readonly tillControls?: Register<unknown>;
+  /**
    * OB-172 · D-6 — the receiving checklists head office has in force for this store, and which products are cold-chain by
    * its product master (`{ checks, coldChainProductIds }`, read by `readReceivingChecklistSetup`). The manager's screen and
    * the warehouse handheld offer the checklist from it with no network, and it travels inside the receipt. Absent → the
    * screens were not told: they cannot ask for it, and head office books such a delivery flagged `receiving_checklist_missing`.
    */
   readonly receivingChecklist?: Register<unknown>;
+  /**
+   * B4 · OB-504 — every product head office's category list makes PACKED (a `packed` department): the manager's Receive form
+   * and the warehouse handheld refuse a packed line with no month of manufacture, with no network. Absent → not told (head
+   * office still refuses such a line by name). Optional in the type only so an older pack still type-checks.
+   */
+  readonly packedProductIds?: Register<readonly unknown[]>;
+  /**
+   * Round 7 · OB-507 (M25-FR-01) — the store's COMMITTED roster as head office holds it: its people, its shifts from a week
+   * ago on, who is on each, and which shifts belong to a published week. Staff see their own shift from it with the line
+   * down (read by `workforce-pack.ts`). Absent → the box was not told, and says so. Optional so an older pack type-checks.
+   */
+  readonly roster?: Register<unknown>;
+  /**
+   * Round 7 · OB-502 (M25-FR-03) — the food-handling certificates of the store's people. The box refuses food-handling work
+   * (a production, bakery or counter-food run) in the name of someone whose certificate expired or is missing, offline.
+   * Absent → the box cannot show a certificate is valid, so it refuses that work and says why (fail closed).
+   */
+  readonly certifications?: Register<unknown>;
   /** Minimum versions this tenant enforces. **Absent means nothing is being enforced.** */
   readonly versionPolicy: Register<unknown>;
   /** Audit records in scope for a retention review, the shop's policies, and any legal holds. */
@@ -1617,7 +1641,11 @@ export function emptyPack(why: string = NEVER): StorePack {
     devices: notKnown(why),
     weighingScales: notKnown(why),
     rollout: notKnown(why),
+    tillControls: notKnown(why),
     receivingChecklist: notKnown(why),
+    packedProductIds: notKnown(why),
+    roster: notKnown(why),
+    certifications: notKnown(why),
     versionPolicy: notKnown(why),
     auditRecords: notKnown(why),
     retentionPolicies: notKnown(why),
@@ -1763,7 +1791,11 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     devices: section<readonly unknown[]>('devices'),
     weighingScales: section<readonly unknown[]>('weighingScales'),
     rollout: section<unknown>('rollout'),
+    tillControls: section<unknown>('tillControls'),
     receivingChecklist: section<unknown>('receivingChecklist'),
+    packedProductIds: section<readonly unknown[]>('packedProductIds'),
+    roster: section<unknown>('roster'),
+    certifications: section<unknown>('certifications'),
     versionPolicy: section<unknown>('versionPolicy'),
     auditRecords: section<readonly unknown[]>('auditRecords'),
     retentionPolicies: section<readonly unknown[]>('retentionPolicies'),

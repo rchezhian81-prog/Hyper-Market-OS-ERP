@@ -37,6 +37,12 @@ export interface ProductionQueueConfig {
   readonly now: () => string;
   /** A fresh id on this device; injected for tests. */
   readonly freshId?: (prefix: string) => string;
+  /**
+   * Round 7 · OB-502 (M25-FR-03): the store computer's judgement of the signed-in person's food-handling certificate (from
+   * the signed pack). When it is not valid, no run and no weigh is saved in their name — refused here in those words (the
+   * box's door and head office refuse it too). Absent → not judged on this screen.
+   */
+  readonly foodHandling?: { readonly allowed: boolean; readonly words?: { readonly en: string; readonly ta: string } } | null;
 }
 
 export interface WeighedCaptureInput {
@@ -53,7 +59,9 @@ export interface WeighedCaptureInput {
 
 export type WeighedOutcome =
   | { readonly outcome: 'saved'; readonly runId: string }
-  | { readonly outcome: 'nobody' | 'no_store' | 'missing' | 'bad_weight' | 'more_out_than_in' };
+  | { readonly outcome: 'nobody' | 'no_store' | 'missing' | 'bad_weight' | 'more_out_than_in' }
+  /** OB-502: the person's food-handling certificate expired or is missing — in the store computer's own words. */
+  | { readonly outcome: 'certificate'; readonly words: { readonly en: string; readonly ta: string } };
 
 /** One piece of production work this screen saved, and where it has got to (the five shared device states). */
 export interface SavedProductionWork {
@@ -95,6 +103,7 @@ export function createProductionQueue(config: ProductionQueueConfig, outbox: Syn
     runPort: () => ({
       post: async (input): Promise<TaskPostResult<{ runId: string }>> => {
         if (config.userId === null || config.storeId === null) return { result: 'refused', reason: 'this store computer has not said who is at the screen and which store it is' };
+        if (config.foodHandling !== undefined && config.foodHandling !== null && !config.foodHandling.allowed) return { result: 'refused', reason: config.foodHandling.words?.en ?? 'the food-handling certificate is not valid' };
         const key = productionRunKey(input.runId);
         // The same run id already saved here is the same run (§31.1): nothing is queued twice.
         if (outbox.find(key) === undefined) {
@@ -121,6 +130,9 @@ export function createProductionQueue(config: ProductionQueueConfig, outbox: Syn
     recordWeighed: (input) => {
       if (config.userId === null) return { outcome: 'nobody' };
       if (config.storeId === null) return { outcome: 'no_store' };
+      if (config.foodHandling !== undefined && config.foodHandling !== null && !config.foodHandling.allowed) {
+        return { outcome: 'certificate', words: config.foodHandling.words ?? { en: 'The food-handling certificate is not valid. Nothing was saved.', ta: 'உணவு கையாளும் சான்றிதழ் செல்லுபடியாகவில்லை. எதுவும் சேமிக்கப்படவில்லை.' } };
+      }
       const dept = input.departmentId.trim(); const inId = input.inputProductId.trim(); const outId = input.outputProductId.trim();
       if (dept === '' || inId === '' || outId === '') return { outcome: 'missing' };
       const inG = wholeGrams(input.inputGrams); const outG = wholeGrams(input.outputGrams);

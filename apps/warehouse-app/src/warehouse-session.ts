@@ -62,6 +62,10 @@ export const FEEDBACK_CODES = Object.freeze([
   // receiving (packages/receiving)
   'received', 'unknown_barcode', 'over_delivery_needs_approval', 'dsd_needs_approval',
   'price_change_refused', 'not_on_order',
+  // B4 · OB-504: a packed product scanned with no month and year of manufacture
+  'manufacture_date_required',
+  // OB-521 (R8-A): new work refused on a withdrawn or too-old build (the work in hand is finished)
+  'app_version_too_old',
   // put-away (packages/warehouse) + this session's own checks
   'moved', 'duplicate_ignored', 'wrong_sku', 'unknown_bin', 'bin_full',
   'insufficient_goods_in', 'insufficient_in_bin', 'not_pickable_state',
@@ -96,7 +100,12 @@ export interface FeedbackSignal {
   readonly vibrateMs: number;
   /** True when the item could not be identified/placed and a person must resolve it. */
   readonly resolutionRequired?: boolean;
+  /** OB-521: the detail in Tamil, where the session has its own Tamil words (the app-version refusal). */
+  readonly detailTa?: string;
 }
+
+/** OB-521: the signal code for new work refused on a withdrawn or too-old build (words in web/app.js). */
+export const APP_VERSION_TOO_OLD = 'app_version_too_old';
 
 function signalFor(feedback: ScanFeedback, code: string, detail: string, resolutionRequired = false): FeedbackSignal {
   const shape = feedback === 'accept'
@@ -127,6 +136,8 @@ export interface ReceiveInput {
    * head office then holds a cold-chain scan off the shelf for a second person's check (owner decision 9 Oct 2026).
    */
   readonly temperatureC?: number;
+  /** B4 · OB-504: the batch's month and year of manufacture (YYYY-MM) as printed on the pack — required for a packed product. */
+  readonly manufacturedOn?: string;
 }
 
 export interface ReceiveActionResult {
@@ -455,6 +466,11 @@ export interface WarehouseAssignment {
    * office books such a delivery flagged `receiving_checklist_missing`.
    */
   readonly receivingChecklist?: unknown;
+  /**
+   * B4 · OB-504: the products head office's category list makes PACKED (the store pack's `packedProductIds`) — a scan of one
+   * with no month and year of manufacture is refused here, offline. Absent = not told (head office still refuses it by name).
+   */
+  readonly packedProductIds?: readonly string[];
   /** OB-288 lane 2 · WF-07 offline: the transfers to send from / count in at this store (absent or null: never told). */
   readonly transfers?: HeldTransfers | null;
 }
@@ -496,6 +512,8 @@ export class WarehouseSession {
   private readonly at: () => string;
   /** OB-172: the receiving checklist setup the store computer served, read strictly (undefined = not told). */
   private readonly receivingSetup: ReceivingChecklistSetup | undefined;
+  /** OB-521: set while this build may not START new work (withdrawn or too old) — the words to refuse it with. */
+  private newWorkBar: { readonly en: string; readonly ta: string } | null = null;
 
   constructor(
     private readonly assignment: WarehouseAssignment,
@@ -517,6 +535,24 @@ export class WarehouseSession {
     for (const item of assignment.goodsIn ?? []) this.goods.set(gKey(item.productId, item.batchId), { ...item });
     for (const line of assignment.pickLines ?? []) this.picks.set(line.lineId, { line: { ...line, batchId: line.batchId ?? null }, pickedMinor: 0 });
     for (const line of assignment.indentLines ?? []) this.indents.set(`${line.indentId}|${line.productId}`, { line, issuedMinor: 0 });
+  }
+
+  /**
+   * OB-521: bar (or, with `null`, lift the bar on) STARTING new work on this build. What is refused is the START of a
+   * piece of work — receiving a delivery nothing of which was received here yet, a check-in at the door, a count (unless
+   * this handheld already counted for that plan), an adjustment request, a transfer step, a floor issue on an indent not
+   * yet issued from here, a pick for an order not yet picked from here. The work in hand is always finished: the rest of
+   * a delivery already being received and its "delivery complete", putting away what was received (stock must not be left
+   * at the door), and the rest of a plan, an indent or an order this handheld already started.
+   */
+  barNewWork(words: { readonly en: string; readonly ta: string } | null): void {
+    this.newWorkBar = words;
+  }
+
+  /** OB-521: the refusal signal, or undefined when new work may start (or this piece is already in hand). */
+  private newWorkRefusal(inHand: () => boolean): FeedbackSignal | undefined {
+    if (this.newWorkBar === null || inHand()) return undefined;
+    return { ...signalFor('reject', APP_VERSION_TOO_OLD, this.newWorkBar.en), detailTa: this.newWorkBar.ta };
   }
 
   /**
@@ -546,6 +582,8 @@ export class WarehouseSession {
     if (held === undefined) return refused('not_a_transfer_here', `transfer ${input.transferId} is not one this store sends, as the store computer last heard`);
     const key = transferDispatchKey(held.transferId);
     if (this.outbox.find(key) !== undefined) return refused('transfer_already_done', `transfer ${held.transferId} has already been sent from this handheld — sending again changes nothing`, 'warn');
+    const barred = this.newWorkRefusal(() => false); // OB-521
+    if (barred !== undefined) return { accepted: false, transferId: input.transferId, signal: barred };
     this.outbox.enqueue(makeEvent({
       id: key, type: TRANSFER_DISPATCH_RECORDED, occurredAt: input.at, idempotencyKey: key, source: this.assignment.assignmentId,
       payload: { transferId: held.transferId, storeId: this.assignment.transfers?.storeId ?? this.assignment.storeId, dispatchedBy: this.assignment.workerId, at: input.at, source: 'warehouse-handheld' },
@@ -564,6 +602,8 @@ export class WarehouseSession {
     if (held === undefined) return refused('not_a_transfer_here', `transfer ${input.transferId} is not one on its way to this store, as the store computer last heard`);
     const key = transferReceiptKey(held.transferId);
     if (this.outbox.find(key) !== undefined) return refused('transfer_already_done', `transfer ${held.transferId} has already been counted in on this handheld — counting again changes nothing`, 'warn');
+    const barred = this.newWorkRefusal(() => false); // OB-521
+    if (barred !== undefined) return { accepted: false, transferId: input.transferId, signal: barred };
     const lineKey = (productId: string, batchId: string | null): string => `${productId}|${batchId ?? ''}`;
     const counts = new Map<string, number>();
     for (const c of input.counted) {
@@ -685,6 +725,9 @@ export class WarehouseSession {
    * queues nothing and returns the reason as scan feedback. Duplicate-scan is a harmless no-op.
    */
   receive(input: ReceiveInput, approval?: ReceiveApproval): ReceiveActionResult {
+    // OB-521: the first scan of a delivery STARTS receiving it; the rest of a delivery already begun here is finished.
+    const barred = this.newWorkRefusal(() => this.receiptScansOf(input.grnId.trim()).length > 0);
+    if (barred !== undefined) return { result: { commandId: input.commandId, outcome: 'app_version_too_old', accepted: false, quantityMinor: 0, detail: barred.detail }, signal: barred };
     const declared = input.declaredUnitCostMinor === undefined ? undefined : money(input.declaredUnitCostMinor, this.currency);
     const command = {
       commandId: input.commandId,
@@ -699,6 +742,7 @@ export class WarehouseSession {
       scannedQuantity: input.scannedQuantity,
       ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
       ...(input.expiry === undefined ? {} : { expiry: input.expiry }),
+      ...(input.manufacturedOn === undefined ? {} : { manufacturedOn: input.manufacturedOn }),
       ...(declared === undefined ? {} : { declaredUnitCost: declared }),
     };
 
@@ -711,6 +755,8 @@ export class WarehouseSession {
       receivedSoFar: this.receivedSoFar,
       policy: this.policy,
       ...(approval === undefined ? {} : { approval }),
+      // B4 · OB-504: a packed product's scan needs its month and year of manufacture — refused here, offline, without it.
+      ...(Array.isArray(this.assignment.packedProductIds) ? { packagedProductIds: this.assignment.packedProductIds.filter((p): p is string => typeof p === 'string') } : {}),
     });
 
     if (!result.accepted) {
@@ -749,6 +795,7 @@ export class WarehouseSession {
         poId: input.poId ?? null, state, expiry: input.expiry ?? null, receivedBy: this.assignment.workerId,
         storeId: this.assignment.storeId, at: command.at,
         ...(input.temperatureC === undefined || !Number.isFinite(input.temperatureC) ? {} : { temperatureC: input.temperatureC }),
+        ...(input.manufacturedOn === undefined || input.manufacturedOn.trim() === '' ? {} : { manufacturedOn: input.manufacturedOn.trim() }),
       },
     }));
 
@@ -968,6 +1015,8 @@ export class WarehouseSession {
     if (this.appliedCommandIds.includes(input.countId) || this.outbox.find(`count-${input.countId}`) !== undefined) {
       return refused('duplicate_ignored', 'this count has already been recorded — a re-count is a new count', 'warn');
     }
+    const barred = this.newWorkRefusal(() => false); // OB-521: a bin count is new work
+    if (barred !== undefined) return { accepted: false, countId: input.countId, binId, signal: barred };
     if (!this.knowsBin(binId)) return refused('unknown_bin', `${binId} is not a bin in this store — set it aside for someone to sort out`, 'reject', true);
     const productId = this.productOfScan(input.scannedItem);
     if (productId === null) return refused('unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, 'reject', true);
@@ -1008,6 +1057,9 @@ export class WarehouseSession {
       return refused('duplicate_ignored', 'this count has already been recorded — a recount is a new count', 'warn');
     }
     if (planId === '') return refused('no_plan', 'scan the count sheet first — a planned count belongs to its plan', 'reject', true);
+    // OB-521: the first count for a plan STARTS it; the rest of a plan this handheld already counted for is finished.
+    const barred = this.newWorkRefusal(() => this.outbox.all().some((i) => (i.event.payload as { planId?: unknown } | null)?.planId === planId));
+    if (barred !== undefined) return { accepted: false, countId: input.countId, planId, signal: barred };
     const productId = this.productOfScan(input.scannedItem);
     if (productId === null) return refused('unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, 'reject', true);
     if (!Number.isSafeInteger(input.countedMinor) || input.countedMinor < 0) return refused('not_a_quantity', `${String(input.countedMinor)} is not a whole quantity`);
@@ -1044,6 +1096,8 @@ export class WarehouseSession {
     if (this.appliedCommandIds.includes(input.requestId) || this.outbox.find(`adj-req:${input.requestId}`) !== undefined) {
       return refused('duplicate_ignored', 'this request has already been recorded — nothing changed', 'warn');
     }
+    const barred = this.newWorkRefusal(() => false); // OB-521: an adjustment request is new work
+    if (barred !== undefined) return { accepted: false, requestId: input.requestId, signal: barred };
     const productId = this.productOfScan(input.scannedItem);
     if (productId === null) return refused('unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, 'reject', true);
     if (!Number.isSafeInteger(input.deltaMinor) || input.deltaMinor === 0) return refused('not_a_quantity', `${String(input.deltaMinor)} is not a whole non-zero quantity`);
@@ -1136,6 +1190,9 @@ export class WarehouseSession {
     if (this.appliedCommandIds.includes(input.commandId) || this.outbox.find(`indent-issue:${input.indentId}:${input.commandId}`) !== undefined) {
       return refused('duplicate_ignored', 'this issue has already been recorded — scanning again changes nothing', 'warn');
     }
+    // OB-521: the first issue against an indent STARTS it; the rest of an indent already issued from here is finished.
+    const barred = this.newWorkRefusal(() => [...this.indents.values()].some((e) => e.line.indentId === input.indentId && e.issuedMinor > 0));
+    if (barred !== undefined) return { accepted: false, commandId: input.commandId, indentId: input.indentId, binId, signal: barred };
     const check = this.checkIssue({ indentId: input.indentId, productId: input.productId, scannedBinId: binId, scannedItem: input.scannedItem });
     if (!check.ok) return refused(check.signal.code, check.signal.detail, check.signal.feedback, check.signal.resolutionRequired ?? false);
     const { line, batchId, inBinMinor } = check;
@@ -1230,6 +1287,10 @@ export class WarehouseSession {
     if (this.appliedCommandIds.includes(input.commandId)) {
       return refused('duplicate_ignored', 'duplicate_ignored', 'this movement has already been recorded — scanning again changes nothing', 'warn');
     }
+    // OB-521: the first pick for an order STARTS it; the rest of an order already picked from here is finished.
+    const orderRef = this.picks.get(input.lineId)?.line.orderRef;
+    const barred = this.newWorkRefusal(() => [...this.picks.values()].some((e) => e.line.orderRef === orderRef && e.pickedMinor > 0));
+    if (barred !== undefined) return { result: { commandId: input.commandId, outcome: 'invalid_command', accepted: false, detail: barred.detail, movements: [] }, signal: barred };
     const check = this.checkPick({ lineId: input.lineId, scannedBinId: input.scannedBinId, scannedItem: input.scannedItem });
     if (!check.ok) {
       // A pick-list refusal is not a stock-engine outcome; the movement shape says "invalid" and the signal says why.

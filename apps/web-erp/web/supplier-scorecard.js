@@ -97,7 +97,7 @@ function lineRows(table, lines) {
     tr.dataset.grn = l.grnId; tr.dataset.product = l.productId;
     const order = l.order === undefined ? `${t('ppvNotCompared')} ${t(`nc_${l.notCompared}`)}` : api.costWords(l.order.unitCost) + (l.order.basis === 'blanket_release' ? ` (${t('ppvBlanket')})` : '');
     tr.append(
-      cell(`${l.receiptNumber} · ${l.receivedOn}`), cell(l.productId), cell(l.poNumber ?? '—'), cell(`${l.keptMinor} ${l.uom}`, 'num'), cell(api.costWords(l.receivedUnitCost), 'num'),
+      cell(`${l.receiptNumber} · ${l.receivedOn}`), cell(l.productId), cell(l.poNumber ?? '—'), cell(`${l.keptMinor} ${l.uom}`, 'num'), cell(api.receivedCostWords ? api.receivedCostWords(lang, l) : (l.receivedUnitCost === null ? t('ppvNotYetBilled') : api.costWords(l.receivedUnitCost)), l.receivedUnitCost === null ? 'num not-billed' : 'num'),
       cell(order, 'num'), cell(l.order === undefined ? '—' : api.signedRupees(l.order.varianceMinor), l.order !== undefined && l.order.varianceMinor > 0 ? 'num over' : 'num'),
       cell(l.contract === undefined ? t('ppvNoContract') : `${api.costWords(l.contract.unitCost)} (${l.contract.agreementId})`, 'num'),
       cell(l.contract === undefined ? '—' : api.signedRupees(l.contract.varianceMinor), l.contract !== undefined && l.contract.varianceMinor > 0 ? 'num over' : 'num'),

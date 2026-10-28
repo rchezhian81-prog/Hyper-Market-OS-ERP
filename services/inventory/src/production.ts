@@ -54,7 +54,7 @@ import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, Labe
 import {
   requireDepartment, operatedDepartments, DEPARTMENT_CATALOGUE,
   DepartmentNotOperatedError, UnknownDepartmentError,
-  requiredFeatureFor, planAllowsDepartment,
+  requiredFeatureFor, planAllowsDepartment, handlesFood,
 } from '../../../packages/production/src/departments';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
@@ -62,6 +62,7 @@ import { valueAtUnitCost, minorPerUnitOf } from '../../../packages/contracts/src
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import type { FoodHandlingTask, FoodHandlingVerdict } from '../../../packages/workforce/src/food-handling';
 
 /** A committed production run, recorded as the evidence a later report reads. */
 export interface StoredRun {
@@ -279,7 +280,23 @@ export interface ProductionDeps {
   readonly recordDepartmentEnabled: (tenantId: string, departmentId: string) => Promise<void> | void;
   /** The paid-plan features this tenant has enabled (M36-FR-01) — gates the specialised departments. */
   readonly entitledFeatures: (tenantId: string) => Promise<readonly string[]> | readonly string[];
+  /**
+   * OB-502 · M25-FR-03: may food-handling work be recorded in this person's name at this moment? Their staff record and
+   * their food-handling certificate on file, judged on the shop's own date. A refusal names the certificate and its
+   * expiry. Absent only on a bare stub with no certificate register (then nothing is judged here).
+   */
+  readonly foodHandling?: (tenantId: string, personId: string, task: FoodHandlingTask, at: string) => Promise<FoodHandlingVerdict> | FoodHandlingVerdict;
   readonly now: () => string;
+}
+
+/** OB-502: a refusal of food-handling work in this person's name — 422, the certificate and its expiry in plain words. */
+export function foodHandlingRefusal(verdict: Extract<FoodHandlingVerdict, { allowed: false }>): never {
+  throw apiError(422, {
+    code: verdict.code,
+    whatHappened: verdict.words.en,
+    wasItSaved: 'not_saved',
+    nextSafeAction: 'Have a manager record the renewed food-handling certificate (Training and certificates), or have a colleague with a valid certificate record this run. The person may do any other work.',
+  });
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -383,6 +400,12 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: 'Use a new run id. Nothing was changed.',
           });
+        }
+        // OB-502: food-handling work is refused in the name of a person whose food-handling certificate expired or is missing.
+        const gatedRecipe = deps.foodHandling === undefined ? undefined : await deps.recipe(ctx.tenantId, b.recipeId);
+        if (deps.foodHandling !== undefined && gatedRecipe !== undefined && handlesFood(gatedRecipe.departmentId)) {
+          const verdict = await deps.foodHandling(ctx.tenantId, ctx.userId, 'production_run', deps.now());
+          if (!verdict.allowed) foodHandlingRefusal(verdict);
         }
         const { body } = await commitRunCore(deps, ctx.tenantId, {
           runId, recipeId: b.recipeId, batches: b.batches, actualOutputMinor: b.actualOutputMinor, outputBatchId: b.outputBatchId,
@@ -619,6 +642,10 @@ export const RUN_SYNC_FLAGS = Object.freeze([
   // The kitchen used more of an ingredient than head office's books say it had: the food exists, so the run is recorded and
   // its ingredients leave the books (they may go below zero, where the stock exceptions read shows them) — and it is said.
   'ingredient_short_at_head_office',
+  // OB-502: the producer's food-handling certificate had expired (or none was on file) when the run was made. The store
+  // computer refuses such a run with the line down; one that still reaches here (the box's pack was older than the
+  // certificate's change) is recorded — the food exists — and said on the record for a manager.
+  'producer_food_certificate_not_valid',
 ] as const);
 export type RunSyncFlag = (typeof RUN_SYNC_FLAGS)[number];
 
@@ -869,6 +896,10 @@ export function syncedProductionRoutes(deps: SyncedProductionDeps): readonly Rou
         const flags: RunSyncFlag[] = held === undefined ? ['producer_unknown'] : held.includes('production.plan.commit') ? [] : ['producer_lacks_authority'];
         const relayed = relayOf(ctx, b);
         const at = new Date(Date.parse(b['at'] as string)).toISOString();
+        // OB-502: judged as at the moment the run was made, on head office's certificate register.
+        const gatedRecipe = deps.foodHandling === undefined ? undefined : await deps.recipe(ctx.tenantId, capture.recipeId);
+        if (deps.foodHandling !== undefined && gatedRecipe !== undefined && handlesFood(gatedRecipe.departmentId)
+          && !(await deps.foodHandling(ctx.tenantId, producedBy, 'production_run', at)).allowed) flags.push('producer_food_certificate_not_valid');
         const { run, body } = await commitRunCore(deps, ctx.tenantId, capture, producedBy, at, { onShortfall: 'record_and_flag', syncFlags: flags, relayed });
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: producedBy, action: 'production.run.record', objectType: 'production_run', objectId: runId, at,

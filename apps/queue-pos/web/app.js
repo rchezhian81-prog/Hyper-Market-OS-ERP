@@ -113,7 +113,9 @@ function tell(title, text, good = false, bill = '') {
 }
 el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; });
 const wordsOf = (r) => (lang === 'ta' && r && typeof r.laneMessageTa === 'string' ? r.laneMessageTa : r && typeof r.laneMessage === 'string' ? r.laneMessage : '');
-const errorWords = (e) => (e && typeof e.laneMessage === 'string' ? e.laneMessage : String(e && e.message ? e.message : e));
+// OB-521 (R8-A): a refusal that carries its own Tamil words (a new basket on a withdrawn or too-old build) says them in Tamil.
+const errorWords = (e) => (e && lang === 'ta' && typeof e.laneMessageTa === 'string' ? e.laneMessageTa
+  : e && typeof e.laneMessage === 'string' ? e.laneMessage : String(e && e.message ? e.message : e));
 
 // ── The sheet: a keypad, a text field, or a list of choices ─────────────────
 let sheetDone = null;
@@ -371,6 +373,12 @@ async function checkBox() {
   try {
     const res = await fetch('/queue-pos/lane/sync-status', { headers: { accept: 'application/json' }, credentials: 'same-origin' });
     boxUp = res.ok;
+    // OB-521 (R8-A): the app version policy as the store computer's signed pack has it now — a withdrawn or too-old build
+    // finishes the basket on screen and starts no new one (only an answer from the box changes it).
+    if (res.ok && till && typeof till.applyVersionPolicy === 'function') {
+      const status = await res.json().catch(() => null);
+      if (status && 'appVersionPolicy' in status) till.applyVersionPolicy(status.appVersionPolicy);
+    }
   } catch { boxUp = false; }
   render();
 }

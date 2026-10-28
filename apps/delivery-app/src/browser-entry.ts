@@ -25,6 +25,7 @@ import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../pack
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { RouteSession, type CollectionInput, type ContributionRule, type StopInput } from './route-session';
+import { openNewWorkGate, bindNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -48,10 +49,14 @@ export interface DriverData {
   readonly contributionRule?: ContributionRule;
   /** |over/short| at or above which a cash handover needs the cash office. Per-tenant. */
   readonly handoverToleranceMinor?: number;
+  /** OB-521: the signed pack's app version policy, as the store computer served it (`null` = the pack carries none). */
+  readonly appVersionPolicy?: unknown;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface DriverWindow {
+  /** OB-521: this build's new-work gate — the screen applies each policy the store computer reports. */
+  driverVersion?: NewWorkGate;
   routeSession?: RouteSession;
   driverData?: DriverData;
   driverOutbox?: DeviceOutbox;
@@ -156,4 +161,10 @@ if (browserWindow !== undefined) {
     const relay = openDriverRelay(browserWindow.laneWriteBase, session, outbox, stamping?.clock);
     if (relay !== undefined) browserWindow.driverRelay = relay;
   }
+  // OB-521: a withdrawn or too-old build finishes the route it started and starts no new one — by the store computer's
+  // signed pack (served with the route, then each badge refresh), kept on this device for a reload with no signal.
+  browserWindow.driverVersion = bindNewWorkGate(openNewWorkGate({
+    client: 'driver', ...(storage === undefined ? {} : { storage }), key: 'sre.driver.app-version-policy',
+    ...(browserWindow.driverData !== undefined && 'appVersionPolicy' in browserWindow.driverData ? { served: browserWindow.driverData.appVersionPolicy } : {}),
+  }), [session]);
 }
