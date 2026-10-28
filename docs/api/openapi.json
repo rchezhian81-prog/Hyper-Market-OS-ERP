@@ -270632,6 +270632,9 @@
           },
           "iamt": {
             "type": "number"
+          },
+          "csamt": {
+            "type": "number"
           }
         },
         "additionalProperties": true

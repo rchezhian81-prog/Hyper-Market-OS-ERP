@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1869,
+  "testFiles": 1870,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2225,7 +2225,7 @@
         "unit": 8,
         "integration": 13,
         "realDb": 7,
-        "browser": 5,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -2268,6 +2268,7 @@
         "browser": [
           "tests/e2e/help-readings-and-losses-are-saved-at-the-store-with-the-line-down.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts",
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts",
           "tests/e2e/the-scrap-and-packaging-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/write-off-capture-delivery.e2e.ts"

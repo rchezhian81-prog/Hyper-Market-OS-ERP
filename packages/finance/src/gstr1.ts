@@ -221,7 +221,8 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
     const rateLines = summariseByRate(doc.lines);
     const pos = doc.placeOfSupplyStateCode === undefined ? {} : { placeOfSupplyStateCode: doc.placeOfSupplyStateCode };
     if (isB2b(doc)) {
-      const invoiceValueMinor = rateLines.reduce((s, r) => s + r.taxableMinor + r.cgstMinor + r.sgstMinor + r.igstMinor, 0);
+      // OB-434: a B2B invoice's value is the whole invoice too — taxable value, GST and compensation cess, as for B2CL.
+      const invoiceValueMinor = rateLines.reduce((s, r) => s + r.taxableMinor + r.cgstMinor + r.sgstMinor + r.igstMinor + (r.cessMinor ?? 0), 0);
       b2b.push({ recipientGstin: doc.recipientGstin as string, invoiceNumber: doc.documentId, invoiceDate: doc.documentDate, invoiceValueMinor, ...pos, rateLines });
     } else {
       b2cLines.push(...doc.lines);
@@ -264,7 +265,8 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
 // supply, and is then NOT also in `b2cs`. Every B2C document's place of supply is judged the same way as a B2B invoice's
 // (`judgePlaceOfSupply`); one that cannot be judged stops the file by name with the B2B ones, never guessed.
 
-export interface GstnItemDetail { readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
+/** OB-434: `csamt` (compensation cess) is present only when the rate line carries cess — the invoice's `val` includes it. */
+export interface GstnItemDetail { readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; readonly csamt?: number; }
 export interface GstnInvoiceItem { readonly num: number; readonly itm_det: GstnItemDetail; }
 export interface GstnB2bInvoice { readonly inum: string; readonly idt: string; readonly val: number; readonly pos: string; readonly rchrg: 'Y' | 'N'; readonly inv_typ: 'R'; readonly itms: readonly GstnInvoiceItem[]; }
 export interface GstnB2b { readonly ctin: string; readonly inv: readonly GstnB2bInvoice[]; }
@@ -385,7 +387,7 @@ export function toGstnGstr1(ret: Gstr1Return, meta: { readonly gstin: string; re
       pos: where.pos,
       rchrg: 'N',
       inv_typ: 'R',
-      itms: inv.rateLines.map((r, i) => ({ num: i + 1, itm_det: { rt: pct(r.rateBps), txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor) } })),
+      itms: inv.rateLines.map((r, i) => ({ num: i + 1, itm_det: { rt: pct(r.rateBps), txval: rupees(r.taxableMinor), camt: rupees(r.cgstMinor), samt: rupees(r.sgstMinor), iamt: rupees(r.igstMinor), ...(r.cessMinor === undefined ? {} : { csamt: rupees(r.cessMinor) }) } })),
     };
     byCtin.set(inv.recipientGstin, [...(byCtin.get(inv.recipientGstin) ?? []), invoice]);
   }

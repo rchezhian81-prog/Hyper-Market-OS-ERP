@@ -32,6 +32,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None open.
+
+---
+
+## Final roadmap re-audit (28 October 2026): nothing partial; four small follow-ups for the owner
+- **What changed:** a read-only check at `main` edeb0a03 (`docs/audit/REAUDIT-2026-10-28.md`, lane tables in `docs/audit/reaudit-2026-10-28/`). The roadmap now has 390 distinct rows: 343 done, 0 partial, 0 missing, 0 decision, 41 external, 6 deferred to R8 in writing. The old total of 391 counted QG-11 twice.
+  - §31.1 clock drift, D03-FR-03 and WF-18 are DONE.
+  - QG-02 and QG-04 are now EXTERNAL.
+  - Every one of the 19 owner decisions from OB-403 to OB-434 that needed building is built, tested and traced.
+- **Tests:** the whole default suite on `main` passed: 14,127 tests, 577 skipped (PostgreSQL legs), 0 failed.
+- **Next:** the owner's answers to F-1 to F-4. Then the store pilot (Stage 12), which is all outside pieces.
+- **Blocked:** nothing in software. The 41 external rows wait on hardware, providers, the CA, staff and the pen test.
+- **Owner decisions needed:**
+  - F-1: OB-413 Tamil alerts. Its R4 target is in the past.
+  - F-2: the flaky camera-switch browser test.
+  - F-3: two untested OB-412 rules.
+  - F-4: two records fixes.
+
+## GST answers OB-433 and OB-434 (28 October 2026)
+- **What changed:**
+  - **OB-433:** the owner confirmed the B2CL line: more than ₹1,00,000 for invoices from 1 Aug 2024, more than ₹2,50,000 before. Nothing to build.
+  - **OB-434 (option a):** in the GSTN GSTR-1 file, a B2B invoice's `val` now includes compensation cess, as B2CL's already did. Each rate line with cess carries `csamt`, so the lines add up to `val`. The return's taxable value and GST totals are unchanged.
+- **Tests:** `tests/unit/a-b2b-invoice-in-the-gstn-file-carries-its-cess.test.ts` (5 tests). The two cess tests fail on the old code.
+- **Next:** before the first live filing, the owner's accountant loads the GSTR-1 file into the GSTN offline tool.
+- **CI fix in the same PR (owner, option A).** `tests/e2e/store-ops-screens-on-the-production-api.e2e.ts` failed with "expected 'missed' to be 'due'" because case (a) ran at 02:59:30 UTC.
+  - Cause: the test pinned "this hour" when the file loaded. The hourly check's slot, with 59 minutes' grace, turns missed at :59.
+  - Fix: the hour is now set just before seeding. A run that would seed in an hour's last three minutes first waits for the next hour.
+  - Test only; the food-safety screen is unchanged.
+- **Blocked:** nothing.
+- **Owner decisions needed:** none.
+
+---
+
 ## CI fix (28 October 2026): the store-day journeys failed "certificate is not yet valid" before 09:00 UTC
 
 **What changed**
