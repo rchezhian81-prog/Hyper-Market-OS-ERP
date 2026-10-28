@@ -5,6 +5,21 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## CI fix (28 October 2026): the store-day journeys failed "certificate is not yet valid" before 09:00 UTC
+
+**What changed**
+- Only the test helper `tests/support/trading-day-clock.ts` changed. No product code changed.
+- **Cause:** the journey tests set the program's clock (`Date`) to 10:00 UTC today. The store computer dates the handheld door's certificate from that clock: valid from an hour before, so 09:00 UTC. TLS checks the certificate against the machine's real clock. A run between 00:00 and 09:00 UTC (05:30 to 14:30 India time) therefore refused the phone's connection as "certificate is not yet valid". This happened on main at 01:10 UTC on 28 Oct, and it blocked #822.
+- **Fix:** the pinned moment is now the most recent 10:00 UTC that has already passed: today's after 10:00, otherwise yesterday's. It is never ahead of the real clock. The journeys still run inside one trading day.
+- **Tests:** `tests/unit/the-journey-clock-is-never-ahead-of-the-real-clock.test.ts` has 4 tests.
+  - With the old helper, 3 fail; with the fix, all 4 pass.
+  - The three journeys need PostgreSQL, so they run in CI.
+- Owner decisions OB-429 to OB-431 (the GST answers) are recorded in the same PR.
+
+**Next:** the 3A builder (State-wise B2CS and B2CL) and #822 (the Keycloak test audience fix) both wait on this.
+
+---
+
 ## GST follow-ups (27 October 2026): place of supply, removing a GSTIN, the GSTN file (OB-426 to OB-428). End of session.
 
 **What changed**
