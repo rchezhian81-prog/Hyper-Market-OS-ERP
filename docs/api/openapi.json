@@ -124050,6 +124050,7 @@
         "required": [
           "b2b",
           "b2c",
+          "b2cInvoices",
           "hsn",
           "totalTaxableMinor",
           "totalTaxMinor",
@@ -124068,6 +124069,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RateSummary"
+            }
+          },
+          "b2cInvoices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/B2cInvoice"
             }
           },
           "hsn": {
@@ -250261,6 +250268,36 @@
         },
         "additionalProperties": true
       },
+      "B2cInvoice": {
+        "type": "object",
+        "required": [
+          "invoiceNumber",
+          "invoiceDate",
+          "invoiceValueMinor",
+          "rateLines"
+        ],
+        "properties": {
+          "invoiceNumber": {
+            "type": "string"
+          },
+          "invoiceDate": {
+            "type": "string"
+          },
+          "invoiceValueMinor": {
+            "type": "number"
+          },
+          "placeOfSupplyStateCode": {
+            "type": "string"
+          },
+          "rateLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateSummary"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
       "BackgroundJob": {
         "type": "object",
         "required": [
@@ -270238,10 +270275,96 @@
         },
         "additionalProperties": true
       },
+      "GstnB2cl": {
+        "type": "object",
+        "required": [
+          "pos",
+          "inv"
+        ],
+        "properties": {
+          "pos": {
+            "type": "string"
+          },
+          "inv": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GstnB2clInvoice"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "GstnB2clInvoice": {
+        "type": "object",
+        "required": [
+          "inum",
+          "idt",
+          "val",
+          "itms"
+        ],
+        "properties": {
+          "inum": {
+            "type": "string"
+          },
+          "idt": {
+            "type": "string"
+          },
+          "val": {
+            "type": "number"
+          },
+          "itms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GstnB2clItem"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "GstnB2clItem": {
+        "type": "object",
+        "required": [
+          "num",
+          "itm_det"
+        ],
+        "properties": {
+          "num": {
+            "type": "number"
+          },
+          "itm_det": {
+            "$ref": "#/components/schemas/GstnB2clItemDetail"
+          }
+        },
+        "additionalProperties": true
+      },
+      "GstnB2clItemDetail": {
+        "type": "object",
+        "required": [
+          "rt",
+          "txval",
+          "iamt"
+        ],
+        "properties": {
+          "rt": {
+            "type": "number"
+          },
+          "txval": {
+            "type": "number"
+          },
+          "iamt": {
+            "type": "number"
+          },
+          "csamt": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "GstnB2cs": {
         "type": "object",
         "required": [
           "sply_ty",
+          "pos",
           "typ",
           "rt",
           "txval",
@@ -270256,6 +270379,9 @@
               "INTER",
               "INTRA"
             ]
+          },
+          "pos": {
+            "type": "string"
           },
           "typ": {
             "type": "string",
@@ -270275,6 +270401,9 @@
           },
           "iamt": {
             "type": "number"
+          },
+          "csamt": {
+            "type": "number"
           }
         },
         "additionalProperties": true
@@ -270283,6 +270412,7 @@
         "type": "object",
         "required": [
           "sply_ty",
+          "pos",
           "typ",
           "rt",
           "txval",
@@ -270297,6 +270427,9 @@
               "INTER",
               "INTRA"
             ]
+          },
+          "pos": {
+            "type": "string"
           },
           "typ": {
             "type": "string",
@@ -270329,6 +270462,7 @@
           "gstin",
           "fp",
           "b2b",
+          "b2cl",
           "b2cs",
           "hsn"
         ],
@@ -270343,6 +270477,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/GstnB2b"
+            }
+          },
+          "b2cl": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GstnB2cl"
             }
           },
           "b2cs": {
@@ -286231,6 +286371,9 @@
             "type": "number"
           },
           "igstMinor": {
+            "type": "number"
+          },
+          "cessMinor": {
             "type": "number"
           }
         },

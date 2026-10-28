@@ -38,6 +38,7 @@ const REALM = 'sre-store';
 const ISSUER = `${BASE}/realms/${REALM}`;
 const BOX_PORT = 8091; // the installer's screen port — the loopback callback the realm allows (OB-388)
 const BOX = `http://127.0.0.1:${BOX_PORT}`;
+const AUDIENCE = 'sre-retail-os-api'; // the realm's audience — head office believes only tokens made for it
 const KEY = ['kc', 'store', 'pc', 'signing', 'key'].join('-').padEnd(48, '0');
 
 class Jar {
@@ -116,12 +117,20 @@ describe.skipIf(!READY).sequential('a real Keycloak: the store computer carries 
     const said: string[] = [];
     api = await startApi({
       DATABASE_URL: asRole(DATABASE_URL!, 'sre_app_store_pc_proof'), PACK_SIGNING_KEY: ['proof', 'pack', 'key'].join('-').padEnd(48, '0'), BOX_HISTORY_SEAL_KEY: ['proof', 'seal', 'key'].join('-').padEnd(48, '1'),
-      IDP_SIGNING_KEY: pilot.secret, IDP_ISSUER: pilot.issuer, IDP_AUDIENCE: 'sre-retail-os-api',
+      IDP_SIGNING_KEY: pilot.secret, IDP_ISSUER: pilot.issuer, IDP_AUDIENCE: AUDIENCE,
       IDP_OIDC_ISSUER: ISSUER, IDP_OIDC_JWKS_URL: `${ISSUER}/protocol/openid-connect/certs`,
       PORT: '0', NODE_ENV: 'test', MIGRATION_TARGET_KIND: 'rehearsal',
       BOOTSTRAP_OWNER_TENANT_ID: TENANT, BOOTSTRAP_OWNER_USER_ID: privileged,
     }, (t) => { said.push(t); }, (t) => { said.push(t); });
     expect(api, said.join('')).toBeDefined();
+    // The box's own head-office credential, for the audience head office checks. A token head office does not believe fails
+    // sign-in on every background pass (the first comes 15 s after the box starts and makes about fifteen calls); five
+    // failures from 127.0.0.1 lock that address for 5 s, and the person's carried session arrives from the same address —
+    // refused 429 too_many_sign_in_attempts whenever it lands in that window (the intermittent failure). So it is checked
+    // here, before the box starts: refused → this fails now, by name, instead of by timing later.
+    const boxToken = new LocalIdp({ ...pilot, audience: AUDIENCE }).issue({ sub: 'u-box', tenantId: TENANT!, branchId: 'store-1' });
+    const believed = await fetch(`http://127.0.0.1:${api!.port}/v1/catalogue/pack`, { headers: { authorization: `Bearer ${boxToken}` } });
+    expect(believed.status, `head office must believe the box's own token: ${said.filter((l) => l.includes('auth refused')).join('')}`).not.toBe(401);
 
     // The REAL store computer, on the store PC's own screen address; its setup names both people at this store.
     dir = await mkdtemp(join(tmpdir(), 'sre-kc-store-pc-'));
@@ -135,9 +144,7 @@ describe.skipIf(!READY).sequential('a real Keycloak: the store computer carries 
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT!, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_PACK_FILE: packFile,
       EDGE_SCREEN_PORT: String(BOX_PORT), EDGE_APPS_DIR: 'apps',
-      CLOUD_API_URL: `http://127.0.0.1:${api!.port}`, // A box token head office believes (ITS audience, sre-retail-os-api): any other fails sign-in on every background pass, and five failures from
-      // 127.0.0.1 lock that address — the same one the person's carried session arrives from (the intermittent 429).
-      CLOUD_API_TOKEN: new LocalIdp({ ...pilot, audience: 'sre-retail-os-api' }).issue({ sub: 'u-box', tenantId: TENANT!, branchId: 'store-1' }), EDGE_HEAD_OFFICE_SIGN_IN_ISSUER: ISSUER,
+      CLOUD_API_URL: `http://127.0.0.1:${api!.port}`, CLOUD_API_TOKEN: boxToken, EDGE_HEAD_OFFICE_SIGN_IN_ISSUER: ISSUER,
     }, () => {}))!;
   }, 120_000);
 

@@ -294,7 +294,7 @@ export function netTable12(sales: Gstr1Table12, returns: Gstr1Table12): NetGstr1
 // check the document-path export already carries. Faithful to the documented schema; the portal's offline
 // tool is the authority.
 
-export interface GstnB2csLine { readonly sply_ty: 'INTRA' | 'INTER'; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; readonly csamt?: number; }
+export interface GstnB2csLine { readonly sply_ty: 'INTRA' | 'INTER'; readonly pos: string; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; readonly csamt?: number; }
 export interface GstnHsnLine { readonly num: number; readonly hsn_sc: string; readonly rt: number; readonly qty: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; readonly csamt?: number; }
 export interface GstnB2cGstr1 {
   readonly gstin: string;
@@ -306,24 +306,45 @@ export interface GstnB2cGstr1 {
 const rupees2 = (minor: number): number => Math.round(minor) / 100;
 
 /**
+ * OB-432: the till-sales GSTN file cannot be made — a HSN/rate row charged IGST (a supply to another State), but a till
+ * sale records no place of supply, so the State it went to cannot be said. Named per row; never guessed.
+ */
+export class GstnB2cFromSalesRefused extends Error {
+  constructor(readonly problems: readonly { readonly hsnCode: string; readonly rateBps: number; readonly why: string }[]) {
+    super(`the GSTR-1 file from till sales cannot be made: ${problems.map((p) => `HSN ${p.hsnCode} at ${p.rateBps / 100}% — ${p.why}`).join('; ')}`);
+    this.name = 'GstnB2cFromSalesRefused';
+  }
+}
+
+/**
  * Serialise a netted B2C from-sales return into the GSTN GSTR-1 portal JSON. `gstin` is the supplier's own
- * GSTIN and `fp` the filing period `MMYYYY`. `b2cs` aggregates the net rows by rate; `hsn.data` is the net
- * HSN summary. Intra vs inter is read per row from where the tax fell (IGST ⇒ inter). Pure.
+ * GSTIN and `fp` the filing period `MMYYYY`. `b2cs` aggregates the net rows State-wise by rate; `hsn.data` is the
+ * net HSN summary. Pure.
+ *
+ * OB-432: a till sale is over the counter, so its place of supply is the store's own State (the first two digits of the
+ * filer's GSTIN): each `b2cs` row is `INTRA` with that `pos`. A till sale records no other State, so a row that charged
+ * IGST cannot be placed and the file is refused by name (`GstnB2cFromSalesRefused`). No till sale goes to B2CL: B2CL is
+ * only for inter-State supplies.
  */
 export function toGstnB2cFromSales(net: NetGstr1Table12, meta: { readonly gstin: string; readonly fp: string }): GstnB2cGstr1 {
-  const byRate = new Map<string, { sply_ty: 'INTRA' | 'INTER'; rt: number; txval: number; camt: number; samt: number; iamt: number; csamt?: number }>();
+  const own = meta.gstin.slice(0, 2);
+  const problems: { hsnCode: string; rateBps: number; why: string }[] = [];
+  const byRate = new Map<number, { rt: number; txval: number; camt: number; samt: number; csamt?: number }>();
   for (const r of net.rows) {
-    const inter = r.netIgstMinor !== 0 && r.netCgstMinor === 0 && r.netSgstMinor === 0;
-    const k = `${inter ? 'INTER' : 'INTRA'}|${r.rateBps}`;
-    const row = byRate.get(k) ?? { sply_ty: inter ? 'INTER' as const : 'INTRA' as const, rt: r.rateBps / 100, txval: 0, camt: 0, samt: 0, iamt: 0 };
-    row.txval += r.netTaxableMinor; row.camt += r.netCgstMinor; row.samt += r.netSgstMinor; row.iamt += r.netIgstMinor;
+    if (r.netIgstMinor !== 0) {
+      problems.push({ hsnCode: r.hsnCode, rateBps: r.rateBps, why: 'it charged IGST (a supply to another State), but a till sale records no place of supply, so the State it went to cannot be said' });
+      continue;
+    }
+    const row = byRate.get(r.rateBps) ?? { rt: r.rateBps / 100, txval: 0, camt: 0, samt: 0 };
+    row.txval += r.netTaxableMinor; row.camt += r.netCgstMinor; row.samt += r.netSgstMinor;
     // A7: the compensation cess goes in `csamt`, beside the GST it was charged with.
     if (r.netCessMinor !== undefined) row.csamt = (row.csamt ?? 0) + r.netCessMinor;
-    byRate.set(k, row);
+    byRate.set(r.rateBps, row);
   }
+  if (problems.length > 0) throw new GstnB2cFromSalesRefused(problems);
   const b2cs: GstnB2csLine[] = [...byRate.values()]
-    .sort((a, b) => a.sply_ty.localeCompare(b.sply_ty) || a.rt - b.rt)
-    .map((r) => ({ sply_ty: r.sply_ty, typ: 'OE', rt: r.rt, txval: rupees2(r.txval), camt: rupees2(r.camt), samt: rupees2(r.samt), iamt: rupees2(r.iamt), ...(r.csamt === undefined ? {} : { csamt: rupees2(r.csamt) }) }));
+    .sort((a, b) => a.rt - b.rt)
+    .map((r) => ({ sply_ty: 'INTRA', pos: own, typ: 'OE', rt: r.rt, txval: rupees2(r.txval), camt: rupees2(r.camt), samt: rupees2(r.samt), iamt: 0, ...(r.csamt === undefined ? {} : { csamt: rupees2(r.csamt) }) }));
   const data: GstnHsnLine[] = net.rows.map((r, i) => ({
     num: i + 1, hsn_sc: r.hsnCode, rt: r.rateBps / 100, qty: r.netQuantityMinor / 1000,
     txval: rupees2(r.netTaxableMinor), camt: rupees2(r.netCgstMinor), samt: rupees2(r.netSgstMinor), iamt: rupees2(r.netIgstMinor),
