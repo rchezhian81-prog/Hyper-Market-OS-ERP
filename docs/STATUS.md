@@ -16,7 +16,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - The three journeys need PostgreSQL, so they run in CI.
 - Owner decisions OB-429 to OB-431 (the GST answers) are recorded in the same PR.
 
-**Next:** the 3A builder (State-wise B2CS and B2CL) and #822 (the Keycloak test audience fix) both wait on this.
+- **OB-431 (3A) is also built in this PR.**
+  - B2CS rows are State-wise and carry `pos`.
+  - There is a B2CL section for inter-State B2C invoices above ₹1,00,000. Before 1 Aug 2024 the line was ₹2,50,000.
+  - Till sales are filed as Tamil Nadu (INTRA).
+  - An IGST document with no State stops the file by name.
+  - The totals and the close's Output GST are unchanged.
+- **Open for the owner and accountant:**
+  - confirm the B2CL line and its date before the first live filing;
+  - whether a B2B invoice's `val` should include cess, like B2CL's (recommended).
+
+**Next:** #822 (the Keycloak test audience fix) waits on this.
 
 ---
 
