@@ -144,17 +144,19 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await p.selectOption('#t-size', 'shelf-70x38');
     await p.click('#t-make');
     await says(p, '#t-status', /^2 tag\(s\) ready to print\.$/);
-    // English AND Tamil on the small 70 × 38 mm stock does not fit at the lawful heights: before this check the lower lines
-    // (the MRP and the price per kg) were cut off unseen; now the page refuses the print and names both products.
-    await says(p, '#t-print-status', /do not fit their label.*: Toor dal 500 g, Ponni rice 25 kg\./);
+    // OB-549: English AND Tamil on the small 70 × 38 mm stock — both names, field labels in English only — fits at the lawful
+    // heights, so nothing is cut off and nothing is refused (the page measures every tag before it prints).
+    expect(await p.locator('#sheet .tag[data-overflow]').count()).toBe(0);
+    expect((await p.textContent('#t-print-status'))?.trim() ?? '').toBe('');
     const dal = p.locator('#sheet .tag[data-product="p-dal"]');
     const dalText = await dal.innerText();
     expect(dalText).toContain('Toor dal 500 g');
     expect(dalText).toContain('துவரம் பருப்பு');
     expect(dalText).toContain('₹72.00');
-    expect(dalText).toMatch(/MRP \/ அ\.சி\.வி \(MRP\) ₹80\.00/);
-    expect(dalText).toMatch(/₹144\.00 per kg \/ ஒரு கிலோ/);
-    expect(dalText).toMatch(/You save \/ சேமிப்பு ₹8\.00/);
+    expect(dalText).toMatch(/MRP ₹80\.00/);
+    expect(dalText).toMatch(/₹144\.00 per kg/);
+    expect(dalText).toMatch(/You save ₹8\.00/);
+    expect(dalText).not.toContain('அ.சி.வி'); // the field labels are in English only (OB-549); the names stay in both
     expect(await p.locator('#sheet .tag[data-product="p-rice"]').innerText()).toMatch(/₹58\.00 per kg/);
     expect(await p.textContent('#refused-rows')).toMatch(/GHEE-JAR · Ghee jar — its net quantity is missing or cannot be read/);
     // Real millimetres: the 70 × 38 mm stock, and the price printed at its judged 8 mm (font ≥ 8 / 0.7 mm).

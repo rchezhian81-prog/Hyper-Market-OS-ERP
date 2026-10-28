@@ -31,7 +31,10 @@ function drawTag(tag) {
   box.style.height = `${tag.template.heightMm}mm`;
   const words = (l) => api.tagWords(l);
   const langs = tag.language === 'both' ? ['en', 'ta'] : [tag.language];
-  const say = (pick) => langs.map((l) => pick(words(l))).filter((v, i, a) => a.indexOf(v) === i).join(' / ');
+  // OB-549 (owner, 28 Oct 2026): an English-and-Tamil tag keeps the product's name in both languages but prints its small field
+  // labels (price, MRP, per kg, taxes, saving) in English only, so the MRP and the unit price fit at their lawful heights.
+  const labelLangs = tag.language === 'both' ? ['en'] : langs;
+  const say = (pick) => labelLangs.map((l) => pick(words(l))).filter((v, i, a) => a.indexOf(v) === i).join(' / ');
   const sized = (node, mm) => { node.style.fontSize = `${mm}mm`; return node; };
   const names = [];
   if (langs.includes('en') || tag.nameTa === undefined) names.push(tag.nameEn);
