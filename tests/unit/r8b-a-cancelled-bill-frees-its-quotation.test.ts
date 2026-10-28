@@ -59,7 +59,8 @@ describe('a quoted line below its product\'s floor needs a second person (OB-525
     expect(issueQuotation({ ...base, lines: [line()], lineFloorsMinor: floors, approval: { subjectRef: 'Q-other', status: 'approved', decidedBy: 'u-owner', reason: 'x' } })).toMatchObject({ outcome: 'below_floor_unapproved' });
   });
   it('a product whose floor head office cannot read is kept on the quotation and said — never a floor of zero', () => {
-    const r = issueQuotation({ ...base, lines: [line({ productId: 'p-new' })], lineFloorsMinor: {}, floorNotKnown: ['p-new'] });
+    // R9-A · OB-532: such a quotation needs the OWNER's approval; with it, the not-known floor is kept and said.
+    const r = issueQuotation({ ...base, lines: [line({ productId: 'p-new' })], lineFloorsMinor: {}, floorNotKnown: ['p-new'], approval: { subjectRef: 'Q1', status: 'approved', decidedBy: 'u-owner', reason: 'new line', byOwner: true } });
     expect(r).toMatchObject({ issued: true, quotation: { floorNotKnown: ['p-new'] } });
   });
 });

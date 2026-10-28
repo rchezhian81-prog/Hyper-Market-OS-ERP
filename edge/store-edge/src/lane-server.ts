@@ -70,7 +70,7 @@ import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { OPERATOR_HEADER, type CheckOutcome, type SignInOutcome } from './till-operators';
 import type { GrantOutcome, ReturnCheck } from './till-approvals';
 import type { IssueOutcome, ReceiptNumberStatus, UseCheck } from './receipt-numbers';
-import type { HoldOutcome, RecallOutcome, HeldSummary } from './held-bills';
+import type { HoldOutcome, RecallOutcome, HeldSummary, AbandonOutcome } from './held-bills';
 import type { PhoneBasketsPort } from './phone-baskets';
 import { QUOTATION_NEEDS_HEAD_OFFICE, type QuotationsAtLanePort } from './quotations-at-lane'; // R7-C · OB-506
 import type { QueueRecallAnswer } from './queue-baskets';
@@ -267,10 +267,11 @@ export interface LanePaymentAttemptsPort {
 
 /** The held-basket register this socket asks (`HeldBills`). */
 export interface LaneHeldBillsPort {
-  hold(input: { readonly laneId: string; readonly cashierId: string; readonly billId: unknown; readonly lines: unknown; readonly ageAnswers?: unknown; readonly tradingDay?: unknown; readonly reason?: unknown }): Promise<HoldOutcome>;
+  hold(input: { readonly laneId: string; readonly cashierId: string; readonly billId: unknown; readonly lines: unknown; readonly ageAnswers?: unknown; readonly tradingDay?: unknown; readonly reason?: unknown; readonly quotations?: unknown }): Promise<HoldOutcome>;
   list(laneId: string): readonly HeldSummary[];
   recall(input: { readonly laneId: string; readonly byUserId: string; readonly billId: unknown }): Promise<RecallOutcome>;
-  abandon(input: { readonly laneId: string; readonly byUserId: string; readonly billId: unknown; readonly reason: unknown }): Promise<{ readonly abandoned: boolean; readonly laneMessage: string }>;
+  /** R9-A · OB-533: a given-up basket's quotations are freed again (`quotationsFreed`), said in English and Tamil. */
+  abandon(input: { readonly laneId: string; readonly byUserId: string; readonly billId: unknown; readonly reason: unknown }): Promise<AbandonOutcome>;
 }
 
 /** The receipt-number register this socket asks (`ReceiptNumbers`). */
@@ -1032,7 +1033,7 @@ export function startLaneServer(input: {
         const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
         try {
           const out = pathname === LANE_HELD_BILLS_ROUTE
-            ? await held.hold({ laneId: ops.laneId, cashierId: check.userId, billId: b['billId'], lines: b['lines'], ageAnswers: b['ageAnswers'], tradingDay: b['tradingDay'], reason: b['reason'] })
+            ? await held.hold({ laneId: ops.laneId, cashierId: check.userId, billId: b['billId'], lines: b['lines'], ageAnswers: b['ageAnswers'], tradingDay: b['tradingDay'], reason: b['reason'], quotations: b['quotations'] /* R9-A · OB-533 */ })
             : pathname === LANE_HELD_BILLS_RECALL_ROUTE
               ? await held.recall({ laneId: ops.laneId, byUserId: check.userId, billId: b['billId'] })
               : await held.abandon({ laneId: ops.laneId, byUserId: check.userId, billId: b['billId'], reason: b['reason'] });

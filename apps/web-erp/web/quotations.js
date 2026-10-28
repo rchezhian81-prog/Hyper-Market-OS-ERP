@@ -72,6 +72,7 @@ function paint() {
   for (const [id, key] of [['make-h', 'makeH'], ['q-store-l', 'store'], ['q-customer-l', 'customer'], ['q-until-l', 'validUntil'], ['l-code-l', 'lineCode'], ['l-qty-l', 'lineQty'],
     ['l-price-l', 'linePrice'], ['l-add-text', 'addLine'], ['lines-h', 'linesH'], ['q-approval-l', 'approval'], ['q-make-text', 'make'], ['q-ask-text', 'askApproval'],
     ['list-h', 'listH'], ['s-state-l', 'state'], ['s-show-text', 'show'], ['s-follow-text', 'followUp']]) $(id).textContent = t(key);
+  if (session !== null && session.needsOwner && session.needsOwner()) $('q-ask-text').textContent = t('askOwner'); // R9-A · OB-532
   if (api !== null) {
     const sel = $('s-state'); const keep = sel.value;
     sel.replaceChildren(...api.states.map((s) => { const o = document.createElement('option'); o.value = s; o.textContent = t(`s_${s}`); return o; }));
@@ -114,6 +115,8 @@ else {
       $('q-status').textContent = api.outcomeWords(lang, out);
       // R8-B · OB-525: a price below its floor — offer to ask a second person for exactly this quotation.
       $('q-ask').hidden = session.belowFloor() === undefined; $('q-ask-status').textContent = '';
+      // R9-A · OB-532: a product whose floor head office does not know — only the OWNER may approve; the button says so.
+      $('q-ask-text').textContent = t(session.needsOwner() ? 'askOwner' : 'askApproval');
       if (out.result === 'ok') { $('q-number').hidden = false; $('q-number').textContent = out.value.quotationId; lines = []; paintLines(); }
     });
     $('q-ask').addEventListener('click', async () => {

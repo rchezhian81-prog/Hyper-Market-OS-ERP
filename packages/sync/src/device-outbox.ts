@@ -120,6 +120,8 @@ export class DeviceOutbox<TType extends string = string, TPayload = unknown>
     private readonly store: DeviceStore,
     restored: readonly OutboxItem<TType, TPayload>[] = [],
     private readonly stamper?: RecordStamper,
+    /** Round 9 · OB-537: this device's own app build, stamped on every record it queues (a handheld's page supplies it). */
+    private readonly appVersion?: string,
   ) {
     super(restored);
   }
@@ -128,10 +130,11 @@ export class DeviceOutbox<TType extends string = string, TPayload = unknown>
     this.store.write(JSON.stringify(this.all()));
   }
 
-  override enqueue(event: Parameters<SyncOutbox<TType, TPayload>['enqueue']>[0], stamp?: SignInStamp): OutboxItem<TType, TPayload> {
+  override enqueue(event: Parameters<SyncOutbox<TType, TPayload>['enqueue']>[0], stamp?: SignInStamp, appVersion?: string): OutboxItem<TType, TPayload> {
     // OB-180: stamped once, when first queued — a re-queue of the same key keeps the stamp it was made under.
     const stamped = stamp ?? (this.stamper === undefined || this.find(event.idempotencyKey) !== undefined ? undefined : this.stamper(event as DomainEvent));
-    const item = super.enqueue(event, stamped);
+    // OB-537: the build that queued it, once — a re-queue keeps the build it was first queued on.
+    const item = super.enqueue(event, stamped, appVersion ?? this.appVersion);
     this.save();
     return item;
   }
@@ -158,7 +161,9 @@ export function openDeviceOutbox<TType extends string = string, TPayload = unkno
   store: DeviceStore,
   onProblem: (why: string) => void,
   stamper?: RecordStamper,
+  /** Round 9 · OB-537: a handheld's own app build, stamped on each record as it is queued. */
+  appVersion?: string,
 ): DeviceOutbox<TType, TPayload> {
   const restored = restoreItems(store, onProblem) as OutboxItem<TType, TPayload>[];
-  return new DeviceOutbox<TType, TPayload>(store, restored, stamper);
+  return new DeviceOutbox<TType, TPayload>(store, restored, stamper, appVersion);
 }

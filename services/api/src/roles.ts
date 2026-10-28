@@ -343,6 +343,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // Held by the owner only so he may grant the store computer its role (no escalation); a person never relays with it.
       'pos.quotation.free',
       // ── R8-B · OB-523 — end
+      // ── R9-A · OB-532 (a quotation on a product with no known floor) — begin
+      // Only the owner approves a quoted price on a product never received at a cost (like OB-520 at the till).
+      'pos.quotation.nofloor.approve',
+      // ── R9-A · OB-532 — end
+      // ── R9-B · OB-537 (handheld records carry their build) — begin
+      // Held by the owner only so he may grant the store computer its role (no escalation); a person never relays with it.
+      'platform.handheldbuild.sync',
+      // ── R9-B · OB-537 — end
       'finance.einvoice.generate', 'finance.einvoice.read',
       'finance.gstr.generate', 'finance.gstr.read', 'finance.gstr.approve', 'finance.gstr.submit',
       'payroll.statutory.read', 'payroll.ess.self',
@@ -1055,6 +1063,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // office frees the quotation — only from the bill it is on. Free only: the box never issues or withdraws a quotation.
       'pos.quotation.free',
       // ── R8-B · OB-523 — end
+      // ── R9-B · OB-537 (handheld records carry their build) — begin
+      // A queue till's basket stays on the box; the box relays the build it was made on (queued on its disk, sent once) and
+      // head office flags a withdrawn or too-old one. Report only: nothing here changes a basket, a version or stock.
+      'platform.handheldbuild.sync',
+      // ── R9-B · OB-537 — end
     ],
   },
 ];

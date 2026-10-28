@@ -91,6 +91,12 @@ describe.each(backings)('shelf tags and quotations on head office\'s records —
       await ok(req('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, { kind: 'ean' }), `barcode ${id}`);
       if (ta !== undefined) await ok(req('POST', `/v1/catalogue/products/${id}/content`, { nameTa: ta, reason: 'Tamil name for the shelf tag' }), `tamil ${id}`);
     }
+    // R9-A · OB-532: the rice and the dal came into the store at a cost (opening stock), so head office knows their floors —
+    // a product never received at a cost would need the OWNER's approval to be quoted.
+    await ok(req('POST', '/v1/inventory/goods-receipt/opening-quoted', { warehouseId: STORE, receivedOnDate: '2030-01-02', currency: 'INR', lines: [
+      { lineId: 'L1', productId: 'p-rice', orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: { minor: 130_000, currency: 'INR' }, condition: 'good' },
+      { lineId: 'L2', productId: 'p-dal', orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: { minor: 6_000, currency: 'INR' }, condition: 'good' },
+    ] }), 'opening stock');
     await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: AS_OF }), 'publish the pack');
     const pack = (await req('GET', '/v1/catalogue/pack')).body as SignedPack;
     const oilInPack = pack.snapshot.products.find((p) => p.productId === 'p-oil')!;

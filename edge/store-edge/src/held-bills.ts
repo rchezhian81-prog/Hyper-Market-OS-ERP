@@ -14,6 +14,12 @@
 //   • nothing is ever deleted (hard rule #6) — every hold, recall and abandonment stays on the log.
 //
 // A held basket holds no stock: it is a note of intent, not a movement.
+//
+// R9-A · OB-533 (owner, 28 Oct 2026): a basket that rang a retail quotation up carries the quotation's number and the bill it
+// was rung up on. GIVING IT UP frees the quotation again — the same compensating release as a cancelled bill (OB-523): a
+// `QuotationFreedAtTill` record with who gave it up (the person this box verified) and why, on the box's disk, queued for head
+// office and sent once (offline it waits). RECALLING it keeps the quotation attached: the till gets it back with the lines.
+// A line lowered on the till (a quotation's price or a manager's cut) keeps its price evidence while parked.
 
 import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
 import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
@@ -21,8 +27,27 @@ import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import {
   suspendBill, resumeBill, abandonBill, SerialisedSuspendedBillStore,
-  type SuspendedBill, type SuspendedLine, type SuspendedAgeAnswer, type SuspensionPolicy,
+  type SuspendedBill, type SuspendedLine, type SuspendedAgeAnswer, type SuspensionPolicy, type HeldQuotation,
 } from '../../../packages/suspended-sales/src/suspended-bill';
+import { heldQuotationsOf } from './bill-void-at-lane';
+
+/**
+ * R9-A · OB-533: free the quotations of a held basket that was given up — the box's release records (bill-void-at-lane.ts),
+ * kept on its disk and queued for head office; idempotent on the basket and quotation.
+ */
+export type FreeHeldQuotations = (input: {
+  readonly heldBillId: string; readonly laneId: string; readonly byUserId: string; readonly reason: string; readonly quotations: readonly HeldQuotation[];
+}) => Promise<{ readonly kept: true } | { readonly kept: false; readonly refusedBecause: string }>;
+
+/** What the box answers a give-up (OB-533: with the quotations it freed, in English and Tamil). */
+export interface AbandonOutcome {
+  readonly abandoned: boolean;
+  readonly laneMessage: string;
+  readonly laneMessageTa?: string;
+  readonly quotationsFreed?: readonly string[];
+  /** OB-533: the basket was given up but its quotations could not be freed on this box's disk — said, never silent (P-08). */
+  readonly quotationsNotFreed?: readonly string[];
+}
 
 export type HoldOutcome =
   | { readonly held: true; readonly billId: string; readonly lineCount: number; readonly laneMessage: string }
@@ -65,6 +90,10 @@ function lineOf(v: unknown): SuspendedLine | undefined {
     // B8 (OB-298): a perishable line's pack-date check comes back with it, read strictly.
     ...(isObj(v['packDateCheck']) && isStr(v['packDateCheck']['confirmedBy']) && isStr(v['packDateCheck']['confirmedAt'])
       ? { packDateCheck: { confirmedBy: v['packDateCheck']['confirmedBy'], confirmedAt: v['packDateCheck']['confirmedAt'] } } : {}),
+    // R9-A · OB-533: a lowered line keeps its price evidence (the price it was cut from, who approved, the activity) — read strictly.
+    ...(isObj(v['priceOverride']) && int(v['priceOverride']['fromUnitMinor']) && v['priceOverride']['fromUnitMinor'] >= 0
+      && isStr(v['priceOverride']['approvedBy']) && isStr(v['priceOverride']['activityId'])
+      ? { priceOverride: { fromUnitMinor: v['priceOverride']['fromUnitMinor'], approvedBy: v['priceOverride']['approvedBy'], activityId: v['priceOverride']['activityId'] } } : {}),
   };
 }
 function answerOf(v: unknown): SuspendedAgeAnswer | undefined {
@@ -97,6 +126,7 @@ export class HeldBills {
       readonly tenantId: string;
       readonly now: () => string;
       readonly tradingDayOf: (iso: string) => string;
+      readonly freeQuotations?: FreeHeldQuotations;
     },
     restored: readonly SuspendedBill[],
     unreadable: number,
@@ -119,6 +149,9 @@ export class HeldBills {
      * till sent no trading day. Absent: the shop default calendar (Asia/Kolkata, midnight), never the UTC date.
      */
     readonly tradingDayOf?: (iso: string) => string;
+    /** R9-A · OB-533: frees a given-up basket's quotations (the box's release records). Absent → a basket carrying a
+     *  quotation cannot be given up here (refused in words — never given up with its quotation silently left used). */
+    readonly freeQuotations?: FreeHeldQuotations;
   }): Promise<HeldBills> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'held-bills.log' });
     const restored: SuspendedBill[] = [];
@@ -131,7 +164,7 @@ export class HeldBills {
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
-    return new HeldBills(log, { policy: input.policy, storeId: input.storeId, tenantId: input.tenantId, now: input.now ?? (() => new Date().toISOString()), tradingDayOf: input.tradingDayOf ?? ((iso) => tradingDayIn(iso, DEFAULT_SHOP_CALENDAR)) }, restored, unreadable);
+    return new HeldBills(log, { policy: input.policy, storeId: input.storeId, tenantId: input.tenantId, now: input.now ?? (() => new Date().toISOString()), tradingDayOf: input.tradingDayOf ?? ((iso) => tradingDayIn(iso, DEFAULT_SHOP_CALENDAR)), ...(input.freeQuotations === undefined ? {} : { freeQuotations: input.freeQuotations }) }, restored, unreadable);
   }
 
   private serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -151,12 +184,14 @@ export class HeldBills {
   }
 
   /** Park a basket for this lane, on the disk before the till hears "held". A re-sent hold (lost reply) is the same hold. */
-  hold(input: { readonly laneId: string; readonly cashierId: string; readonly billId: unknown; readonly lines: unknown; readonly ageAnswers?: unknown; readonly tradingDay?: unknown; readonly reason?: unknown }): Promise<HoldOutcome> {
+  hold(input: { readonly laneId: string; readonly cashierId: string; readonly billId: unknown; readonly lines: unknown; readonly ageAnswers?: unknown; readonly tradingDay?: unknown; readonly reason?: unknown; readonly quotations?: unknown }): Promise<HoldOutcome> {
     return this.serial(async () => {
       if (!isStr(input.billId)) return { held: false, refusedBecause: 'bill_id_missing', laneMessage: 'The till did not say which basket this is. Nothing was held — try again.' };
       const raw = Array.isArray(input.lines) ? input.lines : [];
       const lines = raw.map(lineOf);
-      if (lines.some((l) => l === undefined)) return { held: false, refusedBecause: 'basket_not_readable', laneMessage: 'The store computer could not read this basket. Nothing was held — try again.' };
+      // OB-533: the quotations rung up on the basket travel with it — read strictly; an unreadable one is a basket not kept.
+      const quotations = heldQuotationsOf(input.quotations);
+      if (lines.some((l) => l === undefined) || quotations === undefined) return { held: false, refusedBecause: 'basket_not_readable', laneMessage: 'The store computer could not read this basket. Nothing was held — try again.' };
       const existing = this.bills.get(input.billId);
       if (existing !== undefined && existing.laneId === input.laneId && existing.state === 'suspended') {
         return { held: true, billId: existing.billId, lineCount: existing.lines.length, laneMessage: 'Basket held.' };
@@ -170,6 +205,7 @@ export class HeldBills {
         currency: 'INR', lines: lines as SuspendedLine[], at: this.deps.now(),
         ...(isStr(input.reason) ? { reason: input.reason } : {}),
         ...(answers.length === 0 ? {} : { ageAnswers: answers }),
+        ...(quotations.length === 0 ? {} : { quotations }),
       }, scratch, this.policy());
       if (!result.suspended || result.bill === undefined) {
         return { held: false, refusedBecause: result.outcome, laneMessage: WORDS[result.outcome] ?? result.detail };
@@ -222,13 +258,27 @@ export class HeldBills {
     });
   }
 
-  /** Give a held basket up — kept, with who and why (hard rule #6), never deleted. */
-  abandon(input: { readonly laneId: string; readonly byUserId: string; readonly billId: unknown; readonly reason: unknown }): Promise<{ readonly abandoned: boolean; readonly laneMessage: string }> {
+  /** Give a held basket up — kept, with who and why (hard rule #6), never deleted. OB-533: its quotations are freed again. */
+  abandon(input: { readonly laneId: string; readonly byUserId: string; readonly billId: unknown; readonly reason: unknown }): Promise<AbandonOutcome> {
     return this.serial(async () => {
       if (!isStr(input.billId)) return { abandoned: false, laneMessage: WORDS['not_found']! };
       const held = this.bills.get(input.billId);
       if (held !== undefined && held.laneId !== input.laneId && this.policy().allowCrossLaneRecall !== true) {
         return { abandoned: false, laneMessage: WORDS['other_lane']! };
+      }
+      const quotations = held?.quotations ?? [];
+      if (quotations.length > 0 && this.deps.freeQuotations === undefined) {
+        return {
+          abandoned: false,
+          laneMessage: 'This basket carries a quotation, and this store computer cannot free quotations, so the basket stays held. Tell the manager.',
+          laneMessageTa: 'இந்தக் கூடையில் ஒரு விலைப்புள்ளி உள்ளது; இந்தக் கடைக் கணினி விலைப்புள்ளிகளை விடுவிக்க முடியாது, எனவே கூடை நிறுத்தி வைக்கப்பட்டபடியே உள்ளது. மேலாளரிடம் சொல்லவும்.',
+        };
+      }
+      // A give-up re-sent after a lost reply (or after a release the disk refused): the basket is already given up — its
+      // quotations' releases are made sure of (each is keyed, so nothing is written twice) and said.
+      if (held !== undefined && held.state === 'abandoned' && quotations.length > 0) {
+        const ensured = await this.freeQuotationsOf(held, input.laneId, held.abandonedBy ?? input.byUserId, held.abandonReason ?? '');
+        return { abandoned: true, ...ensured };
       }
       const scratch = SerialisedSuspendedBillStore.hydrate(this.bills.serialise());
       const result = abandonBill({ billId: input.billId, byUserId: input.byUserId, reason: isStr(input.reason) ? input.reason : '', at: this.deps.now() }, scratch);
@@ -238,8 +288,30 @@ export class HeldBills {
       } catch (e) {
         return { abandoned: false, laneMessage: `The store computer could not record it, so the basket stays held. ${e instanceof Error ? e.message : String(e)}` };
       }
-      return { abandoned: true, laneMessage: 'Basket given up. It stays on the record.' };
+      if (quotations.length === 0) return { abandoned: true, laneMessage: 'Basket given up. It stays on the record.' };
+      // OB-533: the basket is given up on the disk — now each quotation it carried is released (kept, then queued).
+      const freed = await this.freeQuotationsOf(result.bill, input.laneId, input.byUserId, result.bill.abandonReason ?? '');
+      return { abandoned: true, ...freed };
     });
+  }
+
+  /** OB-533: release a given-up basket's quotations, and say what happened in the cashier's words (English and Tamil). */
+  private async freeQuotationsOf(bill: SuspendedBill, laneId: string, byUserId: string, reason: string): Promise<Omit<AbandonOutcome, 'abandoned'>> {
+    const quotations = bill.quotations ?? [];
+    const ids = quotations.map((q) => q.quotationId);
+    const out = await this.deps.freeQuotations!({ heldBillId: bill.billId, laneId, byUserId, reason, quotations });
+    if (!out.kept) {
+      return {
+        quotationsNotFreed: ids,
+        laneMessage: `Basket given up, but quotation ${ids.join(', ')} could NOT be freed on this store computer (${out.refusedBecause}) — it stays used. Give the basket up again to retry, or tell the manager.`,
+        laneMessageTa: `கூடை கைவிடப்பட்டது, ஆனால் விலைப்புள்ளி ${ids.join(', ')} இந்தக் கடைக் கணினியில் விடுவிக்கப்படவில்லை (${out.refusedBecause}) — அது பயன்படுத்தியதாகவே இருக்கும். மீண்டும் கைவிட்டு முயலவும், அல்லது மேலாளரிடம் சொல்லவும்.`,
+      };
+    }
+    return {
+      quotationsFreed: ids,
+      laneMessage: `Basket given up. It stays on the record. Quotation ${ids.join(', ')} is freed again — head office is told now, or as soon as its line is back; it can then be rung up on a later bill.`,
+      laneMessageTa: `கூடை கைவிடப்பட்டது; பதிவில் இருக்கும். விலைப்புள்ளி ${ids.join(', ')} மீண்டும் விடுவிக்கப்பட்டது — தலைமை அலுவலகத்துக்கு இப்போதே, அல்லது இணைப்பு திரும்பியதும் தெரிவிக்கப்படும்; பிறகு வேறு பில்லில் சேர்க்கலாம்.`,
+    };
   }
 
   async close(): Promise<void> {

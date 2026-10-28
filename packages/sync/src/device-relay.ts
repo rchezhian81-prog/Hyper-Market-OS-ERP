@@ -28,6 +28,7 @@
 import type { DomainEvent } from '../../contracts/src/event';
 import type { OutboxItem } from './outbox';
 import { readSignInStamp, type SignInStamp } from './sign-in-stamp';
+import { readReportedBuild } from '../../platform-admin/src/handheld-build';
 
 /** The box's routes for device work. Named here so the device and the box cannot drift apart. */
 export const DEVICE_OUTBOX_PATH = '/lane/outbox';
@@ -150,6 +151,9 @@ export interface RelayItem {
   readonly event: DomainEvent;
   /** OB-180: the sign-in a handheld made it under. Only the device socket reads it; it never travels to head office. */
   readonly stamp?: SignInStamp;
+  /** Round 9 · OB-537: the app build that queued it on the handheld. The store computer writes it onto the record it keeps
+   *  and sends (`handheldBuild`), with its own mark when its pack says that build should not have started new work. */
+  readonly appVersion?: string;
 }
 
 /** What a device posts: who it is (the surface) and the items, in enqueue order. */
@@ -220,7 +224,13 @@ export function readRelayItem(v: unknown): ReadRelayItem {
   };
   const stamp = readSignInStamp(v['stamp']);
   if (!stamp.ok) return { ok: false, key, reason: stamp.reason };
-  return { ok: true, item: stamp.stamp === undefined ? { key, event } : { key, event, stamp: stamp.stamp } };
+  // OB-537: a build that is not a short piece of text is not a build — refused with the reason, never guessed at.
+  const build = readReportedBuild(v['appVersion']);
+  if (!build.ok) return { ok: false, key, reason: 'the item\'s appVersion is not a build number' };
+  return {
+    ok: true,
+    item: { key, event, ...(stamp.stamp === undefined ? {} : { stamp: stamp.stamp }), ...(build.appVersion === undefined ? {} : { appVersion: build.appVersion }) },
+  };
 }
 
 export type ReadRelayBatch =

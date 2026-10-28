@@ -10,6 +10,9 @@
 // stock-movement right, a Dispatch button beside it — an online write under the reader's session. A refusal is said in
 // plain words and the return stays undispatched; with no connection the screen says it needs one. Only once head office
 // has recorded the dispatch is the return offered as "gone back".
+// R9-A · OB-534: each delivery with a line no supplier bill is matched to yet offers "Match the bill" (the supplier bill
+// number, then the button) to a reader holding the bill-match right — never to the person who received the goods (the screen
+// says someone else matches it). The bill matched is shown afterwards, line by line. An online write; offline it says so.
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -153,6 +156,8 @@ function receiptNode(r) {
   }
   if (r.valueIncomplete) { const s = document.createElement('span'); s.className = 'value-incomplete'; s.textContent = t('valueIncomplete'); facts.append(s); }
   li.append(facts);
+  // R9-A · OB-534: the supplier bill — matched (which bill, what cost, by whom), or the "Match the bill" button.
+  if (r.billMatch && (r.billMatch.matched.length > 0 || r.billMatch.canMatch || r.billMatch.receivedByYou)) li.append(billBox(r));
 
   // The valued difference, right-aligned in tabular figures; a delivery with none says so in words.
   const val = document.createElement('span');
@@ -207,6 +212,48 @@ function receiptNode(r) {
     li.append(returns);
   }
   return li;
+}
+
+// ── the supplier bill matched to this delivery (R9-A · OB-534) ────────────────
+
+function billBox(r) {
+  const box = document.createElement('div');
+  box.className = 'bill-match';
+  box.dataset.grnId = r.grnId;
+  const head = document.createElement('span'); head.className = 'd-word'; worded(head, 'receipt-text', t('billMatchHeading')); box.append(head);
+  for (const m of r.billMatch.matched) {
+    const line = document.createElement('span'); line.className = 'bill-matched'; line.dataset.invoiceId = m.invoiceId;
+    worded(line, 'check', m.label); box.append(line);
+  }
+  if (r.billMatch.receivedByYou) {
+    const note = document.createElement('span'); note.className = 'bill-not-you'; worded(note, 'user-round', t('billMatchNotYou')); box.append(note);
+  }
+  if (r.billMatch.canMatch) {
+    const id = `bill-${r.grnId}`.replace(/[^A-Za-z0-9_-]/g, '_');
+    const label = document.createElement('label'); label.htmlFor = id; label.textContent = t('billMatchLabel');
+    const input = document.createElement('input');
+    input.id = id; input.type = 'text'; input.autocomplete = 'off'; input.className = 'sre-input bill-invoice'; input.placeholder = t('billMatchPlaceholder');
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'sre-btn bill-match-btn'; button.dataset.grnId = r.grnId;
+    const word = t('billMatchBtn');
+    if (window.sreIcon && typeof window.sreIcon.withWord === 'function') button.append(window.sreIcon.withWord('receipt-text', word));
+    else button.textContent = word;
+    button.addEventListener('click', () => {
+      void (async () => {
+        button.disabled = true;
+        try {
+          const outcome = await session.matchBill({ grnId: r.grnId, invoiceId: input.value });
+          paintResult(session.presentBillMatchOutcome(lang, outcome));
+          // Only a match head office recorded changes the screen; a refusal leaves the delivery exactly as it was.
+          if (outcome.outcome === 'matched' || outcome.outcome === 'already_matched') { paint(); await refresh(); }
+        } finally {
+          button.disabled = false;
+        }
+      })();
+    });
+    box.append(label, input, button);
+  }
+  return box;
 }
 
 // ── dispatched under an e-way bill (OB-204) ─────────────────────────────────

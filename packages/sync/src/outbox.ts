@@ -20,6 +20,9 @@ export interface OutboxItem<TType extends string = string, TPayload = unknown> {
   readonly reason: string | null;
   /** OB-180: the sign-in a handheld made this record under, stamped when it was queued. Absent everywhere else. */
   readonly stamp?: SignInStamp;
+  /** Round 9 · OB-537: the app build that queued this record (a handheld's), stamped once when it was queued — so a record
+   *  queued on an old build and sent after an update still names the old build. Absent everywhere else. */
+  readonly appVersion?: string;
 }
 
 export class SyncOutbox<TType extends string = string, TPayload = unknown> {
@@ -42,8 +45,9 @@ export class SyncOutbox<TType extends string = string, TPayload = unknown> {
     }
   }
 
-  /** Enqueue a locally-committed event; idempotent on its idempotency key. `stamp`: OB-180, a handheld's sign-in stamp. */
-  enqueue(event: DomainEvent<TType, TPayload>, stamp?: SignInStamp): OutboxItem<TType, TPayload> {
+  /** Enqueue a locally-committed event; idempotent on its idempotency key. `stamp`: OB-180, a handheld's sign-in stamp.
+   *  `appVersion`: OB-537, the build that queued it. */
+  enqueue(event: DomainEvent<TType, TPayload>, stamp?: SignInStamp, appVersion?: string): OutboxItem<TType, TPayload> {
     const existing = this.items.get(event.idempotencyKey);
     if (existing) {
       return existing; // already queued or handled — one effect (§31.1)
@@ -55,6 +59,7 @@ export class SyncOutbox<TType extends string = string, TPayload = unknown> {
       attempts: 0,
       reason: null,
       ...(stamp === undefined ? {} : { stamp }),
+      ...(appVersion === undefined ? {} : { appVersion }),
     });
     this.items.set(event.idempotencyKey, item);
     return item;
