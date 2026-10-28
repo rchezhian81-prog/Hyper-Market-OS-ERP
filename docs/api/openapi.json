@@ -5804,6 +5804,90 @@
         }
       }
     },
+    "/v1/b2b/accounts/{customerId}/gstin/removal": {
+      "post": {
+        "operationId": "postB2bAccountsByCustomerIdGstinRemoval",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "b2b.account.manage",
+        "x-entitlement": "b2b",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostB2bAccountsByCustomerIdGstinRemovalRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostB2bAccountsByCustomerIdGstinRemovalReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"b2b.account.manage\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/b2b/accounts/{customerId}/receivables": {
       "post": {
         "operationId": "postB2bAccountsByCustomerIdReceivables",
@@ -112298,7 +112382,7 @@
           "history": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/CustomerGstinRecord"
+              "$ref": "#/components/schemas/CustomerGstinFact"
             }
           },
           "asAt": {
@@ -156555,6 +156639,71 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/b2b-credit.ts"
       },
+      "PostB2bAccountsByCustomerIdGstinRemovalReply": {
+        "type": "object",
+        "required": [
+          "files",
+          "detail",
+          "customerId",
+          "removed",
+          "removedGstin",
+          "legalName",
+          "stateCode",
+          "reason",
+          "removedBy",
+          "removedAt"
+        ],
+        "properties": {
+          "files": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean",
+            "const": true
+          },
+          "removedGstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "stateCode": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "removedBy": {
+            "type": "string"
+          },
+          "removedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
+      },
+      "PostB2bAccountsByCustomerIdGstinRemovalRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
+      },
       "PostB2bAccountsByCustomerIdGstinReply200": {
         "type": "object",
         "required": [
@@ -173195,6 +173344,9 @@
               },
               "additionalProperties": true
             }
+          },
+          "placeOfSupplyStateCode": {
+            "type": "string"
           },
           "recipientGstin": {
             "type": "string"
@@ -242459,6 +242611,7 @@
           "basis": {
             "type": "string",
             "enum": [
+              "customer_gstin_state",
               "delivery_state",
               "store_state_assumed"
             ]
@@ -242797,6 +242950,9 @@
           },
           "invoiceValueMinor": {
             "type": "number"
+          },
+          "placeOfSupplyStateCode": {
+            "type": "string"
           },
           "rateLines": {
             "type": "array",
@@ -251353,6 +251509,16 @@
         },
         "additionalProperties": true
       },
+      "CustomerGstinFact": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CustomerGstinRecord"
+          },
+          {
+            "$ref": "#/components/schemas/CustomerGstinRemoval"
+          }
+        ]
+      },
       "CustomerGstinRecord": {
         "type": "object",
         "required": [
@@ -251399,6 +251565,47 @@
             "type": "string"
           },
           "stateName": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CustomerGstinRemoval": {
+        "type": "object",
+        "required": [
+          "customerId",
+          "removed",
+          "removedGstin",
+          "legalName",
+          "stateCode",
+          "reason",
+          "removedBy",
+          "removedAt"
+        ],
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean",
+            "const": true
+          },
+          "removedGstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "stateCode": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "removedBy": {
+            "type": "string"
+          },
+          "removedAt": {
             "type": "string"
           }
         },
@@ -262363,6 +262570,9 @@
           "inum",
           "idt",
           "val",
+          "pos",
+          "rchrg",
+          "inv_typ",
           "itms"
         ],
         "properties": {
@@ -262374,6 +262584,20 @@
           },
           "val": {
             "type": "number"
+          },
+          "pos": {
+            "type": "string"
+          },
+          "rchrg": {
+            "type": "string",
+            "enum": [
+              "N",
+              "Y"
+            ]
+          },
+          "inv_typ": {
+            "type": "string",
+            "const": "R"
           },
           "itms": {
             "type": "array",

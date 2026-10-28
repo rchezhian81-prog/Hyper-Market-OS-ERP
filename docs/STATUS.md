@@ -5,6 +5,53 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## GST follow-ups (27 October 2026): place of supply, removing a GSTIN, the GSTN file (OB-426 to OB-428). End of session.
+
+**What changed**
+- **OB-426:** a credit invoice's delivery State is pre-filled from the customer's GSTIN, and stays editable. The CGST+SGST or IGST split follows the State used.
+- **OB-427:** a customer's GSTIN can be removed, with a reason. The removal is an append-only fact and is audited. Later invoices file B2C, and issued invoices never change.
+- **OB-428:** each B2B invoice in the GSTN portal file carries `pos`, `rchrg` "N" and `inv_typ` "R". An invoice with no place of supply, or one that does not match its split, stops the export by name.
+
+**This session, in all (27 Oct)**
+- **#816:** re-audit, plus decisions OB-403 to OB-405.
+- **#818:** final batch.
+  - Clock hold and the owner alert.
+  - Rebate claims and the rebates page.
+  - Month-end receivables and B2B GST.
+  - Tobacco board on the go-live checklist.
+  - Security reviewer role and floor-device approvals.
+- **#819:** customer GSTIN, and reviewer-only review requests.
+- **This PR:** OB-426 to OB-428.
+- Owner decisions OB-406 to OB-421 and OB-426 to OB-428 are recorded.
+
+**Tests run**
+- This PR's tests and all guardrails passed: 1,861 of 1,861.
+- The builder ran the whole unit and integration suite: 12,137 passed, 0 failed.
+- The PostgreSQL and browser legs run in CI.
+
+**What is next**
+- The owner's answers to the three questions below.
+- A separate fix for the intermittent real-Keycloak lockout test. It is offered as a suggested task.
+- **Owner actions after install:**
+  - grant Mr Sivakumar the Security reviewer role and name him on Risk acceptance (OA-17);
+  - enter 30 days on Supplier rebates (OA-18);
+  - load the GSTR-1 portal file into the GSTN offline tool before the first live filing.
+
+**Blocked / external**
+- As before: real hardware, live providers, the CA and legacy data, staff UAT, the pen test.
+
+**Needs an owner decision**
+- **`inv_typ` "R":** confirm that every B2B invoice is a regular invoice. No export, SEZ or deemed-export invoices are made.
+- **Old hand-entered B2B supplies with no place of supply.** Do they keep stopping the export?
+  - (a) Keep the refusal.
+  - (b) Add a correction route.
+- **B2CS and B2CL in the GSTN file.** B2CS rows need `pos`, and large inter-State B2C invoices need a B2CL section.
+  - (a) Build State-wise B2CS plus B2CL.
+  - (b) `pos` on intra-State rows only, and refuse when an inter-State row exists.
+  - (c) Defer to a named release.
+
+---
+
 ## Follow-ups (27 October 2026): customer GSTIN (OB-416) and reviewer-only review requests (OB-420)
 
 **What changed**

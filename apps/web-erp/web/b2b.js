@@ -69,6 +69,9 @@ function paintCustomer() {
     gf.id = 'acct-gstin'; acct.append(gf);
   }
   $('gstin-form').hidden = !(may.manageAccount && a !== null);
+  // OB-427: a GSTIN on record may be removed (the registration was cancelled), with the reason typed above.
+  const hasGstin = a !== null && (a.gstin ?? null) !== null;
+  $('g-remove').hidden = !hasGstin; $('g-remove-note').hidden = !hasGstin;
   if (customer.contracts.length === 0) k.append(text('li', t('contractNone')));
   for (const c of customer.contracts) {
     const li = document.createElement('li'); li.dataset.contract = c.contractId;
@@ -134,7 +137,12 @@ function paintDocs() {
       const row = document.createElement('div'); row.className = 'row-form';
       const sent = {};
       for (const l of d.lines) { const f = field(`${t('dispatchedL')}: ${l.description}`, 'dispatched'); f.input.inputMode = 'numeric'; f.input.dataset.line = l.lineId; sent[l.lineId] = f.input; row.append(f.label); }
-      const st = field(t('deliveryState'), 'delivery-state');
+      // OB-426: the delivery State starts as the State of the customer's GSTIN, when one is on record — and can be changed.
+      const pre = api.deliveryStatePrefill ? api.deliveryStatePrefill(customer.account) : null;
+      const st = field(t('deliveryState'), 'delivery-state', pre === null ? '' : pre.stateCode);
+      st.input.inputMode = 'numeric'; st.input.maxLength = 2;
+      const stNote = text('span', pre === null ? t('deliveryBlank') : `${pre.stateName} (${pre.stateCode}) — ${t('deliveryFromGstin')}`, 'meta delivery-note');
+      st.label.append(stNote);
       row.append(st.label);
       const pf = button(t('proforma'), 'file-text', 'proforma', true);
       pf.addEventListener('click', async () => { const o = await session.proforma(customerId, d.documentId); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
@@ -182,7 +190,7 @@ function paint() {
     ['propose-h', 'proposeH'], ['k-id-l', 'contractIdL'], ['k-from-l', 'validFrom'], ['k-to-l', 'validTo'], ['k-expiry-l', 'onExpiryL'], ['k-expiry-block', 'block'], ['k-expiry-fallback', 'fallback'], ['k-limit-l', 'limitL'], ['k-terms-l', 'termsL'], ['k-prices-l', 'pricesL'], ['k-note-l', 'noteL'], ['k-save-text', 'propose'], ['k-ask-text', 'askApproval'],
     ['quote-h', 'quoteH'], ['q-note', 'priceNote'], ['q-store-l', 'storeL'], ['q-days-l', 'validDays'], ['q-add-text', 'addLine'], ['q-issue-text', 'issueQuote'],
     ['docs-h', 'docsH'], ['o-h', 'ordersH'], ['collect-h', 'collectH'], ['pay-amount-l', 'receivedL'], ['pay-save-text', 'recordPayment'],
-    ['gstin-h', 'gstinH'], ['gstin-note', 'gstinNote'], ['g-gstin-l', 'gstinL'], ['g-name-l', 'gstinNameL'], ['g-reason-l', 'gstinReasonL'], ['g-save-text', 'gstinSave']]) $(id).textContent = t(key);
+    ['gstin-h', 'gstinH'], ['gstin-note', 'gstinNote'], ['g-gstin-l', 'gstinL'], ['g-name-l', 'gstinNameL'], ['g-reason-l', 'gstinReasonL'], ['g-save-text', 'gstinSave'], ['g-remove-text', 'removeGstin'], ['g-remove-note', 'removeGstinNote']]) $(id).textContent = t(key);
   paintDesk(); paintRequests(); paintCustomer(); paintQuoteLines();
 }
 
@@ -205,7 +213,7 @@ async function openCustomer(id) {
 }
 const contractInput = () => ({ customerId: customerId ?? $('c-id').value, contractId: $('k-id').value, validFrom: $('k-from').value, validTo: $('k-to').value, onExpiry: $('k-expiry').value, prices: $('k-prices').value, limitRupees: $('k-limit').value, termsDays: $('k-terms').value, note: $('k-note').value });
 
-for (const [id, name] of [['c-open', 'search'], ['k-save', 'file-text'], ['k-ask', 'hand'], ['q-add', 'list-plus'], ['q-issue', 'send'], ['pay-save', 'banknote'], ['g-save', 'shield-check']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+for (const [id, name] of [['c-open', 'search'], ['k-save', 'file-text'], ['k-ask', 'hand'], ['q-add', 'list-plus'], ['q-issue', 'send'], ['pay-save', 'banknote'], ['g-save', 'shield-check'], ['g-remove', 'trash']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (!may.named) { $('page-status').textContent = t('nobody'); }
@@ -230,6 +238,11 @@ else {
     const out = await session.recordGstin({ customerId: customerId ?? '', gstin: $('g-gstin').value, legalName: $('g-name').value, reason: $('g-reason').value });
     say('g-status', out);
     if (out.result === 'ok') { $('g-gstin').value = ''; $('g-name').value = ''; $('g-reason').value = ''; await openCustomer(customerId); }
+  });
+  $('g-remove').addEventListener('click', async () => {
+    const out = await session.removeGstin({ customerId: customerId ?? '', reason: $('g-reason').value });
+    say('g-status', out);
+    if (out.result === 'ok') { $('g-reason').value = ''; await openCustomer(customerId); }
   });
   $('pay-save').addEventListener('click', async () => { const out = await session.recordPayment(customerId ?? '', $('pay-amount').value); say('pay-status', out); if (out.result === 'ok') await openCustomer(customerId); });
 }
