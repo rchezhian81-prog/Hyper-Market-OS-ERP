@@ -76,6 +76,7 @@ import { openEveningCheckBox } from './evening-check-box';
 import { OFFICE_LANE } from './office-sign-in';
 import { returnIdOf } from './cloud-return';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
+import { overrideReductionMinor } from '../../../packages/price-guard/src/till-override';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
 import { commitLocally } from './durability';
@@ -1085,8 +1086,8 @@ export async function startEdge(
         acks.push({ key, status: 'duplicate' });
         continue;
       }
-      // OB-502 (M25-FR-03): food-handling work in the name of someone whose food-handling certificate expired or is missing is
-      // refused BEFORE the disk, from the certificates in the signed pack — the same rule as head office, with the line down.
+      // OB-502 (M25-FR-03): food-handling work in the name of someone whose food-handling certificate the pack shows EXPIRED is
+      // refused BEFORE the disk (only an expired one — owner, 28 Oct 2026; none on file is not blocked), from the certificates in the signed pack — the same rule as head office, with the line down.
       const foodRefusal = foodHandlingRefusalAtTheDoor({
         pack, event, handlesFood, now: new Date().toISOString(), dateOf: (at) => packCalendarDate(pack, at),
         departmentOfRecipe: (recipeId) => {
@@ -1149,6 +1150,16 @@ export async function startEdge(
       // OB-271 · audit A11: a card/UPI refund done on the shop's own machine — the refund (billRef), its amount, its tender,
       // and the machine's refund reference (read below, never card data).
       || (kind === 'card_refund_on_machine' && str(body['billRef']) && whole(value) && (value as number) > 0 && (body['refundTender'] === 'card' || body['refundTender'] === 'upi')));
+    // OB-500: a price change's amount is worked out HERE — from the line's first price, the new price and the quantity (the
+    // product's unit from this box's own catalogue) — and a till that says a different amount is refused, never believed.
+    if (readable && kind === 'price_override') {
+      const productId = body['productId'] as string;
+      const uom = gateProductsOf(pack, node.pack(), new Date().toISOString()).get(productId)?.baseUom ?? (str(body['uom']) ? body['uom'] : undefined);
+      const own = uom === undefined ? undefined : overrideReductionMinor(body['fromUnitMinor'] as number, body['toUnitMinor'] as number, body['quantityMinor'] as number, uom);
+      if (own !== value) {
+        return { recorded: false, refusedBecause: 'cut_does_not_match', laneMessage: 'The till\'s amount for this price change does not agree with what the store computer works out from the line\'s first price, the new price and the quantity. Nothing was done — the line keeps its price.' };
+      }
+    }
     if (!readable) {
       return { recorded: false, refusedBecause: 'not_readable', laneMessage: kind === 'void'
         ? 'The till did not say which line, how much and why. Nothing was removed — try again.'
@@ -1196,7 +1207,10 @@ export async function startEdge(
         approvalId: body['approvalId'], kind, billRef: kind === 'no_sale' ? null : body['billRef'] as string, valueMinor: kind === 'no_sale' ? 0 : value as number,
         requestedBy: cashierId, laneId, activityId: body['activityId'] as string,
         // OB-500: a price change spends only the approval given for exactly this product and new price.
-        ...(kind === 'price_override' ? { productId: body['productId'] as string, toUnitMinor: body['toUnitMinor'] as number } : {}),
+        ...(kind === 'price_override' ? {
+          productId: body['productId'] as string, toUnitMinor: body['toUnitMinor'] as number,
+          lineId: body['lineId'] as string, fromUnitMinor: body['fromUnitMinor'] as number, quantityMinor: body['quantityMinor'] as number,
+        } : {}),
       });
       if (!spent.ok) return { recorded: false, refusedBecause: spent.refusedBecause, laneMessage: spent.laneMessage };
       approval = spent.stamp;
@@ -1625,6 +1639,8 @@ export async function startEdge(
     approvalThresholdMinor: () => (pack.servicePolicy.known ? pack.servicePolicy.value.approvalThresholdMinor : null),
     // OB-500 (R7-A): the floors and price-cut limits head office signed into this box's CURRENT pack — judged offline.
     tillControls: () => (pack.tillControls?.known === true ? pack.tillControls.value : undefined),
+    // OB-500: the product's unit from this box's own catalogue, so the box prices a cut itself (a weighed line rounded down).
+    uomOf: (productId) => gateProductsOf(pack, node.pack(), new Date().toISOString()).get(productId)?.baseUom,
   });
   // RECEIPT NUMBERS (audit PF-04 · M01-FR-02): issued by this box from the lane's published range (else its own sequence,
   // said aloud), on its disk before the till hears them, and bound to the record that used them. The numbers already on

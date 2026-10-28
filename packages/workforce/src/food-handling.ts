@@ -1,7 +1,9 @@
 // OB-502 (owner, 28 Oct 2026, in writing) · M25-FR-03 "an expired certification blocks the gated task".
 //
-// An expired — or missing — food-handling certificate BLOCKS recording food-handling work: a production run, a bakery
-// run and a counter-food (weighed) run. Only that: the till is unchanged, and the person may still do every other job
+// An EXPIRED food-handling certificate BLOCKS recording food-handling work: a production run, a bakery run and a
+// counter-food (weighed) run. Only an expired one (owner, 28 Oct 2026, clarifying OB-502): a person with NO verified
+// certificate on file is NOT blocked — the work is recorded and the verdict says plainly that none is on file. Only that
+// is gated: the till is unchanged, and the person may still do every other job
 // (the gate is on the task, never the person — `canPerformTask`). The same rule runs at head office and on the store
 // computer with the line down (the certificates travel in the signed store pack), so the answer does not depend on the
 // network. The refusal is in plain words, English and Tamil, naming the certificate and the date it expired.
@@ -46,9 +48,11 @@ export const CERTIFICATE_KINDS: readonly { readonly kind: string; readonly en: s
 
 export type FoodHandlingVerdict =
   | { readonly allowed: true; readonly validUntil: string }
+  /** No verified food-handling certificate on file: NOT blocked (owner, 28 Oct 2026) — said, so it can be recorded. */
+  | { readonly allowed: true; readonly noCertificateOnFile: true; readonly words: { readonly en: string; readonly ta: string } }
   | {
     readonly allowed: false;
-    readonly code: 'food_handling_certificate_expired' | 'food_handling_certificate_missing' | 'food_handler_inactive';
+    readonly code: 'food_handling_certificate_expired' | 'food_handler_inactive';
     /** The certificate this work needs. */
     readonly certificate: string;
     /** When the newest verified certificate expired (only for an expired one). */
@@ -64,7 +68,8 @@ const TASK_WORDS: Record<FoodHandlingTask, { readonly en: string; readonly ta: s
 
 /**
  * May this person have food-handling work recorded in their name TODAY? `employee` is the person's staff record (absent
- * when the shop holds none — then there can be no certificate on file either). Only a VERIFIED certificate counts.
+ * when the shop holds none — then there can be no certificate on file either). Only a VERIFIED certificate counts. Refused
+ * only when the newest verified certificate has EXPIRED (or the person has left); none on file → allowed, said plainly.
  */
 export function foodHandlingVerdict(input: {
   readonly personId: string;
@@ -103,11 +108,12 @@ export function foodHandlingVerdict(input: {
       },
     };
   }
+  // certification_missing: no verified certificate on file — NOT a block (owner, 28 Oct 2026: only an expired one blocks).
   return {
-    allowed: false, code: 'food_handling_certificate_missing', certificate: FOOD_HANDLING_CERTIFICATE, decision,
+    allowed: true, noCertificateOnFile: true,
     words: {
-      en: `There is no verified food-handling certificate on file for ${who}. ${cap(task.en)} cannot be recorded in their name until a manager records one. They may still do other work. Nothing was saved.`,
-      ta: `${who} அவர்களுக்குச் சரிபார்க்கப்பட்ட உணவு கையாளும் சான்றிதழ் பதிவில் இல்லை. ஒரு மேலாளர் அதைப் பதியும் வரை அவர் பெயரில் ${task.ta} செய்ய முடியாது. மற்ற வேலைகளைச் செய்யலாம். எதுவும் சேமிக்கப்படவில்லை.`,
+      en: `There is no verified food-handling certificate on file for ${who}. ${cap(task.en)} may still be recorded in their name — only an expired certificate blocks it. A manager may record one on the staff certificates page.`,
+      ta: `${who} அவர்களுக்குச் சரிபார்க்கப்பட்ட உணவு கையாளும் சான்றிதழ் பதிவில் இல்லை. அவர் பெயரில் ${task.ta} இன்னும் செய்யலாம் — காலாவதியான சான்றிதழ் மட்டுமே தடுக்கும். ஒரு மேலாளர் பணியாளர் சான்றிதழ்கள் பக்கத்தில் அதைப் பதியலாம்.`,
     },
   };
 }

@@ -1297,6 +1297,10 @@ export function buildSurface(deps: {
       huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
       shopStateOf: shopStateOf({ store, now }), deliveryOnSale: tillDeliveryOnSale({ store, now }), // OB-288 till side: OB-348 · OB-299
       tillOverrideRulesFor: tillOverrideRulesForSale({ store, now, settings, signer }), clientVersionPolicy: clientVersionPolicyOf({ store, now }), // OB-500 · OB-501 (R7-A)
+      // OB-506: a price the till set from a quotation (lowered or raised) is judged against head office's own quotation record.
+      quotationsNamedFor: async (t, ids) => (await quotationsAdapter({ store, now }).quotations(t))
+        .filter((q) => ids.includes(q.quotationId))
+        .map((q) => ({ quotationId: q.quotationId, state: q.state, lines: q.lines.map((l) => ({ productId: l.productId, unitPriceMinor: l.unitPriceMinor })) })),
     }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
@@ -1652,6 +1656,7 @@ export function buildSurface(deps: {
       quoteRequests: empty([]), recordQuoteRequest: () => {}, schedules: empty([]), recordSchedule: () => {}, runs: empty([]), recordRun: () => {}, now,
     } : {
       ...b2bRecurringOrdersAdapter({ store, now }), // M22-FR-03: every record of a recurring order kept (proposed, approved, paused)
+      calendar: shopCalendar, // OB-514: the date each record fell on is the shop's date
       documents: b2bDocumentDeps(store),
       customerForUser: b2bPortalAdapter({ store, now }).customerForUser,
       recordAccessRefusal: b2bPortalAdapter({ store, now }).recordAccessRefusal,

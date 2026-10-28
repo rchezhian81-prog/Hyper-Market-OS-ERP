@@ -73,11 +73,14 @@ export interface IncomingSaleLine {
   /**
    * A price lowered at the till with a manager's approval (audit PF-07 · M12-FR-04): the unit price before, who approved
    * it and the till action that holds the evidence (on the loss-prevention record). A record, never a control.
+   * OB-506 (owner, 28 Oct 2026): or a price SET from a retail quotation rung up at the till — lowered or RAISED to the
+   * quoted price — with the quotation's number in `quotationId` (and `activityId` `quotation:<number>`).
    */
   readonly priceOverride?: {
     readonly fromUnitPriceMinor?: number;
     readonly approvedBy?: string;
     readonly activityId?: string;
+    readonly quotationId?: string;
   };
   /**
    * B6: the scales the lane took weight from for a WEIGHED line, and the last day each stamp was valid, as the till's gate
@@ -380,6 +383,21 @@ export interface IntakeContext {
   };
   /** OB-501: head office's app version policy — `null` when none is set (nothing enforced); absent when nobody looked. */
   readonly versionPolicy?: VersionPolicy | null;
+  /**
+   * OB-506: the quotations this sale's lines name, as head office's OWN record holds them — each one's state and the price it
+   * promised per product. A line whose price the till set from a quotation is judged against this, never on the till's word:
+   * explained only when that quotation is CONVERTED (rung up at a till) and promised exactly this price for this product.
+   * Absent when nobody looked (no line names a quotation, or not wired): such a line is judged as any other price change.
+   */
+  readonly quotationsNamed?: readonly { readonly quotationId: string; readonly state: string; readonly lines: readonly { readonly productId: string; readonly unitPriceMinor: number }[] }[];
+}
+
+/** OB-506: the quotation a line's price was set from, as the till recorded it (its number, or the `quotation:<n>` evidence). */
+export function quotationOfLine(line: Pick<IncomingSaleLine, 'priceOverride'>): string | undefined {
+  const o = line.priceOverride;
+  if (o === undefined) return undefined;
+  if (typeof o.quotationId === 'string' && o.quotationId.trim() !== '') return o.quotationId.trim();
+  return typeof o.activityId === 'string' && o.activityId.startsWith('quotation:') && o.activityId.length > 'quotation:'.length ? o.activityId.slice('quotation:'.length).trim() : undefined;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -735,6 +753,27 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     }
 
     const difference = line.unitPriceMinor - product.unitPriceMinor;
+    // OB-506 (owner, 28 Oct 2026): a price the till SET from a quotation — lowered, or RAISED to the quoted price — is
+    // explained when head office's OWN record shows that quotation converted (rung up at a till) and promising exactly this
+    // price for this product. Still listed, as informational, naming the quotation. One the record does not back is
+    // MATERIAL. The MRP finding above is judged first and is never excused by a quotation.
+    const quotationId = quotationOfLine(line);
+    const quoted = quotationId === undefined || ctx.quotationsNamed === undefined ? undefined
+      : ((q) => q !== undefined && q.state === 'converted' && q.lines.some((ql) => ql.productId === line.productId && ql.unitPriceMinor === line.unitPriceMinor))(ctx.quotationsNamed.find((q) => q.quotationId === quotationId));
+    if (!aboveMrp && quoted === true && Math.abs(difference) > priceTolerance) {
+      add('price_differs_from_catalogue', 'informational',
+        `${product.sku} was charged at ${line.unitPriceMinor}, the price quotation ${quotationId!} promised (the catalogue says ${product.unitPriceMinor})`,
+        `The price came from quotation ${quotationId!}, which head office converted for a till bill. Nothing to do.`,
+        { productId: line.productId, differenceMinor: difference });
+      continue;
+    }
+    if (!aboveMrp && quoted === false && Math.abs(difference) > priceTolerance) {
+      add('price_differs_from_catalogue', 'material',
+        `${product.sku} was charged at ${line.unitPriceMinor} naming quotation ${quotationId!}, but head office's record holds no converted quotation ${quotationId!} promising that price (the catalogue says ${product.unitPriceMinor})`,
+        'The till set this price from a quotation head office cannot match. Check the bill against the quotation, and that till and its store computer are on the current version.',
+        { productId: line.productId, differenceMinor: difference });
+      continue;
+    }
     // A price the till LOWERED with a manager's approval (PF-07) from the catalogue's own price is explained by that
     // approval: still listed, as informational, naming who approved it and the evidence — never "check the lane".
     const override = line.priceOverride;

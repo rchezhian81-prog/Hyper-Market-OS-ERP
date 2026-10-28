@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -46,6 +46,11 @@ beforeAll(async () => {
   await runMigrations(pgPoolClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
 });
 afterAll(async () => { await pool?.end(); });
+
+// OB-514: a recurring day is judged from the schedule's own history, so the approvals here must come BEFORE the dates
+// that are run — the clock is pinned to the day this journey is set in (it still advances), never the machine's date.
+beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true }); vi.setSystemTime(new Date('2026-10-28T05:00:00.000Z')); });
+afterEach(() => { vi.useRealTimers(); });
 
 interface Backing { readonly name: string; readonly fresh: () => { harness: ApiHarness; store: EventStore }; readonly restart: (prior: EventStore) => { harness: ApiHarness; store: EventStore } }
 const backings: Backing[] = [{

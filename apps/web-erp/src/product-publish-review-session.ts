@@ -179,7 +179,11 @@ export function createProductPublishReviewSession(
       // are shown too (hard rule #6: a dead letter is VISIBLE, never dropped; the classifier maps the terminal
       // outbox states to `permanently_refused` / `published`). The classifier reads the operator's CURRENT
       // context for every still-deliverable item — never the queued snapshot.
-      const items = ports.outbox().all().map((i) => toQueuedPublishItem(i));
+      const all = ports.outbox().all();
+      const items = all.map((i) => toQueuedPublishItem(i));
+      // A refused publish keeps head office's own words with its dead letter (e.g. OB-503: "needs a second person") —
+      // shown on its row, so the person reads WHY, not only that it was refused (P-08).
+      const refusalOf = new Map(all.filter((i) => i.state === 'dead_letter' && typeof i.reason === 'string' && i.reason.trim() !== '').map((i) => [i.key, i.reason!.trim()] as const));
       const summary = summarizePublishQueue(items, ctx);
 
       const rows: PresentedPublishItem[] = summary.rows.map(({ item, state }) => {
@@ -197,7 +201,7 @@ export function createProductPublishReviewSession(
           }),
           needsAttention: face.attention,
           deliverable: state === 'ready',
-          detail: face.detail ? t(face.detail) : '',
+          detail: [face.detail ? t(face.detail) : '', state === 'permanently_refused' ? (refusalOf.get(item.key) ?? '') : ''].filter((w) => w !== '').join(' '),
         };
       });
 

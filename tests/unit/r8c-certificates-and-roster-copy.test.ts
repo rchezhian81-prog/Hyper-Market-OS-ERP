@@ -20,15 +20,15 @@ describe('OB-522 · FoSTaC counts as the same food-handling certificate (OB-502)
     for (const k of ['food-handling', 'Food handling', 'FOOD_HANDLING', 'fostac', 'FoSTaC', ' Fostac ']) expect(isFoodHandlingKind(k), k).toBe(true);
     for (const k of ['forklift', 'first-aid', 'fos-tac-x', '']) expect(isFoodHandlingKind(k), k).toBe(false);
   });
-  it('a verified FoSTaC certificate in date lets food-handling work through; an expired or unverified one blocks it', () => {
+  it('a verified FoSTaC certificate in date lets food-handling work through; an expired one blocks it; an unverified one counts as none on file (not blocked — only an expired certificate blocks)', () => {
     expect(foodHandlingVerdict({ personId: 'E-K', employee: KUMAR, certifications: [cert()], today: TODAY, task: 'production_run' })).toEqual({ allowed: true, validUntil: '2026-12-31' });
     const expired = foodHandlingVerdict({ personId: 'E-K', employee: KUMAR, certifications: [cert({ validUntil: '2026-10-01' })], today: TODAY, task: 'weighed_run' });
     expect(expired.allowed === false && expired.code).toBe('food_handling_certificate_expired');
     const unverified = foodHandlingVerdict({ personId: 'E-K', employee: KUMAR, certifications: [cert({ verifiedBy: undefined })], today: TODAY, task: 'production_run' });
-    expect(unverified.allowed === false && unverified.code).toBe('food_handling_certificate_missing');
-    // A different kind never counts.
-    const other = foodHandlingVerdict({ personId: 'E-K', employee: KUMAR, certifications: [cert({ kind: 'forklift' })], today: TODAY, task: 'production_run' });
-    expect(other.allowed).toBe(false);
+    expect(unverified).toMatchObject({ allowed: true, noCertificateOnFile: true });
+    // A different kind never counts — an expired forklift licence is not an expired food-handling certificate.
+    const other = foodHandlingVerdict({ personId: 'E-K', employee: KUMAR, certifications: [cert({ kind: 'forklift', validUntil: '2026-01-01' })], today: TODAY, task: 'production_run' });
+    expect(other).toMatchObject({ allowed: true, noCertificateOnFile: true });
   });
   it('the store computer judges a FoSTaC certificate from the signed pack the same way, offline', () => {
     const pack: StorePack = {
@@ -57,22 +57,24 @@ describe('OB-522 · the Staff certificates session (apps/web-erp/src/certificate
   const reader = { userId: 'u-clerk', permissions: ['workforce.roster.read'] };
   const NOW = () => '2026-10-28T06:00:00.000Z';
 
-  it('says what each person may do today: a verified FoSTaC → allowed; expired / unverified → blocked, in both languages', async () => {
+  it('says what each person may do today: a verified FoSTaC → allowed; EXPIRED → blocked, in both languages; unverified or none on file → allowed, said (only an expired certificate blocks)', async () => {
     const s = createCertificatesSession({ viewer: manager, now: NOW, fetch: fake({
-      'GET /v1/hr/workforce/roster': { status: 200, body: { employees: [KUMAR, { employeeId: 'E-D', name: 'Devi', branchId: 'S1', roles: ['cook'], active: true }, { employeeId: 'E-R', name: 'Rani', branchId: 'S1', roles: ['cashier'], active: true }] } },
-      'GET /v1/hr/workforce/certifications': { status: 200, body: { certifications: [cert(), cert({ certificationId: 'C0', validUntil: '2025-12-31' }), cert({ certificationId: 'C2', employeeId: 'E-D', kind: 'food-handling', verifiedBy: undefined })] } },
+      'GET /v1/hr/workforce/roster': { status: 200, body: { employees: [KUMAR, { employeeId: 'E-D', name: 'Devi', branchId: 'S1', roles: ['cook'], active: true }, { employeeId: 'E-R', name: 'Rani', branchId: 'S1', roles: ['cashier'], active: true }, { employeeId: 'E-A', name: 'Arun', branchId: 'S1', roles: ['cook'], active: true }] } },
+      'GET /v1/hr/workforce/certifications': { status: 200, body: { certifications: [cert(), cert({ certificationId: 'C0', validUntil: '2025-12-31' }), cert({ certificationId: 'C2', employeeId: 'E-D', kind: 'food-handling', verifiedBy: undefined }), cert({ certificationId: 'C3', employeeId: 'E-A', validUntil: '2026-10-01' })] } },
     }) });
     const out = await s.load();
     expect(out.result).toBe('ok');
     if (out.result !== 'ok') return;
     expect(out.value.today).toBe('2026-10-28');
-    const [devi, kumar, rani] = out.value.people;
+    const [arun, devi, kumar, rani] = out.value.people;
     expect(kumar).toMatchObject({ name: 'Kumar', food: { allowed: true, validUntil: '2026-12-31' } });
     expect(kumar!.certificates.map((c) => [c.certificationId, c.standing, c.foodHandling])).toEqual([['C1', 'valid', true], ['C0', 'expired', true]]);
-    expect(devi!.food.allowed).toBe(false);
+    expect(arun!.food.allowed).toBe(false);
+    if (!arun!.food.allowed) { expect(arun!.food.words.en).toContain("Arun's food-handling certificate expired on 2026-10-01"); expect(arun!.food.words.ta).toMatch(/[஀-௿]/); }
+    expect(devi!.food).toMatchObject({ allowed: true, noCertificateOnFile: true, validUntil: '—' });
     expect(devi!.certificates[0]!.standing).toBe('unverified');
-    if (!rani!.food.allowed) { expect(rani!.food.words.en).toContain('There is no verified food-handling certificate on file for Rani'); expect(rani!.food.words.ta).toMatch(/[஀-௿]/); }
-    expect(rani!.food.allowed).toBe(false);
+    expect(rani!.food).toMatchObject({ allowed: true, noCertificateOnFile: true });
+    if ('words' in rani!.food) { expect(rani!.food.words.en).toContain('There is no verified food-handling certificate on file for Rani'); expect(rani!.food.words.ta).toMatch(/[஀-௿]/); }
   });
 
   it('records a certificate from the pick-list only, verified in MY name when I saw it; never my own; dates must make sense', async () => {

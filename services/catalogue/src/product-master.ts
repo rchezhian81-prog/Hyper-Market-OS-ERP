@@ -29,6 +29,7 @@ import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identit
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import type { MrpReplacement } from '../../../packages/product/src/product';
+import { regulatedFlagsFor } from './catalogue-preview';
 
 /** OB-512: `mrpReplacement: { effectiveFrom, reason }` off a publish body — undefined when absent; 'invalid' when unreadable. */
 function readMrpReplacement(v: unknown): { readonly effectiveFrom: string; readonly reason: string } | undefined | 'invalid' {
@@ -41,6 +42,53 @@ function readMrpReplacement(v: unknown): { readonly effectiveFrom: string; reado
   return { effectiveFrom, reason };
 }
 const rupeesOf = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
+
+type MrpEntry = NonNullable<ProductRecord['mrpHistory']>[number];
+const sameMrp = (a: MrpEntry | undefined, b: MrpEntry | undefined): boolean =>
+  a !== undefined && b !== undefined && a?.effectiveFrom === b?.effectiveFrom
+  && Number(a?.value?.minor) === Number(b?.value?.minor) && String(a?.value?.currency ?? 'INR') === String(b?.value?.currency ?? 'INR');
+
+/**
+ * OB-512 · B2: the first MRP head office HOLDS for this product that the sent history does not carry exactly — left out,
+ * or sent with a different figure for its date. Head office's held history is the truth: a publish may only ADD MRPs with
+ * new dates. The one held date an approved replacement names (`replacedOn`) is exempt — it travels the replacement path.
+ */
+function mrpNotKept(held: readonly MrpEntry[], sent: readonly MrpEntry[], replacedOn: string | undefined): { readonly entry: MrpEntry; readonly sentInstead?: MrpEntry } | undefined {
+  for (const entry of held) {
+    if (entry?.effectiveFrom === replacedOn) continue;
+    if (sent.some((s) => sameMrp(s, entry))) continue;
+    const sentInstead = sent.find((s) => s?.effectiveFrom === entry?.effectiveFrom);
+    return sentInstead === undefined ? { entry } : { entry, sentInstead };
+  }
+  return undefined;
+}
+
+/** The till-facing words for the regulated markers a product can carry (the keys of `regulatedFlagsFor`). */
+const REGULATED_WORDS: Readonly<Record<string, string>> = {
+  minimumAge: 'a minimum age to buy it', tobacco: 'tobacco', packMinimumMinor: 'a tobacco pack minimum', carryBag: 'a carry bag',
+  plasticMaterial: 'a plastic material', plasticThicknessMicrons: 'a plastic thickness', bannedSingleUsePlastic: 'a banned single-use plastic',
+  gold: 'gold (hallmark HUID)', huid: 'a hallmark HUID', bisControlled: 'BIS-controlled goods', bisLicenceNo: 'a BIS licence number',
+  bisLicenceValidUntil: 'a BIS licence date', perishable: 'a perishable (pack date checked at the till)',
+};
+
+/**
+ * OB-503 (owner, in writing; narrowed 28 Oct 2026 to an age limit and tobacco): the second-person markers a publish puts on the tills that head office has not
+ * already put there for this product — every marker of a product reaching the tills for the first time (never published,
+ * or published only as a draft), or a marker newly added to one already on sale. Empty when the product does not reach
+ * the tills from this publish (it stays a draft or is discontinued), or carries nothing new.
+ */
+// OB-503 as the owner narrowed it (28 Oct 2026): only an age limit and tobacco need the second person. Gold, BIS goods, carry
+// bags/plastic and perishables keep their till checks but are published by one person (with the step-up at pack publish).
+const SECOND_PERSON_MARKERS: ReadonlySet<string> = new Set(['minimumAge', 'tobacco', 'packMinimumMinor']);
+const secondPersonMarkers = (r: ProductRecord): readonly string[] => Object.keys(regulatedFlagsFor(r) ?? {}).filter((k) => SECOND_PERSON_MARKERS.has(k));
+function regulationGained(current: ProductRecord | undefined, next: ProductRecord): readonly string[] {
+  if (!SELLING.includes(next.lifecycle)) return [];
+  const now = secondPersonMarkers(next);
+  if (now.length === 0) return [];
+  const before = new Set(current === undefined || current.lifecycle === 'draft' ? [] : secondPersonMarkers(current));
+  return now.filter((k) => !before.has(k)).sort();
+}
+const regulatedWords = (flags: readonly string[]): string => flags.map((f) => REGULATED_WORDS[f] ?? f).join(', ');
 
 export interface ProductMasterDeps {
   /**
@@ -189,6 +237,24 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             wasItSaved: 'not_saved', nextSafeAction: 'Send the date and the reason, with the approvalId of the second person\'s approval. Nothing was saved.',
           });
         }
+        // OB-347: a draft never published, or a first class on a product that had none, is not a tax-class change and needs no
+        // approval (judged with the approval further down).
+        const fromClass = typeof current?.taxClass === 'string' && current.taxClass.trim() !== '' ? current.taxClass.trim() : undefined;
+        const toClass = typeof record.taxClass === 'string' ? record.taxClass.trim() : '';
+        const classChange = current !== undefined && current.lifecycle !== 'draft' && fromClass !== undefined && fromClass !== toClass
+          ? { from: fromClass, to: toClass } : undefined;
+        // OB-503: one publish names ONE approval (`approvalId`). A publish that would newly put an age-restricted or regulated
+        // product on the tills AND change its tax class or replace an MRP needs two different second-person checks — said
+        // plainly here, so the person does them one after the other instead of meeting a puzzling approval refusal.
+        const likelyGained = regulationGained(current, { ...record, lifecycle: record.lifecycle === 'draft' ? 'new' : record.lifecycle });
+        if (likelyGained.length > 0 && (classChange !== undefined || asked !== undefined)) {
+          throw apiError(422, {
+            code: 'one_second_person_check_per_publish',
+            whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(likelyGained)} AND ${classChange !== undefined ? 'a new tax class' : 'a replaced MRP'} in the same publish. Each needs its own second person's approval, and one publish carries one approval.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Publish the ${classChange !== undefined ? 'tax class change' : 'MRP replacement'} first (with its own approval), then publish the age-restricted or regulated details with a second person's approval. Nothing was saved.`,
+          });
+        }
         let mrpApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
         let replacement: MrpReplacement | undefined;
         if (asked !== undefined) {
@@ -238,16 +304,29 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
               : 'Keep the MRP already on record for that date, or give the new MRP the date it really takes effect from (a later date), and publish again. Nothing was saved.',
           });
         }
+        // OB-512 · B2 (an MRP is never overwritten): head office's HELD history is the truth. A publish may only ADD MRPs with new
+        // dates; an MRP on record that the publish leaves out, or sends with another figure, is refused by name — otherwise
+        // dropping an MRP in one publish and sending a different one for its date in the next would change it with no reason,
+        // no approval and no record. The only way to change one is the approved replacement above (not yet in force).
+        const notKept = mrpNotKept(held, sent, replacement?.effectiveFrom);
+        if (notKept !== undefined) {
+          const { entry, sentInstead } = notKept;
+          const date = String(entry?.effectiveFrom ?? '');
+          const notYetInForce = date > today;
+          throw apiError(409, {
+            code: 'mrp_on_record_not_kept',
+            whatHappened: `"${record.name}" cannot be published: head office holds an MRP of ${rupeesOf(Number(entry?.value?.minor))} taking effect on ${date}, and this publish ${sentInstead === undefined ? 'leaves it out' : `sends ${rupeesOf(Number(sentInstead.value?.minor))} for that date instead`}. An MRP on record is never removed or changed by a publish (B2) — a publish may only add an MRP with a new date.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: notYetInForce
+              ? `Send the MRPs exactly as head office holds them (read them with GET /v1/catalogue/products/${productId}). The MRP for ${date} is not yet in force, so it may be REPLACED with a reason and a second person's approval: ask for approval (kind mrp_replacement, subjectRef product:${productId}:mrp:${date}) and publish again with mrpReplacement { effectiveFrom: "${date}", reason } and the approvalId. Nothing was saved.`
+              : `Send the MRPs exactly as head office holds them (read them with GET /v1/catalogue/products/${productId}). The MRP for ${date} is already in force (today is ${today}) and stays on record; to move the price, add a new MRP with its own later date. Nothing was saved.`,
+          });
+        }
         // OB-512: every replacement ever made is carried forward from head office's record (append-only), never from a body.
         const replacements = [...(current?.mrpReplacements ?? []), ...(replacement === undefined ? [] : [replacement])];
         const toPublish: ProductRecord = replacements.length === 0 ? record : { ...record, mrpReplacements: replacements };
         // OB-347 (owner, 24 Oct 2026, in writing): a PUBLISHED product's tax (HSN) class changes only with a Finance approver's
         // approval of exactly this record — the accountant or the owner, never the person asking (kind `hsn_class_change`).
-        // A draft never published, or a first class on a product that had none, is not a change and needs none.
-        const fromClass = typeof current?.taxClass === 'string' && current.taxClass.trim() !== '' ? current.taxClass.trim() : undefined;
-        const toClass = typeof record.taxClass === 'string' ? record.taxClass.trim() : '';
-        const classChange = current !== undefined && current.lifecycle !== 'draft' && fromClass !== undefined && fromClass !== toClass
-          ? { from: fromClass, to: toClass } : undefined;
         let hsnApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
         if (classChange !== undefined) {
           hsnApproval = deps.approvals === undefined ? undefined : await approvalNamedIn(deps.approvals, {
@@ -319,6 +398,29 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             activationRefused = standing;
           }
         }
+        // OB-503 (owner, in writing: "only risky new products need a second person before reaching the tills"): a product that
+        // reaches the tills from this publish carrying an age limit or a regulated marker head office has not already put
+        // there — a new age-restricted/regulated product, or one newly made so — needs a second person's approval of exactly
+        // this record through the maker-checker engine (kind `regulated_product_publish`; the checker approves catalogue
+        // changes, `catalogue.tax.approve`: the accountant or the owner — never the maker), on top of the publisher's fresh
+        // second-factor sign-in at pack publish (ADR-0013 point 4). An ordinary product is published by one person.
+        const gained = regulationGained(current, published);
+        let regulatedApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
+        if (gained.length > 0) {
+          regulatedApproval = await approvalNamedIn(deps.approvals, {
+            tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+            kind: 'regulated_product_publish', subjectRef: `product:${productId}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
+            maker: ctx.userId, usedBy: `regulated-product:${productId}:${gained.join(',')}`, now: deps.now?.() ?? new Date().toISOString(),
+          });
+          if (regulatedApproval === undefined) {
+            throw apiError(422, {
+              code: 'regulated_product_needs_second_person',
+              whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(gained)}. An age-restricted or tobacco product needs a second person to approve it before it goes on sale — never the person publishing it (OB-503).`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind regulated_product_publish, subjectRef product:${productId}, with exactly this product record); once a second person who approves catalogue changes (the accountant or the owner) approves it, send it again with the approvalId. Nothing was saved.`,
+            });
+          }
+        }
         // The one re-check a single device CANNOT do (ADR-0013 control 9): SKU uniqueness across the WHOLE
         // tenant. Each device validates the product it holds, but two devices authoring offline each believe
         // their SKU is free — only here, where every product master lives, can a collision be seen. A SKU
@@ -343,6 +445,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             // OB-347: the Finance approval is spent once, after every rule passed and before the record is written.
             if (attempt === 0) await hsnApproval?.spend();
             if (attempt === 0) await mrpApproval?.spend(); // OB-512: spent once, after every rule passed, before the write
+            if (attempt === 0) await regulatedApproval?.spend(); // OB-503: spent once, after every rule passed, before the write
             await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId, held?.version);
           } catch (err) {
             if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
@@ -360,6 +463,14 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
               reason: replacement.reason, approvalId: replacement.approvalId, correlationId: `mrp-replacement:${productId}:${replacement.effectiveFrom}`,
             });
           }
+          if (regulatedApproval !== undefined) {
+            await deps.recordAudit?.(ctx.tenantId, {
+              actorId: ctx.userId, action: 'catalogue.product.regulated.publish', objectType: 'product', objectId: productId,
+              at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+              before: { regulated: '' }, after: { regulated: gained.join(','), approvedBy: regulatedApproval.decision.decidedBy },
+              approvalId: regulatedApproval.decision.requestId, correlationId: `regulated-product:${productId}:${gained.join(',')}`,
+            });
+          }
           if (classChange !== undefined && hsnApproval !== undefined) {
             await deps.recordAudit?.(ctx.tenantId, {
               actorId: ctx.userId, action: 'catalogue.product.tax_class.change', objectType: 'product', objectId: productId,
@@ -374,6 +485,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
               product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}),
               ...(classChange === undefined || hsnApproval === undefined ? {} : { taxClassChange: { from: classChange.from, to: classChange.to, approvedBy: hsnApproval.decision.decidedBy } }),
               ...(replacement === undefined ? {} : { mrpReplacement: replacement }), // OB-512
+              ...(regulatedApproval === undefined ? {} : { regulatedApproval: { regulated: gained, approvedBy: regulatedApproval.decision.decidedBy, approvalId: regulatedApproval.decision.requestId } }), // OB-503
               // B16: said, never silent — the product is saved as a draft and is NOT on sale until its warning is confirmed.
               ...(activationRefused === undefined || activationRefused.sellable ? {} : {
                 activation: {

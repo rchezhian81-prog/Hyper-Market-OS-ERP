@@ -203,6 +203,8 @@ describe.each(backings)('OB-500 · OB-501 on the store computer, offline — $na
     await signInTill(till, CASHIER);
     till.scanBarcode(GHEE);
     const line = till.basket()[0]!.lineId;
+    // OB-500: what the till sends with a price-cut approval — the line, its first price, its quantity and unit.
+    const cutOn = { lineId: line, fromUnitMinor: 64_000, quantityMinor: 1, uom: 'ea' };
 
     // ₹450 is below the ₹500 floor: refused at the till, before any manager is asked, in both languages.
     const below = till.priceChangeValue(line, 45_000);
@@ -210,22 +212,22 @@ describe.each(backings)('OB-500 · OB-501 on the store computer, offline — $na
     expect((below as { laneMessage: string }).laneMessage).toContain('₹500.00');
     expect((below as { laneMessageTa?: string }).laneMessageTa).toContain('குறைந்தபட்ச விலை');
     // …and the store computer refuses it too when asked directly (an old till, or one that skipped its own check).
-    const direct = await till.approveAtTill({ managerId: MANAGER, pin: '000000', kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 19_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 45_000 });
+    const direct = await till.approveAtTill({ managerId: MANAGER, pin: '000000', kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 19_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 45_000, ...cutOn });
     expect(direct).toMatchObject({ approved: false, refusedBecause: 'below_floor' });
 
     // ₹640 → ₹520 takes ₹120 off: above the manager's ₹100 limit — refused by the box, in English and Tamil.
     const big = till.priceChangeValue(line, 52_000);
     expect(big).toMatchObject({ ok: true, reductionMinor: 12_000, productId: 'p-ghee' });
-    const over = await till.approveAtTill({ managerId: MANAGER, pin: pinOf(MANAGER), kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 12_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 52_000 });
+    const over = await till.approveAtTill({ managerId: MANAGER, pin: pinOf(MANAGER), kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 12_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 52_000, ...cutOn });
     expect(over).toMatchObject({ approved: false, refusedBecause: 'above_limit' });
     expect((over as { laneMessage: string }).laneMessage).toContain('₹100.00');
     expect((over as { laneMessageTa?: string }).laneMessageTa).toContain('வரம்பை');
     // The owner has no limit: the same ₹120 is his to approve.
-    const owners = await till.approveAtTill({ managerId: OWNER, pin: pinOf(OWNER), kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 12_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 52_000 });
+    const owners = await till.approveAtTill({ managerId: OWNER, pin: pinOf(OWNER), kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 12_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 52_000, ...cutOn });
     expect(owners, JSON.stringify(owners)).toMatchObject({ approved: true });
 
     // ₹90 off (₹640 → ₹550) is within the manager's limit: approved, recorded, the line changes.
-    const fine = await till.approveAtTill({ managerId: MANAGER, pin: pinOf(MANAGER), kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 9_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 55_000 });
+    const fine = await till.approveAtTill({ managerId: MANAGER, pin: pinOf(MANAGER), kind: 'price_override', billRef: till.currentBillRef(), valueMinor: 9_000, reason: 'damaged_pack', productId: 'p-ghee', toUnitMinor: 55_000, ...cutOn });
     expect(fine, JSON.stringify(fine)).toMatchObject({ approved: true });
     // An approval for ₹550 is never spent on another price.
     expect(await till.priceChangeAtTill(line, 54_000, 'damaged_pack', { approvalId: (fine as { approvalId: string }).approvalId })).toMatchObject({ ok: false });
@@ -238,6 +240,60 @@ describe.each(backings)('OB-500 · OB-501 on the store computer, offline — $na
     expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
     // Within the floor and the limit: head office raises nothing about the cut.
     expect((await materialKinds()).filter((e) => e.saleId === `S-${n}` && e.kind.startsWith('price_cut'))).toEqual([]);
+  }, 120_000);
+
+  it('OB-500: offline, two stacked cuts that together pass the manager\'s limit are refused at the till and by the box; a cut line\'s quantity is locked; the box judges its OWN figure, never the till\'s', async () => {
+    const { catalogue, lane } = await served(edge);
+    cut = true; // ── THE NETWORK IS CUT ──
+    try {
+      const till = bootPos({ laneId: LANE, catalogue, lanePort: edge.lane!.port, priceFloors: lane['priceFloors'] as Record<string, number> });
+      await signInTill(till, CASHIER);
+      till.scanBarcode(GHEE);
+      const line = till.basket()[0]!.lineId;
+      const approve = (managerId: string, v: ReturnType<typeof till.priceChangeValue>, toUnitMinor: number, over: Record<string, unknown> = {}) => {
+        if (!v.ok) throw new Error(v.laneMessage);
+        return till.approveAtTill({ managerId, pin: pinOf(managerId), kind: 'price_override', billRef: till.currentBillRef(), valueMinor: v.reductionMinor, reason: 'damaged_pack', productId: v.productId, toUnitMinor, lineId: v.lineId, fromUnitMinor: v.fromUnitMinor, quantityMinor: v.quantityMinor, uom: v.uom, ...over });
+      };
+
+      // First cut: ₹640 → ₹590, ₹50 off — within the manager's ₹100. Approved, recorded on the box, the line changes.
+      const first = till.priceChangeValue(line, 59_000);
+      expect(first).toMatchObject({ ok: true, reductionMinor: 5_000, fromUnitMinor: 64_000 });
+      const g1 = await approve(MANAGER, first, 59_000);
+      expect(g1, JSON.stringify(g1)).toMatchObject({ approved: true });
+      expect(await till.priceChangeAtTill(line, 59_000, 'damaged_pack', { approvalId: (g1 as { approvalId: string }).approvalId })).toMatchObject({ ok: true });
+
+      // A cut line's quantity is locked: ₹50 off one is never ₹500 off ten without a new approval.
+      let refused: { name?: string; laneMessage?: string; laneMessageTa?: string } | undefined;
+      try { till.setQuantity(line, 10); } catch (e) { refused = e as typeof refused; }
+      expect(refused?.name).toBe('CutLineQuantityRefusedError');
+      expect(refused?.laneMessage).toContain('void the line and ring it again');
+      expect(refused?.laneMessageTa).toContain('எண்ணிக்கையை மாற்ற முடியாது');
+      expect(till.basket()[0]!.qty).toBe(1);
+
+      // Second cut: ₹590 → ₹520 is another ₹70 (still above the ₹500 floor) — but ₹120 off the line's first price. The till
+      // asks for ₹120; the box refuses it.
+      const second = till.priceChangeValue(line, 52_000);
+      expect(second).toMatchObject({ ok: true, reductionMinor: 12_000, fromUnitMinor: 64_000 });
+      const g2 = await approve(MANAGER, second, 52_000);
+      expect(g2).toMatchObject({ approved: false, refusedBecause: 'above_limit' });
+      expect((g2 as { laneMessage: string }).laneMessage).toContain('₹120.00');
+      // A till that measures from the price already cut ("₹70 off ₹590") is not believed: the box knows the line's first price.
+      expect(await approve(MANAGER, second, 52_000, { fromUnitMinor: 59_000, valueMinor: 7_000 })).toMatchObject({ approved: false, refusedBecause: 'cut_does_not_match' });
+      // An understated amount ("₹10") is judged on the box's own figure (₹120): above the limit.
+      expect(await approve(MANAGER, second, 52_000, { valueMinor: 1_000 })).toMatchObject({ approved: false, refusedBecause: 'above_limit' });
+      expect(till.basket()[0]!.unitPriceMinor).toBe(59_000);
+
+      // And the box's till-activity door works the amount out itself: an understated price change is refused before the disk.
+      const before = (await readLog(edge.deviceEventsLog.path)).length;
+      const token = await signInAtLane(edge.lane!.port, CASHIER);
+      const tampered = await (await saved(`http://127.0.0.1:${edge.lane!.port}/lane/till-activity`, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeader(token) },
+        body: JSON.stringify({ activityId: 'O-tampered', kind: 'price_override', billRef: till.currentBillRef(), lineId: line, productId: 'p-ghee', description: 'Ghee 1L',
+          fromUnitMinor: 64_000, toUnitMinor: 52_000, quantityMinor: 1, uom: 'ea', valueMinor: 7_000, reason: 'damaged_pack', approvalId: (g1 as { approvalId: string }).approvalId }),
+      })).json() as { recorded: boolean; refusedBecause?: string };
+      expect(tampered).toMatchObject({ recorded: false, refusedBecause: 'cut_does_not_match' });
+      expect((await readLog(edge.deviceEventsLog.path)).length).toBe(before);
+    } finally { cut = false; }
   }, 120_000);
 
   it('OB-500: head office re-checks a lowered line that arrives beyond the floor or the manager\'s limit and raises it — the sale stands', async () => {

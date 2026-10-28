@@ -27,8 +27,9 @@ import { addDays, rosterWeekStartOf } from '../../packages/workforce/src/working
  *     visible (hard rule #10); a second "in" is booked and FLAGGED as an exception, never silently fixed.
  * M25-FR-03 · OB-502 "an expired certification blocks the gated task":
  *   • on the box, offline, a production run in the name of a cook whose food-handling certificate EXPIRED is refused before
- *     the disk in plain words naming the certificate and its expiry; a cook with a valid certificate is kept; the production
- *     screen is told the signed-in cook's verdict.
+ *     the disk in plain words naming the certificate and its expiry; a cook with a valid certificate is kept; a cook with NO
+ *     certificate on file is kept too (owner, 28 Oct 2026: only an expired certificate blocks); the production screen is
+ *     told the signed-in cook's verdict.
  */
 
 const S1 = 'S1';
@@ -56,6 +57,7 @@ async function cloudAndBox(harness: () => ApiHarness) {
   await h.provisionRole(T, 'E-RANI', 'cashier', [S1]);
   await h.provisionRole(T, 'E-COOK', 'store_manager', [S1]);
   await h.provisionRole(T, 'E-OK', 'store_manager', [S1]);
+  await h.provisionRole(T, 'E-NEW', 'store_manager', [S1]);
   for (const [id, body] of [['C1', { kind: 'company', name: 'SRE Retail' }], [S1, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' }], [KITCHEN, { kind: 'department', name: 'Cafe kitchen', parentId: S1, companyId: 'C1' }]] as const) {
     await ok(call('POST', `/v1/org/nodes/${id}`, 'u-owner', body), `org ${id}`);
   }
@@ -63,7 +65,7 @@ async function cloudAndBox(harness: () => ApiHarness) {
   // The roster: Rani on two shifts of NEXT week, which the manager publishes; one shift of the week after (not published).
   const today = shopDateIn(new Date().toISOString());
   const week = addDays(rosterWeekStartOf(today), 7);
-  for (const [id, name, roles] of [['E-RANI', 'Rani', ['cashier']], ['E-COOK', 'Kumar', ['cook']], ['E-OK', 'Selvi', ['cook']]] as const) {
+  for (const [id, name, roles] of [['E-RANI', 'Rani', ['cashier']], ['E-COOK', 'Kumar', ['cook']], ['E-OK', 'Selvi', ['cook']], ['E-NEW', 'Devi', ['cook']]] as const) {
     await ok(call('POST', `/v1/hr/workforce/employees/${id}`, 'u-mgr', { name, branchId: S1, roles, active: true }), `employee ${id}`);
   }
   const shifts = [['SH-1', addDays(week, 1)], ['SH-2', addDays(week, 2)], ['SH-9', addDays(week, 8)]] as const;
@@ -72,7 +74,7 @@ async function cloudAndBox(harness: () => ApiHarness) {
     await ok(call('POST', `/v1/hr/workforce/shifts/${id}/assignments/E-RANI`, 'u-mgr', { role: 'cashier' }), `assign ${id}`);
   }
   await ok(call('POST', '/v1/hr/compliance/roster-publications/P-1', 'u-mgr', { branchId: S1, weekStart: week }), 'publish next week');
-  // Certificates: Kumar's EXPIRED yesterday; Selvi's is valid. Each verified by the manager who saw it.
+  // Certificates: Kumar's EXPIRED yesterday; Selvi's is valid. Each verified by the manager who saw it. Devi has none on file.
   await ok(call('POST', '/v1/hr/workforce/certifications/C-COOK', 'u-mgr', { employeeId: 'E-COOK', kind: 'Food handling', issuedOn: '2025-01-01', validUntil: addDays(today, -1), verifiedBy: 'u-mgr' }), 'cert cook');
   await ok(call('POST', '/v1/hr/workforce/certifications/C-OK', 'u-mgr', { employeeId: 'E-OK', kind: 'food-handling', issuedOn: '2026-01-01', validUntil: addDays(today, 200), verifiedBy: 'u-mgr' }), 'cert ok');
 
@@ -160,7 +162,7 @@ describe.each(backings)('OB-507 · OB-502: the roster and the certificates ride 
     expect((await box.syncOnce!()).sent).toBe(0);
     expect(c.net.posts).toBe(0);
 
-    // ── OB-502 at the box's door, offline: Kumar's certificate expired; Selvi's is valid ──
+    // ── OB-502 at the box's door, offline: Kumar's certificate expired; Selvi's is valid; Devi has none on file ──
     const refused = (await hand(box, [run('R-K', 'E-COOK', outAt)]))[0]!;
     expect(refused.status).toBe('refused');
     expect(refused.reason).toContain('food_handling_certificate_expired');
@@ -168,9 +170,12 @@ describe.each(backings)('OB-507 · OB-502: the roster and the certificates ride 
     expect(refused.reason).toContain('Kumar');
     expect(refused.reason).toMatch(/[஀-௿]/); // and in Tamil
     expect((await hand(box, [run('R-S', 'E-OK', outAt)]))[0]!.status).toBe('accepted');
+    // No certificate on file is NOT a block (only an expired one is): Devi's run is kept, offline.
+    expect((await hand(box, [run('R-D', 'E-NEW', outAt)]))[0]!.status).toBe('accepted');
     // The production screen is told the signed-in cook's verdict, in words.
     expect((await screen(box, '/production/', GLOBAL_FOR.production, 'E-COOK'))['foodHandling']).toMatchObject({ allowed: false, code: 'food_handling_certificate_expired', expiredOn: addDays(c.today, -1) });
     expect((await screen(box, '/production/', GLOBAL_FOR.production, 'E-OK'))['foodHandling']).toMatchObject({ allowed: true });
+    expect((await screen(box, '/production/', GLOBAL_FOR.production, 'E-NEW'))['foodHandling']).toMatchObject({ allowed: true, noCertificateOnFile: true });
 
     // ── COLD RESTART, still offline: nothing lost; a re-sent mark is the same mark ──
     await box.stop(); cleanups.pop();

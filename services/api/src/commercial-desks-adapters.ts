@@ -290,7 +290,7 @@ export function commercialDesksSweep(input: Base & {
       if (input.recurring !== undefined) {
         const on = await shopClock(input.calendar).dateOf(tenantId, at);
         const documents = b2bOrderMakingChain({ store: input.store, now: input.now, ...(input.recurring.numberSeries === undefined ? {} : { numberSeries: input.recurring.numberSeries }) });
-        const runs = await runRecurringOrders({ ...b2bRecurringOrdersAdapter(input), documents }, { tenantId, on, ranBy: RECURRING_RUNNER, oncePerDay: true });
+        const runs = await runRecurringOrders({ ...b2bRecurringOrdersAdapter(input), documents, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }, { tenantId, on, ranBy: RECURRING_RUNNER, oncePerDay: true });
         for (const r of runs.filter((x) => x.outcome === 'exception')) {
           const alertId = `b2b-recurring-exception:${r.scheduleId}:${r.on}`;
           // OB-435: the refusal's own words are kept as they were said (verbatim in both languages); the frame is translated.

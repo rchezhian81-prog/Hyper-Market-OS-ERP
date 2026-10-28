@@ -114,7 +114,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -174,6 +174,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindTaxRateChange: 'Change the GST rate of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
     kindHsnClassChange: 'Change the tax (HSN) class of a published product',
     kindMrpReplacement: 'Replace an MRP that is not yet in force',
+    kindRegulatedProductPublish: 'Put an age-restricted or regulated product on sale',
     kindB2BContract: 'Approve a business customer\'s contract (prices, dates, credit and terms)',
     kindB2BCreditOverride: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
     kindB2BCreditLimit: 'Set or change a business customer\'s credit limit (and payment terms)',
@@ -256,6 +257,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
     kindHsnClassChange: 'வெளியிடப்பட்ட பொருளின் வரி (HSN) வகையை மாற்றுதல்',
     kindMrpReplacement: 'இன்னும் நடைமுறைக்கு வராத MRP-ஐ மாற்றுதல்',
+    kindRegulatedProductPublish: 'வயது வரம்புள்ள அல்லது ஒழுங்குமுறைக்கு உட்பட்ட பொருளை விற்பனைக்கு வைத்தல்',
     kindB2BContract: 'வணிக வாடிக்கையாளரின் ஒப்பந்தத்தை அனுமதித்தல் (விலை, தேதிகள், கடன், நிபந்தனைகள்)',
     kindB2BCreditOverride: 'வாடிக்கையாளரின் கடன் வரம்பை (அல்லது முடிந்த ஒப்பந்தத்தை) மீறி வணிக ஆர்டரை அனுமதித்தல்',
     kindB2BCreditLimit: 'வணிக வாடிக்கையாளரின் கடன் வரம்பை (மற்றும் கட்டண நிபந்தனைகளை) அமைத்தல் அல்லது மாற்றுதல்',
@@ -351,6 +353,8 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   hsn_class_change: 'kindHsnClassChange',
   // OB-512: an MRP not yet in force replaced — another catalogue publisher approves.
   mrp_replacement: 'kindMrpReplacement',
+  // OB-503: an age-restricted or regulated product reaching the tills — a second person who approves catalogue changes.
+  regulated_product_publish: 'kindRegulatedProductPublish',
   // OB-288 commercial desks (M22-FR-01): a B2B contract (a second contract manager approves); an order over the credit limit (the owner).
   b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride', b2b_credit_limit: 'kindB2BCreditLimit',
   // OB-288 P4 (M36-FR-03): closing the shop's account — IT asks, the owner approves.

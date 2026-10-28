@@ -75,3 +75,14 @@ export async function sentWithApproval(
   if (decided.status !== 201) return decided;
   return send({ ...body, approvalId: requestId });
 }
+
+/**
+ * OB-503 (owner, in writing): a product reaching the tills age-restricted or regulated needs a second person's approval of
+ * exactly its publish (kind `regulated_product_publish`; the checker approves catalogue changes — the accountant or the
+ * owner, never the maker). Resolves the publish body naming that approval.
+ */
+export function regulatedPublishBody(
+  h: ApiHarness, tenantId: string, productId: string, body: Record<string, unknown>, maker = 'u-owner', checker = 'u-acct',
+): Promise<Record<string, unknown>> {
+  return approvedBody(h, tenantId, maker, checker, 'regulated_product_publish', `product:${productId}`, body, { productId });
+}

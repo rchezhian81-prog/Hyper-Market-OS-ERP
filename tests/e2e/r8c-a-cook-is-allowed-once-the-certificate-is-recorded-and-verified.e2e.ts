@@ -17,9 +17,11 @@ import { addDays } from '../../packages/workforce/src/working-time';
  *
  * The real store computer serves the page as the person the front signed in; head office's API runs in memory and every `/v1`
  * call reaches it as that person on the box's own origin. Through Chromium:
- *   • Kumar the cook has no certificate: head office refuses his bakery run, and the page says his food-handling work is
- *     BLOCKED, in English and Tamil;
- *   • Asha (a manager) records his FoSTaC certificate from the pick-list WITHOUT ticking "I have seen it": the page lists it as
+ *   • Kumar the cook has no certificate on file: NOT blocked (owner, 28 Oct 2026: only an EXPIRED certificate blocks) — head
+ *     office takes his bakery run and the page says his food-handling work is allowed;
+ *   • his verified food-handling certificate is on file EXPIRED: head office refuses his run, and the page says his
+ *     food-handling work is BLOCKED, naming the day it expired;
+ *   • Asha (a manager) records his FoSTaC renewal from the pick-list WITHOUT ticking "I have seen it": the page lists it as
  *     not verified and he is still blocked (and his run still refused);
  *   • Kumar opens the page himself: he is offered no "Verify" on his own certificate;
  *   • the manager who saw the original presses "Verify — I have seen it": the page now says his food-handling work is allowed
@@ -122,12 +124,21 @@ describe.skipIf(!HAVE_BROWSER)('the Staff certificates page through the store co
   });
   const kumar = `#people li[data-person="${COOK}"]`;
 
-  it('a cook blocked; his FoSTaC certificate recorded, then verified by a second person on the page; the cook allowed', async () => {
-    // ── Kumar has no certificate: head office refuses his bakery run; the page says he is blocked ──
-    expect(await bake()).toMatchObject({ status: 422, code: 'food_handling_certificate_missing' });
+  it('a cook with none on file allowed; blocked once his certificate is on file expired; his FoSTaC renewal recorded, then verified by a second person on the page; the cook allowed', async () => {
+    // ── Kumar has no certificate on file: NOT blocked — head office takes his run; the page says he is allowed ──
+    expect((await bake()).status).toBe(201);
+    const first = await open(ASHA);
+    await first.page.waitForSelector(`${kumar}[data-food="allowed"]`);
+    expect(first.errors).toEqual([]);
+    await stops.pop()!();
+    // ── his verified certificate, on file EXPIRED: head office refuses his run; the page says he is blocked ──
+    const expiredOn = addDays(TODAY, -2);
+    const old = await ho.request({ method: 'POST', path: '/v1/hr/workforce/certifications/CERT-OLD', userId: MANAGER, tenantId: TENANT, branchId: STORE, idempotencyKey: `k-${randomUUID()}`, body: { employeeId: COOK, kind: 'food-handling', issuedOn: '2025-01-01', validUntil: expiredOn, verifiedBy: MANAGER } });
+    expect(old.status, JSON.stringify(old.body)).toBeLessThan(300);
+    expect(await bake()).toMatchObject({ status: 422, code: 'food_handling_certificate_expired' });
     const a = await open(ASHA);
     await a.page.waitForSelector(`${kumar}[data-food="blocked"]`);
-    await says(a.page, `${kumar} .food`, /Food-handling work: BLOCKED — There is no verified food-handling certificate on file for Kumar/);
+    await says(a.page, `${kumar} .food`, new RegExp(`Food-handling work: BLOCKED — Kumar's food-handling certificate expired on ${expiredOn}`));
     // The pick-list: food handling and FoSTaC (which counts as the same) — nothing else.
     expect(await a.page.$$eval('#c-kind option', (os) => os.map((o) => (o as unknown as { value: string }).value))).toEqual(['food-handling', 'fostac']);
 
@@ -141,14 +152,14 @@ describe.skipIf(!HAVE_BROWSER)('the Staff certificates page through the store co
     await a.page.waitForSelector(`${kumar} li[data-standing="unverified"]`);
     expect(await a.page.textContent(`${kumar} li[data-standing="unverified"]`)).toMatch(/FoSTaC \(FSSAI food safety training\) — counts as food handling · from .* to .*Not verified/);
     expect(await a.page.getAttribute(kumar, 'data-food')).toBe('blocked');
-    expect(await bake()).toMatchObject({ status: 422, code: 'food_handling_certificate_missing' });
+    expect(await bake()).toMatchObject({ status: 422, code: 'food_handling_certificate_expired' });
     expect(a.errors).toEqual([]);
 
     // ── Kumar on the page: no "Verify" on his own certificate ──
     const k = await open(COOK);
     await k.page.waitForSelector(`${kumar} li[data-standing="unverified"]`);
     expect(await k.page.$$(`${kumar} button[data-act="verify"]`)).toHaveLength(0);
-    expect(await k.page.$$(`${kumar} button[data-act="renew"]`)).toHaveLength(1);
+    expect(await k.page.$$(`${kumar} li[data-standing="unverified"] button[data-act="renew"]`)).toHaveLength(1);
 
     // ── the manager who saw the original verifies it on the page: Kumar is allowed; head office takes his run ──
     const m = await open(MANAGER);
@@ -161,7 +172,7 @@ describe.skipIf(!HAVE_BROWSER)('the Staff certificates page through the store co
     expect((await bake()).status).toBe(201);
 
     // ── Renew fills the form; Tamil on the toggle ──
-    await m.page.click(`${kumar} button[data-act="renew"]`);
+    await m.page.click(`${kumar} li[data-standing="valid"] button[data-act="renew"]`);
     expect(await m.page.inputValue('#c-person')).toBe(COOK);
     expect(await m.page.inputValue('#c-kind')).toBe('fostac');
     expect(await m.page.isVisible('#c-renewing')).toBe(true);

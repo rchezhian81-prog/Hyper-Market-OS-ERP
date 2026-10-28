@@ -45,6 +45,15 @@ const WORDS = {
     mayNotCapture: 'Your role cannot hand in or confirm supplier bills.', mayNotMatch: 'Checking a bill against the order needs the bill-checking right — another person does it.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.',
     typedAs: 'Typed onto the register as', typedBy: 'typed by',
+    // OB-509 (G3): deliveries waiting for their bill.
+    cnkH: 'Deliveries waiting for their bill',
+    cnkLede: 'Goods that came with no order, or that were not on the order, are booked with their cost not known. Pick the supplier\'s bill for the delivery and match it: their cost becomes the bill\'s. A typed figure never sets the stock\'s value.',
+    cnkReading: 'Reading the deliveries waiting for a bill…', cnkNone: 'No delivery is waiting for its bill — every cost is known.',
+    cnkMayNot: 'Matching a bill to a delivery needs the bill-checking right — another person does it.',
+    cnkPill: 'Cost not known', noOrder: 'no purchase order', order: 'order', store: 'store', receivedBy: 'received by',
+    inStock: 'in stock', because_no_issued_order: 'no purchase order', because_not_on_order: 'not on the order',
+    noBillYet: 'No bill on head office\'s register names these goods yet — hand in or type the supplier\'s bill above first.',
+    pickBillLabel: 'The supplier bill for this delivery', matchBill: 'Match this bill to the delivery', each: 'each', per: 'per',
   },
   ta: {
     title: 'சப்ளையர் பில்கள்',
@@ -82,6 +91,14 @@ const WORDS = {
     mayNotCapture: 'உங்கள் பங்கால் சப்ளையர் பில்களைக் கொடுக்கவோ உறுதிசெய்யவோ முடியாது.', mayNotMatch: 'பில்லை ஆர்டருடன் சரிபார்க்க பில் சரிபார்ப்பு உரிமை தேவை — வேறு ஒருவர் செய்வார்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.',
     typedAs: 'தட்டச்சு செய்து பதிவேட்டில் சேர்த்த எண்', typedBy: 'தட்டச்சு செய்தவர்',
+    cnkH: 'பில்லுக்காகக் காத்திருக்கும் டெலிவரிகள்',
+    cnkLede: 'ஆர்டர் இல்லாமல் வந்த அல்லது ஆர்டரில் இல்லாத பொருட்கள் விலை தெரியாமல் பதிவு செய்யப்படுகின்றன. அந்த டெலிவரிக்கான சப்ளையர் பில்லைத் தேர்ந்தெடுத்துப் பொருத்துங்கள்: அவற்றின் விலை பில்லின் விலையாகும். தட்டச்சு செய்த எண் ஒருபோதும் இருப்பின் மதிப்பை அமைக்காது.',
+    cnkReading: 'பில்லுக்காகக் காத்திருக்கும் டெலிவரிகளைப் படிக்கிறது…', cnkNone: 'எந்த டெலிவரியும் பில்லுக்காகக் காத்திருக்கவில்லை — எல்லா விலைகளும் தெரியும்.',
+    cnkMayNot: 'பில்லை டெலிவரியுடன் பொருத்த பில் சரிபார்ப்பு உரிமை தேவை — வேறு ஒருவர் செய்வார்.',
+    cnkPill: 'விலை தெரியவில்லை', noOrder: 'கொள்முதல் ஆர்டர் இல்லை', order: 'ஆர்டர்', store: 'கடை', receivedBy: 'பெற்றவர்',
+    inStock: 'இருப்பில்', because_no_issued_order: 'கொள்முதல் ஆர்டர் இல்லை', because_not_on_order: 'ஆர்டரில் இல்லை',
+    noBillYet: 'இந்தப் பொருட்களைக் குறிப்பிடும் பில் தலைமை அலுவலகப் பதிவேட்டில் இன்னும் இல்லை — முதலில் மேலே சப்ளையர் பில்லைக் கொடுக்கவும் அல்லது தட்டச்சு செய்யவும்.',
+    pickBillLabel: 'இந்த டெலிவரிக்கான சப்ளையர் பில்', matchBill: 'இந்த பில்லை டெலிவரியுடன் பொருத்து', each: 'ஒன்றுக்கு', per: 'க்கு',
   },
 };
 let lang = 'en';
@@ -366,6 +383,82 @@ $('run-match').addEventListener('click', async () => {
   if (answer.ok) drawMatch(answer.value);
 });
 
+// ── Deliveries waiting for their bill (OB-509 · G3) ─────────────────────────
+
+let waitingList = null;
+const steps = (minor, uom) => (uom === 'kg' || uom === 'L' ? (minor / 1000).toLocaleString('en-IN', { maximumFractionDigits: 3 }) : String(minor));
+const priceWords = (p) => `${p.productId} ${inr(p.unitPriceMinor)} ${p.unitPricePer > 1 ? `${t('per')} ${p.unitPricePer}` : t('each')}`;
+
+async function refreshWaiting() {
+  if (session === null) return;
+  const status = $('cnk-status');
+  if (!session.mayMatch) { status.className = 'status'; status.textContent = t('cnkMayNot'); $('cnk-list').replaceChildren(); return; }
+  status.className = 'status';
+  status.textContent = t('cnkReading');
+  const answer = await session.waitingForBill();
+  if (!answer.ok) { say(status, answer, ''); return; }
+  waitingList = answer.value;
+  status.textContent = waitingList.receipts.length === 0 ? t('cnkNone') : '';
+  renderWaiting();
+}
+
+function renderWaiting() {
+  if (waitingList === null) return;
+  $('cnk-list').replaceChildren(...waitingList.receipts.map((r) => {
+    const li = document.createElement('li');
+    li.className = 'bill';
+    li.dataset.grn = r.grnId;
+    const head = document.createElement('div');
+    head.className = 'head';
+    head.append(cell('span', r.number || r.grnId, 'what'), cell('span', t('cnkPill'), 'pill waiting'));
+    const when = r.receivedAt ? new Date(r.receivedAt).toLocaleString() : '';
+    const facts = cell('div', [r.poId === null ? t('noOrder') : `${t('order')} ${r.poId}`, `${t('store')} ${r.warehouseId}`, `${t('receivedBy')} ${r.receivedBy}`, when].filter((x) => x !== '').join(' · '), 'facts');
+    const lines = cell('div', r.waiting.map((w) => `${w.productId} × ${steps(w.inStockMinor, w.uom)} ${t('inStock')} — ${t(`because_${w.because}`)}`).join(' · '), 'facts');
+    li.append(head, facts, lines);
+    const rowStatus = cell('p', '', 'status');
+    rowStatus.setAttribute('role', 'status');
+    rowStatus.setAttribute('aria-live', 'polite');
+    if (r.receivedByYou) {
+      li.append(cell('p', session.matchWords(lang, { ok: false, unreachable: false, status: 403, code: 'receivedByYou', whatHappened: '', nextSafeAction: '' }).text, 'muted'));
+    } else if (r.bills.length === 0) {
+      li.append(cell('p', t('noBillYet'), 'muted'));
+    } else {
+      const id = `cnk-bill-${safeId(r.grnId)}`;
+      const label = document.createElement('label');
+      label.htmlFor = id;
+      label.append(cell('span', t('pickBillLabel')));
+      const select = document.createElement('select');
+      select.id = id;
+      select.className = 'cnk-bill';
+      select.replaceChildren(...r.bills.map((b) => {
+        const opt = document.createElement('option');
+        opt.value = b.invoiceId;
+        opt.textContent = `${b.invoiceId} · ${t('supplier')} ${b.supplierId} · ${b.prices.map(priceWords).join(', ')}`;
+        return opt;
+      }));
+      label.append(select);
+      const button = cell('button', t('matchBill'), 'primary');
+      button.type = 'button';
+      button.dataset.act = 'match-bill';
+      button.dataset.grn = r.grnId;
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const answer = await session.matchToReceipt(r.grnId, select.value);
+          const said = session.matchWords(lang, answer);
+          rowStatus.className = `status ${said.good ? 'good' : 'err'}`;
+          rowStatus.textContent = said.text;
+          // A match head office recorded: the list is read again (this delivery leaves it) and what happened stays said above it.
+          if (answer.ok) { await refreshWaiting(); $('cnk-status').className = 'status good'; $('cnk-status').textContent = said.text; }
+        } finally { button.disabled = false; }
+      });
+      li.append(label, button);
+    }
+    li.append(rowStatus);
+    return li;
+  }));
+}
+
 // ── Language and boot ──────────────────────────────────────────────────────
 
 function paint() {
@@ -383,8 +476,12 @@ function paint() {
   $('l-type-invoice').textContent = t('confirmInvoice'); $('l-type-supplier').textContent = t('supplierCode'); $('l-type-po').textContent = t('poNumber'); $('l-type-total').textContent = t('typeTotal');
   $('type-add-line').textContent = t('addLine'); $('type-save').textContent = t('typeSave');
   $('match-h').textContent = t('matchH'); $('match-lede').textContent = t('matchLede'); $('run-match').textContent = t('runMatch');
+  $('cnk-h').textContent = t('cnkH'); $('cnk-lede').textContent = t('cnkLede');
+  if (session !== null && !session.mayMatch) $('cnk-status').textContent = t('cnkMayNot');
+  else if (waitingList !== null && waitingList.receipts.length === 0) $('cnk-status').textContent = t('cnkNone');
   if (who === null || session === null) { $('nobody').hidden = false; $('nobody').textContent = t('nobody'); }
   renderRegister();
+  renderWaiting();
   if (openDoc !== null) renderDrawer();
 }
 
@@ -401,7 +498,7 @@ if (who === null || session === null) {
   $('hand-section').hidden = true;
 }
 paint();
-if (session !== null) void refresh();
+if (session !== null) { void refresh(); void refreshWaiting(); }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it just will not be cached */ });

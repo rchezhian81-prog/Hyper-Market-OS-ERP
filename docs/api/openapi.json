@@ -57195,6 +57195,50 @@
         }
       }
     },
+    "/v1/inventory/receipts-cost-not-known": {
+      "get": {
+        "operationId": "getInventoryReceiptsCostNotKnown",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.invoice.match",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryReceiptsCostNotKnownReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.invoice.match\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/receiving-scans": {
       "get": {
         "operationId": "getInventoryReceivingScans",
@@ -137141,6 +137185,35 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/goods-receipt.ts"
       },
+      "GetInventoryReceiptsCostNotKnownReply": {
+        "type": "object",
+        "required": [
+          "receipts",
+          "count",
+          "billsReadable",
+          "asAt"
+        ],
+        "properties": {
+          "receipts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReceiptWaitingForBill"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "billsReadable": {
+            "type": "boolean"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/goods-receipt.ts"
+      },
       "GetInventoryReceivingScansReply": {
         "type": "object",
         "required": [
@@ -165176,7 +165249,8 @@
           "on",
           "runs",
           "generated",
-          "exceptions"
+          "exceptions",
+          "notMade"
         ],
         "properties": {
           "on": {
@@ -165193,6 +165267,12 @@
           },
           "exceptions": {
             "type": "number"
+          },
+          "notMade": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecurringNotMade"
+            }
           }
         },
         "additionalProperties": true,
@@ -166453,6 +166533,29 @@
                 "type": "string"
               },
               "nextSafeAction": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "regulatedApproval": {
+            "type": "object",
+            "required": [
+              "regulated",
+              "approvedBy",
+              "approvalId"
+            ],
+            "properties": {
+              "regulated": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "approvalId": {
                 "type": "string"
               }
             },
@@ -224067,6 +224170,9 @@
                     },
                     "activityId": {
                       "type": "string"
+                    },
+                    "quotationId": {
+                      "type": "string"
                     }
                   },
                   "additionalProperties": true
@@ -253195,6 +253301,34 @@
         },
         "additionalProperties": true
       },
+      "BillValuedRelease": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "invoiceId",
+          "unitCost",
+          "quantityMinor",
+          "valueMinor"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "invoiceId": {
+            "type": "string"
+          },
+          "unitCost": {
+            "$ref": "#/components/schemas/OrderLineCost"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "BillingSchedule": {
         "type": "object",
         "required": [
@@ -255481,6 +255615,71 @@
           },
           "at": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CandidateBill": {
+        "type": "object",
+        "required": [
+          "invoiceId",
+          "supplierId",
+          "poId",
+          "currency",
+          "prices",
+          "checkedBy"
+        ],
+        "properties": {
+          "invoiceId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "poId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "currency": {
+            "type": "string"
+          },
+          "prices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "unitPriceMinor"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "string"
+                },
+                "unitPriceMinor": {
+                  "type": "number"
+                },
+                "unitPricePer": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "checkedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "additionalProperties": true
@@ -268026,6 +268225,12 @@
               "direct",
               "relayed"
             ]
+          },
+          "valuedAtBill": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillValuedRelease"
+            }
           }
         },
         "additionalProperties": true
@@ -277919,6 +278124,9 @@
           "valueNotKnown": {
             "type": "boolean",
             "const": true
+          },
+          "valuedAtBill": {
+            "$ref": "#/components/schemas/BillValuedRelease"
           }
         },
         "additionalProperties": true
@@ -289715,6 +289923,103 @@
         },
         "additionalProperties": true
       },
+      "ReceiptWaitingForBill": {
+        "type": "object",
+        "required": [
+          "grnId",
+          "number",
+          "poId",
+          "warehouseId",
+          "receivedBy",
+          "receivedAt",
+          "waiting",
+          "bills",
+          "receivedByYou"
+        ],
+        "properties": {
+          "grnId": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "poId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "warehouseId": {
+            "type": "string"
+          },
+          "receivedBy": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "waiting": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "lineId",
+                "productId",
+                "quantityMinor",
+                "uom",
+                "because",
+                "detail",
+                "inStockMinor"
+              ],
+              "properties": {
+                "lineId": {
+                  "type": "string"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "quantityMinor": {
+                  "type": "number"
+                },
+                "uom": {
+                  "type": "string"
+                },
+                "because": {
+                  "type": "string",
+                  "enum": [
+                    "no_issued_order",
+                    "not_on_order"
+                  ]
+                },
+                "typedUnitCost": {
+                  "$ref": "#/components/schemas/OrderLineCost"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "inStockMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "bills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CandidateBill"
+            }
+          },
+          "receivedByYou": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
       "ReceivedLine": {
         "type": "object",
         "required": [
@@ -290666,6 +290971,30 @@
           },
           "rtoSeconds": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RecurringNotMade": {
+        "type": "object",
+        "required": [
+          "scheduleId",
+          "customerId",
+          "on",
+          "why"
+        ],
+        "properties": {
+          "scheduleId": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "on": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
           }
         },
         "additionalProperties": true

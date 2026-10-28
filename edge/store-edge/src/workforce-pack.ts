@@ -4,10 +4,12 @@
 //   • "My rota" with the internet down: the box folds a person's own shifts from the committed roster head office put in the
 //     pack, with the SAME fold head office's `GET /v1/hr/workforce/my-roster` runs (packages/workforce/src/my-roster.ts), and
 //     says how old it is. Only published weeks are shown.
-//   • An expired or missing food-handling certificate blocks recording food-handling work here too, offline: the box judges a
+//   • An EXPIRED food-handling certificate blocks recording food-handling work here too, offline: the box judges a
 //     production / bakery / counter-food run in a person's name against the certificates in the pack, on the shop's own date,
-//     with the same rule head office uses (packages/workforce/src/food-handling.ts). A pack that carried no certificates
-//     cannot show any certificate is valid, so the work is refused and the reason said (fail closed, never a silent pass).
+//     with the same rule head office uses (packages/workforce/src/food-handling.ts). Only an expired one (owner, 28 Oct
+//     2026): a person with no certificate on file is not blocked, and a pack that carried no certificates cannot show
+//     anyone's certificate expired, so the box does not refuse — it says so, and head office judges the relayed run on its
+//     own register (a run by someone whose certificate had expired is flagged there).
 // Each section is read strictly: a malformed one is treated as not told, never half-trusted. Pure: no I/O, no clock.
 
 import type { StorePack } from './store-pack';
@@ -103,21 +105,34 @@ export function packCertifications(pack: Pick<StorePack, 'certifications'>): { r
   return { asAt: c['asAt'], certifications: out };
 }
 
-/** Why the box cannot judge a certificate at all: the pack carried no certificates (or no roster) it could read. */
+/**
+ * The pack carried no certificates the box could read: it cannot show anyone's certificate EXPIRED, so it does not refuse
+ * (only an expired certificate blocks — owner, 28 Oct 2026). Said, never a silent pass; head office judges the relayed run.
+ */
 export const NOT_TOLD_CERTIFICATES = {
   code: 'food_handling_certificates_not_known_here',
-  en: 'This store computer has not been told the food-handling certificates yet, so it cannot show this person\'s certificate is valid. Food-handling work cannot be recorded here until head office sends them (connect the store computer, or record the run at head office). Nothing was saved.',
-  ta: 'உணவு கையாளும் சான்றிதழ்கள் இன்னும் இந்தக் கடைக் கணினிக்குச் சொல்லப்படவில்லை; இவரின் சான்றிதழ் செல்லுபடியானது எனக் காட்ட முடியாது. தலைமை அலுவலகம் அவற்றை அனுப்பும் வரை இங்கு உணவு கையாளும் பதிவு செய்ய முடியாது. எதுவும் சேமிக்கப்படவில்லை.',
+  en: 'This store computer has not been told the food-handling certificates yet, so it cannot check this person\'s certificate here. The work is recorded; head office checks it against its own certificate register when the run reaches it.',
+  ta: 'உணவு கையாளும் சான்றிதழ்கள் இன்னும் இந்தக் கடைக் கணினிக்குச் சொல்லப்படவில்லை; இவரின் சான்றிதழை இங்கு சரிபார்க்க முடியாது. பதிவு சேமிக்கப்படுகிறது; பதிவு தலைமை அலுவலகத்தை அடைந்ததும் அதன் சான்றிதழ் பதிவேட்டுடன் சரிபார்க்கப்படும்.',
 } as const;
 
-export type BoxFoodHandlingVerdict = FoodHandlingVerdict | { readonly allowed: false; readonly code: typeof NOT_TOLD_CERTIFICATES.code; readonly words: { readonly en: string; readonly ta: string } };
+export type BoxFoodHandlingVerdict = FoodHandlingVerdict
+  | { readonly allowed: true; readonly certificatesNotKnownHere: true; readonly code: typeof NOT_TOLD_CERTIFICATES.code; readonly words: { readonly en: string; readonly ta: string } };
 
-/** OB-502 on the box: may food-handling work be recorded in this person's name on `today` (the shop's own date)? */
+/**
+ * OB-502 on the box: may food-handling work be recorded in this person's name on `today` (the shop's own date)? Refused
+ * only when the pack SHOWS this person's certificate expired (or the roster shows they have left).
+ */
 export function foodHandlingOnBox(pack: Pick<StorePack, 'roster' | 'certifications'>, personId: string, task: FoodHandlingTask, today: string): BoxFoodHandlingVerdict {
   const roster = packRoster(pack);
   const certs = packCertifications(pack);
-  if (roster === undefined || certs === undefined) return { allowed: false, code: NOT_TOLD_CERTIFICATES.code, words: { en: NOT_TOLD_CERTIFICATES.en, ta: NOT_TOLD_CERTIFICATES.ta } };
-  return foodHandlingVerdict({ personId, employee: roster.employees.find((e) => e.employeeId === personId), certifications: certs.certifications, today, task });
+  const employee = roster?.employees.find((e) => e.employeeId === personId);
+  if (certs === undefined) {
+    // No certificates to judge — but a person the roster shows as having left is still refused, as before.
+    const left = employee === undefined ? undefined : foodHandlingVerdict({ personId, employee, certifications: [], today, task });
+    if (left !== undefined && !left.allowed) return left;
+    return { allowed: true, certificatesNotKnownHere: true, code: NOT_TOLD_CERTIFICATES.code, words: { en: NOT_TOLD_CERTIFICATES.en, ta: NOT_TOLD_CERTIFICATES.ta } };
+  }
+  return foodHandlingVerdict({ personId, employee, certifications: certs.certifications, today, task });
 }
 
 /**
@@ -157,7 +172,10 @@ export function foodHandlingRefusalAtTheDoor(input: {
 /** What a served screen is told about its viewer's food-handling certificate (OB-502) — judged on the shop's date of `now`. */
 export function foodHandlingForViewer(pack: Pick<StorePack, 'roster' | 'certifications' | 'policies'>, userId: string, now: string): Record<string, unknown> {
   const verdict = foodHandlingOnBox(pack, userId, 'production_run', packCalendarDate(pack, now));
-  return verdict.allowed
-    ? { allowed: true, validUntil: verdict.validUntil }
-    : { allowed: false, code: verdict.code, words: verdict.words, ...('expiredOn' in verdict && verdict.expiredOn !== undefined ? { expiredOn: verdict.expiredOn } : {}) };
+  if (verdict.allowed) {
+    if ('validUntil' in verdict) return { allowed: true, validUntil: verdict.validUntil };
+    // Allowed with nothing to show: no certificate on file, or none told to this computer — said, not hidden.
+    return { allowed: true, ...('certificatesNotKnownHere' in verdict ? { certificatesNotKnownHere: true } : { noCertificateOnFile: true }), words: verdict.words };
+  }
+  return { allowed: false, code: verdict.code, words: verdict.words, ...('expiredOn' in verdict && verdict.expiredOn !== undefined ? { expiredOn: verdict.expiredOn } : {}) };
 }

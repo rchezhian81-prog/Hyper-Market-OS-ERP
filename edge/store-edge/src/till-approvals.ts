@@ -20,7 +20,7 @@ import { randomBytes } from 'node:crypto';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import type { CheckOutcome, CheckRefusal, SignInRefusal } from './till-operators';
-import { judgeTillOverride, readTillControls, type TillOverrideRefusal } from '../../../packages/price-guard/src/till-override';
+import { judgeTillOverride, overrideReductionMinor, readTillControls, type TillOverrideRefusal } from '../../../packages/price-guard/src/till-override';
 
 /** The permission a manager needs to approve a refund at the till — the one head office re-checks on every synced refund. */
 export const APPROVAL_AUTHORITY = 'pos.return.approve';
@@ -59,7 +59,15 @@ export type ApprovalRefusal =
   | 'self_approval' | 'approval_not_readable'
   | 'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match'
   /** OB-500: a price cut below the product's floor, or beyond the approving manager's limit (or with no rules on the box). */
-  | TillOverrideRefusal;
+  | TillOverrideRefusal
+  /** OB-500: the till's figures for a price cut do not agree with what this box works out (the amount, or the line's first price). */
+  | 'cut_does_not_match';
+
+/** OB-500: the words when the till's figures for a price cut disagree with this store computer's own (English and Tamil). */
+const CUT_DOES_NOT_MATCH = {
+  en: 'The till\'s figures for this price cut do not agree with what the store computer works out from the line\'s first price, the new price and the quantity. Nothing was changed — the price stays as it was. Void the line, ring it again, and ask again.',
+  ta: 'இந்த விலைக் குறைப்புக்கான பில்லிங் இயந்திரத்தின் கணக்கு, வரியின் முதல் விலை, புதிய விலை மற்றும் எண்ணிக்கையிலிருந்து கடைக் கணினி கணக்கிடுவதுடன் பொருந்தவில்லை. எதுவும் மாற்றப்படவில்லை — விலை முன்பு இருந்தபடியே உள்ளது. வரியை ரத்து செய்து, மீண்டும் சேர்த்து, மீண்டும் கேளுங்கள்.',
+} as const;
 
 const WORDS: Readonly<Record<'self_approval' | 'approval_not_readable' | 'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match', string>> = {
   self_approval: 'A refund must be approved by a manager who is not the person at the till. Ask another manager.',
@@ -88,6 +96,8 @@ interface Granted {
   readonly at: string; readonly expiresAt: string;
   /** OB-500: a price cut is approved for exactly this product and this new unit price — spent only by that change. */
   readonly productId?: string; readonly toUnitMinor?: number;
+  /** OB-500: the line, its FIRST price (before any cut) and its quantity the cut was judged on — spent only by that line. */
+  readonly lineId?: string; readonly fromUnitMinor?: number; readonly quantityMinor?: number;
 }
 type LogRecord =
   | ({ readonly kind: 'granted' } & Omit<Granted, 'kind'> & { readonly subjectKind: ApprovalKind })
@@ -135,6 +145,8 @@ export class TillApprovals {
        * carry it — then no price cut is approved. Left out of the composition only by tests that do not judge price cuts.
        */
       readonly tillControls?: () => unknown;
+      /** OB-500: the product's unit of measure from THIS box's pack — so a weighed line's cut is priced as the till prices it. */
+      readonly uomOf?: (productId: string) => string | undefined;
       readonly now: () => string;
     },
     restored: readonly LogRecord[],
@@ -150,6 +162,7 @@ export class TillApprovals {
     readonly operators: TillApprovals['deps']['operators'];
     readonly approvalThresholdMinor: () => number | null;
     readonly tillControls?: () => unknown;
+    readonly uomOf?: (productId: string) => string | undefined;
     readonly now?: () => string;
   }): Promise<TillApprovals> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'till-approvals.log' });
@@ -165,7 +178,8 @@ export class TillApprovals {
     }
     return new TillApprovals(log, {
       operators: input.operators, approvalThresholdMinor: input.approvalThresholdMinor,
-      ...(input.tillControls === undefined ? {} : { tillControls: input.tillControls }), now: input.now ?? (() => new Date().toISOString()),
+      ...(input.tillControls === undefined ? {} : { tillControls: input.tillControls }),
+      ...(input.uomOf === undefined ? {} : { uomOf: input.uomOf }), now: input.now ?? (() => new Date().toISOString()),
     }, restored, unreadable);
   }
 
@@ -175,6 +189,8 @@ export class TillApprovals {
         approvalId: r.approvalId, kind: r.subjectKind, billRef: r.billRef, valueMinor: r.valueMinor, requestedBy: r.requestedBy,
         approvedBy: r.approvedBy, laneId: r.laneId, reason: r.reason, at: r.at, expiresAt: r.expiresAt,
         ...(typeof r.productId === 'string' ? { productId: r.productId } : {}), ...(typeof r.toUnitMinor === 'number' ? { toUnitMinor: r.toUnitMinor } : {}),
+        ...(typeof r.lineId === 'string' ? { lineId: r.lineId } : {}), ...(typeof r.fromUnitMinor === 'number' ? { fromUnitMinor: r.fromUnitMinor } : {}),
+        ...(typeof r.quantityMinor === 'number' ? { quantityMinor: r.quantityMinor } : {}),
       });
     } else if (!this.usedBy.has(r.approvalId)) this.usedBy.set(r.approvalId, r.usedBy);
   }
@@ -196,6 +212,8 @@ export class TillApprovals {
     readonly kind: unknown; readonly billRef: unknown; readonly valueMinor: unknown; readonly reason: unknown;
     /** OB-500: for a price cut — the product and the new unit price the manager approves. */
     readonly productId?: unknown; readonly toUnitMinor?: unknown;
+    /** OB-500: and the line, its FIRST price (before any cut), its quantity and unit — this box works out the cut itself. */
+    readonly lineId?: unknown; readonly fromUnitMinor?: unknown; readonly quantityMinor?: unknown; readonly uom?: unknown;
   }): Promise<GrantOutcome> {
     const refuse = (refusedBecause: ApprovalRefusal, laneMessage: string, laneMessageTa?: string): GrantOutcome => ({ approved: false, refusedBecause, laneMessage, ...(laneMessageTa === undefined ? {} : { laneMessageTa }) });
     const asker = this.deps.operators.check(input.token, input.laneId);
@@ -214,19 +232,26 @@ export class TillApprovals {
     if (managerId === asker.userId) return refuse('self_approval', WORDS.self_approval);
     // OB-500: a price cut is judged by the shop's own rules from THIS box's signed pack — the floor before any PIN is looked at.
     const cut = kind === 'price_override' && this.deps.tillControls !== undefined ? this.priceCutOf(input) : undefined;
-    if (cut !== undefined && !cut.readable) return refuse('approval_not_readable', 'A price change approval needs the product and the new price. Nothing was changed.');
+    if (cut !== undefined && !cut.readable) return refuse('approval_not_readable', 'A price change approval needs the line, its first price, its quantity, the product and the new price. Nothing was changed.');
     const controls = cut === undefined ? undefined : readTillControls(this.deps.tillControls?.());
     if (cut?.readable === true) {
       const floor = judgeTillOverride({ controls, productId: cut.productId, toUnitMinor: cut.toUnitMinor, reductionMinor: 0, approverId: '' });
       if (!floor.ok) return refuse(floor.refusedBecause, floor.words.en, floor.words.ta);
+      // A line already cut on this bill is measured from its FIRST price — the one its first cut here named — so a second
+      // cut is judged on everything taken off the line, never on the step from a price already cut.
+      const first = this.firstCutOn(billRef, input.laneId, cut.lineId);
+      if (first !== undefined && first !== cut.fromUnitMinor) return refuse('cut_does_not_match', CUT_DOES_NOT_MATCH.en, CUT_DOES_NOT_MATCH.ta);
     }
     const authority = OVERRIDE_KINDS.includes(kind) ? OVERRIDE_AUTHORITY : APPROVAL_AUTHORITY;
     const manager = await this.deps.operators.verifyPerson({ staffId: managerId, pin: input.pin, laneId: input.laneId, authority });
     if (!manager.ok) return refuse(manager.refusedBecause, manager.laneMessage);
-    // OB-500: and the approving manager's own price-cut limit, for what the cut takes off the line.
+    // OB-500: and the approving manager's own price-cut limit, for what the cut takes off the WHOLE line from its first
+    // price — this box's own figure from the first price, the new price and the quantity, never the amount the till sent.
     if (cut?.readable === true) {
-      const judged = judgeTillOverride({ controls, productId: cut.productId, toUnitMinor: cut.toUnitMinor, reductionMinor: valueMinor, approverId: manager.userId, approverName: manager.displayName });
+      const judged = judgeTillOverride({ controls, productId: cut.productId, toUnitMinor: cut.toUnitMinor, reductionMinor: cut.reductionMinor, approverId: manager.userId, approverName: manager.displayName });
       if (!judged.ok) return refuse(judged.refusedBecause, judged.words.en, judged.words.ta);
+      // Within the rules on this box's own figure — but a till that said a different amount is not given an approval for it.
+      if (valueMinor !== cut.reductionMinor) return refuse('cut_does_not_match', CUT_DOES_NOT_MATCH.en, CUT_DOES_NOT_MATCH.ta);
     }
     const nowMs = Date.parse(this.deps.now());
     const approvalId = `apr-${randomBytes(12).toString('hex')}`;
@@ -235,18 +260,35 @@ export class TillApprovals {
       kind: 'granted', approvalId, subjectKind: kind, billRef: kind === 'no_receipt_return' || kind === 'no_sale' ? null : billRef, valueMinor,
       requestedBy: asker.userId, approvedBy: manager.userId, laneId: input.laneId, reason: String(input.reason).trim().slice(0, 200),
       at: new Date(nowMs).toISOString(), expiresAt,
-      ...(cut?.readable === true ? { productId: cut.productId, toUnitMinor: cut.toUnitMinor } : {}),
+      ...(cut?.readable === true ? { productId: cut.productId, toUnitMinor: cut.toUnitMinor, lineId: cut.lineId, fromUnitMinor: cut.fromUnitMinor, quantityMinor: cut.quantityMinor } : {}),
     });
     return { approved: true, approvalId, approvedBy: manager.userId, displayName: manager.displayName, expiresAt };
   }
 
-  /** OB-500: the product and new unit price a price-cut approval names, read defensively off the till's request. */
-  private priceCutOf(input: { readonly productId?: unknown; readonly toUnitMinor?: unknown }):
-    { readonly readable: true; readonly productId: string; readonly toUnitMinor: number } | { readonly readable: false } {
+  /**
+   * OB-500: the price cut a request names, read defensively off the till's request — the product, the line, its FIRST price,
+   * the new price and the quantity — and what it takes off the line, worked out HERE (the pack's unit of measure for the
+   * product when this box knows it, so a weighed line is priced as the till prices it).
+   */
+  private priceCutOf(input: { readonly productId?: unknown; readonly toUnitMinor?: unknown; readonly lineId?: unknown; readonly fromUnitMinor?: unknown; readonly quantityMinor?: unknown; readonly uom?: unknown }):
+    { readonly readable: true; readonly productId: string; readonly lineId: string; readonly toUnitMinor: number; readonly fromUnitMinor: number; readonly quantityMinor: number; readonly reductionMinor: number }
+    | { readonly readable: false } {
+    const whole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
     const productId = isStr(input.productId) ? input.productId.trim() : undefined;
-    const to = input.toUnitMinor;
-    return productId !== undefined && typeof to === 'number' && Number.isSafeInteger(to) && to >= 0
-      ? { readable: true, productId, toUnitMinor: to } : { readable: false };
+    const lineId = isStr(input.lineId) ? input.lineId.trim() : undefined;
+    const { toUnitMinor: to, fromUnitMinor: from, quantityMinor: qty } = input;
+    if (productId === undefined || lineId === undefined || !whole(to) || !whole(from) || to >= from || !whole(qty) || qty <= 0) return { readable: false };
+    const uom = this.deps.uomOf?.(productId) ?? (isStr(input.uom) ? input.uom.trim() : undefined);
+    if (uom === undefined) return { readable: false };
+    return { readable: true, productId, lineId, toUnitMinor: to, fromUnitMinor: from, quantityMinor: qty, reductionMinor: overrideReductionMinor(from, to, qty, uom) };
+  }
+
+  /** OB-500: the first price the earliest price cut approved here for this line of this bill named, if any. */
+  private firstCutOn(billRef: string | null, laneId: string, lineId: string): number | undefined {
+    for (const g of this.granted.values()) {
+      if (g.kind === 'price_override' && g.billRef === billRef && g.laneId === laneId && g.lineId === lineId && g.fromUnitMinor !== undefined) return g.fromUnitMinor;
+    }
+    return undefined;
   }
 
   /**
@@ -330,6 +372,8 @@ export class TillApprovals {
     readonly requestedBy: string; readonly laneId: string; readonly activityId: string;
     /** OB-500: the product and new unit price the price change applies — must be the ones approved. */
     readonly productId?: string; readonly toUnitMinor?: number;
+    /** OB-500: and the line, its first price and its quantity — must be the ones the cut was judged on. */
+    readonly lineId?: string; readonly fromUnitMinor?: number; readonly quantityMinor?: number;
   }): Promise<ReturnCheck> {
     const say: Record<'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match', string> = {
       approval_required: 'This needs a manager\'s approval on this till. Nothing was done — ask a manager to approve it with their PIN.',
@@ -347,7 +391,8 @@ export class TillApprovals {
     if (already === undefined && Date.parse(g.expiresAt) <= Date.parse(this.deps.now())) return fail('approval_expired');
     if (g.kind !== input.kind || g.billRef !== input.billRef || g.valueMinor !== input.valueMinor || g.requestedBy !== input.requestedBy || g.laneId !== input.laneId
       // OB-500: an approval given for one product and price is never spent on another.
-      || (g.productId !== undefined && (g.productId !== input.productId || g.toUnitMinor !== input.toUnitMinor))) {
+      || (g.productId !== undefined && (g.productId !== input.productId || g.toUnitMinor !== input.toUnitMinor))
+      || (g.fromUnitMinor !== undefined && (g.lineId !== input.lineId || g.fromUnitMinor !== input.fromUnitMinor || g.quantityMinor !== input.quantityMinor))) {
       return fail('approval_does_not_match');
     }
     if (already === undefined) await this.record({ kind: 'used', at: this.deps.now(), approvalId: input.approvalId, usedBy: input.activityId });

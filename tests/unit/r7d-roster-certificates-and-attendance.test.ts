@@ -40,20 +40,24 @@ describe('OB-502 · the food-handling gate (packages/workforce/src/food-handling
     // The newest certificate decides: an old lapsed one beside a current one is no block.
     expect(foodHandlingVerdict({ personId: 'E-K', employee: KUMAR, certifications: [cert({ certificationId: 'old', validUntil: '2025-01-01' }), cert()], today: TODAY, task: 'weighed_run' }).allowed).toBe(true);
   });
-  it('MISSING, UNVERIFIED, another person\'s, another kind, or no staff record at all — all block as missing; a leaver is blocked', () => {
-    const missing = (certifications: readonly Certification[], employee: Employee | undefined = KUMAR) => {
+  it('MISSING, UNVERIFIED, another person\'s, another kind, or no staff record at all — NOT blocked (owner, 28 Oct 2026: only an expired certificate blocks), said plainly; a leaver is blocked', () => {
+    const verdictOf = (certifications: readonly Certification[], employee: Employee | undefined = KUMAR) => {
       const v = foodHandlingVerdict({ personId: 'E-K', employee, certifications, today: TODAY, task: 'weighed_run' });
-      return v.allowed ? 'allowed' : v.code;
+      return v.allowed ? ('noCertificateOnFile' in v ? 'allowed, none on file' : 'allowed') : v.code;
     };
-    expect(missing([])).toBe('food_handling_certificate_missing');
-    expect(missing([cert({ verifiedBy: undefined })])).toBe('food_handling_certificate_missing');
-    expect(missing([cert({ employeeId: 'E-OTHER' })])).toBe('food_handling_certificate_missing');
-    expect(missing([cert({ kind: 'forklift' })])).toBe('food_handling_certificate_missing');
-    expect(missing([cert()], undefined)).toBe('allowed'); // a certificate on file, no staff record: judged on the certificate
-    expect(missing([], undefined)).toBe('food_handling_certificate_missing');
-    expect(missing([cert()], { ...KUMAR, active: false })).toBe('food_handler_inactive');
+    expect(verdictOf([])).toBe('allowed, none on file');
+    expect(verdictOf([cert({ verifiedBy: undefined })])).toBe('allowed, none on file');
+    expect(verdictOf([cert({ employeeId: 'E-OTHER' })])).toBe('allowed, none on file');
+    expect(verdictOf([cert({ kind: 'forklift' })])).toBe('allowed, none on file');
+    expect(verdictOf([cert()], undefined)).toBe('allowed'); // a certificate on file, no staff record: judged on the certificate
+    expect(verdictOf([], undefined)).toBe('allowed, none on file');
+    expect(verdictOf([cert()], { ...KUMAR, active: false })).toBe('food_handler_inactive');
+    // Another person's EXPIRED certificate does not block this person.
+    expect(verdictOf([cert({ employeeId: 'E-OTHER', validUntil: '2026-01-01' })])).toBe('allowed, none on file');
     const v = foodHandlingVerdict({ personId: 'E-K', employee: KUMAR, certifications: [], today: TODAY, task: 'weighed_run' });
-    expect(v.allowed ? '' : v.words.en).toContain('Counter-food (weighed) work cannot be recorded');
+    expect(v).toMatchObject({ allowed: true, noCertificateOnFile: true });
+    expect(v.allowed && 'words' in v ? v.words.en : '').toBe('There is no verified food-handling certificate on file for Kumar. Counter-food (weighed) work may still be recorded in their name — only an expired certificate blocks it. A manager may record one on the staff certificates page.');
+    expect(v.allowed && 'words' in v ? v.words.ta : '').toMatch(/[஀-௿]/);
   });
   it('a certificate kind is read however it was typed', () => {
     for (const k of ['food-handling', 'Food handling', 'FOOD_HANDLING', ' food  handling ']) expect(certificateKindKey(k)).toBe(FOOD_HANDLING_CERTIFICATE);
@@ -112,25 +116,33 @@ describe('OB-502 on the store computer — offline, from the pack', () => {
     expect(v.allowed ? '' : v.code).toBe('food_handling_certificate_expired');
     expect(packCertifications(pack)?.certifications).toHaveLength(1);
   });
-  it('a pack with no certificates (or no roster) fails CLOSED, saying why', () => {
-    for (const p of [packWith({ roster: rosterSection() }), packWith({ certifications: certSection([]) }), packWith({ roster: rosterSection(), certifications: certSection([{ certificationId: 'C1' }]) })]) {
+  it('a pack with no certificates it can read cannot show anyone\'s certificate expired — NOT refused, and said so; a leaver on the roster still is', () => {
+    for (const p of [packWith({ roster: rosterSection() }), packWith({}), packWith({ roster: rosterSection(), certifications: certSection([{ certificationId: 'C1' }]) })]) {
       const v = foodHandlingOnBox(p, 'E-K', 'production_run', TODAY);
-      expect(v.allowed ? '' : v.code).toBe(NOT_TOLD_CERTIFICATES.code);
+      expect(v).toMatchObject({ allowed: true, certificatesNotKnownHere: true, code: NOT_TOLD_CERTIFICATES.code });
     }
+    const leaver = packWith({ roster: rosterSection({ employees: [{ employeeId: 'E-K', name: 'Kumar', roles: ['cook'], active: false }] }) });
+    const gone = foodHandlingOnBox(leaver, 'E-K', 'production_run', TODAY);
+    expect(gone.allowed ? '' : gone.code).toBe('food_handler_inactive');
+    // Certificates told but no roster: still judged on the certificates — the expired one is refused.
+    const noRoster = foodHandlingOnBox(packWith({ certifications: certSection([{ certificationId: 'C1', employeeId: 'E-K', kind: 'food-handling', issuedOn: '2025-01-01', validUntil: '2026-10-20', verifiedBy: 'u-mgr' }]) }), 'E-K', 'production_run', TODAY);
+    expect(noRoster.allowed ? '' : noRoster.code).toBe('food_handling_certificate_expired');
   });
-  it('the door: a production run and a counter-food run in a lapsed name are refused; other records pass untouched', () => {
+  it('the door: a production run and a counter-food run in a lapsed name are refused; one by a person with no certificate on file, and other records, pass untouched', () => {
     const door = (type: string, payload: Record<string, unknown>, recipeDept?: string) => foodHandlingRefusalAtTheDoor({
       pack, event: { type, payload }, handlesFood, dateOf: () => TODAY, now: `${TODAY}T05:00:00.000Z`, departmentOfRecipe: () => recipeDept,
     });
     expect(door('ProductionRunCaptured', { producedBy: 'E-K', recipeId: 'r-cake', at: `${TODAY}T04:00:00.000Z` }, 'cafe')).toMatch(/^food_handling_certificate_expired: Kumar's food-handling certificate expired on 2026-10-20\..* \/ /);
     expect(door('ProductionRunCaptured', { producedBy: 'E-K', recipeId: 'not-known-here' })).toContain('food_handling_certificate_expired'); // unknown recipe: food
-    expect(door('WeighedRunCaptured', { weighedBy: 'E-R', departmentId: 'meat_fish' })).toContain('food_handling_certificate_missing');
+    expect(door('WeighedRunCaptured', { weighedBy: 'E-R', departmentId: 'meat_fish' })).toBeUndefined(); // Rani: no certificate on file — not blocked
     expect(door('ProductionRunCaptured', { recipeId: 'r-cake' })).toContain('does not say who made it');
     for (const type of ['ProductionReleaseDecided', 'AttendanceMarked', 'StockCounted']) expect(door(type, { producedBy: 'E-K' })).toBeUndefined();
   });
   it('the production screen is told the viewer\'s verdict on the shop\'s own date', () => {
     expect(foodHandlingForViewer(pack, 'E-K', '2026-10-19T20:00:00.000Z')).toEqual({ allowed: true, validUntil: '2026-10-20' }); // 01:30 IST on the 20th
     expect(foodHandlingForViewer(pack, 'E-K', '2026-10-20T19:00:00.000Z')).toMatchObject({ allowed: false, expiredOn: '2026-10-20' }); // 00:30 IST on the 21st
+    expect(foodHandlingForViewer(pack, 'E-R', '2026-10-20T19:00:00.000Z')).toMatchObject({ allowed: true, noCertificateOnFile: true }); // none on file: allowed, said
+    expect(foodHandlingForViewer(packWith({ roster: rosterSection() }), 'E-K', '2026-10-20T19:00:00.000Z')).toMatchObject({ allowed: true, certificatesNotKnownHere: true });
   });
 });
 

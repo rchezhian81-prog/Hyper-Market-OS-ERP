@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { regulatedPublishBody } from '../support/approval-request';
 import { recordedPayRun, switchPayReleaseOn } from '../support/pay-run';
 import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
@@ -212,9 +213,12 @@ describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws th
 // ── the SENSITIVE leg on the REAL chain (E1b · M03-FR-03 → M12-FR-04) ──────────────────────────────────────────
 // OB-288 P2 · B17: SRE sells no liquor (TASMAC) — the age-restricted fixture is a non-alcoholic energy drink (HSN 2202).
 const RESTRICTED = { categoryId: 'restricted', name: 'Age-restricted drinks', parentId: null, regulated: ['age_restricted'] };
-const publishDrink = (h: ApiHarness, minimumAge: number, key: string) =>
+const drinkBody = (minimumAge: number) =>
+  ({ product: { sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', safety: { minimumAge } }, categories: [RESTRICTED] });
+// OB-503: the FIRST time the age-restricted product reaches the tills, a second person (CHECKER) approves exactly that publish.
+const publishDrink = async (h: ApiHarness, minimumAge: number, key: string, approved = false) =>
   h.request({ method: 'POST', path: '/v1/catalogue/products/p-energy/publish', userId: OWNER, tenantId: A, idempotencyKey: key,
-    body: { product: { sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', safety: { minimumAge } }, categories: [RESTRICTED] } });
+    body: approved ? await regulatedPublishBody(h, A, 'p-energy', drinkBody(minimumAge), OWNER, CHECKER) : drinkBody(minimumAge) });
 const latestPack = async (h: ApiHarness) =>
   ((await h.request({ method: 'GET', path: '/v1/catalogue/pack', userId: OWNER, tenantId: A })).body as
     { snapshot: { version: number; products: { productId: string; regulatedFlags?: Record<string, unknown> }[] } }).snapshot;
@@ -235,7 +239,7 @@ describe('a SENSITIVE catalogue publish — an age-restricted product added or c
     expect(await packVersion(h)).toBe(1);
 
     // The age-restricted product master arrives (the engine made it declare its minimum age) and is priced.
-    expect((await publishDrink(h, 21, 'k-energy')).status).toBe(201);
+    expect((await publishDrink(h, 21, 'k-energy', true)).status).toBe(201);
     await setPrice(h, 'p-energy', 'e1', 9_000, '2030-01-01');
 
     // One product added — 1 ≪ 50, so not bulk — but it is REGULATED: refused, named, nothing published.

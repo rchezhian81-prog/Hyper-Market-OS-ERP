@@ -54,11 +54,12 @@ export interface SuspendedLine {
   /** B8 (OB-298): who confirmed a perishable's printed pack date, and when — the recalled line keeps its check. */
   readonly packDateCheck?: { readonly confirmedBy: string; readonly confirmedAt: string };
   /**
-   * R9-A · OB-533: a line whose price was lowered on the till (a manager's approved cut, or a quotation's promised price —
-   * `approvedBy: "quotation N"`) keeps its evidence while parked, so the recalled line is the line that was parked: the
-   * price it was cut from, who approved it and the till activity that recorded it. Never a lower price without its reason.
+   * OB-500 · R9-A · OB-533 · OB-545: a line whose price the till changed (a manager's approved cut, or a quotation's price —
+   * lowered, or raised to the quoted price, `approvedBy: "quotation N"`) keeps its evidence while parked, so the recalled
+   * line is the line that was parked: its first price, who approved it, the till activity and the quotation it came from.
+   * A recalled cut line is still a cut line (its quantity stays locked and a further cut is judged on the whole cut).
    */
-  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string };
+  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string; readonly quotationId?: string };
   readonly voided: boolean;
   readonly voidReason?: string;
 }

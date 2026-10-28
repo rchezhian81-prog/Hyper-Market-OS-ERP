@@ -272,7 +272,7 @@ import { deviceChangeRequest, type FleetDeliveryPort } from './fleet-device-deli
 import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
-import { deliverOnePublish, type PublishDeliveryPort, type PublishHttp } from './product-publish-delivery';
+import { deliverOnePublish, type PublishAnswer, type PublishDeliveryPort, type PublishHttp } from './product-publish-delivery';
 import type { ProductPublishPayload, ProductPublishBarcode } from './catalogue-publish-command';
 import type { CategoryPolicy } from '../../../packages/product/src/index';
 import {
@@ -4102,7 +4102,7 @@ function openPublishDeliveryPort(): PublishDeliveryPort {
   // One operator-authenticated POST, shared by both legs. `credentials: 'same-origin'` carries the operator's
   // OWN auth cookie (never a service token — ADR-0013); a network/timeout returns 0, which the delivery leg
   // treats as retryable so a lost link holds the publish pending and never loses it.
-  const post = async (path: string, body: unknown, idempotencyKey: string): Promise<number> => {
+  const post = async (path: string, body: unknown, idempotencyKey: string): Promise<PublishAnswer> => {
     const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
     if (fetchFn === undefined) return 0; // off-browser (tests inject their own http) — treat as a lost link
     try {
@@ -4112,6 +4112,8 @@ function openPublishDeliveryPort(): PublishDeliveryPort {
         credentials: 'same-origin',
         body: JSON.stringify(body),
       });
+      // A refusal carries head office's own words (e.g. OB-503 "needs a second person"), kept with the dead letter.
+      if (res.status >= 400 && res.status < 500) return { status: res.status, ...(await refusalOf(res)) };
       return res.status;
     } catch {
       return 0;

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { regulatedPublishBody } from '../support/approval-request';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -73,6 +74,7 @@ describe.each(backings)('B16: a tobacco pack without a current warning confirmat
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-meena', 'store_manager');
     await h.provisionRole(T, 'u-cash', 'cashier');
+    await h.provisionRole(T, 'u-acct', 'accountant'); // OB-503: the second person who approves a regulated product reaching the tills
     const req = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner'): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
     const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
@@ -112,7 +114,8 @@ describe.each(backings)('B16: a tobacco pack without a current warning confirmat
     // A cold restart: the confirmation is on the product record, kept.
     h = restart(h);
     // A publish cannot type a confirmation in (or out): the body's own `tobaccoWarning` is ignored; the stored one is carried.
-    const activated = await ok(req('POST', '/v1/catalogue/products/p-cig/publish', { product: { ...cigarettes, tobaccoWarning: { images: [], confirmations: [] } }, categories: [TOBACCO] }), 'activate');
+    // OB-503: tobacco reaching the tills for the first time (the draft never did) needs a second person's approval as well.
+    const activated = await ok(req('POST', '/v1/catalogue/products/p-cig/publish', await regulatedPublishBody(h, T, 'p-cig', { product: { ...cigarettes, tobaccoWarning: { images: [], confirmations: [] } }, categories: [TOBACCO] })), 'activate');
     expect(activated.body).toMatchObject({ product: { lifecycle: 'new', tobaccoWarning: { confirmations: [expect.objectContaining({ confirmedBy: 'u-meena' })] } } });
     expect((activated.body as Record<string, unknown>)['activation']).toBeUndefined();
 

@@ -177,6 +177,20 @@ export interface ExcessDecision {
   readonly movementIds: readonly string[];
   /** How the decision arrived: on the decide route, or relayed from the manager's screen through the box. */
   readonly via: 'direct' | 'relayed';
+  /**
+   * OB-509 (G3): the released units of a cost-not-known line whose supplier bill was ALREADY matched came in at that bill's
+   * cost (their movement carries it) — one entry per such line. Absent when none did.
+   */
+  readonly valuedAtBill?: readonly BillValuedRelease[];
+}
+
+/** OB-509 (G3): units of a cost-not-known line released AFTER its bill was matched, valued at the matched bill's cost. */
+export interface BillValuedRelease {
+  readonly lineId: string;
+  readonly invoiceId: string;
+  readonly unitCost: OrderLineCost;
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
 }
 
 /**
@@ -485,6 +499,8 @@ export interface LineDisposition {
   readonly via: 'direct' | 'relayed';
   /** OB-509: the line's cost is not known (no issued order / not on the order), so `valueMinor` is not a value — said, never 0. */
   readonly valueNotKnown?: true;
+  /** OB-509 (G3): the line's bill was already matched — accepted units came in at the bill's cost, and `valueMinor` is at it. */
+  readonly valuedAtBill?: BillValuedRelease;
 }
 
 /** SP-6b — how a GRN assembled from handheld scans came to be, and what the scans had already posted (see `GrnRecord.assembledFrom`). */
@@ -729,6 +745,8 @@ export interface GoodsReceiptDeps {
   /** OB-509: the supplier's bill on head office's register, and the append that records its match to a receipt with its postings. */
   readonly supplierBill?: (tenantId: string, invoiceId: string) => Promise<SupplierBillForReceipt | undefined> | SupplierBillForReceipt | undefined;
   readonly commitBillMatch?: (tenantId: string, record: GrnRecord, postings: readonly BillCostPosting[], key: string) => Promise<void> | void;
+  /** OB-509 (G3): every supplier bill on head office's register (a withdrawn bill is not on it) — the bills a person may pick. */
+  readonly supplierBills?: (tenantId: string) => Promise<readonly SupplierBillForReceipt[]> | readonly SupplierBillForReceipt[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -1126,6 +1144,41 @@ export const linesAwaitingDisposition = (g: GrnRecord): readonly CheckedLine[] =
 export const awaitsDecision = (g: GrnRecord): boolean =>
   (g.heldMinor > 0 && g.excessDecision === undefined) || linesAwaitingDisposition(g).length > 0;
 
+// ── OB-509 (G3): held and quarantined units of a cost-not-known line are valued by the bill matched to it, whichever comes first ──
+
+/** The bill cost a cost-not-known line took when its supplier bill was matched — undefined while it waits (or its cost was known). */
+export function billCostOfLine(rec: GrnRecord, lineId: string): BillCost | undefined {
+  if (!(rec.costNotKnown ?? []).some((c) => c.lineId === lineId)) return undefined;
+  return (rec.billCosts ?? []).find((b) => b.lineId === lineId && b.costWasKnown !== true);
+}
+
+/**
+ * The line as its released units are booked: at the matched bill's cost when the line's cost was not known and its bill is
+ * matched (so the movement carries the bill's cost, its own `per` included); otherwise unchanged.
+ */
+export function lineAtBillCost(rec: GrnRecord, line: CheckedLine): CheckedLine {
+  const billed = billCostOfLine(rec, line.lineId);
+  if (billed === undefined) return line;
+  const unitCost = { minor: billed.unitCost.minor, currency: billed.unitCost.currency, ...(billed.unitCost.per === undefined || billed.unitCost.per === 1 ? {} : { per: billed.unitCost.per }) } as CheckedLine['unitCost'];
+  return { ...line, unitCost };
+}
+
+/** The unit cost a released unit's movement carries: the matched bill's; else the line's own; never ₹0 for a cost not known. */
+const releaseUnitCostMinor = (rec: GrnRecord) => (l: CheckedLine): number | undefined =>
+  billCostOfLine(rec, l.lineId) !== undefined ? l.unitCost.minor : (l.unitCost.minor > 0 ? l.unitCost.minor : undefined);
+
+/**
+ * The units of a line this receipt released into stock AFTER capture with their own inbound movement — the approved held
+ * excess (`…:excess`, never on a receipt assembled from scans: those were already on hand) and the accepted quarantine
+ * (`…:accepted`, what the scans had not posted). A bill matched later values them with the line's sellable units, once.
+ */
+export function releasedUnitsOf(rec: GrnRecord, line: CheckedLine): number {
+  const excess = rec.excessDecision?.decision === 'approved' && rec.assembledFrom === undefined ? line.heldMinor : 0;
+  const accepted = (rec.dispositions ?? []).some((d) => d.lineId === line.lineId && d.disposition === 'accept')
+    ? Math.max(0, line.quarantinedMinor - (rec.assembledFrom?.onHandByLine[line.lineId] ?? 0)) : 0;
+  return excess + accepted;
+}
+
 export type ExcessDecisionOutcome =
   | { readonly ok: true; readonly record: GrnRecord; readonly alreadyDecided: boolean }
   | { readonly ok: false; readonly refusedBecause: string; readonly detail: string };
@@ -1155,12 +1208,18 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
   const postedByScans = rec.assembledFrom !== undefined;
   const movements: Movement[] = input.decision === 'approved' && !postedByScans
     ? inboundMovements({
-      grnId: rec.grnId, locationId: rec.warehouseId, lines: rec.captured.lines, quantityOf: (l) => l.heldMinor, suffix: ':excess',
+      // OB-509 (G3): a cost-not-known line whose bill is already matched releases at the bill's cost.
+      grnId: rec.grnId, locationId: rec.warehouseId, lines: rec.captured.lines.map((l) => lineAtBillCost(rec, l)), quantityOf: (l) => l.heldMinor, suffix: ':excess',
       occurredAt: decidedAt, enteredBy: rec.receivedBy, approvedBy: input.decidedBy,
       // A relayed receipt whose cost head office never held was captured at ₹0 — release it unvalued too, not at ₹0.
-      unitCostMinorOf: (l) => (l.unitCost.minor > 0 ? l.unitCost.minor : undefined),
+      unitCostMinorOf: releaseUnitCostMinor(rec),
     })
     : [];
+  const valuedAtBill: BillValuedRelease[] = movements.flatMap((m) => {
+    const line = rec.captured.lines.find((l) => `${rec.grnId}:${l.lineId}:excess` === m.movementId);
+    const billed = line === undefined ? undefined : billCostOfLine(rec, line.lineId);
+    return line === undefined || billed === undefined ? [] : [{ lineId: line.lineId, invoiceId: billed.invoiceId, unitCost: billed.unitCost, quantityMinor: m.quantityMinor, valueMinor: valueAtCost(m.quantityMinor, line.uom, billed.unitCost) }];
+  });
   const heldByProduct: Record<string, number> = {};
   for (const l of rec.captured.lines) if (l.heldMinor > 0) heldByProduct[l.productId] = (heldByProduct[l.productId] ?? 0) + l.heldMinor;
   const releasedMinor = input.decision === 'approved' ? rec.captured.lines.reduce((s, l) => s + l.heldMinor, 0) : 0;
@@ -1170,6 +1229,7 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
     excessDecision: {
       decision: input.decision, decidedBy: input.decidedBy, decidedAt, reason: input.reason,
       releasedMinor, movementIds: movements.map((m) => m.movementId), via: input.via,
+      ...(valuedAtBill.length === 0 ? {} : { valuedAtBill }),
     },
     ...(postedByScans && input.decision === 'rejected'
       ? { governanceFlags: [...(rec.governanceFlags ?? []).filter((f) => f !== 'excess_on_hand_pending_return'), 'excess_on_hand_pending_return'] }
@@ -1190,6 +1250,7 @@ export async function decideReceiptExcess(deps: GoodsReceiptDeps, input: {
     after: {
       decision: input.decision, receivedBy: rec.receivedBy, releasedMinor: String(releasedMinor),
       availableMinor: String(decided.availableMinor), movementIds: movements.map((m) => m.movementId).join(','), via: input.via,
+      valuedAtBill: valuedAtBill.map((v) => `${v.lineId}@${v.unitCost.minor}:${v.invoiceId}`).join(','),
     },
     reason: input.reason, correlationId: rec.grnId,
   });
@@ -1501,22 +1562,29 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
   const decidedAt = deps.now();
   // SP-6b: on a receipt assembled from the handheld's scans, units the scans already posted on-hand are never released again.
   const alreadyOnHand = rec.assembledFrom?.onHandByLine[line.lineId] ?? 0;
+  // OB-509 (G3): a cost-not-known line whose supplier bill is already matched is valued — and its accepted units released — at
+  // the bill's cost; before its bill is matched it stays not known (the match values the accepted units with the rest).
+  const billed = billCostOfLine(rec, line.lineId);
+  const costed = lineAtBillCost(rec, line);
   const movements: Movement[] = input.disposition === 'accept'
     ? inboundMovements({
-      grnId: rec.grnId, locationId: rec.warehouseId, lines: [line], quantityOf: (l) => Math.max(0, l.quarantinedMinor - alreadyOnHand), suffix: ':accepted',
+      grnId: rec.grnId, locationId: rec.warehouseId, lines: [costed], quantityOf: (l) => Math.max(0, l.quarantinedMinor - alreadyOnHand), suffix: ':accepted',
       occurredAt: decidedAt, enteredBy: rec.receivedBy, approvedBy: input.decidedBy,
-      unitCostMinorOf: (l) => (l.unitCost.minor > 0 ? l.unitCost.minor : undefined),
+      unitCostMinorOf: releaseUnitCostMinor(rec),
     })
     : [];
+  const releasedHere = movements.reduce((n, m) => n + m.quantityMinor, 0);
   const disposition: LineDisposition = {
     lineId: line.lineId, productId: line.productId, quantityMinor: quantity, disposition: input.disposition,
     decidedBy: input.decidedBy, decidedAt, reason: input.reason,
-    valueMinor: valueAtCost(quantity, line.uom, line.unitCost), currency: line.unitCost.currency, // OB-31
+    valueMinor: valueAtCost(quantity, line.uom, costed.unitCost), currency: costed.unitCost.currency, // OB-31
     movementIds: movements.map((m) => m.movementId), via: input.via,
-    ...(line.costNotKnown === true ? { valueNotKnown: true as const } : {}),
+    ...(line.costNotKnown === true && billed === undefined ? { valueNotKnown: true as const } : {}),
+    ...(billed === undefined ? {} : {
+      valuedAtBill: { lineId: line.lineId, invoiceId: billed.invoiceId, unitCost: billed.unitCost, quantityMinor: releasedHere, valueMinor: valueAtCost(releasedHere, line.uom, billed.unitCost) },
+    }),
   };
-  const released = movements.reduce((n, m) => n + m.quantityMinor, 0);
-  const decided: GrnRecord = { ...rec, availableMinor: rec.availableMinor + released, dispositions: [...(rec.dispositions ?? []), disposition] };
+  const decided: GrnRecord = { ...rec, availableMinor: rec.availableMinor + releasedHere, dispositions: [...(rec.dispositions ?? []), disposition] };
   await deps.commitDisposition(input.tenantId, decided, movements, `${rec.grnId}:${line.lineId}:disposition`);
   await deps.recordAudit?.(input.tenantId, {
     actorId: input.decidedBy, action: `receipt.disposition.${input.disposition}`, objectType: 'goods_receipt', objectId: rec.grnId,
@@ -1524,7 +1592,8 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
     before: { lineId: line.lineId, quarantinedMinor: String(line.quarantinedMinor), rejectedMinor: String(line.rejectedMinor) },
     after: {
       disposition: input.disposition, receivedBy: rec.receivedBy, quantityMinor: String(quantity), valueMinor: String(disposition.valueMinor),
-      releasedMinor: String(released), movementIds: movements.map((m) => m.movementId).join(','), via: input.via,
+      releasedMinor: String(releasedHere), movementIds: movements.map((m) => m.movementId).join(','), via: input.via,
+      valuedAtBill: billed === undefined ? '' : `${billed.invoiceId}@${billed.unitCost.minor}`,
     },
     reason: input.reason, correlationId: rec.grnId,
   });
@@ -1639,8 +1708,10 @@ export type BillMatchOutcome =
 
 /**
  * OB-509 — match the supplier's bill to a receipt's cost-not-known lines. Each line whose product the bill names takes the
- * bill's price (per the bill's own `per`), once: the receipt's next state records it (append-only), and its SELLABLE units —
- * which went in unvalued — are valued at it by a value-only posting at the receiving store. A line the bill does not name
+ * bill's price (per the bill's own `per`), once: the receipt's next state records it (append-only), and its units in stock —
+ * the SELLABLE units plus any held excess / quarantined units already released, all of which went in unvalued — are valued at
+ * it by a value-only posting at the receiving store. Units released after the match carry the bill's cost on their own
+ * movement (G3), so nothing is valued twice and nothing is left unvalued. A line the bill does not name
  * stays not known. Refused when the bill is for another order, or when the matcher is the person who received the goods (§28).
  */
 export async function matchBillToReceipt(deps: GoodsReceiptDeps, input: {
@@ -1677,7 +1748,9 @@ export async function matchBillToReceipt(deps: GoodsReceiptDeps, input: {
     const line = rec.captured.lines.find((l) => l.lineId === w.lineId);
     if (bl === undefined || line === undefined) continue;
     const unitCost: OrderLineCost = { minor: bl.unitPriceMinor, currency: bill.currency, ...(bl.unitPricePer === undefined || bl.unitPricePer === 1 ? {} : { per: bl.unitPricePer }) };
-    const quantityMinor = line.sellableMinor;
+    // G3: its sellable units AND any held excess / quarantined units already released into stock (unvalued) — once, here.
+    // Units released later come in at this bill's cost on their own movement (`lineAtBillCost`), so none is counted twice.
+    const quantityMinor = line.sellableMinor + releasedUnitsOf(rec, line);
     const valueMinor = valueAtCost(quantityMinor, line.uom, unitCost);
     matched.push({ lineId: w.lineId, productId: w.productId, invoiceId: bill.invoiceId, unitCost, quantityMinor, valueMinor, matchedBy: input.matchedBy, matchedAt });
     if (quantityMinor > 0) postings.push({ lineId: w.lineId, productId: w.productId, locationId: rec.warehouseId, quantityMinor, uom: line.uom, valueMinor, invoiceId: bill.invoiceId, poId: rec.poId });
@@ -1707,8 +1780,78 @@ export async function matchBillToReceipt(deps: GoodsReceiptDeps, input: {
 export const stillCostNotKnown = (g: GrnRecord): readonly CostNotKnownLine[] =>
   (g.costNotKnown ?? []).filter((l) => !(g.billCosts ?? []).some((b) => b.lineId === l.lineId));
 
+/** OB-509 (G3): a bill on head office's register a person may match to a receipt still waiting for its cost. */
+export interface CandidateBill {
+  readonly invoiceId: string;
+  readonly supplierId: string;
+  readonly poId: string | null;
+  readonly currency: string;
+  /** The bill's price for each waiting product it names — what each line's cost would become. */
+  readonly prices: readonly { readonly productId: string; readonly unitPriceMinor: number; readonly unitPricePer?: number }[];
+  /** The second person who checked the bill's capture; null when nobody has. */
+  readonly checkedBy: string | null;
+}
+
+/** OB-509 (G3): one receipt with a line whose cost is still not known, and the registered bills that could make it known. */
+export interface ReceiptWaitingForBill {
+  readonly grnId: string;
+  readonly number: string;
+  readonly poId: string | null;
+  readonly warehouseId: string;
+  readonly receivedBy: string;
+  readonly receivedAt: string;
+  readonly waiting: readonly (CostNotKnownLine & { readonly inStockMinor: number })[];
+  /** Bills for the same order (or, with no order, bills with none) naming at least one waiting product. */
+  readonly bills: readonly CandidateBill[];
+  /** The reader booked this delivery in — head office refuses them matching its bill (§28); said before they try. */
+  readonly receivedByYou: boolean;
+}
+
+/**
+ * OB-509 (G3) — the receipts still waiting for their supplier's bill, oldest first, each with the bills on head office's
+ * register that could be matched to it: the same order (or, with no order, a bill with none) and naming a waiting product.
+ * The match itself stays head office's (`matchBillToReceipt`): this only lists. Pure.
+ */
+export function receiptsWaitingForBill(receipts: readonly GrnRecord[], bills: readonly SupplierBillForReceipt[], viewer: string): readonly ReceiptWaitingForBill[] {
+  return receipts
+    .map((g) => ({ g, waiting: stillCostNotKnown(g) }))
+    .filter(({ waiting }) => waiting.length > 0)
+    .sort((a, b) => a.g.receivedAt.localeCompare(b.g.receivedAt) || a.g.grnId.localeCompare(b.g.grnId))
+    .map(({ g, waiting }) => {
+      const products = new Set(waiting.map((w) => w.productId));
+      const candidates = bills
+        .filter((b) => (b.poId ?? null) === (g.poId ?? null) && b.lines.some((l) => products.has(l.productId)))
+        .map((b): CandidateBill => ({
+          invoiceId: b.invoiceId, supplierId: b.supplierId, poId: b.poId ?? null, currency: b.currency, checkedBy: b.approvedBy,
+          prices: b.lines.filter((l) => products.has(l.productId)).map((l) => ({ productId: l.productId, unitPriceMinor: l.unitPriceMinor, ...(l.unitPricePer === undefined ? {} : { unitPricePer: l.unitPricePer }) })),
+        }))
+        .sort((x, y) => x.invoiceId.localeCompare(y.invoiceId));
+      return {
+        grnId: g.grnId, number: g.number, poId: g.poId, warehouseId: g.warehouseId, receivedBy: g.receivedBy, receivedAt: g.receivedAt,
+        waiting: waiting.map((w) => {
+          const line = g.captured.lines.find((l) => l.lineId === w.lineId);
+          return { ...w, inStockMinor: line === undefined ? 0 : line.sellableMinor + releasedUnitsOf(g, line) };
+        }),
+        bills: candidates, receivedByYou: g.receivedBy === viewer,
+      };
+    });
+}
+
 export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
   return [
+    {
+      // OB-509 (G3): the receipts whose cost is still NOT KNOWN, with the bills on head office's register that could be matched
+      // to each — the list the bill-matching screen works from. Gated like the match itself; only the caller's branches.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/receipts-cost-not-known',
+      permission: 'purchase.invoice.match',
+      handler: async (ctx) => {
+        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1
+        const all = (await deps.all(ctx.tenantId)).filter((g) => scope.covers(g.warehouseId));
+        const bills = deps.supplierBills === undefined ? [] : await deps.supplierBills(ctx.tenantId);
+        const receipts = receiptsWaitingForBill(all, bills, ctx.userId);
+        return { status: 200, body: { receipts, count: receipts.length, billsReadable: deps.supplierBills !== undefined, asAt: deps.now() } };
+      },
+    },
     {
       // Capture a goods receipt. Body: { number?, poId, warehouseId, receivedOnDate, currency, lines[] }. The product
       // rules and the tolerance policy are head office's own — a body naming them is refused (F03). Idempotent on the

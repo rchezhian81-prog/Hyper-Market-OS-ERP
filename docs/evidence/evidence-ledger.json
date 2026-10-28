@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1917,
+  "testFiles": 1925,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1795,8 +1795,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 13,
-        "integration": 16,
-        "realDb": 9,
+        "integration": 17,
+        "realDb": 10,
         "browser": 3,
         "connected": 2,
         "device": 0,
@@ -1825,6 +1825,7 @@
           "tests/integration/a-b2b-recurring-order-makes-itself-on-its-day.test.ts",
           "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
           "tests/integration/a-credit-customers-gstin-files-their-invoices-in-gstr1-b2b.test.ts",
+          "tests/integration/a-paused-recurring-order-never-makes-up-its-missed-days.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/b2b-collections.test.ts",
           "tests/integration/b2b-commission.test.ts",
@@ -1843,6 +1844,7 @@
           "tests/integration/a-b2b-recurring-order-makes-itself-on-its-day.test.ts",
           "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
           "tests/integration/a-credit-customers-gstin-files-their-invoices-in-gstr1-b2b.test.ts",
+          "tests/integration/a-paused-recurring-order-never-makes-up-its-missed-days.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/the-close-checks-credit-customer-receivables.test.ts"

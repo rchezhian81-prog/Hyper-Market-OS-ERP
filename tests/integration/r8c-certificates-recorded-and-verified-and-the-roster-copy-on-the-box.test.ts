@@ -14,9 +14,10 @@ import { addDays } from '../../packages/workforce/src/working-time';
 
 // Round 8 · R8-C — head office's side and the real store computer, in memory and (with DATABASE_URL) on real PostgreSQL,
 // with cold restarts. Synthetic people only.
-//   • OB-522 (M25-FR-03 · OB-502): a FoSTaC certificate is the same food-handling certificate. Recorded WITHOUT verifying it
-//     is no cover (the cook's run is refused); the cook cannot verify their own; nobody can verify in another's name; a
-//     manager who saw it verifies it (re-recording it in their own name) and the cook's run goes through. It rides the signed
+//   • OB-522 (M25-FR-03 · OB-502): a FoSTaC certificate is the same food-handling certificate. Only an EXPIRED certificate
+//     blocks (owner, 28 Oct 2026 — a person with none on file is not blocked). A cook whose certificate expired stays
+//     blocked when a FoSTaC renewal is recorded WITHOUT verifying it (no cover); the cook cannot verify their own; nobody can
+//     verify in another's name; a manager who saw it verifies it (re-recording it in their own name) and the run goes through. It rides the signed
 //     store pack, and the store computer, offline, lets the FoSTaC cook's food work through.
 //   • OB-531 (M25-FR-01): the store computer puts its copy of head office's roster — with the gaps folded by the same engine —
 //     on the manager's rostering screen, with when head office last sent it; with the cable out across a cold restart.
@@ -54,18 +55,21 @@ describe.each(backings)('OB-522 · OB-531 — on $name', ({ harness }) => {
     const runBody = (id: string) => ({ recipeId: 'r-cake', batches: 1, actualOutputMinor: 1, outputBatchId: `CAKE-${id}`, locationId: S1 });
     const fostac = { employeeId: 'u-kumar', kind: 'fostac', issuedOn: TODAY, validUntil: addDays(TODAY, 365) };
 
-    // ── no certificate: blocked ──
-    expect(codeOf(await call('POST', '/v1/production/runs/run-1', 'u-kumar', runBody('1')))).toBe('food_handling_certificate_missing');
-    // ── recorded WITHOUT verifying (as the page does when "I have seen it" is not ticked): still no cover ──
+    // ── no certificate on file: NOT blocked (owner, 28 Oct 2026: only an expired certificate blocks) ──
+    expect((await call('POST', '/v1/production/runs/run-0', 'u-kumar', runBody('0'))).status).toBe(201);
+    // ── his verified food-handling certificate EXPIRED: blocked ──
+    await ok(call('POST', '/v1/hr/workforce/certifications/CERT-OLD', 'u-mgr', { employeeId: 'u-kumar', kind: 'food-handling', issuedOn: '2025-01-01', validUntil: addDays(TODAY, -2), verifiedBy: 'u-mgr' }), 'expired');
+    expect(codeOf(await call('POST', '/v1/production/runs/run-1', 'u-kumar', runBody('1')))).toBe('food_handling_certificate_expired');
+    // ── the FoSTaC renewal recorded WITHOUT verifying (as the page does when "I have seen it" is not ticked): still no cover ──
     await ok(call('POST', '/v1/hr/workforce/certifications/CERT-K', 'u-mgr', fostac), 'recorded');
-    expect(codeOf(await call('POST', '/v1/production/runs/run-1', 'u-kumar', runBody('1')))).toBe('food_handling_certificate_missing');
+    expect(codeOf(await call('POST', '/v1/production/runs/run-1', 'u-kumar', runBody('1')))).toBe('food_handling_certificate_expired');
     // ── Kumar cannot verify his own; a manager cannot verify in another person's name; a cashier cannot record at all ──
     const self = await call('POST', '/v1/hr/workforce/certifications/CERT-K', 'u-kumar', { ...fostac, verifiedBy: 'u-kumar' });
     expect([self.status, codeOf(self)]).toEqual([422, 'self_verification']);
     const proxy = await call('POST', '/v1/hr/workforce/certifications/CERT-K', 'u-mgr', { ...fostac, verifiedBy: 'u-owner' });
     expect(proxy.status).toBeGreaterThanOrEqual(400);
     expect((await call('POST', '/v1/hr/workforce/certifications/CERT-K', 'u-clerk', { ...fostac, verifiedBy: 'u-clerk' })).status).toBe(403);
-    expect(codeOf(await call('POST', '/v1/production/runs/run-1', 'u-kumar', runBody('1')))).toBe('food_handling_certificate_missing');
+    expect(codeOf(await call('POST', '/v1/production/runs/run-1', 'u-kumar', runBody('1')))).toBe('food_handling_certificate_expired');
 
     h = harness(h); // ── COLD RESTART ──
     // ── the manager who saw it verifies it — the same certificate, re-recorded in her own name ──
@@ -74,12 +78,12 @@ describe.each(backings)('OB-522 · OB-531 — on $name', ({ harness }) => {
 
     h = harness(h); // ── COLD RESTART: the verified FoSTaC certificate is read back, and still counts ──
     const listed = ((await ok(call('GET', '/v1/hr/workforce/certifications', 'u-mgr'), 'list')).body as { certifications: { certificationId: string; kind: string; verifiedBy?: string }[] }).certifications;
-    expect(listed).toEqual([expect.objectContaining({ certificationId: 'CERT-K', kind: 'fostac', verifiedBy: 'u-mgr' })]);
+    expect(listed).toEqual(expect.arrayContaining([expect.objectContaining({ certificationId: 'CERT-K', kind: 'fostac', verifiedBy: 'u-mgr' })]));
     expect((await call('POST', `/v1/production/weighed-runs/w-1`, 'u-kumar', { departmentId: 'meat_fish', inputs: [{ productId: 'CHICKEN', weightGrams: 2_000, costPerKg: { minor: 18_000, currency: 'INR' } }], outputs: [{ productId: 'CUTS', weightGrams: 1_900 }] })).status).toBe(201);
     // ── it rides the signed store pack as a food-handling certificate ──
     const section = await certificationsPackSection(h.store, () => new Date().toISOString(), T, S1);
-    expect(section?.certifications).toEqual([expect.objectContaining({ certificationId: 'CERT-K', kind: 'fostac', verifiedBy: 'u-mgr' })]);
-  });
+    expect(section?.certifications).toEqual(expect.arrayContaining([expect.objectContaining({ certificationId: 'CERT-K', kind: 'fostac', verifiedBy: 'u-mgr' })]));
+  }, 60_000);
 
   it('the store computer puts its copy of head office\'s roster on the manager\'s rostering screen, with its time — cable out, cold restart', async () => {
     const h = harness();

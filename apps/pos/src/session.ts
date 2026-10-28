@@ -95,6 +95,12 @@ export interface PosSessionConfig {
    */
   readonly hsnCodeOf?: (productId: string) => string | undefined;
   /**
+   * OB-506 (owner, 28 Oct 2026): a product's MRP as the lane's signed catalogue pack carries it, by id — the legal ceiling a
+   * line raised to a quotation's price may never pass (Legal Metrology · A9). Absent, or no MRP on the product → the till
+   * cannot show a raised price is within the MRP, so it refuses to raise it.
+   */
+  readonly mrpOf?: (productId: string) => number | undefined;
+  /**
    * OB-306 (M03-FR-02): the own-barcode bundle a product is sold as, from the lane's signed catalogue pack. A bundle line is
    * exploded at the commit (`explodeBundleLine`) and the components it takes off the shelf are frozen on the line, so head
    * office writes one stock movement per component. Absent → no product is a bundle here.
@@ -275,7 +281,7 @@ export interface BasketEntry {
    * The line's price was LOWERED at the till with a manager's approval (audit PF-07 · M12-FR-04): the unit price before,
    * who approved it and the till action the store computer holds as evidence. Carried on the sale record.
    */
-  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string };
+  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string; readonly quotationId?: string };
 }
 
 /**
@@ -389,6 +395,37 @@ export interface BasketTotals extends BillTotals {
   readonly roundOffMinor?: number;
 }
 
+/**
+ * OB-506 (owner, 28 Oct 2026): a quotation's price HIGHER than the till's price is charged — but never above the line's
+ * MRP (Legal Metrology · A9). The till refuses to raise the line, in plain words, rather than quietly charging less than
+ * the quotation promised or more than the law allows.
+ */
+export class QuotedPriceRefusedError extends Error {
+  readonly laneMessage: string;
+  readonly laneMessageTa: string;
+  constructor(public readonly refusedBecause: 'quoted_above_mrp' | 'mrp_not_known', words: { readonly en: string; readonly ta: string }) {
+    super(`quoted price refused: ${refusedBecause}`);
+    this.name = 'QuotedPriceRefusedError';
+    this.laneMessage = words.en;
+    this.laneMessageTa = words.ta;
+  }
+}
+
+const rupeesOf = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
+
+/** The till's words when a quoted price would pass the MRP, or the MRP is not known — English and Tamil. */
+export function quotedPriceRefusal(refusedBecause: 'quoted_above_mrp' | 'mrp_not_known', quotedMinor: number, mrpMinor?: number): { readonly en: string; readonly ta: string } {
+  return refusedBecause === 'quoted_above_mrp'
+    ? {
+      en: `the quoted price ${rupeesOf(quotedMinor)} is above this item's MRP ${rupeesOf(mrpMinor ?? 0)} — a customer is never charged above the MRP`,
+      ta: `சொன்ன விலை ${rupeesOf(quotedMinor)} இந்தப் பொருளின் அதிகபட்ச சில்லறை விலை (MRP) ${rupeesOf(mrpMinor ?? 0)}-ஐ விட அதிகம் — MRP-க்கு மேல் வாடிக்கையாளரிடம் வசூலிக்கக் கூடாது`,
+    }
+    : {
+      en: `the quoted price ${rupeesOf(quotedMinor)} is higher than the till's price, and this till's price pack carries no MRP for the item, so the till cannot show the quoted price is within the MRP`,
+      ta: `சொன்ன விலை ${rupeesOf(quotedMinor)} பில்லிங் விலையை விட அதிகம்; இந்த பில்லிங்கின் விலைத் தொகுப்பில் இந்தப் பொருளுக்கு MRP இல்லை, எனவே சொன்ன விலை MRP-க்குள் உள்ளதா என்று காட்ட முடியாது`,
+    };
+}
+
 export class EmptyBasketError extends Error {
   constructor() {
     super('Cannot tender an empty basket.');
@@ -439,6 +476,22 @@ export class LocalCommitRefusedError extends Error {
     this.name = 'LocalCommitRefusedError';
     if (from?.laneMessageTa !== undefined) this.laneMessageTa = from.laneMessageTa;
     if (from?.refusedBecause !== undefined) this.refusedBecause = from.refusedBecause;
+  }
+}
+
+/**
+ * OB-500: a line whose price a manager cut cannot change quantity — the approval was for the rupees taken off THAT
+ * quantity, and ten of them would take ten times as much off with nobody approving it. The line keeps its quantity; the
+ * cashier voids it and rings it again. Said in the cashier's words, English and Tamil.
+ */
+export class CutLineQuantityRefusedError extends Error {
+  readonly laneMessage: string;
+  readonly laneMessageTa: string;
+  constructor(public readonly description: string) {
+    super(`${description}: a line with a manager-approved price cut cannot change quantity.`);
+    this.name = 'CutLineQuantityRefusedError';
+    this.laneMessage = `The price of ${description} was cut with a manager's approval, so its quantity cannot be changed. Nothing was changed — void the line and ring it again.`;
+    this.laneMessageTa = `${description} பொருளின் விலை மேலாளரின் ஒப்புதலுடன் குறைக்கப்பட்டது, எனவே அதன் எண்ணிக்கையை மாற்ற முடியாது. எதுவும் மாற்றப்படவில்லை — வரியை ரத்து செய்து மீண்டும் பில்லில் சேர்க்கவும்.`;
   }
 }
 
@@ -877,6 +930,9 @@ export class PosSession {
     if (!Number.isSafeInteger(quantityMinor) || quantityMinor <= 0) {
       throw new RangeError(`Quantity must be a positive integer, got ${quantityMinor}.`);
     }
+    // OB-500: a manager approved a price cut for THIS quantity — the rupees it takes off the line. A new quantity would
+    // multiply that cut with no new approval, so it is refused; the cashier voids the line and rings it again.
+    if (line.priceOverride !== undefined && quantityMinor !== line.quantityMinor) throw new CutLineQuantityRefusedError(line.description);
     // A new quantity is judged like a new scan (B6 · B14): a loose-cigarette count, or a weight keyed on a lane whose
     // scale has lapsed, is refused and the line keeps the quantity it had.
     const refusals = this.lineRefusals({ ...line, quantityMinor }, this.nowIso());
@@ -908,6 +964,9 @@ export class PosSession {
   /**
    * What lowering a line's unit price to `toUnitMinor` would take off the line, priced exactly as the line is priced
    * (weighed goods included) — the value a manager approves and loss prevention judges (audit PF-07).
+   *
+   * OB-500: measured from the line's FIRST price (the price it was rung at, before any cut), never from a price already
+   * cut — so a second cut on the same line is judged on everything taken off it, and two ₹90 cuts are ₹180, not ₹90 twice.
    */
   overrideValue(lineId: string, toUnitMinor: number): { readonly fromUnitMinor: number; readonly reductionMinor: number } {
     const line = this.lines.find((l) => l.lineId === lineId && !l.voided);
@@ -918,23 +977,54 @@ export class PosSession {
     // B19: a carry bag stays a PRICED line — no approval can make it free. Asked here, before any approval is spent.
     const refusals = this.lineRefusals({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }, this.nowIso(), undefined, line.priceOverride?.fromUnitMinor ?? line.unitPrice.minor);
     if (refusals.length > 0) throw new TillRuleRefusedError(refusals);
-    const before = this.priceOf(line).total.minor;
+    const firstUnitMinor = line.priceOverride?.fromUnitMinor ?? line.unitPrice.minor;
+    const before = this.priceOf({ ...line, unitPrice: money(firstUnitMinor, line.unitPrice.currency) }).total.minor;
     const after = this.priceOf({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }).total.minor;
-    return { fromUnitMinor: line.unitPrice.minor, reductionMinor: before - after };
+    return { fromUnitMinor: firstUnitMinor, reductionMinor: before - after };
   }
 
   /**
    * Lower a line's price — ONLY once the store computer holds the approved change as evidence (the caller's job, audit
    * PF-07). The line keeps where the price came from and who approved it; the sale record carries both.
    */
-  overridePrice(lineId: string, toUnitMinor: number, evidence: { readonly approvedBy: string; readonly activityId: string }): BasketEntry {
+  overridePrice(lineId: string, toUnitMinor: number, evidence: { readonly approvedBy: string; readonly activityId: string; readonly quotationId?: string }): BasketEntry {
     this.notWhileAwaiting();
+    // The line's first price — kept through every later cut, so the sale record and head office see the whole cut.
     const { fromUnitMinor } = this.overrideValue(lineId, toUnitMinor);
     const line = this.lines.find((l) => l.lineId === lineId)!;
-    const first = line.priceOverride?.fromUnitMinor ?? fromUnitMinor;
     const next: BasketEntry = Object.freeze({
       ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency),
-      priceOverride: { fromUnitMinor: first, approvedBy: evidence.approvedBy, activityId: evidence.activityId },
+      priceOverride: { fromUnitMinor, approvedBy: evidence.approvedBy, activityId: evidence.activityId, ...(evidence.quotationId === undefined ? {} : { quotationId: evidence.quotationId }) },
+    });
+    this.replace(lineId, next);
+    return next;
+  }
+
+  /**
+   * OB-506 (owner, 28 Oct 2026): RAISE a line to the price a quotation promised, when that is higher than the till's price —
+   * the only way a till raises a price. Never above the line's MRP as the lane's own signed pack carries it (Legal Metrology
+   * · A9): above it, or with no MRP known, the line is refused in words (`QuotedPriceRefusedError`) and keeps its price. The
+   * line records where the price came from — the quotation's number — so head office's sale check sees why.
+   */
+  chargeQuotedPrice(lineId: string, toUnitMinor: number, quotationId: string): BasketEntry {
+    this.notWhileAwaiting();
+    const line = this.lines.find((l) => l.lineId === lineId && !l.voided);
+    if (line === undefined) throw new NoSuchLineError(lineId);
+    if (!Number.isSafeInteger(toUnitMinor) || toUnitMinor <= line.unitPrice.minor) {
+      throw new RangeError(`A quoted price is raised to only when it is above the till's price: ${toUnitMinor} is not above ${line.unitPrice.minor}.`);
+    }
+    const id = quotationId.trim();
+    if (id === '') throw new RangeError('A raised price names the quotation it came from.');
+    const mrp = this.config.mrpOf?.(line.productId);
+    if (mrp === undefined || !Number.isSafeInteger(mrp)) throw new QuotedPriceRefusedError('mrp_not_known', quotedPriceRefusal('mrp_not_known', toUnitMinor));
+    if (toUnitMinor > mrp) throw new QuotedPriceRefusedError('quoted_above_mrp', quotedPriceRefusal('quoted_above_mrp', toUnitMinor, mrp));
+    const first = line.priceOverride?.fromUnitMinor ?? line.unitPrice.minor;
+    const raised: BasketEntry = { ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) };
+    const refusals = this.lineRefusals(raised, this.nowIso(), undefined, Math.max(first, toUnitMinor));
+    if (refusals.length > 0) throw new TillRuleRefusedError(refusals);
+    const next: BasketEntry = Object.freeze({
+      ...raised,
+      priceOverride: { fromUnitMinor: first, approvedBy: `quotation ${id}`, activityId: `quotation:${id}`, quotationId: id },
     });
     this.replace(lineId, next);
     return next;
@@ -1346,8 +1436,9 @@ export class PosSession {
         ...(scale === undefined ? {} : { scaleCheck: scale }),
         ...(flags.tobacco === true && flags.packMinimumMinor !== undefined ? { packCheck: { packMinimumMinor: flags.packMinimumMinor } } : {}),
         ...(flags.carryBag === true ? { carryBag: { ...(flags.plasticMaterial === undefined ? {} : { material: flags.plasticMaterial }), ...(flags.plasticThicknessMicrons === undefined ? {} : { thicknessMicrons: flags.plasticThicknessMicrons }) } } : {}),
-        // A price lowered with a manager's approval (PF-07): where it came from, who approved it, the evidence's id.
-        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitPriceMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId } }),
+        // A price lowered with a manager's approval (PF-07), or set from a quotation (OB-506 — lowered or raised): where it
+        // came from, who approved it, the evidence's id, and the quotation's number when a quotation set it.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitPriceMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId, ...(l.priceOverride.quotationId === undefined ? {} : { quotationId: l.priceOverride.quotationId }) } }),
       };
     });
     // The record's net and GST are the sum of what is INSIDE each line as actually charged — after the attributed
@@ -1585,8 +1676,9 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
-        // R9-A · OB-533: a lowered line (a quotation's price, a manager's cut) is parked with its price evidence.
-        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId } }),
+        // R9-A · OB-533: a lowered (or quotation-raised) line keeps its price evidence while parked — never a changed price without its reason.
+        // OB-500: a cut line keeps its first price and its approval when parked, so a recalled line is still a cut line.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { ...l.priceOverride } }),
       })),
       ageAnswers: this.ageAnswerLog.map((a) => ({ minimumAge: a.minimumAge, outcome: a.outcome, by: a.by, at: a.at, ...(a.productId === undefined ? {} : { productId: a.productId }) })),
     };
@@ -1616,8 +1708,10 @@ export class PosSession {
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
         ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
-        // R9-A · OB-533: a lowered line comes back with its price evidence — never a lower price without its reason.
-        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId } }),
+        // R9-A · OB-533: a lowered (or quotation-raised) line keeps its price evidence while parked — never a changed price without its reason.
+        // OB-500: a cut line comes back as a cut line — its first price and approval — so its quantity stays locked and a
+        // further cut is measured from its first price, and head office still re-checks it.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { ...l.priceOverride } }),
         // The pack's flags come back with the line (B14 · B19), so the commit judges a recalled line like a scanned one.
         ...(this.config.regulatedFlagsOf?.(l.productId) === undefined ? {} : { regulatedFlags: this.config.regulatedFlagsOf(l.productId) }),
       }));

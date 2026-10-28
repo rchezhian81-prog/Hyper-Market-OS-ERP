@@ -13,7 +13,7 @@ import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import { isOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
 import type { VersionPolicy } from '../../../packages/platform-admin/src/devices'; // OB-501 (R7-A)
 import {
-  acceptSale, summariseIntake,
+  acceptSale, summariseIntake, quotationOfLine,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,
 } from './sale-intake';
 
@@ -75,6 +75,11 @@ export interface PosDeps {
   readonly shopStateOf?: (tenantId: string, sale: IncomingSale) => Promise<string | undefined>;
   /** OB-500 (R7-A): head office's floor and price-cut limits for a sale's lowered lines (undefined when it has none). */
   readonly tillOverrideRulesFor?: (tenantId: string, sale: IncomingSale) => Promise<IntakeContext['tillOverrideRules'] | undefined>;
+  /**
+   * OB-506: the quotations named by a sale's lines (a price the till set from a quotation, lowered or raised), as head
+   * office's own record holds them. Asked only when a line names one. Absent → such a line is judged as any price change.
+   */
+  readonly quotationsNamedFor?: (tenantId: string, quotationIds: readonly string[]) => Promise<IntakeContext['quotationsNamed']>;
   /** OB-501 (R7-A): head office's app version policy (undefined when none is set). */
   readonly clientVersionPolicy?: (tenantId: string) => Promise<VersionPolicy | undefined>;
   /**
@@ -224,6 +229,13 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           // OB-500 · OB-501 (R7-A): head office's own price-cut rules for the lowered lines, and its app version policy.
           ...(await (async () => { const r = await deps.tillOverrideRulesFor?.(ctx.tenantId, sale); return r === undefined ? {} : { tillOverrideRules: r }; })()),
           ...(deps.clientVersionPolicy === undefined ? {} : { versionPolicy: (await deps.clientVersionPolicy(ctx.tenantId)) ?? null }),
+          // OB-506: the quotations a line's price was set from, read from head office's own record (only when a line names one).
+          ...(await (async () => {
+            const ids = [...new Set(sale.lines.flatMap((l) => { const q = quotationOfLine(l); return q === undefined ? [] : [q]; }))];
+            if (ids.length === 0 || deps.quotationsNamedFor === undefined) return {};
+            const named = await deps.quotationsNamedFor(ctx.tenantId, ids);
+            return named === undefined ? {} : { quotationsNamed: named };
+          })()),
         } satisfies IntakeContext);
 
         // NEW-3 (C10 · hard rule #3): what is KEPT never holds card data. The intake above judged the sale as it arrived

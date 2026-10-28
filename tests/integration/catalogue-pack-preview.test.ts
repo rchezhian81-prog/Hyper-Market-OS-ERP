@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { regulatedPublishBody } from '../support/approval-request';
 
 // Slice 2 (M03 → M05 → the lane): the catalogue-pack ASSEMBLY folds the four cloud master-data stores this
 // session built — the product master, the price lists, the barcode register, and the tax-class GST-rate
@@ -57,14 +58,15 @@ describe('catalogue pack assembly / preview (slice 2)', () => {
   it('an age-restricted product master carries its minimum age into the pack as regulatedFlags — the field the lane’s age gate reads; an unrestricted one carries no flag (E1b · M03-FR-03 → M12-FR-04)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-acct', 'accountant'); // OB-503: the second person who approves an age-restricted product
     await setTaxRate(h, '25010020', 0);
     await setTaxRate(h, '22029920', 1800);
     expect((await publishProduct(h, 'p-salt', salt())).status).toBe(201);
     await setPrice(h, 'p-salt', 2000, 2500);
     // The drink sits in an age-restricted category, so the product engine made it declare safety.minimumAge to publish.
     const drink = await h.request({ method: 'POST', path: '/v1/catalogue/products/p-energy/publish', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-p-energy',
-      body: { product: { sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', safety: { minimumAge: 21 } }, categories: [RESTRICTED] } });
-    expect(drink.status).toBe(201);
+      body: await regulatedPublishBody(h, A, 'p-energy', { product: { sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', safety: { minimumAge: 21 } }, categories: [RESTRICTED] }) });
+    expect(drink.status, JSON.stringify(drink.body)).toBe(201);
     await setPrice(h, 'p-energy', 18_000, 20_000);
     expect((await assignBarcode(h, 'p-energy', '8901234567890')).status).toBe(201);
 

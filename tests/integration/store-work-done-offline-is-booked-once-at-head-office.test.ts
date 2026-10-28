@@ -148,7 +148,7 @@ describe.each(backings)('M11-FR-02 offline: a weigh-in / weigh-out, costed at he
     expect(codeOf(await call('POST', '/v1/production/weighed-runs/w1/synced', 'u-box', weighed('w1', { inputs: [{ productId: 'CHICKEN', weightGrams: 2_100 }] })))).toBe('weighed_run_conflicts_with_record');
     // Mutton head office has never bought: weighed and recorded, its cost NOT KNOWN — never priced at zero as if free.
     const m = await call('POST', '/v1/production/weighed-runs/w2/synced', 'u-box', weighed('w2', { inputs: [{ productId: 'MUTTON', weightGrams: 1_000 }], outputs: [{ productId: 'MUTTON-CUTS', weightGrams: 800 }], weighedBy: 'u-nobody' }), 'w2');
-    expect(m.body).toMatchObject({ costKnown: false, uncostedProducts: ['MUTTON'], syncFlags: ['weigher_unknown', 'weigher_food_certificate_not_valid'] }); // OB-502: nobody known holds no certificate either
+    expect(m.body).toMatchObject({ costKnown: false, uncostedProducts: ['MUTTON'], syncFlags: ['weigher_unknown'] }); // OB-502: nobody known has no certificate on file — not flagged for it (only an expired certificate is)
     const boardRuns = ((await call('GET', '/v1/production/weighed-runs', 'u-owner')).body as { runs: { runId: string }[] }).runs;
     expect(boardRuns.map((r) => r.runId).sort()).toEqual(['w1', 'w2']);
     expect((await call('POST', '/v1/production/weighed-runs/w3/synced', 'u-cook', weighed('w3'))).status).toBe(403);

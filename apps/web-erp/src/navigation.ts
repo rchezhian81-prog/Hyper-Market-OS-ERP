@@ -117,7 +117,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (served by the store computer since OB-380). Gated on the
   // permission those routes check (`purchase.invoice.capture`).
-  { id: 'supplier-bills', label: 'Supplier bills', labelTa: 'சப்ளையர் பில்கள்', path: '/supplier-bills', requires: 'purchase.invoice.capture', group: 'Purchase' },
+  { id: 'supplier-bills', label: 'Supplier bills', labelTa: 'சப்ளையர் பில்கள்', path: '/supplier-bills', requires: 'purchase.invoice.match', group: 'Purchase' },
   // ── OB-288 commercial desks (M22 · M24 · M27) — begin
   // M24-FR-01/02: the buyer's ONE queue of supplier submissions (invoices, delivery notes, price proposals, RFQ replies,
   // claims) decided with a reason, and each order's delivery status — a head-office page. Gated on the permission its routes

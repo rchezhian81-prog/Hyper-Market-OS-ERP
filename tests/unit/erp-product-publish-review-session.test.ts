@@ -93,6 +93,15 @@ describe('view — classification and triage', () => {
     expect(v.rows.slice(1).every((r) => r.state === 'ready')).toBe(true);
   });
 
+  it('OB-503: a refused publish shows head office\'s own words on its row — "needs a second person" reaches the person', () => {
+    const ob = queueOf([rec()]);
+    const key = ob.pending()[0]!.key;
+    ob.deadLetter(key, 'head office refused this publish: An age-restricted or regulated product needs a second person to approve it before it goes on sale — kept for review');
+    const row = session({ outbox: () => ob }).view('en').rows[0]!;
+    expect(row.state).toBe('permanently_refused');
+    expect(row.detail).toContain('needs a second person');
+  });
+
   it('refuses to review a queue for a screen that was not told who is using it (no shared logins)', () => {
     const v = session({}, null).view('en');
     expect(v.rows).toEqual([]);
