@@ -79,7 +79,7 @@ const WORDS = {
   en: {
     noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
     boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
-    noCloud: 'store computer cannot reach head office', cloudNotSetUp: 'no head office link set up',
+    noCloud: 'store computer cannot reach head office', cloudLoginRefused: 'store computer\'s head office login needs renewing', cloudNotSetUp: 'no head office link set up',
     cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No connection to the store computer. This is the work this handheld was last given, at',
     goodsIn: 'Waiting to be put away', noWork: 'No warehouse work has been given to this handheld yet.',
@@ -168,7 +168,7 @@ const WORDS = {
   ta: {
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
-    noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
+    noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudLoginRefused: 'கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
     cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்த கருவிக்குக் கடைசியாகக் கொடுக்கப்பட்ட வேலை இதுதான்:',
     goodsIn: 'அடுக்க வைக்கக் காத்திருப்பவை', noWork: 'இந்த கருவிக்கு இதுவரை கிடங்கு வேலை தரப்படவில்லை.',
@@ -1331,7 +1331,7 @@ function paintBadge() {
     if (s.cloud === 'online') boxWords = `${t('boxOnline')}${when}`;
     else {
       dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
-      boxWords = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+      boxWords = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'login_refused' ? t('cloudLoginRefused') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
     }
   }
   // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse; a

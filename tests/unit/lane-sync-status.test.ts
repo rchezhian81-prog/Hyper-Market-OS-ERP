@@ -85,3 +85,20 @@ describe('the numbers are sums over every queue, and the times are the latest', 
     expect(s.now).toBe(NOW);
   });
 });
+
+describe('OB-429 — head office refused the store computer\'s own login', () => {
+  it('says so ahead of "offline", says selling continues and what is held, and says how to put it right', () => {
+    const s = laneSyncStatus({
+      configured: true, queues: [q(3, 0, '2026-09-29T08:00:00.000Z')], lastPackStatus: 'offline', lastContactAt: '2026-09-29T09:15:00.000Z', now: NOW,
+      boxLogin: { refused: true, refusedAt: '2026-09-29T10:00:00.000Z' },
+    });
+    expect(s.cloud).toBe('login_refused');
+    expect(s.unsent).toBe(3);
+    expect(s.staffMessage).toMatch(/refused this store computer's own login at 2026-09-29T10:00:00.000Z.*stopped contacting head office.*Selling continues\. 3 item\(s\) are saved on this box and will go once the login is renewed\. Renew the store computer's head-office login, then restart the store computer\./);
+  });
+
+  it('a login not refused changes nothing', () => {
+    const s = laneSyncStatus({ configured: true, queues: [q()], lastPackStatus: 'kept', lastContactAt: null, now: NOW, boxLogin: { refused: false, refusedAt: null } });
+    expect(s.cloud).toBe('online');
+  });
+});

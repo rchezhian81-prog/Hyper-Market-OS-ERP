@@ -196,6 +196,12 @@ CLOUD_API_TOKEN=<the token you were shown>
 Stop the till (Ctrl-C, or close the window) and start it again (Step 2). It now drains its queue to
 the books whenever there is a line, and keeps selling when there is not.
 
+> **When the screens say "this store computer's head-office login needs renewing" (OB-429).** Head office refused
+> the token: it expired after its 30 days, or it was revoked. The store computer stopped contacting head office at the
+> first refusal, so the shop's address is not locked and people can still sign in to head office on the store PC. It
+> keeps selling and keeps every bill queued. Make a new token as above, put it in `till/till.env`, and restart the till.
+> The queue then goes up by itself. A restart with the old token is refused once again and stops again.
+
 > **Pilot stand-in.** The token tool is the pilot's stand-in for a proper identity provider — the
 > same job that provider's admin console does at go-live. Choosing the production identity provider
 > is a later decision (ADR OA-4); when it lands, tokens come from it and this script is retired.

@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## CI fix (27 October 2026): the intermittent "Identity server suites (real Keycloak)" failure, root cause found
+
+**What changed**
+- **Cause:** in `tests/integration/keycloak-store-computer.test.ts` the test store computer held a head-office token that head office did not believe. The earlier fix in #820 made the token for the wrong audience, so head office still refused it (`audience_not_ours`). The box's first background pass, 15 s after it starts, makes about fifteen head-office calls. The first five failed, and the sign-in lock (5 failures → 5 s) closed 127.0.0.1. The person's carried session comes from the same address. Their call was refused 429 whenever it landed in those 5 s, and the one-time code's 30-second window decides when it lands.
+- **Fix (test only):** the box's token is now made for the audience head office checks (`sre-retail-os-api`). Setup now checks that head office believes it, so a mismatch fails at once, by name, not by timing. The lockout is unchanged and correct: a token head office refuses *is* a failed sign-in.
+- **Ruled out:** the earlier 401s in the flow (the box refuses them itself and never sends them); the first sign-in; a cold key download (no token was refused); earlier suites (each suite starts its own head office, and the lock is kept in that process's memory).
+
+**Tests that ran (this box, real Keycloak 26.0.7 + PostgreSQL 16, synthetic data)**
+- Forced the person's call into the lock window (16–19 s after the box starts). Main's version: refused 429, every time. The fixed version: 200 every time, and head office refused no tokens.
+- Repeated untouched runs of both versions (counts in the pull request), plus lint and type check.
+
+**Owner decision OB-429 (28 Oct 2026): option B, built in the same pull request**
+- **The problem:** a store computer whose own head-office login broke (expired or revoked) would lock the store's address. People signing in to head office on the store PC were then told "too many sign-in attempts", which hid the real cause.
+- **What it does now:** at the first refusal of its own login, the store computer stops contacting head office. Head office sees one failed sign-in, never the five that lock the address. Selling continues and every bill stays queued, without using up its retry tries. Every screen's connection badge says the store computer's head-office login needs renewing, in English and Tamil. A restart with a renewed login starts it again (runbook: in-store install, Step 5).
+- **What does not trip it:** a permission refusal, head office's own lock, a head-office fault, or a 401 head office did not word. A person's own head-office session is never stopped by it. The lockout itself is unchanged.
+- **Tests:** a unit test for the gate and one for the badge wording. An integration test runs the real store computer against a head office using the real lockout settings: one refusal, then no calls in 8 passes, the address not locked, the sale still queued. With the gate switched off, the same test fails: 45 calls, and the address is locked.
+
+**Next**
+- Merge the pull request once its checks are green.
+- On the real store PC, after go-live, the person installing it can check the message by using an old token once.
+
+---
+
 ## GST follow-ups (27 October 2026): place of supply, removing a GSTIN, the GSTN file (OB-426 to OB-428). End of session.
 
 **What changed**
