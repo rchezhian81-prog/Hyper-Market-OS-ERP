@@ -5655,6 +5655,239 @@
         }
       }
     },
+    "/v1/b2b/accounts/{customerId}/gstin": {
+      "get": {
+        "operationId": "getB2bAccountsByCustomerIdGstin",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "b2b.account.read",
+        "x-entitlement": "b2b",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetB2bAccountsByCustomerIdGstinReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"b2b.account.read\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postB2bAccountsByCustomerIdGstin",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "b2b.account.manage",
+        "x-entitlement": "b2b",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostB2bAccountsByCustomerIdGstinRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostB2bAccountsByCustomerIdGstinReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostB2bAccountsByCustomerIdGstinReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"b2b.account.manage\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/b2b/accounts/{customerId}/gstin/removal": {
+      "post": {
+        "operationId": "postB2bAccountsByCustomerIdGstinRemoval",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "b2b.account.manage",
+        "x-entitlement": "b2b",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostB2bAccountsByCustomerIdGstinRemovalRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostB2bAccountsByCustomerIdGstinRemovalReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"b2b.account.manage\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/b2b/accounts/{customerId}/receivables": {
       "post": {
         "operationId": "postB2bAccountsByCustomerIdReceivables",
@@ -111507,6 +111740,58 @@
                 "requestedAt"
               ],
               "properties": {
+                "decider": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "userId",
+                        "displayName"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "whatToDo"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": false
+                        },
+                        "whatToDo": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
                 "escalation": {
                   "$ref": "#/components/schemas/ApprovalEscalationView"
                 },
@@ -111608,6 +111893,58 @@
                 "requestedAt"
               ],
               "properties": {
+                "decider": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "userId",
+                        "displayName"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "named",
+                        "whatToDo"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "const": "security_reviewer"
+                        },
+                        "named": {
+                          "type": "boolean",
+                          "const": false
+                        },
+                        "whatToDo": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
                 "escalation": {
                   "$ref": "#/components/schemas/ApprovalEscalationView"
                 },
@@ -112030,6 +112367,50 @@
         "$ref": "#/components/schemas/VerifyResult.audit.audit-trail",
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/audit-trail-store.ts"
+      },
+      "GetB2bAccountsByCustomerIdGstinReply": {
+        "type": "object",
+        "required": [
+          "history",
+          "asAt",
+          "files",
+          "detail",
+          "customerId",
+          "current"
+        ],
+        "properties": {
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerGstinFact"
+            }
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "files": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerGstinRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
       },
       "GetB2bAccountsByCustomerIdReply": {
         "type": "object",
@@ -112521,7 +112902,8 @@
                   "currency",
                   "outstandingMinor",
                   "availableCreditMinor",
-                  "paymentTermsDays"
+                  "paymentTermsDays",
+                  "gstin"
                 ],
                 "properties": {
                   "creditLimitMinor": {
@@ -112549,6 +112931,45 @@
                       },
                       {
                         "type": "number"
+                      }
+                    ]
+                  },
+                  "gstin": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "gstin",
+                          "legalName",
+                          "stateCode",
+                          "stateName",
+                          "recordedBy",
+                          "recordedAt"
+                        ],
+                        "properties": {
+                          "gstin": {
+                            "type": "string"
+                          },
+                          "legalName": {
+                            "type": "string"
+                          },
+                          "stateCode": {
+                            "type": "string"
+                          },
+                          "stateName": {
+                            "type": "string"
+                          },
+                          "recordedBy": {
+                            "type": "string"
+                          },
+                          "recordedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
                       }
                     ]
                   }
@@ -112730,7 +113151,8 @@
                 "validUntil",
                 "locationId",
                 "pricedFrom",
-                "converted"
+                "converted",
+                "buyer"
               ],
               "properties": {
                 "documentId": {
@@ -112838,6 +113260,16 @@
                   "anyOf": [
                     {
                       "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "buyer": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/B2BInvoiceBuyer"
                     },
                     {
                       "type": "null"
@@ -155034,66 +155466,136 @@
         "x-derived-from": "services/identity/src/approval-requests.ts"
       },
       "PostApprovalsRequestsReply": {
-        "type": "object",
-        "required": [
-          "status",
-          "requestId",
-          "kind",
-          "subjectRef",
-          "valueMinor",
-          "fingerprint",
-          "details",
-          "summary",
-          "reason",
-          "requestedBy",
-          "requestedAt"
-        ],
-        "properties": {
-          "status": {
-            "type": "string"
-          },
-          "requestId": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "subjectRef": {
-            "type": "string"
-          },
-          "valueMinor": {
-            "anyOf": [
-              {
-                "type": "null"
-              },
-              {
-                "type": "number"
-              }
-            ]
-          },
-          "fingerprint": {
-            "type": "string"
-          },
-          "details": {
+        "anyOf": [
+          {
             "type": "object",
-            "additionalProperties": {
-              "x-untyped": "unknown"
-            }
+            "required": [
+              "decider",
+              "status",
+              "requestId",
+              "kind",
+              "subjectRef",
+              "valueMinor",
+              "fingerprint",
+              "details",
+              "summary",
+              "reason",
+              "requestedBy",
+              "requestedAt"
+            ],
+            "properties": {
+              "decider": {
+                "$ref": "#/components/schemas/DeciderView"
+              },
+              "status": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "subjectRef": {
+                "type": "string"
+              },
+              "valueMinor": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              },
+              "summary": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "requestedBy": {
+                "type": "string"
+              },
+              "requestedAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           },
-          "summary": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "requestedBy": {
-            "type": "string"
-          },
-          "requestedAt": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "requestId",
+              "kind",
+              "subjectRef",
+              "valueMinor",
+              "fingerprint",
+              "details",
+              "summary",
+              "reason",
+              "requestedBy",
+              "requestedAt"
+            ],
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "subjectRef": {
+                "type": "string"
+              },
+              "valueMinor": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              },
+              "summary": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "requestedBy": {
+                "type": "string"
+              },
+              "requestedAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/approval-requests.ts"
       },
@@ -156137,6 +156639,155 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/b2b-credit.ts"
       },
+      "PostB2bAccountsByCustomerIdGstinRemovalReply": {
+        "type": "object",
+        "required": [
+          "files",
+          "detail",
+          "customerId",
+          "removed",
+          "removedGstin",
+          "legalName",
+          "stateCode",
+          "reason",
+          "removedBy",
+          "removedAt"
+        ],
+        "properties": {
+          "files": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean",
+            "const": true
+          },
+          "removedGstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "stateCode": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "removedBy": {
+            "type": "string"
+          },
+          "removedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
+      },
+      "PostB2bAccountsByCustomerIdGstinRemovalRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
+      },
+      "PostB2bAccountsByCustomerIdGstinReply200": {
+        "type": "object",
+        "required": [
+          "alreadySet",
+          "customerId",
+          "reason",
+          "recordedBy",
+          "recordedAt",
+          "previousGstin",
+          "gstin",
+          "legalName",
+          "stateCode",
+          "stateName"
+        ],
+        "properties": {
+          "alreadySet": {
+            "type": "boolean"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "previousGstin": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "gstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "stateCode": {
+            "type": "string"
+          },
+          "stateName": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
+      },
+      "PostB2bAccountsByCustomerIdGstinReply201": {
+        "$ref": "#/components/schemas/CustomerGstinRecord",
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
+      },
+      "PostB2bAccountsByCustomerIdGstinRequest": {
+        "type": "object",
+        "required": [
+          "gstin",
+          "legalName",
+          "reason"
+        ],
+        "properties": {
+          "gstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-customer-gstin.ts"
+      },
       "PostB2bAccountsByCustomerIdReceivablesReply": {
         "type": "object",
         "required": [
@@ -157064,6 +157715,9 @@
           },
           "dueOn": {
             "type": "string"
+          },
+          "buyer": {
+            "$ref": "#/components/schemas/B2BInvoiceBuyer"
           },
           "gstNotJudged": {
             "type": "string"
@@ -172690,6 +173344,9 @@
               },
               "additionalProperties": true
             }
+          },
+          "placeOfSupplyStateCode": {
+            "type": "string"
           },
           "recipientGstin": {
             "type": "string"
@@ -241954,6 +242611,7 @@
           "basis": {
             "type": "string",
             "enum": [
+              "customer_gstin_state",
               "delivery_state",
               "store_state_assumed"
             ]
@@ -242001,6 +242659,30 @@
               },
               "additionalProperties": true
             }
+          }
+        },
+        "additionalProperties": true
+      },
+      "B2BInvoiceBuyer": {
+        "type": "object",
+        "required": [
+          "gstin",
+          "legalName",
+          "stateCode",
+          "stateName"
+        ],
+        "properties": {
+          "gstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "stateCode": {
+            "type": "string"
+          },
+          "stateName": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -242268,6 +242950,9 @@
           },
           "invoiceValueMinor": {
             "type": "number"
+          },
+          "placeOfSupplyStateCode": {
+            "type": "string"
           },
           "rateLines": {
             "type": "array",
@@ -250824,6 +251509,108 @@
         },
         "additionalProperties": true
       },
+      "CustomerGstinFact": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CustomerGstinRecord"
+          },
+          {
+            "$ref": "#/components/schemas/CustomerGstinRemoval"
+          }
+        ]
+      },
+      "CustomerGstinRecord": {
+        "type": "object",
+        "required": [
+          "customerId",
+          "reason",
+          "recordedBy",
+          "recordedAt",
+          "previousGstin",
+          "gstin",
+          "legalName",
+          "stateCode",
+          "stateName"
+        ],
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "previousGstin": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "gstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "stateCode": {
+            "type": "string"
+          },
+          "stateName": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CustomerGstinRemoval": {
+        "type": "object",
+        "required": [
+          "customerId",
+          "removed",
+          "removedGstin",
+          "legalName",
+          "stateCode",
+          "reason",
+          "removedBy",
+          "removedAt"
+        ],
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean",
+            "const": true
+          },
+          "removedGstin": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "stateCode": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "removedBy": {
+            "type": "string"
+          },
+          "removedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "CustomerMerge": {
         "type": "object",
         "required": [
@@ -252014,6 +252801,58 @@
           }
         },
         "additionalProperties": true
+      },
+      "DeciderView": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "role",
+              "named",
+              "userId",
+              "displayName"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "const": "security_reviewer"
+              },
+              "named": {
+                "type": "boolean",
+                "const": true
+              },
+              "userId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "role",
+              "named",
+              "whatToDo"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "const": "security_reviewer"
+              },
+              "named": {
+                "type": "boolean",
+                "const": false
+              },
+              "whatToDo": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
       },
       "DelegatedDecision": {
         "type": "object",
@@ -261731,6 +262570,9 @@
           "inum",
           "idt",
           "val",
+          "pos",
+          "rchrg",
+          "inv_typ",
           "itms"
         ],
         "properties": {
@@ -261742,6 +262584,20 @@
           },
           "val": {
             "type": "number"
+          },
+          "pos": {
+            "type": "string"
+          },
+          "rchrg": {
+            "type": "string",
+            "enum": [
+              "N",
+              "Y"
+            ]
+          },
+          "inv_typ": {
+            "type": "string",
+            "const": "R"
           },
           "itms": {
             "type": "array",
@@ -287005,6 +287861,9 @@
               },
               "additionalProperties": true
             }
+          },
+          "buyer": {
+            "$ref": "#/components/schemas/B2BInvoiceBuyer"
           }
         },
         "additionalProperties": true

@@ -14,10 +14,11 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1,
-  salesToOutwardSupplies, netTable12, toGstnB2cFromSales, InvalidSalesToOutwardInput,
+  salesToOutwardSupplies, netTable12, toGstnB2cFromSales, InvalidSalesToOutwardInput, Gstr1ExportRefused,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
   type SoldTaxLine, type ProductTaxEntry, type PlaceOfSupply,
 } from '../../../packages/finance/src/index';
+import { GST_STATE_NAMES } from '../../../packages/finance/src/gst-states';
 
 const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,6 +30,8 @@ export interface StoredOutwardDoc {
   readonly documentDate: string;
   readonly supplyType: SupplyKind;
   readonly recipientGstin?: string;
+  /** OB-428: the place of supply (2-digit GST State code) the document's tax split was judged on, when recorded. */
+  readonly placeOfSupplyStateCode?: string;
   readonly lines: readonly OutwardSupplyLine[];
   /**
    * OB-408: present when the system put this document on the return itself, from a B2B tax invoice as it was issued — the
@@ -92,6 +95,11 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         if (supplyType === 'b2b' && (recipientGstin === undefined || !GSTIN.test(recipientGstin))) {
           throw apiError(422, { code: 'b2b_needs_recipient_gstin', whatHappened: 'a B2B outward supply needs a valid recipient GSTIN', wasItSaved: 'not_saved', nextSafeAction: 'Send the buyer’s GSTIN, or record this as a B2C supply.' });
         }
+        // OB-428: the place of supply, optional — the GSTN file needs it for a B2B invoice that charged IGST.
+        const pos = b['placeOfSupplyStateCode'];
+        if (pos !== undefined && !(typeof pos === 'string' && /^\d{2}$/.test(pos) && GST_STATE_NAMES[pos] !== undefined)) {
+          throw apiError(400, { code: 'not_a_gst_state_code', whatHappened: `placeOfSupplyStateCode ${JSON.stringify(pos)} is not a GST State code (two digits, e.g. 33 for Tamil Nadu, 32 for Kerala).`, wasItSaved: 'not_saved', nextSafeAction: 'Send the State code of the place of supply, or leave it out for a supply inside the shop\'s own State.' });
+        }
         const turnover = b['annualTurnoverMinor'] as number;
         const lines = b['lines'] as OutwardSupplyLine[];
         const problems: string[] = [];
@@ -122,6 +130,7 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
         await deps.record(ctx.tenantId, {
           documentId, documentDate: b['documentDate'], supplyType,
           ...(recipientGstin !== undefined ? { recipientGstin } : {}),
+          ...(typeof pos === 'string' ? { placeOfSupplyStateCode: pos } : {}),
           lines,
         });
         return { status: 201, body: { documentId, lineCount: lines.length } };
@@ -267,7 +276,20 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
           throw apiError(400, { code: 'export_needs_period_gstin_fp', whatHappened: 'The GSTN export needs ?from=YYYY-MM-DD&to=YYYY-MM-DD, the supplier &gstin= and the filing period &fp=MMYYYY.', wasItSaved: 'not_saved', nextSafeAction: 'Send the period, your GSTIN and the filing month as MMYYYY.' });
         }
         const docs = (await deps.documents(ctx.tenantId)).filter((d) => d.documentDate >= from && d.documentDate <= to);
-        return { status: 200, body: toGstnGstr1(gstr1Return(docs), { gstin, fp }) };
+        try {
+          return { status: 200, body: toGstnGstr1(gstr1Return(docs), { gstin, fp }) };
+        } catch (e) {
+          // OB-428: a B2B invoice whose place of supply is missing or disagrees with its tax split is never guessed.
+          if (e instanceof Gstr1ExportRefused) {
+            throw apiError(422, {
+              code: 'gstr1_place_of_supply_not_judged',
+              whatHappened: `The GSTN file was not made: ${e.problems.map((p) => `invoice ${p.invoiceNumber} (buyer ${p.recipientGstin}): ${p.why}`).join('; ')}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'No file was made and nothing was filed. A B2B invoice that charged IGST must say the State the goods went to: enter a hand-entered invoice with placeOfSupplyStateCode. Ask the accountant about any invoice named here before filing.',
+            });
+          }
+          throw e;
+        }
       },
     },
   ];

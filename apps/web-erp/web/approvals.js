@@ -91,6 +91,8 @@ function requestNode(r, waitingForMe) {
   if (r.subjectRef) facts.append(fact(t('aboutLabel'), r.subjectRef));
 
   li.append(head, summary, statusNode(r.status), facts);
+  // OB-420: who alone may decide it (a floor-device review: the named security reviewer), or that nobody can yet.
+  if (r.whoDecides) { const who = statusNode(r.whoDecides); who.classList.add('who-decides'); li.append(who); }
 
   if (r.details.length > 0) {
     const details = document.createElement('div'); details.className = 'details';

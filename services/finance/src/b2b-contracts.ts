@@ -34,6 +34,7 @@ import {
 import { actionDetails, approvalNamedIn, openApproval, NO_APPROVALS, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { StoredB2BDocument, B2BCreditGate } from './b2b-documents';
 import type { B2BAccount } from './b2b-credit';
+import { gstinInForce, type CustomerGstinFact } from './b2b-customer-gstin';
 import { shopClock, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export type { StoredB2BContract } from '../../../packages/b2b/src/index';
@@ -69,6 +70,8 @@ export interface B2BDeskDeps {
   readonly documents: (tenantId: string, customerId: string) => Promise<readonly StoredB2BDocument[]>;
   /** Customers the desk has met: a contract, a quotation, a quote request. */
   readonly knownCustomers: (tenantId: string) => Promise<readonly string[]>;
+  /** OB-416: the customer's GSTIN facts on the credit account, oldest first (the latest in force). */
+  readonly customerGstins?: (tenantId: string, customerId: string) => Promise<readonly CustomerGstinFact[]>;
   readonly now: () => string;
   readonly calendar?: ShopCalendarOf;
 }
@@ -303,9 +306,11 @@ export function b2bDeskRoutes(deps: B2BDeskDeps): readonly Route[] {
         const customerId = (ctx.params['customerId'] ?? '').trim();
         if (customerId === '') throw notFound('a B2B customer (none named)');
         const day = await today(deps, ctx.tenantId);
-        const [account, outstanding, documents, contracts] = await Promise.all([
+        const [account, outstanding, documents, contracts, gstins] = await Promise.all([
           deps.account(ctx.tenantId, customerId), deps.outstandingMinor(ctx.tenantId, customerId), deps.documents(ctx.tenantId, customerId), deps.contracts(ctx.tenantId),
+          deps.customerGstins?.(ctx.tenantId, customerId) ?? Promise.resolve([]),
         ]);
+        const gstin = gstinInForce(gstins); // OB-427: a removed GSTIN is not in force
         const mine = contracts.filter((c) => c.customerId === customerId);
         const ordered = [...documents].sort((a, b) => (a.issuedAt < b.issuedAt ? 1 : a.issuedAt > b.issuedAt ? -1 : 0));
         const converted = new Set(documents.filter((d) => d.kind === 'sales_order' && d.derivedFrom !== undefined).map((d) => d.derivedFrom as string));
@@ -322,6 +327,8 @@ export function b2bDeskRoutes(deps: B2BDeskDeps): readonly Route[] {
             account: account === undefined ? null : {
               creditLimitMinor: account.creditLimitMinor, currency: account.currency, outstandingMinor: outstanding,
               availableCreditMinor: account.creditLimitMinor - outstanding, paymentTermsDays: account.paymentTermsDays ?? null,
+              // OB-416: the GSTIN its next tax invoice is made out to (null → none on record: invoices file B2C).
+              gstin: gstin === undefined ? null : { gstin: gstin.gstin, legalName: gstin.legalName, stateCode: gstin.stateCode, stateName: gstin.stateName, recordedBy: gstin.recordedBy, recordedAt: gstin.recordedAt },
             },
             contract: positionWords(contractPosition(mine, customerId, day)),
             contracts: mine.map((c) => presentContract(c, day)),
@@ -329,6 +336,8 @@ export function b2bDeskRoutes(deps: B2BDeskDeps): readonly Route[] {
               documentId: d.documentId, number: d.number, kind: d.kind, issuedAt: d.issuedAt, derivedFrom: d.derivedFrom ?? null, orderId: d.orderId ?? null,
               grossMinor: d.grossMinor, lines: d.lines, validUntil: d.validUntil ?? null, locationId: d.locationId ?? null, pricedFrom: d.pricedFrom ?? null,
               converted: d.kind === 'quotation' ? converted.has(d.documentId) : null,
+              // OB-416: the buyer a tax invoice was made out to, as on the day it was issued (null → none: it filed B2C).
+              buyer: d.kind === 'tax_invoice' ? d.buyer ?? null : null,
             })),
             orders,
             asAt: deps.now(),

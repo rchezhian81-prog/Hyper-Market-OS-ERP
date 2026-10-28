@@ -25,6 +25,7 @@ import type { NumberFormat } from '../../../packages/numbering/src/numbering';
 import { GST_STATE_NAMES } from '../../../packages/finance/src/gst-states';
 import type { LineToPrice, PricingResult, PriceSource } from '../../../packages/b2b/src/contracts';
 import { actionDetails } from '../../identity/src/approval-requests';
+import type { B2BInvoiceBuyer } from './b2b-customer-gstin';
 
 /**
  * A stored document. A quotation also carries the window its price holds for (`convertQuotation` needs
@@ -43,6 +44,12 @@ export type StoredB2BDocument = B2BDocument & {
   readonly gstNotJudged?: string;
   /** M22-FR-01 (OB-288 commercial desks): where each quoted line's price came from — the contract, the price list, or typed. */
   readonly pricedFrom?: readonly { readonly lineId: string; readonly priceSource: PriceSource; readonly contractId?: string }[];
+  /**
+   * OB-416: on a tax invoice, the buyer it is made out to — the customer's GSTIN, the legal name registered under it and its
+   * State — as on the credit account at the moment it was issued (printed on the invoice; it files B2B under the GSTIN).
+   * Absent → no GSTIN was on record then, and the invoice files B2C. Never changed once issued (OB-415).
+   */
+  readonly buyer?: B2BInvoiceBuyer;
 };
 
 /**
@@ -133,10 +140,24 @@ export interface B2BDocumentsDeps {
   readonly pricing?: (tenantId: string, input: { readonly customerId: string; readonly locationId?: string; readonly at: string; readonly lines: readonly LineToPrice[] }) => Promise<PricingResult>;
   /** M22-FR-01: the contract-aware credit gate with a second person's override. Present → used instead of `creditAllowed`. */
   readonly creditGate?: B2BCreditGate;
+  /** OB-416: the customer's GSTIN in force now (the credit account's latest), or undefined when none is on record. */
+  readonly customerGstin?: (tenantId: string, customerId: string) => Promise<B2BInvoiceBuyer | undefined>;
   readonly now: () => string;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+
+/**
+ * OB-426 (owner, option B, 27 Oct 2026, in writing): the delivery State a tax invoice's CGST + SGST or IGST split is judged
+ * on. A State the person invoicing named is used as named. Left blank, it is the State of the customer's GSTIN on record
+ * (the pre-fill — the split then says `customer_gstin_state`); with no GSTIN either, nothing is named and the split assumes
+ * the store's own State, as before (A8). Pure.
+ */
+export function deliveryStateFor(named: string | undefined, buyer: B2BInvoiceBuyer | undefined): { readonly deliveryStateCode?: string; readonly deliveryStateFrom?: 'customer_gstin' } {
+  if (named !== undefined) return { deliveryStateCode: named };
+  if (buyer !== undefined) return { deliveryStateCode: buyer.stateCode, deliveryStateFrom: 'customer_gstin' };
+  return {};
+}
 const isInt = (v: unknown): v is number => Number.isInteger(v);
 
 /** Read the request lines as B2BLine[], or null if any line is malformed (a 400, not a business refusal). */
@@ -296,23 +317,28 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
         const alreadyInvoiced = sumByLine(all.filter((d) => d.kind === 'tax_invoice' && d.orderId === order.documentId));
         const at = deps.now();
         // A8: where the goods were delivered (a 2-digit GST State code from the delivery address) against the supplier's own
-        // State. Named → judged; not named → the store's own State, and the document says it was assumed.
+        // State. Named → judged; not named → the customer's GSTIN State (OB-426), else the store's own State, said as assumed.
         const deliveryState = ((ctx.body ?? {}) as { deliveryStateCode?: unknown }).deliveryStateCode;
         if (deliveryState !== undefined && !(typeof deliveryState === 'string' && /^\d{2}$/.test(deliveryState) && GST_STATE_NAMES[deliveryState] !== undefined)) {
           throw apiError(400, {
             code: 'not_a_gst_state_code', whatHappened: `deliveryStateCode ${JSON.stringify(deliveryState)} is not a GST State code (two digits, e.g. 33 for Tamil Nadu, 32 for Kerala).`,
-            wasItSaved: 'not_saved', nextSafeAction: 'Send the State code of the delivery address, or leave it out for a delivery in the store\'s own State. No number was drawn.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Send the State code of the delivery address, or leave it out: the State of the customer\'s GSTIN on record is then used, or with none the store\'s own State. No number was drawn.',
           });
         }
-        let placeOfSupply: { supplierStateCode: string; deliveryStateCode?: string } | undefined;
+        // OB-416: the buyer's GSTIN in force at this moment goes onto the invoice (printed, and filed B2B under it).
+        const buyer = await deps.customerGstin?.(ctx.tenantId, customerId);
+        // OB-426: a delivery State left blank is the State of the customer's GSTIN when one is on record (the person
+        // invoicing may name another); with none, the store's own State, said as assumed. The split follows the State used.
+        let placeOfSupply: { supplierStateCode: string; deliveryStateCode?: string; deliveryStateFrom?: 'customer_gstin' } | undefined;
         if (deps.supplierStateCode !== undefined) {
           const supplierStateCode = await deps.supplierStateCode(ctx.tenantId, order.locationId);
-          if (supplierStateCode !== undefined) placeOfSupply = { supplierStateCode, ...(typeof deliveryState === 'string' ? { deliveryStateCode: deliveryState } : {}) };
+          if (supplierStateCode !== undefined) placeOfSupply = { supplierStateCode, ...deliveryStateFor(typeof deliveryState === 'string' ? deliveryState : undefined, buyer) };
         }
         // P-08: with no supplier State on record the split cannot be judged — the invoice says so, never a guessed split.
         const gstNotJudged = deps.supplierStateCode !== undefined && placeOfSupply === undefined
           ? 'The State this business is registered for GST in is not on record for this order\'s store, so this invoice carries no CGST / SGST / IGST split. Record the store\'s GSTIN in the store setup.'
           : undefined;
+
 
         const probe = issueTaxInvoice({ documentId, order, challans, alreadyInvoiced, format: FORMAT.tax_invoice, seq: 0, at, ...(placeOfSupply === undefined ? {} : { placeOfSupply }) });
         if (!probe.issued) {
@@ -327,13 +353,14 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
         const result = issueTaxInvoice({ documentId, order, challans, alreadyInvoiced, format: FORMAT.tax_invoice, seq, at, ...(placeOfSupply === undefined ? {} : { placeOfSupply }) });
         const doc = result.document;
         if (doc === undefined) throw notFound(`invoice ${documentId}`); // unreachable — the probe issued
-        await deps.recordDocument(ctx.tenantId, customerId, { ...doc, orderId: order.documentId, ...(gstNotJudged === undefined ? {} : { gstNotJudged }) });
+        const stored: StoredB2BDocument = { ...doc, orderId: order.documentId, ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(buyer === undefined ? {} : { buyer }) };
+        await deps.recordDocument(ctx.tenantId, customerId, stored);
         // FUL-09: the invoice is now money owed — a receivable on the customer's terms, on the AR ledger, and for the books.
-        const owed = await deps.afterTaxInvoice?.(ctx.tenantId, customerId, { ...doc, orderId: order.documentId });
+        const owed = await deps.afterTaxInvoice?.(ctx.tenantId, customerId, stored);
         // FUL-09 · M22-FR-03: the attributed salesperson's commission, derived from this invoice by the approved rule.
         const commission = order.salespersonId === undefined || deps.commissionOnInvoice === undefined ? undefined
           : await deps.commissionOnInvoice(ctx.tenantId, { salespersonId: order.salespersonId, invoice: { ...doc, orderId: order.documentId } });
-        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail, ...(doc.gst === undefined ? {} : { gst: doc.gst }), ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(owed === undefined ? {} : { dueOn: owed.dueOn }), ...(commission === undefined ? {} : { commission }) } };
+        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail, ...(doc.gst === undefined ? {} : { gst: doc.gst }), ...(gstNotJudged === undefined ? {} : { gstNotJudged }), ...(buyer === undefined ? {} : { buyer }), ...(owed === undefined ? {} : { dueOn: owed.dueOn }), ...(commission === undefined ? {} : { commission }) } };
       },
     },
     {
