@@ -34,12 +34,18 @@ const MIDDAY_ZONE = (() => {
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-operations screens (OB-154) on the production API, in a real browser', () => {
   let browser: Browser;
   let shop: InboxShop;
-  const H = Math.floor(Date.now() / HOUR) * HOUR;
+  // The hour the hourly check is seeded against — set in `beforeAll`, just before seeding. Case (a) needs the last hour's
+  // slot MISSED and this hour's DUE; with 59 minutes' grace this hour's slot turns missed at :59, so a run that seeds in
+  // the last three minutes of an hour first waits for the next one (it failed at 02:59:30 UTC, 28 Oct 2026).
+  let H = 0;
   const at = (hours: number) => new Date(H + hours * HOUR).toISOString();
   const today = new Date().toISOString().slice(0, 10);
 
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
+    const intoHour = Date.now() % HOUR;
+    if (intoHour > HOUR - 3 * 60_000) await new Promise((r) => setTimeout(r, HOUR - intoHour + 1_000));
+    H = Math.floor(Date.now() / HOUR) * HOUR;
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
       page: { path: '/food-safety', html: 'food-safety.html', dataGlobal: DATA },
@@ -65,7 +71,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
-  }, 180_000);
+  }, 360_000);
 
   afterAll(async () => {
     await browser?.close();
