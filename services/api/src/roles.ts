@@ -351,6 +351,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // Held by the owner only so he may grant the store computer its role (no escalation); a person never relays with it.
       'platform.handheldbuild.sync',
       // ── R9-B · OB-537 — end
+      // ── R10-A · OB-542 · OB-543 — begin
+      // OB-542: the owner holds the accountant's approval word only so he may grant the accountant role (no escalation); he
+      // never approves his own quotation with it (the engine refuses self-approval, and the route counts only an accountant).
+      // OB-543: the owner holds the goods-receipt screen's narrow read only so he may grant it (he reads with the broad one).
+      'pos.quotation.nofloor.ownerquote.approve', 'inventory.goodsreceipt.read',
+      // ── R10-A · OB-542 · OB-543 — end
       'finance.einvoice.generate', 'finance.einvoice.read',
       'finance.gstr.generate', 'finance.gstr.read', 'finance.gstr.approve', 'finance.gstr.submit',
       'payroll.statutory.read', 'payroll.ess.self',
@@ -850,6 +856,16 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // the Company report shows its figures for them. Read only — no org write (`platform.setup.write`) comes with it.
       'org.branch.read',
       // ── OB-288 round 3 — end
+      // ── R10-A · OB-542 · OB-543 (owner, 28 Oct 2026) — begin
+      // OB-542: the accountant approves a quotation the OWNER himself makes on a product with no known floor (never received
+      // at a cost). Only that kind: anyone else's such quotation still needs the owner (OB-532).
+      'pos.quotation.nofloor.ownerquote.approve',
+      // OB-543: the accountant reads the goods-receipt screen — least privilege: its own narrow word opens ONLY the screen's
+      // receipt list (GET /v1/inventory/goods-receipt-review), not the stock reads `inventory.availability.read` opens. The
+      // bill-match word (`purchase.invoice.match`) the accountant already holds above; head office still refuses the person
+      // who received the goods (`self_match`).
+      'inventory.goodsreceipt.read',
+      // ── R10-A · OB-542 · OB-543 — end
     ],
   },
   {

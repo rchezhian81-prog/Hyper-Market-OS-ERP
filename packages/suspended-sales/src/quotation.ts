@@ -106,6 +106,12 @@ export interface QuotationApproval {
    * owner-only kind `quotation_floor_not_known`). Only such an approval lets a product with no known floor be quoted.
    */
   readonly byOwner?: boolean;
+  /**
+   * OB-542 (owner, 28 Oct 2026): the decider holds the ACCOUNTANT role at the quotation's store and approved it under the
+   * accountant's kind `quotation_floor_not_known_owner_quoted`. Only such an approval lets the OWNER's own quotation on a
+   * product with no known floor be issued.
+   */
+  readonly byAccountant?: boolean;
 }
 
 export type IssueRefusal =
@@ -114,6 +120,7 @@ export type IssueRefusal =
   | 'invalid_validity'
   | 'below_floor_unapproved'
   | 'floor_not_known_unapproved'
+  | 'floor_not_known_owner_quoted_unapproved'
   | 'self_approved';
 
 export interface IssueResult {
@@ -157,6 +164,11 @@ export function issueQuotation(
     readonly lineFloorsMinor?: Readonly<Record<string, number>>;
     /** OB-525: the products whose floor head office could not read — kept on the quotation, said, never a zero floor. */
     readonly floorNotKnown?: readonly string[];
+    /**
+     * OB-542: the person quoting holds the OWNER role at the quotation's store (head office's own grants). Then a product with
+     * no known floor needs the ACCOUNTANT's approval instead of the owner's; anyone else's quotation still needs the owner's.
+     */
+    readonly quoterIsOwner?: boolean;
     readonly approval?: QuotationApproval;
   },
 ): IssueResult {
@@ -213,7 +225,13 @@ export function issueQuotation(
   if (notKnownLines.length > 0) {
     const a = input.approval;
     const said = [...new Set(notKnownLines.map((l) => l.description))].join('; ');
-    if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId || a.byOwner !== true) {
+    // OB-542: the OWNER's own quotation is approved by the ACCOUNTANT (an owner's approval does not count for it — he would be
+    // approving his own); anyone else's needs the owner's, as OB-532.
+    if (input.quoterIsOwner === true) {
+      if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId || a.byAccountant !== true) {
+        return { ...base, issued: false, outcome: 'floor_not_known_owner_quoted_unapproved', detail: `head office does not know the lowest price of ${said} (never received at a cost) — the owner is quoting it himself, so only the accountant may approve it (OB-542)` };
+      }
+    } else if (a === undefined || a.status !== 'approved' || a.subjectRef !== input.quotationId || a.byOwner !== true) {
       return { ...base, issued: false, outcome: 'floor_not_known_unapproved', detail: `head office does not know the lowest price of ${said} (never received at a cost) — only the owner may approve quoting it (OB-532)` };
     }
     if (a.decidedBy === input.issuedBy) {

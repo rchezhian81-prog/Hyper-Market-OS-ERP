@@ -2066,6 +2066,9 @@ export function fleetPayload(input: ScreenInput): Record<string, unknown> | null
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // OB-601: the Devices page on the store PC asks head office for THIS store's handheld findings (head office still narrows
+  // to what the person may see, and refuses a store they may not).
+  if (input.pack.policies.known && input.pack.policies.value.branchId) payload['storeId'] = input.pack.policies.value.branchId;
 
   return payload;
 }

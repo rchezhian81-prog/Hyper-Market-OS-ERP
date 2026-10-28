@@ -22,6 +22,12 @@ export interface NavItem {
   readonly path: string;
   /** The permission a user must hold for this item to appear at all. */
   readonly requires: Permission;
+  /**
+   * R10-A · OB-543: a NARROWER word that also opens this one screen (and nothing else) — e.g. the accountant's
+   * `inventory.goodsreceipt.read` for the goods-receipt screen, so a reader is not given a broad word for one screen.
+   * Absent: only `requires` opens it.
+   */
+  readonly alsoOpenedWith?: readonly Permission[];
   /** Grouping for the sidebar; items keep their declared order within a group. */
   readonly group: string;
   /** The same label in Tamil (NFR-08) — the menu is drawn in the reader's language, never half of it. */
@@ -124,7 +130,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // check (`supplier.portal.review`).
   { id: 'supplier-submissions', label: 'Supplier submissions', labelTa: 'சப்ளையர் சமர்ப்பிப்புகள்', path: '/supplier-submissions', requires: 'supplier.portal.review', group: 'Purchase' },
   // ── OB-288 commercial desks — end
-  { id: 'goods-receipt', label: 'Goods receipt review', labelTa: 'சரக்கு வரவு ஆய்வு', path: '/goods-receipt', requires: 'inventory.availability.read', group: 'Receiving' },
+  { id: 'goods-receipt', label: 'Goods receipt review', labelTa: 'சரக்கு வரவு ஆய்வு', path: '/goods-receipt', requires: 'inventory.availability.read', alsoOpenedWith: ['inventory.goodsreceipt.read'] /* R10-A · OB-543 */, group: 'Receiving' },
   // QG-02 lane 1 R4 (M07-FR-01 · WF-04): head office's dock diary — a store's day door by door, late bookings shown. Gated on
   // the read the diary route checks (`inventory.availability.read`); booking needs `inventory.movement.append` (the route's).
   { id: 'dock-diary', label: 'Dock diary', labelTa: 'டாக் நாட்குறிப்பு', path: '/dock-diary', requires: 'inventory.availability.read', group: 'Receiving' },
@@ -470,9 +476,7 @@ export function navigationFor(
   context: NavigationContext,
   catalogue: readonly NavItem[] = ERP_NAVIGATION,
 ): NavGroup[] {
-  const permitted = catalogue.filter((item) =>
-    access.can({ userId: context.userId, permission: item.requires, branchId: context.branchId }),
-  );
+  const permitted = catalogue.filter((item) => mayOpenItem(access, context, item));
 
   const groups: NavGroup[] = [];
   for (const item of permitted) {
@@ -499,7 +503,17 @@ export function canOpen(
 ): boolean {
   const item = catalogue.find((i) => i.path === path);
   if (item === undefined) return false; // unknown path → denied, never a blank allow
-  return access.can({ userId: context.userId, permission: item.requires, branchId: context.branchId });
+  return mayOpenItem(access, context, item);
+}
+
+/** Every word that opens an item: its `requires`, then any narrower `alsoOpenedWith` (R10-A · OB-543). */
+export function permissionsOpening(item: NavItem): readonly Permission[] {
+  return [item.requires, ...(item.alsoOpenedWith ?? [])];
+}
+
+/** The user holds a word that opens this item, in the branch they are working in. */
+function mayOpenItem(access: AccessControl, context: NavigationContext, item: NavItem): boolean {
+  return permissionsOpening(item).some((permission) => access.can({ userId: context.userId, permission, branchId: context.branchId }));
 }
 
 /** The landing page for this user: their first permitted item, or null if none. */

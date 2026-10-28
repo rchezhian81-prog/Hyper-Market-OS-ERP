@@ -364,6 +364,7 @@ import { appVersionPolicyRoutes } from './r8a-client-version-adapters'; // OB-52
 import { handheldBuildRoutes, withHandheldBuildCheck } from './r9b-handheld-build-adapters'; // OB-537 (R9-B)
 import { r8bQuotationHooks, r8bReceiptHooks } from './r8b-quotes-receiving-adapters'; // OB-523 · OB-525 · OB-529 (R8-B)
 import { r9aQuotationHooks } from './r9a-quotes-billmatch-adapters'; // OB-532 (R9-A)
+import { r10aQuotationHooks } from './r10a-devices-accountant-adapters'; // OB-542 (R10-A)
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
 import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters';
@@ -1785,7 +1786,7 @@ export function buildSurface(deps: {
     // (idempotent), and a withdrawn/expired quote is kept as a lost-sale signal. Event-sourced, restart-safe.
     ...quotationsRoutes(store === undefined
       ? { quotations: () => [], record: () => {}, now }
-      : { ...quotationsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...r8bQuotationHooks({ store, now, settings, signer }) /* R8 OB-523 · OB-525 */, ...r9aQuotationHooks({ store }) /* R9 OB-532 */ }),
+      : { ...quotationsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...r8bQuotationHooks({ store, now, settings, signer }) /* R8 OB-523 · OB-525 */, ...r9aQuotationHooks({ store }) /* R9 OB-532 */, ...r10aQuotationHooks({ store }) /* R10 OB-542 */ }),
     // Restricted-sale gate (B14 / COTPA 2003) — the till's age-18 gate on tobacco and its refusal of a
     // loose single-stick quantity; a decision, not a write, so stateless and offline-safe.
     ...restrictedSalesRoutes(),

@@ -17,6 +17,9 @@
 // Round 9 · OB-532 (owner, 28 Oct 2026): a quotation on a product whose floor head office cannot read (never received at a
 // cost) needs the OWNER's approval — head office refuses it (`quotation_floor_not_known_unapproved`), and the page offers to
 // ask the OWNER (kind `quotation_floor_not_known`) for exactly that quotation; the person quoting can never approve it.
+// Round 10 · OB-542 (owner, 28 Oct 2026): when the person quoting is the OWNER himself, head office refuses it as
+// `quotation_floor_not_known_owner_quoted_unapproved`, and the page offers to ask the ACCOUNTANT (kind
+// `quotation_floor_not_known_owner_quoted`) for exactly that quotation instead.
 
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
 import { paiseOf, rupees } from './blanket-orders-session';
@@ -47,6 +50,9 @@ export const QUOTATIONS_COPY = {
     freedFrom: 'freed again from cancelled bill',
     askOwner: 'Ask the owner to approve this price', askedOwner: 'Owner\'s approval asked. Head office does not know the lowest price of an item here (it was never received at a cost), so only the owner may approve it. When the owner approves it in Approvals, write its id here and press "Make the quotation" again — without changing the lines. Its id:',
     floorNotKnownReason: 'a quoted price on a product whose lowest price is not known (never received at a cost) — only the owner may approve it',
+    // R10-A · OB-542
+    askAccountant: 'Ask the accountant to approve this price', askedAccountant: 'Accountant\'s approval asked. Head office does not know the lowest price of an item here (it was never received at a cost), and you are the owner, so the accountant approves it. When the accountant approves it in Approvals, write its id here and press "Make the quotation" again — without changing the lines. Its id:',
+    floorNotKnownOwnerReason: 'the owner quotes a price on a product whose lowest price is not known (never received at a cost) — the accountant approves it',
   },
   ta: {
     title: 'விலைப்புள்ளிகள்', lead: 'ஒரு வாடிக்கையாளருக்குச் சொன்ன விலை, ஒரு தேதி வரை நிலைக்கும். சரக்கு ஒதுக்கப்படாது. வாடிக்கையாளர் எண்ணை பில்லிங்குக்குக் கொண்டு வருவார்; காசாளர் சொன்ன விலையில் சேர்ப்பார்.',
@@ -66,6 +72,9 @@ export const QUOTATIONS_COPY = {
     freedFrom: 'ரத்தான பில்லிலிருந்து மீண்டும் விடுவிக்கப்பட்டது',
     askOwner: 'இந்த விலைக்கு உரிமையாளரின் அனுமதி கேள்', askedOwner: 'உரிமையாளரின் அனுமதி கேட்கப்பட்டது. இங்குள்ள ஒரு பொருளின் குறைந்தபட்ச விலை தலைமை அலுவலகத்துக்குத் தெரியாது (விலையுடன் ஒருபோதும் வரவில்லை), எனவே உரிமையாளர் மட்டுமே அனுமதிக்க முடியும். உரிமையாளர் அனுமதிகள் பக்கத்தில் அனுமதித்ததும், அதன் அடையாளத்தை இங்கே எழுதி, வரிகளை மாற்றாமல் "விலைப்புள்ளியை உருவாக்கு" மீண்டும் அழுத்தவும். அடையாளம்:',
     floorNotKnownReason: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்குச் சொன்ன விலை (விலையுடன் ஒருபோதும் வரவில்லை) — உரிமையாளர் மட்டுமே அனுமதிக்க முடியும்',
+    // R10-A · OB-542
+    askAccountant: 'இந்த விலைக்குக் கணக்காளரின் அனுமதி கேள்', askedAccountant: 'கணக்காளரின் அனுமதி கேட்கப்பட்டது. இங்குள்ள ஒரு பொருளின் குறைந்தபட்ச விலை தலைமை அலுவலகத்துக்குத் தெரியாது (விலையுடன் ஒருபோதும் வரவில்லை), நீங்களே உரிமையாளர் என்பதால் கணக்காளர் அனுமதிப்பார். கணக்காளர் அனுமதிகள் பக்கத்தில் அனுமதித்ததும், அதன் அடையாளத்தை இங்கே எழுதி, வரிகளை மாற்றாமல் "விலைப்புள்ளியை உருவாக்கு" மீண்டும் அழுத்தவும். அடையாளம்:',
+    floorNotKnownOwnerReason: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு உரிமையாளரே சொன்ன விலை (விலையுடன் ஒருபோதும் வரவில்லை) — கணக்காளர் அனுமதிப்பார்',
   },
 } as const;
 
@@ -95,6 +104,8 @@ export interface QuotationsSession {
   belowFloor(): string | undefined;
   /** OB-532: that refused quotation needs the OWNER's approval (a product with no known floor), not any second person's. */
   needsOwner(): boolean;
+  /** OB-542: that refused quotation is the OWNER's own on a product with no known floor — the ACCOUNTANT approves it. */
+  needsAccountant(): boolean;
   /** OB-525: ask a second person to approve exactly that quotation (maker-checker, kind `quotation_below_floor`); OB-532: ask
    *  the owner (kind `quotation_floor_not_known`) when head office said a product's floor is not known. */
   askApproval(): Done<{ readonly requestId: string }>;
@@ -120,7 +131,7 @@ export const quotationsOutcomeWords = (lang: Lang, out: Outcome<unknown>): strin
     const notKnown = Array.isArray(v['floorNotKnown']) && v['floorNotKnown'].length > 0 ? ` ${quotationsWords(lang, 'floorNotKnown')} ${(v['floorNotKnown'] as unknown[]).join(', ')}.` : '';
     return `${quotationsWords(lang, 'made')} ${v['quotationId']}${notKnown}`;
   }
-  if (typeof v['requestId'] === 'string') return `${quotationsWords(lang, v['kind'] === 'quotation_floor_not_known' ? 'askedOwner' : 'askedApproval')} ${v['requestId']}`;
+  if (typeof v['requestId'] === 'string') return `${quotationsWords(lang, v['kind'] === 'quotation_floor_not_known' ? 'askedOwner' : v['kind'] === 'quotation_floor_not_known_owner_quoted' ? 'askedAccountant' : 'askedApproval')} ${v['requestId']}`;
   return '';
 };
 
@@ -139,7 +150,8 @@ export function createQuotationsSession(input: {
   let pack: PackView | undefined; // read once per page — a line is checked against the pack the tills charge from
   // OB-525: the quotation head office refused as below its floor — kept (number and exact body) so the approval asked for
   // it, and the same quotation made again with that approval, are for exactly this quotation.
-  let draft: { readonly quotationId: string; readonly key: string; readonly body: Record<string, unknown>; readonly owner: boolean } | undefined;
+  // Who approves it: a second person (below floor), the owner (OB-532) or — the owner's own — the accountant (OB-542).
+  let draft: { readonly quotationId: string; readonly key: string; readonly body: Record<string, unknown>; readonly approver: 'second' | 'owner' | 'accountant' } | undefined;
   return {
     may,
     line: async (f) => {
@@ -175,19 +187,28 @@ export function createQuotationsSession(input: {
         ...body, ...(f.approvalId.trim() === '' ? {} : { approvalId: f.approvalId.trim() }),
       });
       if (out.result === 'ok') draft = undefined;
-      else if (out.result === 'refused' && (out.code === 'quotation_below_floor_unapproved' || out.code === 'quotation_floor_not_known_unapproved')) {
-        draft = { quotationId, key, body, owner: out.code === 'quotation_floor_not_known_unapproved' }; // OB-532: the owner's
+      else if (out.result === 'refused' && (out.code === 'quotation_below_floor_unapproved' || out.code === 'quotation_floor_not_known_unapproved' || out.code === 'quotation_floor_not_known_owner_quoted_unapproved')) {
+        // OB-532: the owner's; OB-542: the owner's own quotation — the accountant's.
+        draft = { quotationId, key, body, approver: out.code === 'quotation_floor_not_known_unapproved' ? 'owner' : out.code === 'quotation_floor_not_known_owner_quoted_unapproved' ? 'accountant' : 'second' };
       }
       else if (draft !== undefined && draft.key !== key) draft = undefined;
       return out;
     },
     belowFloor: () => draft?.quotationId,
-    needsOwner: () => draft?.owner === true,
+    needsOwner: () => draft?.approver === 'owner',
+    needsAccountant: () => draft?.approver === 'accountant',
     askApproval: async () => {
       const no = gate('write'); if (no !== undefined) return no;
       if (draft === undefined) return { result: 'invalid', why: 'needBelowFloor' };
       // Exactly the body the quotation is made with, plus its path id (the engine fingerprints these).
-      return call('POST', '/v1/approvals/requests', draft.owner
+      if (draft.approver === 'accountant') {
+        return call('POST', '/v1/approvals/requests', {
+          kind: 'quotation_floor_not_known_owner_quoted', subjectRef: draft.quotationId, details: { ...draft.body, quotationId: draft.quotationId }, valueMinor: null,
+          summary: `Quotation ${draft.quotationId} for ${String(draft.body['customerRef'])}, made by the owner, quotes a product whose lowest price is not known — accountant's approval`,
+          reason: quotationsWords('en', 'floorNotKnownOwnerReason'),
+        });
+      }
+      return call('POST', '/v1/approvals/requests', draft.approver === 'owner'
         ? {
           kind: 'quotation_floor_not_known', subjectRef: draft.quotationId, details: { ...draft.body, quotationId: draft.quotationId }, valueMinor: null,
           summary: `Quotation ${draft.quotationId} for ${String(draft.body['customerRef'])} quotes a product whose lowest price is not known — owner's approval`,

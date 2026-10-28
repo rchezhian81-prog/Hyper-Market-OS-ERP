@@ -55,6 +55,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 10 (28 October 2026): the owner's decisions OB-540 to OB-543 and OB-600 to OB-601 built; OB-602 and OB-603 decided
+
+**What changed**
+- **Devices page:** a section lists handheld work done on a withdrawn or too-old app version, in English and Tamil, and shows only this store's work (OB-540, OB-601). It says "Not known", "head office could not be reached" or "no head-office sign-in" instead of an empty list (P-08).
+- **Quotations:** a quotation the owner makes himself on a product with no known cost floor is approved by that store's accountant; everyone else's still needs the owner; the quoter never approves his own (OB-542).
+- **Supplier bills:** the accountant opens the goods-receipt screen through a narrow read permission (one list, no stock levels or valuation) and matches the bill there; the receiver is still refused (OB-543, OB-600).
+- Kept as built: OB-541 (the Rota asks for the office PIN again).
+- **Records:** this session's decisions now number from OB-600, after both working sessions used OB-540 to OB-543.
+- **Independent check of rounds 6 to 10:** 711 tests run (708 passed, 3 skipped for want of a real identity server). It found three gaps (the van-delivery door takes no batch or manufacture date; a manager-approved cut grows when the quantity changes; an out-of-date till ties up a quotation) and two missing proofs. The quantity gap is fixed by the other session's open PR #831; the rest are being built in round 11 with the owner's answers OB-602 and OB-603.
+
+**Tests that ran (this box, synthetic data)**
+- Unit + guardrails + integration + contract + security + migration on real PostgreSQL: 15,511 passed, 22 skipped (real identity server / store-volume runs), 0 failed. Type check clean.
+
+**What is next**
+- Round 11: manufacture date and batch at the van-delivery door (OB-504); an out-of-date till refuses a quotation before converting it (OB-501); the accountant approves the owner's own below-floor quotation (OB-602); tests for OB-603, OB-536 and OB-515.
+
+**Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 9 (28 October 2026): the owner's decisions OB-532 to OB-539 built; OB-540 to OB-543 decided
 
 **What changed**

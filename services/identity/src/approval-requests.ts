@@ -114,6 +114,16 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     makerPermission: 'pos.quotation.write', checkerPermission: 'pos.quotation.nofloor.approve', validForMinutes: 24 * 60,
   },
   // ── R9-A · OB-532 — end
+  // ── R10-A · OB-542 (owner, 28 Oct 2026) — begin: a quotation on a product with no known floor that the OWNER himself makes
+  // is approved by the ACCOUNTANT (anyone else's still needs the owner, OB-532). The checker word
+  // `pos.quotation.nofloor.ownerquote.approve` is the accountant's (and the owner's, only so he may grant it — he can never
+  // approve his own: the engine refuses self-approval); the quotation route also re-checks that the decider holds the
+  // ACCOUNTANT role at the quotation's store and that the quoter holds the owner role there.
+  quotation_floor_not_known_owner_quoted: {
+    kind: 'quotation_floor_not_known_owner_quoted', label: 'The owner quotes a customer a price on a product whose lowest price is not known (accountant approves)',
+    makerPermission: 'pos.quotation.write', checkerPermission: 'pos.quotation.nofloor.ownerquote.approve', validForMinutes: 24 * 60,
+  },
+  // ── R10-A · OB-542 — end
   // Finance (2b-vi-b-2 · M23-FR-04 "period close/reopen by Finance with approval"): the person who closes or reopens a
   // month asks; someone holding the authority to SIGN a period (`finance.period.sign` — the accountant, the CA, the
   // owner) approves — the signature that certifies the control totals is that person's own act.

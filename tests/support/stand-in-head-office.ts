@@ -4,7 +4,8 @@
 // server's key, pinned to the issuer, our audience and the one shop — and refuses a revoked person (a leaver, "sign me out
 // everywhere") with 401, as head office's revocation list does. It records every call with WHOSE token it carried (or that
 // it carried the store computer's machine credential, or nothing), so a test can prove each page's call went as the
-// person. It answers the Month-end page's first read, the company report's two, and the Rota's two (R9-B); anything else is a plain 404.
+// person. It answers the Month-end page's first read, the company report's two, the Rota's two (R9-B) and the Devices page's
+// version-exceptions read (R10-A); anything else is a plain 404.
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { KeyObject } from 'node:crypto';
@@ -32,6 +33,11 @@ export async function startStandInHeadOffice(input: {
   /** R9-B · OB-539: what the roster reads answer (default: an empty roster). */
   readonly roster?: () => unknown;
   readonly rosterGaps?: () => readonly unknown[];
+  /** R10-A · OB-540: what the handheld version-exceptions register answers (default: nothing on it), and who may read it. */
+  readonly versionExceptions?: () => unknown;
+  readonly versionExceptionReaders?: readonly string[];
+  /** R10-A · OB-543: any other answer a test needs (the goods-receipt screen's reads and bill match); undefined → the 404. */
+  readonly answer?: (call: { readonly method: string; readonly path: string; readonly as: string; readonly body: string }) => { readonly status: number; readonly body: unknown } | undefined;
 }): Promise<StandInHeadOffice> {
   const calls: HeadOfficeCall[] = [];
   const revoked = new Set<string>();
@@ -74,6 +80,14 @@ export async function startStandInHeadOffice(input: {
       // R9-B · OB-539: the manager's Rota reads the roster and its gaps.
       if (req.method === 'GET' && path === '/v1/hr/workforce/roster') { json(res, 200, input.roster?.() ?? { employees: [], shifts: [], assignments: [] }); return; }
       if (req.method === 'GET' && path === '/v1/hr/workforce/roster-gaps') { json(res, 200, { gaps: input.rosterGaps?.() ?? [] }); return; }
+      // R10-A · OB-540: the Devices page reads head office's register of handheld work on a barred build.
+      if (req.method === 'GET' && path === '/v1/platform/handheld-work/version-exceptions') {
+        if (input.versionExceptionReaders !== undefined && !input.versionExceptionReaders.includes(as)) { json(res, 403, { error: { code: 'forbidden', whatHappened: 'This account does not hold "platform.health.read".' } }); return; }
+        json(res, 200, input.versionExceptions?.() ?? { material: [], informational: 0, informationalExceptions: [], asAt: new Date().toISOString() });
+        return;
+      }
+      const extra = input.answer?.({ method: req.method ?? 'GET', path, as, body: Buffer.concat(parts).toString('utf8') });
+      if (extra !== undefined) { json(res, extra.status, extra.body); return; }
       if (req.method === 'POST' && path === '/v1/echo') { json(res, 200, { youAre: as, idempotencyKey: req.headers['idempotency-key'] ?? null, got: Buffer.concat(parts).toString('utf8') }); return; }
       json(res, 404, { error: { code: 'not_found', whatHappened: 'No such route at the stand-in head office.' } });
     });
