@@ -17,6 +17,15 @@
 // Every line set from a quotation carries the quotation's number (`priceOverride.quotationId`), so head office's sale check
 // sees where the price came from. A line the till cannot ring is listed for the cashier, never dropped.
 //
+// NOTHING RUNG (follow-up to OB-506): head office converts the quotation (one quotation, one bill) BEFORE the till tries a
+// line. When the till then rings NO line at all (each weighed, without a barcode, above the MRP, refused by the pack), the
+// quotation must not stay used up on an empty bill: the till frees it at once through the cancelled-bill release (OB-523) —
+// `bill_void` with no lines, the quotation and the reason "nothing could be rung", kept on the store computer's disk and
+// queued for head office (offline it waits there and is sent once, as a given-up held basket's is, OB-533) — and a fresh
+// bill starts, so the quotation can be rung up later. The cashier is told plainly that the quotation is still open. If the
+// store computer cannot keep the release, the quotation stays on this bill and the cashier is told to cancel the bill
+// (which frees it). A line rung at all — even at the till's own price — keeps the quotation on the bill, as before.
+//
 // OFFLINE (said plainly, never faked): the quotation and its convert rule live at head office — the till and its store
 // computer hold no copy of the promise. With head office (or the store computer) out of reach NOTHING is rung, the screen
 // says why in the cashier's words, and the ordinary sale is untouched (hard rule #1 — this is never on the sale path).
@@ -55,6 +64,8 @@ export interface QuotationAtTill {
   readonly quotationId?: string;
   /** Rung at the quoted price — lowered (`quoted`) or raised (`quoted_higher`) from the till's price — or `same`. */
   readonly added?: readonly { readonly lineId: string; readonly description: string; readonly qty: number; readonly unitPriceMinor: number; readonly at: 'quoted' | 'quoted_higher' | 'same' }[];
+  /** Nothing could be rung, so the quotation was freed again (true) — or could not be freed and stays on this bill (false). */
+  readonly quotationFreed?: boolean;
   /** Not rung (or not at the quoted price) — the cashier deals with each. */
   readonly notAdded?: readonly { readonly productId: string; readonly name: string; readonly qty: number; readonly laneMessage: string; readonly laneMessageTa?: string; readonly refusedBecause?: 'quoted_above_mrp' | 'mrp_not_known' }[];
 }
@@ -108,11 +119,24 @@ export function barcodesByProduct(snapshot: CatalogueSnapshot | undefined): Read
 
 const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
 
+/** The reason kept on record when a quotation is freed because the till could ring none of its lines. */
+export const NOTHING_RUNG_REASON = 'nothing could be rung';
+
+/** How the till frees a quotation it could ring nothing of: the cancelled-bill release on its own store computer (OB-523). */
+export interface QuotationRelease {
+  /** The till-activity post to this till's own store computer (browser-entry's `sendTillActivity`); may throw when unreachable. */
+  readonly post: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /** A fresh activity id for this release (one per quotation rung; a retry of the same post re-sends the same id). */
+  readonly newActivityId: () => string;
+}
+
 /** Ring a quotation up at this till by its number (OB-506). Never throws: every answer is in the cashier's words. */
 export function quotationAtTill(input: {
   readonly port: QuotationsLanePort;
   readonly ops: QuotationTillOps;
   readonly barcodeOf: (productId: string) => string | undefined;
+  /** Frees the quotation when no line could be rung. Absent → the quotation stays on the bill and the cashier is told so. */
+  readonly release?: QuotationRelease;
 }): (quotationNumber: string) => Promise<QuotationAtTill> {
   const { port, ops } = input;
   return async (raw) => {
@@ -127,7 +151,8 @@ export function quotationAtTill(input: {
     if (!ops.hasCatalogue()) return { ok: false, refusedBecause: 'no_catalogue', laneMessage: 'This till has no price pack, so it cannot ring the quotation. Nothing was rung.', laneMessageTa: 'இந்த பில்லிங்கில் விலைத் தொகுப்பு இல்லை, எனவே விலைப்புள்ளியைச் சேர்க்க முடியாது. எதுவும் சேர்க்கப்படவில்லை.' };
     // A fresh bill for the quotation: its reference is the bill the quotation becomes at head office.
     if (ops.committed()) ops.newSale();
-    const answer = await port.convert({ quotationNumber: number, billRef: ops.billRef() });
+    const billRef = ops.billRef();
+    const answer = await port.convert({ quotationNumber: number, billRef });
     if (!answer.converted) {
       return { ok: false, refusedBecause: answer.refusedBecause, laneMessage: answer.laneMessage, ...(answer.laneMessageTa === undefined ? {} : { laneMessageTa: answer.laneMessageTa }) };
     }
@@ -135,6 +160,8 @@ export function quotationAtTill(input: {
     const added: NonNullable<QuotationAtTill['added']>[number][] = [];
     const notAdded: NonNullable<QuotationAtTill['notAdded']>[number][] = [];
     const saidOf = (e: unknown): string | undefined => { const said = (e as { laneMessage?: unknown }).laneMessage; return typeof said === 'string' ? said : undefined; };
+    /** Lines that reached the bill at all (at the quoted price or the till's own). */
+    let rung = 0;
     for (const l of answer.lines) {
       const name = l.description || l.productId;
       if (l.uom !== 'ea') {
@@ -165,6 +192,7 @@ export function quotationAtTill(input: {
       try {
         // The till's OWN pack rings it (and refuses what it does not sell, a recalled item, an age not yet asked).
         const out = ops.scanBarcode(code);
+        rung += 1;
         if (l.quantityMinor > 1 && out.qty === 1) ops.setQuantity(out.lineId, l.quantityMinor);
         const tillPrice = ops.unitPriceOf(out.lineId) ?? l.unitPriceMinor;
         let at: 'quoted' | 'quoted_higher' | 'same' = 'same';
@@ -191,6 +219,7 @@ export function quotationAtTill(input: {
         notAdded.push({ productId: l.productId, name, qty: l.quantityMinor, laneMessage: said ?? (e instanceof Error ? e.message : String(e)) });
       }
     }
+    if (rung === 0) return nothingRung({ release: input.release, ops, quotationId: answer.quotationId, billRef, notAdded });
     const higher = added.filter((a) => a.at === 'quoted_higher').length;
     const overMrp = notAdded.filter((n) => n.refusedBecause === 'quoted_above_mrp').length;
     const tail = `${higher === 0 ? '' : ` ${higher} line(s) are quoted above today's till price — the quoted price is charged.`}${overMrp === 0 ? '' : ` ${overMrp} line(s) are quoted above the MRP and were NOT rung — the office must correct the quotation.`}`;
@@ -204,6 +233,44 @@ export function quotationAtTill(input: {
         ? `விலைப்புள்ளி ${answer.quotationId}: ${added.length} வரி(கள்) சொன்ன விலையில் சேர்க்கப்பட்டன.${tailTa} பொருட்களைச் சரிபார்த்து, பிறகு கட்டணத்தைப் பெறுங்கள்.`
         : `விலைப்புள்ளி ${answer.quotationId}: ${added.length} வரி(கள்) சேர்க்கப்பட்டன; ${notAdded.length} வரி(களை) காசாளர் பார்க்க வேண்டும்.${tailTa}`,
     };
+  };
+}
+
+/**
+ * No line of the quotation reached the bill: free the quotation again at once through the store computer (the cancelled-bill
+ * release, OB-523 — kept on its disk, queued for head office, sent once) and start a fresh bill. Never throws.
+ */
+async function nothingRung(input: {
+  readonly release: QuotationRelease | undefined;
+  readonly ops: QuotationTillOps;
+  readonly quotationId: string;
+  readonly billRef: string;
+  readonly notAdded: NonNullable<QuotationAtTill['notAdded']>;
+}): Promise<QuotationAtTill> {
+  const { release, ops, quotationId, billRef, notAdded } = input;
+  const base = { ok: true, quotationId, added: [], notAdded } as const;
+  let answer: Record<string, unknown> | undefined;
+  if (release !== undefined) {
+    const body = { activityId: release.newActivityId(), kind: 'bill_void', billRef, reason: NOTHING_RUNG_REASON, lines: [], quotationIds: [quotationId] };
+    // One retry with the SAME body (the box keys the release on its id): a lost reply never records it twice.
+    for (let attempt = 0; attempt < 2 && answer === undefined; attempt += 1) {
+      try { answer = await release.post(body); } catch { answer = undefined; }
+    }
+  }
+  if (answer?.['recorded'] === true) {
+    // The store computer holds the release: a fresh bill, so a later try never reuses the bill head office has it on.
+    try { ops.newSale(); } catch { /* the bill is empty; the next quotation starts its own */ }
+    return {
+      ...base, quotationFreed: true,
+      laneMessage: `Quotation ${quotationId}: nothing could be rung — deal with each line below. The quotation is STILL OPEN: it was freed again (head office is told now, or as soon as its line is back), so it can be rung up later.`,
+      laneMessageTa: `விலைப்புள்ளி ${quotationId}: எதுவும் சேர்க்க முடியவில்லை — கீழே உள்ள ஒவ்வொரு வரியையும் பாருங்கள். விலைப்புள்ளி இன்னும் திறந்தே உள்ளது: அது மீண்டும் விடுவிக்கப்பட்டது (தலைமை அலுவலகத்துக்கு இப்போதே, அல்லது இணைப்பு திரும்பியதும் தெரிவிக்கப்படும்), எனவே பிறகு சேர்க்கலாம்.`,
+    };
+  }
+  const why = typeof answer?.['refusedBecause'] === 'string' ? answer['refusedBecause'] : release === undefined ? 'no_release_on_this_till' : 'lane_unreachable';
+  return {
+    ...base, quotationFreed: false, refusedBecause: why,
+    laneMessage: `Quotation ${quotationId}: nothing could be rung, and the quotation could NOT be freed now (${why}) — it stays on this bill. Cancel the whole bill to free it, or tell the manager.`,
+    laneMessageTa: `விலைப்புள்ளி ${quotationId}: எதுவும் சேர்க்க முடியவில்லை, விலைப்புள்ளியை இப்போது விடுவிக்கவும் முடியவில்லை — அது இந்த பில்லிலேயே உள்ளது. அதை விடுவிக்க முழு பில்லையும் ரத்து செய்யுங்கள், அல்லது மேலாளரிடம் சொல்லுங்கள்.`,
   };
 }
 

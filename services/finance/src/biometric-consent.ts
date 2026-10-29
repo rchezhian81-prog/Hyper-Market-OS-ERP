@@ -28,6 +28,8 @@ import {
 import type { Employee } from '../../../packages/workforce/src/workforce';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { addDays } from '../../../packages/workforce/src/working-time';
+import { attendancePairing, nightShiftSpansOf, type RosteredShift } from './attendance-pairing';
 
 export interface AttendanceMark {
   readonly markId: string;
@@ -39,12 +41,19 @@ export interface AttendanceMark {
   readonly recordedBy: string;
   /** OB-507: a mark made on the store computer with the line down and carried here — who carried it, from where. */
   readonly relayed?: { readonly relayedBy: string; readonly source: string; readonly storeId: string };
-  /** OB-507 · hard rule #10: what head office found out of order about a relayed mark — recorded and shown, never hidden. */
+  /**
+   * OB-507 · hard rule #10: what head office found out of order about a relayed mark WHEN IT ARRIVED — kept on the record as
+   * evidence, never edited. The manager's read judges every mark afresh from all the marks it holds then
+   * (./attendance-pairing.ts), so a late-arriving "in" clears an out's exception without touching this record.
+   */
   readonly exceptions?: readonly AttendanceMarkException[];
 }
 
-/** A relayed mark that repeats the person's last mark (two "in"s), or an "out" with no "in" that day. */
-export type AttendanceMarkException = 'repeats_the_last_mark' | 'out_without_in';
+/**
+ * A mark that repeats the person's last mark (two "in"s, or two "out"s), an "out" with no "in" to pair with, or an "in" never
+ * followed by an "out" once its day (or its rostered night shift) is over.
+ */
+export type AttendanceMarkException = 'repeats_the_last_mark' | 'out_without_in' | 'in_without_out';
 
 export interface BiometricConsentDeps {
   readonly now: () => string;
@@ -55,6 +64,8 @@ export interface BiometricConsentDeps {
   readonly marks: (tenantId: string, date?: string) => Promise<readonly AttendanceMark[]>;
   readonly recordMark: (tenantId: string, m: AttendanceMark) => Promise<void>;
   readonly employees: (tenantId: string) => Promise<readonly Employee[]>;
+  /** OB-507: each person's shifts on head office's committed roster — a shift crossing midnight pairs a night "in" and "out". */
+  readonly rosteredShifts?: (tenantId: string) => Promise<readonly RosteredShift[]>;
   /** OB-197: the consent notices the owner signed, and the way his signature is recorded (append-only). */
   readonly notices: (tenantId: string) => Promise<readonly BiometricConsentNotice[]>;
   readonly recordNotice: (tenantId: string, n: BiometricConsentNotice) => Promise<void>;
@@ -230,7 +241,23 @@ export function biometricConsentRoutes(deps: BiometricConsentDeps): readonly Rou
         if (date === undefined || !DAY.test(date)) throw apiError(400, { code: 'attendance_needs_a_date', whatHappened: 'Reading attendance marks needs ?date=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send the date.' });
         const held = scopeOf(ctx);
         const branchOf = new Map((await deps.employees(ctx.tenantId)).map((e) => [e.employeeId, e.branchId] as const));
-        const marks = (await deps.marks(ctx.tenantId, date)).filter((m) => { const br = branchOf.get(m.employeeId); return held === 'all' || (br !== undefined && held.includes(br)); });
+        const inScope = (m: AttendanceMark): boolean => { const br = branchOf.get(m.employeeId); return held === 'all' || (br !== undefined && held.includes(br)); };
+        // OB-507 · P-03: whether marks pair up is judged NOW, from every mark held for the day before, the day and the day
+        // after (a night shift's in and out), never read off the record — a late-arriving "in" clears an out's exception.
+        // What was flagged when a mark arrived stays on its record, untouched, shown as `flaggedOnArrival`.
+        const around = (await deps.marks(ctx.tenantId)).filter((m) => m.date >= addDays(date, -1) && m.date <= addDays(date, 1));
+        const clock = shopClock(deps.calendar);
+        const now = deps.now();
+        const derived = attendancePairing({
+          marks: around,
+          nightShifts: nightShiftSpansOf(await deps.rosteredShifts?.(ctx.tenantId) ?? [], (await clock.calendar(ctx.tenantId)).timeZone),
+          now, today: await clock.today(ctx.tenantId, now),
+        });
+        const marks = around.filter((m) => m.date === date && inScope(m)).map((stored) => {
+          const { exceptions: onArrival, ...fact } = stored;
+          const exceptions = derived.get(stored.markId) ?? [];
+          return { ...fact, ...(exceptions.length === 0 ? {} : { exceptions }), ...(onArrival === undefined || onArrival.length === 0 ? {} : { flaggedOnArrival: onArrival }) };
+        });
         return { status: 200, body: { date, marks, count: marks.length, withExceptions: marks.filter((m) => (m.exceptions ?? []).length > 0).length } };
       },
     },

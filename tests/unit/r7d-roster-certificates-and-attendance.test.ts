@@ -5,6 +5,7 @@ import { handlesFood } from '../../packages/production/src/departments';
 import { packRoster, myRosterOnBox, packCertifications, foodHandlingOnBox, foodHandlingRefusalAtTheDoor, foodHandlingForViewer, NOT_TOLD_CERTIFICATES } from '../../edge/store-edge/src/workforce-pack';
 import { known, notKnown, emptyPack, type StorePack } from '../../edge/store-edge/src/store-pack';
 import { attendanceExceptions } from '../../services/finance/src/attendance-marks-synced';
+import { attendancePairing, nightShiftSpansOf } from '../../services/finance/src/attendance-pairing';
 import { createAttendanceQueue, attendanceKeyFor, ATTENDANCE_MARKED, attendanceWords, ATTENDANCE_COPY } from '../../apps/web-erp/src/attendance-queue';
 import { createProductionQueue } from '../../apps/web-erp/src/production-queue';
 import { createEssSession, ESS_COPY } from '../../apps/web-erp/src/ess-session';
@@ -148,14 +149,61 @@ describe('OB-502 on the store computer — offline, from the pack', () => {
 
 describe('OB-507 · attendance marks', () => {
   const NOW = '2026-10-28T03:30:00.000Z';
+  const DAY = '2026-10-28';
   it('head office flags a mark out of order (two "in"s, or an "out" with no "in") and nothing else', () => {
     const m = (markId: string, kind: 'in' | 'out', at: string) => ({ markId, employeeId: 'E-R', kind, method: 'pin' as const, at, date: '2026-10-28', recordedBy: 'E-R' });
-    expect(attendanceExceptions([], { employeeId: 'E-R', kind: 'in', at: NOW })).toEqual([]);
-    expect(attendanceExceptions([], { employeeId: 'E-R', kind: 'out', at: NOW })).toEqual(['out_without_in']);
-    expect(attendanceExceptions([m('1', 'in', '2026-10-28T01:00:00.000Z')], { employeeId: 'E-R', kind: 'in', at: NOW })).toEqual(['repeats_the_last_mark']);
-    expect(attendanceExceptions([m('1', 'in', '2026-10-28T01:00:00.000Z')], { employeeId: 'E-R', kind: 'out', at: NOW })).toEqual([]);
-    expect(attendanceExceptions([m('1', 'in', '2026-10-28T05:00:00.000Z')], { employeeId: 'E-R', kind: 'in', at: NOW })).toEqual([]); // a LATER mark is not "before"
-    expect(attendanceExceptions([{ ...m('1', 'in', '2026-10-28T01:00:00.000Z'), employeeId: 'E-OTHER' }], { employeeId: 'E-R', kind: 'in', at: NOW })).toEqual([]);
+    expect(attendanceExceptions([], { employeeId: 'E-R', kind: 'in', at: NOW, date: DAY })).toEqual([]);
+    expect(attendanceExceptions([], { employeeId: 'E-R', kind: 'out', at: NOW, date: DAY })).toEqual(['out_without_in']);
+    expect(attendanceExceptions([m('1', 'in', '2026-10-28T01:00:00.000Z')], { employeeId: 'E-R', kind: 'in', at: NOW, date: DAY })).toEqual(['repeats_the_last_mark']);
+    expect(attendanceExceptions([m('1', 'in', '2026-10-28T01:00:00.000Z')], { employeeId: 'E-R', kind: 'out', at: NOW, date: DAY })).toEqual([]);
+    expect(attendanceExceptions([m('1', 'in', '2026-10-28T05:00:00.000Z')], { employeeId: 'E-R', kind: 'in', at: NOW, date: DAY })).toEqual([]); // a LATER mark is not "before"
+    expect(attendanceExceptions([{ ...m('1', 'in', '2026-10-28T01:00:00.000Z'), employeeId: 'E-OTHER' }], { employeeId: 'E-R', kind: 'in', at: NOW, date: DAY })).toEqual([]);
+  });
+  // OB-507 follow-up: pairing is judged when READ, over every mark held — never frozen when one mark happened to arrive.
+  describe('pairing judged when read (attendance-pairing)', () => {
+    const IST = (day: string, hhmm: string): string => new Date(Date.parse(`${day}T${hhmm}:00+05:30`)).toISOString();
+    const mk = (markId: string, employeeId: string, kind: 'in' | 'out', day: string, hhmm: string) => ({ markId, employeeId, kind, at: IST(day, hhmm), date: day });
+    const LATER = { now: IST('2026-10-30', '12:00'), today: '2026-10-30' }; // both days are long over
+    const pair = (marks: ReturnType<typeof mk>[], nightShifts: ReturnType<typeof nightShiftSpansOf> = [], clock = LATER) =>
+      Object.fromEntries(attendancePairing({ marks, nightShifts, ...clock }));
+
+    it('an "out" that arrived before its "in" is an exception only until the "in" is held — then it clears', () => {
+      const out = mk('O', 'E-R', 'out', '2026-10-27', '17:00');
+      expect(pair([out])).toEqual({ O: ['out_without_in'] });
+      expect(pair([out, mk('I', 'E-R', 'in', '2026-10-27', '09:00')])).toEqual({}); // arrival order does not matter
+    });
+    it('a rostered night shift pairs an "in" with the next day\'s "out"; without one the same-day rule stands', () => {
+      const marks = [mk('I', 'E-N', 'in', '2026-10-27', '21:55'), mk('O', 'E-N', 'out', '2026-10-28', '06:05')];
+      const nights = nightShiftSpansOf([{ employeeId: 'E-N', startsAt: IST('2026-10-27', '22:00'), endsAt: IST('2026-10-28', '06:00') }], 'Asia/Kolkata');
+      expect(nights).toEqual([{ employeeId: 'E-N', fromDate: '2026-10-27', toDate: '2026-10-28', endsAt: IST('2026-10-28', '06:00') }]);
+      expect(pair(marks, nights)).toEqual({});
+      expect(pair(marks)).toEqual({ I: ['in_without_out'], O: ['out_without_in'] }); // no night shift on the roster
+      // Somebody else's night shift does not carry this person's "in".
+      expect(pair(marks, nights.map((n) => ({ ...n, employeeId: 'E-OTHER' })))).toEqual({ I: ['in_without_out'], O: ['out_without_in'] });
+      // A day shift is not a night shift.
+      expect(nightShiftSpansOf([{ employeeId: 'E-N', startsAt: IST('2026-10-27', '06:00'), endsAt: IST('2026-10-27', '14:00') }], 'Asia/Kolkata')).toEqual([]);
+    });
+    it('real exceptions stay: an out with no in, a repeated mark, an in never closed once its day or night shift is over', () => {
+      expect(pair([mk('O', 'E-L', 'out', '2026-10-28', '13:00')])).toEqual({ O: ['out_without_in'] });
+      expect(pair([mk('I1', 'E-R', 'in', '2026-10-28', '09:00'), mk('I2', 'E-R', 'in', '2026-10-28', '10:00'), mk('O', 'E-R', 'out', '2026-10-28', '17:00')])).toEqual({ I2: ['repeats_the_last_mark'] });
+      expect(pair([mk('I', 'E-R', 'in', '2026-10-28', '09:00'), mk('O1', 'E-R', 'out', '2026-10-28', '17:00'), mk('O2', 'E-R', 'out', '2026-10-28', '17:05')])).toEqual({ O2: ['repeats_the_last_mark'] });
+      // An "in" with no "out": not an exception while its day is still running — only once it is over.
+      const open = [mk('I', 'E-R', 'in', '2026-10-28', '09:00')];
+      expect(pair(open, [], { now: IST('2026-10-28', '12:00'), today: '2026-10-28' })).toEqual({});
+      expect(pair(open)).toEqual({ I: ['in_without_out'] });
+      // On a rostered night shift: open until the shift ends, past midnight.
+      const night = [mk('N', 'E-N', 'in', '2026-10-27', '21:55')];
+      const nights = nightShiftSpansOf([{ employeeId: 'E-N', startsAt: IST('2026-10-27', '22:00'), endsAt: IST('2026-10-28', '06:00') }], 'Asia/Kolkata');
+      expect(pair(night, nights, { now: IST('2026-10-28', '04:00'), today: '2026-10-28' })).toEqual({});
+      expect(pair(night, nights, { now: IST('2026-10-28', '07:00'), today: '2026-10-28' })).toEqual({ N: ['in_without_out'] });
+    });
+    it('on arrival the same fold is used, and the clock-dependent "never closed" is left to the read', () => {
+      const nights = nightShiftSpansOf([{ employeeId: 'E-N', startsAt: IST('2026-10-27', '22:00'), endsAt: IST('2026-10-28', '06:00') }], 'Asia/Kolkata');
+      const held = [{ ...mk('I', 'E-N', 'in', '2026-10-27', '21:55'), method: 'pin' as const, recordedBy: 'E-N' }];
+      expect(attendanceExceptions(held, { employeeId: 'E-N', kind: 'out', at: IST('2026-10-28', '06:05'), date: '2026-10-28' }, nights)).toEqual([]);
+      expect(attendanceExceptions(held, { employeeId: 'E-N', kind: 'out', at: IST('2026-10-28', '06:05'), date: '2026-10-28' })).toEqual(['out_without_in']);
+      expect(attendanceExceptions([], { employeeId: 'E-N', kind: 'in', at: IST('2026-10-20', '09:00'), date: '2026-10-20' })).toEqual([]);
+    });
   });
   it('the page saves a mark durably on this device, in the person\'s own name, once per id; refuses nobody, no store, no right', () => {
     const outbox = new SyncOutbox();

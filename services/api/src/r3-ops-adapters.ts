@@ -13,6 +13,7 @@ import {
   productionAdapter, lotTraceAdapter, rosterStoreAdapter,
 } from './adapters';
 import { biometricConsentRoutes, type BiometricConsentDeps, type AttendanceMark } from '../../finance/src/biometric-consent';
+import type { RosteredShift } from '../../finance/src/attendance-pairing';
 import type { BiometricConsentEvent, BiometricConsentNotice } from '../../../packages/workforce/src/biometric-consent';
 import { scheduleRoutes, type ScheduleDeps, type StoredDraft } from '../../finance/src/schedule-store';
 import type { ServiceStandard } from '../../../packages/workforce/src/labour-demand';
@@ -298,6 +299,15 @@ export function packPricingFor(input: { readonly store: EventStore; readonly now
 const BIOMETRIC = streamName(STREAM.workforce, 'biometric-consent');
 const MARKS = streamName(STREAM.workforce, 'attendance-marks');
 
+/** OB-507: each person's shifts on head office's committed roster — what pairs a night shift's "in" with the next day's "out". */
+export function rosteredShiftsOf(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string) => Promise<readonly RosteredShift[]> {
+  return async (t) => {
+    const roster = await rosterStoreAdapter(input).roster(t);
+    const byId = new Map(roster.shifts.map((s) => [s.shiftId, s] as const));
+    return roster.assignments.flatMap((a) => { const s = byId.get(a.shiftId); return s === undefined ? [] : [{ employeeId: a.employeeId, startsAt: s.startsAt, endsAt: s.endsAt }]; });
+  };
+}
+
 export function biometricConsentAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): BiometricConsentDeps {
   const { store, now } = input;
   return {
@@ -311,6 +321,7 @@ export function biometricConsentAdapter(input: { readonly store: EventStore; rea
       await store.append(t, MARKS, makeEvent({ id: `attendance-mark-${m.markId}`, type: 'AttendanceMarked', occurredAt: m.at, idempotencyKey: `attendance-mark-${t}-${m.markId}`, source: 'api/hr', payload: m }));
     },
     employees: async (t) => (await rosterStoreAdapter({ store, now }).roster(t)).employees,
+    rosteredShifts: rosteredShiftsOf({ store, now }),
     // OB-197: the owner's signature on a consent notice — one fact per notice, never edited (hard rules #2, #6).
     notices: (t) => all<BiometricConsentNotice>(store, t, BIOMETRIC, 'BiometricConsentNoticeSigned'),
     recordNotice: async (t, n) => {

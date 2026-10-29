@@ -40,18 +40,22 @@
       #sheet { display: flex; flex-wrap: wrap; gap: 4mm; align-content: start; }
       .tag { box-sizing: border-box; border: 0.3mm dashed #000; background: #fff; color: #000; padding: 1.5mm 2mm; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; font-family: "Noto Sans", "Noto Sans Tamil", Arial, sans-serif; line-height: 1.15; page-break-inside: avoid; break-inside: avoid; }
       .tag .name { font-weight: 700; }
-      .tag .price { font-weight: 800; }
+      .tag .price { font-weight: 800; line-height: 1; white-space: nowrap; }
+      /* A tag whose words do not fit its label: marked on the screen and refused at print (the page names it). */
+      .tag[data-overflow] { outline: 1mm solid var(--danger); outline-offset: 0.5mm; }
       .tag .row { display: flex; justify-content: space-between; gap: 2mm; align-items: baseline; }
       .tag .code { letter-spacing: 0.2mm; }
-      /* Printing: only the tags show, from the top-left of the paper — whatever the shared chrome wraps the page in. */
+      /* Printing: only the tags show, from the top-left of the paper — whatever the shared chrome wraps the page in. The paper
+         itself (the label's own size with no margin on the label printer, or a sheet with a margin) is set per print in
+         #print-css by the session's shelfTagPrintCss. */
       @media print {
-        @page { margin: 8mm; }
         body { background: #fff; }
         body * { visibility: hidden; }
         #sheet, #sheet * { visibility: visible; }
         #sheet { position: absolute; left: 0; top: 0; }
       }
     </style>
+    <style id="print-css"></style>
   </head>
   <body>
     <header>
@@ -92,7 +96,12 @@
       </section>
       <section id="sheet-section" hidden aria-label="Tags">
         <p class="meta" id="sheet-meta"></p>
+        <div class="row-form">
+          <label for="t-mode"><span id="t-mode-l"></span><select id="t-mode"></select></label>
+        </div>
+        <p class="meta" id="t-hint"></p>
         <button id="t-print" type="button"><span id="t-print-text"></span></button>
+        <p class="status" id="t-print-status" role="alert" hidden></p>
         <div id="sheet"></div>
       </section>
     </main>
