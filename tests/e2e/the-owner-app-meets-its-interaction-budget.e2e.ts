@@ -70,25 +70,4 @@ describe.skipIf(!HAVE_BROWSER)('the owner app\'s interaction budget, counted on 
     expect(errors).toEqual([]);
     await context.close();
   });
-
-  // OB-435 · OB-439: the brief's "needs attention" line follows the app's language button — Tamil when it is on Tamil,
-  // English otherwise (the line's words come from the brief, `apps/owner-app/src/brief.ts`).
-  it('the "needs attention" line reads in Tamil after the language button, and in English again', async () => {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
-    const page = await context.newPage();
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(`http://127.0.0.1:${edge.screens!.port}/owner/`, { waitUntil: 'load' });
-    await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('attention')?.textContent ?? '').includes('Approval waiting'), undefined, { timeout: 15_000 });
-    expect(await page.textContent('#attention')).toContain('Approval waiting: price change from u-buyer for ₹450.00.');
-    await page.click('#lang');
-    await page.waitForFunction(() => /[\u0B80-\u0BFF]/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('attention')?.textContent ?? ''), undefined, { timeout: 15_000 });
-    const tamil = (await page.textContent('#attention')) ?? '';
-    expect(tamil).toContain('ஒப்புதல் காத்திருக்கிறது: u-buyer இடமிருந்து');
-    expect(tamil).not.toContain('Approval waiting');
-    await page.click('#lang');
-    await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('attention')?.textContent ?? '').includes('Approval waiting'), undefined, { timeout: 15_000 });
-    expect(errors).toEqual([]);
-    await context.close();
-  });
 });

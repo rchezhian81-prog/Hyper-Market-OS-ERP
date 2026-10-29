@@ -33,8 +33,7 @@ import type { BackwardSale, BatchOrigin } from '../../../packages/quality/src/lo
 import type { OutboundLotRecord } from '../../../packages/quality/src/lot-trace';
 import type { IncomingSale } from '../../pos/src/index';
 import type { PackSigner } from '../../catalogue/src/pack';
-import { eventWords, type AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
-import { told, alertText, partOf, type AlertText } from '../../../packages/ops/src/alert-words';
+import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
 import { republishWithBlocks } from '../../catalogue/src/recall-republish';
 import { blockedProductIds } from '../../inventory/src/sale-blocks';
 import { lotTraceBackwardRoutes, type LotTraceBackwardDeps } from '../../inventory/src/lot-trace-backward';
@@ -316,10 +315,9 @@ export function underRecallOf(input: Input): (tenantId: string, productIds: read
 
 // ── 2 & 3. what starting (and closing) a recall does by itself ────────────────────────────────────────────────────────
 
-/** OB-435: `text` — the detail structured, when head office wrote it (a refusal the catalogue gave is kept as it said it). */
 export type TillPackOutcome =
-  | { readonly published: true; readonly version: number; readonly newlyBlocked: readonly string[]; readonly notCarried: readonly string[]; readonly detail: string; readonly text?: AlertText }
-  | { readonly published: false; readonly onPack: boolean; readonly version: number | null; readonly why: string; readonly notCarried: readonly string[]; readonly detail: string; readonly text?: AlertText };
+  | { readonly published: true; readonly version: number; readonly newlyBlocked: readonly string[]; readonly notCarried: readonly string[]; readonly detail: string }
+  | { readonly published: false; readonly onPack: boolean; readonly version: number | null; readonly why: string; readonly notCarried: readonly string[]; readonly detail: string };
 
 /**
  * Publish the tills' pack with every product that must not be sold blocked — at once, prices untouched — and say, for
@@ -332,16 +330,16 @@ export async function publishRecallPack(input: Input & { readonly signer: PackSi
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const previous = await catalogue.currentPack(tenantId);
     if (previous === undefined) {
-      return { published: false, onPack: false, version: null, why: 'no_pack_published_yet', notCarried: [], ...told('recall.pack.noPack') };
+      return { published: false, onPack: false, version: null, why: 'no_pack_published_yet', notCarried: [], detail: 'No catalogue has been published to the tills yet, so no till is selling anything from head office. The first publish will carry this block.' };
     }
     const version = previous.snapshot.version;
     const carried = new Set(previous.snapshot.products.map((p) => p.productId));
     const notCarried = products.filter((p) => !carried.has(p));
     if (products.length === 0) {
-      return { published: false, onPack: false, version, why: 'product_unknown', notCarried, ...told('recall.pack.productUnknown') };
+      return { published: false, onPack: false, version, why: 'product_unknown', notCarried, detail: 'Head office cannot name this batch to a product (no receipt or stock movement carried it), so no till can refuse it. Record the batch\'s receipt; the block follows.' };
     }
     if (notCarried.length === products.length) {
-      return { published: false, onPack: false, version, why: 'not_carried_by_any_till', notCarried, ...told('recall.pack.notCarried', { products: notCarried, version }) };
+      return { published: false, onPack: false, version, why: 'not_carried_by_any_till', notCarried, detail: `No till carries ${notCarried.join(', ')} (it is not on catalogue v${version}), so none can sell it.` };
     }
     const blocked = blockedProductIds(await blocks.blocks(tenantId));
     const r = republishWithBlocks({
@@ -349,13 +347,13 @@ export async function publishRecallPack(input: Input & { readonly signer: PackSi
       publishedBy: `recall-block:${startedBy}`, publishedAt: input.now(),
     });
     if (r.outcome === 'already_on_pack') return { published: false, onPack: true, version, why: 'already_on_pack', notCarried, detail: r.detail };
-    if (r.outcome === 'refused') return { published: false, onPack: false, version, why: r.because, notCarried, ...told('recall.pack.refused', { detail: r.detail }) };
+    if (r.outcome === 'refused') return { published: false, onPack: false, version, why: r.because, notCarried, detail: `The recall pack was refused: ${r.detail}. Publish the catalogue by hand now.` };
     await catalogue.storePack(tenantId, r.pack);
     const held = await catalogue.currentPack(tenantId);
     if (held?.signature === r.pack.signature) return { published: true, version: r.pack.snapshot.version, newlyBlocked: r.newlyBlocked, notCarried, detail: r.detail };
     // Somebody published the same version a moment earlier — read the pack again and block on top of theirs.
   }
-  return { published: false, onPack: false, version: null, why: 'publish_raced', notCarried: [], ...told('recall.pack.raced') };
+  return { published: false, onPack: false, version: null, why: 'publish_raced', notCarried: [], detail: 'Three publishes landed while the recall pack was being signed. Publish the catalogue by hand now.' };
 }
 
 export type OwnerAlertOutcome =
@@ -367,7 +365,7 @@ async function ownersOf(store: EventStore, tenantId: string): Promise<string[]> 
 }
 
 /** Raise the recall into every owner's alert inbox — critical, acknowledgement due in 15 minutes. */
-export async function raiseRecallAlert(input: Input, tenantId: string, record: RecallRecord, detail: string, text?: AlertText): Promise<OwnerAlertOutcome> {
+export async function raiseRecallAlert(input: Input, tenantId: string, record: RecallRecord, detail: string): Promise<OwnerAlertOutcome> {
   const lifecycle = alertLifecycleAdapter(input);
   const alertId = `${RECALL_ALERT_PREFIX}${record.batchId}`;
   const owners = await ownersOf(input.store, tenantId);
@@ -379,8 +377,8 @@ export async function raiseRecallAlert(input: Input, tenantId: string, record: R
   const event: AlertLifecycleEvent = {
     alertId, change: 'raised', by: record.initiatedBy, at,
     alert: {
-      alertId, component: `Recall of batch ${record.batchId}`, componentText: alertText('recall.component', { batchId: record.batchId }), status: 'down',
-      ownerUserId: owners[0]!, ownerName: owners[0]!, detail, ...(text === undefined ? {} : { text }), raisedAt: at, ackDueBy,
+      alertId, component: `Recall of batch ${record.batchId}`, status: 'down',
+      ownerUserId: owners[0]!, ownerName: owners[0]!, detail, raisedAt: at, ackDueBy,
       ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
     },
   };
@@ -397,9 +395,9 @@ export async function clearRecallAlert(input: Input, tenantId: string, record: R
   const w = record.withdrawal;
   await lifecycle.recordAlertEvent(tenantId, {
     alertId, change: 'cleared', by: w?.withdrawnBy ?? record.closedBy ?? 'unknown', at: input.now(),
-    ...eventWords(w !== undefined
-      ? told('recall.cleared.withdrawn', { reason: w.reason })
-      : told('recall.cleared.closed', { evidence: record.evidenceRef ?? '' })),
+    detail: w !== undefined
+      ? `the recall was withdrawn as started by mistake: ${w.reason}`
+      : `the recall was closed with evidence ${record.evidenceRef ?? ''}`.trim(),
   }, `${alertId}|cleared|${w?.withdrawnAt ?? record.closedAt ?? input.now()}`);
   return true;
 }
@@ -431,15 +429,16 @@ function onRecallStart(input: Input & { readonly signer: PackSigner }, inner: Ro
     // 3 first: the tills are what stop the next sale.
     const tillPack = await reported(() => publishRecallPack(input, ctx.tenantId, ctx.userId, products));
     const openPurchaseOrders = await reported(() => openOrdersFor(input, ctx.tenantId, products));
-    // OB-435: structured words — the English word for word as before; a reason a person typed and a machine's refusal kept as said.
-    const tills = !('published' in tillPack) ? alertText('recall.tills.failed', { detail: tillPack.detail })
-      : tillPack.published ? alertText('recall.tills.published', { version: tillPack.version })
-        : tillPack.onPack ? alertText('recall.tills.already')
-          : tillPack.why === 'not_carried_by_any_till' ? alertText('recall.tills.notCarried')
-            : alertText('recall.tills.notBlocked', { detail: partOf(tillPack.text, tillPack.detail) });
-    const orders = Array.isArray(openPurchaseOrders) ? openPurchaseOrders.map((o) => o.poId) : [];
-    const words = told('recall.alert', { batchId: record.batchId, by: record.initiatedBy, reason: record.reason, products: [...products], tills, orders });
-    const ownerAlert = await reported(() => raiseRecallAlert(input, ctx.tenantId, record, words.detail, words.text));
+    const tills = !('published' in tillPack) ? `it is NOT yet blocked at the tills (${tillPack.detail}) — publish the catalogue now`
+      : tillPack.published ? `the tills' catalogue v${tillPack.version} now refuses it`
+        : tillPack.onPack ? 'the tills already refuse it'
+          : tillPack.why === 'not_carried_by_any_till' ? 'no till carries it'
+            : `it is NOT yet blocked at the tills — ${tillPack.detail}`;
+    const orders = Array.isArray(openPurchaseOrders) && openPurchaseOrders.length > 0
+      ? ` Open purchase orders for it: ${openPurchaseOrders.map((o) => o.poId).join(', ')}.` : '';
+    const detail = `Batch ${record.batchId} was recalled by ${record.initiatedBy}: ${record.reason}. `
+      + `${products.length === 0 ? 'Head office cannot name its product yet, so no till can refuse it — record the batch\'s receipt.' : `Product(s) ${products.join(', ')}: ${tills}.`}${orders}`;
+    const ownerAlert = await reported(() => raiseRecallAlert(input, ctx.tenantId, record, detail));
     return { status: 201, body: { ...(res.body as object), products, tillPack, ownerAlert, openPurchaseOrders } };
   };
 }

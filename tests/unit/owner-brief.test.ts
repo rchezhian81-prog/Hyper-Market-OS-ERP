@@ -83,22 +83,6 @@ describe('buildBrief', () => {
     expect(brief.alerts[0]?.linkedTxnIds).toHaveLength(6); // but every txn is linked
   });
 
-  // OB-435 · OB-439: each alert and "needs attention" line carries its Tamil twin; the English is the sentence as before.
-  it('gives every alert and attention line in English and Tamil (OB-435)', () => {
-    const events: ActivityEvent[] = Array.from({ length: 3 }, (_, i) => ({ txnId: `t${i}`, kind: 'void', cashierId: 'c1', at: ASOF }));
-    const exceptions = evaluateLossPrevention(events, [{ kind: 'void', maxCount: 2 }]);
-    const brief = buildBrief(input({ exceptions, approvals: [{ id: 'a1', subjectType: 'purchase_order', subjectRef: 'po-1', requestedBy: 'buyer-1', valueMinor: 812_000_00 }] }));
-    const alert = brief.alerts[0]!;
-    expect(alert.words.en).toBe(alert.sentence);
-    expect(alert.words.ta).toMatch(/[\u0B80-\u0BFF]/);
-    expect(alert.words.ta).toContain('ரத்து செய்த பில்கள்');
-    expect(alert.words.ta).not.toMatch(/voided|over the limit/);
-    const approval = brief.attention.find((a) => a.source === 'approval')!;
-    expect(approval.sentence).toBe('Approval waiting: purchase order from buyer-1 for ₹8,12,000.00.');
-    expect(approval.words).toEqual({ en: approval.sentence, ta: 'ஒப்புதல் காத்திருக்கிறது: buyer-1 இடமிருந்து கொள்முதல் ஆணை, ₹8,12,000.00.' });
-    expect(brief.attention.find((a) => a.source === 'exception')!.words).toEqual(alert.words);
-  });
-
   it('puts urgent escalations above ordinary flags', () => {
     const exceptions = [
       ...evaluateLossPrevention(

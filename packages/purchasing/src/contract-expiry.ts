@@ -35,8 +35,6 @@ export interface ExpiringContract {
 
 export type ExpiryStep = 'expired' | 'expiring';
 
-import { told, type AlertText } from '../../ops/src/alert-words';
-
 export interface ContractExpiryAlert {
   readonly alertId: string;
   readonly register: ContractRegister;
@@ -47,8 +45,6 @@ export interface ContractExpiryAlert {
   readonly daysLeft: number;
   readonly step: ExpiryStep;
   readonly detail: string;
-  /** OB-435: `detail`, structured (rendered in English into `detail`, and in Tamil for a Tamil reader). */
-  readonly text?: AlertText;
 }
 
 const DAY_MS = 86_400_000;
@@ -85,16 +81,19 @@ export function contractExpiryAlerts(input: {
   for (const c of input.contracts) {
     if (!c.approved || !isDate(c.endsOn)) continue;
     const daysLeft = daysBetweenDates(input.today, c.endsOn);
-    const what = c.what === undefined || c.what.trim() === '' ? null : c.what.trim();
+    const label = c.register === 'display' ? `Display contract ${c.contractId}` : `Supplier contract ${c.contractId}`;
+    const what = c.what === undefined || c.what.trim() === '' ? '' : ` (${c.what.trim()})`;
     if (daysLeft < 0) {
       out.push({
         alertId: contractAlertId(c, 'expired'), register: c.register, contractId: c.contractId, supplierId: c.supplierId, endsOn: c.endsOn, daysLeft, step: 'expired',
-        ...told('contract.expired', { register: c.register, contractId: c.contractId, what, supplier: c.supplierId, endsOn: c.endsOn, daysAgo: -daysLeft }),
+        detail: c.register === 'display'
+          ? `${label}${what} with ${c.supplierId} ended on ${c.endsOn}, ${-daysLeft} day(s) ago. If the display is still on the floor, the shop is giving the space away. Renew it or take the display down.`
+          : `${label} with ${c.supplierId} ended on ${c.endsOn}, ${-daysLeft} day(s) ago. Orders placed since are on no agreed terms. Renew it or stop ordering on it.`,
       });
     } else if (input.warnDays !== null && daysLeft <= input.warnDays) {
       out.push({
         alertId: contractAlertId(c, 'expiring'), register: c.register, contractId: c.contractId, supplierId: c.supplierId, endsOn: c.endsOn, daysLeft, step: 'expiring',
-        ...told('contract.expiring', { register: c.register, contractId: c.contractId, what, supplier: c.supplierId, endsOn: c.endsOn, daysLeft, warnDays: input.warnDays }),
+        detail: `${label}${what} with ${c.supplierId} ends on ${c.endsOn} (${daysLeft} day(s) left; you asked to be told ${input.warnDays} day(s) ahead). Renew it or plan for its end.`,
       });
     }
   }

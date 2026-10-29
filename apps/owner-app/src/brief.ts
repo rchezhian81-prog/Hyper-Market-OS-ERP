@@ -17,12 +17,6 @@
 
 import { salesSummary, freshness, type SaleFact, type SalesSummary, type Freshness } from '../../../packages/reporting/src/index';
 import type { LpException, Severity, SignalKind } from '../../../packages/loss-prevention/src/index';
-// OB-435: only the brief's own sentences (not every alert sentence head office knows) ride in the phone app.
-import { renderWith, type AlertText } from '../../../packages/ops/src/alert-text';
-import { BUSINESS_WORDS } from '../../../packages/ops/src/alert-words-business';
-
-/** A brief line in English and Tamil. */
-export interface AlertWords { readonly en: string; readonly ta: string }
 
 /** An approval waiting on the owner (from the maker-checker engine, M02). */
 export interface PendingApproval {
@@ -46,8 +40,6 @@ export interface AlertGroup {
   readonly linkedTxnIds: readonly string[];
   /** Plain-English line for the brief. */
   readonly sentence: string;
-  /** OB-435 · OB-439: the same line in English and Tamil, for the app's language button (`sentence` is the English). */
-  readonly words: AlertWords;
 }
 
 /** One of the three things needing attention, in priority order. */
@@ -55,8 +47,6 @@ export interface AttentionItem {
   readonly rank: 1 | 2 | 3;
   readonly source: 'exception' | 'approval';
   readonly sentence: string;
-  /** OB-435 · OB-439: the same line in English and Tamil. */
-  readonly words: AlertWords;
   /** What to open when the owner taps it. */
   readonly ref: string;
 }
@@ -103,8 +93,13 @@ function rupees(minor: number): string {
   return `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** OB-435: a brief line in both languages (the English is word for word what the brief always said). */
-const bothLanguages = (text: AlertText): AlertWords => ({ en: renderWith(BUSINESS_WORDS, text, 'en'), ta: renderWith(BUSINESS_WORDS, text, 'ta') });
+const KIND_WORDS: Readonly<Record<SignalKind, string>> = Object.freeze({
+  void: 'voided bills',
+  refund: 'refunds',
+  discount: 'discounts',
+  no_sale: 'no-sale drawer opens',
+  cash_variance: 'cash variances',
+});
 
 /** Group exceptions by (kind, severity) so a spike is one line, not a storm. */
 function groupAlerts(exceptions: readonly LpException[]): AlertGroup[] {
@@ -131,19 +126,18 @@ function groupAlerts(exceptions: readonly LpException[]): AlertGroup[] {
   }
 
   return [...groups.values()]
-    .map((g) => {
+    .map((g) => ({
+      kind: g.kind,
+      severity: g.severity,
+      count: g.count,
+      totalValueMinor: g.totalValueMinor,
+      linkedTxnIds: g.linked,
       // Lead with what the owner cares about: the money, then how many bills.
-      const words = bothLanguages({ kind: 'owner.brief.group', params: { urgent: g.severity === 'escalate', kind: g.kind, totalMinor: g.totalValueMinor, transactions: g.linked.length } });
-      return {
-        kind: g.kind,
-        severity: g.severity,
-        count: g.count,
-        totalValueMinor: g.totalValueMinor,
-        linkedTxnIds: g.linked,
-        sentence: words.en,
-        words,
-      };
-    })
+      sentence:
+        `${g.severity === 'escalate' ? 'Urgent: ' : ''}${KIND_WORDS[g.kind]} over the limit` +
+        (g.totalValueMinor > 0 ? ` — ${rupees(g.totalValueMinor)} across` : ' —') +
+        ` ${g.linked.length} transaction${g.linked.length === 1 ? '' : 's'}.`,
+    }))
     // Worst first: escalations, then the larger value, then the larger count.
     .sort((a, b) => {
       if (a.severity !== b.severity) return a.severity === 'escalate' ? -1 : 1;
@@ -154,12 +148,15 @@ function groupAlerts(exceptions: readonly LpException[]): AlertGroup[] {
 
 /** Pick the three things that most need the owner, alerts outranking approvals. */
 function pickAttention(alerts: readonly AlertGroup[], approvals: readonly PendingApproval[]): AttentionItem[] {
-  const candidates: { source: 'exception' | 'approval'; sentence: string; words: AlertWords; ref: string }[] = [
-    ...alerts.map((a) => ({ source: 'exception' as const, sentence: a.sentence, words: a.words, ref: `${a.kind}:${a.severity}` })),
-    ...approvals.map((a) => {
-      const words = bothLanguages({ kind: 'owner.brief.approval', params: { subject: a.subjectType, by: a.requestedBy, valueMinor: a.valueMinor } });
-      return { source: 'approval' as const, sentence: words.en, words, ref: a.id };
-    }),
+  const candidates: { source: 'exception' | 'approval'; sentence: string; ref: string }[] = [
+    ...alerts.map((a) => ({ source: 'exception' as const, sentence: a.sentence, ref: `${a.kind}:${a.severity}` })),
+    ...approvals.map((a) => ({
+      source: 'approval' as const,
+      sentence:
+        `Approval waiting: ${a.subjectType.replace(/_/g, ' ')} from ${a.requestedBy}` +
+        (a.valueMinor !== null ? ` for ${rupees(a.valueMinor)}` : '') + '.',
+      ref: a.id,
+    })),
   ];
   return candidates.slice(0, 3).map((c, i) => ({ rank: (i + 1) as 1 | 2 | 3, ...c }));
 }

@@ -15,7 +15,6 @@
 //
 // Pure and deterministic: no clock, no I/O.
 
-import { alertDisplay } from './alert-words';
 import type { HealthStatus, RaisedAlert } from './health';
 
 /** A live alert as A06 reads it — the raised alert plus where it is in its lifecycle. `LiveAlert` from the
@@ -43,11 +42,6 @@ export interface OperationsFinding {
   readonly evidence: Readonly<Record<string, string | number>>;
   /** EA-09: the branch the alert belongs to (from its rule); absent = shop-wide. */
   readonly branchId?: string;
-  /**
-   * OB-435 · OB-439: the headline and detail in English and Tamil, for the Operations page's language button (an alert
-   * recorded before OB-435 reads in English in both). The runbook is the operator's reviewed procedure, in English.
-   */
-  readonly words?: { readonly en: { readonly headline: string; readonly detail: string }; readonly ta: { readonly headline: string; readonly detail: string } };
 }
 
 // Worst first, so an operator sees the lane-stopping incident before the stale-price one.
@@ -85,8 +79,6 @@ export function recommendOperationsRunbooks(alerts: readonly AlertForAdvice[]): 
   const findings: OperationsFinding[] = [];
   for (const { alert, state } of alerts) {
     if (state === 'acknowledged') continue; // a named owner is already on it (M35-FR-04)
-    const shown = alertDisplay(alert);
-    const said = (l: 'en' | 'ta') => ({ headline: l === 'en' ? `${alert.component} is ${alert.status}: ${alert.detail}` : `${shown.ta.component} — ${shown.ta.status}: ${shown.ta.detail}`, detail: shown[l].detail });
     findings.push({
       findingId: `ops-runbook:${alert.alertId}`,
       alertId: alert.alertId,
@@ -104,7 +96,6 @@ export function recommendOperationsRunbooks(alerts: readonly AlertForAdvice[]): 
         ...(state === 'escalated' ? { escalated: 'yes — past its deadline, unacknowledged' } : {}),
       },
       ...(alert.branchId === undefined ? {} : { branchId: alert.branchId }),
-      words: { en: said('en'), ta: said('ta') },
     });
   }
   return findings.sort((a, b) =>

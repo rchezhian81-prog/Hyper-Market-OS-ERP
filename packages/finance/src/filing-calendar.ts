@@ -19,7 +19,6 @@
 // Pure: `today` is supplied (the shop's own date), there is no clock.
 
 import { parseMonthlyPeriod, parseFinancialYear } from './gst-period';
-import { told, type AlertText } from '../../ops/src/alert-words';
 
 export type GstReturnType = 'GSTR1' | 'GSTR3B' | 'GSTR9' | 'GSTR9C';
 export const GST_RETURN_TYPES: readonly GstReturnType[] = ['GSTR1', 'GSTR3B', 'GSTR9', 'GSTR9C'];
@@ -87,8 +86,6 @@ export interface CalendarEntry {
   /** True when this entry must reach the owner as an exception (near the bar, or barred). */
   readonly ownerException: boolean;
   readonly detail: string;
-  /** OB-435: for an owner exception, `detail` structured (rendered in English into `detail`, and in Tamil). */
-  readonly text?: AlertText;
 }
 
 export interface FilingCalendar {
@@ -127,7 +124,7 @@ export function judgeFiling(input: {
   }
   const daysToTimeBar = daysBetween(input.today, timeBarDate);
   if (input.today > timeBarDate) {
-    return { ...base, warning: 'time_barred', daysOverdue: daysBetween(dueDate, input.today), ownerException: true, ...told('gst.timeBarred', { type: input.type, period: input.period, bar: timeBarDate }) };
+    return { ...base, warning: 'time_barred', daysOverdue: daysBetween(dueDate, input.today), ownerException: true, detail: `${input.type} ${input.period} was never filed and is now permanently time-barred (the bar was ${timeBarDate}) — it can no longer be filed` };
   }
   if (input.today <= periodEnds) {
     return { ...base, warning: 'period_not_ended', daysToTimeBar, ownerException: false, detail: `${input.type} ${input.period}: the period has not ended; due ${dueDate}` };
@@ -137,7 +134,7 @@ export function judgeFiling(input: {
   }
   const daysOverdue = daysBetween(dueDate, input.today);
   if (input.nearBarDays !== null && daysToTimeBar <= input.nearBarDays) {
-    return { ...base, warning: 'near_time_bar', daysOverdue, daysToTimeBar, ownerException: true, ...told('gst.nearBar', { type: input.type, period: input.period, bar: timeBarDate, days: daysToTimeBar }) };
+    return { ...base, warning: 'near_time_bar', daysOverdue, daysToTimeBar, ownerException: true, detail: `${input.type} ${input.period} is NOT filed and will be permanently barred on ${timeBarDate} — ${daysToTimeBar} day(s) left` };
   }
   return { ...base, warning: 'overdue', daysOverdue, daysToTimeBar, ownerException: false, detail: `${input.type} ${input.period} is ${daysOverdue} day(s) overdue (due ${dueDate}); it is barred for ever on ${timeBarDate}` };
 }

@@ -14,7 +14,6 @@
 
 import { PAYSLIP_PARTICULARS, PAYSLIP_PARTICULAR_KEYS, particularsListConfirmed, type ParticularsList, type PayslipParticularKey } from './legal-settings';
 import type { Payslip } from './payslip';
-import { told, type AlertText } from '../../ops/src/alert-words';
 
 /** Refused: a listed particular the payslip does not carry ("payslip particular missing: <name>"). */
 export class PayslipParticularMissing extends Error {
@@ -115,8 +114,6 @@ export interface PayslipLateException {
   readonly kind: 'not_issued_by_pay_date' | 'issued_after_pay_date';
   readonly issuedOn?: string;
   readonly detail: string;
-  /** OB-435: `detail`, structured (rendered in English into `detail`, and in Tamil for a Tamil reader). */
-  readonly text?: AlertText;
 }
 
 /** The store-local calendar date of an instant (India is UTC+05:30 = 330 minutes). */
@@ -130,11 +127,11 @@ export function payslipsLateForPayDate(input: { readonly expected: readonly Expe
   const out: PayslipLateException[] = [];
   for (const e of input.expected) {
     if (e.issuedAt === undefined) {
-      if (input.today > e.payDate) out.push({ employeeId: e.employeeId, period: e.period, payDate: e.payDate, kind: 'not_issued_by_pay_date', ...told('payslip.notIssued', { employee: e.employeeId, period: e.period, payDate: e.payDate }) });
+      if (input.today > e.payDate) out.push({ employeeId: e.employeeId, period: e.period, payDate: e.payDate, kind: 'not_issued_by_pay_date', detail: `${e.employeeId}'s payslip for ${e.period} was not issued by the pay date ${e.payDate}` });
       continue;
     }
     const on = localDate(e.issuedAt, input.utcOffsetMinutes);
-    if (on > e.payDate) out.push({ employeeId: e.employeeId, period: e.period, payDate: e.payDate, kind: 'issued_after_pay_date', issuedOn: on, ...told('payslip.issuedLate', { employee: e.employeeId, period: e.period, on, payDate: e.payDate }) });
+    if (on > e.payDate) out.push({ employeeId: e.employeeId, period: e.period, payDate: e.payDate, kind: 'issued_after_pay_date', issuedOn: on, detail: `${e.employeeId}'s payslip for ${e.period} was issued on ${on}, after the pay date ${e.payDate}` });
   }
   return out.sort((a, b) => a.payDate.localeCompare(b.payDate) || a.employeeId.localeCompare(b.employeeId));
 }

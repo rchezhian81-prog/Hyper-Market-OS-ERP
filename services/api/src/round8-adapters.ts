@@ -14,7 +14,7 @@ import type { RaisedException } from '../../pos/src/loss-prevention';
 import type { PlacedOrder, OrderTransition } from '../../orders/src/index';
 import type { FavouriteRecord, ShoppingListVersion, ReturnRequestRecord } from '../../orders/src/storefront-self';
 import type { CompetitorObservation } from '../../pricing/src/competitor-prices';
-import { STREAM, streamName, notificationQueueAdapter, effectiveGrants, rosterStoreAdapter, orgStructureAdapter, staffLanguageOf } from './adapters';
+import { STREAM, streamName, notificationQueueAdapter, effectiveGrants, rosterStoreAdapter, orgStructureAdapter } from './adapters';
 import type { BreachAlert, DutyManagers } from '../../orders/src/exception-ownership';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from './roles';
@@ -115,8 +115,6 @@ export function breachAlertAdapter(input: { readonly store: EventStore; readonly
   const queue = notificationQueueAdapter({ store: input.store, now: input.now });
   return {
     dutyManagersFor: (tenantId: string, orderId: string, at: string): Promise<DutyManagers> => dutyManagersFor(input.store, input.now, tenantId, orderId, at),
-    // OB-439: a delivery-exception text message goes in the recipient's own language (their staff record; English unless Tamil).
-    alertLanguageOf: (tenantId: string, userId: string): Promise<'en' | 'ta'> => staffLanguageOf(input.store, input.now, tenantId, userId),
     enqueueBreachAlert: async (tenantId: string, a: BreachAlert): Promise<boolean> => {
       if ((await queue.events!(tenantId)).some((e) => e.id === a.id && e.change === 'enqueued')) return false;
       await queue.record(tenantId, {
