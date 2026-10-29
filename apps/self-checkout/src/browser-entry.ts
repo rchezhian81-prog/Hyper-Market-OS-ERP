@@ -7,6 +7,7 @@
 //
 // Nothing here talks to head office. Every call goes to this lane's own store computer on loopback, as the till's do.
 
+import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
 import '../../pos/src/browser-entry';
 import { laneBase, lanePortFrom, DEFAULT_LANE_PORT } from '../../pos/src/browser-entry';
 import { posRolloutOf } from '../../pos/src/lane-rollout';
@@ -55,3 +56,7 @@ if (w !== undefined && w.posSession !== undefined) {
     },
   });
 }
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

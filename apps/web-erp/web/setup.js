@@ -7,6 +7,8 @@
 // queues offline, and shows loading / saved / queued / failed / conflict. Completeness recomputes
 // after a save. No setup value is a secret; none is logged. No prompt/confirm/alert.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 
 const WORDS = {
@@ -304,7 +306,7 @@ function itemRow(item) {
   what.append(question, value);
   if (item.changedBy) {
     const audit = document.createElement('small');
-    audit.textContent = `${t('changedBy')} ${item.changedBy}${item.changedAt ? ` · ${new Date(item.changedAt).toLocaleString()}` : ''}`;
+    audit.textContent = `${t('changedBy')} ${item.changedBy}${item.changedAt ? ` · ${shopWhen(item.changedAt)}` : ''}`;
     what.append(audit);
   }
 
@@ -436,7 +438,7 @@ function prefixRow(r) {
   what.append(title, now);
   if (r.setBy) {
     const who = document.createElement('small');
-    who.textContent = `${pw('setBy')} ${r.setBy}${r.setAt ? ` · ${new Date(r.setAt).toLocaleString()}` : ''}${r.earlier.length > 0 ? ` · ${pw('earlier')}: ${r.earlier.join(', ')}` : ''}`;
+    who.textContent = `${pw('setBy')} ${r.setBy}${r.setAt ? ` · ${shopWhen(r.setAt)}` : ''}${r.earlier.length > 0 ? ` · ${pw('earlier')}: ${r.earlier.join(', ')}` : ''}`;
     what.append(who);
   }
   if (r.why) {

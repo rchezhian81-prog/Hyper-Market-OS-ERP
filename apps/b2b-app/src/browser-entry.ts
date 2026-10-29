@@ -23,6 +23,7 @@
 // The last-served page may cache so the portal opens offline and says so (the stale strip), but the figures are
 // never treated as current from a cache — they are re-read live on load and Refresh.
 
+import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
 import {
   createB2BPortalSession, B2B_DOCUMENT_KINDS, AGE_BUCKETS,
   type B2BPortalSession, type B2BPortalData, type B2BPortalPorts, type B2BFeed, type FeedRefusal,
@@ -169,3 +170,7 @@ const browserWindow = (globalThis as { window?: B2BWindow }).window;
 if (browserWindow !== undefined) {
   attachB2BPortal(browserWindow);
 }
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

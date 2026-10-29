@@ -7,6 +7,8 @@
 // network or the reader's attention. APPROVE and RESOLVE A SHORTFALL go through the session's online ports. No
 // prompt/confirm/alert; no timer.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -117,7 +119,7 @@ function indentNode(r) {
   const facts = document.createElement('div');
   facts.className = 'facts';
   const fact = (text) => { const s = document.createElement('span'); s.textContent = text; facts.append(s); };
-  if (r.requestedAt) fact(new Date(r.requestedAt).toLocaleString());
+  if (r.requestedAt) fact(shopWhen(r.requestedAt));
   fact(`${t('requestedByLabel')}: ${r.requestedBy}` + (r.ownAsk ? ` — ${t('approveOwnAsk')}` : ''));
   if (r.approvedBy) fact(`${t('approvedByLabel')}: ${r.approvedBy}`);
   if (r.reason) fact(r.reason);
@@ -373,7 +375,7 @@ function paint() {
   el('whoami').textContent = window.indentsData?.userId ?? '';
   el('lang').textContent = t('langName');
   el('refresh').textContent = t('refresh');
-  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${new Date(view.asOf).toLocaleString()}` : '';
+  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${shopWhen(view.asOf)}` : '';
 
   const state = el('state');
   if (view.indents.length === 0) {

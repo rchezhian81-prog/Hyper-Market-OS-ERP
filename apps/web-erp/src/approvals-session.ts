@@ -20,6 +20,7 @@
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
+import { shopTimeOf, shopWallClockOf } from '../../../packages/calendar/src/shop-day';
 
 // ── the shapes the routes hand over (shared with the import screen, which asks for approvals) ────────────────────
 
@@ -399,11 +400,10 @@ export const rupees = (minor: number): string =>
 /** A time as the shop reads it: India time, DD-MM-YYYY HH:MM — the same words on every screen and in every test. */
 export function shopTime(iso: string | null | undefined): string {
   if (iso === null || iso === undefined || iso.trim() === '') return '';
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return iso;
-  const d = new Date(ms + 330 * 60_000); // IST is UTC+05:30, with no daylight saving
-  const two = (n: number): string => String(n).padStart(2, '0');
-  return `${two(d.getUTCDate())}-${two(d.getUTCMonth() + 1)}-${d.getUTCFullYear()} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}`;
+  // OB-607: in the zone the store computer served this page (else the shop default) — no fixed offset, never the device's.
+  const w = shopWallClockOf(iso);
+  if (w === '') return iso;
+  return `${w.slice(8, 10)}-${w.slice(5, 7)}-${w.slice(0, 4)} ${shopTimeOf(iso)}`;
 }
 
 /** "contentFingerprint" → "Content fingerprint": a key nobody translated still reads as words, never as code. */

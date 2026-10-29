@@ -12,7 +12,8 @@ const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(na
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, cls) { const b = document.createElement('button'); b.type = 'button'; if (cls) b.className = cls; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
-const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : d.toLocaleString([], { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }); };
+// OB-607: a slot's day and time are the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const hhmm = (iso) => window.sreShopDay?.dateTimeOf(iso) || iso;
 let day = null;
 
 const ACTS = { arrived: ['arrived', 'truck'], completed: ['completed', 'check'], no_show: ['noShow', 'x'], cancelled: ['cancel', 'rotate-ccw'] };

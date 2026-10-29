@@ -4,6 +4,8 @@
 // in head office's own words. Nothing is written on open: the register is a GET; every write is a person's click.
 // Every word has a Tamil twin and follows the one language toggle.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const who = window.supplierBillsData && typeof window.supplierBillsData === 'object' ? window.supplierBillsData : null;
 const session = window.supplierBillsSession ?? null;
@@ -411,7 +413,7 @@ function renderWaiting() {
     const head = document.createElement('div');
     head.className = 'head';
     head.append(cell('span', r.number || r.grnId, 'what'), cell('span', t('cnkPill'), 'pill waiting'));
-    const when = r.receivedAt ? new Date(r.receivedAt).toLocaleString() : '';
+    const when = r.receivedAt ? shopWhen(r.receivedAt) : '';
     const facts = cell('div', [r.poId === null ? t('noOrder') : `${t('order')} ${r.poId}`, `${t('store')} ${r.warehouseId}`, `${t('receivedBy')} ${r.receivedBy}`, when].filter((x) => x !== '').join(' · '), 'facts');
     const lines = cell('div', r.waiting.map((w) => `${w.productId} × ${steps(w.inStockMinor, w.uom)} ${t('inStock')} — ${t(`because_${w.because}`)}`).join(' · '), 'facts');
     li.append(head, facts, lines);

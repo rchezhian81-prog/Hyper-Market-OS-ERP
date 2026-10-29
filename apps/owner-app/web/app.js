@@ -24,6 +24,8 @@
 //
 // Nothing here fetches. What the phone was last told is all there is (§31).
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 
 /** Exact minor units in, rupees out. The model never sees a float. */
@@ -592,8 +594,9 @@ function paintStale() {
   if (!strip) return;
   strip.hidden = at === undefined;
   if (at === undefined) return;
-  // The device's own local time, because the person reading it is standing in the shop.
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+  // OB-607: the SHOP's clock (the zone the store computer served), never this device's own — a phone or laptop set to
+  // another zone read the shop's 01:00 as its own evening.
+  strip.textContent = `${t('staleShell')} ${shopWhen(at)}`;
 }
 paintStale();
 el('lang').addEventListener('click', paintStale);

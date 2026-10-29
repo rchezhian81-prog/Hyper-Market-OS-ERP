@@ -184,7 +184,7 @@ describe('the store computers session', () => {
     const out = await createStoreComputersSession({ viewer: HO, fetch: ho.fetch, ...keys }).load();
     const zones = (out as { value: Board }).value.zones;
     expect(zones.map((z) => [z.storeId, z.verdict, z.machineTimeZone, z.shopTimeZoneFrom, z.stale])).toEqual([['S1', 'differs', 'UTC', 'shop_default', true], ['S2', 'in_step', 'Asia/Kolkata', 'store_pack', false]]);
-    expect(zoneWords('en', zones[0]!)).toBe('NOT the shop\'s zone — ask IT to set it to Asia/Kolkata. Bills are still dated by the shop\'s zone. Old news: this store computer has not reported since 2026-10-26 05:00.');
+    expect(zoneWords('en', zones[0]!)).toBe('NOT the shop\'s zone — ask IT to set it to Asia/Kolkata. Bills are still dated by the shop\'s zone. Old news: this store computer has not reported since 2026-10-26 10:30.'); // OB-607: 05:00 UTC is 10:30 at that shop
     expect(zoneWords('en', zones[1]!)).toBe('Keeps the shop\'s zone.');
     expect(zoneWords('ta', zones[0]!)).toMatch(/[஀-௿]/);
     expect(ho.sent.every((x) => x.method === 'GET')).toBe(true);

@@ -7,6 +7,8 @@
 // off. No prompt/confirm/alert.
 
 // OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -321,7 +323,7 @@ function paintBoardAge() {
   const note = el('board-asof');
   if (board === undefined || window.productionSession === undefined) { note.hidden = true; return; }
   note.hidden = false;
-  note.textContent = board === null ? t('boardNotKnown') : `${t('boardAsOf')} ${new Date(board.asAt).toLocaleString()}`;
+  note.textContent = board === null ? t('boardNotKnown') : `${t('boardAsOf')} ${shopWhen(board.asAt)}`;
 }
 paint();
 void syncSaved();

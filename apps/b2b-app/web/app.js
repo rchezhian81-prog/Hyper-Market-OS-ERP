@@ -7,6 +7,8 @@
 // (GETs). Offline the screen keeps its view and the stale strip says the page is what it was last shown. No
 // prompt/confirm/alert.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -197,7 +199,7 @@ async function refresh() {
   const data = await api.refresh();
   if (data) {
     session = api.present(data);
-    el('asof').textContent = `${t('asOfLabel')} ${new Date(data.asAt).toLocaleString()}`;
+    el('asof').textContent = `${t('asOfLabel')} ${shopWhen(data.asAt)}`;
     paint();
   }
 }
@@ -211,7 +213,7 @@ function paintStale() {
   if (!strip) return;
   strip.hidden = at === undefined;
   if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+  strip.textContent = `${t('staleShell')} ${shopWhen(at)}`;
 }
 paintStale();
 el('lang').addEventListener('click', paintStale);

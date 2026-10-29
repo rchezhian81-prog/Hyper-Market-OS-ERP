@@ -21,6 +21,10 @@
 // Nothing here calls the network. The sale path goes to this till's own disk over loopback
 // (ADR-0004), and the service worker caches the shell so the lane opens during an outage.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
+// OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 
 /** Exact minor units in, rupees out. The model never sees a float. */
@@ -905,7 +909,7 @@ async function untilTheBoxAnswers(again, words, entry) {
   const paint = () => {
     setText('checking-title', t('checkingTitle'));
     setText('checking-text', words());
-    setText('checking-asked', askedAt === null ? '' : `${t('checkingAsked')} ${askedAt.toLocaleTimeString()}`);
+    setText('checking-asked', askedAt === null ? '' : `${t('checkingAsked')} ${shopTimeOf(askedAt)}`);
     setText('checking-now', t('checkNow'));
   };
   paint();
@@ -1315,9 +1319,9 @@ let box = { asked: false, reachable: false, status: null };
 /** OB-403: the store computer's hold on new offers as the till last applied it (the page booted with the box's). */
 let offerHoldCutoff = (window.posLane && window.posLane.offerHold && window.posLane.offerHold.held === true && typeof window.posLane.offerHold.cutoffAt === 'string') ? window.posLane.offerHold.cutoffAt : null;
 
-/** The local clock face for a box time — the person reading it is standing in the shop. */
+/** A box time on the SHOP's clock (OB-607: its zone as the box served it, never this till device's own), HH:MM. */
 function clock(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return shopTimeOf(iso);
 }
 
 /** The connection state the tested session records, from the box's answer (the contracts' vocabulary). */
@@ -1461,7 +1465,7 @@ el('void').addEventListener('click', async () => {
 let heldCount = 0;
 const heldBasketOption = (b) => ({
   value: b.billId,
-  label: `${b.firstItem}${b.lineCount > 1 ? ` +${b.lineCount - 1}` : ''} · ${inr(b.valueMinor)} · ${new Date(b.heldAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+  label: `${b.firstItem}${b.lineCount > 1 ? ` +${b.lineCount - 1}` : ''} · ${inr(b.valueMinor)} · ${shopTimeOf(b.heldAt)}`,
 });
 
 /**
@@ -2024,7 +2028,7 @@ async function splitPayment(payable) {
     if (!wallet.ok) { tell(t('read'), wallet.laneMessage, STOP); wallet = null; }
     else {
       tell(t('member'), t('splitWallet').replace('{last4}', wallet.last4 || session.loyaltyMemberLast4()).replace('{points}', String(wallet.points))
-        .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? new Date(wallet.asOf).toLocaleString() : '—')
+        .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? shopWhen(wallet.asOf) : '—')
         // OB-295: the member's tier multiplier from the box's copy — "not set" until the owner sets tiers.
         + ' ' + tierWords(wallet.tier), STOP);
     }
@@ -3050,8 +3054,9 @@ function paintStale() {
   if (!strip) return;
   strip.hidden = at === undefined;
   if (at === undefined) return;
-  // The device's own local time, because the person reading it is standing in the shop.
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+  // OB-607: the SHOP's clock (the zone the store computer served), never this device's own — a phone or laptop set to
+  // another zone read the shop's 01:00 as its own evening.
+  strip.textContent = `${t('staleShell')} ${shopWhen(at)}`;
 }
 paintStale();
 el('lang').addEventListener('click', paintStale);
