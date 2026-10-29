@@ -5,10 +5,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## OB-550 (29 October 2026): alerts and alert text messages back to English only
+## OB-553 (29 October 2026): alerts and alert text messages back to English only
 - **What changed:**
   - The owner chose B. Alert messages and alert text messages are English only, and the staff-record English/Tamil choice is withdrawn.
-  - #833 (OB-435 and OB-439) is reverted as one compensating commit. Records already written stay (append-only), and the decision rows OB-435 to OB-440 are kept, marked superseded by OB-550.
+  - #833 (OB-435 and OB-439) is reverted as one compensating commit. Records already written stay (append-only), and the decision rows OB-435 to OB-440 are kept, marked superseded by OB-553.
   - Screens keep their English/Tamil button for everything else.
 - **Tests:** the alert suites, the guardrails and the whole default suite are run before the pull request; counts are in the PR.
 - **Next:** none for alerts. A future change back to Tamil alerts would be a new owner decision; the reverted code is in git history (#833).
@@ -16,6 +16,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner decisions needed:** none.
 
 ## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-549
+## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-551
 
 **What happened**
 - An independent check of round 7 (OB-500 to OB-518) against the owner's wording found five places where a rule could be walked around, and two places where the build went beyond the decision. #830 was merged before the fixes were ready, so they come in this follow-up.
@@ -39,9 +40,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - Shelf tags: one tag per label on a label printer (the default), or a sheet to cut; a tag that does not fit is refused by name; English-and-Tamil tags print their field labels in English only (OB-549), measured to fit 70 × 38 mm.
 - Quotations: rung up only at the store they were made for; freed at once when nothing could be rung.
 
-**Still needs the owner (no change made)**
-- When no minimum margin is set, a product's lowest allowed price at the till equals its buying cost: what should the floor be then?
-- A line lowered by a quotation is flagged at head office as a cut beyond a manager's limit: should it count against the limit?
+**The two open questions — decided 29 October 2026 (OB-550, OB-551)**
+- OB-550: with no minimum margin set, the lowest allowed price at the till stays at the buying cost (as built; a test pins it).
+- OB-551: a line lowered by a quotation that head office's own record backs no longer counts against a manager's price-cut limit. A line naming a quotation head office cannot back is still raised; the floor and the MRP still hold.
+- OB-552 (29 October 2026, option 1): a quotation on a product with no known floor still raises "price cut without a floor, not by the owner" at head office, although the owner already approved that quotation when it was made (OB-532). The owner chose to keep this finding as extra caution; nothing changes.
+
+**What is next:** the owner's in-store checks of the follow-ups (shelf tags at 70 × 38 mm, a quotation with nothing ringable, a night shift).
+**Blocked / needs an owner decision:** none from this round.
 ---
 
 ## OB-435 and OB-439 (28 October 2026): every alert in English and Tamil; a text message in its reader's language
