@@ -303,6 +303,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // scheduled reports and exports. Gated on the SAME permission the thresholds read checks (`owner.alert.read`).
   { id: 'owner-alerts', label: 'Owner alerts and schedules', labelTa: 'உரிமையாளர் எச்சரிக்கைகளும் திட்டங்களும்', path: '/owner-alerts', requires: 'owner.alert.read', group: 'Reports' },
   // ── OB-288 lane 4 · P2 — end
+  // OB-608 (owner, 29 Oct 2026) · P-03 · P-08 · M29-FR-03 · M25-FR-01: what head office found on till bills (critical and
+  // material findings, `GET /v1/sales/exceptions`) and the attendance marks of a shop day that do not pair up — both kept at
+  // head office and, until this page, seen on no screen. Read only. Opened by either word; each section shows only for its own.
+  { id: 'findings', label: 'Bill findings and attendance flags', labelTa: 'பில் கண்டறிதல்களும் வருகை எச்சரிக்கைகளும்', path: '/findings', requires: 'pos.exception.read', alsoOpenedWith: ['workforce.roster.read'], group: 'Reports' },
   // ── end R4 Lane 3 ──
   // AI control — the kill switch, agents, the proposal queue, cost (A01–A10 governance). Gated on the budget read
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /

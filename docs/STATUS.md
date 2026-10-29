@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-608 (29 October 2026): a page for head office's bill findings and attendance flags
+
+**What changed**
+- **Why:** while the in-store checks were being prepared, two things head office keeps turned out to be on no screen: the findings it raises on till bills (for example, a price cut beyond a manager's limit, or a recalled product sold) and the attendance marks that do not pair up (a forgotten clock-out, including on a night shift). The owner chose to add a page (option 1, OB-608).
+- **New office page, "Bill findings and attendance flags" (Reports menu):**
+  - **Bill findings:** every open critical and material finding, critical first. Each shows the bill number, the product, the money difference, head office's own sentence and what to do. Informational notes (such as a price a quotation promised, OB-551) are shown only as a count.
+  - **Attendance flags:** for the chosen shop day (today by default), the marks that do not pair up, with the person's name and the time on the shop's clock. Head office judges a night shift across midnight.
+  - The owner and the store manager see both sections. The page opens for anyone with either permission and shows only the section they may see. Head office re-checks every read. Nothing is written.
+  - The words around the findings are in English and Tamil; head office's own sentences stay in English (OB-553).
+  - The store computer serves it like every other head-office page (OB-380). With head office out of reach it says so, never shows a copy.
+- **In-store checklist:** checks 3 and 4 can now be confirmed on this page.
+
+**Tests that ran (this box, synthetic data)**
+- New unit test against head office's real routes: 7 tests (two seen failing on purpose with the logic broken).
+- New browser test through a real store computer: 2 tests. The manager sees the findings in order and Ravi's unpaired "out", in English and Tamil, and nothing is written; a cashier is refused.
+- The browser test of every office page ("says when head office is down"): now 60 pages, all pass.
+- Guardrails (150 files), the menu and page tests, type check, lint; the full default suite (results in the pull request).
+
+**Seen, not changed**
+- `GET /v1/sales/exceptions` is not limited to the reader's own stores (it reads the whole company). With one store this changes nothing; a second store would need it narrowed.
+
+**What is next**
+- The owner's in-store checks, now including checks 3 and 4 on this page.
+
+**Blocked:** nothing. **Owner decisions needed:** none.
+
+---
+
 ## OB-553 (29 October 2026): alerts and alert text messages back to English only
 - **What changed:**
   - The owner chose B. Alert messages and alert text messages are English only, and the staff-record English/Tamil choice is withdrawn.

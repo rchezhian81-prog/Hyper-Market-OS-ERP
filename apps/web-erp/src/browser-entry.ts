@@ -112,6 +112,7 @@ import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
 import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring'; // M28-FR-02 · M28-FR-03 · M29-FR-02
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
+import { wireFindings } from './findings-browser-wiring'; // OB-608
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7316,4 +7317,6 @@ if (browserWindow !== undefined) {
   wireShelfTagsAndQuotations(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 8 (R8-C): Staff certificates (OB-522).
   wireCertificates(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // OB-608: Bill findings and attendance flags.
+  wireFindings(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
 }

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Bill findings and attendance flags</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Bill findings and attendance flags (OB-608 · P-03 · P-08 · M29-FR-03 · M25-FR-01 · M05-FR-02). A THIN CLIENT over two
+      head-office routes no screen reached before: every open critical and material finding head office raised on a till bill
+      (GET /v1/sales/exceptions), and the attendance marks of one shop day that do not pair up (GET
+      /v1/hr/workforce/attendance-marks?date=), judged by head office when asked. A read only: nothing is written, nothing is
+      decided here. Its session is apps/web-erp/src/findings-session.ts. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 0 1 220px; }
+      .counts { font-variant-numeric: tabular-nums; font-weight: 700; margin: 0; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      ul.rows > li.tone-error { border-left-color: var(--error); } ul.rows > li.tone-degraded { border-left-color: var(--degraded); }
+      .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+      .chip { font-size: 13px; font-weight: 700; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Bill findings and attendance flags</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Bill findings and attendance flags</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="sales" hidden aria-labelledby="sales-h">
+        <h3 id="sales-h"></h3>
+        <p class="meta" id="sales-lead"></p>
+        <button id="s-reload" type="button" class="quiet"><span id="s-reload-text"></span></button>
+        <p class="counts" id="s-counts"></p>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="s-rows"></ul>
+      </section>
+      <section id="attendance" hidden aria-labelledby="att-h">
+        <h3 id="att-h"></h3>
+        <p class="meta" id="att-lead"></p>
+        <form class="row-form" id="a-ask">
+          <label for="a-day"><span id="a-day-l"></span><input id="a-day" type="date" /></label>
+          <button id="a-show" type="submit"><span id="a-show-text"></span></button>
+        </form>
+        <p class="counts" id="a-counts"></p>
+        <p class="status" id="a-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="a-rows"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./findings.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
