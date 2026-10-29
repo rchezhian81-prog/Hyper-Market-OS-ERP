@@ -127,6 +127,8 @@ describe.skipIf(!HAVE_BROWSER)('the production screen at the counter with the li
     await page.waitForSelector('#result:not([hidden])');
     expect((await page.textContent('#result-text')) ?? '').toContain('Run saved on this screen');
     await page.waitForFunction(() => (globalThis as unknown as ProdWindow).productionTasks!.view('en').saved.some((w) => w.kind === 'run' && w.state === 'handed_to_box'), undefined, { timeout: 10_000 });
+    // The list is redrawn after the state changes — wait for its words, never read them the same instant.
+    await waitText(page, '#saved-rows', 'With the store computer');
     expect((await page.textContent('#saved-rows')) ?? '').toContain('With the store computer');
 
     // WEIGH — more out than in is refused before it is saved; then a good weigh is saved.

@@ -25,6 +25,8 @@ hands off to the next; you do not need to know which of the other runbooks exist
    own dates on. Pairs with the one-lane pilot plan.
 6. **`backup-and-recovery.md`** — the safety net: take a backup before anything you care about, and
    prove a restore actually works (not assumed).
+7. **`pilot-buy-and-sign-checklist.md`** — the 41 roadmap rows that need something from outside
+   (equipment, contracts, people, real data), in the order to start them, with who and "done when".
 
 **Real data (only after the owner's written "Option 2 GO"):** `real-data-load.md` — creating a second,
 real tenant beside the demo (`pnpm run tenant:bootstrap`) and loading the sealed, cleaned extract into it

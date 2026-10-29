@@ -5,6 +5,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Store pilot checklist (29 October 2026): what to buy, sign and arrange
+- **What changed:** new `docs/runbooks/pilot-buy-and-sign-checklist.md` (listed in the runbooks index). It puts the 41 roadmap rows that need something from outside (equipment, contracts, people, real data) in the order to start them, with who does each and how to know it is done. Every row ID is kept and all 41 are listed; nothing new is required. Also removed a duplicated heading in this file.
+- **Tests:** docs only; guardrails run before the pull request.
+- **Next:** the owner works down Step 1 (the long-lead items: equipment, payment gateway, penetration test, live servers, off-site backup, CA). OB-607 (times of day on the shop's clock) is being built in another session.
+- **Blocked:** nothing in software.
+- **Owner decisions needed:** none.
+
 ## OB-553 (29 October 2026): alerts and alert text messages back to English only
 - **What changed:**
   - The owner chose B. Alert messages and alert text messages are English only, and the staff-record English/Tamil choice is withdrawn.
@@ -15,7 +22,6 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Blocked:** nothing.
 - **Owner decisions needed:** none.
 
-## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-549
 ## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-551
 
 **What happened**
