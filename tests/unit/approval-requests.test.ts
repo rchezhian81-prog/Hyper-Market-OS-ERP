@@ -248,6 +248,6 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(47); // OB-503: regulated_product_publish · R9-A OB-532: quotation_floor_not_known · R7 OB-512: mrp_replacement · OB-407: floor_device_review · D03-FR-03 · OB-404: rebate_claim · FG-4: role_scope_change · OB-360: b2b_credit_limit · OB-288 commercial desks: b2b_contract, b2b_credit_override · OB-288 till side: hsn_class_change (OB-347) · OB-288 P2: tax_rate_change, promotion_funding · OB-288 lane 1 · P1: approval_rule_change, org_structure_change, config_change, flag_change, department_scope_change + FUL-14 substitution_above_cap + PA-04 branch_transition + D14 r10 partner_webhook_subscription + r26 OB-97 store_computer_replaced + R2 C20 OB-165 posh_committee_change + F1 L2 scale_stamp_change · OB-288 P4: tenant_closure
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(49); // R11-A OB-602: quotation_below_floor_owner_quoted · R10-A OB-542: quotation_floor_not_known_owner_quoted · OB-503: regulated_product_publish · R9-A OB-532: quotation_floor_not_known · R7 OB-512: mrp_replacement · and the earlier kinds listed in the history of this line
   });
 });

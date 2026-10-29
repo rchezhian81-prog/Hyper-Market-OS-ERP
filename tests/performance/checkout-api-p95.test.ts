@@ -3,6 +3,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { sellOnline, onlineReady } from '../support/sell-online';
 import { TARGETS, againstBudget, type Sample } from './harness';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * §32 "Customer checkout API — p95 ≤2 s excluding payment provider — APM/load test" (QG-05; OB-288 gates lane).
@@ -43,7 +44,7 @@ describe(`customer checkout API — p95 ≤ ${TARGETS.customerCheckoutMs} ms exc
     await h.seedOwner(T, OWNER);
     await h.enableFeature(T, 'customer_app');
     for (const c of CUSTOMERS) await h.provisionRole(T, c, 'customer');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = shopDateIn(new Date().toISOString()); // the shop's own date — from 18:30 UTC it is already tomorrow there
     const ok = async (path: string, body: unknown, key: string) => { const r = await post(path, OWNER, key, body); expect(r.status, `${path}: ${JSON.stringify(r.body)}`).toBeLessThan(300); };
     await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
     for (const p of PRODUCTS) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -12,6 +12,7 @@ import { startRealCloud, type RealCloud } from '../support/real-store';
 import { approvedBody } from '../support/approval-request';
 import { STORE_RULES } from '../support/store-rules';
 import type { ApiHarness } from '../support/api-harness';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **D06-FR-05 (markdown ladder) evidence — an approved markdown is the price the SERVED till charges, in a real browser,
@@ -56,7 +57,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
   let cloud: RealCloud;
   const dirs: string[] = [];
   const stops: (() => Promise<void>)[] = [];
-  const today = new Date().toISOString().slice(0, 10);
+  // The shop's own date, at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case
+  // is proven whenever this runs: the shelf price and the pack are dated by the shop's day, never the UTC date.
+  const EVENING = theEvening();
+  const today = EVENING.shopDate;
 
   const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown) =>
     cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: randomUUID() }) });
@@ -77,6 +81,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
   };
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'pos'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
@@ -97,7 +102,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
     }), 'shelf price');
     await ok(call('POST', `/v1/catalogue/products/${PRODUCT}/barcodes/${BARCODE}`, OWNER, { kind: 'ean' }), 'barcode');
   }, 180_000);
-  afterAll(async () => { await browser?.close(); await cloud?.stop(); });
+  afterAll(async () => { await browser?.close(); await cloud?.stop(); vi.useRealTimers(); });
   afterEach(async () => {
     for (const stop of stops.splice(0).reverse()) await stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
@@ -119,6 +124,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
   /** Open the served till, sign the cashier in, scan the barcode as a scanner does; the total the till asks. */
   async function ringOne(edge: EdgeProcess, expectVersion: number): Promise<{ total: string; line: string; errors: string[] }> {
     const context = await browser.newContext();
+    await pinThePageClock(context);
     try {
       const page: Page = await context.newPage();
       const errors: string[] = [];

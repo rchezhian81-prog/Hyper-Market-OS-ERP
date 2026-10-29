@@ -30,7 +30,7 @@ import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
 import { navigationPayload, type NavigationPayload, asSignedInPerson, permissionsOf } from './screen-navigation';
-import { ERP_NAVIGATION } from '../../../apps/web-erp/src/navigation';
+import { ERP_NAVIGATION, permissionsOpening } from '../../../apps/web-erp/src/navigation';
 import {
   SIGN_OUT_BAR, notAllowedPage, officeCookie, officeTokenOf, readSignInForm, safeNext, signInPage, signedInGlobals,
   type OfficeCheck, type OfficeSignIn,
@@ -337,6 +337,21 @@ export const OPEN_SCREENS: readonly ScreenName[] = Object.freeze(['pos', ...CUST
 export function permissionForScreen(screen: ScreenName): string | null {
   const item = ERP_NAVIGATION.find((i) => screenOfPath(i.path.split('?')[0] ?? i.path) === screen);
   return item === undefined ? null : item.requires;
+}
+
+/**
+ * R10-A · OB-543: every word that opens a screen — its menu item's `requires` and any narrower `alsoOpenedWith` (the
+ * accountant's `inventory.goodsreceipt.read` for the goods-receipt screen) — or null when no item opens it.
+ */
+export function permissionsForScreen(screen: ScreenName): readonly string[] | null {
+  const item = ERP_NAVIGATION.find((i) => screenOfPath(i.path.split('?')[0] ?? i.path) === screen);
+  return item === undefined ? null : permissionsOpening(item);
+}
+
+/** The person holds a word that opens this screen (or no menu item gates it). */
+function mayOpenScreen(screen: ScreenName, held: readonly string[] | null): boolean {
+  const needs = permissionsForScreen(screen);
+  return needs === null || needs.some((p) => (held ?? []).includes(p));
 }
 
 /** The office gate the screen socket asks (OB-259): edge/store-edge/src/office-sign-in.ts `OfficeSessions`. */
@@ -704,8 +719,7 @@ export function startScreenServer(input: {
           page(res, 401, signInPage({ next: safeNext(req.url), problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
           return;
         }
-        const needs = permissionForScreen(route.screen);
-        if (needs !== null && !(permissionsOf(session.userId, snap.pack) ?? []).includes(needs)) {
+        if (!mayOpenScreen(route.screen, permissionsOf(session.userId, snap.pack))) { // R10-A · OB-543: any word that opens it
           const menu = navigationPayload({ screen: route.screen, pack: snap.pack, payload: { userId: session.userId }, screenOf: screenOfPath });
           page(res, 403, notAllowedPage({ displayName: session.displayName, links: menu.groups.flatMap((g) => g.items.map((i) => ({ path: i.path, label: i.label }))) }));
           return;
@@ -728,8 +742,7 @@ export function startScreenServer(input: {
           return;
         }
         if (officeUser === null) {
-          const needs = permissionForScreen(route.screen);
-          if (needs !== null && !(permissionsOf(ho.userId, snap.pack) ?? []).includes(needs)) {
+          if (!mayOpenScreen(route.screen, permissionsOf(ho.userId, snap.pack))) { // R10-A · OB-543
             const menu = navigationPayload({ screen: route.screen, pack: snap.pack, payload: { userId: ho.userId }, screenOf: screenOfPath });
             page(res, 403, notAllowedPage({ displayName: ho.userId, links: menu.groups.flatMap((g) => g.items.map((i) => ({ path: i.path, label: i.label }))) }));
             return;

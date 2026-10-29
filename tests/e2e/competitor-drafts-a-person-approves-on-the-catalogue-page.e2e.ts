@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { STORE_RULES } from '../support/store-rules';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **D-18 (R4, OB-216) — competitor prices draft a price change on the Products and prices page; a person approves it**, in a
@@ -23,7 +24,10 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['competitor', 'drafts', 'e2e', 'signing', 'key'].join('-').padEnd(48, '0');
 const CASHIER = 'u-cash';
-const TODAY = new Date().toISOString().slice(0, 10);
+// The shop's own date, at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+// proven whenever this runs: the price is dated by the shop's day, never the UTC date.
+const EVENING = theEvening();
+const TODAY = EVENING.shopDate;
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000 - 60_000).toISOString();
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor drafts a person approves on the catalogue page, on the production API (D-18)', () => {
@@ -34,6 +38,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor
   const shelf = async (id: string): Promise<number> => ((await shop.cloud().request({ method: 'GET', path: `/v1/prices/list/${id}/resolve?storeId=store-1&at=${encodeURIComponent(new Date().toISOString())}`, userId: OWNER })).body as { priceMinor: number }).priceMinor;
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
@@ -58,10 +63,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 300_000);
-  afterAll(async () => { await browser?.close(); await shop?.stop(); });
+  afterAll(async () => { await browser?.close(); await shop?.stop(); vi.useRealTimers(); });
 
   const open = async (who: string) => {
     const context = await browser.newContext();
+    await pinThePageClock(context);
     await shop.signIn(context, who);
     const page = await context.newPage();
     const writes: string[] = []; const errors: string[] = [];

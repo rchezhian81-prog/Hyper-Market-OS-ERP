@@ -22,7 +22,7 @@
 
 import { createHash } from 'node:crypto';
 import type { BoundStoreGuard, Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, recordsInScope } from '../../kernel/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { judgeHandheldBuild, readHandheldBuild, withoutHandheldBuild, type HandheldBuild, type HandheldBuildFinding } from '../../../packages/platform-admin/src/handheld-build';
@@ -126,7 +126,11 @@ export function handheldBuildRoutes(input: { readonly store: EventStore | undefi
       api: 'API-10', method: 'GET', path: HANDHELD_BUILD_EXCEPTIONS_PATH,
       permission: HANDHELD_BUILD_READ_PERMISSION,
       handler: async (ctx) => {
-        const all = findings === undefined ? [] : await findings.list(ctx.tenantId);
+        // OB-601 (owner, 28 Oct 2026): only the branches the caller may see — their scope for this route's word, from their
+        // grants (never the request's). `?branchId=` narrows to one of them; a branch they may not see is refused by name
+        // (403 scope_not_held), never silently emptied. Company-wide callers see every store unless they name one.
+        const asked = typeof ctx.query['branchId'] === 'string' && ctx.query['branchId'].trim() !== '' ? ctx.query['branchId'].trim() : undefined;
+        const all = recordsInScope(ctx, findings === undefined ? [] : await findings.list(ctx.tenantId), (e) => e.store, asked);
         const material = all.filter((e) => e.severity === 'material');
         return {
           status: 200,
@@ -134,7 +138,7 @@ export function handheldBuildRoutes(input: { readonly store: EventStore | undefi
             // Control by exception (P-03): the barred-build work is listed; "no build reported" is counted (a device older
             // than the rule cannot report one), with the records behind the count kept on the register.
             material, informational: all.length - material.length, informationalExceptions: all.filter((e) => e.severity === 'informational'),
-            asAt: input.now(),
+            asAt: input.now(), branchId: asked ?? null,
           },
         };
       },

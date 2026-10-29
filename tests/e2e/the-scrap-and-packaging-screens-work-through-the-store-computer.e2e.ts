@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -9,7 +9,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
-import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **The Scrap and recycling page (M28-FR-02) and the Packaging and crates page (M28-FR-03) in a real browser, served by the
@@ -31,7 +31,10 @@ const HAVE_BROWSER = existsSync(CHROMIUM);
 const KEY = ['salvage', 'screen', 'box', 'signing', 'key'].join('-').padEnd(48, '0');
 const TENANT = randomUUID();
 const OWNER = 'u-owner'; const MANAGER = 'u-mgr';
-const TODAY = shopDateIn(new Date().toISOString());
+// The shop's own date, at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+// proven whenever this runs: the review's window is the shop's today, and the disposal recorded "now" must fall in it.
+const EVENING = theEvening();
+const TODAY = EVENING.shopDate;
 
 describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store computer (M28-FR-02 · M28-FR-03)', () => {
   let browser: Browser;
@@ -41,6 +44,7 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
   const stops: (() => Promise<void>)[] = [];
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
     ho = apiHarness();
@@ -63,12 +67,13 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
       EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_SCREEN_TRUST_FORWARDED_USER: '1',
     }, () => {}))!;
   }, 240_000);
-  afterAll(async () => { await browser?.close(); await edge?.stop(); if (dir !== undefined) await rm(dir, { recursive: true, force: true }); });
+  afterAll(async () => { await browser?.close(); await edge?.stop(); if (dir !== undefined) await rm(dir, { recursive: true, force: true }); vi.useRealTimers(); });
   afterEach(async () => { for (const stop of stops.splice(0).reverse()) await stop(); });
 
   /** A page on the box's origin as `who`; head office's API carried on that origin, as that person. */
   const open = async (who: string, path: string): Promise<{ page: Page; errors: string[] }> => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', extraHTTPHeaders: { 'x-sre-user': who } });
+    await pinThePageClock(context);
     stops.push(() => context.close());
     await context.route('**/v1/**', async (route) => {
       const req = route.request();

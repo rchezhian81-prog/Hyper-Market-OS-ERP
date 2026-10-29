@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -7,6 +7,9 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { testModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { seedOnlineShop, listShopOnline, callsFor, OWNER, OTHER_CUSTOMER, STORE, type ShopCalls } from '../support/online-shop';
 import { startCustomerShop, type CustomerShop } from './lib/customer-shop';
+import { pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { shiftDate } from '../../packages/calendar/src/trading-day';
 import { AI_SUGGESTION_NOTICE } from '../../services/ai/src/control';
 import { HELP_ANSWER_NOTICE } from '../../services/orders/src/storefront-account';
 
@@ -39,10 +42,13 @@ const MARGIN_OK = { description: 'offer (synthetic)', normalPrice: { minor: 6_00
 describe.skipIf(!existsSync(CHROMIUM))('the customer app prices with the till\'s offers and keeps my account (OB-288 wave 3), in a real browser', () => {
   let browser: Browser;
   beforeAll(async () => {
+    // The journey runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+    // proven whenever this runs.
+    pinTheEveningClock();
     execFileSync('node', ['scripts/build-app.mjs', 'customer-app'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   }, 120_000);
-  afterAll(async () => { await browser?.close(); });
+  afterAll(async () => { await browser?.close(); vi.useRealTimers(); });
 
   it('camera barcode · voice switch · the shop\'s price with offer and coupon, paid exactly · substitution · AI notice · delivery code slot · A05 · repeat orders · addresses · paying · occasions · AI opt-in · Tamil', async () => {
     const provider = testModePaymentProvider();
@@ -54,7 +60,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app prices with the till\'s
     await h.enableFeature(T, 'loyalty');
     await listShopOnline(c);
     await ok(req('PUT', '/v1/serviceability/delivery-service', { storeLocation: STORE_AT, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 }), 'delivery service');
-    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+    const tomorrow = shiftDate(shopDateIn(new Date().toISOString()), 1); // the shop's tomorrow
     const slot = ((await ok(req('GET', '/v1/serviceability/delivery-service', undefined, OWNER, { day: tomorrow }), 'slots')).body as { slots: { startsAt: string; endsAt: string }[] }).slots[0]!;
     await ok(req('POST', '/v1/promotions/milk-10/definition', { kind: 'percent_off', percentBps: 1_000, productIds: ['MILK'], startsAt: day(-1), endsAt: day(30) }), 'define milk-10');
     await ok(req('POST', '/v1/promotions/milk-10/launch', MARGIN_OK), 'launch milk-10');
@@ -68,6 +74,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app prices with the till\'s
     });
     const store: CustomerShop = await startCustomerShop({ h, tenantId: T, subject: SUBJECT, shopData });
     const context = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation', 'camera'] });
+    await pinThePageClock(context);
     const page: Page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -145,6 +152,10 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app prices with the till\'s
       // ── My account (before paying, while the basket is full): repeat order, address, paying, occasion, AI opt-in ──
       await page.click('#tab-account');
       await page.locator('#repeat-orders-empty:not([hidden])').waitFor({ timeout: 10_000 });
+      // The first day offered is the SHOP's today — at 19:30 UTC the phone (a browser on UTC) is still on the shop's
+      // yesterday, and head office refuses a repeat order that starts before the shop's today.
+      expect(await page.inputValue('#repeat-start')).toBe(shopDateIn(new Date().toISOString()));
+      expect(await page.getAttribute('#repeat-start', 'min')).toBe(shopDateIn(new Date().toISOString()));
       await page.check('#repeat-every input[value="weekdays"]');
       await page.click('#repeat-save');
       expect(await text('#repeat-say')).toBe('Choose at least one day. Nothing was sent.');

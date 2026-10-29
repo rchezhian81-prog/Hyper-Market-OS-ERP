@@ -353,8 +353,9 @@ el('ask-person').addEventListener('click', async () => {
 
 // ── My account ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-// R1c (M01-FR-02): this device's own date (it stands in the shop), never the UTC date of the moment.
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// M01-FR-02: the SHOP's today (its own zone, from the bundle's shop clock) — never the phone's own date, which on a phone
+// set to another zone (or a browser on UTC from 18:30 UTC) is still the shop's yesterday, and never the UTC date.
+const today = () => shop().commerce.todayAtShop();
 function paintAccountWords() {
   for (const [id, k] of [['account-title', 'accountTitle'], ['repeat-orders-title', 'repeatTitle'], ['repeat-orders-lead', 'repeatLead'], ['repeat-days-label', 'daysLabel'], ['repeat-start-label', 'startLabel'], ['repeat-time-label', 'timeLabel'],
     ['addresses-title', 'addressesTitle'], ['addresses-lead', 'addressesLead'], ['address-label-label', 'addressLabel'], ['address-landmark-label', 'landmarkLabel'], ['paying-title', 'payingTitle'],

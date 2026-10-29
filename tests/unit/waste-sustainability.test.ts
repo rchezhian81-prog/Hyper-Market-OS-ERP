@@ -36,6 +36,17 @@ const scrap = (over: Partial<ScrapSale>): ScrapSale => ({
 describe('scrap proceeds are made to EXIST and posted (M28-FR-02)', () => {
   const period = { branchId: 'b-main', from: '2026-07-01', to: '2026-07-31' };
 
+  it('places each sale on the SHOP\'s day, never its UTC date: 19:30 UTC on 28 Oct is 29 Oct in the shop (and 00:30 shop time on 1 Aug is still July in UTC)', () => {
+    const evening = scrap({ at: '2026-10-28T19:30:00Z' });
+    expect(reviewScrap({ branchId: 'b-main', from: '2026-10-29', to: '2026-10-29', sales: [evening] }).sales).toBe(1);
+    expect(reviewScrap({ branchId: 'b-main', from: '2026-10-28', to: '2026-10-28', sales: [evening] }).sales).toBe(0);
+    const firstOfAugust = scrap({ at: '2026-07-31T19:00:00Z' });
+    expect(reviewScrap({ ...period, sales: [firstOfAugust] }).sales).toBe(0);
+    expect(reviewScrap({ branchId: 'b-main', from: '2026-08-01', to: '2026-08-31', sales: [firstOfAugust] }).sales).toBe(1);
+    // A shop told another zone reads in that zone.
+    expect(reviewScrap({ branchId: 'b-main', from: '2026-10-28', to: '2026-10-28', sales: [evening], timeZone: 'UTC' }).sales).toBe(1);
+  });
+
   it('accepts a properly evidenced, posted sale with nothing to say', () => {
     const review = reviewScrap({ ...period, sales: [scrap({})] });
     expect(review.findings).toEqual([]);

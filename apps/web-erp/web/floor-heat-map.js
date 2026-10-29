@@ -18,11 +18,11 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['m-sales', 'indian-rupee'], ['m-margin', 'percent'], ['show', 'layout-grid']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 
-// The reading window: this month so far, until the person chooses other days.
-const today = new Date();
-const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-$('from').value = iso(new Date(today.getFullYear(), today.getMonth(), 1));
-$('to').value = iso(today);
+// The reading window: this month so far — the SHOP's today and month (never the browser's own date, which is still
+// yesterday in the shop from 18:30 UTC on a browser set to UTC) — until the person chooses other days.
+const today = api === null ? '' : api.todayAtShop();
+$('from').value = today === '' ? '' : `${today.slice(0, 7)}-01`;
+$('to').value = today;
 
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function say(out) { $('page-status').className = 'status err'; $('page-status').textContent = api.outcomeWords(lang, out); }

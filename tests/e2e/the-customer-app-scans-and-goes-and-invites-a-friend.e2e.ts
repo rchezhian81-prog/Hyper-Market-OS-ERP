@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -7,6 +7,9 @@ import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { testModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { seedOnlineShop, listShopOnline, callsFor, deliveredOrder, OWNER, OTHER_CUSTOMER, STORE, type ShopCalls } from '../support/online-shop';
 import { startCustomerShop, type CustomerShop } from './lib/customer-shop';
+import { pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { shiftDate } from '../../packages/calendar/src/trading-day';
 
 /**
  * **OB-350 scan-and-go and OB-351 invite a friend — the customer app, in a real browser, on the real API (in memory).**
@@ -31,10 +34,13 @@ const NEARBY = { latitude: 11.02, longitude: 76.96 };
 describe.skipIf(!existsSync(CHROMIUM))('the customer app scans and goes, and invites a friend (OB-350 · OB-351), in a real browser', () => {
   let browser: Browser;
   beforeAll(async () => {
+    // The journey runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+    // proven whenever this runs.
+    pinTheEveningClock();
     execFileSync('node', ['scripts/build-app.mjs', 'customer-app'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   }, 120_000);
-  afterAll(async () => { await browser?.close(); });
+  afterAll(async () => { await browser?.close(); vi.useRealTimers(); });
 
   it('invite a friend: code, "not set", own code refused, a friend waiting then earned · scan and go: camera + typed, refusals, two totals, the till code, which till took it · Tamil', async () => {
     const provider = testModePaymentProvider();
@@ -47,9 +53,11 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app scans and goes, and inv
     await listShopOnline(c);
     await h.provisionRole(T, 'u-box', 'store_computer', [STORE]);
     for (const [id, code] of [['MILK', MILK_GTIN], ['BROOM', BROOM_GTIN]] as const) await ok(req('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, { kind: 'ean' }), `barcode ${id}`);
-    await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: new Date().toISOString().slice(0, 10) }), 'pack with barcodes');
+    // The pack is as of the SHOP's today — its prices start then (from 18:30 UTC the UTC date is the shop's yesterday,
+    // when no price is yet in force and the pack would be empty).
+    await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: shopDateIn(new Date().toISOString()) }), 'pack with barcodes');
     await ok(req('PUT', '/v1/serviceability/delivery-service', { storeLocation: STORE_AT, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 }), 'delivery service');
-    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+    const tomorrow = shiftDate(shopDateIn(new Date().toISOString()), 1); // the shop's tomorrow
     const slot = ((await ok(req('GET', '/v1/serviceability/delivery-service', undefined, OWNER, { day: tomorrow }), 'slots')).body as { slots: { startsAt: string; endsAt: string }[] }).slots[0]!;
     const pack = (await ok(req('GET', '/v1/catalogue/pack'), 'pack')).body as { snapshot: { version: number; products: { productId: string; name: string; unitPriceMinor: number; baseUom: string }[] } };
     const shopData = async () => ({
@@ -63,6 +71,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app scans and goes, and inv
     });
     const store: CustomerShop = await startCustomerShop({ h, tenantId: T, subject: SUBJECT, shopData });
     const context = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation', 'camera'] });
+    await pinThePageClock(context);
     const page: Page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

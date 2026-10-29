@@ -32,6 +32,7 @@
 import type { Money } from '../../contracts/src/money';
 import type { PackHierarchy } from '../../product/src/pack';
 import { fromBaseUnits, unitsPerLevel } from '../../product/src/pack';
+import { manufactureDateVerdict } from './capture';
 
 // --- dock scheduling ------------------------------------------------------------
 
@@ -265,8 +266,8 @@ export function receiveScan(input: {
   const quantityMinor = command.scannedQuantity * unitsPerScan;
 
   // 3b. B4 · OB-504: a packed product's batch is not received without its month and year of manufacture.
-  const mfg = command.manufacturedOn?.trim() ?? '';
-  if ((input.packagedProductIds ?? []).includes(resolution.productId) && !/^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/.test(mfg)) {
+  //     The one shared rule (capture.ts `manufactureDateVerdict`); a packed product with an unreadable date is refused too.
+  if ((input.packagedProductIds ?? []).includes(resolution.productId) && manufactureDateVerdict(true, command.manufacturedOn) !== 'ok') {
     return {
       commandId: command.commandId,
       outcome: 'manufacture_date_required',

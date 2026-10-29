@@ -71,6 +71,59 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 12 (29 October 2026): the shop's date between midnight and 05:30; decision OB-606
+
+**What happened**
+- From 18:30 to 24:00 UTC the shop's date (India time) is a day ahead of the UTC date. The pull request checks for rounds 10 and 11 failed in that window, and so did main. Seventeen tests used the UTC date where the shop's date is meant: three integration tests, one speed test and thirteen browser test files.
+- **Four real faults found and fixed:** the waste-analytics and floor-heat-map pages opened on yesterday after midnight; a customer's repeat order offered yesterday as its first day and was then refused; head office's scrap review hid disposals recorded after midnight.
+- Every fixed browser test now runs at a pinned 01:00 shop time, so the case is proven at any hour; a new guardrail stops UTC-date shortcuts in product code.
+- **OB-606 (owner):** the screens that still take the date from the device itself move to the shop's clock next.
+
+**Tests that ran (this box, synthetic data)**
+- The CI basic test step in the evening window after the fixes: 14,515 passed, 0 failed. The builder's full unit + integration on PostgreSQL in the window: 15,635 passed, 1 failed (the QG-10 release snapshot colliding with other writers on the shared database; passed alone). Full browser suite in the window: 669 of 669 passed. Guardrails: 1,859 passed.
+
+**What is next:** OB-606. **Blocked / needs the owner:** nothing new.
+
+---
+
+## Round 11 (28 October 2026): the gaps from the independent check closed; OB-602, OB-604 and OB-605 built
+
+**What changed**
+- **Van deliveries at the back door (DSD):** the handheld asks for the batch (scanned), expiry and month of manufacture; packed goods need the month (OB-504) and batch-tracked goods need a batch and expiry (OB-605), offline on the handheld and again at head office. One product in several batches is booked into stock separately per batch (OB-604).
+- **Out-of-date till:** it refuses a quotation number before anything is used up; the quotation stays open (OB-501).
+- **Quotations:** the owner's own quotation below the margin floor is approved by the store's accountant (OB-602).
+- **Proved by new tests, unchanged:** a held basket can be recalled on an out-of-date till (OB-603); put-away works on an out-of-date handheld (OB-536); a store manager cannot record scrap (OB-515).
+- A manager-approved cut whose quantity changes is refused by the other session's round 7 check (#831, OB-500).
+- Rounds 10 and 11 were rebuilt together on main after #831 and #833 merged.
+
+**Tests that ran (this box, synthetic data, rounds 10 and 11 together on main)**
+- Unit + guardrails + integration + contract + security + migration on real PostgreSQL: 15,608 passed, 22 skipped, 1 failed under load (the QG-10 release-snapshot test on PostgreSQL); it passed 3 of 3 when run alone. It also failed under load in round 9, so it is recorded as a follow-up to make it robust. Full browser suite: 669 of 669 passed. Type check clean.
+- Not run here: real hardware, staff UAT, live providers, a real identity server (CI runs that leg).
+
+**What is next:** nothing open in software from the rounds 6–11 checks. **Blocked / needs the owner:** nothing new.
+
+---
+
+## Round 10 (28 October 2026): the owner's decisions OB-540 to OB-543 and OB-600 to OB-601 built; OB-602 and OB-603 decided
+
+**What changed**
+- **Devices page:** a section lists handheld work done on a withdrawn or too-old app version, in English and Tamil, and shows only this store's work (OB-540, OB-601). It says "Not known", "head office could not be reached" or "no head-office sign-in" instead of an empty list (P-08).
+- **Quotations:** a quotation the owner makes himself on a product with no known cost floor is approved by that store's accountant; everyone else's still needs the owner; the quoter never approves his own (OB-542).
+- **Supplier bills:** the accountant opens the goods-receipt screen through a narrow read permission (one list, no stock levels or valuation) and matches the bill there; the receiver is still refused (OB-543, OB-600).
+- Kept as built: OB-541 (the Rota asks for the office PIN again).
+- **Records:** this session's decisions now number from OB-600, after both working sessions used OB-540 to OB-543.
+- **Independent check of rounds 6 to 10:** 711 tests run (708 passed, 3 skipped for want of a real identity server). It found three gaps (the van-delivery door takes no batch or manufacture date; a manager-approved cut grows when the quantity changes; an out-of-date till ties up a quotation) and two missing proofs. The quantity gap is fixed by the other session's open PR #831; the rest are being built in round 11 with the owner's answers OB-602 and OB-603.
+
+**Tests that ran (this box, synthetic data)**
+- Unit + guardrails + integration + contract + security + migration on real PostgreSQL: 15,511 passed, 22 skipped (real identity server / store-volume runs), 0 failed. Type check clean.
+
+**What is next**
+- Round 11: manufacture date and batch at the van-delivery door (OB-504); an out-of-date till refuses a quotation before converting it (OB-501); the accountant approves the owner's own below-floor quotation (OB-602); tests for OB-603, OB-536 and OB-515.
+
+**Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 9 (28 October 2026): the owner's decisions OB-532 to OB-539 built; OB-540 to OB-543 decided
 
 **What changed**

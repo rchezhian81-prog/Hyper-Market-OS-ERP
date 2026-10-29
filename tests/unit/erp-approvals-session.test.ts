@@ -148,6 +148,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       promotion_launch: { en: APPROVALS_COPY.en.kindPromotionLaunch, ta: APPROVALS_COPY.ta.kindPromotionLaunch },
       quotation_below_floor: { en: APPROVALS_COPY.en.kindQuotationBelowFloor, ta: APPROVALS_COPY.ta.kindQuotationBelowFloor },
       quotation_floor_not_known: { en: APPROVALS_COPY.en.kindQuotationFloorNotKnown, ta: APPROVALS_COPY.ta.kindQuotationFloorNotKnown }, // R9-A · OB-532
+      quotation_floor_not_known_owner_quoted: { en: APPROVALS_COPY.en.kindQuotationFloorNotKnownOwnerQuoted, ta: APPROVALS_COPY.ta.kindQuotationFloorNotKnownOwnerQuoted }, // R10-A · OB-542
+      quotation_below_floor_owner_quoted: { en: APPROVALS_COPY.en.kindQuotationBelowFloorOwnerQuoted, ta: APPROVALS_COPY.ta.kindQuotationBelowFloorOwnerQuoted }, // R11-A · OB-602
       period_close: { en: 'Close and sign an accounting month', ta: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்' },
       period_reopen: { en: 'Reopen a signed accounting month', ta: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்' },
       concession_contract: { en: 'Approve a concession contract', ta: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்' },

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -11,6 +11,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '../support/p3-purchase';
 import { sentWithApproval, decide } from '../support/approval-request';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **The Supplier rebates page in a real browser, served by the store computer, over head office's real routes (QG-02 ·
@@ -31,7 +32,10 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const HAVE_BROWSER = existsSync(CHROMIUM);
 const KEY = ['rebates', 'screen', 'box', 'signing', 'key'].join('-').padEnd(48, '0');
 const TENANT = randomUUID();
-const TODAY = new Date().toISOString().slice(0, 10);
+// The shop's own date, at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+// proven whenever this runs: the bill, the accrual and "Sent on" are the shop's days, never the UTC date.
+const EVENING = theEvening();
+const TODAY = EVENING.shopDate;
 
 describe.skipIf(!HAVE_BROWSER)('the Supplier rebates page through the store computer (QG-02 · OB-404)', () => {
   let browser: Browser;
@@ -41,6 +45,7 @@ describe.skipIf(!HAVE_BROWSER)('the Supplier rebates page through the store comp
   const stops: (() => Promise<void>)[] = [];
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
     ho = apiHarness();
@@ -74,12 +79,13 @@ describe.skipIf(!HAVE_BROWSER)('the Supplier rebates page through the store comp
       EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_SCREEN_TRUST_FORWARDED_USER: '1',
     }, () => {}))!;
   }, 240_000);
-  afterAll(async () => { await browser?.close(); await edge?.stop(); if (dir !== undefined) await rm(dir, { recursive: true, force: true }); });
+  afterAll(async () => { await browser?.close(); await edge?.stop(); if (dir !== undefined) await rm(dir, { recursive: true, force: true }); vi.useRealTimers(); });
   afterEach(async () => { for (const stop of stops.splice(0).reverse()) await stop(); });
 
   /** A page on the box's origin as `who`; head office's API carried on that origin, as that person. */
   const open = async (who: string, path: string): Promise<{ page: Page; errors: string[] }> => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', extraHTTPHeaders: { 'x-sre-user': who } });
+    await pinThePageClock(context);
     stops.push(() => context.close());
     await context.route('**/v1/**', async (route) => {
       const req = route.request();

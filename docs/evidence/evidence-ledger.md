@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1925. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1932. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 97 · Integration (in-process) 104 · Real PostgreSQL 102 · Browser (stub cloud) 91 · Browser (connected) 71 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 42 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 39 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -65,7 +65,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M36 | PARTIALLY_WIRED | 15 | 30 | 6 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D01 | PARTIALLY_WIRED | 3 | 10 | 3 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D02 | PARTIALLY_WIRED | 4 | 9 | 3 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D03 | PARTIALLY_WIRED | 12 | 17 | 9 | 8 | 4 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D03 | PARTIALLY_WIRED | 11 | 17 | 9 | 8 | 4 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D04 | PARTIALLY_WIRED | 11 | 18 | 10 | 7 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D05 | PARTIALLY_WIRED | 2 | 14 | 7 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D06 | PARTIALLY_WIRED | 5 | 8 | 1 | 3 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -76,7 +76,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | D11 | PARTIALLY_WIRED | 2 | 12 | 5 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D12 | PARTIALLY_WIRED | 2 | 11 | 5 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D13 | PARTIALLY_WIRED | 6 | 12 | 10 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D14 | PARTIALLY_WIRED | 9 | 12 | 5 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D14 | PARTIALLY_WIRED | 8 | 12 | 5 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A01 | PARTIALLY_WIRED | 11 | 13 | 9 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A02 | PARTIALLY_WIRED | 7 | 10 | 5 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A03 | WIRED | 7 | 10 | 5 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |

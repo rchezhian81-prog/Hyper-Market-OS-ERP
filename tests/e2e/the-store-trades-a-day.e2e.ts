@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -9,8 +9,10 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { prepareTillBox, signInThroughScreen, pinOf } from '../support/till-operator';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
-import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
+import { tradingDayIn } from '../../packages/calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../packages/calendar/src/shop-clock';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **The store trades a day in a REAL browser, on the REAL cloud, over REAL PostgreSQL, through the REAL box (SP-9-i · W10).**
@@ -73,12 +75,16 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
   };
 
   beforeAll(async () => {
+    // The whole day runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+    // proven whenever this runs.
+    const evening = pinTheEveningClock(theEvening());
     execFileSync('node', ['scripts/build-app.mjs', 'pos'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store
     for (const [who, role] of [[CASHIER, 'cashier'], [MANAGER, 'store_manager'], [ACCT, 'accountant']] as const) await cloud.grant(who, role);
-    const today = new Date().toISOString().slice(0, 10);
+    // The shop's own date: head office refuses a price dated before the shop's today (from 18:30 UTC the UTC date is).
+    const today = evening.shopDate;
     expect((await call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', OWNER, { rateBps: 500 }, 'tax-1006')).status).toBeLessThan(300);
     expect((await call('POST', `/v1/catalogue/products/${PRODUCT}/publish`, OWNER, {
       product: { sku: 'RICE-5KG', name: 'Ponni rice 5kg', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' },
@@ -91,10 +97,10 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     expect((await call('POST', '/v1/catalogue/pack', OWNER, { storeId: STORE, asOf: today }, 'pack-1')).status).toBe(201);
     expect((await call('POST', '/v1/inventory/movements', OWNER, {
       movementId: 'mv-opening', productId: PRODUCT, locationId: STORE, kind: 'received', quantityMinor: 10, uom: 'ea',
-      occurredAt: `${today}T00:30:00.000Z`, enteredBy: OWNER, unitCostMinor: COST,
+      occurredAt: new Date(Date.now() - 2 * 3_600_000).toISOString(), enteredBy: OWNER, unitCostMinor: COST, // on hand before the day's first sale
     }, 'mv-opening')).status).toBe(202);
   }, 180_000);
-  afterAll(async () => { await browser?.close(); await cloud?.stop(); });
+  afterAll(async () => { await browser?.close(); await cloud?.stop(); vi.useRealTimers(); });
   afterEach(async () => {
     for (const stop of stops.splice(0).reverse()) await stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
@@ -148,6 +154,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
 
     const context = await browser.newContext();
+    await pinThePageClock(context);
     stops.push(() => context.close());
     const page = await context.newPage();
     const errors: string[] = [];
@@ -175,8 +182,11 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     expect(await shown(page)).toMatchObject({ title: 'Float taken — the till is open' });
     // Dated NOW, like the float and the close the shell itself dates: the box counts the cash a shift took between its float
     // and its close, so a sale stamped ahead of the clock would simply not be in the drawer it expects.
-    const soldAt = new Date().toISOString();
-    const tradingDay = tradingDateOf(soldAt, makeTradingDayRule('00:00'));
+    // The till's own clock — the one that dated the float (the test process's pinned clock can run a little behind it).
+    const soldAt = await page.evaluate(() => new Date().toISOString());
+    // The SHOP's trading day, as the box and the till date it (their pack's zone, never this machine's — which is UTC here,
+    // and from 18:30 UTC still on the shop's previous day).
+    const tradingDay = tradingDayIn(soldAt, DEFAULT_SHOP_CALENDAR);
     await page.keyboard.type(BARCODE);
     await page.keyboard.press('Enter');
     await page.waitForSelector('#lines tr');

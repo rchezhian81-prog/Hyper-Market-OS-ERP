@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * D-24 (R4, signed OB-227 · OB-220) — the Store events page, in a real browser, on the PRODUCTION API over real
@@ -17,7 +19,9 @@ import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-s
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['events', 'e2e', 'key'].join('-').padEnd(48, '0');
-const today = (): string => new Date().toISOString().slice(0, 10);
+// The shop's own date: head office's forecast runs from the shop's tomorrow, and the history is the shop's trading days —
+// from 18:30 UTC the UTC date is still the shop's yesterday.
+const today = (): string => shopDateIn(new Date().toISOString());
 const day = (n: number): string => new Date(Date.parse(`${today()}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store events page (D-24) on the production API, in a real browser', () => {
@@ -25,6 +29,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
   let shop: InboxShop;
 
   beforeAll(async () => {
+    // The journey runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+    // proven whenever this runs.
+    pinTheEveningClock();
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
@@ -47,10 +54,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
   afterAll(async () => {
     await browser?.close();
     await shop?.stop();
+    vi.useRealTimers();
   });
 
   it('the manager records Pongal → "manager\'s estimate" → the forecast names it, with the correction and its back-test → weather off → withdrawn', async () => {
     const context = await browser.newContext();
+    await pinThePageClock(context);
     const errors: string[] = [];
     try {
       await shop.signIn(context, MGR, 'br-1');
