@@ -272,7 +272,7 @@ describe('labels, quality release and repacking (M11-FR-03)', () => {
     const printed = renderLabel(buildPackLabel(label(), CAFE));
     expect(printed[1]).toBe('Cheese sandwich');
     expect(printed).toContain('Net 180 g');
-    expect(printed).toContain('USE BY 2026-08-03 18:00');
+    expect(printed).toContain('USE BY 2026-08-03 23:30'); // OB-607: 18:00 UTC on the shop's clock
     expect(printed).toContain('Contains: Cereals containing gluten, Milk');
     expect(printed[0]).toBe('[●] VEG');
     expect(printed).toContain('Unit price ₹500.00 per kg');

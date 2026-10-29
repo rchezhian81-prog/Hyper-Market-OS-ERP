@@ -85,7 +85,12 @@ const isCertification = (v: unknown): v is Certification =>
 const isHoursRow = (v: unknown): v is { employeeId: string; hours: number } =>
   isObj(v) && isStr(v['employeeId']) && typeof v['hours'] === 'number' && Number.isFinite(v['hours']) && (v['hours'] as number) >= 0;
 
-export function workforceRoutes(): readonly Route[] {
+/** OB-607: the tenant's shop calendar — each roster gap names its hour in that zone. Absent → the shop default, never UTC. */
+export interface WorkforceRouteDeps {
+  readonly calendar?: (tenantId: string) => Promise<{ readonly timeZone: string }> | { readonly timeZone: string };
+}
+
+export function workforceRoutes(deps: WorkforceRouteDeps = {}): readonly Route[] {
   return [
     {
       // The named gaps in a proposed roster. Body: { shifts: ShiftRequirement[], assignments: ShiftAssignment[],
@@ -109,6 +114,7 @@ export function workforceRoutes(): readonly Route[] {
           shifts: b['shifts'] as ShiftRequirement[],
           assignments: b['assignments'] as ShiftAssignment[],
           employees: b['employees'] as Employee[],
+          ...(deps.calendar === undefined ? {} : { timeZone: (await deps.calendar(ctx.tenantId)).timeZone }),
         });
         // "Nobody rostered" (assigned === 0) is the unstaffed-critical exception — surfaced separately so a
         // manager sees the shifts that cannot open at all, not just the ones that are a person short (P-03).

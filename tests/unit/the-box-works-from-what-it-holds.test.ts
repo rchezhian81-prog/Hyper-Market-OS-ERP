@@ -46,8 +46,15 @@ describe('the counter label, rendered on the box (M11-FR-03 offline)', () => {
     const l = counterLabelFor(input(), { runId: 'r-cake', netQuantity: '450 g', packerDetails: 'SRE Hyper Market, Tamil Nadu', allergens: ['cereals_gluten', 'eggs'], vegClass: 'non_veg' });
     expect(l).toMatchObject({ ok: true, batchId: 'CAKE-1', useBy: '2026-10-25T06:00:00.000Z', productName: 'Plum cake', priceMinor: 12_000, barcode: '8901234567890', from: 'head_office_board' });
     // B9 · B3 · B24: the mark and the eight-group allergens in words, the unit sale price, and the print sizes it was judged at.
-    expect(l.ok && l.lines).toEqual(expect.arrayContaining(['[▲] NON-VEG', 'Plum cake', 'Batch CAKE-1', 'USE BY 2026-10-25 06:00', 'Contains: Cereals containing gluten, Eggs', 'INR 120.00', 'Unit price ₹266.67 per kg']));
+    expect(l.ok && l.lines).toEqual(expect.arrayContaining(['[▲] NON-VEG', 'Plum cake', 'Batch CAKE-1', 'USE BY 2026-10-25 11:30' /* OB-607: 06:00 UTC on the shop's clock */, 'Contains: Cereals containing gluten, Eggs', 'INR 120.00', 'Unit price ₹266.67 per kg']));
     expect(l).toMatchObject({ vegClass: 'non_veg', unitPrice: { unitPriceMinor: 266_67, per: 'kg' }, print: { templateId: 'counter-58x40', minHeightMm: 1, letterHeightMm: 2 } });
+  });
+
+  it('OB-607: prints the USE BY on the shop\'s clock in the zone of the signed pack — offline, never the UTC clock of the run', () => {
+    const inDubai = input({ pack: readPack({ version: 1, policies: { tradingDayCutoff: '02:00', storeId: 'S1', branchId: 'S1', timeZone: 'Asia/Dubai' } }, NOW) });
+    const l = counterLabelFor(inDubai, { runId: 'r-cake', netQuantity: '450 g', packerDetails: 'SRE Hyper Market, Tamil Nadu', allergens: ['cereals_gluten', 'eggs'], vegClass: 'non_veg' });
+    expect(l.ok && l.lines).toContain('USE BY 2026-10-25 10:00');
+    expect(l).toMatchObject({ useBy: '2026-10-25T06:00:00.000Z' }); // what is kept is the instant, unchanged
   });
 
   it('prices a weighed pack at the price per kilo × its weight, with the weight in a barcode the till itself reads back', () => {

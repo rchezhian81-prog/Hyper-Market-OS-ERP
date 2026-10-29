@@ -105,6 +105,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 15 (29 October 2026): typed times read as shop time (OB-608); labels and rota messages on the shop's clock (OB-607); promotion days (OB-610)
+
+**What changed**
+- **Typed date-times (OB-608):** dock booking, CCTV clip, competitor "seen at", month-end payment time and incident timeline read what is typed as shop time on any device; impossible times (25:00, 30 February) are refused, not rolled over. Stored records unchanged.
+- **Printed labels and rota messages (OB-607):** USE BY on pack, scale and counter labels, and rota-gap messages, show the shop's clock (from the store pack offline, or the shop's calendar at head office). A new guardrail stops back-end code cutting the UTC clock out of ISO text.
+- **Promotions (OB-610):** a promotion drafted from "Bought together" runs whole shop days, midnight to 23:59:59.
+
+**Tests that ran (builder, this box, synthetic data):** full unit + integration on PostgreSQL 15,685 passed (the one failure was round 14's traceability row, fixed on main); full browser suite 762 of 762; fails-before for all five forms, the labels and the promotion days.
+
+**What is next:** the date and time work is complete. **Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 14 (29 October 2026): every time shown on a screen is the shop's clock (OB-607); decision OB-608
 
 **What changed**

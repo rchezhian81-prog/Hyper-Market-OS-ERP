@@ -15,7 +15,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
-import { servedShopZone } from '../../../packages/calendar/src/shop-day';
+import { servedShopZone, instantOfTyped } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -166,7 +166,10 @@ export function createIncidentsSession(input: {
   /** A fresh incident id (the record's own name at head office). */
   readonly newIncidentId?: () => string;
   readonly newActionId?: () => string;
+  /** OB-608: the shop's zone a typed "when it happened" is read in; absent → the zone the store computer served this page. */
+  readonly timeZone?: string;
 }): IncidentsSession {
+  const zone = input.timeZone ?? servedShopZone();
   const perms = new Set(input.viewer?.permissions ?? []);
   const named = input.viewer?.userId !== undefined;
   const may = {
@@ -225,8 +228,10 @@ export function createIncidentsSession(input: {
     },
     addTimeline: async (id, f) => {
       if (!named) return nobody;
-      if (blank(f.note) || blank(f.happenedAt) || Number.isNaN(Date.parse(f.happenedAt))) return { result: 'invalid', why: 'needAll' };
-      return call('POST', `/v1/platform/incidents/${enc(id)}/timeline`, { entryId: `tl-${rand().slice(0, 8)}`, happenedAt: new Date(f.happenedAt).toISOString(), note: f.note.trim() });
+      // OB-608: "when it happened" is typed on the SHOP's clock (never this device's).
+      const happenedAt = instantOfTyped(f.happenedAt, zone);
+      if (blank(f.note) || happenedAt === '') return { result: 'invalid', why: 'needAll' };
+      return call('POST', `/v1/platform/incidents/${enc(id)}/timeline`, { entryId: `tl-${rand().slice(0, 8)}`, happenedAt, note: f.note.trim() });
     },
     addAction: async (id, f) => {
       if (!named) return nobody;

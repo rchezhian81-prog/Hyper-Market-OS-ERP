@@ -6,6 +6,7 @@
 // page has no place for video. Every rule is head office's; this session refuses only the cheap things before a request.
 
 import type { ViewerIdentity } from './browser-entry';
+import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 export type Outcome<T> =
@@ -70,7 +71,8 @@ export interface CorrelationSession {
   cctv(caseId: string, ref: { readonly cameraId: string; readonly from: string; readonly to: string; readonly collectedBy: string }): Promise<Outcome<{ readonly ref: string; readonly videoStored: false }>>;
 }
 
-export function createCorrelationSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newId?: () => string }): CorrelationSession {
+export function createCorrelationSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newId?: () => string; readonly timeZone?: string }): CorrelationSession {
+  const zone = input.timeZone ?? servedShopZone();
   const perms = new Set(input.viewer?.permissions ?? []);
   const named = input.viewer?.userId !== undefined;
   const may = { named, read: named && perms.has('lp.case.read'), manage: named && perms.has('lp.case.manage') };
@@ -104,9 +106,12 @@ export function createCorrelationSession(input: { readonly viewer: ViewerIdentit
     },
     cctv: async (caseId, ref) => {
       if (!may.manage) return { result: 'invalid', why: 'cannotManage' };
-      if (blank(caseId, ref.cameraId, ref.from, ref.to, ref.collectedBy) || Number.isNaN(Date.parse(ref.from)) || Number.isNaN(Date.parse(ref.to))) return { result: 'invalid', why: 'needAll' };
+      // OB-608: the clip's times are typed on the SHOP's clock (the zone the store computer served), never the device's.
+      const from = instantOfTyped(ref.from, zone);
+      const to = instantOfTyped(ref.to, zone);
+      if (blank(caseId, ref.cameraId, ref.collectedBy) || from === '' || to === '') return { result: 'invalid', why: 'needAll' };
       return call('POST', `/v1/loss-prevention/cases/${enc(caseId.trim())}/cctv/${enc(newId())}`, {
-        cameraId: ref.cameraId.trim(), from: new Date(ref.from).toISOString(), to: new Date(ref.to).toISOString(), collectedBy: ref.collectedBy.trim(),
+        cameraId: ref.cameraId.trim(), from, to, collectedBy: ref.collectedBy.trim(),
       });
     },
   };

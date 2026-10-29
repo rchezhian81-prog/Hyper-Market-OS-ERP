@@ -64,6 +64,8 @@ export interface RosterStoreDeps {
     /** Each visible shift, with the published week it belongs to. */
     readonly visible: ReadonlyMap<string, PublishedWeekRef>;
   }>;
+  /** OB-607: the tenant's shop calendar — each roster gap names its hour in that zone. Absent → the shop default, never UTC. */
+  readonly calendar?: (tenantId: string) => Promise<{ readonly timeZone: string }> | { readonly timeZone: string };
   readonly now: () => string;
 }
 
@@ -213,7 +215,9 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
       handler: async (ctx) => {
         const branchId = typeof ctx.query['branchId'] === 'string' && ctx.query['branchId'] !== '' ? ctx.query['branchId'] : undefined;
         const r = await scopedRoster(deps, ctx, branchId);
-        const gaps = rosterGaps({ shifts: r.shifts, assignments: r.assignments, employees: r.employees });
+        // OB-607: each gap names its hour on the shop's clock (the tenant's calendar), never the UTC clock of the ISO text.
+        const zone = deps.calendar === undefined ? undefined : (await deps.calendar(ctx.tenantId)).timeZone;
+        const gaps = rosterGaps({ shifts: r.shifts, assignments: r.assignments, employees: r.employees, ...(zone === undefined ? {} : { timeZone: zone }) });
         const unstaffed = gaps.filter((g) => g.assigned === 0).length;
         return {
           status: 200,

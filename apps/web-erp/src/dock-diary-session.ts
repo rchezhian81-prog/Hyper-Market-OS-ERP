@@ -8,6 +8,7 @@
 // nothing is written without a click. English and Tamil.
 
 import { makeCaller, outcomeIn, newId, type Outcome } from './r4-insight-call';
+import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -63,12 +64,14 @@ export const NEXT_STATUSES: Readonly<Record<DockStatus, readonly DockStatus[]>> 
   booked: ['arrived', 'no_show', 'cancelled'], arrived: ['completed'], completed: [], no_show: [], cancelled: [],
 });
 
-/** A typed local date-time (`2026-10-26T10:30`, the form's value) as an instant; null when it is not one. */
-export function instantOf(local: string): string | null {
-  const v = local.trim();
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return null;
-  const ms = Date.parse(v);
-  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+/**
+ * A typed date-time (`2026-10-26T10:30`, the form's value) as an instant; null when it is not one. OB-608: what is typed is
+ * the SHOP's clock (the zone the store computer served this page), never the device's — "10:30" on a laptop in New York
+ * was booked as 10:30 New York, 20:00 at the shop's door.
+ */
+export function instantOf(local: string, timeZone: string = servedShopZone()): string | null {
+  const at = instantOfTyped(local, timeZone);
+  return at === '' ? null : at;
 }
 
 export interface DockDiarySession {
@@ -78,7 +81,8 @@ export interface DockDiarySession {
   setStatus(slotId: string, status: Exclude<DockStatus, 'booked'>, reason: string): Promise<Outcome<{ readonly booking: DockBooking; readonly alreadySet: boolean }, 'nobody' | 'cannotBook' | 'needReason'>>;
 }
 
-export function createDockDiarySession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newSlotId?: () => string }): DockDiarySession {
+export function createDockDiarySession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newSlotId?: () => string; readonly timeZone?: string }): DockDiarySession {
+  const zone = input.timeZone ?? servedShopZone();
   const named = input.viewer?.userId !== undefined;
   const held = new Set(input.viewer?.permissions ?? []);
   const may = { named, read: named && held.has('inventory.availability.read'), book: named && held.has('inventory.movement.append') };
@@ -98,8 +102,8 @@ export function createDockDiarySession(input: { readonly viewer: { readonly user
     book: async (f) => {
       if (!named) return { result: 'invalid', why: 'nobody' };
       if (!may.book) return { result: 'invalid', why: 'cannotBook' };
-      const startsAt = instantOf(f.startsAt);
-      const endsAt = instantOf(f.endsAt);
+      const startsAt = instantOf(f.startsAt, zone);
+      const endsAt = instantOf(f.endsAt, zone);
       if (f.storeId.trim() === '' || f.dockId.trim() === '' || startsAt === null || endsAt === null) return { result: 'invalid', why: 'needBooking' };
       const poIds = f.poIds.split(',').map((p) => p.trim()).filter((p) => p !== '');
       return call('POST', `/v1/inventory/dock-diary/${encodeURIComponent(slotIdOf())}`, {

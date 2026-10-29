@@ -2628,7 +2628,7 @@ export function rosteringPayload(input: ScreenInput): Record<string, unknown> | 
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
   // Round 8 · OB-531: the store computer's copy of the roster (from the signed pack), with when head office last sent it —
   // the screen shows it READ-ONLY only when head office cannot be reached, and says so. Null = the box was not told one.
-  payload['boxRoster'] = rosterCopyOnBox(input.pack);
+  payload['boxRoster'] = rosterCopyOnBox(input.pack, packTimeZone(input.pack)); // OB-607: each gap says the shop's hour
 
   return payload;
 }

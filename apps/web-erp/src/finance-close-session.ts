@@ -22,6 +22,7 @@
 // value is invented: a read that fails is "not known", never an empty list or a zero.
 
 import { translator, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
+import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 // ── The wire ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ export interface FinanceCloseViewer {
   readonly permissions?: readonly string[];
   /** This month in the shop's calendar (YYYY-MM). The screen never reads a clock of its own. */
   readonly period?: string;
+  /** OB-608: the shop's zone a typed payment time is read in; absent → the zone the store computer served this page. */
+  readonly timeZone?: string;
 }
 
 /** The route permissions — the same codes head office checks. */
@@ -404,9 +407,11 @@ export function createFinanceCloseSession(viewer: FinanceCloseViewer | undefined
     resolvePayment: async (attemptId, rec) => {
       if (!may.resolve) return notAllowed(P.resolve);
       if (attemptId.trim() === '' || typeof rec.statementComplete !== 'boolean') return invalid();
-      if (rec.found !== 'nothing' && (!Number.isSafeInteger(rec.amountMinor) || rec.amountMinor <= 0 || Number.isNaN(Date.parse(rec.at)))) return invalid();
+      // OB-608: the payment time typed from the provider's statement is the SHOP's clock (never this device's).
+      const at = instantOfTyped(rec.at, viewer?.timeZone ?? servedShopZone());
+      if (rec.found !== 'nothing' && (!Number.isSafeInteger(rec.amountMinor) || rec.amountMinor <= 0 || at === '')) return invalid();
       // The provider's reference for the payment IS the attempt id the till asked under (the engine matches on it).
-      const authorisations = rec.found === 'nothing' ? [] : [{ ref: attemptId, amountMinor: rec.amountMinor, status: rec.found, at: new Date(rec.at).toISOString() }];
+      const authorisations = rec.found === 'nothing' ? [] : [{ ref: attemptId, amountMinor: rec.amountMinor, status: rec.found, at }];
       return send('POST', `/v1/finance/payment-exceptions/${enc(attemptId)}/resolve`, { authorisations, statementComplete: rec.statementComplete });
     },
 

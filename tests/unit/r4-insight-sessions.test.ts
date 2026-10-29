@@ -55,7 +55,7 @@ describe('the Bought together session (D-23)', () => {
     await s.draftPromotion(pair, '5', '2030-02-01', '2030-02-28');
     expect(r.calls[0]!.url).toBe('/v1/reporting/basket-affinity?from=2030-01-01&to=2030-01-31&minBaskets=3&department=grocery');
     expect(r.calls[1]!.url).toMatch(/^\/v1\/promotions\/aff-[A-Za-z0-9]+\/definition$/);
-    expect(r.calls[1]!.body).toEqual({ kind: 'percent_off', percentBps: 500, productIds: ['a', 'b'], startsAt: '2030-02-01T00:00:00.000Z', endsAt: '2030-02-28T23:59:59.000Z' });
+    expect(r.calls[1]!.body).toEqual({ kind: 'percent_off', percentBps: 500, productIds: ['a', 'b'], startsAt: '2030-01-31T18:30:00.000Z', endsAt: '2030-02-28T18:29:59.000Z' }); // OB-610: whole shop days
     expect(await createAffinitySession({ viewer: viewer('reporting.report.read'), fetch: r.fetch }).draftPromotion(pair, '5', '2030-02-01', '2030-02-28')).toEqual({ result: 'invalid', why: 'cannotDraft' });
   });
 });

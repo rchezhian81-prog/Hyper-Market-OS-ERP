@@ -84,10 +84,11 @@ export interface RosterCopyOnBox {
   readonly assignments: readonly ShiftAssignment[];
   readonly gaps: readonly RosterGap[];
 }
-export function rosterCopyOnBox(pack: Pick<StorePack, 'roster'>): RosterCopyOnBox | null {
+export function rosterCopyOnBox(pack: Pick<StorePack, 'roster'>, timeZone?: string): RosterCopyOnBox | null {
   const roster = packRoster(pack);
   if (roster === undefined) return null;
-  const gaps = rosterGaps({ shifts: roster.shifts, assignments: roster.assignments, employees: roster.employees });
+  // OB-607: each gap names its hour on the shop's clock — the pack's zone (`timeZone`, offline), else the shop default.
+  const gaps = rosterGaps({ shifts: roster.shifts, assignments: roster.assignments, employees: roster.employees, ...(timeZone === undefined ? {} : { timeZone }) });
   return { storeId: roster.storeId, asAt: roster.asAt, employees: roster.employees, shifts: roster.shifts, assignments: roster.assignments, gaps };
 }
 

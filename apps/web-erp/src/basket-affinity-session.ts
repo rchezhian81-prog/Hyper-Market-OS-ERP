@@ -6,6 +6,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import { makeCaller, newId, outcomeIn, type Outcome } from './r4-insight-call';
+import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 export interface PairView {
@@ -60,7 +61,8 @@ export interface AffinitySession {
   draftPromotion(pair: PairView, percent: string, startsAt: string, endsAt: string): Promise<Outcome<{ readonly promotionId: string; readonly status: string }>>;
 }
 
-export function createAffinitySession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): AffinitySession {
+export function createAffinitySession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly timeZone?: string }): AffinitySession {
+  const zone = input.timeZone ?? servedShopZone();
   const perms = new Set(input.viewer?.permissions ?? []);
   const named = input.viewer?.userId !== undefined;
   const may = { named, read: named && perms.has('reporting.report.read'), draft: named && perms.has('promotion.launch') };
@@ -81,9 +83,14 @@ export function createAffinitySession(input: { readonly viewer: ViewerIdentity |
       if (!may.draft) return { result: 'invalid', why: 'cannotDraft' };
       const p = Number(percent.trim());
       if (!Number.isFinite(p) || p <= 0 || p > 100 || !DAY.test(startsAt.trim()) || !DAY.test(endsAt.trim()) || endsAt.trim() < startsAt.trim()) return { result: 'invalid', why: 'needPromo' };
+      // OB-610: the typed dates are whole SHOP days — 00:00:00 on the first to 23:59:59 on the last, in the shop's zone (the
+      // one the store computer served this page) — never UTC day edges (which ran the offer 05:30 to 05:29 the day after).
+      const from = instantOfTyped(`${startsAt.trim()}T00:00`, zone);
+      const until = instantOfTyped(`${endsAt.trim()}T23:59:59`, zone);
+      if (from === '' || until === '') return { result: 'invalid', why: 'needPromo' };
       return call('POST', `/v1/promotions/${enc(newId('aff'))}/definition`, {
         kind: 'percent_off', percentBps: Math.round(p * 100), productIds: [pair.productA, pair.productB],
-        startsAt: `${startsAt.trim()}T00:00:00.000Z`, endsAt: `${endsAt.trim()}T23:59:59.000Z`,
+        startsAt: from, endsAt: until,
       });
     },
   };

@@ -286,6 +286,8 @@ export interface ProductionDeps {
    * expiry. Absent only on a bare stub with no certificate register (then nothing is judged here).
    */
   readonly foodHandling?: (tenantId: string, personId: string, task: FoodHandlingTask, at: string) => Promise<FoodHandlingVerdict> | FoodHandlingVerdict;
+  /** OB-607: the tenant's shop calendar — a label's USE BY is printed in its zone. Absent → the shop default, never UTC. */
+  readonly calendar?: (tenantId: string) => Promise<{ readonly timeZone: string }> | { readonly timeZone: string };
   readonly now: () => string;
 }
 
@@ -564,7 +566,9 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           }
           throw e;
         }
-        return { status: 200, body: { runId, batchId: run.outputBatchId, lines: renderLabel(prepared), ...labelPrintFacts(prepared) } };
+        // OB-607: the USE BY is printed on the shop's clock (the tenant's calendar), never the UTC clock of the ISO text.
+        const zone = deps.calendar === undefined ? undefined : (await deps.calendar(ctx.tenantId)).timeZone;
+        return { status: 200, body: { runId, batchId: run.outputBatchId, lines: renderLabel(prepared, zone), ...labelPrintFacts(prepared) } };
       },
     },
     {
