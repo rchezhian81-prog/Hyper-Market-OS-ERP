@@ -56,6 +56,21 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 12 (29 October 2026): the shop's date between midnight and 05:30; decision OB-606
+
+**What happened**
+- From 18:30 to 24:00 UTC the shop's date (India time) is a day ahead of the UTC date. The pull request checks for rounds 10 and 11 failed in that window, and so did main. Seventeen tests used the UTC date where the shop's date is meant: three integration tests, one speed test and thirteen browser test files.
+- **Four real faults found and fixed:** the waste-analytics and floor-heat-map pages opened on yesterday after midnight; a customer's repeat order offered yesterday as its first day and was then refused; head office's scrap review hid disposals recorded after midnight.
+- Every fixed browser test now runs at a pinned 01:00 shop time, so the case is proven at any hour; a new guardrail stops UTC-date shortcuts in product code.
+- **OB-606 (owner):** the screens that still take the date from the device itself move to the shop's clock next.
+
+**Tests that ran (this box, synthetic data)**
+- The CI basic test step in the evening window after the fixes: 14,515 passed, 0 failed. The builder's full unit + integration on PostgreSQL in the window: 15,635 passed, 1 failed (the QG-10 release snapshot colliding with other writers on the shared database; passed alone). Full browser suite in the window: 669 of 669 passed. Guardrails: 1,859 passed.
+
+**What is next:** OB-606. **Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 11 (28 October 2026): the gaps from the independent check closed; OB-602, OB-604 and OB-605 built
 
 **What changed**
