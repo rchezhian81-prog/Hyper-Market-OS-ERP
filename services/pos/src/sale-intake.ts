@@ -393,11 +393,10 @@ export interface IntakeContext {
 }
 
 /**
- * OB-506: whether head office's OWN record backs a line's price as set from a quotation — that quotation CONVERTED (rung up
- * at a till) and promising exactly this price for this product. `undefined` when the line names no quotation or nobody
- * looked the quotations up; `false` when the record does not back it.
+ * OB-506: whether head office's OWN record backs a line's price as set from a quotation — that quotation converted (rung up
+ * at a till) and promising exactly this price for this product. `undefined` when the line names no quotation or nobody looked.
  */
-function quotationBacksLine(line: IncomingSaleLine, ctx: IntakeContext): boolean | undefined {
+function quotationBacksLine(line: Pick<IncomingSaleLine, 'priceOverride' | 'productId' | 'unitPriceMinor'>, ctx: Pick<IntakeContext, 'quotationsNamed'>): boolean | undefined {
   const quotationId = quotationOfLine(line);
   if (quotationId === undefined || ctx.quotationsNamed === undefined) return undefined;
   const q = ctx.quotationsNamed.find((n) => n.quotationId === quotationId);
@@ -893,9 +892,8 @@ function tillOverrideFindings(sale: IncomingSale, ctx: IntakeContext): SaleExcep
       });
       continue;
     }
-    // OB-551 (owner, 29 Oct 2026, B1): a price set from a quotation head office's own record backs is not a manager's cut —
-    // the quotation was approved on its own — so it is not counted against any manager's limit. One the record does not
-    // back is judged as any other cut. The floor above is checked either way.
+    // OB-551 (owner, 29 Oct 2026): a price set from a quotation head office's own record backs does not count against any
+    // manager's price-cut limit — it was approved when the quotation was made. One the record does not back is still judged.
     if (quotationBacksLine(line, ctx) === true) continue;
     const limit = rules.limits.get(approver) ?? { state: 'not_set', limitMinor: null };
     const over = cut > 0 && (limit.state === 'not_set' || (limit.state === 'limit' && cut > (limit.limitMinor ?? 0)));

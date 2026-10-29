@@ -23,7 +23,7 @@ const CONTROLS: TillControls = {
 describe('OB-500 — the floor price is the price guard\'s own margin-floor rule, rounded up', () => {
   it('cost ₹400 at a 20% floor is ₹500; it never goes below the cost; and it agrees with checkPrice at the boundary', () => {
     expect(floorPriceMinor(40_000, 2_000)).toBe(50_000);
-    expect(floorPriceMinor(40_000, 0)).toBe(40_000);
+    expect(floorPriceMinor(40_000, 0)).toBe(40_000); // OB-550 (owner, 29 Oct 2026): no margin floor set → the floor IS the cost
     expect(floorPriceMinor(33_333, 1_500)).toBe(39_216); // 33333 / 0.85 = 39215.29… → up
     for (const [cost, bps] of [[40_000, 2_000], [33_333, 1_500], [1, 9_999], [12_345, 777]] as const) {
       const floor = floorPriceMinor(cost, bps);

@@ -323,6 +323,23 @@ describe('OB-506 — head office\'s sale check explains a quoted price from its 
     expect(prices(acceptSale(sale(190_00, older), ctx({ quotationsNamed: [QUOTE] })))).toEqual([['price_differs_from_catalogue', 'informational']]);
   });
 
+  it('OB-551 (owner, 29 Oct 2026): a line LOWERED to a converted quotation\'s price does not count against any manager\'s price-cut limit; one head office cannot back still does; the floor still holds', () => {
+    const LOWERED = { ...RAISED, fromUnitPriceMinor: 180_00 };
+    const LOW_QUOTE = { ...QUOTE, lines: [{ productId: 'P-OIL', unitPriceMinor: 160_00 }] };
+    // The till names the quotation as its approver — no person, so no limit of its own ("not set").
+    const rules = { floors: new Map([['P-OIL', 150_00]]), limits: new Map() };
+    expect(prices(acceptSale(sale(160_00, LOWERED), ctx({ quotationsNamed: [LOW_QUOTE], tillOverrideRules: rules })))).toEqual([['price_differs_from_catalogue', 'informational']]);
+    // Before OB-551 this was raised as a cut beyond the approver's limit; it still is when head office's record does not back it.
+    expect(prices(acceptSale(sale(160_00, LOWERED), ctx({ quotationsNamed: [{ ...LOW_QUOTE, state: 'issued' }], tillOverrideRules: rules }))))
+      .toEqual([['price_differs_from_catalogue', 'material'], ['price_cut_above_approver_limit', 'material']]);
+    expect(prices(acceptSale(sale(160_00, LOWERED), ctx({ quotationsNamed: [LOW_QUOTE], tillOverrideRules: { ...rules, floors: new Map([['P-OIL', 170_00]]) } }))))
+      .toEqual([['price_cut_below_floor', 'material'], ['price_differs_from_catalogue', 'informational']]);
+    // A manager's own price cut (no quotation) is judged against the limit exactly as before.
+    const { quotationId: _q, ...byManager } = { ...LOWERED, approvedBy: 'u-mgr', activityId: 'act-1' }; void _q;
+    expect(prices(acceptSale(sale(160_00, byManager), ctx({ quotationsNamed: [LOW_QUOTE], tillOverrideRules: { ...rules, limits: new Map([['u-mgr', { state: 'limit' as const, limitMinor: 10_00 }]]) } }))))
+      .toContainEqual(['price_cut_above_approver_limit', 'material']);
+  });
+
   it('a quotation never excuses a price above the MRP — still CRITICAL', () => {
     const r = acceptSale(sale(210_00, RAISED), ctx({ quotationsNamed: [{ ...QUOTE, lines: [{ productId: 'P-OIL', unitPriceMinor: 210_00 }] }] }));
     expect(prices(r)).toEqual([['sold_above_mrp', 'critical']]);
