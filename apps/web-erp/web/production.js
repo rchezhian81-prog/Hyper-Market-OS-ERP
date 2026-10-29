@@ -6,6 +6,8 @@
 // ONLY on an explicit click, never on load; on success the board is re-read (a GET) so a released batch drops
 // off. No prompt/confirm/alert.
 
+// OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -93,7 +95,7 @@ function rowNode(r) {
   facts.append(
     fact(t('batchLabel'), r.batchId),
     fact(t('qtyLabel'), r.quantity),
-    fact(t('expiryLabel'), new Date(r.expiresAt).toLocaleDateString()),
+    fact(t('expiryLabel'), shopDayOf(r.expiresAt)),
     fact(t('costLabel'), r.cost ?? t('costNotKnown'), r.cost === null),
     fact(t('yieldLabel'), r.yieldWord),
     fact(t('departmentLabel'), r.departmentId),

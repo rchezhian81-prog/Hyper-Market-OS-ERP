@@ -3,6 +3,8 @@
 // page lays out what it is told. Only a person whose role may review sees the queue; every decision is a click with a
 // reason. Every word has a Tamil twin; every button carries an icon beside its word.
 
+// OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.supplierSubmissions ?? null;
 const session = api?.session ?? null;
@@ -52,7 +54,7 @@ function paintLookup() {
   const ul = $('po-rows'); ul.replaceChildren();
   if (looked === null) return;
   if (looked.updates.length === 0) { ul.append(text('li', t('noWord'))); return; }
-  for (const d of looked.updates) ul.append(text('li', `${deliveryWords(d)} · ${t('received')} ${new Date(d.receivedAt).toLocaleDateString('en-CA')}`));
+  for (const d of looked.updates) ul.append(text('li', `${deliveryWords(d)} · ${t('received')} ${shopDayOf(d.receivedAt)}`));
 }
 
 function paint() {

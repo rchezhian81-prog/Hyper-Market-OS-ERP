@@ -14,6 +14,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import type { HttpRequest } from '../../services/kernel/src/index';
+import { shopDay } from '../../packages/calendar/src/shop-day';
 
 /**
  * **QG-02 Â· OB-390 (owner, 26 Oct 2026) â€” store-manager.md "assign/complete a task â‰¤3", counted in a real browser on the
@@ -109,7 +110,8 @@ describe.skipIf(!HAVE_BROWSER)('store tasks meet the interaction budget (QG-02 Â
   afterAll(async () => { await browser?.close(); await shell?.stop(); await pool?.end(); expect(pageErrors).toEqual([]); });
 
   const open = async (who: string, file: string, branch?: string): Promise<{ page: Page; close: () => Promise<void> }> => {
-    const context = await browser.newContext();
+    // OB-606: on a device in New York, not India â€” the deadline is still the end of the SHOP's today.
+    const context = await browser.newContext({ timezoneId: 'America/New_York' });
     await context.addCookies([{ name: 'who', value: who, url: shell.base }, ...(branch === undefined ? [] : [{ name: 'branch', value: branch, url: shell.base }])]);
     const page = await context.newPage();
     page.on('pageerror', (e) => { pageErrors.push(`${file}: ${String(e)}`); });
@@ -125,7 +127,7 @@ describe.skipIf(!HAVE_BROWSER)('store tasks meet the interaction budget (QG-02 Â
       expect(await board.page.inputValue('#a-branch'), 'the manager\'s own store, from the sign-in').toBe('br-1');
       const due = await board.page.inputValue('#a-due');
       expect(due, 'due by the end of today').toMatch(/^\d{4}-\d{2}-\d{2}T23:59$/);
-      expect(due.slice(0, 10), 'today, in the browser\'s own day').toBe(await board.page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }));
+      expect(due, 'the end of the SHOP\'s today, never the device\'s').toBe(shopDay('Asia/Kolkata').endOfTodayField());
 
       const taps = new Tally(board.page);
       await taps.type('#a-title', 'Face up aisle 4');
@@ -135,7 +137,7 @@ describe.skipIf(!HAVE_BROWSER)('store tasks meet the interaction budget (QG-02 Â
       expect(taps.reset(), 'assign a task').toBeLessThanOrEqual(3);
       const [task] = (await tasks()).filter((x) => x.title === 'Face up aisle 4');
       expect(task).toMatchObject({ branchId: 'br-1', assignedTo: CASHIER, evidenceRequired: false });
-      expect(Date.parse(task!.dueAt)).toBe(Date.parse(due)); // the browser's own 23:59 today, as head office holds it
+      expect(task!.dueAt).toBe(shopDay('Asia/Kolkata').instantOfField(due)); // 23:59 in the SHOP, as head office holds it
       // Nobody completes on the board (OB-158).
       expect(await board.page.locator('button.done').count()).toBe(0);
     } finally { await board.close(); }
@@ -170,7 +172,8 @@ describe.skipIf(!HAVE_BROWSER)('store tasks meet the interaction budget (QG-02 Â
       await board.page.waitForFunction("(document.querySelector('#assign-status')?.textContent ?? '') === 'Assigned in your name.'", undefined, { timeout: 15_000 });
       const task = (await tasks()).find((x) => x.title === 'Count the tills');
       expect(task?.branchId).toBe('br-2');
-      expect(Date.parse(task!.dueAt)).toBe(Date.parse(await board.page.evaluate(() => new Date('2099-01-02T09:30').toISOString())));
+      // 09:30 in the SHOP (OB-606), not 09:30 on this New York device.
+      expect(task!.dueAt).toBe('2099-01-02T04:00:00.000Z');
     } finally { await board.close(); }
   }, 90_000);
 });

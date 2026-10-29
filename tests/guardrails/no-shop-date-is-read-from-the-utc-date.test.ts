@@ -37,10 +37,6 @@ const RULES: Rule[] = [
  */
 const ALLOWED: readonly { readonly file: string; readonly line: string; readonly why: string }[] = [
   {
-    file: 'apps/web-erp/src/migration-session.ts', line: 'config.now.slice(0, 10) : wallClockIn(config.now)',
-    why: 'slices only when `now` is NOT an instant (Date.parse fails: the page was handed a plain YYYY-MM-DD day); an instant is read through wallClockIn',
-  },
-  {
     file: 'packages/owner-control/src/scheduled-brief.ts', line: 'const today = input.now.slice(0, 10);',
     why: '`now` here is already the SHOP\'s wall clock by contract (callers pass "<shop date>T<shop hh:mm>:00Z"), so its first ten characters are the shop\'s today',
   },
@@ -104,5 +100,89 @@ describe('no shop date is read from the UTC date of "now" (M01-FR-02)', () => {
     ];
     expect(scan([sample('apps/x/bad.ts', bad.join('\n'))], RULES).map((f) => f.line)).toEqual(bad.map((_, i) => i + 1));
     expect(scan([sample('apps/x/good.ts', good.join('\n'))], RULES)).toEqual([]);
+  });
+});
+
+/**
+ * **No screen takes its date from the DEVICE's own clock or zone (OB-606 · M01-FR-02 · P-08 · round 13, R13-A).**
+ *
+ * A browser's own date is the date in whatever zone its device is set to. The store PC and the tills are set to India time;
+ * a manager's laptop abroad, a head-office browser in a data centre, a CI runner and a phone set to another zone are not —
+ * and from 18:30 UTC a browser on UTC is still on the shop's yesterday. Round 13 moved every screen that did this (the day
+ * book, the POSH report, the company report, GST returns, buying, migration, the food-safety board, the manager's day close,
+ * the till's concession tag, the dates shown in the lists, …) to the shop's day: packages/calendar/src/shop-day.ts
+ * (`window.sreShopDay` in the office bundle) or apps/pos/web/shop-date.js on the till's plain pages, in the shop's zone the
+ * store computer serves from its signed pack (`window.shopTimeZone`).
+ *
+ * This tripwire fails when a device-local date idiom appears in SCREEN code (apps/, edge/):
+ *   • `toLocaleDateString(…)` with no `timeZone` named in the call — the device's own date, in any locale (`'en-CA'` too);
+ *   • a date or time built from the device's own fields: `.getFullYear()`, `.getMonth()`, `.getDate()`, `.getDay()`,
+ *     `.getHours()`, `.getMinutes()` (the UTC twins, `getUTC…`, are not matched);
+ *   • `wallClockIn(moment)` with no zone — the machine's own zone.
+ * Times of day and date-times shown with `toLocaleString()` / `toLocaleTimeString()` are not matched yet: whether they move
+ * to the shop's clock too is put to the owner (round 13 report).
+ */
+const DEVICE_RULES: Rule[] = [
+  { rule: 'toLocaleDateString with no timeZone (the device\'s own date)', re: /\.toLocaleDateString\((?![^)]*timeZone)/ },
+  { rule: 'a date built from the device\'s own fields', re: /\.get(?:FullYear|Month|Date|Day|Hours|Minutes)\(\)/ },
+  { rule: 'wallClockIn with no zone (the machine\'s own zone)', re: /\bwallClockIn\((?:[^(),]|\((?:[^()]|\([^()]*\))*\))*\)/ },
+];
+
+/** The places in screen code that may read the device's own fields, each with its reason (file + a piece of the line). */
+const DEVICE_ALLOWED: readonly { readonly file: string; readonly line: string; readonly why: string }[] = [
+  {
+    file: 'apps/web-erp/web/app.js', line: 'return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}',
+    why: 'the SAMPLE stand-in only: with the bundle the day close reads the shop\'s wall clock (window.sreShopDay.wallClock()); without it the page runs on sample data and says so',
+  },
+  {
+    file: 'apps/web-erp/web/app.js', line: 'String(d.getHours()).padStart(2, \'0\')}:${String(d.getMinutes())',
+    why: 'a card payment\'s TIME of day (HH:MM) on the manager\'s Today screen — times of day are not dates; whether they move to the shop\'s clock is the open owner question from round 13',
+  },
+];
+
+const SCREEN_DIRS = ['apps', 'edge'];
+
+function deviceHits() {
+  const entries = loadCodeEntries(SCREEN_DIRS).map((e) => ({ ...e, content: stripComments(e.content) }));
+  return scan(entries, DEVICE_RULES);
+}
+
+describe('no screen takes its date from the device\'s own clock or zone (OB-606)', () => {
+  it('screen code has no device-local date idiom outside the allowlist — each allowed place says why', () => {
+    const found = deviceHits().filter((f) => !DEVICE_ALLOWED.some((a) => a.file === f.file && f.snippet.includes(a.line)));
+    // Fix it with the shop's day (window.sreShopDay / packages/calendar/src/shop-day.ts, or apps/pos/web/shop-date.js), or —
+    // only if the device's own clock is genuinely meant — add it to DEVICE_ALLOWED with the reason.
+    expect(found.map((f) => `${f.file}:${f.line} [${f.rule}] ${f.snippet}`)).toEqual([]);
+  });
+
+  it('every allowlist entry still matches a real hit and gives a reason (no stale or silent excuses)', () => {
+    const all = deviceHits();
+    for (const a of DEVICE_ALLOWED) {
+      expect(a.why.trim().length, `${a.file}: a reason`).toBeGreaterThan(20);
+      expect(all.filter((f) => f.file === a.file && f.snippet.includes(a.line)).length, `${a.file}: "${a.line}" still there`).toBeGreaterThan(0);
+    }
+  });
+
+  it('tripwire — the detector fires on each device idiom, and not on the shop\'s day or a zoned call', () => {
+    const bad = [
+      "const today = new Date().toLocaleDateString('en-CA');",
+      "fact(t('due'), new Date(r.dueOn).toLocaleDateString()),",
+      "const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}`; };",
+      "const m = d.getMonth() === 0 ? 12 : d.getMonth();",
+      "export const startOfToday = (now = new Date()) => new Date(now.getFullYear(), 0, 1).toISOString();",
+      "const hh = String(d.getHours()).padStart(2, '0');",
+      "const asOf = wallClockIn(new Date().toISOString()).slice(0, 10);",
+      "const by = wallClockIn(dueBy).slice(0, 10);",
+    ];
+    const good = [
+      "const today = window.sreShopDay.today();",
+      "const shown = new Date(at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });",
+      "const y = d.getUTCFullYear(); const m = d.getUTCMonth(); const dd = d.getUTCDate();",
+      "const at = wallClockIn(now(), timeZone).slice(0, 10);",
+      "const at = wallClockIn(new Date(guess).toISOString(), timeZone);",
+      "const ms = d.getTime();",
+    ];
+    expect(scan([sample('apps/x/bad.js', bad.join('\n'))], DEVICE_RULES).map((f) => f.line)).toEqual(bad.map((_, i) => i + 1));
+    expect(scan([sample('apps/x/good.js', good.join('\n'))], DEVICE_RULES)).toEqual([]);
   });
 });

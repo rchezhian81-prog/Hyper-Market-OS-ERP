@@ -11,7 +11,8 @@ const may = session?.may ?? { named: false, readPrices: false };
 let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
 // R1c: this device's own date of a moment, never its UTC date.
-const day = (iso) => (typeof iso === 'string' ? (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date(iso).toLocaleDateString('en-CA')) : '');
+// OB-606: a moment is shown on the SHOP's date (its zone), never this device's; a plain date is already a date.
+const day = (iso) => (typeof iso === 'string' ? (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : (window.sreShopDay?.dateOf(iso) ?? '')) : '');
 let report = null;
 
 function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }

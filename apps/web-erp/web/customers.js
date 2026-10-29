@@ -4,6 +4,8 @@
 // merges by itself), and the merges waiting for a second person, in force, and undone. Nothing is written on open.
 // Every word has a Tamil twin.
 
+// OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.customers ?? null;
 const session = api?.session ?? null;
@@ -43,7 +45,7 @@ function paint() {
     return p;
   }));
   $('customer-rows').replaceChildren(...(overview?.customers ?? []).map((c) => row(
-    [c.customerRef, segmentWords(c.segment), `${c.orders} ${t('orders')}`, c.lastOrderAt === null ? t('noOrder') : `${t('lastOrder')} ${new Date(c.lastOrderAt).toLocaleDateString('en-CA')}`],
+    [c.customerRef, segmentWords(c.segment), `${c.orders} ${t('orders')}`, c.lastOrderAt === null ? t('noOrder') : `${t('lastOrder')} ${shopDayOf(c.lastOrderAt)}`],
     { customer: c.customerRef, segment: c.segment, profiled: String(c.profiled) },
   )));
 
@@ -94,7 +96,7 @@ const MARK = { open: '⚠', waiting_on_customer: '⏱', resolved: '✓', closed:
 function caseItem(c) {
   const li = el('li', `row ${c.state === 'open' || c.state === 'waiting_on_customer' ? 'tone-degraded' : 'tone-ok'}`);
   li.dataset.case = c.caseId; li.dataset.state = c.state; li.dataset.kind = c.kind;
-  li.append(el('strong', '', `${MARK[c.state] ?? '○'} ${c.caseId} — ${t(`state_${c.state}`)} · ${new Date(c.openedAt).toLocaleDateString('en-CA')}`));
+  li.append(el('strong', '', `${MARK[c.state] ?? '○'} ${c.caseId} — ${t(`state_${c.state}`)} · ${shopDayOf(c.openedAt)}`));
   li.append(el('span', 'summary', c.summary));
   if (c.orderRef) li.append(el('span', 'muted', `${t('order')} ${c.orderRef}`));
   if (c.resolution) li.append(el('span', 'muted', `✓ ${t('answered')}: ${c.resolution}`));
@@ -112,7 +114,7 @@ function paintRecord() {
     return;
   }
   const p = record.purchases ?? { count: 0, grossMinor: 0 };
-  $('record-summary').textContent = `${t('bought')}: ${p.count} ${t('orders')} · ${t('netSpend')} ₹${((record.netSpendMinor ?? 0) / 100).toFixed(2)}${record.lastPurchaseAt ? ` · ${t('lastBill')} ${new Date(record.lastPurchaseAt).toLocaleDateString('en-CA')}` : ''}`;
+  $('record-summary').textContent = `${t('bought')}: ${p.count} ${t('orders')} · ${t('netSpend')} ₹${((record.netSpendMinor ?? 0) / 100).toFixed(2)}${record.lastPurchaseAt ? ` · ${t('lastBill')} ${shopDayOf(record.lastPurchaseAt)}` : ''}`;
   const sh = record.serviceHistory;
   if (sh === undefined || sh.read !== true) {
     $('record-say').className = 'status err'; $('record-say').textContent = `⚠ ${sh?.say ?? ''}`;

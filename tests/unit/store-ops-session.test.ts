@@ -119,11 +119,11 @@ describe('store tasks and my tasks', () => {
     expect(http.sent[0]).toEqual({ method: 'POST', path: '/v1/hr/workforce/assigned-tasks/t1/complete', body: { stepsDone: ['s1'], evidenceRefs: ['photo-aisle4'], note: 'done' }, key: 'k-1' });
   });
   it('OB-390: a new task defaults to the end of TODAY (the day startOfToday gives) and the manager\'s own store from the sign-in', async () => {
-    // The deadline field holds 23:59 of the reader's own day — the same day the food-safety board calls today.
+    // The deadline field holds 23:59 of the SHOP's day (OB-606) — the same day the food-safety board calls today, whatever
+    // zone the reader's device is set to.
     const now = new Date('2026-10-16T09:30:00+05:30');
-    const day = new Date(startOfToday(now));
-    const two = (n: number) => String(n).padStart(2, '0');
-    expect(endOfTodayField(now)).toBe(`${day.getFullYear()}-${two(day.getMonth() + 1)}-${two(day.getDate())}T23:59`);
+    expect(startOfToday(now)).toBe('2026-10-15T18:30:00.000Z');
+    expect(endOfTodayField(now)).toBe('2026-10-16T23:59');
     expect(endOfTodayField(now)).toMatch(/^\d{4}-\d{2}-\d{2}T23:59$/);
     expect(Date.parse(endOfTodayField(now))).toBeGreaterThan(Date.parse(startOfToday(now)));
     // The branch is head office's answer about who is signed in — a GET, nothing written.

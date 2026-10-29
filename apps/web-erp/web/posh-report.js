@@ -41,8 +41,9 @@ const WORDS = {
   },
 };
 const t = (key) => WORDS[lang]?.[key] ?? WORDS.en[key] ?? key;
-// R1c (M01-FR-02): this device's own date (it stands in the shop), never the UTC date of the moment.
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// OB-606 (M01-FR-02): the SHOP's today (its zone, as the store computer told the page) — never this device's own date, and
+// never the UTC date of the moment. '' when the bundle is not here to say (the date is then the person's to write).
+const today = () => (window.sreShopDay === undefined ? '' : window.sreShopDay.today());
 
 let exceptions = [];
 let filed = [];

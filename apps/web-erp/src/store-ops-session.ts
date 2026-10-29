@@ -19,13 +19,13 @@
 // page OFFERS; head office re-checks every act.
 
 import type { ViewerIdentity } from './browser-entry';
-import { wallClockIn } from '../../../packages/calendar/src/trading-day';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { shopDay, servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 /** Today in the shop's own zone (packages/calendar shop-clock), never the browser's or UTC — the reading window's default
  *  last day (its first day is the 1st of that month). From 18:30 UTC, and in a browser on UTC, the browser's own date is
  *  still yesterday in the shop. */
-export const todayAtShop = (nowIso: string = new Date().toISOString()): string => shopDateIn(nowIso);
+export const todayAtShop = (nowIso: string = new Date().toISOString(), timeZone: string = servedShopZone()): string => shopDateIn(nowIso, timeZone);
 
 export type Lang = 'en' | 'ta';
 
@@ -210,18 +210,31 @@ export function splitToday(board: FoodSafetyBoard): {
   return { missed: by(['missed']), due: by(['due']), done: by(['done', 'done_failed', 'done_late']), later: by(['upcoming']), failed: by(['done_failed']).length };
 }
 
-/** The start of the reader's own day (local midnight), as an ISO time — "today" on the food-safety board. */
-export const startOfToday = (now: Date = new Date()): string => new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+/**
+ * The start of the SHOP's today (its midnight in the shop's zone), as an ISO time — "today" on the food-safety board
+ * (OB-606). Never the reader's own midnight: a browser set to London or New York (or a browser on UTC from 18:30 UTC) is
+ * still on the shop's yesterday, and its board showed yesterday's checks as today's and hid today's.
+ */
+export const startOfToday = (now: Date = new Date(), timeZone: string = servedShopZone()): string => shopDay(timeZone, () => now.toISOString()).startOfToday();
 
 /**
  * OB-390 (store-manager.md "assign/complete a task ≤3"): the deadline a new task starts at — the end of today (23:59 of the
- * reader's own day), as the value a `datetime-local` field holds. The DAY is `startOfToday`'s, so it follows however
- * "today" is worked out there; this only writes it in the field's shape. A default only: the manager may change it.
+ * SHOP's day, OB-606), as the value a `datetime-local` field holds. The field holds the SHOP's wall clock, and the task is
+ * sent as the instant that wall clock means in the shop (`deadlineInstant`). A default only: the manager may change it.
  */
-export function endOfTodayField(now: Date = new Date()): string {
-  const day = new Date(startOfToday(now));
-  const two = (n: number): string => String(n).padStart(2, '0');
-  return `${day.getFullYear()}-${two(day.getMonth() + 1)}-${two(day.getDate())}T23:59`;
+export function endOfTodayField(now: Date = new Date(), timeZone: string = servedShopZone()): string {
+  return shopDay(timeZone, () => now.toISOString()).endOfTodayField();
+}
+
+/**
+ * The instant a task's deadline field means (OB-606): a `datetime-local` value has no zone, and it is the SHOP's wall
+ * clock — never the device's (on a laptop set to London, "23:59" was sent as 23:59 London, 05:29 the next morning in the
+ * shop). A value that already names its zone is kept as that instant. '' when it is neither.
+ */
+export function deadlineInstant(value: string, timeZone: string = servedShopZone()): string {
+  const v = value.trim();
+  if (/(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(v)) return Number.isNaN(Date.parse(v)) ? '' : new Date(v).toISOString();
+  return shopDay(timeZone).instantOfField(v);
 }
 
 export interface CheckRecordForm {
@@ -273,6 +286,8 @@ export function createStoreOpsSession(input: {
   /** A fresh record / task id (the record's own name at head office). */
   readonly newId?: (prefix: string) => string;
   readonly now?: () => Date;
+  /** The shop's zone (OB-606) — as the store computer told the page; the shop default otherwise. */
+  readonly timeZone?: string;
 }): StoreOpsSession {
   const perms = new Set(input.viewer?.permissions ?? []);
   const named = input.viewer?.userId !== undefined;
@@ -288,8 +303,10 @@ export function createStoreOpsSession(input: {
   };
   const rand = (): string => (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
   const newKey = input.newKey ?? (() => `ops-${rand()}`);
-  const newId = input.newId ?? ((prefix: string) => `${prefix}-${wallClockIn(new Date().toISOString()).slice(0, 10).replace(/-/g, '')}-${rand().slice(0, 8)}`);
+  const zone = input.timeZone ?? servedShopZone();
   const now = input.now ?? (() => new Date());
+  // A record's own name carries the SHOP's date (OB-606), never the device's.
+  const newId = input.newId ?? ((prefix: string) => `${prefix}-${shopDateIn(now().toISOString(), zone).replace(/-/g, '')}-${rand().slice(0, 8)}`);
   const http = input.fetch ?? ((...a: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...a));
 
   async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Outcome<T>> {
@@ -316,7 +333,7 @@ export function createStoreOpsSession(input: {
   return {
     may,
     foodSafetyToday: () => (!named ? Promise.resolve(nobody) : !may.readChecks ? Promise.resolve(cannot)
-      : call('GET', `/v1/facilities/food-safety/status?from=${enc(startOfToday(now()))}`)),
+      : call('GET', `/v1/facilities/food-safety/status?from=${enc(startOfToday(now(), zone))}`)),
     recordCheck: async (check, f) => {
       if (!named) return nobody;
       const reading = f.readingC.trim();
@@ -354,11 +371,12 @@ export function createStoreOpsSession(input: {
     taskBoard: () => (!named ? Promise.resolve(nobody) : !may.readTasks ? Promise.resolve(cannot) : call('GET', '/v1/hr/workforce/assigned-tasks')),
     assignTask: async (f) => {
       if (!named) return nobody;
-      if (blank(f.branchId) || blank(f.title) || blank(f.assignedTo) || blank(f.dueAt) || Number.isNaN(Date.parse(f.dueAt))) return { result: 'invalid', why: 'needAll' };
+      const dueAt = blank(f.dueAt) ? '' : deadlineInstant(f.dueAt, zone);
+      if (blank(f.branchId) || blank(f.title) || blank(f.assignedTo) || dueAt === '') return { result: 'invalid', why: 'needAll' };
       const steps = f.steps.split('\n').map((s) => s.trim()).filter((s) => s !== '').map((label, i) => ({ stepId: `s${i + 1}`, label }));
       const taskId = newId('task');
       const out = await call('POST', `/v1/hr/workforce/assigned-tasks/${enc(taskId)}`, {
-        branchId: f.branchId.trim(), title: f.title.trim(), assignedTo: f.assignedTo.trim(), dueAt: new Date(f.dueAt).toISOString(),
+        branchId: f.branchId.trim(), title: f.title.trim(), assignedTo: f.assignedTo.trim(), dueAt,
         critical: f.critical, evidenceRequired: f.evidenceRequired, steps,
       });
       return out.result === 'ok' ? { result: 'ok', value: { taskId } } : out;

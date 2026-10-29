@@ -87,7 +87,10 @@ function slotRow(slot) {
 function paint() {
   document.title = `SRE ${t('fsTitle')}`;
   for (const [id, k] of [['title-text', 'fsTitle'], ['page-h', 'fsTitle'], ['lead', 'fsLead'], ['k-missed', 'fsMissed'], ['k-due', 'fsDue'], ['k-done', 'fsDone'], ['k-failed', 'fsFailed'], ['receiving-h', 'fsReceiving']]) $(id).textContent = t(k);
-  $('today-h').textContent = new Date().toLocaleDateString();
+  // OB-606: the SHOP's today in words (its zone, as the store computer told the page) — never this device's own date.
+  const shopDay = window.sreShopDay ?? null;
+  $('today-h').textContent = shopDay === null ? '' : shopDay.dayWords(shopDay.today(), lang);
+  $('today-h').dataset.day = shopDay === null ? '' : shopDay.today();
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.storeOpsData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');

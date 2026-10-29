@@ -45,7 +45,8 @@ import {
   type ConsentState,
 } from '../../../packages/customer/src/consent';
 import type { DataSubjectRequest, RightKind } from '../../../packages/customer/src/data-rights';
-import { wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 /** One thing the shop may want to do with a customer's information, and on which channel. */
 export interface ConsentPurposeSpec {
@@ -216,7 +217,7 @@ export function raiseRequest(input: {
     dueBy,
   });
 
-  const by = wallClockIn(dueBy).slice(0, 10); // R1c: the customer's own date, never the UTC one
+  const by = shopDateIn(dueBy, servedShopZone()); // OB-606: the SHOP's date the answer is due by (the shop answers by its own day) — never the device's or UTC
   return {
     request,
     tellTheCustomer: offer.partialByLaw

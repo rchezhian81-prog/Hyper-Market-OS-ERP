@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { actionDetails } from '../../services/identity/src/approval-requests';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **R2 addendum C20 · OB-154 "A" — the owner's "Committee annual report" page, in a real browser, on the PRODUCTION API
@@ -24,8 +25,11 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['posh', 'report', 'e2e', 'key'].join('-').padEnd(48, '0');
 const IC = 'u-ic-e2e';
 const SUMMARY = 'SYNTHETIC-E2E-COMPLAINT-WORDS';
-const YEAR = new Date().getUTCFullYear() - 1;
-const TODAY = new Date().toISOString().slice(0, 10);
+// OB-606 (round 13): the journey runs at a pinned evening 19:30 UTC — 01:00 the next morning in the shop — on a device in
+// New York, where it is still the shop's yesterday. The filing date the page offers is the SHOP's today.
+const EVENING = theEvening();
+const TODAY = EVENING.shopDate;
+const YEAR = Number(TODAY.slice(0, 4)) - 1;
 const STATE = TODAY <= `${YEAR + 1}-01-31` ? 'Due' : 'Overdue';
 
 interface Doc { querySelectorAll(s: string): { length: number } }
@@ -35,6 +39,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Committee 
   let shop: InboxShop;
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
@@ -53,10 +58,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Committee 
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 180_000);
-  afterAll(async () => { await browser?.close(); await shop?.stop(); });
+  afterAll(async () => { await browser?.close(); await shop?.stop(); vi.useRealTimers(); });
 
   it('the owner sees the report due, is refused filing a report not made, then records the filing once the committee makes it', async () => {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ timezoneId: 'America/New_York' });
+    await pinThePageClock(context);
     await shop.signIn(context, OWNER);
     const page = await context.newPage();
     const errors: string[] = [];
@@ -89,7 +95,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Committee 
       expect(await page.content()).not.toContain(SUMMARY);
       expect(await page.content()).not.toContain('SYN-A');
 
-      // Recorded as filed: the year moves to Filed and nothing is due.
+      // Recorded as filed: the year moves to Filed and nothing is due. The filing date offered is the SHOP's today.
+      expect(await ready.locator('input.filed-on').inputValue()).toBe(TODAY);
       await ready.locator('input.reference').fill('DO-ACK-SYNTH-1');
       await ready.locator('button.record').click();
       await page.locator(`#done-rows .row[data-year="${YEAR}"]`).waitFor({ timeout: 15_000 });

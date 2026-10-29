@@ -3,6 +3,8 @@
 // (apps/web-erp/src/owner-alerts-session.ts, in the bundle as window.ownerAlerts) does every call; this page lays out what
 // it is told. A threshold not set says so in words. Every word has a Tamil twin; every button carries an icon.
 
+// OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.ownerAlerts ?? null;
 const session = api?.session ?? null;
@@ -20,7 +22,7 @@ const fillIn = (words, values) => Object.entries(values).reduce((w, [k, v]) => w
 // OB-375 · OB-378: the kiosk hours and the watch numbers in force — the owner's written decision until he enters another.
 function paintFloor() {
   if (floor === null) return;
-  const from = (row) => (row.source === 'owner_decision' ? fillIn(t('fromDecision'), { decision: row.decision, date: row.decidedOn }) : fillIn(t('fromEntry'), { by: row.setBy ?? '', at: row.setAt ? new Date(row.setAt).toLocaleDateString('en-CA') : '' }));
+  const from = (row) => (row.source === 'owner_decision' ? fillIn(t('fromDecision'), { decision: row.decision, date: row.decidedOn }) : fillIn(t('fromEntry'), { by: row.setBy ?? '', at: row.setAt ? shopDayOf(row.setAt) : '' }));
   const kiosk = floor.settings.find((r) => r.setting === 'kiosk_stale_after');
   const watch = floor.settings.find((r) => r.setting === 'self_checkout_watch');
   if (kiosk) {

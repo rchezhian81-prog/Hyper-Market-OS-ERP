@@ -178,7 +178,7 @@ function paintDelivery() {
   const order = el('du-order');
   const keep = order.value;
   const opts = [new Option(t('chooseOrder'), '')];
-  for (const o of feed?.orders ?? []) opts.push(new Option(`${o.number}${o.issuedAt ? ` · ${new Date(o.issuedAt).toLocaleDateString('en-CA')}` : ''}`, o.poId));
+  for (const o of feed?.orders ?? []) opts.push(new Option(`${o.number}${o.issuedAt && window.supplierPortal ? ` · ${window.supplierPortal.dateOf(o.issuedAt)}` : ''}`, o.poId));
   order.replaceChildren(...opts);
   if ([...order.options].some((x) => x.value === keep)) order.value = keep;
   const status = el('du-status');

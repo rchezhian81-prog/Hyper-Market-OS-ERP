@@ -17,7 +17,8 @@
 // the shop's `b2b` switch. Nothing is read or written on open; every write is a person's click, in their own name.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
-import { wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -238,7 +239,7 @@ export function createB2BDeskSession(input: { readonly viewer: { readonly userId
   const call = makeCaller({ keyPrefix: 'b2b-desk', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const id = input.makeId ?? newId;
   const enc = encodeURIComponent;
-  const today = (): string => wallClockIn(new Date().toISOString()).slice(0, 10); // R1c: this device's own date
+  const today = (): string => shopDateIn(new Date().toISOString(), servedShopZone()); // OB-606: the SHOP's date, never this device's
   const contractOf = (c: ContractInput): ContractBody | Invalid => contractBodyOf(c, () => id('K'));
   const doc = (customerId: string, kind: string, body: unknown, prefix: string) => call('POST', `/v1/b2b/documents/${enc(customerId)}/${kind}/${enc(id(prefix))}`, body);
   return {

@@ -71,6 +71,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 13 (29 October 2026): every screen takes the shop's date, on any device (OB-606); decision OB-607
+
+**What changed**
+- Every screen that took "today", a month or a shown date from the device's own clock now uses the shop's day: day book, GST returns, buying, company report, POSH filing, migration, the food-safety board, store-task deadlines, facilities, the manager's day close, customers, loyalty, owner alerts, supplier submissions, production, AI control, rollout, price integrity, the till's concession tag, the supplier and B2B apps and the customer privacy centre.
+- The store computer gives each page the shop's time zone from its signed pack, so this works with the internet off; a page with no zone uses India time, never the device's.
+- Proven by opening each screen in a browser set to New York time at 01:00 shop time; before the fix most showed the wrong day.
+- **OB-607 (owner):** times of day move to the shop's clock everywhere next.
+
+**Tests that ran (builder, this box, synthetic data):** full unit + integration on PostgreSQL 15,675 passed (1 stale evidence ledger, regenerated); full browser suite 694 of 694 passed. The joined branch is re-tested on the pull request.
+
+**What is next:** OB-607. **Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 12 (29 October 2026): the shop's date between midnight and 05:30; decision OB-606
 
 **What happened**
