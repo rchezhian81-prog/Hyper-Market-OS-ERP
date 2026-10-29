@@ -86,6 +86,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Online sto
       expect(await milk.locator('.facts').textContent()).toContain('Missing: grievance officer name, grievance officer contact');
       await milk.locator('button.publish').click();
       await page.locator('#result', { hasText: 'online listing incomplete: grievance officer name' }).waitFor({ timeout: 15_000 });
+      // The page re-reads and redraws the listings after each publish; a click on a row mid-redraw lands on a button
+      // being replaced and is lost. Wait for the re-read to finish before the next click.
+      await page.waitForLoadState('networkidle');
       await page.locator('#listings .row[data-product="SAREE"] button.publish').click();
       await page.locator('#result', { hasText: "other seller's goods: not sold online" }).waitFor({ timeout: 15_000 });
       expect(await page.locator('#listings .row[data-product="MILK"] .state').textContent()).toBe('Not online');
