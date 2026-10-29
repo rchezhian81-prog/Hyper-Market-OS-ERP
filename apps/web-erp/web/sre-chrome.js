@@ -503,6 +503,7 @@
     'shelf-tags': 'tag', // round 7 · OB-505 — an icon already in the set
     'quotations': 'file-text', // round 7 · OB-506 — an icon already in the set
     'certificates': 'badge-check', // round 8 · OB-522 — an icon already in the set
+    'findings': 'clipboard-check', // OB-609 — an icon already in the set
     'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set

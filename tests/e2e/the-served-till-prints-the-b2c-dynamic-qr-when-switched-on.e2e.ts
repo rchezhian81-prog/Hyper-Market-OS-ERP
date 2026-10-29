@@ -119,7 +119,9 @@ describe.skipIf(!HAVE_BROWSER)('A22 — the served till prints the B2C dynamic Q
   it('OFF: no QR on the paper, nothing said', async () => {
     const { page } = await till({});
     await sellOne(page);
-    expect(await page.textContent('#refusal-receipt')).not.toContain('QR');
+    // QR as a word of its own ("[QR] Scan to pay…", "UPI QR switched on…"), never letters inside a code: the bill number's
+    // random prefix can hold them (ZZUQR2NX-000001 failed this check once on 29 Oct 2026 with the receipt correct).
+    expect(await page.textContent('#refusal-receipt')).not.toMatch(/(?<![A-Za-z0-9])QR(?![A-Za-z0-9])/);
     await page.click('#print-bill');
     const [p] = await prints(page);
     expect(p?.qrSrc).toBeNull();

@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1936. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1938. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 97 · Integration (in-process) 104 · Real PostgreSQL 102 · Browser (stub cloud) 91 · Browser (connected) 71 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 42 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 39 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -51,11 +51,11 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M22 | WIRED | 13 | 17 | 10 | 3 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M23 | PARTIALLY_WIRED | 27 | 37 | 23 | 6 | 2 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M24 | E2E_VERIFIED | 4 | 10 | 4 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M25 | E2E_VERIFIED | 12 | 27 | 12 | 10 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M25 | E2E_VERIFIED | 13 | 27 | 12 | 10 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M26 | E2E_VERIFIED | 4 | 12 | 5 | 4 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M27 | WIRED | 8 | 8 | 3 | 3 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M28 | E2E_VERIFIED | 8 | 13 | 7 | 6 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M29 | E2E_VERIFIED | 15 | 16 | 9 | 4 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M29 | E2E_VERIFIED | 16 | 16 | 9 | 4 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M30 | E2E_VERIFIED | 11 | 13 | 7 | 5 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M31 | WIRED | 6 | 14 | 7 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M32 | E2E_VERIFIED | 11 | 19 | 8 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |

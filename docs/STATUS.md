@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-609 (29 October 2026): a page for head office's bill findings and attendance flags
+
+**What changed**
+- **Why:** while the in-store checks were being prepared, two things head office keeps turned out to be on no screen: the findings it raises on till bills (for example, a price cut beyond a manager's limit, or a recalled product sold) and the attendance marks that do not pair up (a forgotten clock-out, including on a night shift). The owner chose to add a page (option 1, OB-609).
+- **New office page, "Bill findings and attendance flags" (Reports menu):**
+  - **Bill findings:** every open critical and material finding, critical first. Each shows the bill number, the product, the money difference, head office's own sentence and what to do. Informational notes (such as a price a quotation promised, OB-551) are shown only as a count.
+  - **Attendance flags:** for the chosen shop day (today by default), the marks that do not pair up, with the person's name and the time on the shop's clock. Head office judges a night shift across midnight.
+  - The owner and the store manager see both sections. The page opens for anyone with either permission and shows only the section they may see. Head office re-checks every read. Nothing is written.
+  - The words around the findings are in English and Tamil; head office's own sentences stay in English (OB-553).
+  - The store computer serves it like every other head-office page (OB-380). With head office out of reach it says so, never shows a copy.
+- **In-store checklist:** checks 3 and 4 can now be confirmed on this page.
+
+**Tests that ran (this box, synthetic data)**
+- New unit test against head office's real routes: 7 tests (two seen failing on purpose with the logic broken).
+- New browser test through a real store computer: 2 tests. The manager sees the findings in order and Ravi's unpaired "out", in English and Tamil, and nothing is written; a cashier is refused.
+- The browser test of every office page ("says when head office is down"): now 60 pages, all pass.
+- Guardrails (150 files), the menu and page tests, type check, lint; the full default suite: 14,550 passed, 0 failed (580 PostgreSQL tests skipped here; CI runs them).
+- **Fixed in passing:** the till's "no QR on the bill when switched off" browser test failed once in CI because the bill number's random prefix (ZZUQR2NX) contained the letters "QR". The receipt was correct. The test now looks for QR as a word of its own, so it still catches a real QR line. Test only.
+
+**Seen, not changed**
+- `GET /v1/sales/exceptions` is not limited to the reader's own stores (it reads the whole company). With one store this changes nothing; a second store would need it narrowed.
+
+**What is next**
+- The owner's in-store checks, now including checks 3 and 4 on this page.
+
+**Blocked:** nothing. **Owner decisions needed:** none.
+
+---
 ## Store pilot checklist (29 October 2026): what to buy, sign and arrange
 - **What changed:** new `docs/runbooks/pilot-buy-and-sign-checklist.md` (listed in the runbooks index). It puts the 41 roadmap rows that need something from outside (equipment, contracts, people, real data) in the order to start them, with who does each and how to know it is done. Every row ID is kept and all 41 are listed; nothing new is required. Also removed a duplicated heading in this file.
 - **Tests:** docs only; guardrails run before the pull request.
