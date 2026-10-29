@@ -34,7 +34,9 @@ import {
   DATE_ORDERS, OLD_ERP_FILE_MAX_BYTES, OLD_ERP_REPORTS, columnValuesOf, headerKey, headerRowOf, judgeMapping, oldErpTemplateCsv,
 } from '../../../packages/migration/src/old-erp-reports';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
-import { makeTradingDayRule, wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
+// OB-606: every page's "today", month and shown dates at the SHOP's clock (the zone the store computer told the page).
+import { shopDay, type ShopDay } from '../../../packages/calendar/src/shop-day';
 import {
   APPROVE_REASONS,
   REJECT_REASONS,
@@ -2245,8 +2247,8 @@ function openFacilitiesVerifyPort(): FacilitiesVerifyPort {
 export async function fetchFacilitiesBoard(): Promise<FacilitiesData | null> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return null;
-  // R1c: the local YYYY-MM-DD this browser's wall clock reads (the shop's day), not the UTC date.
-  const asOf = wallClockIn(new Date().toISOString()).slice(0, 10);
+  // OB-606: the SHOP's today (its zone, as the store computer told this page) — never this browser's own date.
+  const asOf = shopDay().today();
   try {
     const res = await fetchFn(`/v1/facilities/overdue?asOf=${asOf}`, {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
@@ -5126,6 +5128,8 @@ export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbo
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
+  /** OB-606: the shop's day for every page — today, this month, a shown date — at the shop's clock, never the device's. */
+  sreShopDay?: ShopDay;
   managerSession?: ManagerSession;
   managerData?: ManagerData;
   /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
@@ -6453,6 +6457,8 @@ export function bootReporting(data: ReportingData | undefined): ReportingSession
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
 const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
+  // OB-606: one shop's day for every page in this bundle (each page's own script reads its dates from it).
+  browserWindow.sreShopDay = shopDay();
   // The day close (M14-FR-04) reaches the store computer when the box injected its lane address;
   // without it the manager screen falls back to a local preview close that only touches this browser.
   // The manager's DURABLE device queue (SP-2a · F11): opened here so the session writes into it and the relay

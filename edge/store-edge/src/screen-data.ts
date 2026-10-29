@@ -636,10 +636,13 @@ export interface LaneHealth {
  * tills' last device reports (peripheral-health.ts), its own outbox, and its last send to head office. A device the till
  * never reported is "not reported", never "working" (P-08). Undefined on a box that keeps no device reports (no till).
  */
-const shopClock = (iso: string): string | null => { try { return wallClockIn(iso); } catch { return null; } };
+// OB-606: the shop's wall clock of a moment, in the shop's zone from the signed pack — never this machine's zone (a box
+// container keeps UTC unless told, so a lane's last report read 19:30 when the shop's clock said 01:00 the next day).
+const shopClock = (iso: string, timeZone: string): string | null => { try { return wallClockIn(iso, timeZone); } catch { return null; } };
 
 export function laneHealth(input: ScreenInput): readonly LaneHealth[] | undefined {
   if (input.peripheralReports === undefined) return undefined;
+  const zone = packTimeZone((input as { readonly pack?: ScreenInput['pack'] }).pack ?? { policies: { known: false } }); // a box with no pack yet: the shop default
   const laneOf = (payload: unknown): string | null => {
     const l = payload !== null && typeof payload === 'object' ? (payload as { laneId?: unknown }).laneId : undefined;
     return typeof l === 'string' && l !== '' ? l : null;
@@ -659,10 +662,10 @@ export function laneHealth(input: ScreenInput): readonly LaneHealth[] | undefine
     return {
       laneId,
       lastReportAt: report?.reportedAt ?? null,
-      lastReportShop: report === undefined ? null : shopClock(report.reportedAt),
+      lastReportShop: report === undefined ? null : shopClock(report.reportedAt, zone),
       devices: { printer: said('printer'), scanner: said('scanner'), card_terminal: said('card_terminal') },
       unsent: unsentBy.get(laneId) ?? 0,
-      ...(input.laneLink === undefined ? {} : { boxLastSentAt: input.laneLink.lastSentAt, boxLastSentShop: input.laneLink.lastSentAt === null ? null : shopClock(input.laneLink.lastSentAt) }),
+      ...(input.laneLink === undefined ? {} : { boxLastSentAt: input.laneLink.lastSentAt, boxLastSentShop: input.laneLink.lastSentAt === null ? null : shopClock(input.laneLink.lastSentAt, zone) }),
       problems: report === undefined ? 0 : report.devices.filter((d) => d.state !== 'ok').length,
     };
   });

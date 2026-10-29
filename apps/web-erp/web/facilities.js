@@ -7,6 +7,8 @@
 // box to type a second person's name). Both are HUMAN decisions that run ONLY on an explicit click, never on load;
 // on success the board is re-read (a GET) so a finished check drops off. No prompt/confirm/alert.
 
+// OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -115,7 +117,7 @@ function rowNode(r) {
   const facts = document.createElement('div'); facts.className = 'facts';
   facts.append(
     fact(t('categoryLabel'), r.categoryWord),
-    fact(t('dueLabel'), new Date(r.dueOn).toLocaleDateString()),
+    fact(t('dueLabel'), shopDayOf(r.dueOn)),
     fact(t('lateLabel'), r.lateWord),
   );
   if (r.escalateTo) facts.append(fact(t('escalatedToLabel'), r.escalateTo));

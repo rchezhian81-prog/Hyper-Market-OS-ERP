@@ -69,12 +69,12 @@ const may = (p) => held.has(p);
 /** ₹ from paise, Indian grouping — a figure for reading, never for sums. */
 const rupees = (minor) => `${minor < 0 ? '−' : ''}₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const taxOf = (h) => h.cgstMinor + h.sgstMinor + h.igstMinor;
-/** The shop's last month, MMYYYY, from the browser's own calendar (the default to show — head office decides the rest). */
+/** The shop's last month, MMYYYY, from the SHOP's calendar (OB-606: its zone, never this browser's own) — the default to
+ *  show; head office decides the rest. '' when the bundle is not here to say. */
 function lastMonth() {
-  const d = new Date();
-  const m = d.getMonth() === 0 ? 12 : d.getMonth();
-  const y = d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear();
-  return `${String(m).padStart(2, '0')}${y}`;
+  if (window.sreShopDay === undefined) return '';
+  const ym = window.sreShopDay.lastMonth();
+  return `${ym.slice(5, 7)}${ym.slice(0, 4)}`;
 }
 const fyOf = (fp) => { const m = Number(fp.slice(0, 2)); const y = Number(fp.slice(2)); const s = m >= 4 ? y : y - 1; return `${s}-${String((s + 1) % 100).padStart(2, '0')}`; };
 

@@ -8,13 +8,14 @@
 //     it) and the driver's last stamped stop with an estimate — "not given yet" until head office gives them, never made up.
 
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 /**
  * Today in the SHOP's own zone (packages/calendar shop-clock) — a repeat order's earliest start day. Never the phone's own
  * date and never the UTC date: head office judges "not before today" by the shop's day, and a phone set to another zone
  * (or the UTC date, from 18:30 UTC) is still on the shop's yesterday — the order was refused as starting in the past.
  */
-export const todayAtShop = (nowIso: string = new Date().toISOString()): string => shopDateIn(nowIso);
+export const todayAtShop = (nowIso: string = new Date().toISOString(), timeZone: string = servedShopZone()): string => shopDateIn(nowIso, timeZone);
 
 /** The coupon codes the shop reads (the same rule as head office's). */
 export const COUPON_CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;

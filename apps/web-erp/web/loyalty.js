@@ -4,6 +4,8 @@
 // stays "not on record". Tiers and expiry read "not set" until the owner enters them; the CA's note stands beside
 // expiry. Every state is an icon AND words; every word has a Tamil twin.
 
+// OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.loyaltyDesk ?? null;
 const session = api?.session ?? null;
@@ -63,7 +65,7 @@ function paintFound() {
   facts.append(text('span', tierLine, 'tier'));
   if (s.nextTier) facts.append(text('span', `↑ ${api.rupees(s.nextTier.moreSpendMinor)} ${t('more')} ${t('nextTier')} ${s.nextTier.name}`, 'next'));
   const exp = s.expiry.state === 'not_set' ? `○ ${t('expiryNotSet')}`
-    : s.expiry.next ? `⏱ ${t('nextExpiry')}: ${s.expiry.next.points} ${t('points')} ${t('on')} ${new Date(s.expiry.next.expiresAt).toLocaleDateString('en-CA')}` : `✓ ${t('nothingToExpire')}`;
+    : s.expiry.next ? `⏱ ${t('nextExpiry')}: ${s.expiry.next.points} ${t('points')} ${t('on')} ${shopDayOf(s.expiry.next.expiresAt)}` : `✓ ${t('nothingToExpire')}`;
   facts.append(text('span', exp, 'expiry'));
   li.append(facts);
   $('found').replaceChildren(li);
@@ -121,7 +123,7 @@ function paintTierRows() { $('tier-rows').replaceChildren(...tierDrafts.map(tier
 function draftsFrom(p) {
   tierDrafts = p.tiers.tiers.map((x) => ({ name: x.name, nameTa: x.nameTa ?? '', spendRupees: String(x.minSpend12mMinor / 100), multiplier: api.multiplierWords(x.multiplierBps) }));
 }
-function lastSet(last) { return last === null ? '' : ` · ${t('lastSet')} ${last.setBy} ${new Date(last.setAt).toLocaleDateString('en-CA')}: ${last.reason}`; }
+function lastSet(last) { return last === null ? '' : ` · ${t('lastSet')} ${last.setBy} ${shopDayOf(last.setAt)}: ${last.reason}`; }
 function paintProgramme() {
   $('owner-only').hidden = may.configure || !may.read; $('owner-only').textContent = `○ ${t('ownerOnly')}`;
   for (const id of ['add-tier', 'save-tiers', 'save-expiry', 'tiers-reason', 'expiry-reason', 'expiry-months']) $(id).disabled = !may.configure;
@@ -177,7 +179,7 @@ function paintReferral() {
   const both = referral.referrer.state === 'set' && referral.referred.state === 'set';
   $('referral-say').className = `status ${both ? 'good' : ''}`;
   $('referral-say').dataset.referrer = referral.referrer.state; $('referral-say').dataset.referred = referral.referred.state;
-  $('referral-say').textContent = `${both ? '✓' : '○'} ${t('referrerL').replace(' (₹)', '')}: ${side(referral.referrer)} · ${t('referredL').replace(' (₹)', '')}: ${side(referral.referred)}${referral.lastSetBy ? ` · ${t('lastSet')} ${referral.lastSetBy} ${new Date(referral.lastSetAt).toLocaleDateString('en-CA')}: ${referral.lastReason}` : ''}`;
+  $('referral-say').textContent = `${both ? '✓' : '○'} ${t('referrerL').replace(' (₹)', '')}: ${side(referral.referrer)} · ${t('referredL').replace(' (₹)', '')}: ${side(referral.referred)}${referral.lastSetBy ? ` · ${t('lastSet')} ${referral.lastSetBy} ${shopDayOf(referral.lastSetAt)}: ${referral.lastReason}` : ''}`;
 }
 async function loadReferral() {
   const out = await session.referralRewards();

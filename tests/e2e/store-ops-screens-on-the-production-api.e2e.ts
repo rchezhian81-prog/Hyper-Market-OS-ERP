@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { instantOf, wallClockIn } from '../../packages/calendar/src/trading-day';
 
 /**
  * **OB-154 (owner, 16 Oct 2026, "Add screens before pilot") — the store-operations screens, in a real browser, on the
@@ -29,11 +30,14 @@ const DATA = 'storeOpsData';
 // The whole journey runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case
 // is proven whenever this runs.
 const EVENING = theEvening();
-/** An `Etc/GMT` zone in which the clock reads about midday now (its sign is reversed: `Etc/GMT-5` is UTC+5). */
-const MIDDAY_ZONE = (() => {
-  const ahead = Math.max(-12, Math.min(14, 12 - new Date(EVENING.at).getUTCHours()));
-  return ahead === 0 ? 'Etc/GMT' : `Etc/GMT${ahead > 0 ? '-' : '+'}${Math.abs(ahead)}`;
-})();
+// OB-606 (round 13): the browsers run on a device in New York — NOT India — where 19:30 UTC is still the afternoon of the
+// shop's yesterday. Each screen must show the shop's day anyway (round 12 worked around the food-safety board's own-zone
+// "today" by running it in a zone where it was midday; the board now takes the shop's day and the work-around is gone).
+const DEVICE_ZONE = 'America/New_York';
+// The food-safety slots: hourly from 23:00 the shop's yesterday — 23:00 (yesterday's board), 00:00 (today's, MISSED by
+// 00:59) and 01:00, the pinned moment itself (today's, DUE).
+const SHOP_MIDNIGHT = Date.parse(instantOf(`${EVENING.shopDate}T00:00`, 'Asia/Kolkata'));
+const slot = (hoursFromShopMidnight: number) => new Date(SHOP_MIDNIGHT + hoursFromShopMidnight * HOUR).toISOString();
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-operations screens (OB-154) on the production API, in a real browser', () => {
   let browser: Browser;
@@ -65,7 +69,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
         await cloud.grant(CASHIER, 'cashier');
         // (a) an hourly chiller check from two hours ago: two slots missed, this hour's due.
         await ok(cloud.request({ method: 'POST', path: '/v1/facilities/food-safety/checks/chiller', userId: OWNER, idempotencyKey: 'fs-chiller', body: {
-          branchId: 'br-1', title: 'Dairy chiller', kind: 'temperature', everyMinutes: 60, startsAt: at(-2), graceMinutes: 59, minTenthsC: 0, maxTenthsC: 50, assignedRole: 'store_manager', escalatesTo: OWNER,
+          branchId: 'br-1', title: 'Dairy chiller', kind: 'temperature', everyMinutes: 60, startsAt: slot(-1), graceMinutes: 59, minTenthsC: 0, maxTenthsC: 50, assignedRole: 'store_manager', escalatesTo: OWNER,
         } }), 'define chiller');
         // (b) the price of record for OIL at br-1 is ₹55; the shelf was seen showing ₹50.
         await ok(cloud.request({ method: 'POST', path: '/v1/prices/list/OIL/entries/e-oil', userId: OWNER, idempotencyKey: 'price-oil', body: { scope: 'store', scopeRef: 'br-1', priceMinor: 5_500, mrpMinor: 11_000, costMinor: 2_500, marginFloorBps: 0, currency: 'INR', effectiveFrom: today } }), 'price');
@@ -99,15 +103,17 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   };
 
   it('(a) food-safety: today shows missed and due; a failure with no action is refused; with it, recorded in the owner\'s name', async () => {
-    // "Today" on the food-safety board starts at the browser's own midnight. The slots are seeded from two hours ago, so the
-    // browser runs in a zone where it is about noon now — just after midnight they would fall on yesterday's board.
-    const { page, close } = await open(OWNER, '/food-safety', MIDDAY_ZONE);
+    // "Today" on the food-safety board is the SHOP's today (OB-606), on a device in New York at 01:00 shop time.
+    const { page, close } = await open(OWNER, '/food-safety', DEVICE_ZONE);
     try {
       await page.locator('#rows .row').first().waitFor({ timeout: 15_000 });
-      // The last hour's slot is MISSED (escalated); the count is exactly the missed rows the page shows.
-      expect(await page.locator(`#rows .row[data-slot="${at(-1)}"]`).getAttribute('data-state')).toBe('missed');
+      expect(await page.getAttribute('#today-h', 'data-day')).toBe(EVENING.shopDate);
+      // The shop's midnight slot is MISSED (escalated); the count is exactly the missed rows the page shows.
+      expect(await page.locator(`#rows .row[data-slot="${slot(0)}"]`).getAttribute('data-state')).toBe('missed');
       expect(await page.textContent('#v-missed')).toBe(String(await page.locator('#rows .row[data-state="missed"]').count()));
-      const due = page.locator(`#rows .row[data-slot="${at(0)}"]`);
+      // 23:00 the shop's yesterday is yesterday's board — never shown as today's (New York's own "today" showed it).
+      expect(await page.locator(`#rows .row[data-slot="${slot(-1)}"]`).count()).toBe(0);
+      const due = page.locator(`#rows .row[data-slot="${slot(1)}"]`);
       expect(await due.getAttribute('data-state')).toBe('due');
       await due.locator('input.reading').fill('9.2');
       await due.locator('button.save').click();
@@ -115,7 +121,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
       expect(await due.locator('.status').textContent()).toMatch(/write down what was done/);
       await due.locator('textarea.action').fill('Moved the milk to the walk-in; engineer called');
       await due.locator('button.save').click();
-      await page.locator(`#rows .row[data-slot="${at(0)}"][data-state="done_failed"]`).waitFor({ timeout: 15_000 });
+      await page.locator(`#rows .row[data-slot="${slot(1)}"][data-state="done_failed"]`).waitFor({ timeout: 15_000 });
       expect(await page.textContent('#v-failed')).toBe('1');
       const status = (await shop.cloud().request({ method: 'GET', path: `/v1/facilities/food-safety/status?from=${encodeURIComponent(at(-3))}`, userId: OWNER })).body as { failed: { performedBy: string; correctiveAction: string }[] };
       expect(status.failed).toEqual([expect.objectContaining({ performedBy: OWNER, correctiveAction: 'Moved the milk to the walk-in; engineer called' })]);
@@ -125,7 +131,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   }, 60_000);
 
   it('(b) price mismatches: the shelf below the price of record, in the owner\'s four bands', async () => {
-    const { page, close } = await open(OWNER, '/price-integrity');
+    const { page, close } = await open(OWNER, '/price-integrity', DEVICE_ZONE);
     try {
       expect(await page.locator('#bands .panel').count()).toBe(4);
       await page.fill('#branch', 'br-1');
@@ -134,18 +140,21 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
       const row = page.locator('#rows tr[data-product="OIL"][data-surface="shelf_label"]');
       expect(await row.getAttribute('data-kind')).toBe('shown_below_record');
       expect(await row.textContent()).toMatch(/Shelf label — shows LESS than the price — honour it.*₹55\.00.*₹50\.00.*Under 1 day/);
+      // OB-606: open since the SHOP's date it was seen — on a device in New York, still the shop's yesterday there.
+      expect(await row.textContent()).toContain(EVENING.shopDate);
       expect(await page.locator('#bands .panel[data-band="under 1 day"] .v').textContent()).toBe('1');
     } finally { await close(); }
   }, 60_000);
 
   it('(c) store tasks: the owner assigns on the board; the cashier completes it on his own page with evidence; the board says done', async () => {
-    const board = await open(OWNER, '/store-tasks');
+    const board = await open(OWNER, '/store-tasks', DEVICE_ZONE);
     try {
       await board.page.locator('#assign-section').waitFor({ state: 'visible', timeout: 15_000 });
       await board.page.fill('#a-title', 'Face up aisle 4');
       await board.page.fill('#a-person', CASHIER);
       await board.page.fill('#a-branch', 'br-1');
-      await board.page.fill('#a-due', new Date(H + 3 * HOUR).toISOString().slice(0, 16));
+      // The deadline field holds the SHOP's wall clock (OB-606) — three hours from now, as the shop's clock reads it.
+      await board.page.fill('#a-due', wallClockIn(new Date(H + 3 * HOUR).toISOString(), 'Asia/Kolkata'));
       await board.page.check('#a-evidence');
       await board.page.click('#a-save');
       await board.page.locator('#rows .row[data-status="pending"]').waitFor({ timeout: 15_000 });

@@ -8,11 +8,10 @@
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
-/** Yesterday in the store's local calendar — the day an accountant usually posts in the morning. */
+/** Yesterday in the SHOP's calendar (OB-606: its zone, never this device's) — the day an accountant usually posts in the
+ *  morning. '' when the bundle is not here to say (the day is then the person's to choose). */
 function defaultDay() {
-  const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return window.sreShopDay === undefined ? '' : window.sreShopDay.daysAgo(1);
 }
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */

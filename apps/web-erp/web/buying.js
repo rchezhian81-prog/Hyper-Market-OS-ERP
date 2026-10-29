@@ -597,8 +597,8 @@ el('raise-po').addEventListener('click', async () => {
 
 const otb = window.buyingOpenToBuy ?? null;
 let otbLast = null;
-// R1c (M01-FR-02): this device's own date (it stands in the shop), never the UTC date of the moment.
-const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+// OB-606 (M01-FR-02): the SHOP's month (its zone, as the store computer told the page) — never this device's own month.
+const thisMonth = () => (window.sreShopDay === undefined ? '' : window.sreShopDay.thisMonth());
 
 function otbSay(id, answer, good) {
   const node = el(id);

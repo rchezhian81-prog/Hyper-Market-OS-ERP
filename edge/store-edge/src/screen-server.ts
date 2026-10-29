@@ -29,6 +29,7 @@ import { createServer, type Server, type ServerResponse, type IncomingMessage } 
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
+import { packTimeZone } from './shop-zone'; // OB-606
 import { navigationPayload, type NavigationPayload, asSignedInPerson, permissionsOf } from './screen-navigation';
 import { ERP_NAVIGATION, permissionsOpening } from '../../../apps/web-erp/src/navigation';
 import {
@@ -797,6 +798,9 @@ export function startScreenServer(input: {
           // OB-388: with no office PIN on this box, the head-office sign-in names who is looking — and draws the Sign out bar.
           ...(officeUser !== null || headOfficeUser === null ? {} : signedInGlobals({ userId: headOfficeUser, displayName: displayNameIn(snap.pack, headOfficeUser), expiresAt: '' })),
           catalogueFreshness: catalogueFreshness(snap),
+          // OB-606: the shop's zone from this box's SIGNED store pack (else the shop default) — every page dates "today",
+          // a month and a shown date by it (packages/calendar shop-day), never by its device's own zone; no network call.
+          shopTimeZone: packTimeZone(snap.pack),
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
           ...(posLane === undefined ? {} : { posLane }),
           ...(posRefundPolicy === undefined ? {} : { posRefundPolicy }),

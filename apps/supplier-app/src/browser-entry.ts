@@ -29,6 +29,7 @@ import {
 } from './supplier-portal-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
+import { shopDateOf } from '../../../packages/calendar/src/shop-day';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
@@ -60,6 +61,8 @@ interface SupplierWindow {
     rebateClaims(): SupplierRebateClaimsFeed | null;
     /** OB-389: send the Top-up proposal — checked first; the second and last write this surface makes. */
     sendTopUpProposal(input: TopUpInput): Promise<TopUpOutcome>;
+    /** OB-606: the SHOP's date of a moment (the shop's zone, never the supplier's device's) — an order's issue date. */
+    dateOf(value: unknown): string;
   };
 }
 
@@ -267,6 +270,7 @@ export function attachSupplierPortal(win: SupplierWindow): void {
       supplierPortalPortsFromData(data, folded),
     );
   win.supplierPortal = {
+    dateOf: (value) => shopDateOf(value),
     refresh: async () => {
       // The feeds read together; a feed that fails to load stays absent rather than becoming a false empty.
       const mayPropose = new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION);

@@ -14,11 +14,12 @@
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
 import { rupees } from './blanket-orders-session';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export { rupees };
 export type Lang = 'en' | 'ta';
 /** Today in the shop's own zone (packages/calendar shop-clock), never the browser's or UTC — the form's default day. */
-export const todayAtShop = (nowIso: string = new Date().toISOString()): string => shopDateIn(nowIso);
+export const todayAtShop = (nowIso: string = new Date().toISOString(), timeZone: string = servedShopZone()): string => shopDateIn(nowIso, timeZone);
 export type CompareBy = 'branch' | 'category' | 'vendor' | 'staff';
 export const COMPARE_BY: readonly CompareBy[] = ['branch', 'category', 'vendor', 'staff'];
 /** The longest period one drill may cover — head office's own bound (MAX_DRILL_DAYS), checked here only to say it first. */

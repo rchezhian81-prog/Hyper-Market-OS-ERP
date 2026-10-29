@@ -14,7 +14,8 @@
 // signed-in person — head office takes it from the session; the page never names anyone as the author.
 
 import type { ViewerIdentity } from './browser-entry';
-import { wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -177,7 +178,7 @@ export function createIncidentsSession(input: {
   };
   const rand = (): string => (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
   const newKey = input.newKey ?? (() => `inc-${rand()}`);
-  const newIncidentId = input.newIncidentId ?? (() => `inc-${wallClockIn(new Date().toISOString()).slice(0, 10).replace(/-/g, '')}-${rand().slice(0, 8)}`);
+  const newIncidentId = input.newIncidentId ?? (() => `inc-${shopDateIn(new Date().toISOString(), servedShopZone()).replace(/-/g, '')}-${rand().slice(0, 8)}`);
   const newActionId = input.newActionId ?? (() => `act-${rand().slice(0, 8)}`);
   const http = input.fetch ?? ((...a: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...a));
 

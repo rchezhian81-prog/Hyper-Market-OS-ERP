@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1932,
+  "testFiles": 1934,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -32,11 +32,11 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 27,
+        "unit": 28,
         "integration": 25,
         "realDb": 12,
-        "browser": 8,
-        "connected": 4,
+        "browser": 9,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -57,6 +57,7 @@
           "tests/unit/persistence-config-store.test.ts",
           "tests/unit/pos-receipt-numbering.test.ts",
           "tests/unit/published-templates-pull.test.ts",
+          "tests/unit/r13a-screens-take-the-shops-date.test.ts",
           "tests/unit/receipt-numbers.test.ts",
           "tests/unit/receipt.test.ts",
           "tests/unit/reporting-consolidation.test.ts",
@@ -115,6 +116,7 @@
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/document-template-publish-delivery.e2e.ts",
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
+          "tests/e2e/r13a-the-office-pages-open-on-the-shops-day.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
           "tests/e2e/the-manager-sees-when-the-box-zone-is-not-the-shops.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
@@ -124,6 +126,7 @@
         "connected": [
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
+          "tests/e2e/r13a-the-office-pages-open-on-the-shops-day.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts"
         ],

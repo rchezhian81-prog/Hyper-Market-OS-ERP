@@ -690,8 +690,9 @@ function labelled(button, iconName, word) {
   button.replaceChildren(...(mark ? [mark, text] : [text]));
   button.classList.add('sre-with-icon');
 }
-// R1c (M01-FR-02): this device's own date (it stands in the shop), never the UTC date of the moment.
-const today = () => { const d = new Date(window.migrationData?.now ?? Date.now()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// OB-606 (M01-FR-02): the SHOP's date of the page's moment (its zone, as the store computer told the page) — never this
+// device's own date, and never the UTC date. '' when the bundle is not here to say.
+const today = () => (window.sreShopDay === undefined ? '' : (window.migrationData?.now ? window.sreShopDay.dateOf(window.migrationData.now) : window.sreShopDay.today()));
 const enteredHere = new Set();
 
 function buildAreas() {

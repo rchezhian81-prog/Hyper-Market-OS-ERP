@@ -68,7 +68,8 @@ interface Recorder {
 /** OB-362: the supplier's own open orders, as `/me/orders` answers (scoped on the server — never another supplier's). */
 const ORDERS = [
   { poId: 'po-a1', number: 'PO-000001', issuedAt: '2026-10-20T09:00:00Z', deliverToLocationId: 'br-1', lines: 1 },
-  { poId: 'po-a3', number: 'PO-000003', issuedAt: '2026-10-22T09:00:00Z', deliverToLocationId: 'br-1', lines: 2 },
+  // OB-606: issued at 19:30 UTC on the 21st — 01:00 on the 22nd in the shop; the portal shows the SHOP's date of issue.
+  { poId: 'po-a3', number: 'PO-000003', issuedAt: '2026-10-21T19:30:00Z', deliverToLocationId: 'br-1', lines: 2 },
 ];
 
 /** D03-FR-03 · OB-404: two claims the shop SENT this supplier — one waiting with no due day set yet, one partly paid. */
@@ -230,7 +231,8 @@ describe.skipIf(!HAVE_BROWSER)('a supplier reads its own account end to end in a
   it('OB-362: the Delivery update form names only its own open orders, refuses before sending, and sends ONE delivery_status — in English and Tamil', async () => {
     const rec: Recorder = { supplierData: login('u-acme', ['supplier.portal.self', 'supplier.portal.self.submit']), mayRead: true, mayUpdate: true, requests: [] };
     const srv = await startPageAndCloud(rec);
-    const context = await browser.newContext();
+    // OB-606: the supplier's device is in New York, not India — an order's date is still the shop's date of issue.
+    const context = await browser.newContext({ timezoneId: 'America/New_York' });
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

@@ -3,3 +3,4 @@
 
 export * from './trading-day';
 export * from './shop-clock';
+export * from './shop-day';

@@ -8,6 +8,8 @@
 // on this page — head office computes it from the contract. Corrections (a reversal, an adjustment) are a
 // supervisor's act at head office, never a rewrite here (§28, hard rule #2).
 
+import { shopDateIn, shopZoneOf } from './shop-date.js';
+
 const $ = (id) => document.getElementById(id);
 
 const statusEl = $('status');
@@ -27,8 +29,9 @@ function laneBase() {
 
 const str = (id) => $(id).value.trim();
 const num = (id) => Number($(id).value);
-// R1c (M01-FR-02): this device's own date (it stands in the shop), never the UTC date of the moment.
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// OB-606 (M01-FR-02): the SHOP's date (its zone, from the store computer's signed pack — offline), never this till
+// device's own date and never the UTC date of the moment.
+const today = () => shopDateIn(Date.now(), shopZoneOf(window));
 
 /** The lines this page recorded in this session — what the box accepted, never a claim about the cloud. */
 const recorded = [];

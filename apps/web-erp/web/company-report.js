@@ -92,7 +92,8 @@ async function getJson(path) {
 // The month, from the page address; it defaults to the current one. The company comes from head office (below).
 const PAGE = new URLSearchParams(window.location.search);
 const ASKED_NODE = PAGE.get('node');
-const PERIOD = /^\d{4}-\d{2}$/.test(PAGE.get('period') || '') ? PAGE.get('period') : ((d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)(new Date()); // R1c: this device's own month
+// OB-606: the SHOP's month (its zone, as the store computer told the page) — never this device's own month.
+const PERIOD = /^\d{4}-\d{2}$/.test(PAGE.get('period') || '') ? PAGE.get('period') : (window.sreShopDay === undefined ? '' : window.sreShopDay.thisMonth());
 let NODE = null;
 
 /** Head office's company structure: the companies, the branches of each, and every node's name. */

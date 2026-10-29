@@ -21,7 +21,8 @@
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
-import { wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 // ── the raw feeds, exactly as the cloud hands them over (the screen consumes the served JSON) ───────────────
 
@@ -349,8 +350,8 @@ export function createB2BPortalSession(config: B2BPortalConfig, ports: B2BPortal
         return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('stateNotPermitted') }), notIdentified);
       }
       const data = ports.portal();
-      // R1c: this device's own date of the reading (a reading not yet made has no moment: its text is kept as it is).
-      const today = Number.isNaN(Date.parse(data.asAt)) ? data.asAt.slice(0, 10) : wallClockIn(data.asAt).slice(0, 10);
+      // OB-606: the SHOP's date of the reading, never this device's (a reading not yet made has no moment: its text is kept).
+      const today = Number.isNaN(Date.parse(data.asAt)) ? data.asAt.slice(0, 10) : shopDateIn(data.asAt, servedShopZone());
 
       // Each feed stands on its own: shown, refused (the login lacks the grant — a permission answer, never a
       // zero), unreadable just now, or genuinely empty. A refused statement is NOT "you owe nothing" (P-08).

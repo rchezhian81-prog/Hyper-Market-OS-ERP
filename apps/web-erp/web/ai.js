@@ -19,6 +19,8 @@
 //
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
+// OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 
 const money = (minor) =>
@@ -411,8 +413,8 @@ function evaluationWords(agent) {
   if (agent.evaluationCases === 0) return t('noCases');
   const e = agent.lastEvaluation;
   if (e === null) return t('noEvaluation');
-  if (!e.complete) return `${t('checked')} ${new Date(e.at).toLocaleDateString()} · ${t('incomplete')}`;
-  return `${t('checked')} ${new Date(e.at).toLocaleDateString()} · ${e.passed}/${e.total} ${t('passed')}${e.unsafe > 0 ? ` · ${e.unsafe} ${t('unsafe')}` : ''}`;
+  if (!e.complete) return `${t('checked')} ${shopDayOf(e.at)} · ${t('incomplete')}`;
+  return `${t('checked')} ${shopDayOf(e.at)} · ${e.passed}/${e.total} ${t('passed')}${e.unsafe > 0 ? ` · ${e.unsafe} ${t('unsafe')}` : ''}`;
 }
 
 // ── Waiting for you ─────────────────────────────────────────────────────────
@@ -543,7 +545,7 @@ function renderModels() {
       what.className = 'what';
       const name = document.createElement('strong');
       name.textContent = `${m.modelId} (${m.tier}) — ${m.state === 'approved' ? t('approvedOn') : t('withdrawn')}`;
-      what.append(name, line(`${m.adapterId} · ${t('residency')} ${m.dataResidency === 'india' ? t('india') : t('outside')} · ${m.approvedBy} · ${new Date(m.approvedAt).toLocaleDateString()}${m.withdrawnReason === undefined ? '' : ` · ${m.withdrawnReason}`}`));
+      what.append(name, line(`${m.adapterId} · ${t('residency')} ${m.dataResidency === 'india' ? t('india') : t('outside')} · ${m.approvedBy} · ${shopDayOf(m.approvedAt)}${m.withdrawnReason === undefined ? '' : ` · ${m.withdrawnReason}`}`));
       row.append(what);
       return row;
     })));

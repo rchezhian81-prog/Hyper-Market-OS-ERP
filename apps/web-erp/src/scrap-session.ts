@@ -14,11 +14,12 @@
 import { makeCaller, outcomeIn, newId, type Outcome } from './r4-insight-call';
 import { paiseOf, rupees } from './blanket-orders-session';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export { rupees };
 export type Lang = 'en' | 'ta';
 /** Today in the shop's own zone (packages/calendar shop-clock), never the browser's or UTC — the form's default day. */
-export const todayAtShop = (nowIso: string = new Date().toISOString()): string => shopDateIn(nowIso);
+export const todayAtShop = (nowIso: string = new Date().toISOString(), timeZone: string = servedShopZone()): string => shopDateIn(nowIso, timeZone);
 
 export const SCRAP_CATEGORIES = ['cardboard', 'plastic', 'metal', 'e_waste', 'used_oil', 'damaged_stock', 'expired_stock', 'other'] as const;
 export const SCRAP_DISPOSALS = ['sold', 'recycled', 'donated', 'destroyed'] as const;

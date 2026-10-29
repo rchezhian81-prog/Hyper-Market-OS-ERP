@@ -14,7 +14,8 @@
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
 import { rupees } from './head-office-http';
-import { wallClockIn } from '../../../packages/calendar/src/trading-day';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -194,7 +195,7 @@ export function planBody(form: NewPlanForm): { readonly body: Record<string, unk
   };
 }
 
-const stamp = (): string => wallClockIn(new Date().toISOString()).slice(0, 10).replace(/-/g, ''); // R1c: this device's own date
+const stamp = (): string => shopDateIn(new Date().toISOString(), servedShopZone()).replace(/-/g, ''); // OB-606: the SHOP's date, never this device's
 const rand = (): string => Math.random().toString(36).slice(2, 7);
 
 export function createCountPlansSession(viewer: CountPlanViewer | undefined, http: HeadOfficeHttp, ids: { plan(): string; count(planId: string, productId: string): string } = {

@@ -1307,6 +1307,7 @@ function renderBlockers(blockers) {
     const words_ = BLOCKER_WORDS[blocker.kind]?.[lang] ?? BLOCKER_WORDS[blocker.kind]?.en ?? { title: blocker.kind, todo: '' };
     const box = document.createElement('div');
     box.className = 'blocker';
+    box.dataset.kind = blocker.kind; // which blocker, for a reader (and a test) — the words stay the person's
 
     const title = document.createElement('h3');
     // A count belongs in front of the sentence where there is one, and nowhere where there is not.
@@ -1346,8 +1347,11 @@ function renderBlockers(blockers) {
   }));
 }
 
-/** Store-local wall-clock, as the trading-day rule expects it ("YYYY-MM-DDTHH:MM"). */
+/** The SHOP's wall clock, as the trading-day rule expects it ("YYYY-MM-DDTHH:MM") — OB-606: in the shop's zone (as the
+ *  store computer told the page), never this device's: a laptop set to London closed the shop's yesterday. */
 function localStamp() {
+  if (window.sreShopDay !== undefined) return window.sreShopDay.wallClock();
+  // The sample stand-in (no bundle): this device's own clock, and the page already says it is sample data.
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
