@@ -34,8 +34,6 @@ export interface OperationsFindingView {
   readonly status: string;
   readonly headline: string;
   readonly detail: string;
-  /** OB-435 · OB-439: the headline and detail in both languages (absent from an older head office: English only). */
-  readonly words?: { readonly en: { readonly headline: string; readonly detail: string }; readonly ta: { readonly headline: string; readonly detail: string } };
   /** The recommended runbook — the reviewed steps an operator takes. */
   readonly runbook: string;
 }
@@ -182,8 +180,6 @@ export function createOperationsInboxSession(
     const t = translator(OPERATIONS_INBOX_COPY, lang);
     const open = entry.status === 'open';
     const f = entry.finding;
-    // OB-435 · OB-439: the incident in the page's language (English when head office sent no Tamil).
-    const said = f.words?.[lang] ?? { headline: f.headline, detail: f.detail };
     // Open recommendations are the work — a 'down' incident is the graver, an 'error' tone; a degraded/unknown
     // one asks for a glance (P-03). A set-aside one is idle. Colour is never the only signal — an icon rides too.
     const tone: Tone = !open ? 'idle' : f.status === 'down' ? 'error' : 'degraded';
@@ -192,10 +188,10 @@ export function createOperationsInboxSession(
     return {
       findingId: f.findingId,
       component: f.component,
-      status: presentStatus({ tone, icon, label, announcement: said.headline, needsAttention: open }),
+      status: presentStatus({ tone, icon, label, announcement: f.headline, needsAttention: open }),
       needsAttention: open,
-      headline: said.headline,
-      detail: said.detail,
+      headline: f.headline,
+      detail: f.detail,
       runbook: f.runbook,
       ...(entry.dismissal !== undefined ? { dismissedBy: entry.dismissal.by, dismissedReason: entry.dismissal.reason } : {}),
     };

@@ -22,7 +22,6 @@
 import { returnedValue as returnedValueOf } from '../../../packages/finance/src/day-book';
 import { latestStoreReports, nothingUnsentAtFor } from './report-producers';
 import { createHash, randomUUID } from 'node:crypto';
-import { languageOrEnglish } from '../../../packages/ops/src/alert-words';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import { money } from '../../../packages/contracts/src/money';
@@ -8098,12 +8097,6 @@ async function builtInAuthorityOf(store: EventStore, tenantId: string, userId: s
   };
 }
 
-/** OB-439: the language a person's alert text messages go in — the choice on their staff record; English unless it is Tamil. */
-export async function staffLanguageOf(store: EventStore, now: () => string, tenantId: string, userId: string): Promise<'en' | 'ta'> {
-  const e = (await rosterStoreAdapter({ store, now }).roster(tenantId)).employees.find((x) => x.employeeId === userId);
-  return languageOrEnglish(e?.language);
-}
-
 export function alertLifecycleAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -8112,8 +8105,6 @@ export function alertLifecycleAdapter(input: {
     now: input.now,
     // Round 33 · OB-119: only the owner acknowledges a built-in alert (the IT administrator is refused by name).
     builtInAlertAuthorityOf: (tenantId, userId) => builtInAuthorityOf(input.store, tenantId, userId),
-    // OB-439: the language on the person's staff record (English unless it says Tamil, or they are not on the staff list).
-    alertLanguageOf: (tenantId, userId) => staffLanguageOf(input.store, input.now, tenantId, userId),
     alerts: async (tenantId) =>
       projectAlerts(await allOf<AlertLifecycleEvent>(input.store, tenantId, ALERTS_STREAM, 'AlertLifecycle')),
     recordAlertEvent: async (tenantId, event, key) => {

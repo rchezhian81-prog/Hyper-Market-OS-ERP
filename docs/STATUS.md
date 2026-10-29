@@ -5,6 +5,16 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-550 (29 October 2026): alerts and alert text messages back to English only
+- **What changed:**
+  - The owner chose B. Alert messages and alert text messages are English only, and the staff-record English/Tamil choice is withdrawn.
+  - #833 (OB-435 and OB-439) is reverted as one compensating commit. Records already written stay (append-only), and the decision rows OB-435 to OB-440 are kept, marked superseded by OB-550.
+  - Screens keep their English/Tamil button for everything else.
+- **Tests:** the alert suites, the guardrails and the whole default suite are run before the pull request; counts are in the PR.
+- **Next:** none for alerts. A future change back to Tamil alerts would be a new owner decision; the reverted code is in git history (#833).
+- **Blocked:** nothing.
+- **Owner decisions needed:** none.
+
 ## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-549
 
 **What happened**

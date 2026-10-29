@@ -41,7 +41,6 @@ import type { NotificationQueueEvent } from '../../customer/src/notification-que
 import type { TillActivity } from '../../pos/src/loss-prevention';
 import type { ClosedShiftRecord } from '../../pos/src/shift';
 import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
-import { told, alertText, partOf } from '../../../packages/ops/src/alert-words';
 import {
   STREAM, streamName, effectiveGrants, permissionsHeldBy, alertLifecycleAdapter, wasteAdapter, scrapAdapter, facilitiesAssetsAdapter, storeSyncView,
 } from './adapters';
@@ -190,10 +189,8 @@ export function ownerExceptionsAdapter(input: Base): OwnerExceptionsDeps {
           alertId, change: 'raised', by, at,
           alert: {
             alertId, component: `Owner alert — ${THRESHOLD_WORDS[a.kind].en.split(':')[0]}`, status: a.severity === 'urgent' ? 'down' : 'degraded',
-            // OB-435: the same words in Tamil for a Tamil reader (the English is word for word as before).
-            componentText: alertText('owner.exception.component', { en: THRESHOLD_WORDS[a.kind].en.split(':')[0]!, ta: THRESHOLD_WORDS[a.kind].ta.split(':')[0]! }),
             ownerUserId: owners[0]!, ownerName: owners[0]!, branchId: a.branchId,
-            ...told('owner.exception.detail', { headline: partOf(a.headlineText, a.headline), day, count: a.count, refs: [...a.transactionRefs] }), raisedAt: at, ackDueBy: at,
+            detail: `${a.headline} (trading day ${day}; ${a.count} record(s): ${a.transactionRefs.join(', ')})`, raisedAt: at, ackDueBy: at,
             ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
           },
         };
@@ -315,7 +312,7 @@ export function ownerReportingSurface(surface: Route[], raw: OwnerReportingInput
           ? { known: false, detail: energy.detail }
           : { known: true, kilowattHours: energy.kilowattHours, costMinor: energy.costMinor, estimatedShareBps: energy.estimatedShareBps, readings: branchReadings.length, detail: energy.detail },
         scrap: branchScrap.length === 0
-          ? { known: false, detail: 'no scrap sale is recorded for this branch in this window — nothing sold, or nothing recorded' } // alert-words: not an alert
+          ? { known: false, detail: 'no scrap sale is recorded for this branch in this window — nothing sold, or nothing recorded' }
           : { known: true, sales: branchScrap.length, proceedsMinor: branchScrap.reduce((t, s) => t + s.proceedsMinor, 0), grams: branchScrap.reduce((t, s) => t + s.grams, 0), offBooks: branchScrap.filter((s) => s.postedToFinance !== true).length },
         drill: {
           waste: behind.map((w) => ({ wasteId: w.wasteId, at: w.at, departmentId: w.departmentId, productId: w.productId, source: w.source, valueMinor: w.valueMinor, disposal: w.disposal, ...(w.grams === undefined ? {} : { grams: w.grams }) })),

@@ -19,7 +19,6 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { told, type AlertText } from '../../../packages/ops/src/alert-words';
 
 export interface VolumeThreshold {
   readonly principals: number;
@@ -37,8 +36,8 @@ export interface DataVolumeDeps {
   /** The registers that hold customers' personal data, each with the customer references it holds. */
   readonly sources: (tenantId: string) => Promise<readonly VolumeSource[]>;
   /** Raise (or clear) the owner alert; answers whether something new was raised. */
-  readonly raiseOwnerAlert: (tenantId: string, alert: { readonly alertId: string; readonly detail: string; readonly at: string; readonly text?: AlertText }) => Promise<boolean>;
-  readonly clearOwnerAlert: (tenantId: string, alertIdPrefix: string, at: string, detail: string, text?: AlertText) => Promise<number>;
+  readonly raiseOwnerAlert: (tenantId: string, alert: { readonly alertId: string; readonly detail: string; readonly at: string }) => Promise<boolean>;
+  readonly clearOwnerAlert: (tenantId: string, alertIdPrefix: string, at: string, detail: string) => Promise<number>;
   readonly now: () => string;
 }
 
@@ -50,8 +49,6 @@ export interface VolumeWatch {
   /** null while the threshold is not set: the watch cannot judge, and never fires. */
   readonly crossed: boolean | null;
   readonly detail: string;
-  /** OB-435: `detail`, structured, once a threshold is set (rendered in English into `detail`, and in Tamil). */
-  readonly text?: AlertText;
 }
 
 export async function readVolumeWatch(deps: Pick<DataVolumeDeps, 'thresholds' | 'sources' | 'now'>, tenantId: string): Promise<VolumeWatch> {
@@ -68,7 +65,9 @@ export async function readVolumeWatch(deps: Pick<DataVolumeDeps, 'thresholds' | 
   const crossed = all.size >= t.principals;
   return {
     threshold: { set: true, ...t }, volume, crossed,
-    ...told(crossed ? 'dpdp.crossed' : 'dpdp.below', { count: all.size, threshold: t.principals, version: t.version }),
+    detail: crossed
+      ? `${all.size} customers' personal data on record — at or above the ${t.principals} the CA set (version ${t.version}). Ask the CA and lawyer whether the shop may be notified as a Significant Data Fiduciary (DPDP Act s.10) and whether a data protection impact assessment, an audit and a DPO are needed (Rules 12–13).`
+      : `${all.size} customers' personal data on record — below the ${t.principals} the CA set (version ${t.version}).`,
   };
 }
 
@@ -77,10 +76,10 @@ export async function runVolumeWatch(deps: DataVolumeDeps, tenantId: string, at:
   const watch = await readVolumeWatch(deps, tenantId);
   if (watch.crossed === null) return { raised: false, cleared: 0, watch };
   if (watch.crossed && watch.threshold.set) {
-    const raised = await deps.raiseOwnerAlert(tenantId, { alertId: `${VOLUME_ALERT_PREFIX}v${watch.threshold.version}`, detail: watch.detail, at, ...(watch.text === undefined ? {} : { text: watch.text }) });
+    const raised = await deps.raiseOwnerAlert(tenantId, { alertId: `${VOLUME_ALERT_PREFIX}v${watch.threshold.version}`, detail: watch.detail, at });
     return { raised, cleared: 0, watch };
   }
-  return { raised: false, cleared: await deps.clearOwnerAlert(tenantId, VOLUME_ALERT_PREFIX, at, watch.detail, watch.text), watch };
+  return { raised: false, cleared: await deps.clearOwnerAlert(tenantId, VOLUME_ALERT_PREFIX, at, watch.detail), watch };
 }
 
 export function dataVolumeWatchRoutes(deps: DataVolumeDeps): readonly Route[] {

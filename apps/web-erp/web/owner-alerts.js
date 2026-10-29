@@ -76,8 +76,7 @@ function paintToday() {
   if (today.alerts.length === 0) al.append(text('li', t('noAlerts')));
   for (const a of today.alerts) {
     const li = document.createElement('li'); li.dataset.alert = a.inboxId;
-    // OB-435 · OB-439: the alert in this page's language (an alert recorded in English only reads in English).
-    li.append(text('strong', `⚠ ${(a.headlineWords && a.headlineWords[lang]) || a.headline}`));
+    li.append(text('strong', `⚠ ${a.headline}`));
     li.append(text('span', a.inOwnersInbox ? `✓ ${t('inInbox')}` : t('notInInbox'), 'meta'));
     al.append(li);
   }

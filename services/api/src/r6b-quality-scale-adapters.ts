@@ -17,8 +17,6 @@ import { foldScaleRegister } from '../../platform/src/scale-register';
 import { STREAM, streamName, alertLifecycleAdapter } from './adapters';
 import { scaleRegisterAdapter } from './r2-till-adapters';
 import { finBridgeRaiseToOwners } from './finance-bridge-adapters';
-import { eventWords } from '../../platform/src/alert-lifecycle';
-import { told, alertText, type AlertText } from '../../../packages/ops/src/alert-words';
 
 // ── M10-FR-02: the quality-sample register ───────────────────────────────────────────────────────────────────────────
 
@@ -67,24 +65,22 @@ export function scaleStampExpirySweep(input: { readonly store: EventStore; reado
   return async (tenantId, at) => {
     const today = await clock.today(tenantId, at);
     const register = foldScaleRegister(await scaleRegisterAdapter(input).scaleVersions(tenantId));
-    const due: { readonly alertId: string; readonly component: string; readonly detail: string; readonly text: AlertText; readonly componentText: AlertText }[] = [];
+    const due: { readonly alertId: string; readonly component: string; readonly detail: string }[] = [];
     for (const s of register) {
       const v = weighingScaleVerification({ reverificationDueOn: s.reverificationDueOn }, today, SCALE_VERIFICATION_NOTICE_DAYS);
       if (v.level === 'current') continue;
-      // OB-435: the words structured — English word for word as before, and Tamil for a Tamil reader.
-      const words = told(v.level === 'expired' ? 'scale.lapsed' : 'scale.dueSoon', {
-        assetId: s.assetId, approvalNo: s.approvalNo, lanes: [...s.laneIds], dueOn: s.reverificationDueOn, days: v.level === 'expired' ? -v.daysRemaining : v.daysRemaining,
-      });
-      const component = alertText('scale.component', { assetId: s.assetId, storeId: s.storeId });
+      const lanes = s.laneIds.length === 0 ? 'no till lane' : `lane${s.laneIds.length === 1 ? '' : 's'} ${s.laneIds.join(', ')}`;
       due.push({
         alertId: scaleAlertId(s.assetId, s.reverificationDueOn),
-        component: `Weighing scale ${s.assetId} (${s.storeId})`, componentText: component,
-        detail: words.detail, text: words.text,
+        component: `Weighing scale ${s.assetId} (${s.storeId})`,
+        detail: v.level === 'expired'
+          ? `The Legal Metrology stamp of scale ${s.assetId} (approval ${s.approvalNo}, ${lanes}) lapsed on ${s.reverificationDueOn} — ${v.detail}. Its lanes sell nothing by weight until it is re-verified and the new certificate is recorded.`
+          : `The Legal Metrology stamp of scale ${s.assetId} (approval ${s.approvalNo}, ${lanes}) is valid only until ${s.reverificationDueOn} — ${v.detail}. After that date its lanes stop selling by weight.`,
       });
     }
     let raised = 0;
     for (const a of due) {
-      if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, a.alertId, a.component, a.detail, 'system:scale-stamp', at, a.alertId, { text: a.text, componentText: a.componentText })) raised += 1;
+      if (await finBridgeRaiseToOwners(input.store, input.now, tenantId, a.alertId, a.component, a.detail, 'system:scale-stamp', at, a.alertId)) raised += 1;
     }
     const lifecycle = alertLifecycleAdapter({ store: input.store, now: input.now });
     const dueIds = new Set(due.map((a) => a.alertId));
@@ -92,7 +88,7 @@ export function scaleStampExpirySweep(input: { readonly store: EventStore; reado
       .filter((x) => x.state !== 'cleared' && x.alert.alertId.startsWith(SCALE_ALERT_PREFIX) && !dueIds.has(x.alert.alertId))
       .map((x) => x.alert.alertId).sort();
     for (const id of stale) {
-      await lifecycle.recordAlertEvent(tenantId, { alertId: id, change: 'cleared', by: 'system:scale-stamp', at, ...eventWords(told('scale.cleared')) }, `${id}|cleared|${at}`);
+      await lifecycle.recordAlertEvent(tenantId, { alertId: id, change: 'cleared', by: 'system:scale-stamp', at, detail: 'the scale was re-stamped, or its stamp is no longer due' }, `${id}|cleared|${at}`);
     }
     return raised;
   };

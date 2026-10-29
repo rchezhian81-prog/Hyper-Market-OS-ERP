@@ -43250,90 +43250,6 @@
         }
       }
     },
-    "/v1/hr/workforce/employees/{employeeId}/language": {
-      "post": {
-        "operationId": "postHrWorkforceEmployeesByEmployeeIdLanguage",
-        "tags": [
-          "API-11 Platform"
-        ],
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "x-permission": "workforce.roster.manage",
-        "x-entitlement": null,
-        "x-idempotent": true,
-        "parameters": [
-          {
-            "name": "employeeId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PostHrWorkforceEmployeesByEmployeeIdLanguageRequest"
-              }
-            }
-          }
-        },
-        "x-body-schema": "derived",
-        "responses": {
-          "200": {
-            "description": "The reply, as the handler builds it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PostHrWorkforceEmployeesByEmployeeIdLanguageReply"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/Unreadable"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorised"
-          },
-          "403": {
-            "description": "Not \"workforce.roster.manage\".",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorReply"
-                }
-              }
-            }
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      }
-    },
     "/v1/hr/workforce/employees/{employeeId}/salary-account": {
       "post": {
         "operationId": "postHrWorkforceEmployeesByEmployeeIdSalaryAccount",
@@ -115748,9 +115664,6 @@
                 },
                 "summary": {
                   "type": "string"
-                },
-                "summaryText": {
-                  "$ref": "#/components/schemas/AlertText"
                 }
               },
               "additionalProperties": true
@@ -144813,8 +144726,7 @@
                 "alert",
                 "state",
                 "deliveries",
-                "occurrence",
-                "words"
+                "occurrence"
               ],
               "properties": {
                 "deliveredToMe": {
@@ -144853,9 +144765,6 @@
                 "escalationDetail": {
                   "type": "string"
                 },
-                "escalationText": {
-                  "$ref": "#/components/schemas/AlertText"
-                },
                 "deliveries": {
                   "type": "array",
                   "items": {
@@ -144877,9 +144786,6 @@
                 },
                 "updatedAt": {
                   "type": "string"
-                },
-                "words": {
-                  "$ref": "#/components/schemas/AlertDisplay"
                 }
               },
               "additionalProperties": true
@@ -144908,75 +144814,7 @@
           "alerts": {
             "type": "array",
             "items": {
-              "type": "object",
-              "required": [
-                "alert",
-                "state",
-                "deliveries",
-                "occurrence",
-                "words"
-              ],
-              "properties": {
-                "alert": {
-                  "$ref": "#/components/schemas/RaisedAlert"
-                },
-                "state": {
-                  "type": "string",
-                  "enum": [
-                    "acknowledged",
-                    "cleared",
-                    "escalated",
-                    "open"
-                  ]
-                },
-                "escalatesToUserId": {
-                  "type": "string"
-                },
-                "acknowledgedBy": {
-                  "type": "string"
-                },
-                "acknowledgedAt": {
-                  "type": "string"
-                },
-                "escalatedTo": {
-                  "type": "string"
-                },
-                "escalatedAt": {
-                  "type": "string"
-                },
-                "escalationDetail": {
-                  "type": "string"
-                },
-                "escalationText": {
-                  "$ref": "#/components/schemas/AlertText"
-                },
-                "deliveries": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AlertDelivery"
-                  }
-                },
-                "clearedAt": {
-                  "type": "string"
-                },
-                "occurrence": {
-                  "type": "number"
-                },
-                "foreign": {
-                  "type": "boolean",
-                  "const": true
-                },
-                "revision": {
-                  "type": "number"
-                },
-                "updatedAt": {
-                  "type": "string"
-                },
-                "words": {
-                  "$ref": "#/components/schemas/AlertDisplay"
-                }
-              },
-              "additionalProperties": true
+              "$ref": "#/components/schemas/LiveAlert"
             }
           },
           "open": {
@@ -146328,117 +146166,7 @@
         ],
         "properties": {
           "observed": {
-            "type": "object",
-            "required": [
-              "boxes",
-              "signals",
-              "provenance",
-              "freshness",
-              "queues",
-              "lastBackup",
-              "notObserved",
-              "boxComponents",
-              "storeComputersPreparing"
-            ],
-            "properties": {
-              "boxes": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/BoxHealthView"
-                }
-              },
-              "signals": {
-                "$ref": "#/components/schemas/HealthSignals"
-              },
-              "provenance": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
-                }
-              },
-              "freshness": {
-                "type": "object",
-                "required": [
-                  "lastSaleAt",
-                  "ageSeconds"
-                ],
-                "properties": {
-                  "lastSaleAt": {
-                    "anyOf": [
-                      {
-                        "type": "null"
-                      },
-                      {
-                        "type": "string"
-                      }
-                    ]
-                  },
-                  "ageSeconds": {
-                    "anyOf": [
-                      {
-                        "type": "null"
-                      },
-                      {
-                        "type": "number"
-                      }
-                    ]
-                  }
-                },
-                "additionalProperties": true
-              },
-              "queues": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ConnectorQueueDepth"
-                }
-              },
-              "lastBackup": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/BackupRecord"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "notObserved": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "boxComponents": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ComponentHealth"
-                }
-              },
-              "storeComputersPreparing": {
-                "anyOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "type": "object",
-                    "required": [
-                      "since",
-                      "why"
-                    ],
-                    "properties": {
-                      "since": {
-                        "type": "string"
-                      },
-                      "why": {
-                        "type": "string"
-                      }
-                    },
-                    "additionalProperties": true
-                  }
-                ]
-              }
-            },
-            "additionalProperties": true
+            "$ref": "#/components/schemas/ObservedSignals"
           },
           "health": {
             "$ref": "#/components/schemas/SystemHealth"
@@ -154727,7 +154455,6 @@
             "items": {
               "type": "object",
               "required": [
-                "headlineWords",
                 "inboxId",
                 "inOwnersInbox",
                 "alertId",
@@ -154742,9 +154469,6 @@
                 "lastAt"
               ],
               "properties": {
-                "headlineWords": {
-                  "$ref": "#/components/schemas/AlertWords"
-                },
                 "inboxId": {
                   "type": "string"
                 },
@@ -154775,9 +154499,6 @@
                 },
                 "headline": {
                   "type": "string"
-                },
-                "headlineText": {
-                  "$ref": "#/components/schemas/AlertText"
                 },
                 "count": {
                   "type": "number"
@@ -189352,50 +189073,6 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/workforce-enablement.ts"
       },
-      "PostHrWorkforceEmployeesByEmployeeIdLanguageReply": {
-        "type": "object",
-        "required": [
-          "employee",
-          "language",
-          "alertMessagesIn"
-        ],
-        "properties": {
-          "employee": {
-            "$ref": "#/components/schemas/Employee"
-          },
-          "language": {
-            "type": "string",
-            "enum": [
-              "en",
-              "ta"
-            ]
-          },
-          "alertMessagesIn": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": true,
-        "x-body-schema": "derived",
-        "x-derived-from": "services/finance/src/workforce-enablement.ts"
-      },
-      "PostHrWorkforceEmployeesByEmployeeIdLanguageRequest": {
-        "type": "object",
-        "required": [
-          "language"
-        ],
-        "properties": {
-          "language": {
-            "type": "string",
-            "enum": [
-              "en",
-              "ta"
-            ]
-          }
-        },
-        "additionalProperties": true,
-        "x-body-schema": "derived",
-        "x-derived-from": "services/finance/src/workforce-enablement.ts"
-      },
       "PostHrWorkforceEmployeesByEmployeeIdReply": {
         "type": "object",
         "required": [
@@ -189712,13 +189389,6 @@
                 "hourlyRateMinor": {
                   "type": "number"
                 },
-                "language": {
-                  "type": "string",
-                  "enum": [
-                    "en",
-                    "ta"
-                  ]
-                },
                 "name": {
                   "type": "string"
                 },
@@ -189876,13 +189546,6 @@
                 },
                 "hourlyRateMinor": {
                   "type": "number"
-                },
-                "language": {
-                  "type": "string",
-                  "enum": [
-                    "en",
-                    "ta"
-                  ]
                 },
                 "name": {
                   "type": "string"
@@ -190299,13 +189962,6 @@
               "hourlyRateMinor": {
                 "type": "number"
               },
-              "language": {
-                "type": "string",
-                "enum": [
-                  "en",
-                  "ta"
-                ]
-              },
               "name": {
                 "type": "string"
               },
@@ -190643,13 +190299,6 @@
               },
               "hourlyRateMinor": {
                 "type": "number"
-              },
-              "language": {
-                "type": "string",
-                "enum": [
-                  "en",
-                  "ta"
-                ]
               },
               "name": {
                 "type": "string"
@@ -226307,9 +225956,6 @@
           "detail": {
             "type": "string"
           },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
-          },
           "raised": {
             "type": "boolean"
           },
@@ -233278,9 +232924,6 @@
                       },
                       "detail": {
                         "type": "string"
-                      },
-                      "text": {
-                        "$ref": "#/components/schemas/AlertText"
                       }
                     },
                     "additionalProperties": true
@@ -233316,9 +232959,6 @@
                       },
                       "detail": {
                         "type": "string"
-                      },
-                      "text": {
-                        "$ref": "#/components/schemas/AlertText"
                       }
                     },
                     "additionalProperties": true
@@ -249877,101 +249517,6 @@
         },
         "additionalProperties": true
       },
-      "AlertDisplay": {
-        "type": "object",
-        "required": [
-          "en",
-          "ta"
-        ],
-        "properties": {
-          "en": {
-            "type": "object",
-            "required": [
-              "component",
-              "status",
-              "detail"
-            ],
-            "properties": {
-              "component": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string"
-              },
-              "detail": {
-                "type": "string"
-              },
-              "escalation": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          },
-          "ta": {
-            "type": "object",
-            "required": [
-              "component",
-              "status",
-              "detail"
-            ],
-            "properties": {
-              "component": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string"
-              },
-              "detail": {
-                "type": "string"
-              },
-              "escalation": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          },
-          "englishOnly": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "additionalProperties": true
-      },
-      "AlertParam": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/AlertText"
-          },
-          {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/AlertText"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          },
-          {
-            "type": "number"
-          },
-          {
-            "type": "string"
-          }
-        ]
-      },
       "AlertRule": {
         "type": "object",
         "required": [
@@ -250020,44 +249565,6 @@
             }
           },
           "builtInRedirect": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "additionalProperties": true
-      },
-      "AlertText": {
-        "type": "object",
-        "required": [
-          "kind"
-        ],
-        "properties": {
-          "kind": {
-            "type": "string"
-          },
-          "params": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/AlertParam"
-            }
-          }
-        },
-        "additionalProperties": true
-      },
-      "AlertWords": {
-        "type": "object",
-        "required": [
-          "en",
-          "ta"
-        ],
-        "properties": {
-          "en": {
-            "type": "string"
-          },
-          "ta": {
-            "type": "string"
-          },
-          "englishOnly": {
             "type": "boolean",
             "const": true
           }
@@ -250530,9 +250037,6 @@
           },
           "summary": {
             "type": "string"
-          },
-          "summaryText": {
-            "$ref": "#/components/schemas/AlertText"
           },
           "waitMinutes": {
             "type": "number"
@@ -253328,9 +252832,6 @@
           },
           "detail": {
             "type": "string"
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true
@@ -255304,9 +254805,6 @@
           "description": {
             "type": "string"
           },
-          "descriptionText": {
-            "$ref": "#/components/schemas/AlertText"
-          },
           "lastChangedBy": {
             "type": "string"
           },
@@ -255445,9 +254943,6 @@
           },
           "detail": {
             "type": "string"
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true
@@ -258631,9 +258126,6 @@
                 }
               ]
             }
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true
@@ -258766,9 +258258,6 @@
           },
           "detail": {
             "type": "string"
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true
@@ -259750,9 +259239,6 @@
           },
           "detail": {
             "type": "string"
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true
@@ -266743,13 +266229,6 @@
           },
           "homeDepartmentId": {
             "type": "string"
-          },
-          "language": {
-            "type": "string",
-            "enum": [
-              "en",
-              "ta"
-            ]
           }
         },
         "additionalProperties": true
@@ -278454,9 +277933,6 @@
           "escalationDetail": {
             "type": "string"
           },
-          "escalationText": {
-            "$ref": "#/components/schemas/AlertText"
-          },
           "deliveries": {
             "type": "array",
             "items": {
@@ -282405,48 +281881,6 @@
           },
           "branchId": {
             "type": "string"
-          },
-          "words": {
-            "type": "object",
-            "required": [
-              "en",
-              "ta"
-            ],
-            "properties": {
-              "en": {
-                "type": "object",
-                "required": [
-                  "headline",
-                  "detail"
-                ],
-                "properties": {
-                  "headline": {
-                    "type": "string"
-                  },
-                  "detail": {
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": true
-              },
-              "ta": {
-                "type": "object",
-                "required": [
-                  "headline",
-                  "detail"
-                ],
-                "properties": {
-                  "headline": {
-                    "type": "string"
-                  },
-                  "detail": {
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": true
-              }
-            },
-            "additionalProperties": true
           }
         },
         "additionalProperties": true
@@ -283758,9 +283192,6 @@
           },
           "headline": {
             "type": "string"
-          },
-          "headlineText": {
-            "$ref": "#/components/schemas/AlertText"
           },
           "count": {
             "type": "number"
@@ -285136,9 +284567,6 @@
           },
           "detail": {
             "type": "string"
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true
@@ -288918,12 +288346,6 @@
             "items": {
               "type": "string"
             }
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
-          },
-          "componentText": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true
@@ -307261,9 +306683,6 @@
           },
           "detail": {
             "type": "string"
-          },
-          "text": {
-            "$ref": "#/components/schemas/AlertText"
           }
         },
         "additionalProperties": true

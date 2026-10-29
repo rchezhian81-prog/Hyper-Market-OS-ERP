@@ -21,7 +21,7 @@
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError, assertBranchInScope, notFound, scopeOf } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { STAFF_LANGUAGES, type Employee, type ShiftRequirement, type ShiftAssignment, type SopAcknowledgement, type StaffLanguage } from '../../../packages/workforce/src/workforce';
+import type { Employee, ShiftRequirement, ShiftAssignment, SopAcknowledgement } from '../../../packages/workforce/src/workforce';
 import { accessMatch, type AccessGrant } from '../../../packages/workforce/src/access-match';
 import {
   trainingRows, checkCompletion, checkCompetency, currentCurricula, readCurriculumItems,
@@ -320,29 +320,6 @@ export function workforceEnablementRoutes(deps: WorkforceEnablementDeps): readon
         await deps.putEmployee!(ctx.tenantId, next, ctx.idempotencyKey ?? `home-dept-${employeeId}-${deps.now()}`);
         await seal(ctx, 'workforce.home_department.set', 'employee', employeeId, { homeDepartmentId: departmentId ?? 'not set', before: e.homeDepartmentId ?? 'not set' });
         return { status: 200, body: { employee: next } };
-      },
-    },
-
-    {
-      // OB-439 (owner, 28 Oct 2026, in writing): a person's language on the staff record — English or Tamil — the language
-      // their alert text messages go in (English unless set). Body: { language: 'en' | 'ta' }. Set by the owner or a manager
-      // in scope (`workforce.roster.manage`, the same right as the person's other staff-record settings), sealed on the audit
-      // trail with what it was before. Kept, never deleted: the staff record is append-only (latest per person).
-      api: 'API-11', method: 'POST', path: '/v1/hr/workforce/employees/:employeeId/language',
-      permission: 'workforce.roster.manage', idempotent: true,
-      handler: async (ctx) => {
-        const employeeId = (ctx.params['employeeId'] ?? '').trim();
-        const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (employeeId === '' || !STAFF_LANGUAGES.includes(b['language'] as StaffLanguage)) bad('not_readable_as_a_language', 'Give the language: { language: "en" } for English or { language: "ta" } for Tamil.');
-        if (deps.putEmployee === undefined) refuse(503, 'staff_record_not_writable_here', 'This head office cannot write the staff record.', 'Nothing was saved.');
-        const e = (await deps.employees(ctx.tenantId)).find((x) => x.employeeId === employeeId);
-        if (e === undefined) throw notFound(`employee ${employeeId} on the staff list`);
-        assertBranchInScope(ctx, e.branchId);
-        const language = b['language'] as StaffLanguage;
-        const next: Employee = { ...e, language };
-        await deps.putEmployee!(ctx.tenantId, next, ctx.idempotencyKey ?? `language-${employeeId}-${deps.now()}`);
-        await seal(ctx, 'workforce.language.set', 'employee', employeeId, { language, before: e.language ?? 'not set (English)' });
-        return { status: 200, body: { employee: next, language, alertMessagesIn: language === 'ta' ? 'Tamil' : 'English' } };
       },
     },
 

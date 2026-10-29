@@ -166,43 +166,6 @@ describe.each(backings)('a late delivery exception is told to its holder, else t
     expect(r.status).toBe(200);
     expect((r.body as Swept).queued.map((q) => [q.to, q.as])).toEqual([[DUTY, 'store_manager_grants'], [OFF, 'store_manager_grants']]);
   }, 60_000);
-
-  // OB-439: the text message goes in the RECIPIENT's language — Tamil to a manager whose staff record says Tamil, English to
-  // one with no language set — and the queue id (exception × queue × person) is exactly as before.
-  it('the message is in each recipient\'s own language (OB-439): Tamil set → Tamil, unset → English; the same ids', async () => {
-    const store = makeStore();
-    const transport = recordingTransport();
-    const h = serve(store, transport);
-    const T = randomUUID();
-    const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string) =>
-      h.request({ method, path, userId, tenantId: T, ...(method === 'GET' ? {} : { idempotencyKey: key ?? `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
-    await h.seedOwner(T, OWNER);
-    await h.provisionRole(T, DUTY, 'store_manager', ['br-1']);
-    await h.provisionRole(T, OFF, 'store_manager');
-    await seedSubstitutionTruth(h, T, SWAP_PRODUCTS);
-    await lateSwap(h.store, T);
-    expect((await call('POST', '/v1/notifications/budget', OWNER, { capMinor: 100_000, costMinorByChannel: { sms: 25 } })).status).toBe(201);
-    // DUTY chose Tamil on the staff record; OFF has no language set (and no staff record at all).
-    expect((await call('POST', `/v1/hr/workforce/employees/${DUTY}`, OWNER, { name: 'Duty Manager', branchId: 'br-1', roles: ['store_manager'], active: true })).status).toBe(200);
-    expect((await call('POST', `/v1/hr/workforce/employees/${DUTY}/language`, OWNER, { language: 'ta' })).status).toBe(200);
-
-    const r = await call('POST', '/v1/orders/substitution-exceptions/breach-alerts', OWNER, {}, 'lang-sweep-1');
-    expect(r.status).toBe(200);
-    expect((r.body as Swept).queued.map((q) => [q.to, q.id])).toEqual([
-      [DUTY, `subx-${ID}-customer_service_desk-${DUTY}`],
-      [OFF, `subx-${ID}-customer_service_desk-${OFF}`],
-    ]);
-    await call('POST', '/v1/notifications/queue/drain', OWNER, {}, 'lang-drain-1');
-    const tamil = transport.sent.find((m) => m.customerId === DUTY)!.text;
-    expect(tamil).toMatch(/[\u0B80-\u0BFF]/);
-    expect(tamil).toMatch(/^நேர வரம்பு கடந்த டெலிவரி விதிவிலக்கு: ஆர்டர் ord-late வரி l1 — கொள்கைப்படி குறைவாக எடுத்தது, ₹0\.00 சம்பந்தப்பட்டது, வாடிக்கையாளர் சேவை மேசை வரிசையில்/);
-    expect(tamil).not.toMatch(/Delivery exception|at stake/);
-    const english = transport.sent.find((m) => m.customerId === OFF)!.text;
-    expect(english).toMatch(/^Delivery exception past its time limit: order ord-late line l1 — policy short pick, ₹0\.00 at stake, in the customer service desk queue \(nobody has claimed it — you are the duty manager\)/);
-    expect(english).not.toMatch(/[\u0B80-\u0BFF]/);
-    // A second sweep queues nothing again (one message per exception × queue × person).
-    expect((await call('POST', '/v1/orders/substitution-exceptions/breach-alerts', OWNER, {}, 'lang-sweep-2')).body).toMatchObject({ queued: [], alreadyQueued: 2 });
-  }, 60_000);
 });
 
 describe.skipIf(DATABASE_URL === undefined)('in the served API the head-office worker raises the alerts on its own timer (PA-08 · OB-61)', () => {

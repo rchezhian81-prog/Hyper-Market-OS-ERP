@@ -107,8 +107,7 @@ export interface ThresholdRow { readonly kind: AlertKind; readonly state: 'set' 
 export interface TodayView {
   readonly tradingDay: string;
   readonly kinds: readonly { readonly kind: AlertKind; readonly threshold: string; readonly events: number | null; readonly alerts: number; readonly say: string }[];
-  /** OB-435 · OB-439: `headlineWords` — the headline in English and Tamil (absent from an older head office: English only). */
-  readonly alerts: readonly { readonly kind: AlertKind; readonly headline: string; readonly headlineWords?: { readonly en: string; readonly ta: string }; readonly inboxId: string; readonly inOwnersInbox: boolean; readonly count: number; readonly valueMinor: number }[];
+  readonly alerts: readonly { readonly kind: AlertKind; readonly headline: string; readonly inboxId: string; readonly inOwnersInbox: boolean; readonly count: number; readonly valueMinor: number }[];
 }
 export interface ScheduleRow {
   readonly schedule: { readonly scheduleId: string; readonly kind: 'report' | 'export'; readonly target: string; readonly dueAt: readonly [number, number]; readonly language: Lang; readonly status: 'active' | 'stopped' };
