@@ -392,6 +392,18 @@ export interface IntakeContext {
   readonly quotationsNamed?: readonly { readonly quotationId: string; readonly state: string; readonly lines: readonly { readonly productId: string; readonly unitPriceMinor: number }[] }[];
 }
 
+/**
+ * OB-506: whether head office's OWN record backs a line's price as set from a quotation — that quotation CONVERTED (rung up
+ * at a till) and promising exactly this price for this product. `undefined` when the line names no quotation or nobody
+ * looked the quotations up; `false` when the record does not back it.
+ */
+function quotationBacksLine(line: IncomingSaleLine, ctx: IntakeContext): boolean | undefined {
+  const quotationId = quotationOfLine(line);
+  if (quotationId === undefined || ctx.quotationsNamed === undefined) return undefined;
+  const q = ctx.quotationsNamed.find((n) => n.quotationId === quotationId);
+  return q !== undefined && q.state === 'converted' && q.lines.some((ql) => ql.productId === line.productId && ql.unitPriceMinor === line.unitPriceMinor);
+}
+
 /** OB-506: the quotation a line's price was set from, as the till recorded it (its number, or the `quotation:<n>` evidence). */
 export function quotationOfLine(line: Pick<IncomingSaleLine, 'priceOverride'>): string | undefined {
   const o = line.priceOverride;
@@ -758,8 +770,7 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     // price for this product. Still listed, as informational, naming the quotation. One the record does not back is
     // MATERIAL. The MRP finding above is judged first and is never excused by a quotation.
     const quotationId = quotationOfLine(line);
-    const quoted = quotationId === undefined || ctx.quotationsNamed === undefined ? undefined
-      : ((q) => q !== undefined && q.state === 'converted' && q.lines.some((ql) => ql.productId === line.productId && ql.unitPriceMinor === line.unitPriceMinor))(ctx.quotationsNamed.find((q) => q.quotationId === quotationId));
+    const quoted = quotationBacksLine(line, ctx);
     if (!aboveMrp && quoted === true && Math.abs(difference) > priceTolerance) {
       add('price_differs_from_catalogue', 'informational',
         `${product.sku} was charged at ${line.unitPriceMinor}, the price quotation ${quotationId!} promised (the catalogue says ${product.unitPriceMinor})`,
@@ -882,6 +893,10 @@ function tillOverrideFindings(sale: IncomingSale, ctx: IntakeContext): SaleExcep
       });
       continue;
     }
+    // OB-551 (owner, 29 Oct 2026, B1): a price set from a quotation head office's own record backs is not a manager's cut —
+    // the quotation was approved on its own — so it is not counted against any manager's limit. One the record does not
+    // back is judged as any other cut. The floor above is checked either way.
+    if (quotationBacksLine(line, ctx) === true) continue;
     const limit = rules.limits.get(approver) ?? { state: 'not_set', limitMinor: null };
     const over = cut > 0 && (limit.state === 'not_set' || (limit.state === 'limit' && cut > (limit.limitMinor ?? 0)));
     if (over) {

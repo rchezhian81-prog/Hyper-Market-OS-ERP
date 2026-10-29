@@ -5,6 +5,32 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Owner answers OB-550 and OB-551 (29 October 2026): the till's floor stays at cost; a quotation price is not a manager's cut
+
+**What changed**
+- **OB-550 (option 1):** with no minimum margin set, a product's lowest allowed price at the till stays at its buying cost. No change was needed; the decision is recorded.
+- **OB-551 (option 1):** head office no longer counts a line lowered to a quotation's price against a manager's price-cut limit. The till records the quotation, not a manager, as the approver, so every such line used to be flagged "beyond the limit".
+  - **Safeguard:** this applies only when head office's own record backs the line: that quotation was rung up (converted) and promised exactly this price for this product. A quotation number it cannot back is still judged as any other cut, so a till cannot name a made-up quotation to get past a limit.
+  - The product's lowest allowed price (the floor) is still checked either way.
+  - Only head office's after-the-sale check changed (`services/pos/src/sale-intake.ts`). The till and store computer never applied a manager's limit to a quotation price, so they are unchanged.
+
+**Tests that ran (this box, synthetic data)**
+- New: `tests/unit/a-quotation-price-is-not-a-managers-cut.test.ts` (3 tests). The two that need the change failed on the old code; the made-up-quotation test passed before and after.
+- The 37 unit, guardrail and contract test files that touch quotations or the sale check: 587 tests passed.
+- The six PostgreSQL quotation and price-cut integration tests: 26 tests passed.
+- Type check, lint and the evidence-ledger check: clean.
+
+**Seen, not changed (ask before changing)**
+- A quotation on a product with no known floor still raises "price cut without a floor, not by the owner" at head office. That quotation already needed the owner's approval when it was made (OB-532), so this finding may also be unwanted. It was not part of the question asked, so it is left as it is.
+
+**What is next**
+- #834 (rounds 10 and 11) is open; merge it only when every check is green.
+- The store pilot (Stage 12), which waits on outside pieces.
+
+**Blocked:** nothing. **Owner decisions needed:** whether the no-floor quotation finding above should also be dropped (optional).
+
+---
+
 ## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-549
 
 **What happened**
@@ -29,9 +55,9 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - Shelf tags: one tag per label on a label printer (the default), or a sheet to cut; a tag that does not fit is refused by name; English-and-Tamil tags print their field labels in English only (OB-549), measured to fit 70 × 38 mm.
 - Quotations: rung up only at the store they were made for; freed at once when nothing could be rung.
 
-**Still needs the owner (no change made)**
-- When no minimum margin is set, a product's lowest allowed price at the till equals its buying cost: what should the floor be then?
-- A line lowered by a quotation is flagged at head office as a cut beyond a manager's limit: should it count against the limit?
+**Answered by the owner on 29 Oct 2026 (see the entry above)**
+- When no minimum margin is set, a product's lowest allowed price at the till equals its buying cost: keep it (OB-550).
+- A line lowered by a quotation is no longer counted against a manager's limit, when head office's own record backs the quotation (OB-551).
 ---
 
 ## OB-435 and OB-439 (28 October 2026): every alert in English and Tamil; a text message in its reader's language
