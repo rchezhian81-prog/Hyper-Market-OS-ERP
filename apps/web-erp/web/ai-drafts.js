@@ -4,6 +4,8 @@
 // the server refuses to the person who asked for the words. A07's summaries are read-only suggestions. Each POST carries
 // its own idempotency key; every word has a Tamil twin and follows the one language toggle.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const who = window.aiDraftsData && typeof window.aiDraftsData === 'object' ? window.aiDraftsData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
@@ -124,7 +126,7 @@ function renderSummaries() {
     card.dataset.summary = s.summaryId;
     const meta = document.createElement('p');
     meta.className = 'muted';
-    meta.textContent = `${s.summaryId} · ${new Date(s.at).toLocaleString()} · ${t('askedBy')} ${s.requestedBy} · ${t('fromRecords')} ${s.citedEvidenceIds.length} ${t('records')}`;
+    meta.textContent = `${s.summaryId} · ${shopWhen(s.at)} · ${t('askedBy')} ${s.requestedBy} · ${t('fromRecords')} ${s.citedEvidenceIds.length} ${t('records')}`;
     const q = document.createElement('blockquote');
     q.textContent = s.text;
     card.append(meta, q);

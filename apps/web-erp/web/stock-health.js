@@ -5,6 +5,8 @@
 // READ-ONLY — it changes nothing. Refresh re-reads the numbers live (a GET); offline the screen keeps its view
 // and the stale strip says the page is what the box last told it. No prompt/confirm/alert.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -114,7 +116,7 @@ function paint() {
   el('lang').textContent = t('langName');
   el('refresh').textContent = t('refresh');
 
-  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${new Date(view.asOf).toLocaleString()}` : '';
+  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${shopWhen(view.asOf)}` : '';
 
   // A not-permitted / nothing-yet state has no signals: show the state line rather than an empty list.
   const state = el('state');

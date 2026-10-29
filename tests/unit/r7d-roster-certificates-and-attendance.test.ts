@@ -240,7 +240,7 @@ describe('OB-507 · the self-service page shows the box\'s held rota when head o
     const data = { userId: 'E-R', permissions: ['payroll.ess.self'], myRoster: held };
     const offline = createEssSession({ userId: 'E-R' }, essPortsFromData(data, null, null)).view('en');
     expect(offline.rows.map((r) => r.id)).toContain('shift-SH-1');
-    expect(offline.rosterAsOfWords).toBe('Your rota as the store computer last heard it from head office, at 2026-10-28 03:00');
+    expect(offline.rosterAsOfWords).toBe('Your rota as the store computer last heard it from head office, at 2026-10-28 08:30'); // OB-607: 03:00 UTC is 08:30 at the shop
     const live = createEssSession({ userId: 'E-R' }, essPortsFromData(data, { known: true, active: true, shifts: [] }, null)).view('ta');
     expect(live.rows.map((r) => r.id)).toContain('rota-empty');
     expect(live.rosterAsOfWords).toBe('');

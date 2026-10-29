@@ -5,6 +5,8 @@
 // approved it, the customer, the reason and when. READ-ONLY — a breach is worked out of band (the money
 // already moved), so there is no write here at all. No prompt/confirm/alert.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -81,7 +83,7 @@ function rowNode(r) {
   const cust = document.createElement('span'); cust.textContent = `${t('customerLabel')}: ${r.customerRef}`;
   const reason = document.createElement('span'); reason.textContent = `${t('reasonLabel')}: ${r.reasonCode}`;
   facts.append(sale, lane, tender, by, appr, cust, reason);
-  if (r.processedAt) { const when = document.createElement('span'); when.textContent = `${t('whenLabel')}: ${new Date(r.processedAt).toLocaleString()}`; facts.append(when); }
+  if (r.processedAt) { const when = document.createElement('span'); when.textContent = `${t('whenLabel')}: ${shopWhen(r.processedAt)}`; facts.append(when); }
 
   li.append(head, status, flags, facts);
   return li;

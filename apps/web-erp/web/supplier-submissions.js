@@ -5,6 +5,8 @@
 
 // OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
 const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never the UTC clock.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.supplierSubmissions ?? null;
 const session = api?.session ?? null;
@@ -26,7 +28,7 @@ function paintQueue() {
   for (const row of queue.waiting) {
     const li = document.createElement('li'); li.dataset.submission = row.submissionId; li.dataset.partner = row.partnerId;
     li.append(text('strong', `${t(`kind_${row.kind}`)} — ${row.partnerId}`));
-    li.append(text('span', `${row.submissionId} · ${t('received')} ${row.receivedAt.slice(0, 16).replace('T', ' ')}${row.submittedBy ? ` · ${t('from')} ${row.submittedBy}` : ''}`, 'meta'));
+    li.append(text('span', `${row.submissionId} · ${t('received')} ${shopWhen(row.receivedAt)}${row.submittedBy ? ` · ${t('from')} ${row.submittedBy}` : ''}`, 'meta'));
     const line = api.documentLine(row);
     if (line !== '') li.append(text('span', line, 'meta'));
     if (row.feeds) li.append(text('span', `${t('feeds')}: ${row.feeds}`, 'meta'));
@@ -101,7 +103,7 @@ function paintVmi() {
   for (const p of vmiQueue) {
     const li = document.createElement('li'); li.dataset.proposal = p.proposalId;
     li.append(text('strong', `${p.supplierId} → ${p.storeId}: ${p.lines.map((l) => `${l.quantity} × ${l.productId}`).join(', ')}`));
-    li.append(text('span', `${p.proposalId} · ${vt('proposed')} ${p.proposedAt.slice(0, 16).replace('T', ' ')}${p.note ? ` — ${p.note}` : ''}`, 'meta'));
+    li.append(text('span', `${p.proposalId} · ${vt('proposed')} ${shopWhen(p.proposedAt)}${p.note ? ` — ${p.note}` : ''}`, 'meta'));
     const costs = {};
     const form = document.createElement('div'); form.className = 'row-form';
     for (const l of p.lines) {

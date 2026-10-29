@@ -5,6 +5,8 @@
 // Every group reads as a state — a tone AND an icon AND a word, never colour alone — and recall comes first: a safety block
 // before a catalogue gap.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 
 const real = window.unsellableSession;
@@ -39,7 +41,7 @@ function paint() {
   el('whoami').textContent = window.unsellableData?.storeId ?? '';
   el('title').textContent = t('title');
   el('lead').textContent = t('lead');
-  el('asof').textContent = view.asOf ? `${t('asOf')} · ${new Date(view.asOf).toLocaleString()}` : '';
+  el('asof').textContent = view.asOf ? `${t('asOf')} · ${shopWhen(view.asOf)}` : '';
   el('summary').textContent = view.count === 0 ? '' : view.sellableCount === null ? view.countLabel : `${view.countLabel} · ${view.sellableCount} ${t('sellable')}`;
 
   const state = el('state');

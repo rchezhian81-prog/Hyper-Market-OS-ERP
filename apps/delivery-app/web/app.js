@@ -23,6 +23,10 @@
 // No stop touches the network. Every stop is local and queues to the device (§31 delivery row); the one
 // call this file makes is a read of the store computer's sync status, for the badge (design system §1 rule 4).
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
+// OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 
 // ── OB-205: an icon from the one set beside the words ───────────────────────
@@ -1030,9 +1034,9 @@ el('lang').addEventListener('click', () => {
 let box = { asked: false, reachable: false, status: null };
 const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : null);
 
-/** The device's clock face for a store-computer time — the person reading it is standing in the shop. */
+/** A store-computer time on the SHOP's clock (OB-607: its zone as the box served it, never this device's own), HH:MM. */
 function clock(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return shopTimeOf(iso);
 }
 
 function paintBadge() {
@@ -1126,8 +1130,9 @@ function paintStale() {
   if (!strip) return;
   strip.hidden = at === undefined;
   if (at === undefined) return;
-  // The device's own local time, because the person reading it is standing in the shop.
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+  // OB-607: the SHOP's clock (the zone the store computer served), never this device's own — a phone or laptop set to
+  // another zone read the shop's 01:00 as its own evening.
+  strip.textContent = `${t('staleShell')} ${shopWhen(at)}`;
 }
 paintStale();
 el('lang').addEventListener('click', paintStale);

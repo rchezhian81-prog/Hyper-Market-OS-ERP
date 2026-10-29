@@ -71,6 +71,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 14 (29 October 2026): every time shown on a screen is the shop's clock (OB-607); decision OB-608
+
+**What changed**
+- Every time of day and date-time a screen shows now follows the shop's clock on any device: the "old copy" strip and the "last contact" badge on all 11 apps, the manager's card-payment times, production, suppliers, goods receipt, indents, stock health, store tasks, my tasks, food safety, recalls, held returns, AI drafts and AI control, approvals, incidents, store computers, supplier submissions, the till's delivery slip and more. What is stored did not change.
+- The guardrail now also blocks device-clock and UTC-clock shortcuts in screen code; its allowlist is empty.
+- **OB-608 (owner):** date-times typed by hand on five forms are read as shop time next.
+- **Found, to fix next under OB-607:** printed food labels (`USE BY`) and staff shift messages take the time from the UTC clock (outside screen code).
+
+**Tests that ran (builder, this box, synthetic data):** full unit + integration on PostgreSQL 15,666 passed; full browser suite 754 of 754 (62 new, at device zone New York, 19:30 UTC); fails-before: 61 of 62 new browser tests and 74 guardrail hits with the old screen code.
+
+**What is next:** OB-608 and the label and shift-message times. **Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 13 (29 October 2026): every screen takes the shop's date, on any device (OB-606); decision OB-607
 
 **What changed**

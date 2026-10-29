@@ -11,7 +11,7 @@
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import { wallClockIn } from '../../../packages/calendar/src/trading-day';
-import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone, shopDateTimeOf, shopTimeOf } from '../../../packages/calendar/src/shop-day';
 
 /** A shift the employee is rostered for. */
 export interface EssShift {
@@ -133,9 +133,10 @@ function money(minor: number): string {
 /** Read a start time as "Sun 06:00" on the SHOP's clock (R1c: deterministic in the shop zone — never UTC, never the browser's). */
 function whenLabel(iso: string): string {
   if (Number.isNaN(Date.parse(iso))) return iso;
-  const local = wallClockIn(iso, DEFAULT_SHOP_CALENDAR.timeZone);
+  const zone = servedShopZone(); // OB-607: the zone the store computer served (else the shop default)
+  const local = wallClockIn(iso, zone);
   const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${local.slice(0, 10)}T00:00:00Z`).getUTCDay()] ?? '';
-  return `${day} ${local.slice(11, 16)}`;
+  return `${day} ${shopTimeOf(iso, zone)}`;
 }
 
 export function createEssSession(config: EssConfig, ports: EssPorts): EssSession {
@@ -215,7 +216,7 @@ export function createEssSession(config: EssConfig, ports: EssPorts): EssSession
         screenState: presentScreenState({ state, label: t(state === 'empty' ? 'stateEmpty' : 'stateReady') }),
         rows,
         nobodyNamed: config.userId === null,
-        rosterAsOfWords: asOf === null ? '' : `${t('heldAsOf')} ${asOf.slice(0, 16).replace('T', ' ')}`,
+        rosterAsOfWords: asOf === null ? '' : `${t('heldAsOf')} ${shopDateTimeOf(asOf) || asOf}`,
       };
     },
   };

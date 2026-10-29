@@ -20,6 +20,8 @@
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
 // OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 
@@ -297,7 +299,7 @@ function renderSwitch() {
   const headline = document.createElement('span');
   headline.className = 'big';
   headline.textContent = view.kill.masterOn ? t('masterOn') : view.kill.active.length === 0 ? t('nothingStopped') : `${view.kill.active.length} ${t('stopped')}`;
-  box.append(headline, line(`${t('asAt')} ${new Date(view.asAt).toLocaleString()}`));
+  box.append(headline, line(`${t('asAt')} ${shopWhen(view.asAt)}`));
 
   // Every active scoped switch, with what the shop does without what it stopped, and the way back.
   el('kill-list').replaceChildren(...view.kill.active.map((sw) => {
@@ -308,7 +310,7 @@ function renderSwitch() {
     what.className = 'what';
     const name = document.createElement('strong');
     name.textContent = sw.reason;
-    what.append(name, line(`${sw.scope === 'single_agent' ? sw.agentId : sw.scope === 'all_ai' ? t('scopeAll') : t('scopeFacing')} · ${t('stoppedBy')} ${sw.activatedBy} · ${t('pulledAt')} ${new Date(sw.activatedAt).toLocaleString()}`));
+    what.append(name, line(`${sw.scope === 'single_agent' ? sw.agentId : sw.scope === 'all_ai' ? t('scopeAll') : t('scopeFacing')} · ${t('stoppedBy')} ${sw.activatedBy} · ${t('pulledAt')} ${shopWhen(sw.activatedAt)}`));
     for (const agent of view.agents.filter((a) => a.stopped && a.stoppedBecause === 'kill_switch')) what.append(line(`${t('instead')}: ${kit.withoutIt(agent)}`));
     const acts = document.createElement('span');
     acts.className = 'acts';
@@ -449,7 +451,7 @@ function renderQueue() {
       what.className = 'what';
       const name = document.createElement('strong');
       name.textContent = p.summary;
-      what.append(name, line(`${t('drafted')} ${p.agent} ${p.agentName} · ${new Date(p.createdAt).toLocaleString()}`));
+      what.append(name, line(`${t('drafted')} ${p.agent} ${p.agentName} · ${shopWhen(p.createdAt)}`));
       // AI-NFR-04: how sure, and what it cannot know — on every suggestion.
       what.append(chip(words(BAND_WORDS, p.confidence.band), `band-${p.confidence.band}`), line(`${t('cannotKnow')}: ${p.confidence.uncertainty}`));
       what.append(line(`${t('evidence')}: ${p.evidence.map((e) => `${e.source} — ${e.summary}`).join(' · ')}`));
@@ -457,7 +459,7 @@ function renderQueue() {
       where.className = 'where';
       what.append(where);
       if (p.outcome !== null) {
-        what.append(line(`${p.outcome.decision === 'approved' ? t('approvedBy') : t('rejectedBy')} ${p.outcome.by} · ${new Date(p.outcome.at).toLocaleString()}${p.outcome.reason === undefined ? '' : ` — ${p.outcome.reason}`}`));
+        what.append(line(`${p.outcome.decision === 'approved' ? t('approvedBy') : t('rejectedBy')} ${p.outcome.by} · ${shopWhen(p.outcome.at)}${p.outcome.reason === undefined ? '' : ` — ${p.outcome.reason}`}`));
       }
       row.append(what);
       if (p.mayDecide) {
@@ -575,7 +577,7 @@ function renderModels() {
       const what = document.createElement('span');
       what.className = 'what';
       const name = document.createElement('strong');
-      name.textContent = `${c.agent} · ${c.outcome} · ${new Date(c.at).toLocaleString()}`;
+      name.textContent = `${c.agent} · ${c.outcome} · ${shopWhen(c.at)}`;
       what.append(name, line(c.instruction), line(`${c.evidenceFrom ?? '—'} · ${c.evidenceCount} · ${c.modelId ?? '—'}`));
       if (c.piiRemoved.length > 0) what.append(line(`${t('piiRemoved')}: ${c.piiRemoved.join(', ')}`));
       if (c.blockedTools.length > 0) what.append(line(`${t('blocked')}: ${c.blockedTools.join(', ')}`));
@@ -599,7 +601,7 @@ function renderIncidents() {
       what.className = 'what';
       const name = document.createElement('strong');
       name.textContent = i.summary;
-      what.append(name, line(`${i.agent ?? '—'} · ${i.raisedBy} · ${new Date(i.raisedAt).toLocaleString()}`),
+      what.append(name, line(`${i.agent ?? '—'} · ${i.raisedBy} · ${shopWhen(i.raisedAt)}`),
         line(i.state === 'open' ? t('open') : i.state === 'owned' ? `${t('owned')} ${i.owner}` : `${t('closed')} — ${i.closeReason ?? ''}`));
       row.append(what);
       if (i.state !== 'closed' && view.may.manageIncidents) {

@@ -30,7 +30,7 @@ describe('OB-352 — the till\'s delivery slip', () => {
     await s.commit('S-1', 'N-1', AT, cash(13_000));
     const slip = s.deliverySlip('en')!;
     expect(slip).toMatchObject({ path: 'delivery_desk', jobRef: 'till-S-1', receiptNumber: 'N-1', itemLines: 1 });
-    expect(slip.lines.slice(0, 5)).toEqual(['DELIVERY SLIP', 'Delivery job: till-S-1', 'Bill: N-1', 'Billed: 2026-10-24 09:30', 'Item lines: 1']);
+    expect(slip.lines.slice(0, 5)).toEqual(['DELIVERY SLIP', 'Delivery job: till-S-1', 'Bill: N-1', 'Billed: 2026-10-24 15:00', 'Item lines: 1']); // OB-607: 09:30 UTC is 15:00 at the shop
     expect(slip.lines).toContain('Address: ________________________');
     expect(slip.lines).toContain('Delivery slot (day and time): ________________________');
     expect(s.deliverySlip('ta')!.lines[0]).toBe('டெலிவரி சீட்டு');

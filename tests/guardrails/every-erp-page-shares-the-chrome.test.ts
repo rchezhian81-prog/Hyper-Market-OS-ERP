@@ -99,8 +99,9 @@ describe('the chrome itself', () => {
     expect(manager).toMatch(/id="stale" hidden role="status" data-en="[^"]*do not close the day on it[^"]*" data-ta="[^"]+"/);
   });
 
-  it('says the time in the reader\'s own local time', () => {
-    expect(CHROME).toMatch(/new Date\(at\)\.toLocaleString\(\)/);
+  it('says the time at the SHOP\'s clock, never the reader\'s device clock (OB-607)', () => {
+    expect(CHROME).toMatch(/window\.sreShopDay\?\.dateTimeOf\(at\)/);
+    expect(CHROME).not.toMatch(/new Date\(at\)\.toLocaleString\(\)/);
   });
 });
 

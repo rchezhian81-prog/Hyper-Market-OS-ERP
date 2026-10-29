@@ -10,6 +10,7 @@
 // Everything else here is local by design: the stock ledger and outbox are in memory at the lane,
 // and the sync agent drains the outbox afterwards, never in the sale path.
 
+import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { posRolloutOf, type PosRollout } from './lane-rollout'; // OB-288 P4 (R8-9 · OB-316)
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
@@ -2287,3 +2288,7 @@ if (browserWindow !== undefined && (globalThis as { sreQueueTill?: unknown }).sr
   // OB-288 P4 (R8-9 · OB-316): the lane's rollout switches, beside the session — nothing in the sale path waits on them.
   browserWindow.posRollout = posRolloutOf(lane?.rollout);
 }
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

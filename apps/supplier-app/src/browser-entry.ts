@@ -29,7 +29,7 @@ import {
 } from './supplier-portal-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
-import { shopDateOf } from '../../../packages/calendar/src/shop-day';
+import { attachShopDay, shopDateOf } from '../../../packages/calendar/src/shop-day'; // OB-606 · OB-607
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
@@ -301,3 +301,7 @@ const browserWindow = (globalThis as { window?: SupplierWindow }).window;
 if (browserWindow !== undefined) {
   attachSupplierPortal(browserWindow);
 }
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

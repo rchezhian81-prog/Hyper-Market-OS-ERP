@@ -6,6 +6,8 @@
 // proposed one with a reason — run ONLY on an explicit click, only where the reader holds the right, and the
 // session refuses a self-approval before anything is sent (§28). No prompt/confirm/alert.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -241,7 +243,7 @@ function paint() {
   el('whoami').textContent = window.suppliersData?.userId ?? '';
   el('lang').textContent = t('langName');
   worded(el('refresh'), 'refresh-cw', t('refresh'));
-  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${new Date(view.asOf).toLocaleString()}` : '';
+  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${shopWhen(view.asOf)}` : '';
   el('col-id').textContent = vw('colId');
   el('col-status').textContent = vw('colStatus');
   el('col-facts').textContent = vw('colFacts');

@@ -20,6 +20,7 @@
 // on the same device. The store is injectable, so a host app with a better one (IndexedDB, an OS
 // keystore) supplies it instead of this.
 
+import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
 import { buildBrief } from './brief';
 import {
   APPROVE_REASONS,
@@ -216,3 +217,7 @@ if (browserWindow !== undefined) {
 }
 
 export { buildBrief };
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

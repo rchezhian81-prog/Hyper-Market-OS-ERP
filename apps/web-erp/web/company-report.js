@@ -200,7 +200,8 @@ function renderContributors(contributors) {
     tr.appendChild(cell(`${branchName(c.branchId)} (${c.branchId})`));
     tr.appendChild(cell(rupees(c.measures.grossMinor ?? 0)));
     tr.appendChild(cell(rupees(c.measures.netMinor ?? 0)));
-    tr.appendChild(cell(c.lastRefreshAt ? new Date(c.lastRefreshAt).toISOString().slice(0, 16).replace('T', ' ') : t('neverSynced')));
+    // OB-607: when it last synced, at the shop's clock — never the UTC clock of the moment.
+    tr.appendChild(cell(c.lastRefreshAt ? window.sreShopDay?.dateTimeOf(c.lastRefreshAt) ?? '' : t('neverSynced')));
     rows.appendChild(tr);
   }
 }

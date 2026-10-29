@@ -4,6 +4,8 @@
 // a big loss — and this page shows exactly what it answered, never its own guess. A decision id is minted once per
 // unit and re-used if the answer is lost, so a retry never records twice. No prompt/confirm/alert; nothing on a timer.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
@@ -116,7 +118,7 @@ function rowNode(item, open) {
   fact(`${t('batchLabel')}: ${item.batchId ?? t('noBatch')}`);
   if (item.condition) fact(`${t('conditionLabel')}: ${item.condition}`);
   fact(`${t('placeLabel')}: ${item.locationId ?? t('noPlace')}`);
-  fact(`${t('sinceLabel')}: ${new Date(item.heldAt).toLocaleString()}`);
+  fact(`${t('sinceLabel')}: ${shopWhen(item.heldAt)}`);
   for (const d of item.decisions) {
     const extra = d.valueMinor === undefined ? '' : ` · ${t('valueLabel')} ${rupees(d.valueMinor)}${d.approvedBy ? ` · ${t('approvedByLabel')} ${d.approvedBy}` : ''}`;
     const why = d.decision === 'write_off' && WASTE_REASONS.includes(d.reasonCode) ? t(d.reasonCode) : d.reasonCode;

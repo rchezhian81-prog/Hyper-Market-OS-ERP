@@ -9,6 +9,8 @@
 //    Colleague panel, and every button there takes the colleague's own staff code and PIN, typed again each time.
 // 3. No `prompt`, `confirm` or `alert`. Icons always beside words; English and Tamil.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 const mark = (name, size = 22) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
 function paintIconSlots() {
@@ -211,7 +213,7 @@ function paintStale() {
   if (!strip) return;
   strip.hidden = at === undefined;
   if (at === undefined) return;
-  strip.textContent = `${t('staleShell')} ${new Date(at).toLocaleString()}`;
+  strip.textContent = `${t('staleShell')} ${shopWhen(at)}`;
 }
 paintStale();
 el('lang').addEventListener('click', paintStale);
