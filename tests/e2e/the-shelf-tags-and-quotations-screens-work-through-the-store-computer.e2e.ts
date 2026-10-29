@@ -21,7 +21,11 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  *     the till's price, the MRP and the price per kg; the ghee whose net quantity cannot be divided is refused by name; the
  *     tags are drawn in real millimetres at the judged heights, and the print view shows only the tags; Tamil;
  *   • quotations: the manager makes a quotation (a promised price), gets its eight-digit number, lists it, voids it with a
- *     reason and sees it voided; a cashier is not offered making one and head office refuses her the list; Tamil.
+ *     reason and sees it voided; a cashier is not offered making one and head office refuses her the list; Tamil;
+ *   • R10-A · OB-542: the OWNER quoting a product with no known floor himself is offered "Ask the accountant", in English and
+ *     Tamil; he cannot approve his own; the store's accountant approves it at head office and the same quotation is made.
+ *   • R11-A · OB-602: the same for the owner's own quotation BELOW the floor; the accountant sees it waiting in Approvals on
+ *     the store computer, named in English and Tamil, and approves it there.
  * Synthetic data only. Without a browser binary it SKIPS.
  */
 
@@ -29,7 +33,7 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const HAVE_BROWSER = existsSync(CHROMIUM);
 const KEY = ['shelf', 'quote', 'box', 'signing', 'key'].join('-').padEnd(48, '0');
 const TENANT = randomUUID();
-const OWNER = 'u-owner'; const MANAGER = 'u-mgr'; const CASHIER = 'u-cash';
+const OWNER = 'u-owner'; const MANAGER = 'u-mgr'; const CASHIER = 'u-cash'; const ACCOUNTANT = 'u-acct';
 const STORE = 'store-1';
 const PX_PER_MM = 96 / 25.4;
 const TODAY = shopDateIn(new Date().toISOString());
@@ -59,6 +63,7 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await ho.seedOwner(TENANT, OWNER);
     await ho.provisionRole(TENANT, MANAGER, 'store_manager', [STORE]);
     await ho.provisionRole(TENANT, CASHIER, 'cashier', [STORE]);
+    await ho.provisionRole(TENANT, ACCOUNTANT, 'accountant', [STORE]); // R10-A · OB-542
     const post = async (path: string, body: unknown): Promise<void> => {
       const r = await ho.request({ method: 'POST', path, userId: OWNER, tenantId: TENANT, idempotencyKey: `k-${randomUUID()}`, body });
       expect(r.status, `${path}: ${JSON.stringify(r.body)}`).toBeLessThan(300);
@@ -88,8 +93,9 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
         { id: 'owner', name: 'Owner', permissions: everything },
         { id: 'manager', name: 'Store manager', permissions: ['identity.self.read', 'catalogue.pack.read', 'pos.quotation.read', 'pos.quotation.write'] },
         { id: 'cashier', name: 'Cashier', permissions: ['identity.self.read', 'catalogue.pack.read', 'pos.quotation.read'] },
+        { id: 'accountant', name: 'Accountant', permissions: ['identity.self.read'] }, // R11-A · OB-602: opens Approvals on the box
       ],
-      roleAssignments: [{ userId: OWNER, roleId: 'owner', branchScope: 'all' }, { userId: MANAGER, roleId: 'manager', branchScope: [STORE] }, { userId: CASHIER, roleId: 'cashier', branchScope: [STORE] }],
+      roleAssignments: [{ userId: OWNER, roleId: 'owner', branchScope: 'all' }, { userId: MANAGER, roleId: 'manager', branchScope: [STORE] }, { userId: CASHIER, roleId: 'cashier', branchScope: [STORE] }, { userId: ACCOUNTANT, roleId: 'accountant', branchScope: [STORE] }],
     }), 'utf8');
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
@@ -314,6 +320,85 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     expect((asked.body as { quotations: { quotationId: string; marginApprovedBy?: string }[] }).quotations.find((q) => q.quotationId === number)).toMatchObject({ marginApprovedBy: OWNER });
     await p.click('#lang');
     await says(p, '#q-ask-text', /^இந்த விலைக்கு இரண்டாவது நபரின் அனுமதி கேள்$/);
+    expect(errors).toEqual([]);
+  });
+
+  it('R10-A · OB-542: the owner\'s own quotation on a product with no known floor asks the ACCOUNTANT; approved by her, the same quotation is made', async () => {
+    const { page: p, errors } = await open(OWNER, '/quotations/');
+    await p.waitForSelector('#make:not([hidden])');
+    await p.fill('#q-store', STORE); await p.fill('#q-customer', 'Kannan Caterers');
+    await p.fill('#l-code', 'RICE-25'); await p.fill('#l-qty', '3'); await p.fill('#l-price', '1400');
+    await p.click('#l-add');
+    await p.waitForSelector('#lines li[data-product="p-rice"]');
+    await p.click('#q-make');
+    await says(p, '#q-status', /^Head office refused: head office does not know the lowest price of Ponni rice 25 kg \(never received at a cost\) — the owner is quoting it himself, so only the accountant may approve it \(OB-542\)/);
+    await p.waitForSelector('#q-ask:not([hidden])');
+    await says(p, '#q-ask-text', /^Ask the accountant to approve this price$/);
+    await p.click('#lang');
+    await says(p, '#q-ask-text', /^இந்த விலைக்குக் கணக்காளரின் அனுமதி கேள்$/);
+    await p.click('#lang');
+    await says(p, '#q-ask-text', /^Ask the accountant to approve this price$/);
+    await p.click('#q-ask');
+    await says(p, '#q-ask-status', /^Accountant's approval asked\. .* Its id: areq-/);
+    const asked = ((await p.textContent('#q-ask-status')) ?? '').split(' ').at(-1)!;
+    // The owner cannot approve his own; a store manager does not hold the word; the store's accountant approves it.
+    const decide = (userId: string, branchId?: string) => ho.request({ method: 'POST', path: `/v1/approvals/requests/${asked}/decide`, userId, tenantId: TENANT, ...(branchId === undefined ? {} : { branchId }), idempotencyKey: `d-${randomUUID()}`, body: { decision: 'approved', reason: 'checked against the supplier quote' } });
+    expect((await decide(OWNER)).status).toBeGreaterThanOrEqual(400);
+    expect((await decide(MANAGER, STORE)).status).toBe(403);
+    const byAccountant = await decide(ACCOUNTANT, STORE);
+    expect(byAccountant.status, JSON.stringify(byAccountant.body)).toBeLessThan(300);
+    await p.fill('#q-approval', asked);
+    await p.click('#q-make');
+    await says(p, '#q-status', /^Quotation made at head office\. Its number — give it to the customer: \d{8} /);
+    const number = (await p.textContent('#q-number'))!;
+    const listed = await ho.request({ method: 'GET', path: '/v1/pos/quotations', userId: OWNER, tenantId: TENANT });
+    expect((listed.body as { quotations: { quotationId: string; marginApprovedBy?: string; issuedBy: string }[] }).quotations.find((q) => q.quotationId === number)).toMatchObject({ issuedBy: OWNER, marginApprovedBy: ACCOUNTANT });
+    expect(errors).toEqual([]);
+  });
+
+  it('R11-A · OB-602: the owner\'s own quotation BELOW the floor asks the ACCOUNTANT; she sees it in Approvals (English and Tamil) and approves it; the same quotation is made', async () => {
+    const { page: p, errors } = await open(OWNER, '/quotations/');
+    await p.waitForSelector('#make:not([hidden])');
+    await p.fill('#q-store', STORE); await p.fill('#q-customer', 'Lakshmi Mess');
+    await p.fill('#l-code', 'DAL-500'); await p.fill('#l-qty', '12'); await p.fill('#l-price', '66');
+    await p.click('#l-add');
+    await p.waitForSelector('#lines li[data-product="p-dal"]');
+    await p.click('#q-make');
+    await says(p, '#q-status', /^Head office refused: quoted below the product's floor price: Toor dal 500 g at 66\.00 \(floor 70\.00\) — the owner is quoting it himself, so only the accountant may approve it \(OB-602\)/);
+    await p.waitForSelector('#q-ask:not([hidden])');
+    await says(p, '#q-ask-text', /^Ask the accountant to approve this price$/);
+    await p.click('#lang');
+    await says(p, '#q-ask-text', /^இந்த விலைக்குக் கணக்காளரின் அனுமதி கேள்$/);
+    await p.click('#q-ask');
+    await says(p, '#q-ask-status', /^கணக்காளரின் அனுமதி கேட்கப்பட்டது\. .*குறைந்தபட்ச விலைக்குக் கீழே.* அடையாளம்: areq-/);
+    await p.click('#lang');
+    await says(p, '#q-ask-text', /^Ask the accountant to approve this price$/);
+    const asked = ((await p.textContent('#q-ask-status')) ?? '').split(' ').at(-1)!;
+    expect(asked).toMatch(/^areq-/);
+    // The owner cannot approve his own; a store manager holds no word for it.
+    const decide = (userId: string, branchId?: string) => ho.request({ method: 'POST', path: `/v1/approvals/requests/${asked}/decide`, userId, tenantId: TENANT, ...(branchId === undefined ? {} : { branchId }), idempotencyKey: `d-${randomUUID()}`, body: { decision: 'approved', reason: 'mine' } });
+    expect((await decide(OWNER)).status).toBeGreaterThanOrEqual(400);
+    expect((await decide(MANAGER, STORE)).status).toBe(403);
+
+    // The accountant opens Approvals on the store computer: the owner's request waits for her, named in her language.
+    const a = await open(ACCOUNTANT, '/approvals/');
+    const row = a.page.locator(`#waiting li[data-request-id="${asked}"]`);
+    await row.waitFor({ timeout: 15_000 });
+    await says(a.page, `#waiting li[data-request-id="${asked}"] .headline`, /^The owner quotes a customer below the margin floor \(accountant approves\)$/);
+    await a.page.click('#lang');
+    await says(a.page, `#waiting li[data-request-id="${asked}"] .headline`, /^லாப வரம்புக்குக் கீழே உரிமையாளரே வாடிக்கையாளருக்குச் சொன்ன விலை \(கணக்காளர் அனுமதிப்பார்\)$/);
+    await a.page.click('#lang');
+    await row.locator('input.reason').fill('Bulk order for a mess — checked the margin');
+    await row.locator('button.approve').click();
+    await row.waitFor({ state: 'detached', timeout: 15_000 });
+    expect(a.errors).toEqual([]);
+
+    await p.fill('#q-approval', asked);
+    await p.click('#q-make');
+    await says(p, '#q-status', /^Quotation made at head office\. Its number — give it to the customer: \d{8}$/);
+    const number = (await p.textContent('#q-number'))!;
+    const listed = await ho.request({ method: 'GET', path: '/v1/pos/quotations', userId: OWNER, tenantId: TENANT });
+    expect((listed.body as { quotations: { quotationId: string; marginApprovedBy?: string; issuedBy: string }[] }).quotations.find((q) => q.quotationId === number)).toMatchObject({ issuedBy: OWNER, marginApprovedBy: ACCOUNTANT });
     expect(errors).toEqual([]);
   });
 

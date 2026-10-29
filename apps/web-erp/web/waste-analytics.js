@@ -59,11 +59,11 @@ async function show(event) {
   paint();
 }
 
-// The window opens on this month so far; a person changes it and asks again.
-const today = new Date();
-const pad = (n) => String(n).padStart(2, '0');
-$('to').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-$('from').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`;
+// The window opens on this month so far — the SHOP's today and month (never the browser's own date, which is still
+// yesterday in the shop from 18:30 UTC on a browser set to UTC); a person changes it and asks again.
+const today = api === null ? '' : api.todayAtShop();
+$('to').value = today;
+$('from').value = today === '' ? '' : `${today.slice(0, 7)}-01`;
 $('ask').addEventListener('submit', (e) => { void show(e); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();

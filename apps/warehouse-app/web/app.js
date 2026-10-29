@@ -379,7 +379,7 @@ function buildKeypad(hostId, entryId, maxDigits = 6) {
       const current = el(entryId).textContent;
       el(entryId).textContent = key === 'C' ? '0'
         : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0')
-          : (current === '0' ? key : (current + key).slice(0, maxDigits));
+          : (current === '0' ? key : (current + key).slice(0, Number(el(entryId).dataset.max || maxDigits)));
     });
     return button;
   }));
@@ -455,10 +455,11 @@ el('temp-ok').addEventListener('click', () => {
 
 // The blind count's quantity: what the worker SAW. The panel carries no expected figure — the model has none to give.
 let qtyResolve = null;
-function awaitQty(title, hint, initial = '0') {
+function awaitQty(title, hint, initial = '0', maxDigits = 6) {
   say(el('qty-title'), title, 'calculator');
   el('qty-hint').textContent = hint;
   el('qty-entry').textContent = initial;
+  el('qty-entry').dataset.max = String(maxDigits); // B4 · OB-504 (round 11): an expiry date is eight digits
   el('qty-cancel').textContent = t('cancel');
   el('qty-ok').textContent = t('ok');
   el('qty').hidden = false;
@@ -1103,6 +1104,15 @@ const DSD_WORDS = {
     delivery_note_not_signed: 'Scan the delivery note first', no_cash_at_the_door: 'No cash at the door',
     dsd_not_started: 'Start the check-in first', dsd_already_closed: 'This delivery is already closed', dsd_needs_vendor: 'Choose the delivery and key the driver',
     app_version_too_old: 'Update this handheld',
+    // B4 · OB-504 (round 11): the batch facts at the door.
+    manufacture_date_required: 'Packed goods — enter the month of manufacture first', expiry_not_readable: 'That expiry is not a date',
+    // OB-605: a batch-tracked item needs its batch and its expiry.
+    batch_required: 'Batch-tracked — scan the batch number first', expiry_required: 'Batch-tracked — enter the expiry date first',
+    dsdBatch: 'Batch', dsdBatchNone: 'not scanned', dsdBatchTitle: 'Scan the batch number on the pack',
+    dsdExpiry: 'Expiry', dsdExpiryNone: 'not entered', dsdExpiryTitle: 'Expiry date — key it as YYYYMMDD',
+    dsdExpiryHint: 'From the pack, for example 20270131 for 31 January 2027. Key 0 to clear it.',
+    needExpiry: 'The expiry date is not readable', needExpiryDetail: 'Key the date as eight digits, for example 20270131. Nothing was set.',
+    dsdMfg: 'Month of manufacture (packed goods)', dsdMfgNone: 'not entered',
     expected: 'expected', scanned: 'scanned', back: 'handed back', kept: 'kept',
     // D-11: what is kept from a route sheet (no order) or beyond the order waits for a second person at head office.
     held: 'held for a second person',
@@ -1124,6 +1134,13 @@ const DSD_WORDS = {
     delivery_note_not_signed: 'முதலில் டெலிவரி குறிப்பை ஸ்கேன் செய்யவும்', no_cash_at_the_door: 'வாசலில் பணம் இல்லை',
     dsd_not_started: 'முதலில் சரிபார்ப்பைத் தொடங்கவும்', dsd_already_closed: 'இந்த டெலிவரி ஏற்கனவே முடிந்தது', dsd_needs_vendor: 'டெலிவரியைத் தேர்வு செய்து ஓட்டுநர் எண்ணை உள்ளிடவும்',
     app_version_too_old: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
+    manufacture_date_required: 'பொதி செய்த பொருள் — முதலில் தயாரிப்பு மாதத்தை உள்ளிடவும்', expiry_not_readable: 'அந்தக் காலாவதி தேதி சரியான தேதி அல்ல',
+    batch_required: 'தொகுதி கண்காணிக்கும் பொருள் — முதலில் தொகுதி எண்ணை ஸ்கேன் செய்யவும்', expiry_required: 'தொகுதி கண்காணிக்கும் பொருள் — முதலில் காலாவதி தேதியை உள்ளிடவும்',
+    dsdBatch: 'தொகுதி எண்', dsdBatchNone: 'ஸ்கேன் செய்யப்படவில்லை', dsdBatchTitle: 'பொதியில் உள்ள தொகுதி எண்ணை ஸ்கேன் செய்யவும்',
+    dsdExpiry: 'காலாவதி தேதி', dsdExpiryNone: 'உள்ளிடப்படவில்லை', dsdExpiryTitle: 'காலாவதி தேதி — YYYYMMDD ஆக உள்ளிடவும்',
+    dsdExpiryHint: 'பொதியிலிருந்து, எடுத்துக்காட்டாக 31 ஜனவரி 2027க்கு 20270131. அழிக்க 0 உள்ளிடவும்.',
+    needExpiry: 'காலாவதி தேதியைப் படிக்க முடியவில்லை', needExpiryDetail: 'தேதியை எட்டு இலக்கங்களாக உள்ளிடவும், எ.கா. 20270131. எதுவும் அமைக்கப்படவில்லை.',
+    dsdMfg: 'தயாரிப்பு மாதம் (பொதி செய்த பொருள்)', dsdMfgNone: 'உள்ளிடப்படவில்லை',
     expected: 'எதிர்பார்த்தது', scanned: 'ஸ்கேன்', back: 'திருப்பியது', kept: 'வைத்தது',
     held: 'இரண்டாம் நபர் முடிவுக்காக நிறுத்தப்பட்டது',
     short: 'குறைவு', over: 'அதிகம்', not_expected: 'ஆர்டரில் இல்லை', noDifferences: 'வேறுபாடு இல்லை',
@@ -1143,6 +1160,16 @@ let dsdChoice = null; // { poId } | { routeId, supplierId }
 let dsdDriver = null; // the driver's mobile number, keyed
 let dsdNote = null; // the delivery note's scanned reference
 let dsdBack = null; // a hand-back in progress: { productId, quantityMinor }
+// B4 · OB-504 (round 11): the batch facts keyed at the door; they ride on every door scan until changed or cleared.
+let dsdBatchId = null; // the batch number scanned off the pack
+let dsdExpiry = null; // YYYY-MM-DD
+let dsdMfg = null; // YYYY-MM
+
+function paintDsdBatch() {
+  say(el('dsd-batch'), `${dt('dsdBatch')}: ${dsdBatchId ?? dt('dsdBatchNone')}`, 'barcode');
+  say(el('dsd-expiry'), `${dt('dsdExpiry')}: ${dsdExpiry ?? dt('dsdExpiryNone')}`, 'calendar-clock');
+  say(el('dsd-mfg'), `${dt('dsdMfg')}: ${dsdMfg ?? dt('dsdMfgNone')}`, 'calendar');
+}
 
 function dsdFelt(signal) {
   feltResult({ ...signal, code: signal.code });
@@ -1188,6 +1215,13 @@ function renderDsd() {
     const count = document.createElement('span'); count.className = 'count';
     sayQty(count, `${l.scannedMinor} / ${l.expectedMinor}`, `${dt('scanned')} / ${dt('expected')}`);
     row.append(what, qty, count);
+    // OB-604: the line split by batch — each batch is received (or held) as its own movement.
+    if (Array.isArray(l.batches) && l.batches.length > 0) {
+      const parts = document.createElement('span'); parts.className = 'batches';
+      parts.textContent = l.batches.map((b) => `${dt('dsdBatch')} ${b.batchId ?? dt('dsdBatchNone')}${b.expiry ? ` (${b.expiry})` : ''}: ${b.keptMinor}`
+        + (b.heldMinor > 0 ? ` · ${dt('held')} ${b.heldMinor}` : '')).join(' · ');
+      row.append(parts);
+    }
     return row;
   }));
   el('dsd-differences').replaceChildren(...(view.discrepancies.length === 0
@@ -1214,6 +1248,7 @@ function paintDsdWords() {
   say(el('dsd-hand-back'), dt('handBack'), 'rotate-ccw');
   say(el('dsd-cancel'), dt('backBtn'), 'x');
   say(el('dsd-close'), dt('closeDelivery'), 'file-text');
+  paintDsdBatch();
 }
 paintDsdWords();
 el('dsd-open').addEventListener('click', () => { el('dsd').hidden = false; renderDsd(); });
@@ -1232,8 +1267,47 @@ el('dsd-start').addEventListener('click', () => {
 el('dsd-scan').addEventListener('click', async () => {
   const code = await awaitScan(t('scanBarcode'));
   if (code === null || !dsd) return;
-  dsdFelt(dsd.scan(nextId('dsd-scan'), code));
+  dsdFelt(dsd.scan(nextId('dsd-scan'), code, {
+    ...(dsdBatchId === null ? {} : { batchId: dsdBatchId }),
+    ...(dsdExpiry === null ? {} : { expiry: dsdExpiry }),
+    ...(dsdMfg === null ? {} : { manufacturedOn: dsdMfg }),
+  }));
   renderDsd();
+});
+// B4 · OB-504 (round 11): the batch label is SCANNED (no text box on the handheld); expiry and month of manufacture are keyed.
+el('dsd-batch').addEventListener('click', async () => {
+  const code = await awaitScan(dt('dsdBatchTitle'));
+  if (code === null) return;
+  dsdBatchId = code;
+  paintDsdBatch();
+});
+el('dsd-expiry').addEventListener('click', async () => {
+  const keyed = await awaitQty(dt('dsdExpiryTitle'), dt('dsdExpiryHint'), dsdExpiry === null ? '0' : dsdExpiry.replace(/-/g, ''), 8);
+  if (keyed === null) return;
+  if (keyed === 0) { dsdExpiry = null; paintDsdBatch(); return; }
+  const text = String(keyed);
+  const iso = `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6)}`;
+  const day = new Date(`${iso}T00:00:00Z`);
+  if (!/^\d{8}$/.test(text) || Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== iso) {
+    feltResult({ feedback: 'reject', code: 'needExpiry', detail: dt('needExpiryDetail'), sound: 'error', vibrateMs: 300 });
+    el('banner-title').textContent = dt('needExpiry');
+    return;
+  }
+  dsdExpiry = iso;
+  paintDsdBatch();
+});
+el('dsd-mfg').addEventListener('click', async () => {
+  const keyed = await awaitQty(t('mfgTitle'), t('mfgHint'), dsdMfg === null ? '0' : dsdMfg.replace('-', ''));
+  if (keyed === null) return;
+  if (keyed === 0) { dsdMfg = null; paintDsdBatch(); return; }
+  const text = String(keyed);
+  const month = Number(text.slice(4));
+  if (!/^\d{6}$/.test(text) || month < 1 || month > 12) {
+    feltResult({ feedback: 'reject', code: 'needMfg', detail: t('needMfgDetail'), sound: 'error', vibrateMs: 300 });
+    return;
+  }
+  dsdMfg = `${text.slice(0, 4)}-${text.slice(4)}`;
+  paintDsdBatch();
 });
 el('dsd-hand-back').addEventListener('click', () => {
   const view = dsd ? dsd.view() : null;

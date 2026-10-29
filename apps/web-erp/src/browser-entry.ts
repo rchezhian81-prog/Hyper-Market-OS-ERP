@@ -269,6 +269,7 @@ import {
 } from './fleet-session';
 import type { DeviceChangeCommand } from './fleet-device-command';
 import { deviceChangeRequest, type FleetDeliveryPort } from './fleet-device-delivery';
+import { fleetVersionExceptionsPort, type FleetVersionExceptionsPort } from './fleet-version-exceptions'; // R10-A · OB-540
 import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
@@ -325,6 +326,7 @@ import {
   bandWords as storeOpsBandWords, surfaceWords as storeOpsSurfaceWords, kindWords as storeOpsKindWords, reasonWords as storeOpsReasonWords,
   splitToday as storeOpsSplitToday, rupees as storeOpsRupees, percent as storeOpsPercent, OB163_BANDS, type StoreOpsSession,
   endOfTodayField as storeOpsEndOfTodayField,
+  todayAtShop as storeOpsTodayAtShop,
 } from './store-ops-session';
 // R3 Lane 4 · D-9: the Staff schedule page (labour-demand forecast, draft roster a manager commits, actuals).
 import { createScheduleSession, scheduleWords, scheduleOutcomeWords, scheduleRupees, type ScheduleSession } from './schedule-session';
@@ -339,7 +341,7 @@ import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateSta
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
 // OB-288 P2 (M04-FR-04 · OB-308): the Floor heat map page.
-import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees as heatRupees, type HeatMapSession } from './floor-heat-map-session';
+import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees as heatRupees, todayAtShop as heatMapTodayAtShop, type HeatMapSession } from './floor-heat-map-session';
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
@@ -3122,7 +3124,8 @@ export function goodsReceiptPortsFromData(
   return {
     snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_GOODS_RECEIPT,
     // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
-    mayRead: () => held.has(INVENTORY_READ_PERMISSION),
+    // R10-A · OB-543: the screen's own narrow read (`inventory.goodsreceipt.read`, the accountant's) opens it too.
+    mayRead: () => held.has(INVENTORY_READ_PERMISSION) || held.has(GOODS_RECEIPT_SCREEN_READ_PERMISSION),
     // Batch 2: recording a supplier return is the route's own right (`inventory.movement.append`).
     mayRecordReturn: () => held.has(WRITE_OFF_APPEND_PERMISSION),
     returnPort: () => returnPort ?? null,
@@ -3251,8 +3254,22 @@ function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string
   });
 }
 
-export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
-  const body = await getInventory('/v1/inventory/goods-receipt');
+/** R10-A · OB-543: the goods-receipt screen's own narrow read — the accountant's word, which opens only the screen's list. */
+export const GOODS_RECEIPT_SCREEN_READ_PERMISSION = 'inventory.goodsreceipt.read';
+
+/**
+ * R10-A · OB-543: which list the screen reads for this reader — the broad receipts list for a reader holding the stock read
+ * (`inventory.availability.read`), else the screen's own narrow list (`inventory.goodsreceipt.read`, the accountant's). The
+ * same body; head office checks the word on each.
+ */
+export function goodsReceiptListPathFor(permissions: readonly string[] | undefined): string {
+  const held = new Set(permissions ?? []);
+  return !held.has(INVENTORY_READ_PERMISSION) && held.has(GOODS_RECEIPT_SCREEN_READ_PERMISSION)
+    ? '/v1/inventory/goods-receipt-review' : '/v1/inventory/goods-receipt';
+}
+
+export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): Promise<GoodsReceiptData | null> {
+  const body = await getInventory(path);
   if (body === null || !Array.isArray(body['receipts'])) return null;
 
   type Money = { readonly minor: number; readonly currency: string };
@@ -3986,6 +4003,8 @@ export async function fetchWorkforceWorklist(): Promise<WorkforceWorklistData | 
 export interface FleetData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
+  /** OB-601: this store computer's own store — the Devices page asks head office for this store's findings only. */
+  readonly storeId?: string;
   readonly summary?: FleetSummaryRollup;
   readonly devices?: readonly FleetDeviceRow[];
 }
@@ -5286,6 +5305,8 @@ interface ManagerWindow {
     readonly bands: typeof OB163_BANDS;
     /** OB-390: a new task's default deadline — the end of today, in the deadline field's shape. */
     readonly endOfTodayField: typeof storeOpsEndOfTodayField;
+    /** Today in the shop's own zone — the waste-analytics window's default last day. */
+    readonly todayAtShop: typeof storeOpsTodayAtShop;
   };
   /** R3 D-9: the Staff schedule page — who is looking; head office answers the rest. */
   scheduleData?: ViewerIdentity;
@@ -5309,6 +5330,8 @@ interface ManagerWindow {
   floorHeatMap?: {
     readonly session: HeatMapSession; readonly words: typeof heatMapWords; readonly outcomeWords: typeof heatMapOutcomeWords; readonly heatBand: typeof heatBand;
     readonly areaName: typeof areaName; readonly figureWords: typeof figureWords; readonly areaNotes: typeof areaNotes; readonly rupees: typeof heatRupees;
+    /** Today in the shop's own zone — the reading window's default last day. */
+    readonly todayAtShop: typeof heatMapTodayAtShop;
   };
   accessReviewData?: ViewerIdentity;
   accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
@@ -5513,6 +5536,8 @@ interface ManagerWindow {
   };
   fleetData?: FleetData;
   fleetSession?: FleetSession;
+  /** R10-A · OB-540: the Devices page's section on handheld work done on a withdrawn or too-old app version. */
+  fleetVersionExceptions?: FleetVersionExceptionsPort;
   /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
   fleetOutbox?: SyncOutbox;
   productPublishReviewData?: ProductPublishReviewData;
@@ -6962,7 +6987,7 @@ if (browserWindow !== undefined) {
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {
-      refresh: fetchGoodsReceipt,
+      refresh: () => fetchGoodsReceipt(goodsReceiptListPathFor(goodsReceiptData?.permissions)), // R10-A · OB-543
       present: (snapshot) => createGoodsReceiptSession(
         { userId: goodsReceiptData?.userId === undefined ? null : goodsReceiptData.userId },
         goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort, grnLineDispatchPort, grnBillMatchPort),
@@ -7045,6 +7070,8 @@ if (browserWindow !== undefined) {
   if (fleet !== null) {
     browserWindow.fleetSession = fleet;
     browserWindow.fleetOutbox = fleetOutbox;
+    // R10-A · OB-540: head office's register of handheld work on a barred build, read through the store computer as this person.
+    browserWindow.fleetVersionExceptions = fleetVersionExceptionsPort(browserWindow.fleetData?.permissions, undefined, browserWindow.fleetData?.storeId);
   }
   // The products-to-publish review shares the SAME device-backed catalogue outbox the Save button commits to,
   // so exactly what was queued there is what is reviewed here. Its delivery port POSTs a ready publish under
@@ -7189,7 +7216,7 @@ if (browserWindow !== undefined) {
     words: storeOpsWords, outcomeWords: storeOpsOutcomeWords, slotWords: storeOpsSlotWords, taskWords: storeOpsTaskWords,
     bandWords: storeOpsBandWords, surfaceWords: storeOpsSurfaceWords, kindWords: storeOpsKindWords, reasonWords: storeOpsReasonWords,
     splitToday: storeOpsSplitToday, rupees: storeOpsRupees, percent: storeOpsPercent, bands: OB163_BANDS,
-    endOfTodayField: storeOpsEndOfTodayField,
+    endOfTodayField: storeOpsEndOfTodayField, todayAtShop: storeOpsTodayAtShop,
   };
   // R3 D-9: the Staff schedule page — its session is the tested model in schedule-session.ts; nothing is written on open,
   // and the draft rosters nobody until a manager commits it (P-05).
@@ -7212,7 +7239,7 @@ if (browserWindow !== undefined) {
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
   // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
   browserWindow.floorHeatMapData = viewerIdentity(browserWindow.floorHeatMapData);
-  browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees };
+  browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees, todayAtShop: heatMapTodayAtShop };
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
   // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.

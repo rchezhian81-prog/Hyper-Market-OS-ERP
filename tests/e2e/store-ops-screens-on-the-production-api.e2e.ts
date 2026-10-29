@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **OB-154 (owner, 16 Oct 2026, "Add screens before pilot") — the store-operations screens, in a real browser, on the
@@ -25,9 +26,12 @@ const KEY = ['store', 'ops', 'e2e', 'key'].join('-').padEnd(48, '0');
 const HOUR = 3_600_000;
 const CASHIER = 'u-ravi';
 const DATA = 'storeOpsData';
+// The whole journey runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case
+// is proven whenever this runs.
+const EVENING = theEvening();
 /** An `Etc/GMT` zone in which the clock reads about midday now (its sign is reversed: `Etc/GMT-5` is UTC+5). */
 const MIDDAY_ZONE = (() => {
-  const ahead = Math.max(-12, Math.min(14, 12 - new Date().getUTCHours()));
+  const ahead = Math.max(-12, Math.min(14, 12 - new Date(EVENING.at).getUTCHours()));
   return ahead === 0 ? 'Etc/GMT' : `Etc/GMT${ahead > 0 ? '-' : '+'}${Math.abs(ahead)}`;
 })();
 
@@ -39,9 +43,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   // the last three minutes of an hour first waits for the next one (it failed at 02:59:30 UTC, 28 Oct 2026).
   let H = 0;
   const at = (hours: number) => new Date(H + hours * HOUR).toISOString();
-  const today = new Date().toISOString().slice(0, 10);
+  // The shop's own date: the price is dated by the shop's day, never the UTC date (from 18:30 UTC it is already tomorrow).
+  const today = EVENING.shopDate;
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     const intoHour = Date.now() % HOUR;
     if (intoHour > HOUR - 3 * 60_000) await new Promise((r) => setTimeout(r, HOUR - intoHour + 1_000));
@@ -76,12 +82,14 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   afterAll(async () => {
     await browser?.close();
     await shop?.stop();
+    vi.useRealTimers();
   });
 
   const pageErrors: string[] = [];
   afterAll(() => { expect(pageErrors).toEqual([]); });
   const open = async (who: string, path: string, timezoneId?: string): Promise<{ page: Page; close: () => Promise<void> }> => {
     const context = await browser.newContext(timezoneId === undefined ? {} : { timezoneId });
+    await pinThePageClock(context);
     await shop.signIn(context, who);
     const page = await context.newPage();
     // A script error on the page fails the journey — a screen that throws shows nothing true.
@@ -165,6 +173,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   it('(d) waste analytics: write-offs and waste records side by side, by reason in words', async () => {
     const { page, close } = await open(OWNER, '/waste-analytics');
     try {
+      // The window opens on the SHOP's month so far: at 19:30 UTC the browser (on UTC) still says yesterday, and the bread
+      // wasted "now" is on the shop's today — a window ending on the browser's date would leave it out.
+      expect(await page.inputValue('#to')).toBe(EVENING.shopDate);
+      expect(await page.inputValue('#from')).toBe(`${EVENING.shopDate.slice(0, 7)}-01`);
       await page.locator('table[data-breakdown="wo-reason"] tr[data-key="expiry"]').waitFor({ timeout: 15_000 });
       expect(await page.locator('table[data-breakdown="wo-reason"] tr[data-key="expiry"]').textContent()).toMatch(/Past its date.*₹100\.00/);
       expect(await page.locator('table[data-breakdown="wr-reason"] tr[data-key="preparation"]').textContent()).toMatch(/Lost in preparation.*₹25\.00/);

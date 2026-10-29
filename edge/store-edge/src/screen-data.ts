@@ -870,6 +870,17 @@ export function packedProductIdsFor(input: ScreenInput): Record<string, unknown>
   return { packedProductIds: (register.value as readonly unknown[]).filter((p): p is string => typeof p === 'string' && p.trim() !== '') };
 }
 
+/**
+ * OB-605 (owner, 28 Oct 2026): the products this box's catalogue marks BATCH-TRACKED (the signed pack head office published,
+ * else the pack file) — the warehouse handheld's DSD door refuses a scan of one with no batch or no expiry, offline. Absent
+ * when the box holds no catalogue (head office still refuses such a scan by name).
+ */
+export function batchTrackedProductIdsFor(input: ScreenInput): Record<string, unknown> {
+  const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
+  if (till === undefined) return {};
+  return { batchTrackedProductIds: till.products.filter((p) => p.batchTracked === true).map((p) => p.productId).sort() };
+}
+
 export function receivingChecklistFor(input: ScreenInput): Record<string, unknown> {
   const register = input.pack.receivingChecklist;
   if (register === undefined || !register.known) return {};
@@ -1109,6 +1120,8 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...receivingChecklistFor(input),
     // B4 · OB-504: the packed products — a scan of one with no month of manufacture is refused on the handheld, offline.
     ...packedProductIdsFor(input),
+    // OB-605: the batch-tracked products — a DSD door scan of one with no batch or expiry is refused on the handheld, offline.
+    ...batchTrackedProductIdsFor(input),
     // OB-288 lane 2 · WF-07 offline: the transfers to send from this store and to count in at it, as head office last said.
     ...transferWork(input),
   };
@@ -2066,6 +2079,9 @@ export function fleetPayload(input: ScreenInput): Record<string, unknown> | null
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // OB-601: the Devices page on the store PC asks head office for THIS store's handheld findings (head office still narrows
+  // to what the person may see, and refuses a store they may not).
+  if (input.pack.policies.known && input.pack.policies.value.branchId) payload['storeId'] = input.pack.policies.value.branchId;
 
   return payload;
 }

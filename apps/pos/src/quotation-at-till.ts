@@ -75,6 +75,12 @@ export interface QuotationTillOps {
   readonly signedIn: () => boolean;
   /** True when a bill in progress has lines a customer is waiting on (a just-paid bill does not count). */
   readonly basketInProgress: () => boolean;
+  /**
+   * R11-A · OB-501: the words a withdrawn or too-old build refuses a NEW bill with (from the signed pack), or null when new
+   * bills may start. A quotation is always rung up on a new bill, so it is refused BEFORE the store computer converts it —
+   * the quotation is never tied to a bill that can hold no line. Absent = not told (treated as not barred).
+   */
+  readonly newBillBar?: () => { readonly en: string; readonly ta: string } | null;
   readonly committed: () => boolean;
   readonly hasCatalogue: () => boolean;
   readonly newSale: () => void;
@@ -138,6 +144,10 @@ export function quotationAtTill(input: {
     if (!ops.signedIn()) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: 'Sign in at the till first, then key the quotation number.', laneMessageTa: 'முதலில் பில்லிங்கில் உள்நுழையவும், பிறகு விலைப்புள்ளி எண்ணை உள்ளிடவும்.' };
     if (!NUMBER.test(number)) return { ok: false, refusedBecause: 'not_a_quotation_number', laneMessage: 'Key the number printed on the customer\'s quotation.', laneMessageTa: 'வாடிக்கையாளரின் விலைப்புள்ளியில் அச்சிட்ட எண்ணை உள்ளிடவும்.' };
     if (ops.basketInProgress()) return { ok: false, refusedBecause: 'basket_not_empty', laneMessage: 'Finish or hold the basket on the till first — a quotation is rung up on its own bill.', laneMessageTa: 'முதலில் பில்லிங்கில் உள்ள கூடையை முடிக்கவும் அல்லது நிறுத்தி வைக்கவும் — விலைப்புள்ளி தனி பில்லில் சேர்க்கப்படும்.' };
+    // R11-A · OB-501: a barred build starts no new bill — and a quotation needs one. Refused here, before the box is asked,
+    // so head office never converts the quotation onto a bill this till could not ring a line on.
+    const bar = ops.newBillBar?.() ?? null;
+    if (bar !== null) return { ok: false, refusedBecause: 'app_version_too_old', laneMessage: `${bar.en} The quotation was not used; it can be rung up on an updated till.`, laneMessageTa: `${bar.ta} விலைப்புள்ளி பயன்படுத்தப்படவில்லை; புதுப்பிக்கப்பட்ட பில்லிங்கில் சேர்க்கலாம்.` };
     if (!ops.hasCatalogue()) return { ok: false, refusedBecause: 'no_catalogue', laneMessage: 'This till has no price pack, so it cannot ring the quotation. Nothing was rung.', laneMessageTa: 'இந்த பில்லிங்கில் விலைத் தொகுப்பு இல்லை, எனவே விலைப்புள்ளியைச் சேர்க்க முடியாது. எதுவும் சேர்க்கப்படவில்லை.' };
     // A fresh bill for the quotation: its reference is the bill the quotation becomes at head office.
     if (ops.committed()) ops.newSale();

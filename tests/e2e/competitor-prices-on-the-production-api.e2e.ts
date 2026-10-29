@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { STORE_RULES } from '../support/store-rules';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **Competitor price capture and comparison on the Products and prices page, in a real browser, on the PRODUCTION API
@@ -30,7 +31,10 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['competitor', 'prices', 'e2e', 'signing', 'key'].join('-').padEnd(48, '0');
 const CASHIER = 'u-cash';
 const ACCT = 'u-acct';
-const TODAY = new Date().toISOString().slice(0, 10);
+// The shop's own date, at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+// proven whenever this runs: the price is dated by the shop's day, never the UTC date.
+const EVENING = theEvening();
+const TODAY = EVENING.shopDate;
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor prices on the catalogue page, on the production API, in a real browser (D06-FR-05)', () => {
   let browser: Browser;
@@ -40,6 +44,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor
   const comparison = async () => (await call('GET', '/v1/prices/competitor?storeId=store-1', OWNER)).body as { products: { productId: string; ourPriceMinor: number | null; competitors: { competitor: string; priceMinor: number; gapMinor?: number }[] }[] };
 
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
@@ -62,10 +67,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 180_000);
-  afterAll(async () => { await browser?.close(); await shop?.stop(); });
+  afterAll(async () => { await browser?.close(); await shop?.stop(); vi.useRealTimers(); });
 
   const open = async (who: string) => {
     const context = await browser.newContext();
+    await pinThePageClock(context);
     await shop.signIn(context, who);
     const page = await context.newPage();
     const writes: string[] = []; const errors: string[] = [];

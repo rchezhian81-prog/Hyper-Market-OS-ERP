@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
+import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * M04-FR-04 · OB-308 (OB-288 P2) — the Floor heat map page, in a real browser, on the PRODUCTION API over real PostgreSQL.
@@ -19,12 +20,16 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['heat', 'map', 'e2e', 'signing', 'key'].join('-').padEnd(48, '0');
 const STORE = 'br-1';
 const HOME = { categoryId: 'staples', name: 'Staples', parentId: null };
-const today = new Date().toISOString().slice(0, 10);
+// The shop's own date, at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+// proven whenever this runs: the sale is on the shop's trading day, and the page's window opens on the shop's month.
+const EVENING = theEvening();
+const today = EVENING.shopDate;
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor heat map page (M04-FR-04 · OB-308) on the production API, in a real browser', () => {
   let browser: Browser;
   let shop: InboxShop;
   beforeAll(async () => {
+    pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     shop = await startInboxShop({
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
@@ -60,10 +65,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 300_000);
-  afterAll(async () => { await browser?.close(); await shop?.stop(); });
+  afterAll(async () => { await browser?.close(); await shop?.stop(); vi.useRealTimers(); });
 
   it('draws the floor from above, coloured by sales and by margin per sq ft; "not known" is said, never coloured; Tamil; a cashier reads nothing', async () => {
     const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
+    await pinThePageClock(context);
     await shop.signIn(context, OWNER);
     const page = await context.newPage();
     const reads: string[] = []; const errors: string[] = [];
@@ -71,6 +77,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/v1/')) reads.push(`${r.method()} ${u.pathname}`); });
     await page.goto(`${shop.base}/floor-heat-map`, { waitUntil: 'load' });
     expect(reads, 'nothing is read on open').toEqual([]);
+    // The window opens on the SHOP's month so far — at 19:30 UTC the browser (on UTC) still says yesterday.
+    expect(await page.inputValue('#to')).toBe(today);
+    expect(await page.inputValue('#from')).toBe(`${today.slice(0, 7)}-01`);
     await page.fill('#store', STORE);
     await page.fill('#from', today);
     await page.fill('#to', today);
@@ -105,6 +114,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     await context.close();
 
     const c = await browser.newContext();
+    await pinThePageClock(c);
     await shop.signIn(c, 'u-cash');
     const p2 = await c.newPage();
     await p2.goto(`${shop.base}/floor-heat-map`, { waitUntil: 'load' });

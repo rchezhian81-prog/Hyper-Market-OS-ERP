@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -17,6 +17,9 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { sellOnline, onlineReady } from '../support/sell-online';
+import { pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { shiftDate } from '../../packages/calendar/src/trading-day';
 
 /**
  * **A real customer, in a real browser, places a real order that the cloud then holds** (M20-FR-03,
@@ -153,7 +156,9 @@ async function seededApi(capacityPerSlot = 10, make?: (p: TestModePaymentProvide
   await h.enableFeature(T, 'customer_app');
   await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: T, idempotencyKey: 'mv-1', body: { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: AT, enteredBy: OWNER } });
   // The shop's own figures its quote is made from (FUL-03): milk at ₹60 for L1, and a ₹40 delivery fee.
-  const today = new Date().toISOString().slice(0, 10);
+  // The shop's own date (Asia/Kolkata): head office refuses a price dated before the shop's today, and from 18:30 UTC the
+  // UTC date is the shop's yesterday.
+  const today = shopDateIn(new Date().toISOString());
   const ok = async (path: string, body: unknown, key: string) => expect((await h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: key, body })).status, path).toBeLessThan(300);
   await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
   await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', ...onlineReady(70_00) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');
@@ -164,7 +169,7 @@ async function seededApi(capacityPerSlot = 10, make?: (p: TestModePaymentProvide
   await sellOnline((path, body) => h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: `online-${path}`, body }), ['MILK']);
   // FUL-03: how the store delivers, held at head office (OA-11: the main store, 8 slots 9 am–9 pm).
   expect((await h.request({ method: 'PUT', path: '/v1/serviceability/delivery-service', userId: OWNER, tenantId: T, idempotencyKey: 'dsvc', body: { storeLocation: STORE, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot, leadMinutes: 60 } })).status).toBe(200);
-  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const tomorrow = shiftDate(today, 1); // the shop's tomorrow
   heldSlot = ((await h.request({ method: 'GET', path: '/v1/serviceability/delivery-service', userId: OWNER, tenantId: T, query: { day: tomorrow } })).body as { slots: { startsAt: string; endsAt: string }[] }).slots[0]!;
   return h;
 }
@@ -204,16 +209,20 @@ async function readyToPay(page: Page, base: string, sms: OtpSimulator): Promise<
 describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the cloud holds the order (M20-FR-03, slice 2)', () => {
   let browser: Browser;
   beforeAll(async () => {
+    // Every journey runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case is
+    // proven whenever this runs.
+    pinTheEveningClock();
     execFileSync('node', ['scripts/build-app.mjs', 'customer-app'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 120_000);
-  afterAll(async () => { await browser?.close(); });
+  afterAll(async () => { await browser?.close(); vi.useRealTimers(); });
 
   it('search → basket → check → slot → location → sign in by OTP → pay: the screen says CONFIRMED because the shop has it, with the payment and the stock reserved', async () => {
     const h = await seededApi();
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(h, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    await pinThePageClock(context);
     const page = await context.newPage();
     try {
       await readyToPay(page, store.base, store.sms);
@@ -265,6 +274,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(h, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    await pinThePageClock(context);
     const page = await context.newPage();
     try {
       await readyToPay(page, store.base, store.sms);
@@ -289,6 +299,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(h, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    await pinThePageClock(context);
     const page = await context.newPage();
     try {
       await readyToPay(page, store.base, store.sms);
@@ -323,6 +334,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(h, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    await pinThePageClock(context);
     const page = await context.newPage();
     try {
       await readyToPay(page, store.base, store.sms);
@@ -345,6 +357,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(h, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    await pinThePageClock(context);
     const page = await context.newPage();
     // The fake speech engine (no engine is chosen — the owner's decision): it "hears" one phrase. R4 · D08 (OB-222): the
     // voice link is switched off in the product; a test puts its stand-in behind the link as `shopVoiceStandIn`.
@@ -422,13 +435,14 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     // The packer needs the product's handling class on the product master (never guessed from its name).
     for (const [path, body] of [
       ['/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', handling: 'ambient', ...onlineReady(70_00) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }],
-      ['/v1/catalogue/pack', { storeId: 'L1', asOf: new Date().toISOString().slice(0, 10) }],
+      ['/v1/catalogue/pack', { storeId: 'L1', asOf: shopDateIn(new Date().toISOString()) }],
     ] as const) expect((await current.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: `ob77-${path}`, body })).status, path).toBeLessThan(300);
     // The store's reverse proxy always talks to whichever head-office instance is running now.
     const live = { raw: (i: Parameters<ApiHarness['raw']>[0]) => current!.raw(i), provisionRole: (...a: Parameters<ApiHarness['provisionRole']>) => current!.provisionRole(...a) } as unknown as ApiHarness;
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(live, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    await pinThePageClock(context);
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));

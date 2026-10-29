@@ -12,7 +12,7 @@ import type { BarcodeResolution } from '../../../packages/receiving/src/asn';
 import type { PackHierarchy } from '../../../packages/product/src/pack';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import {
-  reconcileDsd, signDeliveryNote, DsdRefusedError, DSD_HAND_BACK_REASONS,
+  reconcileDsd, signDeliveryNote, DsdRefusedError, DSD_HAND_BACK_REASONS, dsdScanCaptureRefusal,
   type DsdExpectedLine, type DsdScan, type DsdHandBack, type DsdHandBackReason, type DsdReconciliation,
 } from '../../../packages/receiving/src/dsd-checkin';
 
@@ -24,6 +24,10 @@ export const DSD_FEEDBACK_CODES = Object.freeze([
   'hand_back_more_than_scanned', 'delivery_note_not_signed', 'no_cash_at_the_door', 'dsd_not_started', 'dsd_already_closed', 'dsd_needs_vendor',
   // OB-521: a check-in refused to START on a withdrawn or too-old build (one already open is finished).
   'app_version_too_old',
+  // B4 · OB-504 (round 11): a packed product scanned with no (readable) month of manufacture; an expiry that is not a date.
+  'manufacture_date_required', 'expiry_not_readable',
+  // OB-605: a batch-tracked product scanned with no batch, or no expiry.
+  'batch_required', 'expiry_required',
 ] as const);
 export type DsdFeedbackCode = (typeof DSD_FEEDBACK_CODES)[number];
 
@@ -45,7 +49,21 @@ export interface DsdDoorData {
   readonly openDeliveries?: readonly { readonly poId: string; readonly number: string; readonly supplierId: string; readonly ordered: readonly { readonly productId: string; readonly quantityMinor: number; readonly unitCost: { readonly minor: number } }[] }[];
   /** Vendors' route sheets the box served (head office's, for this store); absent = none on this phone, and only orders are offered. */
   readonly dsdRoutes?: readonly DsdRouteOnPhone[];
+  /**
+   * B4 · OB-504 (round 11): the products head office's category list makes PACKED (the store pack's `packedProductIds`, the
+   * same list the receiving scan reads) — a door scan of one with no month of manufacture is refused here, offline.
+   * Absent = not told (head office still refuses it by name).
+   */
+  readonly packedProductIds?: readonly string[];
+  /**
+   * OB-605 (owner, 28 Oct 2026): the products the signed pack marks BATCH-TRACKED — a door scan of one with no batch or no
+   * expiry is refused here, offline (the goods receipt's own rule). Absent = not told (head office still refuses it by name).
+   */
+  readonly batchTrackedProductIds?: readonly string[];
 }
+
+/** B4 · OB-504 (round 11): the batch facts keyed at the door; they ride on every scan until changed. */
+export interface DsdScanCapture { readonly batchId?: string; readonly expiry?: string; readonly manufacturedOn?: string }
 
 interface Open {
   readonly checkInId: string; readonly supplierId: string; readonly storeId: string; readonly against: { kind: 'po'; poId: string } | { kind: 'route'; routeId: string };
@@ -92,7 +110,7 @@ export class DsdDoorSession {
   }
 
   /** A barcode off the van. A case barcode counts as its case size (the pack hierarchy the box served). */
-  scan(scanId: string, barcode: string): DsdSignal {
+  scan(scanId: string, barcode: string, capture: DsdScanCapture = {}): DsdSignal {
     const c = this.current;
     if (c === null) return signal('reject', 'dsd_not_started', 'start the check-in first');
     if (c.closed) return signal('reject', 'dsd_already_closed', `check-in ${c.checkInId} is closed`);
@@ -100,7 +118,18 @@ export class DsdDoorSession {
     if (hit === undefined) return signal('reject', 'unknown_barcode', `${barcode} is not a product this phone knows — hand it back or ask the office`);
     const level = (this.data.packs ?? []).find((p) => p.productId === hit.productId)?.levels.find((l) => l.level === hit.level);
     const qty = level === undefined ? 1 : Math.max(1, (level as { containsMinor?: number }).containsMinor ?? 1);
-    c.scans.push({ scanId, productId: hit.productId, quantityMinor: qty, at: this.now() });
+    const batchId = capture.batchId?.trim() || undefined;
+    const expiry = capture.expiry?.trim() || undefined;
+    const manufacturedOn = capture.manufacturedOn?.trim() || undefined;
+    // B4 · OB-504 (round 11): the product master's packed rule, as every receiving path judges it — refused here, offline.
+    const packed = Array.isArray(this.data.packedProductIds) && this.data.packedProductIds.includes(hit.productId);
+    const tracked = Array.isArray(this.data.batchTrackedProductIds) && this.data.batchTrackedProductIds.includes(hit.productId); // OB-605
+    const refusal = dsdScanCaptureRefusal({ productId: hit.productId, ...(batchId === undefined ? {} : { batchId }), ...(expiry === undefined ? {} : { expiry }), ...(manufacturedOn === undefined ? {} : { manufacturedOn }) }, packed, tracked);
+    if (refusal !== undefined) return signal('reject', refusal.code as DsdFeedbackCode, refusal.message);
+    c.scans.push({
+      scanId, productId: hit.productId, quantityMinor: qty, at: this.now(),
+      ...(batchId === undefined ? {} : { batchId }), ...(expiry === undefined ? {} : { expiry }), ...(manufacturedOn === undefined ? {} : { manufacturedOn }),
+    });
     return signal('accept', 'dsd_scanned', `${hit.productId} +${qty}`);
   }
 

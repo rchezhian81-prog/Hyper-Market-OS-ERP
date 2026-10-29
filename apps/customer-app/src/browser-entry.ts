@@ -49,7 +49,7 @@ import {
 } from './privacy-centre';
 import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest, type ShopCommerceRequest } from './shop-transport';
 import { voiceQuery, voiceSearchLink, builtInRecogniser, customerVoiceSwitch, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort, type RecognitionConstructor } from './voice-search';
-import { basketKey, COUPON_CODE, repeatOrderBody, quoteRows, deliveryHandover, readReferralCode, referralWhy, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
+import { basketKey, COUPON_CODE, repeatOrderBody, todayAtShop, quoteRows, deliveryHandover, readReferralCode, referralWhy, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
 import { createScanAndGo, linesForTheShop, type ScanAndGo, type ScanProduct } from './scan-and-go';
 import { openNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
 import { readScan, scanFrames, scanSupported, type BarcodeReader } from './barcode-scan';
@@ -305,6 +305,8 @@ export interface CommerceShop {
   holdCart(): Promise<MineOutcome<unknown>>;
   /** OB-303: my repeat orders; start one from the basket; pause, resume or cancel one. */
   repeatOrders(): Promise<MineOutcome<unknown>>;
+  /** The shop's today (its own zone, never the phone's) — a repeat order's earliest start day. */
+  todayAtShop(): string;
   startRepeatOrder(form: Omit<RepeatOrderForm, 'lines' | 'locationId' | 'location'>): Promise<MineOutcome<unknown> | { readonly ok: false; readonly refusal: 'form'; readonly why: RepeatOrderWhy }>;
   changeRepeatOrder(subscriptionId: string, change: 'pause' | 'resume' | 'cancel'): Promise<MineOutcome<unknown>>;
   /** M20-FR-04: my saved addresses (a label and the location to about 100 m), and "remove saved payment" (nothing is saved). */
@@ -702,6 +704,7 @@ export function bootShop(
         return a.ok ? { ok: true, value: a.body } : a;
       },
       repeatOrders: async () => { const a = await commerceCall({ method: 'GET', path: 'me/subscriptions' }); return a.ok ? { ok: true, value: a.body } : a; },
+      todayAtShop: () => todayAtShop(),
       startRepeatOrder: async (form) => {
         const built = repeatOrderBody({ ...form, lines: state.lines, locationId: data?.locationId, ...(deliveryLocation === undefined ? {} : { location: deliveryLocation }) });
         if (!built.ok) return { ok: false, refusal: 'form', why: built.why };

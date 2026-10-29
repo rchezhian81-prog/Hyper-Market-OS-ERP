@@ -9,6 +9,12 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import type { Outcome } from './r4-insight-call';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+
+/** Today in the shop's own zone (packages/calendar shop-clock), never the browser's or UTC — the reading window's default
+ *  last day (its first day is the 1st of that month). From 18:30 UTC, and in a browser on UTC, the browser's own date is
+ *  still yesterday in the shop. */
+export const todayAtShop = (nowIso: string = new Date().toISOString()): string => shopDateIn(nowIso);
 
 export type Lang = 'en' | 'ta';
 export type Measure = 'sales' | 'margin';

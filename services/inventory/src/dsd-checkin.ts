@@ -23,10 +23,11 @@
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  reconcileDsd, signDeliveryNote, heldNeedsSecondPerson, isDsdHandBackReason, DsdRefusedError, DSD_HAND_BACK_REASONS,
+  reconcileDsd, signDeliveryNote, heldNeedsSecondPerson, isDsdHandBackReason, DsdRefusedError, DSD_HAND_BACK_REASONS, dsdScanCaptureRefusal, dsdBatchKey,
   type DsdExpectedLine, type DsdScan, type DsdHandBack, type DsdReconciliation, type DsdDeliveryNote,
 } from '../../../packages/receiving/src/dsd-checkin';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { ProductReceiptRules } from '../../../packages/receiving/src/capture';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { Movement } from './index';
 import { formatNumber } from '../../../packages/numbering/src/index';
@@ -49,6 +50,8 @@ export interface DsdOrderView {
   readonly lines: readonly DsdExpectedLine[];
 }
 
+// OB-604: the round-11 `several_batches` flag is gone — a product in several batches is no longer a loss to flag: each batch is
+// posted as its own movement.
 export type DsdFlag = 'receiver_unknown' | 'receiver_lacks_authority' | 'order_or_route_unknown' | 'cost_unknown';
 
 export interface DsdDebitNote {
@@ -63,6 +66,15 @@ export interface DsdDebitNote {
   /** Σ at cost; null when a line's cost is not known (said, never a zero). */
   readonly valueMinor: number | null;
   readonly raisedAt: string;
+}
+
+/** Goods kept beyond the order, waiting for a second person. OB-604: split by batch when the scans named batches. */
+export interface DsdHeldLine {
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly batchId?: string | null;
+  readonly expiry?: string | null;
+  readonly manufacturedOn?: string | null;
 }
 
 export interface DsdCheckInRecord {
@@ -88,7 +100,8 @@ export interface DsdCheckInRecord {
   readonly receivedMovementIds: readonly string[];
   readonly held: {
     readonly state: 'none' | 'pending' | 'approved' | 'rejected';
-    readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+    /** OB-604: one held line per product — or, when its scans named batches, per batch (with that batch's facts). */
+    readonly lines: readonly DsdHeldLine[];
     readonly valueMinor: number | null;
     readonly decidedBy: string | null; readonly decidedAt: string | null; readonly reason: string | null;
     readonly movementIds: readonly string[];
@@ -118,6 +131,12 @@ export interface DsdCheckInDeps {
   readonly allocateDebitNoteNumber?: (tenantId: string) => Promise<number>;
   readonly locationBranches?: LocationBranches;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * B4 · OB-504 (round 11): the product's receiving rule from head office's product master — the SAME `productRule` (with the
+   * PACKED fact) the goods-receipt routes and the handheld's scan route read. A packed product's door scan with no month and
+   * year of manufacture is refused by name. Absent → not judged here (the deps were not given the master).
+   */
+  readonly productRule?: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
 }
 
 /** The permission a receiver needs — the same as receiving any delivery. */
@@ -176,13 +195,18 @@ async function close(deps: DsdCheckInDeps, tenantId: string, rec: DsdCheckInReco
     reconciliation = reconcileDsd({ against: rec.against.kind, expected: rec.expected, scans: rec.scans, handBacks: rec.handBacks });
     note = signDeliveryNote({ body, reconciliation, receiverId, at });
   } catch (e) { return fromEngine(e); }
-  const movements: Movement[] = reconciliation.lines.filter((l) => l.receivableMinor > 0).map((l) => ({
-    movementId: `dsd:${rec.checkInId}:${l.productId}`, productId: l.productId, locationId: rec.storeId, kind: 'received',
-    quantityMinor: l.receivableMinor, uom: l.uom, occurredAt: at, enteredBy: receiverId,
+  // OB-604: one received movement per product — or, when its scans named batches, one per BATCH, each with its own batch and
+  // expiry and an id derived from the check-in and the batch (never the scan order), so a replay never double-posts.
+  const movements: Movement[] = reconciliation.lines.flatMap((l) => receivedParts(l).filter((part) => part.quantityMinor > 0).map((part) => ({
+    movementId: dsdMovementId(rec.checkInId, l.productId, part), productId: l.productId, locationId: rec.storeId, kind: 'received' as const,
+    quantityMinor: part.quantityMinor, uom: l.uom, occurredAt: at, enteredBy: receiverId,
     ...(l.unitCostMinor === null ? {} : { unitCostMinor: l.unitCostMinor }),
-  }));
+    ...batchOnMovement(part),
+  })));
   for (const m of movements) await deps.appendMovement(tenantId, m);
-  const heldLines = reconciliation.lines.filter((l) => l.heldMinor > 0).map((l) => ({ productId: l.productId, quantityMinor: l.heldMinor }));
+  const heldLines: DsdHeldLine[] = reconciliation.lines.flatMap((l) => (l.batches === undefined
+    ? (l.heldMinor > 0 ? [{ productId: l.productId, quantityMinor: l.heldMinor }] : [])
+    : l.batches.filter((b) => b.heldMinor > 0).map((b) => ({ productId: l.productId, quantityMinor: b.heldMinor, batchId: b.batchId, expiry: b.expiry, manufacturedOn: b.manufacturedOn }))));
   const needsDecision = heldLines.length > 0 && heldNeedsSecondPerson(reconciliation.heldValueMinor);
   // OB-196: numbered from the shop's own series — drawn last, once everything else about the close has succeeded, so a
   // refused close never spends a number (the series stays gap-free).
@@ -203,9 +227,49 @@ async function close(deps: DsdCheckInDeps, tenantId: string, rec: DsdCheckInReco
   }, at);
 }
 
+/** OB-604: what a line receives at close — the whole line, or one part per batch (with that batch's facts). */
+interface MovementPart { readonly quantityMinor: number; readonly batched: boolean; readonly batchId?: string | null; readonly expiry?: string | null; readonly manufacturedOn?: string | null }
+const receivedParts = (l: DsdReconciliation['lines'][number]): readonly MovementPart[] => (l.batches === undefined
+  ? [{ quantityMinor: l.receivableMinor, batched: false }]
+  : l.batches.map((b) => ({ quantityMinor: b.receivableMinor, batched: true, batchId: b.batchId, expiry: b.expiry, manufacturedOn: b.manufacturedOn })));
+/**
+ * OB-604: the movement id — `dsd:<checkIn>:<product>` for a line that named no batch (as before), `…:batch:<key>` for a batch
+ * part, `:held` added for goods a second person let in. The key is the batch's own facts (`dsdBatchKey`), so it is the same
+ * on every replay.
+ */
+export const dsdMovementId = (checkInId: string, productId: string, part: { readonly batched?: boolean; readonly batchId?: string | null; readonly expiry?: string | null; readonly manufacturedOn?: string | null }, held = false): string =>
+  `dsd:${checkInId}:${productId}${held ? ':held' : ''}${part.batched === true || part.batchId != null || part.expiry != null || part.manufacturedOn != null
+    ? `:batch:${dsdBatchKey({ batchId: part.batchId ?? null, expiry: part.expiry ?? null, manufacturedOn: part.manufacturedOn ?? null })}` : ''}`;
+/** The batch and expiry a received movement carries (none for a line that named no batch). */
+const batchOnMovement = (part: { readonly batchId?: string | null; readonly expiry?: string | null }): { batchId?: string; expiry?: string } => ({
+  ...(part.batchId == null ? {} : { batchId: part.batchId }),
+  ...(part.expiry == null ? {} : { expiry: part.expiry }),
+});
+
+const optText = (v: unknown): v is string | undefined | null => v === undefined || v === null || typeof v === 'string';
 function readScan(scanId: string, b: Record<string, unknown>, at: string): DsdScan {
-  if (!isStr(b['productId']) || !posInt(b['quantityMinor'])) bad('not_readable_as_a_dsd_scan', 'A scan needs { productId, quantityMinor (whole, above 0) }.');
-  return { scanId, productId: (b['productId'] as string).trim(), quantityMinor: b['quantityMinor'] as number, at };
+  if (!isStr(b['productId']) || !posInt(b['quantityMinor']) || !optText(b['batchId']) || !optText(b['expiry']) || !optText(b['manufacturedOn'])) {
+    bad('not_readable_as_a_dsd_scan', 'A scan needs { productId, quantityMinor (whole, above 0) }, and batchId, expiry (YYYY-MM-DD) and manufacturedOn (YYYY-MM) as text when given.');
+  }
+  return {
+    scanId, productId: (b['productId'] as string).trim(), quantityMinor: b['quantityMinor'] as number, at,
+    ...(isStr(b['batchId']) ? { batchId: b['batchId'].trim() } : {}),
+    ...(isStr(b['expiry']) ? { expiry: b['expiry'].trim() } : {}),
+    ...(isStr(b['manufacturedOn']) ? { manufacturedOn: b['manufacturedOn'].trim() } : {}),
+  };
+}
+
+/**
+ * B4 · OB-504 (round 11) · OB-605: judge door scans by the product master's packed and batch-tracked rules — the same rule (capture.ts) every receiving
+ * path uses, read from head office's own master (never the phone's word). Refused by name (422); nothing is saved.
+ */
+async function judgeScans(deps: DsdCheckInDeps, tenantId: string, scans: readonly DsdScan[], nextSafeAction: string): Promise<void> {
+  for (const scan of scans) {
+    const rule = deps.productRule === undefined ? undefined : await deps.productRule(tenantId, scan.productId);
+    // OB-605: and a BATCH-TRACKED product's scan needs its batch and expiry — the goods receipt's own rule, per scan.
+    const refusal = dsdScanCaptureRefusal(scan, rule?.packaged === true, rule?.batchTracked === true);
+    if (refusal !== undefined) refuse(422, refusal.code, refusal.message, nextSafeAction);
+  }
 }
 function readHandBack(handBackId: string, b: Record<string, unknown>, at: string): DsdHandBack {
   if (!isStr(b['productId']) || !posInt(b['quantityMinor']) || !isDsdHandBackReason(b['reason'])) bad('not_readable_as_a_dsd_hand_back', `A hand-back needs { productId, quantityMinor (whole, above 0), reason: ${DSD_HAND_BACK_REASONS.join(' / ')} }.`);
@@ -316,7 +380,9 @@ export function dsdCheckInRoutes(deps: DsdCheckInDeps): readonly Route[] {
         const scanId = (ctx.params['scanId'] ?? '').trim();
         if (rec.scans.some((s) => s.scanId === scanId)) return { status: 200, body: { checkIn: present(rec), alreadyScanned: true } };
         const at = deps.now();
-        const next = nextVersion(rec, { scans: [...rec.scans, readScan(scanId, (ctx.body ?? {}) as Record<string, unknown>, at)] }, at);
+        const scan = readScan(scanId, (ctx.body ?? {}) as Record<string, unknown>, at);
+        await judgeScans(deps, ctx.tenantId, [scan], 'Give what the pack prints (its batch, expiry and month of manufacture) and scan the item again. Nothing was saved.');
+        const next = nextVersion(rec, { scans: [...rec.scans, scan] }, at);
         await deps.recordCheckIn(ctx.tenantId, next);
         const live = reconcileDsd({ against: next.against.kind, expected: next.expected, scans: next.scans, handBacks: next.handBacks });
         return { status: 201, body: { checkIn: present(next), discrepancies: live.discrepancies } };
@@ -372,6 +438,9 @@ export function dsdCheckInRoutes(deps: DsdCheckInDeps): readonly Route[] {
         if (perms === undefined) flags.push('receiver_unknown');
         else if (!perms.includes(DSD_RECEIVE_PERMISSION)) flags.push('receiver_lacks_authority');
         const scans = (b['scans'] as unknown[]).map((s, i) => readScan(isObj(s) && isStr(s['scanId']) ? s['scanId'] : `s${i}`, isObj(s) ? s : {}, isObj(s) && isIso(s['at']) ? s['at'] : at));
+        // B4 · OB-504 (round 11): a packed product's scan with no month of manufacture is refused by name (422) — nothing is
+        // posted, and the store computer keeps the record as a dead letter for a person (hard rule #6).
+        await judgeScans(deps, ctx.tenantId, scans, 'Nothing was posted. The check-in stays on the store computer for a person: the item needs what its pack prints (its batch, expiry or month of manufacture — OB-504 · OB-605).');
         const handBacks = (b['handBacks'] as unknown[]).map((h, i) => readHandBack(isObj(h) && isStr(h['handBackId']) ? h['handBackId'] : `h${i}`, isObj(h) ? h : {}, isObj(h) && isIso(h['at']) ? h['at'] : at));
         // A receiver the grants do not back keeps nothing on their word: everything kept is held for a person (§28) —
         // judged as if there were no order, so nothing is receivable without a second person. The record keeps the real one.
@@ -403,9 +472,11 @@ export function dsdCheckInRoutes(deps: DsdCheckInDeps): readonly Route[] {
         const at = deps.now();
         const line = (p: string) => rec.reconciliation?.lines.find((l) => l.productId === p);
         const movements: Movement[] = b['decision'] === 'approved' ? rec.held.lines.map((h) => ({
-          movementId: `dsd:${rec.checkInId}:${h.productId}:held`, productId: h.productId, locationId: rec.storeId, kind: 'received' as const,
+          // OB-604: one movement per held line — per batch when the line names one, with its own id, batch and expiry.
+          movementId: dsdMovementId(rec.checkInId, h.productId, { batched: 'batchId' in h || 'expiry' in h || 'manufacturedOn' in h, ...h }, true), productId: h.productId, locationId: rec.storeId, kind: 'received' as const,
           quantityMinor: h.quantityMinor, uom: line(h.productId)?.uom ?? 'ea', occurredAt: at, enteredBy: rec.receivedBy, approvedBy: ctx.userId,
           ...(line(h.productId)?.unitCostMinor == null ? {} : { unitCostMinor: line(h.productId)!.unitCostMinor! }),
+          ...batchOnMovement(h),
         })) : [];
         for (const m of movements) await deps.appendMovement(ctx.tenantId, m);
         const next = nextVersion(rec, { held: { ...rec.held, state: b['decision'] as 'approved' | 'rejected', decidedBy: ctx.userId, decidedAt: at, reason: (b['reason'] as string).trim(), movementIds: movements.map((m) => m.movementId) } }, at);
