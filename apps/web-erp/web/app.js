@@ -1235,7 +1235,9 @@ function renderCardDay() {
   section.hidden = false;
   el('card-day-title').textContent = t('cardDayTitle');
   el('card-day-lead').textContent = t('cardDayLead');
-  const clock = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '—' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  // OB-607: a card payment's time of day is the SHOP's clock (its zone, as the store computer told the page) — never this
+  // device's: a laptop in New York read 15:30 for a payment the shop took at 01:00.
+  const clock = (iso) => window.sreShopDay?.timeOf(iso) || '—';
   const kindOf = (k) => (k === 'upi' ? t('cardKindUpi') : t('cardKindCard'));
   const cell = (tag, text, className) => {
     const c = document.createElement(tag);
@@ -1351,10 +1353,13 @@ function renderBlockers(blockers) {
  *  store computer told the page), never this device's: a laptop set to London closed the shop's yesterday. */
 function localStamp() {
   if (window.sreShopDay !== undefined) return window.sreShopDay.wallClock();
-  // The sample stand-in (no bundle): this device's own clock, and the page already says it is sample data.
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  // OB-607: the sample stand-in (no bundle) reads the SHOP's clock too — the zone the store computer told the page, else
+  // the shop default (Asia/Kolkata, packages/calendar shop-clock) — never this device's own clock.
+  let zone = 'Asia/Kolkata';
+  try { if (typeof window.shopTimeZone === 'string' && window.shopTimeZone !== '') { new Intl.DateTimeFormat('en-CA', { timeZone: window.shopTimeZone }); zone = window.shopTimeZone; } } catch { /* an unknown zone: the shop default */ }
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
 }
 
 el('check-close').addEventListener('click', () => {

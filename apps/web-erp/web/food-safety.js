@@ -3,6 +3,8 @@
 // signed-in person's session, refuses only blank or malformed input before a POST, and hands every refusal back in head
 // office's words. Nothing is written on open; after each record the board is read again. Every word has a Tamil twin.
 
+// OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.storeOps ?? null;
 const session = api?.session ?? null;
@@ -10,7 +12,7 @@ const may = session?.may ?? { named: false, readChecks: false, recordChecks: fal
 
 let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
-const when = (iso) => (typeof iso === 'string' ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+const when = (iso) => (typeof iso === 'string' ? shopTimeOf(iso) : '');
 let board = null;
 
 function say(el, out, good) {

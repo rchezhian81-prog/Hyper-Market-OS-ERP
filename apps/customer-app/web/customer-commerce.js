@@ -307,7 +307,10 @@ function paintOrderExtras() {
 // never on a timer; repainted in the other language without asking again.
 let lastHandover = null;
 let trackedSeen = null;
-const clockOf = (iso) => new Date(iso).toLocaleTimeString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { hour: '2-digit', minute: '2-digit' });
+// OB-607: times are the SHOP's clock (its zone, as the store computer told the page; the shop default Asia/Kolkata when it
+// was told none) — never the customer's phone's own zone.
+const shopZone = () => window.sreShopDay?.zone ?? 'Asia/Kolkata';
+const clockOf = (iso) => new Date(iso).toLocaleTimeString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { timeZone: shopZone(), hour: '2-digit', minute: '2-digit' });
 function paintHandover() {
   if (shop()?.commerce.heldOrderId() === undefined) { el('handover').hidden = true; el('handover-show').hidden = true; return; }
   el('handover').hidden = false; el('handover-show').hidden = false;
@@ -445,7 +448,7 @@ async function paintTillDeliveries() {
   const list = v.deliveries ?? [];
   el('till-dels-empty').hidden = list.length > 0;
   el('till-dels-empty').textContent = v.linked === false ? t('tillDelNotLinked') : t('tillDelNone');
-  const when = (iso) => new Date(iso).toLocaleString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const when = (iso) => new Date(iso).toLocaleString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { timeZone: shopZone(), weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   el('till-dels').replaceChildren(...list.map((d) => {
     const row = document.createElement('div'); row.className = 'row'; row.dataset.tillDelivery = d.orderId; row.dataset.status = d.status;
     row.append(node('span', `${t('tillDelBill')} ${d.receiptNumber}`, 'name'));

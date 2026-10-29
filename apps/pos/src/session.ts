@@ -8,6 +8,7 @@
 // outbox's unsent count so lag is always visible (P-08).
 
 import { money, add, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { shopDateTimeOf } from '../../../packages/calendar/src/shop-day'; // OB-607: the slip's time is the shop's clock
 import { quantity, type Uom } from '../../../packages/contracts/src/quantity';
 import { rate, type Rate } from '../../../packages/contracts/src/rate';
 import type { ConnectionState } from '../../../packages/contracts/src/enums';
@@ -1645,7 +1646,7 @@ export class PosSession {
     const lines = s.path === 'customer_app'
       ? [w.title, `${w.job}: ${s.jobRef}`, `${w.bill}: ${s.receiptNumber}`, w.app]
       : [
-        w.title, `${w.job}: ${s.jobRef}`, `${w.bill}: ${s.receiptNumber}`, `${w.at}: ${s.committedAt.replace('T', ' ').slice(0, 16)}`,
+        w.title, `${w.job}: ${s.jobRef}`, `${w.bill}: ${s.receiptNumber}`, `${w.at}: ${shopDateTimeOf(s.committedAt) || s.committedAt}`,
         `${w.items}: ${s.itemLines}`, w.paid, w.write, `${w.name}: ${blank}`, `${w.address}: ${blank}`, `${blank}`,
         `${w.landmark}: ${blank}`, `${w.phone}: ${blank}`, `${w.slot}: ${blank}`,
       ];

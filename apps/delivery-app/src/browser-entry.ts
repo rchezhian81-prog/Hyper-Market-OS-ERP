@@ -21,6 +21,7 @@
 // camera, kept as a document) is one small image per hand-over, queued as its own record with its
 // fingerprint; the phone's location is read only at a hand-over and head office keeps only the verdict.
 
+import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
@@ -169,3 +170,7 @@ if (browserWindow !== undefined) {
     ...(browserWindow.driverData !== undefined && 'appVersionPolicy' in browserWindow.driverData ? { served: browserWindow.driverData.appVersionPolicy } : {}),
   }), [session]);
 }
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

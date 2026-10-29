@@ -48,7 +48,7 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'shelf-tags', 'quotations',
   // Round 8 (R8-C · OB-522 · OB-380): Staff certificates.
   'certificates',
-  // OB-608 (owner, 29 Oct 2026): Bill findings and attendance flags.
+  // OB-609 (owner, 29 Oct 2026): Bill findings and attendance flags.
   'findings',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];

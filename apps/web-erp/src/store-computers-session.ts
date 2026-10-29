@@ -28,6 +28,7 @@
 // act's idempotency key is made from its approval, so a retried click is the same act.
 
 import type { ViewerIdentity } from './browser-entry';
+import { shopDateTimeOf } from '../../../packages/calendar/src/shop-day'; // OB-607: that store's clock, not UTC
 
 export type Lang = 'en' | 'ta';
 
@@ -202,7 +203,7 @@ export function unusedNumbersWords(lang: Lang, row: UnusedRow): string {
 /** R3 · P-08: what one store computer's time zone means, in the reader's words. */
 export function zoneWords(lang: Lang, z: ZoneRow): string {
   const said = z.verdict === 'differs' ? wordsFor(lang, 'zoneDiffers', { shop: z.shopTimeZone }) : wordsFor(lang, 'zoneInStep');
-  const stale = z.stale ? ` ${wordsFor(lang, 'zoneStale', { at: (z.lastReportAt ?? '').replace('T', ' ').slice(0, 16) })}` : '';
+  const stale = z.stale ? ` ${wordsFor(lang, 'zoneStale', { at: shopDateTimeOf(z.lastReportAt ?? '', z.shopTimeZone) })}` : '';
   return `${said}${stale}`;
 }
 

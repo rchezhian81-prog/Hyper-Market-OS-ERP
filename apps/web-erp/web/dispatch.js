@@ -5,6 +5,8 @@
 // pictures kept) and the cash, the contribution rule, the owner's numbers ("not set" until he enters them), and the
 // own-fleet settlement. Every state is a mark AND words. Every word has a Tamil twin.
 
+// OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.dispatch ?? null;
 const session = api?.session ?? null;
@@ -29,7 +31,7 @@ function button(words, iconName, onClick, cls) {
   const i = icon(iconName); if (i !== null) b.append(i, ' ');
   b.append(text('span', words)); b.addEventListener('click', onClick); return b;
 }
-const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—');
+const clock = (iso) => (iso ? shopTimeOf(iso) : '—');
 
 // ── Waves ────────────────────────────────────────────────────────────────────
 function candidateRow(c, selectable) {
@@ -259,7 +261,8 @@ $('paid').addEventListener('click', async () => settled(await session.recordPaid
 const desk = window.tillDeliveryDesk ?? null;
 const dk = (k) => (desk === null ? k : desk.words(lang, k));
 let tillJobs = null;
-const when = (iso) => (typeof iso === 'string' ? iso.replace('T', ' ').slice(0, 16) : '');
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never the UTC clock.
+const when = (iso) => (typeof iso === 'string' ? window.sreShopDay?.dateTimeOf(iso) ?? '' : '');
 function deskSay(out) { $('till-jobs-status').className = `status ${out.result === 'ok' ? 'good' : 'err'}`; $('till-jobs-status').textContent = desk.outcomeWords(lang, out); }
 function paintTillJobs() {
   const ul = $('till-jobs');

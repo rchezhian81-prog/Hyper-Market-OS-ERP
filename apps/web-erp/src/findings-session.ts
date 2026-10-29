@@ -1,4 +1,4 @@
-// Bill findings and attendance flags (OB-608 · P-03 · P-08 · M29-FR-03 · M25-FR-01 · M05-FR-02). A tested, DOM-free session
+// Bill findings and attendance flags (OB-609 · P-03 · P-08 · M29-FR-03 · M25-FR-01 · M05-FR-02). A tested, DOM-free session
 // over two head-office routes that already existed but that no screen reached, so what head office found was kept and nobody
 // saw it:
 //   • BILL FINDINGS — `GET /v1/sales/exceptions` (`pos.exception.read`): every critical and material finding head office

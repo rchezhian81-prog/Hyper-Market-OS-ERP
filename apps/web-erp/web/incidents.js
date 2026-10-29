@@ -11,7 +11,8 @@ const may = session?.may ?? { named: false, readIncidents: false, manageIncident
 
 let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
-const when = (iso) => (typeof iso === 'string' ? iso.replace('T', ' ').slice(0, 16) : '');
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never the UTC clock.
+const when = (iso) => (typeof iso === 'string' ? window.sreShopDay?.dateTimeOf(iso) ?? '' : '');
 
 let board = null; // { incidents, open } | null
 let register = null; // DrillRegister | null

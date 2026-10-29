@@ -13,7 +13,7 @@ import { STREAM } from '../../services/api/src/adapters';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
- * **OB-608 (owner, 29 Oct 2026) in a real browser: the Bill findings and attendance flags page, served by the store computer,
+ * **OB-609 (owner, 29 Oct 2026) in a real browser: the Bill findings and attendance flags page, served by the store computer,
  * over head office's real routes (OB-380).**
  *
  * The real store computer serves the page as the person the front signed in; head office's API runs in memory and every `/v1`
@@ -36,7 +36,7 @@ const STORE = 'store-1';
 const EARLIER = new Date(Date.now() - 60_000).toISOString();
 const TODAY = shopDateIn(EARLIER);
 
-describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page through the store computer (OB-608)', () => {
+describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page through the store computer (OB-609)', () => {
   let browser: Browser;
   let ho: ApiHarness;
   let edge: EdgeProcess;

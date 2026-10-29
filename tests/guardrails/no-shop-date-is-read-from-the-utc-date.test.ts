@@ -119,25 +119,39 @@ describe('no shop date is read from the UTC date of "now" (M01-FR-02)', () => {
  *   • a date or time built from the device's own fields: `.getFullYear()`, `.getMonth()`, `.getDate()`, `.getDay()`,
  *     `.getHours()`, `.getMinutes()` (the UTC twins, `getUTC…`, are not matched);
  *   • `wallClockIn(moment)` with no zone — the machine's own zone.
- * Times of day and date-times shown with `toLocaleString()` / `toLocaleTimeString()` are not matched yet: whether they move
- * to the shop's clock too is put to the owner (round 13 report).
+ *
+ * **OB-607 (owner, 29 Oct 2026 · round 14, R14-A): times of day and date-times follow the shop's clock too.** Every time a
+ * screen shows or defaults is read through the page's shop's day (`window.sreShopDay.timeOf` / `.dateTimeOf` / `.fieldOf`,
+ * packages/calendar/src/shop-day.ts), so the tripwire also fails on:
+ *   • `toLocaleString(…)` / `toLocaleTimeString(…)` with no `timeZone` named in the call — the device's own clock (a NUMBER
+ *     written `toLocaleString('en-IN')`, with or without its fraction digits, is money or a count and is not matched);
+ *   • `new Intl.DateTimeFormat(…)` with no `timeZone` — the device's own zone;
+ *   • `.getSeconds()` beside `.getHours()` / `.getMinutes()` above;
+ *   • an instant's UTC clock shown by slicing its ISO text (`.replace('T', ' ').slice(0, 16)`, `.slice(0, 16).replace('T', ' ')`,
+ *     `.slice(11, 16)`) — 19:30 UTC is 01:00 the next morning in the shop.
  */
 const DEVICE_RULES: Rule[] = [
   { rule: 'toLocaleDateString with no timeZone (the device\'s own date)', re: /\.toLocaleDateString\((?![^)]*timeZone)/ },
   { rule: 'a date built from the device\'s own fields', re: /\.get(?:FullYear|Month|Date|Day|Hours|Minutes)\(\)/ },
   { rule: 'wallClockIn with no zone (the machine\'s own zone)', re: /\bwallClockIn\((?:[^(),]|\((?:[^()]|\([^()]*\))*\))*\)/ },
+  // OB-607 — times of day and date-times.
+  {
+    rule: 'toLocaleString / toLocaleTimeString with no timeZone (the device\'s own clock)',
+    re: /\.toLocale(?:String|TimeString)\((?!(?:[^()]|\([^()]*\))*timeZone)(?!\s*'en-IN'\s*(?:,\s*\{\s*(?:(?:minimum|maximum)FractionDigits:\s*\d+\s*,?\s*)+\})?\s*\))/,
+  },
+  { rule: 'Intl.DateTimeFormat with no timeZone (the device\'s own zone)', re: /\bIntl\.DateTimeFormat\((?!(?:[^()]|\([^()]*\))*timeZone)/ },
+  { rule: 'a time built from the device\'s own seconds', re: /\.getSeconds\(\)/ },
+  {
+    rule: 'an instant\'s UTC clock shown by slicing its ISO text',
+    re: /\.replace\(\s*'T'\s*,\s*' '\s*\)\s*\.slice\(\s*0\s*,\s*16\s*\)|\.slice\(\s*0\s*,\s*16\s*\)\s*\.replace\(\s*'T'\s*,\s*' '\s*\)|\.slice\(\s*11\s*,\s*16\s*\)/,
+  },
 ];
 
 /** The places in screen code that may read the device's own fields, each with its reason (file + a piece of the line). */
 const DEVICE_ALLOWED: readonly { readonly file: string; readonly line: string; readonly why: string }[] = [
-  {
-    file: 'apps/web-erp/web/app.js', line: 'return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}',
-    why: 'the SAMPLE stand-in only: with the bundle the day close reads the shop\'s wall clock (window.sreShopDay.wallClock()); without it the page runs on sample data and says so',
-  },
-  {
-    file: 'apps/web-erp/web/app.js', line: 'String(d.getHours()).padStart(2, \'0\')}:${String(d.getMinutes())',
-    why: 'a card payment\'s TIME of day (HH:MM) on the manager\'s Today screen — times of day are not dates; whether they move to the shop\'s clock is the open owner question from round 13',
-  },
+  // Empty (OB-607). Round 13's two entries are gone: the manager's sample stand-in now reads the shop's wall clock too (the
+  // zone the store computer served, else Asia/Kolkata), and a card payment's time of day on the manager's Today screen is
+  // the shop's clock (window.sreShopDay.timeOf). Neither truly wanted the device's clock.
 ];
 
 const SCREEN_DIRS = ['apps', 'edge'];
@@ -173,6 +187,17 @@ describe('no screen takes its date from the device\'s own clock or zone (OB-606)
       "const hh = String(d.getHours()).padStart(2, '0');",
       "const asOf = wallClockIn(new Date().toISOString()).slice(0, 10);",
       "const by = wallClockIn(dueBy).slice(0, 10);",
+      // OB-607 — times of day and date-times on the device's (or the UTC) clock.
+      "note.textContent = `${t('boardAsOf')} ${new Date(board.asAt).toLocaleString()}`;",
+      "const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });",
+      "setText('asked', `${t('asked')} ${askedAt.toLocaleTimeString()}`);",
+      "const when = (iso) => new Date(iso).toLocaleString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { weekday: 'short', hour: '2-digit' });",
+      "const hhmm = (iso) => new Date(iso).toLocaleString([], { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' });",
+      "const f = new Intl.DateTimeFormat('en-IN', { hour: '2-digit', minute: '2-digit' });",
+      "const ss = String(d.getSeconds()).padStart(2, '0');",
+      "const when = (iso) => (typeof iso === 'string' ? iso.replace('T', ' ').slice(0, 16) : '');",
+      "li.textContent = `${row.receivedAt.slice(0, 16).replace('T', ' ')}`;",
+      "what.textContent = `${w(m.kind)} · ${m.at.slice(11, 16)}`;",
     ];
     const good = [
       "const today = window.sreShopDay.today();",
@@ -181,6 +206,16 @@ describe('no screen takes its date from the device\'s own clock or zone (OB-606)
       "const at = wallClockIn(now(), timeZone).slice(0, 10);",
       "const at = wallClockIn(new Date(guess).toISOString(), timeZone);",
       "const ms = d.getTime();",
+      // OB-607 — the shop's clock, a zoned call, and numbers.
+      "const clock = (iso) => window.sreShopDay?.timeOf(iso) ?? '';",
+      "strip.textContent = `${t('staleShell')} ${window.sreShopDay?.dateTimeOf(at) ?? ''}`;",
+      "const when = (iso) => new Date(iso).toLocaleString(lang() === 'ta' ? 'ta-IN' : 'en-IN', { timeZone: shopZone(), weekday: 'short' });",
+      "const clockOf = (iso) => new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit' });",
+      "const f = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric' });",
+      "const inr = (minor) => '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });",
+      "const n = (count).toLocaleString('en-IN');",
+      "return (minor / 1000).toLocaleString('en-IN', { maximumFractionDigits: 3 });",
+      "const shown = wallClockIn(iso, zone).replace('T', ' ');",
     ];
     expect(scan([sample('apps/x/bad.js', bad.join('\n'))], DEVICE_RULES).map((f) => f.line)).toEqual(bad.map((_, i) => i + 1));
     expect(scan([sample('apps/x/good.js', good.join('\n'))], DEVICE_RULES)).toEqual([]);

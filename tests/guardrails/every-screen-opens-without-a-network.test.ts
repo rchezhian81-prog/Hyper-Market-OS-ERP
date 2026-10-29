@@ -166,10 +166,11 @@ describe('the page is fetched fresh, and a cached one admits it', () => {
     }
   });
 
-  it('says the time in the reader’s own local time', () => {
-    // The person reading it is standing in the shop, not in UTC.
+  it('says the time at the SHOP’s clock, never the reader’s device clock (OB-607)', () => {
+    // Not UTC, and not the device's zone either: a phone set to another zone read the shop's 01:00 as its own evening.
     for (const screen of SCREENS) {
-      expect(code(stripView(screen))).toMatch(/new Date\(at\)\.toLocaleString\(\)/);
+      expect(code(stripView(screen))).toMatch(/shopWhen\(at\)|window\.sreShopDay\?\.dateTimeOf\(at\)/);
+      expect(code(stripView(screen))).not.toMatch(/new Date\(at\)\.toLocaleString\(\)/);
     }
   });
 });

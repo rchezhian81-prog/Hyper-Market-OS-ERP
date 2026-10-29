@@ -14,6 +14,8 @@
 // number, then the button) to a reader holding the bill-match right — never to the person who received the goods (the screen
 // says someone else matches it). The bill matched is shown afterwards, line by line. An online write; offline it says so.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
 
@@ -135,7 +137,7 @@ function receiptNode(r) {
   headline.className = 'headline';
   headline.textContent = r.number;
   id.append(headline);
-  for (const line of [r.poId ?? t('noPo'), r.receivedAt ? new Date(r.receivedAt).toLocaleString() : '']) {
+  for (const line of [r.poId ?? t('noPo'), r.receivedAt ? shopWhen(r.receivedAt) : '']) {
     if (line === '') continue;
     const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = line; id.append(sub);
   }
@@ -359,7 +361,7 @@ function paint() {
   el('whoami').textContent = window.goodsReceiptData?.userId ?? '';
   el('lang').textContent = t('langName');
   worded(el('refresh'), 'refresh-cw', t('refresh'));
-  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${new Date(view.asOf).toLocaleString()}` : '';
+  el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${shopWhen(view.asOf)}` : '';
   el('col-id').textContent = vw('colId');
   el('col-status').textContent = vw('colStatus');
   el('col-facts').textContent = vw('colFacts');

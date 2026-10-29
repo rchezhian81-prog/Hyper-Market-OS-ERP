@@ -8,6 +8,7 @@
 // The person signs in on the box's own queue-till page (staff ID + till PIN, ADR-0020); the session is an HttpOnly cookie
 // this page never sees. The model is told who they are only once the box has said so (`resumeAtTill`).
 
+import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
 import './serve-as-queue-till';
 import { bootPos, serveLaneFrom } from '../../pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
@@ -60,3 +61,7 @@ export function bootQueuePos(w: QueueWindow, options: { readonly base?: string }
 
 const browserWindow = (globalThis as { window?: QueueWindow }).window;
 if (browserWindow !== undefined) browserWindow.queueSession = bootQueuePos(browserWindow);
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

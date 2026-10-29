@@ -1,4 +1,4 @@
-// Bill findings and attendance flags (OB-608 · P-03 · P-08) — the page over head office's sale findings and attendance-mark
+// Bill findings and attendance flags (OB-609 · P-03 · P-08) — the page over head office's sale findings and attendance-mark
 // routes. The session (apps/web-erp/src/findings-session.ts, in the bundle as window.findings) does every call and every rule;
 // this page lays out what it is told. It reads head office as it opens (GETs only); nothing is written. Every word this page
 // adds has a Tamil twin; head office's own sentences stay in English (OB-553).

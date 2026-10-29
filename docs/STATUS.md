@@ -5,10 +5,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## OB-608 (29 October 2026): a page for head office's bill findings and attendance flags
+## OB-609 (29 October 2026): a page for head office's bill findings and attendance flags
 
 **What changed**
-- **Why:** while the in-store checks were being prepared, two things head office keeps turned out to be on no screen: the findings it raises on till bills (for example, a price cut beyond a manager's limit, or a recalled product sold) and the attendance marks that do not pair up (a forgotten clock-out, including on a night shift). The owner chose to add a page (option 1, OB-608).
+- **Why:** while the in-store checks were being prepared, two things head office keeps turned out to be on no screen: the findings it raises on till bills (for example, a price cut beyond a manager's limit, or a recalled product sold) and the attendance marks that do not pair up (a forgotten clock-out, including on a night shift). The owner chose to add a page (option 1, OB-609).
 - **New office page, "Bill findings and attendance flags" (Reports menu):**
   - **Bill findings:** every open critical and material finding, critical first. Each shows the bill number, the product, the money difference, head office's own sentence and what to do. Informational notes (such as a price a quotation promised, OB-551) are shown only as a count.
   - **Attendance flags:** for the chosen shop day (today by default), the marks that do not pair up, with the person's name and the time on the shop's clock. Head office judges a night shift across midnight.
@@ -33,6 +33,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 **Blocked:** nothing. **Owner decisions needed:** none.
 
 ---
+## Store pilot checklist (29 October 2026): what to buy, sign and arrange
+- **What changed:** new `docs/runbooks/pilot-buy-and-sign-checklist.md` (listed in the runbooks index). It puts the 41 roadmap rows that need something from outside (equipment, contracts, people, real data) in the order to start them, with who does each and how to know it is done. Every row ID is kept and all 41 are listed; nothing new is required. Also removed a duplicated heading in this file.
+- **Tests:** docs only; guardrails run before the pull request.
+- **Next:** the owner works down Step 1 (the long-lead items: equipment, payment gateway, penetration test, live servers, off-site backup, CA). OB-607 (times of day on the shop's clock) is being built in another session.
+- **Blocked:** nothing in software.
+- **Owner decisions needed:** none.
 
 ## OB-553 (29 October 2026): alerts and alert text messages back to English only
 - **What changed:**
@@ -44,7 +50,6 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Blocked:** nothing.
 - **Owner decisions needed:** none.
 
-## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-549
 ## Round 7 check and fixes (28 October 2026): five gaps closed; owner decisions OB-544 to OB-551
 
 **What happened**
@@ -100,6 +105,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 14 (29 October 2026): every time shown on a screen is the shop's clock (OB-607); decision OB-608
+
+**What changed**
+- Every time of day and date-time a screen shows now follows the shop's clock on any device: the "old copy" strip and the "last contact" badge on all 11 apps, the manager's card-payment times, production, suppliers, goods receipt, indents, stock health, store tasks, my tasks, food safety, recalls, held returns, AI drafts and AI control, approvals, incidents, store computers, supplier submissions, the till's delivery slip and more. What is stored did not change.
+- The guardrail now also blocks device-clock and UTC-clock shortcuts in screen code; its allowlist is empty.
+- **OB-608 (owner):** date-times typed by hand on five forms are read as shop time next.
+- **Found, to fix next under OB-607:** printed food labels (`USE BY`) and staff shift messages take the time from the UTC clock (outside screen code).
+
+**Tests that ran (builder, this box, synthetic data):** full unit + integration on PostgreSQL 15,666 passed; full browser suite 754 of 754 (62 new, at device zone New York, 19:30 UTC); fails-before: 61 of 62 new browser tests and 74 guardrail hits with the old screen code.
+
+**What is next:** OB-608 and the label and shift-message times. **Blocked / needs the owner:** nothing new.
+
+---
+
 ## Round 13 (29 October 2026): every screen takes the shop's date, on any device (OB-606); decision OB-607
 
 **What changed**

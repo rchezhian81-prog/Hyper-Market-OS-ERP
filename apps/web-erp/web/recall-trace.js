@@ -4,6 +4,8 @@
 // and this page shows exactly what it answered. Each write keeps its idempotency key until head office answers, so a
 // retry after a lost answer is the same request. No prompt/confirm/alert; nothing on a timer; nothing written on open.
 
+// OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 const DATA = window.recallTraceData ?? {};
@@ -212,7 +214,7 @@ function recallRow(r) {
   const head = document.createElement('strong');
   head.textContent = `${r.batchId} — ${t(r.status === 'open' ? 'statusOpen' : 'statusClosed')}`;
   const facts = document.createElement('div'); facts.className = 'facts';
-  for (const text of [r.reason, `${t('startedBy')}: ${r.initiatedBy}`, `${t('since')}: ${new Date(r.initiatedAt).toLocaleString()}`, ...(r.closedAt ? [`${t('closedAt')}: ${new Date(r.closedAt).toLocaleString()} (${r.evidenceRef})`] : [])]) {
+  for (const text of [r.reason, `${t('startedBy')}: ${r.initiatedBy}`, `${t('since')}: ${shopWhen(r.initiatedAt)}`, ...(r.closedAt ? [`${t('closedAt')}: ${shopWhen(r.closedAt)} (${r.evidenceRef})`] : [])]) {
     const s = document.createElement('span'); s.textContent = text; facts.append(s);
   }
   const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet open-one';
@@ -300,7 +302,7 @@ function callRow(c) {
   // OB-387: the "phoned" tick — who and when, as head office keeps it. Once ticked it stays; the first tick stands.
   const phoned = document.createElement('span');
   phoned.className = 'phoned';
-  phoned.textContent = c.phoned ? `✓ ${t('phonedBy', { by: c.phoned.by, at: new Date(c.phoned.at).toLocaleString() })}` : t('notPhoned');
+  phoned.textContent = c.phoned ? `✓ ${t('phonedBy', { by: c.phoned.by, at: shopWhen(c.phoned.at) })}` : t('notPhoned');
   li.append(phoned);
   const mayTick = PERMS === null || PERMS.includes('quality.recall.notice.phoned');
   if (!c.phoned && mayTick && callReply?.recall?.status === 'open') {
@@ -319,8 +321,8 @@ function callRow(c) {
       const item = document.createElement('li');
       item.className = x.kind;
       item.textContent = x.kind === 'unticked'
-        ? t('untickedRecord', { by: x.by, at: new Date(x.at).toLocaleString(), reason: x.reason })
-        : t('tickedRecord', { by: x.by, at: new Date(x.at).toLocaleString() });
+        ? t('untickedRecord', { by: x.by, at: shopWhen(x.at), reason: x.reason })
+        : t('tickedRecord', { by: x.by, at: shopWhen(x.at) });
       ul.append(item);
     }
     li.append(ul);
@@ -437,8 +439,8 @@ function paint() {
     const r = opened.recall;
     el('r-detail-h').textContent = `${t('detailH')} ${r.batchId} — ${t(r.status === 'open' ? 'statusOpen' : 'statusClosed')}`;
     const facts = el('r-facts');
-    const lines = [r.reason, `${t('startedBy')}: ${r.initiatedBy}`, `${t('since')}: ${new Date(r.initiatedAt).toLocaleString()}`, ...(opened.after ? afterStartLines(opened.after) : [])];
-    if (r.closedAt) lines.push(`${t('closedAt')}: ${new Date(r.closedAt).toLocaleString()} (${r.evidenceRef})`);
+    const lines = [r.reason, `${t('startedBy')}: ${r.initiatedBy}`, `${t('since')}: ${shopWhen(r.initiatedAt)}`, ...(opened.after ? afterStartLines(opened.after) : [])];
+    if (r.closedAt) lines.push(`${t('closedAt')}: ${shopWhen(r.closedAt)} (${r.evidenceRef})`);
     facts.replaceChildren(...lines.map((x) => { const s = document.createElement('span'); s.textContent = x; return s; }));
     el('r-close-row').hidden = r.status !== 'open';
     el('l-r-evidence').textContent = t('evidenceLabel');
@@ -450,7 +452,7 @@ function paint() {
   if (DATA.tillBlocks !== undefined) {
     el('r-box-h').textContent = t('boxH');
     const tb = DATA.tillBlocks;
-    el('r-box-asof').textContent = tb === null ? t('boxNotKnown') : tb.products.length === 0 ? t('boxNone') : t('boxAsOf', { v: tb.packVersion, at: new Date(tb.builtAt).toLocaleString() });
+    el('r-box-asof').textContent = tb === null ? t('boxNotKnown') : tb.products.length === 0 ? t('boxNone') : t('boxAsOf', { v: tb.packVersion, at: shopWhen(tb.builtAt) });
     el('r-box-rows').replaceChildren(...(tb === null ? [] : tb.products).map((p) => {
       const li = document.createElement('li'); li.className = 'row'; li.dataset.product = p.productId;
       li.textContent = `⛔ ${p.name} (${p.productId}) — ${p.batches === null ? t('boxEvery') : t('boxBatches', { list: p.batches.join(', ') })}`;

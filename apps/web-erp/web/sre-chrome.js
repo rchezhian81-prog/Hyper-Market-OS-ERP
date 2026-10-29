@@ -106,7 +106,9 @@
   // ── The sync badge — connection · freshness, from the store computer (rule 4) ──────────────────────
   let box = { asked: false, reachable: false, status: null };
   const laneBase = () => (typeof window.laneWriteBase === 'string' ? window.laneWriteBase : null);
-  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // OB-607: the badge's time of day is the SHOP's clock (the page's shop's day, in the zone the store computer served) —
+  // never this device's. The page's bundle runs before this chrome (module scripts run in order).
+  const clock = (iso) => window.sreShopDay?.timeOf(iso) ?? '';
 
   function paintBadge() {
     const els = badgeElements();
@@ -209,7 +211,7 @@
       words.className = 'sre-words';
       strip.append(words);
     }
-    setText(words, `${own ?? t('staleShell')} ${new Date(at).toLocaleString()}`);
+    setText(words, `${own ?? t('staleShell')} ${window.sreShopDay?.dateTimeOf(at) ?? ''}`); // OB-607: the shop's clock
   }
 
   // ── The toggle says what you get ─────────────────────────────────────────────────────────────────
@@ -501,7 +503,7 @@
     'shelf-tags': 'tag', // round 7 · OB-505 — an icon already in the set
     'quotations': 'file-text', // round 7 · OB-506 — an icon already in the set
     'certificates': 'badge-check', // round 8 · OB-522 — an icon already in the set
-    'findings': 'clipboard-check', // OB-608 — an icon already in the set
+    'findings': 'clipboard-check', // OB-609 — an icon already in the set
     'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set

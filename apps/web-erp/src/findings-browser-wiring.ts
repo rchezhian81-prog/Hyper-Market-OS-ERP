@@ -1,4 +1,4 @@
-// The browser wiring for the Bill findings and attendance flags page (OB-608) — kept in its own file so the shared bundle entry
+// The browser wiring for the Bill findings and attendance flags page (OB-609) — kept in its own file so the shared bundle entry
 // (browser-entry.ts) carries one import and one call. The page's tested session is attached to `window.findings` from the
 // viewer the front door injected (`window.findingsData`, identity only). Nothing is read or written here.
 

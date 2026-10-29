@@ -25,6 +25,7 @@
 // Prices are never treated as current from a cache — the review carries the catalogue pack version
 // it was built against, and paying against a stale one is refused rather than quietly repriced.
 
+import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
 import type { StorefrontProduct } from '../../../packages/storefront/src/browse';
 import { searchCatalogue, repeatOrder, type SavedList } from '../../../packages/storefront/src/browse';
 import type { Slot, ServiceabilityPolicy } from '../../../packages/storefront/src/checkout';
@@ -1127,3 +1128,7 @@ if (browserWindow !== undefined) {
   const win = browserWindow;
   browserWindow.shopBarcode = { readScan, scanFrames, supported: async () => (win.shopBarcodeStandIn !== undefined ? true : scanSupported(win)) };
 }
+
+// OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
+// zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
+attachShopDay((globalThis as { window?: unknown }).window);

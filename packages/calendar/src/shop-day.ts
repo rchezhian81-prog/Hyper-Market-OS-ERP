@@ -42,6 +42,43 @@ export function shopDateOf(value: unknown, timeZone: string = servedShopZone()):
   return shopDateIn(s, timeZone);
 }
 
+/** A date-time with no zone named ("YYYY-MM-DDTHH:MM", optional seconds) — already a SHOP wall clock (e.g. a lane's
+ *  `lastReportShop`), never a moment for this device to read in its own zone. */
+const ZONELESS = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?$/;
+/** An instant: an ISO-8601 date-time WITH its zone ("Z" or "±HH:MM"). */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+/**
+ * The SHOP's wall clock ("YYYY-MM-DDTHH:MM") of a value a page was handed (OB-607): an instant (an ISO string with its
+ * zone, a `Date`, or epoch milliseconds) is read in the shop's zone; a date-time with no zone is already the shop's wall
+ * clock and is kept as it is (this device's zone never reads it); anything else — a plain date, words, nothing — is ''.
+ */
+export function shopWallClockOf(value: unknown, timeZone: string = servedShopZone()): string {
+  const zone = shopZoneOr(timeZone);
+  let ms: number;
+  if (value instanceof Date) ms = value.getTime();
+  else if (typeof value === 'number') ms = value;
+  else if (typeof value === 'string') {
+    const s = value.trim();
+    const kept = ZONELESS.exec(s);
+    if (kept !== null) return `${kept[1]!}T${kept[2]!}`;
+    if (!INSTANT.test(s)) return '';
+    ms = Date.parse(s);
+  } else return '';
+  if (!Number.isFinite(ms)) return '';
+  return wallClockIn(new Date(ms).toISOString(), zone);
+}
+
+/** The shop's time of day ("HH:MM", 24-hour) of a value a page was handed — '' when it is not a moment. */
+export function shopTimeOf(value: unknown, timeZone: string = servedShopZone()): string {
+  return shopWallClockOf(value, timeZone).slice(11, 16);
+}
+
+/** The shop's date and time ("YYYY-MM-DD HH:MM") of a value a page was handed — '' when it is not a moment. */
+export function shopDateTimeOf(value: unknown, timeZone: string = servedShopZone()): string {
+  return shopWallClockOf(value, timeZone).replace('T', ' ');
+}
+
 /** The shop's "YYYY-MM" one month before a "YYYY-MM". */
 export function monthBefore(month: string): string {
   const y = Number(month.slice(0, 4)); const m = Number(month.slice(5, 7));
@@ -72,6 +109,12 @@ export interface ShopDay {
   instantOfField(value: string): string;
   /** A date in words, in English or Tamil, on the shop's day (e.g. "Thursday, 29 October 2026"). */
   dayWords(value: unknown, lang: 'en' | 'ta'): string;
+  /** OB-607: the shop's time of day of a moment, "HH:MM" (24-hour) — '' when it is not a moment. */
+  timeOf(value: unknown): string;
+  /** OB-607: the shop's date and time of a moment, "YYYY-MM-DD HH:MM" — '' when it is not a moment. */
+  dateTimeOf(value: unknown): string;
+  /** OB-607: the shop's wall clock of a moment in a `datetime-local` field's shape, "YYYY-MM-DDTHH:MM" — '' when not one. */
+  fieldOf(value: unknown): string;
 }
 
 /** The shop's day for a page: its zone (told, or the shop default) and its clock (the browser's own moment by default). */
@@ -99,5 +142,18 @@ export function shopDay(zone: unknown = servedShopZone(), now: () => string = ()
       return new Intl.DateTimeFormat(lang === 'ta' ? 'ta-IN' : 'en-IN', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
         .format(new Date(`${day}T12:00:00.000Z`));
     },
+    timeOf: (value) => shopTimeOf(value, z),
+    dateTimeOf: (value) => shopDateTimeOf(value, z),
+    fieldOf: (value) => shopWallClockOf(value, z),
   };
+}
+
+/**
+ * Give a page its shop's day as `window.sreShopDay` (OB-606/OB-607), read from the zone the store computer served it
+ * (`window.shopTimeZone`, from the signed pack — no network call). Each app's bundle calls this once as it loads, before
+ * the page's own script runs (module scripts run in order), so every plain page script shows dates and times by it.
+ */
+export function attachShopDay(win: unknown): void {
+  if (win === null || typeof win !== 'object') return;
+  (win as { sreShopDay?: ShopDay }).sreShopDay = shopDay((win as { shopTimeZone?: unknown }).shopTimeZone);
 }

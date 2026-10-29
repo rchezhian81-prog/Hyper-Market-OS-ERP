@@ -8,6 +8,8 @@
 // on success the board is re-read (a GET) so a finished check drops off. No prompt/confirm/alert.
 
 // OB-606: a moment is shown on the SHOP's date (its zone, as the store computer told the page) — never this device's own date.
+// OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -276,7 +278,7 @@ function paintFoodSafety() {
     li.className = `row tone-${row.state === 'missed' ? 'error' : row.state === 'due' ? 'degraded' : 'ok'}`;
     li.dataset.check = row.checkId; li.dataset.slot = row.slotDueAt; li.dataset.state = row.state;
     const head = document.createElement('div'); head.className = 'head';
-    const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${row.title} — ${new Date(row.slotDueAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${row.title} — ${shopTimeOf(row.slotDueAt)}`;
     const st = document.createElement('span'); st.className = 'status';
     const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = row.icon;
     const word = document.createElement('span'); word.textContent = row.stateWord;
@@ -348,7 +350,7 @@ function paintQualityHolds() {
       for (const s of row.samples) {
         const item = document.createElement('li'); item.dataset.sample = s.sampleId; item.dataset.result = s.result;
         const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = s.icon;
-        const w = document.createElement('span'); w.textContent = ` ${s.test} — ${s.resultWord} (${qt('qhTakenBy')} ${s.takenBy}, ${s.takenAt.slice(0, 16).replace('T', ' ')})`;
+        const w = document.createElement('span'); w.textContent = ` ${s.test} — ${s.resultWord} (${qt('qhTakenBy')} ${s.takenBy}, ${window.sreShopDay?.dateTimeOf(s.takenAt) ?? ''})`;
         item.append(ic, w); ul.append(item);
       }
       li.append(ul);

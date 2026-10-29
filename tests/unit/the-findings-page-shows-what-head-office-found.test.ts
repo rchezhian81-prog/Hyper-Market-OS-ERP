@@ -7,7 +7,7 @@ import { createFindingsSession, findingsWords, flagWords, shopMomentOf, FINDINGS
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { HEAD_OFFICE_PAGE_SCREENS } from '../../edge/store-edge/src/head-office-pages';
 
-// OB-608 (owner, 29 Oct 2026) · P-03 · P-08 · M29-FR-03 · M25-FR-01: the Bill findings and attendance flags page reads what head
+// OB-609 (owner, 29 Oct 2026) · P-03 · P-08 · M29-FR-03 · M25-FR-01: the Bill findings and attendance flags page reads what head
 // office already kept and no screen showed. Driven here against head office's REAL routes (the pipeline, its permission
 // checks and its pairing rule), the page's session calling them as the signed-in person.
 
@@ -58,7 +58,7 @@ beforeAll(async () => {
   await raise({ kind: 'price_differs_from_catalogue', severity: 'informational', saleId: 'S-103', productId: 'p-oil', differenceMinor: -2_000, detail: 'the price quotation Q-7 promised', ownerAction: 'Nothing to do.' });
 });
 
-describe('OB-608 — bill findings: what head office raised on till bills, critical first', () => {
+describe('OB-609 — bill findings: what head office raised on till bills, critical first', () => {
   it('lists every critical and material finding with head office\'s own words; informational ones only as a count', async () => {
     const out = await sessionAs(MGR, BOTH).bills();
     expect(out.result).toBe('ok');
@@ -80,7 +80,7 @@ describe('OB-608 — bill findings: what head office raised on till bills, criti
   });
 });
 
-describe('OB-608 — attendance flags: the marks of a shop day that do not pair up', () => {
+describe('OB-609 — attendance flags: the marks of a shop day that do not pair up', () => {
   it('shows only the flagged mark, with the person\'s name from the roster and head office\'s flag', async () => {
     const out = await sessionAs(MGR, BOTH).attendance(DAY);
     expect(out.result).toBe('ok');
@@ -102,7 +102,7 @@ describe('OB-608 — attendance flags: the marks of a shop day that do not pair 
   });
 });
 
-describe('OB-608 — the page is reachable and speaks both languages', () => {
+describe('OB-609 — the page is reachable and speaks both languages', () => {
   it('is in the Reports menu for either word, and the store computer serves it', () => {
     const item = ERP_NAVIGATION.find((i) => i.id === 'findings');
     expect(item).toMatchObject({ path: '/findings', requires: 'pos.exception.read', alsoOpenedWith: ['workforce.roster.read'], group: 'Reports' });

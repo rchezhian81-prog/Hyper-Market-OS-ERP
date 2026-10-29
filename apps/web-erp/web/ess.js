@@ -105,7 +105,7 @@ function paintAttendance() {
     li.dataset.state = m.state;
     const icon = document.createElement('span'); icon.setAttribute('aria-hidden', 'true');
     icon.textContent = m.state === 'posted' ? '✓' : m.state === 'refused' ? '✕' : m.state === 'handed_to_box' ? '⇡' : '•';
-    const what = document.createElement('span'); what.textContent = `${w(m.kind)} · ${m.at.slice(11, 16)}`;
+    const what = document.createElement('span'); what.textContent = `${w(m.kind)} · ${window.sreShopDay?.timeOf(m.at) ?? ''}`; // OB-607: the shop's clock, not UTC
     const state = document.createElement('span'); state.className = 'state'; state.textContent = m.stateWord;
     li.append(icon, what, state);
     if (m.reason) { const why = document.createElement('span'); why.className = 'why'; why.textContent = m.reason; li.append(why); }
