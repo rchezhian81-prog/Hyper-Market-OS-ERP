@@ -10,9 +10,11 @@
 //   • a mark dated later than head office's clock is refused (the box's clock is wrong) — kept at the store, visible;
 //   • the same mark again is the same mark (200); a DIFFERENT mark under the same id is a CONFLICT, refused by name and kept at
 //     the store for a person (hard rule #10) — never a silent last-write-wins;
-//   • a mark out of order against what head office already holds for that person that day (a second "in" with no "out"
-//     between, or an "out" with no "in") is RECORDED — it happened — and flagged on the record, so the manager's attendance
-//     read shows it as an exception (P-03), never quietly corrected.
+//   • a mark out of order against what head office already holds for that person (a second "in" with no "out" between, or
+//     an "out" with no "in" — on the same shop day, or the day before on a rostered night shift) is RECORDED — it happened —
+//     and what was seen on arrival is kept on the record as evidence. The manager's attendance read does NOT rely on that
+//     note: it judges every mark afresh from all the marks it then holds (./attendance-pairing.ts), so an "in" that arrives
+//     after its "out" clears the exception (P-03) — and the record is never rewritten.
 // Append-only: one `AttendanceMarked` per mark id, never edited (hard rule #2). The fingerprint method is not offered at the
 // store computer (C21's consent gate lives at head office), so a relayed mark is a PIN mark. No identity number is ever
 // accepted (C21). Each relayed mark is sealed into the audit trail with the box that carried it.
@@ -23,7 +25,9 @@ import { identityNumberFieldsIn } from '../../../packages/workforce/src/biometri
 import type { Employee } from '../../../packages/workforce/src/workforce';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { addDays } from '../../../packages/workforce/src/working-time';
 import type { AttendanceMark, AttendanceMarkException } from './biometric-consent';
+import { attendancePairing, nightShiftSpansOf, type NightShiftSpan, type RosteredShift } from './attendance-pairing';
 
 export interface SyncedAttendanceDeps {
   readonly now: () => string;
@@ -31,6 +35,8 @@ export interface SyncedAttendanceDeps {
   readonly marks: (tenantId: string, date?: string) => Promise<readonly AttendanceMark[]>;
   readonly recordMark: (tenantId: string, m: AttendanceMark) => Promise<void>;
   readonly employees: (tenantId: string) => Promise<readonly Employee[]>;
+  /** Each person's shifts on head office's committed roster (a night shift pairs an "in" with the next day's "out"). */
+  readonly rosteredShifts?: (tenantId: string) => Promise<readonly RosteredShift[]>;
   /** The person's OWN grants at head office (undefined when head office does not know them). */
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly string[] | undefined>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -51,15 +57,19 @@ const refuse = (status: number, code: string, whatHappened: string, nextSafeActi
 const sameMark = (a: AttendanceMark, b: { employeeId: string; kind: string; at: string }): boolean =>
   a.employeeId === b.employeeId && a.kind === b.kind && Date.parse(a.at) === Date.parse(b.at);
 
-/** What is out of order about a mark against the person's other marks that day (the relayed mark not among them). */
-export function attendanceExceptions(dayMarks: readonly AttendanceMark[], mark: { readonly employeeId: string; readonly kind: 'in' | 'out'; readonly at: string }): AttendanceMarkException[] {
-  const before = dayMarks
-    .filter((m) => m.employeeId === mark.employeeId && Date.parse(m.at) < Date.parse(mark.at))
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  const last = before[before.length - 1];
-  if (last !== undefined && last.kind === mark.kind) return ['repeats_the_last_mark'];
-  if (last === undefined && mark.kind === 'out') return ['out_without_in'];
-  return [];
+/**
+ * What is out of order about a mark, as seen the moment it arrives, against the person's other marks head office holds
+ * (the arriving mark not among them) — the same fold the manager's read re-runs over everything (./attendance-pairing.ts).
+ * Only what the mark itself does is judged here ("in_without_out" depends on the clock, so it is left to the read).
+ */
+export function attendanceExceptions(
+  heldMarks: readonly AttendanceMark[],
+  mark: { readonly employeeId: string; readonly kind: 'in' | 'out'; readonly at: string; readonly date: string },
+  nightShifts: readonly NightShiftSpan[] = [],
+): AttendanceMarkException[] {
+  const arriving = { markId: '\u0000arriving', ...mark };
+  const found = attendancePairing({ marks: [...heldMarks, arriving], nightShifts, now: mark.at, today: mark.date }).get(arriving.markId) ?? [];
+  return found.filter((e) => e !== 'in_without_out');
 }
 
 export function syncedAttendanceRoutes(deps: SyncedAttendanceDeps): readonly Route[] {
@@ -110,8 +120,11 @@ export function syncedAttendanceRoutes(deps: SyncedAttendanceDeps): readonly Rou
         if (held === undefined || !held.includes('workforce.attendance.mark')) {
           refuse(422, 'person_may_not_mark_attendance', `${employeeId} ${held === undefined ? 'holds no sign-in head office knows' : 'does not hold the right to mark their own attendance (workforce.attendance.mark)'} — re-checked from their own grants.`, 'Kept at the store; a person must look. Nothing was saved.');
         }
-        const date = await shopClock(deps.calendar).dateOf(ctx.tenantId, at);
-        const exceptions = attendanceExceptions(await deps.marks(ctx.tenantId, date), { employeeId, kind, at });
+        const clock = shopClock(deps.calendar);
+        const date = await clock.dateOf(ctx.tenantId, at);
+        const around = (await deps.marks(ctx.tenantId)).filter((m) => m.date >= addDays(date, -1) && m.date <= addDays(date, 1));
+        const nights = nightShiftSpansOf(await deps.rosteredShifts?.(ctx.tenantId) ?? [], (await clock.calendar(ctx.tenantId)).timeZone);
+        const exceptions = attendanceExceptions(around, { employeeId, kind, at, date }, nights);
         const relayed = { relayedBy: ctx.userId, source: isStr(b['source']) ? (b['source'] as string) : 'store-computer', storeId };
         const mark: AttendanceMark = {
           markId, employeeId, kind, method: 'pin', at, date, recordedBy: employeeId, relayed,

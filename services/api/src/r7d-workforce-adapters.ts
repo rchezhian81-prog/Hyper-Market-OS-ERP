@@ -103,6 +103,7 @@ export function r7dWorkforceRoutes(input: { readonly store: EventStore | undefin
   return [
     ...syncedAttendanceRoutes({
       now: input.now, marks: marks.marks, recordMark: marks.recordMark, employees: marks.employees,
+      ...(marks.rosteredShifts === undefined ? {} : { rosteredShifts: marks.rosteredShifts }),
       permissionsOf: (tenantId, userId) => permissionsHeldBy(store, tenantId, userId),
       ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
       ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),

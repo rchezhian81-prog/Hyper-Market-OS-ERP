@@ -33,6 +33,17 @@ const OWNER = 'u-owner'; const MANAGER = 'u-mgr'; const CASHIER = 'u-cash';
 const STORE = 'store-1';
 const PX_PER_MM = 96 / 25.4;
 const TODAY = shopDateIn(new Date().toISOString());
+const LONG_NAME = 'Cold pressed virgin coconut oil family value pack with a free steel ladle and recipe booklet 500 ml';
+const PT_PER_MM = 72 / 25.4;
+
+/** The pages of a PDF the browser printed: how many, and each page's size in millimetres. */
+function pdfPages(pdf: Buffer): { count: number; sizesMm: [number, number][] } {
+  const raw = pdf.toString('latin1');
+  const count = (raw.match(/\/Type\s*\/Page(?![a-zA-Z])/g) ?? []).length;
+  const sizesMm = [...raw.matchAll(/\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/g)]
+    .map((m) => [Math.round((Number(m[3]) - Number(m[1])) / PT_PER_MM), Math.round((Number(m[4]) - Number(m[2])) / PT_PER_MM)] as [number, number]);
+  return { count, sizesMm };
+}
 
 describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the store computer (OB-505 · OB-506)', () => {
   let browser: Browser;
@@ -57,6 +68,7 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
       ['p-dal', 'DAL-500', 'Toor dal 500 g', '8901000000019', '500 g', 7_200, 8_000],
       ['p-rice', 'RICE-25', 'Ponni rice 25 kg', '8901000000033', '25 kg', 145_000, 150_000],
       ['p-ghee', 'GHEE-JAR', 'Ghee jar', '8901000000040', 'one jar', 60_000, 65_000],
+      ['p-long', 'OIL-LONG', LONG_NAME, '8901000000057', '500 ml', 21_000, 23_000],
     ] as const) {
       await post(`/v1/catalogue/products/${id}/publish`, { product: { sku, name, baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '07139010', lifecycle: 'draft', safety: { netQuantity: net }, mrpHistory: [{ value: { minor: mrp, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] });
       await post(`/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: STORE, priceMinor: price, mrpMinor: mrp, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY });
@@ -132,14 +144,19 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await p.selectOption('#t-size', 'shelf-70x38');
     await p.click('#t-make');
     await says(p, '#t-status', /^2 tag\(s\) ready to print\.$/);
+    // OB-549: English AND Tamil on the small 70 × 38 mm stock — both names, field labels in English only — fits at the lawful
+    // heights, so nothing is cut off and nothing is refused (the page measures every tag before it prints).
+    expect(await p.locator('#sheet .tag[data-overflow]').count()).toBe(0);
+    expect((await p.textContent('#t-print-status'))?.trim() ?? '').toBe('');
     const dal = p.locator('#sheet .tag[data-product="p-dal"]');
     const dalText = await dal.innerText();
     expect(dalText).toContain('Toor dal 500 g');
     expect(dalText).toContain('துவரம் பருப்பு');
     expect(dalText).toContain('₹72.00');
-    expect(dalText).toMatch(/MRP \/ அ\.சி\.வி \(MRP\) ₹80\.00/);
-    expect(dalText).toMatch(/₹144\.00 per kg \/ ஒரு கிலோ/);
-    expect(dalText).toMatch(/You save \/ சேமிப்பு ₹8\.00/);
+    expect(dalText).toMatch(/MRP ₹80\.00/);
+    expect(dalText).toMatch(/₹144\.00 per kg/);
+    expect(dalText).toMatch(/You save ₹8\.00/);
+    expect(dalText).not.toContain('அ.சி.வி'); // the field labels are in English only (OB-549); the names stay in both
     expect(await p.locator('#sheet .tag[data-product="p-rice"]').innerText()).toMatch(/₹58\.00 per kg/);
     expect(await p.textContent('#refused-rows')).toMatch(/GHEE-JAR · Ghee jar — its net quantity is missing or cannot be read/);
     // Real millimetres: the 70 × 38 mm stock, and the price printed at its judged 8 mm (font ≥ 8 / 0.7 mm).
@@ -160,6 +177,114 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await p.click('#lang');
     await says(p, '#choose-h', /^பொருட்களைத் தேர்ந்தெடுங்கள்$/);
     expect(await p.textContent('#refused-rows')).toMatch(/நிகர அளவு இல்லை/);
+    expect(errors).toEqual([]);
+  });
+
+  /** What the page asked the browser to print on: the @page rule it injected for this print (size and margin). */
+  const pageRule = (p: Page): Promise<{ size: string; margin: string } | null> => p.evaluate(() => {
+    const g = globalThis as unknown as { document: { getElementById(id: string): { sheet: { cssRules: ArrayLike<{ cssRules?: ArrayLike<{ type: number; style: { getPropertyValue(k: string): string } }> }> } } } };
+    for (const media of Array.from(g.document.getElementById('print-css').sheet.cssRules)) {
+      for (const rule of Array.from(media.cssRules ?? [])) if (rule.type === 6) return { size: rule.style.getPropertyValue('size'), margin: rule.style.getPropertyValue('margin') };
+    }
+    return null;
+  });
+  const printStyles = (p: Page): Promise<{ breakAfter: string; border: string }[]> => p.evaluate(() => {
+    const g = globalThis as unknown as { document: { querySelectorAll(s: string): ArrayLike<unknown> }; getComputedStyle(e: unknown): { breakAfter: string; borderTopStyle: string } };
+    return Array.from(g.document.querySelectorAll('#sheet .tag')).map((n) => ({ breakAfter: g.getComputedStyle(n).breakAfter, border: g.getComputedStyle(n).borderTopStyle }));
+  });
+  /** Count the browser print dialogs the page opens (the real one would block a headless browser). */
+  const countPrints = (p: Page): Promise<void> => p.evaluate(() => {
+    const w = globalThis as unknown as { print: () => void; printed: number };
+    w.printed = 0; w.print = () => { w.printed += 1; };
+  });
+  const printed = (p: Page): Promise<number> => p.evaluate(() => (globalThis as unknown as { printed: number }).printed);
+  const make = async (p: Page, codes: string, language: string, size: string): Promise<void> => {
+    await p.fill('#t-codes', codes);
+    await p.selectOption('#t-lang', language);
+    await p.selectOption('#t-size', size);
+    await p.click('#t-make');
+    // The page clears its status on the click and says the outcome once the new sheet is drawn.
+    await p.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } } }).document.getElementById('t-status').textContent ?? '') !== '');
+    await p.waitForSelector('#sheet-section:not([hidden])');
+  };
+
+  it('OB-505: on the label printer (the default) each tag prints alone on a page the label\'s own size, no margin, no cut line; an ordinary printer still gets the sheet', async () => {
+    const { page: p, errors } = await open(MANAGER, '/shelf-tags/');
+    await p.waitForSelector('#choose:not([hidden])');
+    await countPrints(p);
+    await make(p, 'DAL-500\nRICE-25', 'en', 'shelf-70x38');
+    await says(p, '#t-status', /^2 tag\(s\) ready to print\.$/);
+    // The label printer is the default, offered in words; nothing overflows.
+    expect(await p.inputValue('#t-mode')).toBe('label');
+    expect(await p.locator('#t-mode option').allTextContents()).toEqual(['Label printer (one tag per label)', 'Ordinary printer (sheet to cut)']);
+    expect(await p.isHidden('#t-print-status')).toBe(true);
+    expect(await p.textContent('#t-hint')).toMatch(/Load 70 × 38 mm labels in the label printer/);
+    expect(await pageRule(p)).toEqual({ size: '70mm 38mm', margin: '0px' });
+    await p.emulateMedia({ media: 'print' });
+    expect(await printStyles(p)).toEqual([{ breakAfter: 'page', border: 'none' }, { breakAfter: 'auto', border: 'none' }]);
+    expect(await p.isVisible('#sheet .tag[data-product="p-rice"]')).toBe(true);
+    // What the browser actually prints: two pages, each 70 × 38 mm — one tag per label.
+    expect(pdfPages(await p.pdf({ preferCSSPageSize: true }))).toEqual({ count: 2, sizesMm: [[70, 38], [70, 38]] });
+    await p.emulateMedia({ media: 'screen' });
+    await p.click('#t-print');
+    expect(await printed(p)).toBe(1);
+
+    // The page size follows the chosen tag stock: the large 100 × 60 mm tag.
+    await make(p, 'DAL-500', 'en', 'shelf-100x60');
+    expect(await p.textContent('#t-print-status')).toBe('');
+    expect(await p.isHidden('#t-print-status')).toBe(true);
+    expect(await p.textContent('#t-hint')).toMatch(/Load 100 × 60 mm labels/);
+    expect(await pageRule(p)).toEqual({ size: '100mm 60mm', margin: '0px' });
+    await p.emulateMedia({ media: 'print' });
+    expect(pdfPages(await p.pdf({ preferCSSPageSize: true }))).toEqual({ count: 1, sizesMm: [[100, 60]] });
+    await p.emulateMedia({ media: 'screen' });
+    await make(p, 'DAL-500\nRICE-25', 'en', 'shelf-70x38');
+
+    // An ordinary printer: the sheet to cut — an 8 mm margin, no forced page per tag, the dashed cut lines.
+    await p.selectOption('#t-mode', 'sheet');
+    expect(await p.textContent('#t-hint')).toMatch(/cut along the dashed lines/);
+    expect(await pageRule(p)).toEqual({ size: '', margin: '8mm' });
+    await p.emulateMedia({ media: 'print' });
+    expect(await printStyles(p)).toEqual([{ breakAfter: 'auto', border: 'dashed' }, { breakAfter: 'auto', border: 'dashed' }]);
+    expect(pdfPages(await p.pdf({ preferCSSPageSize: true, format: 'A4' }))).toEqual({ count: 1, sizesMm: [[210, 297]] });
+    await p.emulateMedia({ media: 'screen' });
+    await p.click('#t-print');
+    expect(await printed(p)).toBe(2);
+    await p.click('#lang');
+    expect(await p.locator('#t-mode option').allTextContents()).toEqual(['லேபிள் அச்சுப்பொறி (ஒரு லேபிளுக்கு ஒரு சீட்டு)', 'சாதாரண அச்சுப்பொறி (வெட்டி எடுக்கும் தாள்)']);
+    expect(await p.inputValue('#t-mode')).toBe('sheet');
+    expect(errors).toEqual([]);
+  });
+
+  it('OB-505 · P-08: a tag whose long name pushes the price off its label is refused at print, by name, in English and Tamil', async () => {
+    const { page: p, errors } = await open(MANAGER, '/shelf-tags/');
+    await p.waitForSelector('#choose:not([hidden])');
+    await countPrints(p);
+    await make(p, 'OIL-LONG\nDAL-500', 'en', 'shelf-70x38');
+    await says(p, '#t-status', /^2 tag\(s\) ready to print\.$/);
+    await p.waitForSelector('#t-print-status:not([hidden])');
+    const said = (await p.textContent('#t-print-status'))!;
+    expect(said).toContain('Not printed — these tags do not fit their label');
+    expect(said).toContain(LONG_NAME);
+    expect(said).not.toContain('Toor dal');
+    expect(said).toMatch(/Shorten the product name, or choose the larger tag size/);
+    expect(await p.getAttribute('#sheet .tag[data-product="p-long"]', 'data-overflow')).toBe('1');
+    expect(await p.getAttribute('#sheet .tag[data-product="p-dal"]', 'data-overflow')).toBeNull();
+    await p.click('#t-print');
+    expect(await printed(p)).toBe(0);
+    await p.selectOption('#t-mode', 'sheet');
+    await p.click('#t-print');
+    expect(await printed(p)).toBe(0);
+    await p.click('#lang');
+    await says(p, '#t-print-status', /^அச்சிடப்படவில்லை — இந்தச் சீட்டுகள் லேபிளில் அடங்கவில்லை/);
+    expect(await p.textContent('#t-print-status')).toContain(LONG_NAME);
+    await p.click('#lang');
+    // Without it, the rest prints.
+    await make(p, 'DAL-500', 'en', 'shelf-70x38');
+    expect(await p.textContent('#t-print-status')).toBe('');
+    expect(await p.isHidden('#t-print-status')).toBe(true);
+    await p.click('#t-print');
+    expect(await printed(p)).toBe(1);
     expect(errors).toEqual([]);
   });
 
