@@ -135,23 +135,26 @@ describe.skipIf(!READY).sequential('a real Keycloak: head office gives a named p
   const holder = `u-holder-${run}`;
   const newcomer = `asha.${run}`;
   const otpSecrets = new Map<string, Buffer>();
-  let kcAdmin = '';
   let provisionerSecret = '';
   let api: RunningApi | undefined;
   let db: Pool | undefined;
   let issuedPassword = '';
 
-  const admin = (method: string, path: string, body?: unknown, bearer = kcAdmin) => fetch(`${BASE}/admin/realms/${REALM}${path}`, {
-    method, headers: { authorization: `Bearer ${bearer}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-  beforeAll(async () => {
+  // The identity server's own administrator token lives 60 seconds (master realm default) and these steps run longer
+  // than that, so every administrator call signs in afresh; a token passed in (the provisioner's) is used as given.
+  const kcAdminToken = async (): Promise<string> => {
     const res = await fetch(`${BASE}/realms/master/protocol/openid-connect/token`, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'password', client_id: 'admin-cli', username: process.env['KEYCLOAK_PROOF_ADMIN_USER'] ?? 'kcadmin', password: readFileSync(ADMIN_PW_FILE!, 'utf8').trim() }).toString(),
     });
-    kcAdmin = ((await res.json()) as { access_token: string }).access_token;
+    return ((await res.json()) as { access_token: string }).access_token;
+  };
+  const admin = async (method: string, path: string, body?: unknown, bearer?: string) => fetch(`${BASE}/admin/realms/${REALM}${path}`, {
+    method, headers: { authorization: `Bearer ${bearer ?? await kcAdminToken()}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+  beforeAll(async () => {
     // The secret the identity server GENERATED for the provisioner — as the administrator copies it, here read back.
     const clients = await (await admin('GET', '/clients?clientId=sre-provisioner')).json() as { id: string }[];
     provisionerSecret = ((await (await admin('GET', `/clients/${clients[0]!.id}/client-secret`)).json()) as { value: string }).value;
