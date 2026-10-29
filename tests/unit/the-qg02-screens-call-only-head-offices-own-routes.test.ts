@@ -50,7 +50,7 @@ describe('Dock diary', () => {
       'GET /v1/inventory/dock-diary?storeId=store-1&date=2026-10-26', 'GET /v1/inventory/dock-diary?storeId=store-1',
       'POST /v1/inventory/dock-diary/slot-1', 'POST /v1/inventory/dock-diary/slot-1/status', 'POST /v1/inventory/dock-diary/slot-1/status',
     ]);
-    expect(ho.calls[2]!.body).toEqual({ storeId: 'store-1', dockId: 'dock-1', startsAt: new Date('2026-10-26T10:00').toISOString(), endsAt: new Date('2026-10-26T11:00').toISOString(), supplierId: 'SUP-1', poIds: ['PO-1', 'PO-2'] });
+    expect(ho.calls[2]!.body).toEqual({ storeId: 'store-1', dockId: 'dock-1', startsAt: '2026-10-26T04:30:00.000Z', endsAt: '2026-10-26T05:30:00.000Z' /* OB-608: typed on the shop's clock */, supplierId: 'SUP-1', poIds: ['PO-1', 'PO-2'] });
     expect(ho.calls[3]!.body).toEqual({ status: 'arrived' });
     expect(ho.calls[4]!.body).toEqual({ status: 'cancelled', reason: 'lorry broke down' });
     expect(ho.calls.filter((c) => c.method === 'POST').every((c) => c.key !== null), 'every write carries its own idempotency key').toBe(true);

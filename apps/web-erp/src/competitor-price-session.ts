@@ -9,6 +9,7 @@
 
 import { translator, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { rupees, paiseOf, outcomeOf, type HttpAnswer, type Outcome } from './finance-close-session';
+import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export { rupees, paiseOf };
 
@@ -28,6 +29,8 @@ export interface CompetitorViewer {
   readonly now?: string;
   /** The shop's products the screen was given, for names. */
   readonly products?: readonly { readonly productId: string; readonly name: string }[];
+  /** OB-608: the shop's zone a typed "seen at" is read in; absent → the zone the store computer served this page. */
+  readonly timeZone?: string;
 }
 
 export interface ComparisonRow {
@@ -168,12 +171,13 @@ export function createCompetitorPriceSession(viewer: CompetitorViewer, http: Com
       if (!may.record) return { kind: 'not_allowed', needs: COMPETITOR_PERMISSIONS.record };
       const priceMinor = paiseOf(input.price);
       if (storeId === null || input.productId.trim() === '' || input.competitor.trim() === '' || priceMinor === null || priceMinor <= 0) return { kind: 'invalid', detail: '' };
-      const when = input.observedAt !== undefined && input.observedAt.trim() !== '' ? input.observedAt : viewer.now;
-      if (when === undefined || Number.isNaN(Date.parse(when))) return { kind: 'invalid', detail: '' };
+      // OB-608: a typed "seen at" is the SHOP's clock (never the device's); the box's own `now` is already an instant.
+      const when = instantOfTyped(input.observedAt !== undefined && input.observedAt.trim() !== '' ? input.observedAt : viewer.now, viewer.timeZone ?? servedShopZone());
+      if (when === '') return { kind: 'invalid', detail: '' };
       const note = input.note?.trim() ?? '';
       // One id per sighting, minted once per click: a re-send after a lost reply is the same record (head office says so).
       return outcomeOf(await http.post(`/v1/prices/competitor/${encodeURIComponent(newId())}`, {
-        productId: input.productId, storeId, competitor: input.competitor.trim(), priceMinor, observedAt: new Date(when).toISOString(), source: input.source,
+        productId: input.productId, storeId, competitor: input.competitor.trim(), priceMinor, observedAt: when, source: input.source,
         ...(note === '' ? {} : { note }),
       }));
     },

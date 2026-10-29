@@ -1160,7 +1160,7 @@ export function buildSurface(deps: {
       writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {},
       ownersOfStockAt: () => [], now,
     } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze }),
-    ...productionRoutes(store === undefined ? {
+    ...calendared(productionRoutes)(store === undefined ? { // OB-607: USE BY on the shop's clock
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
       onHand: empty(0), priorConsumption: empty({}),
       runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
@@ -1847,11 +1847,11 @@ export function buildSurface(deps: {
     // Workforce (M25-FR-01) — roster-gap detection: the named gaps in a proposed roster (per role per shift,
     // with the hour), plus the unstaffed-critical count. Stateless what-if over the tested engine, commits
     // nothing; the durable roster/attendance store is a later increment. Manager-gated (workforce.roster.read).
-    ...workforceRoutes(),
+    ...calendared(workforceRoutes)({}), // OB-607: each gap names the shop's hour
     // HR/Workforce DURABLE roster store (M25-FR-01 follow-on) — the staff directory, shifts and assignments
     // appended to one tenant stream (latest-per-id, hard rule #2), so GET /roster-gaps reads what the roster is
     // missing from STORED facts (the stateful counterpart to the POST what-if above). Writes manage-gated.
-    ...rosterStoreRoutes(store === undefined ? {
+    ...calendared(rosterStoreRoutes)(store === undefined ? { // OB-607
       putEmployee: () => {}, putShift: () => {}, putAssignment: () => {}, roster: () => ({ employees: [], shifts: [], assignments: [] }), now,
       staffVisibility: () => Promise.resolve({ visible: new Map() }),
     } : { ...rosterStoreAdapter({ store, now }), staffVisibility: staffRosterVisibilityAdapter({ store, now }) }),

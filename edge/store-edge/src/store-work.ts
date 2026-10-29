@@ -16,6 +16,7 @@
 
 import type { ScreenInput } from './screen-data';
 import type { HeldWorkFeed } from './work-feeds-file';
+import { packTimeZone } from './shop-zone';
 import type { FeedRecipe, FeedRun } from '../../sync-agent/src/store-work-feeds';
 import { workFeedAgeMinutes } from '../../sync-agent/src/store-work-feeds';
 import { buildPackLabel, renderLabel, IncompleteLabelError, LabelTooSmallError, readLabelTemplate, labelPrintFacts, type PackLabel, type LabelTemplate } from '../../../packages/production/src/packing';
@@ -241,7 +242,8 @@ export function counterLabelFor(input: ScreenInput, req: CounterLabelRequest): C
   if (Date.parse(run.expiresAt) <= Date.parse(input.now)) return refuse('already_expired', `Batch ${run.outputBatchId} was good until ${run.expiresAt}; a label is never printed for food past its use-by. Nothing was printed.`);
   return {
     ok: true, runId: req.runId, batchId: run.outputBatchId, useBy: run.expiresAt, productName: product.name, priceMinor,
-    ...(barcode === undefined ? {} : { barcode }), lines: renderLabel(prepared), ...labelPrintFacts(prepared),
+    // OB-607: the USE BY is printed on the shop's clock, in the zone of the signed store pack (offline — no network call).
+    ...(barcode === undefined ? {} : { barcode }), lines: renderLabel(prepared, packTimeZone(input.pack)), ...labelPrintFacts(prepared),
     from: onBoard !== undefined ? 'head_office_board' : 'captured_here', asAt: held?.feed.asAt ?? null,
   };
 }

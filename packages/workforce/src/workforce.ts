@@ -23,6 +23,8 @@
 //
 // Pure and deterministic: the clock is injected, no I/O.
 
+import { shownShopDateTime } from '../../calendar/src/shop-day';
+
 export interface Employee {
   readonly employeeId: string;
   readonly name: string;
@@ -84,8 +86,15 @@ export function rosterGaps(input: {
   readonly shifts: readonly ShiftRequirement[];
   readonly assignments: readonly ShiftAssignment[];
   readonly employees: readonly Employee[];
+  /**
+   * OB-607: the shop's zone the hour in each message is written in — the tenant's calendar at head office, the store pack's
+   * zone on the store computer (offline). Absent (or a zone nobody knows) → the shop default (Asia/Kolkata), never UTC: a
+   * shift starting 06:00 in the shop is "06:00", not "00:30".
+   */
+  readonly timeZone?: string;
 }): readonly RosterGap[] {
   const active = new Set(input.employees.filter((e) => e.active).map((e) => e.employeeId));
+  const when = (startsAt: string): string => shownShopDateTime(startsAt, input.timeZone);
   const gaps: RosterGap[] = [];
 
   for (const shift of [...input.shifts].sort((a, b) => a.startsAt.localeCompare(b.startsAt))) {
@@ -106,8 +115,8 @@ export function rosterGaps(input: {
         short: requirement.count - assigned,
         detail:
           assigned === 0
-            ? `${shift.startsAt.slice(0, 16).replace('T', ' ')} has NOBODY rostered as ${requirement.role}`
-            : `${shift.startsAt.slice(0, 16).replace('T', ' ')} is ${requirement.count - assigned} short of ${requirement.role}`,
+            ? `${when(shift.startsAt)} has NOBODY rostered as ${requirement.role}`
+            : `${when(shift.startsAt)} is ${requirement.count - assigned} short of ${requirement.role}`,
       });
     }
   }

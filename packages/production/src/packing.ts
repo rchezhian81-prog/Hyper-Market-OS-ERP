@@ -25,6 +25,7 @@
 // Pure and deterministic: the timestamp is injected, there is no clock.
 
 import type { Money } from '../../contracts/src/money';
+import { shownShopDateTime } from '../../calendar/src/shop-day';
 import type { StockMovement } from '../../stock/src/position';
 import type { ProductionDepartment } from './departments';
 import { checkLooseFoodLabel, MAJOR_ALLERGENS, type Allergen, type VegClass } from '../../product/src/loose-food-label';
@@ -257,8 +258,12 @@ const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
 /**
  * Render a label as text lines — the same shape the receipt renderer uses, so a
  * counter printer needs no new plumbing.
+ *
+ * OB-607: the USE BY is printed on the SHOP's clock, in `timeZone` — the store pack's zone on the store computer (offline,
+ * no network call) or the tenant's calendar at head office; absent (or a zone nobody knows) → the shop default
+ * (Asia/Kolkata), never UTC. A pack made at 01:00 in the shop and good for six hours reads "USE BY … 07:00", not 01:30.
  */
-export function renderLabel(label: PackLabel | PreparedLabel): readonly string[] {
+export function renderLabel(label: PackLabel | PreparedLabel, timeZone?: string): readonly string[] {
   const prepared = 'heights' in label ? label : undefined;
   const lines = [
     // B9: the veg / non-veg mark first, where a food label carries one (green dot = veg, brown triangle = non-veg).
@@ -267,7 +272,7 @@ export function renderLabel(label: PackLabel | PreparedLabel): readonly string[]
     `Batch ${label.batchId}`,
     label.netQuantity === '' ? '' : `Net ${label.netQuantity}`,
     label.weightMinor === undefined ? '' : `Weight ${(label.weightMinor / 1000).toFixed(3)} kg`,
-    `USE BY ${label.useBy.slice(0, 16).replace('T', ' ')}`,
+    `USE BY ${shownShopDateTime(label.useBy, timeZone)}`,
     label.allergens === undefined
       ? ''
       : label.allergens.length === 0

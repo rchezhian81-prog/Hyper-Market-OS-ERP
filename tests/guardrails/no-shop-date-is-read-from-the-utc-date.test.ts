@@ -221,3 +221,83 @@ describe('no screen takes its date from the device\'s own clock or zone (OB-606)
     expect(scan([sample('apps/x/good.js', good.join('\n'))], DEVICE_RULES)).toEqual([]);
   });
 });
+
+/**
+ * **What `packages/` writes for a PERSON to read — a printed label, a staff message, a receipt line — never slices the UTC
+ * clock out of ISO text (OB-607 outside screen code · round 15, R15-A).**
+ *
+ * `useBy.slice(0, 16).replace('T', ' ')` printed a pack good until 19:30 UTC as "USE BY … 19:30" — 01:00 the next morning
+ * in the shop — and a roster gap for a shift at 00:30 UTC said "00:30" for the shop's 06:00. Round 15 moved the food label,
+ * the scale label and the roster gap's message to the shop's clock (`shownShopDateTime`, packages/calendar/src/shop-day.ts)
+ * in the zone of the store pack (the label printer, offline) or the tenant's calendar (head office).
+ *
+ * This tripwire fails when package code slices a clock out of ISO text: `.slice(0, 16).replace('T', ' ')`,
+ * `.replace('T', ' ').slice(0, 16)`, `.slice(0, 19).replace('T', ' ')`, `.slice(11, 16)`, `.slice(11, 19)` (and the
+ * `substring` twins). A place whose text is ALREADY the shop's wall clock (read in the shop's zone, or shifted by the
+ * shop's offset first) goes on the allowlist below with the reason.
+ */
+const PACKAGE_RULES: Rule[] = [
+  {
+    rule: 'a clock sliced out of ISO text (the UTC clock, unless it was the shop\'s wall clock already)',
+    re: /\.(?:slice|substring)\(\s*0\s*,\s*1[69]\s*\)\s*\.replace\(\s*['"]T['"]\s*,\s*['"] ['"]\s*\)|\.replace\(\s*['"]T['"]\s*,\s*['"] ['"]\s*\)\s*\.(?:slice|substring)\(\s*0\s*,\s*1[69]\s*\)|\.(?:slice|substring)\(\s*11\s*,\s*1[69]\s*\)/,
+  },
+];
+
+/** Package code whose sliced text is already the shop's wall clock — each with its reason (file + a piece of the line). */
+const PACKAGE_ALLOWED: readonly { readonly file: string; readonly line: string; readonly why: string }[] = [
+  {
+    file: 'packages/calendar/src/shop-day.ts', line: 'return shopWallClockOf(value, timeZone).slice(11, 16);',
+    why: 'the text sliced is `shopWallClockOf` — the moment already read in the shop\'s zone ("YYYY-MM-DDTHH:MM"), so its HH:MM is the shop\'s clock',
+  },
+  {
+    file: 'packages/receipt/src/tax-invoice.ts', line: 'return { date: local.slice(0, 10), time: local.slice(11, 16) };',
+    why: '`local` is the instant moved by India\'s fixed +05:30 first (no daylight saving) — the tax invoice\'s date and time of issue in India time, not the UTC clock',
+  },
+  {
+    file: 'packages/workforce/src/working-time.ts', line: 'new Date(ms + off * 60_000).toISOString().slice(11, 16)',
+    why: 'the moment is moved by the shop\'s own offset (`off`, minutes) before it is sliced — the working-time breach text names the shop\'s hour',
+  },
+];
+
+function packageHits() {
+  const entries = loadCodeEntries(['packages']).map((e) => ({ ...e, content: stripComments(e.content) }));
+  return scan(entries, PACKAGE_RULES);
+}
+
+describe('what packages/ writes for a person never slices the UTC clock out of ISO text (OB-607)', () => {
+  it('package code has no sliced clock outside the allowlist — each allowed place says why', () => {
+    const found = packageHits().filter((f) => !PACKAGE_ALLOWED.some((a) => a.file === f.file && f.snippet.includes(a.line)));
+    // Fix it with the shop's clock (shownShopDateTime / shopDateTimeOf / wallClockIn with the shop's zone), or — only if the
+    // text sliced is already the shop's wall clock — add it to PACKAGE_ALLOWED with the reason.
+    expect(found.map((f) => `${f.file}:${f.line} [${f.rule}] ${f.snippet}`)).toEqual([]);
+  });
+
+  it('every allowlist entry still matches a real hit and gives a reason (no stale or silent excuses)', () => {
+    const all = packageHits();
+    for (const a of PACKAGE_ALLOWED) {
+      expect(a.why.trim().length, `${a.file}: a reason`).toBeGreaterThan(20);
+      expect(all.filter((f) => f.file === a.file && f.snippet.includes(a.line)).length, `${a.file}: "${a.line}" still there`).toBeGreaterThan(0);
+    }
+  });
+
+  it('tripwire — the detector fires on each sliced clock, and not on the shop\'s clock or a hash', () => {
+    const bad = [
+      "`USE BY ${label.useBy.slice(0, 16).replace('T', ' ')}`,",
+      "`${shift.startsAt.slice(0, 16).replace('T', ' ')} has NOBODY rostered as ${role}`",
+      "const when = at.replace('T', ' ').slice(0, 16);",
+      "const stamp = at.slice(0, 19).replace('T', ' ');",
+      "const hhmm = at.slice(11, 16);",
+      "const hms = new Date(ms).toISOString().substring(11, 19);",
+    ];
+    const good = [
+      "`USE BY ${shownShopDateTime(label.useBy, timeZone)}`,",
+      "const hhmm = shopTimeOf(at, zone);",
+      "const shown = wallClockIn(at, zone).replace('T', ' ');",
+      "const ref = sha256Hex(key).slice(0, 16);",
+      "const digest = createHash('sha256').update(key).digest('hex').slice(0, 16);",
+      "const day = at.slice(0, 10);",
+    ];
+    expect(scan([sample('packages/x/bad.ts', bad.join('\n'))], PACKAGE_RULES).map((f) => f.line)).toEqual(bad.map((_, i) => i + 1));
+    expect(scan([sample('packages/x/good.ts', good.join('\n'))], PACKAGE_RULES)).toEqual([]);
+  });
+});

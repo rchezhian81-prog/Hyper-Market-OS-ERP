@@ -69,6 +69,47 @@ export function shopWallClockOf(value: unknown, timeZone: string = servedShopZon
   return wallClockIn(new Date(ms).toISOString(), zone);
 }
 
+/**
+ * OB-608: the instant a date-time TYPED into a form means. A `datetime-local` field (or any "YYYY-MM-DDTHH:MM[:SS]" with no
+ * zone) holds the SHOP's wall clock — never the device's: on a laptop set to New York, "10:30" read by `new Date(…)` was
+ * sent as 10:30 New York, 20:00 in the shop. It is read in the shop's zone (the one the store computer served this page,
+ * `window.shopTimeZone`, else the shop default) — no network call. A value that already names its zone ("Z" or "±HH:MM")
+ * is kept as that instant. Anything else (a plain date, words, an impossible time, nothing) is '' — nothing is made up.
+ */
+export function instantOfTyped(value: unknown, timeZone: string = servedShopZone()): string {
+  if (typeof value !== 'string') return '';
+  const v = value.trim();
+  if (INSTANT.test(v)) {
+    const ms = Date.parse(v);
+    return Number.isNaN(ms) ? '' : new Date(ms).toISOString();
+  }
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2})(\.\d+)?)?$/.exec(v);
+  if (m === null) return '';
+  const day = m[1]!; const hhmm = m[2]!;
+  // An impossible wall clock (month 13, 25:00, 30 February) is refused, not rolled over into another day.
+  const asIfUtc = Date.parse(`${day}T${hhmm}:00.000Z`);
+  if (Number.isNaN(asIfUtc) || new Date(asIfUtc).toISOString().slice(0, 16) !== `${day}T${hhmm}`) return '';
+  if (m[3] !== undefined && Number(m[3]) > 59) return '';
+  try {
+    const base = Date.parse(instantOf(`${day}T${hhmm}`, shopZoneOr(timeZone)));
+    const extra = (m[3] === undefined ? 0 : Number(m[3]) * 1000) + (m[4] === undefined ? 0 : Math.round(Number(m[4]) * 1000));
+    return new Date(base + extra).toISOString();
+  } catch { return ''; }
+}
+
+/**
+ * OB-607 (outside screen code — printed labels, staff messages): a moment as a person reads it, "YYYY-MM-DD HH:MM" on the
+ * shop's clock in `timeZone` (the caller's calendar or the store pack's zone; a zone nobody knows → the shop default, never
+ * UTC). A plain date is already a date and is kept; a date-time with no zone is already the shop's wall clock and is kept;
+ * anything else is shown exactly as it was given — never a clock made up.
+ */
+export function shownShopDateTime(value: string, timeZone: unknown): string {
+  const v = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const shown = shopDateTimeOf(v, shopZoneOr(timeZone));
+  return shown !== '' ? shown : v;
+}
+
 /** The shop's time of day ("HH:MM", 24-hour) of a value a page was handed — '' when it is not a moment. */
 export function shopTimeOf(value: unknown, timeZone: string = servedShopZone()): string {
   return shopWallClockOf(value, timeZone).slice(11, 16);
@@ -131,10 +172,7 @@ export function shopDay(zone: unknown = servedShopZone(), now: () => string = ()
     wallClock: () => wallClockIn(now(), z),
     startOfToday: () => instantOf(`${today()}T00:00`, z),
     endOfTodayField: () => `${today()}T23:59`,
-    instantOfField: (value) => {
-      const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(value.trim());
-      return m === null ? '' : instantOf(m[1]!, z);
-    },
+    instantOfField: (value) => instantOfTyped(value, z),
     dayWords: (value, lang) => {
       const day = shopDateOf(value, z);
       if (day === '') return '';

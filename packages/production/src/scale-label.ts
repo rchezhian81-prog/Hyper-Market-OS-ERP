@@ -16,6 +16,7 @@
 
 import type { EmbeddedBarcodeRule } from '../../catalogue/src/catalogue';
 import type { Money } from '../../contracts/src/money';
+import { shownShopDateTime } from '../../calendar/src/shop-day';
 
 export class ScaleLabelError extends Error {
   constructor(reason: string) {
@@ -118,7 +119,8 @@ export interface ScaleLabelResult {
  * label is computed from the weight, so the sticker and the till agree by
  * construction rather than by coincidence.
  */
-export function buildScaleLabel(pack: WeighedPack, rule: EmbeddedBarcodeRule): ScaleLabelResult {
+export function buildScaleLabel(pack: WeighedPack, rule: EmbeddedBarcodeRule, timeZone?: string): ScaleLabelResult {
+  // OB-607: `timeZone` is the shop's (the store pack's or the caller's calendar); absent → the shop default, never UTC.
   if (pack.weightGrams <= 0) {
     throw new ScaleLabelError('a weighed pack cannot weigh nothing');
   }
@@ -142,7 +144,7 @@ export function buildScaleLabel(pack: WeighedPack, rule: EmbeddedBarcodeRule): S
       `Net ${pack.netQuantity}`,
       `Weight ${(pack.weightGrams / 1000).toFixed(3)} kg`,
       `${pack.pricePerKg.currency} ${(pack.pricePerKg.minor / 100).toFixed(2)} per kg`,
-      `USE BY ${pack.useBy.slice(0, 16).replace('T', ' ')}`,
+      `USE BY ${shownShopDateTime(pack.useBy, timeZone)}`,
       pack.allergens === undefined || pack.allergens.length === 0
         ? 'Allergens: none declared'
         : `Contains: ${pack.allergens.join(', ')}`,

@@ -20,7 +20,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
-import { shopDay, servedShopZone } from '../../../packages/calendar/src/shop-day';
+import { shopDay, servedShopZone, instantOfTyped } from '../../../packages/calendar/src/shop-day';
 
 /** Today in the shop's own zone (packages/calendar shop-clock), never the browser's or UTC — the reading window's default
  *  last day (its first day is the 1st of that month). From 18:30 UTC, and in a browser on UTC, the browser's own date is
@@ -232,9 +232,8 @@ export function endOfTodayField(now: Date = new Date(), timeZone: string = serve
  * shop). A value that already names its zone is kept as that instant. '' when it is neither.
  */
 export function deadlineInstant(value: string, timeZone: string = servedShopZone()): string {
-  const v = value.trim();
-  if (/(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(v)) return Number.isNaN(Date.parse(v)) ? '' : new Date(v).toISOString();
-  return shopDay(timeZone).instantOfField(v);
+  // OB-608: the one rule every typed date-time form uses (packages/calendar/src/shop-day.ts `instantOfTyped`).
+  return instantOfTyped(value, timeZone);
 }
 
 export interface CheckRecordForm {
