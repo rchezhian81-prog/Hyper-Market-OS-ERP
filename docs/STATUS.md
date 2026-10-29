@@ -32,6 +32,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 **The two open questions — decided 29 October 2026 (OB-550, OB-551)**
 - OB-550: with no minimum margin set, the lowest allowed price at the till stays at the buying cost (as built; a test pins it).
 - OB-551: a line lowered by a quotation that head office's own record backs no longer counts against a manager's price-cut limit. A line naming a quotation head office cannot back is still raised; the floor and the MRP still hold.
+- OB-552 (29 October 2026, option 1): a quotation on a product with no known floor still raises "price cut without a floor, not by the owner" at head office, although the owner already approved that quotation when it was made (OB-532). The owner chose to keep this finding as extra caution; nothing changes.
 
 **What is next:** the owner's in-store checks of the follow-ups (shelf tags at 70 × 38 mm, a quotation with nothing ringable, a night shift).
 **Blocked / needs an owner decision:** none from this round.
