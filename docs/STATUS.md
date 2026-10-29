@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Owner answers OB-550 and OB-551 (29 October 2026): the till's floor stays at cost; a quotation price is not a manager's cut
+## Owner answers OB-550 to OB-552 (29 October 2026): the till's floor stays at cost; a quotation price is not a manager's cut
 
 **What changed**
 - **OB-550 (option 1):** with no minimum margin set, a product's lowest allowed price at the till stays at its buying cost. No change was needed; the decision is recorded.
@@ -20,14 +20,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - The six PostgreSQL quotation and price-cut integration tests: 26 tests passed.
 - Type check, lint and the evidence-ledger check: clean.
 
-**Seen, not changed (ask before changing)**
-- A quotation on a product with no known floor still raises "price cut without a floor, not by the owner" at head office. That quotation already needed the owner's approval when it was made (OB-532), so this finding may also be unwanted. It was not part of the question asked, so it is left as it is.
+**Seen, and left as it is (owner, OB-552, option 1)**
+- A quotation on a product with no known floor still raises "price cut without a floor, not by the owner" at head office, although that quotation already needed the owner's approval when it was made (OB-532). The owner chose to keep this finding as extra caution.
 
 **What is next**
 - #834 (rounds 10 and 11) is open; merge it only when every check is green.
 - The store pilot (Stage 12), which waits on outside pieces.
 
-**Blocked:** nothing. **Owner decisions needed:** whether the no-floor quotation finding above should also be dropped (optional).
+**Blocked:** nothing. **Owner decisions needed:** none.
 
 ---
 
