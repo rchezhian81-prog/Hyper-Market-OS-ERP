@@ -54,7 +54,7 @@ const PACK = (extra: Record<string, unknown>) => JSON.stringify(withTillPeople({
   lossPreventionRules: [],
   receivingChecklist: RECEIVING,
   ...extra,
-}, [{ userId: 'u-worker', permissions: ['inventory.movement.append'] }]));
+}, [{ userId: 'u-worker', permissions: ['inventory.movement.append'] }, { userId: 'u-mgr', permissions: ['till.dayclose.read'] }])); // SEC-1: the manager holds the Today screen's word
 
 interface Win {
   readonly managerSession?: { savedWork(): { kind: string; state: string }[] };
