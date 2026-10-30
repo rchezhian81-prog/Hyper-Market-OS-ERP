@@ -21,7 +21,7 @@ hands off to the next; you do not need to know which of the other runbooks exist
    plain-English question with its default and a blank to complete (the owner configuration).
 4. **`store-go-live-checklist.md`** — the walk-through of the things a **person in the store** must
    witness or approve (UAT-01…58): the offline-trading drills, the money checks, the safety drills.
-5. **`pilot-run-sheet.md`** — the same drills laid out **day by day**, a booked plan you put your
+5. **`pilot-run-sheet.md`** — the same drills, **and the staff role cases** (`docs/pilot/UAT-ROLE-CHECKLIST.md`), laid out **day by day**, a booked plan you put your
    own dates on. Pairs with the one-lane pilot plan.
 6. **`backup-and-recovery.md`** — the safety net: take a backup before anything you care about, and
    prove a restore actually works (not assumed).
