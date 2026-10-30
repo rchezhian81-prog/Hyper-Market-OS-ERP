@@ -105,6 +105,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Staff trial checklist brought up to date (30 October 2026)
+
+- `docs/pilot/UAT-ROLE-CHECKLIST.md` was last updated on 5 October, so nothing from rounds 6 to 16 was in the staff trials. Section 13 now adds 26 cases (UATR-R16-01 to -26) for the cashier, store manager, owner, accountant and warehouse roles: price-cut limits, quotations on the till and held baskets, out-of-date tills, shelf tags, food-handling certificates, the Rota copy, Devices and Bill findings by store, Match the bill, the accountant's approvals, batches and hand-backs at the van door, and the shop's date and time on a device set to another country and between 00:00 and 05:30.
+- Every case refers to a decision that is built, tested and on the demo. Running them, and the sign-off, are the store's (staff UAT).
+
+---
+
 ## Round 16 (30 October 2026): the independent check of rounds 10 to 15, its gaps closed; OB-611 and OB-612
 
 **What the check found:** of the rounds 10 to 15 decisions, most were proven (503 tests run, all passed), but four gaps remained and one rule had been assumed.

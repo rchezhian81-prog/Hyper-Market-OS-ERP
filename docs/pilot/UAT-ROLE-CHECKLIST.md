@@ -127,6 +127,64 @@ The tables below pre-fill the fixed columns (Case ID, Requirement, Prerequisite,
 
 ---
 
+## 13. Additions for rounds 6 to 16 (owner decisions OB-500 to OB-612, 28–30 October 2026)
+
+Cases for what was built after this checklist was first written. Same fields and rules as above. "Shop time"
+cases are run once on a laptop or phone whose clock is set to **another country** (London or New York), and
+the device is set back to India time afterwards. Cases marked *after midnight* are run between 00:00 and 05:30
+shop time.
+
+### Cashier
+
+| Case | Requirement | Prerequisite | Steps | Expected | Actual | P/F | Sev | Defect | Retest | Sign-off |
+|---|---|---|---|---|---|---|---|---|---|---|
+| UATR-R16-01 | OB-500 · OB-519 · OB-520 | A product with a known lowest price; a store manager present | Ask for a price cut below the lowest price; then one more than ₹100 off a line | Both refused in words on the till, network cable in or out; the manager may approve up to ₹100 a line | | | | | | |
+| UATR-R16-02 | OB-500 (#831) | A manager-approved cut on one line | Change that line's quantity | Refused: the cut line keeps its quantity; void and ring again | | | | | | |
+| UATR-R16-03 | OB-506 · OB-523 · OB-533 | A quotation made in the office | More → Quotation number; key it; Hold; recall; give the held basket up ("customer left without it") | Quoted prices ring up; the held basket keeps the quotation; giving it up frees it (Quotations list shows "freed again" with who and why), also with the internet out | | | | | | |
+| UATR-R16-04 | OB-501 · OB-603 | A till whose app version head office has stopped | Start a new bill; key a quotation number; recall a held basket | New bill refused with "Update this till"; quotation refused and still Open; the held basket can be finished | | | | | | |
+| UATR-R16-05 | OB-607 · OB-606 | Till with the network cable out | Record a concession tag with no shift; look at the "last contact" badge | Filed under today's shop date; the time shown is the shop's clock | | | | | | |
+
+### Store manager
+
+| Case | Requirement | Prerequisite | Steps | Expected | Actual | P/F | Sev | Defect | Retest | Sign-off |
+|---|---|---|---|---|---|---|---|---|---|---|
+| UATR-R16-06 | OB-505 | A product with a price per kg/litre | Print a shelf tag in English, Tamil and both | Till price never above MRP; price per kg/litre shown; a missing Tamil name is said, not left blank | | | | | | |
+| UATR-R16-07 | OB-502 · OB-522 · OB-538 | A staff member whose food-handling certificate has expired | Record a production run or bakery batch as that person, network in and out | Refused in words; a renewed, verified certificate lets them record again | | | | | | |
+| UATR-R16-08 | OB-507 · OB-531 · OB-539 · OB-541 | Store PC with head office unreachable, then with head office refusing its sign-in, then with the office PIN ended | Open the Rota each time | Unreachable/refused: the store computer's copy, read only, with its age and no "Assign"; PIN ended: asks for the PIN again | | | | | | |
+| UATR-R16-09 | OB-540 · OB-601 | A handheld on a stopped app version did one pick offline | Reconnect; open Devices; switch language | The pick is listed with handheld, version and what was done, this store's only; "Not known" when head office cannot be reached; Tamil too | | | | | | |
+| UATR-R16-10 | OB-612 | Signed in as a store manager | Open Reports → Bill findings | Only this store's bills; asking for another store is refused by name | | | | | | |
+| UATR-R16-11 | OB-606 · OB-607 | Shop time (another country's clock) | Open Day book, GST returns, Store tasks → Assign, Food-safety board | Day book = the shop's yesterday; GST = the shop's last month; deadline 23:59 shop time; food-safety heading is the shop's date | | | | | | |
+| UATR-R16-12 | M01-FR-02 · round 12/16 | *After midnight* | Open Waste analytics, Floor heat map, Today ("deliveries today"), a shelf plan dated today | All on the shop's date; the plan dated today is in force | | | | | | |
+
+### Owner
+
+| Case | Requirement | Prerequisite | Steps | Expected | Actual | P/F | Sev | Defect | Retest | Sign-off |
+|---|---|---|---|---|---|---|---|---|---|---|
+| UATR-R16-13 | OB-532 · OB-542 | A product never received at a cost | Make a quotation as a manager; then as yourself | Manager's: "Ask the owner to approve this price", approved by you; yours: "Ask the accountant", which you cannot approve yourself | | | | | | |
+| UATR-R16-14 | OB-525 · OB-602 | A product with a known lowest price | Quote below it as a manager; then as yourself | Manager's needs you; yours needs the accountant | | | | | | |
+| UATR-R16-15 | OB-610 | Bought together (basket affinity) | Draft a one-day promotion | Runs 00:00 to 23:59:59 that day, shop time | | | | | | |
+| UATR-R16-16 | OB-608 · OB-606/607 | Shop time (another country's clock) | Book a dock door for 10:30; add an incident timeline entry; record a competitor price "seen at" | Each shows the typed time on the store PC (India time); 25:00 or 30 February is refused | | | | | | |
+| UATR-R16-17 | M05 · round 16 | *After midnight*, on a day a new MRP starts | Publish the price pack; ring the product at the till | The till charges the new MRP that morning | | | | | | |
+
+### Accountant
+
+| Case | Requirement | Prerequisite | Steps | Expected | Actual | P/F | Sev | Defect | Retest | Sign-off |
+|---|---|---|---|---|---|---|---|---|---|---|
+| UATR-R16-18 | OB-543 · OB-600 · OB-534 · OB-548 | A delivery waiting for its bill, received by someone else | Open Goods receipt review; Match the bill with a wrong number, then the right one; try another stock screen | Wrong number refused; right one shows the bill, cost and your name; other stock screens stay closed | | | | | | |
+| UATR-R16-19 | OB-542 · OB-602 | The owner's own no-floor or below-floor quotation waiting | Approvals → approve it with a reason | Approved; the owner can then make the quotation | | | | | | |
+| UATR-R16-20 | OB-509 · OB-517 · OB-530 | Goods received with no order | Look at the receipt's value and the price-variance report | Valued only once its supplier bill is matched; variance uses the bill matched to that receipt | | | | | | |
+
+### Warehouse / goods receipt
+
+| Case | Requirement | Prerequisite | Steps | Expected | Actual | P/F | Sev | Defect | Retest | Sign-off |
+|---|---|---|---|---|---|---|---|---|---|---|
+| UATR-R16-21 | OB-504 · OB-605 | Van delivery (DSD) at the back door; wifi out | Scan a packed item without the month of manufacture; a batch-tracked item (milk) without batch, then without expiry; switch language | Each refused in words until set; Tamil too; set batch (scan), expiry (8 digits) and month (6 digits) and it is counted | | | | | | |
+| UATR-R16-22 | OB-604 · OB-611 | One product in two batches on the same van | Scan both batches; hand some back to the driver | Each batch shows its own count; the handheld asks which batch went back (56px, Tamil); a single-batch product goes straight to "How many?" | | | | | | |
+| UATR-R16-23 | OB-508 · OB-528 | A delivery short, damaged or with a different price | Book it in | Every difference names its owner (buyer or store manager), or says why none can | | | | | | |
+| UATR-R16-24 | OB-534 | Signed in as the person who received the delivery | Open Goods receipt | No "Match the bill" button; the screen says someone else must match it | | | | | | |
+| UATR-R16-25 | OB-536 · OB-537 | A handheld on a stopped app version | Put away goods already received; do a pick | Put-away is accepted; the pick counts and appears on Devices as done on a stopped version | | | | | | |
+| UATR-R16-26 | OB-607 | Print a counter label late at night; leave the 6 a.m. rota shift empty | Read USE BY; read the rota gap message | USE BY = wall-clock time + shelf life; the gap message says 06:00 | | | | | | |
+
 ## Coverage note
 
 These role cases exercise the **connected flows** across POS, inventory, orders/fulfilment, finance,
