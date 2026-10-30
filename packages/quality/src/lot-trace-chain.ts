@@ -14,6 +14,8 @@
 // moved than ever arrived.
 // Pure and deterministic: the facts go in, the trace and its CSV come out; no clock, no storage.
 
+import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
+import { shopDateOf } from '../../calendar/src/shop-day';
 import type { OutboundLotRecord } from './lot-trace';
 
 /** One receipt of the batch at a place: from a goods-receipt note, or a stock movement with none. */
@@ -119,7 +121,9 @@ export interface LotTraceChain {
 export type TraceSort = 'date' | 'hop' | 'reference' | 'from' | 'to' | 'product' | 'quantity';
 export const TRACE_SORTS: readonly TraceSort[] = ['date', 'hop', 'reference', 'from', 'to', 'product', 'quantity'];
 
-const day = (at: string): string => at.slice(0, 10);
+// R16-A (M01-FR-02): the SHOP's date of a moment in the trace (a receipt at 01:00 in the shop is on that shop day, not the UTC
+// day before); a plain date is kept, and a value that is neither is no date ('') — never a guessed one.
+const day = (moment: string): string => shopDateOf(moment, DEFAULT_SHOP_CALENDAR.timeZone);
 const NOT_KNOWN = 'not known';
 
 /** Fold the stored facts about one batch into its trace. */

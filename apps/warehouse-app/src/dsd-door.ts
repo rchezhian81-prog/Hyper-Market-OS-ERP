@@ -12,8 +12,8 @@ import type { BarcodeResolution } from '../../../packages/receiving/src/asn';
 import type { PackHierarchy } from '../../../packages/product/src/pack';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import {
-  reconcileDsd, signDeliveryNote, DsdRefusedError, DSD_HAND_BACK_REASONS, dsdScanCaptureRefusal,
-  type DsdExpectedLine, type DsdScan, type DsdHandBack, type DsdHandBackReason, type DsdReconciliation,
+  reconcileDsd, signDeliveryNote, DsdRefusedError, DSD_HAND_BACK_REASONS, dsdScanCaptureRefusal, dsdBatchesHeld,
+  type DsdExpectedLine, type DsdScan, type DsdHandBack, type DsdHandBackReason, type DsdReconciliation, type DsdBatchRef, type DsdBatchHeld,
 } from '../../../packages/receiving/src/dsd-checkin';
 
 export const DSD_CHECK_IN_CLOSED = 'DsdCheckInClosed';
@@ -28,6 +28,8 @@ export const DSD_FEEDBACK_CODES = Object.freeze([
   'manufacture_date_required', 'expiry_not_readable',
   // OB-605: a batch-tracked product scanned with no batch, or no expiry.
   'batch_required', 'expiry_required',
+  // OB-611: goods handed back of a product that came in more than one batch — which batch, a batch not scanned, too many of it.
+  'hand_back_batch_required', 'hand_back_batch_not_scanned', 'hand_back_more_than_batch_held',
 ] as const);
 export type DsdFeedbackCode = (typeof DSD_FEEDBACK_CODES)[number];
 
@@ -133,17 +135,27 @@ export class DsdDoorSession {
     return signal('accept', 'dsd_scanned', `${hit.productId} +${qty}`);
   }
 
-  handBack(handBackId: string, productId: string, quantityMinor: number, reason: DsdHandBackReason): DsdSignal {
+  /**
+   * OB-611 (owner, 30 Oct 2026): the batches this product came off the van in, with what is left of each — when there is more
+   * than one, the screen ASKS which batch the goods handed back are from (offline: from this phone's own scans). One: no question.
+   */
+  handBackBatches(productId: string): readonly DsdBatchHeld[] {
+    const c = this.current;
+    return c === null ? [] : dsdBatchesHeld(c.scans, c.handBacks, productId);
+  }
+
+  handBack(handBackId: string, productId: string, quantityMinor: number, reason: DsdHandBackReason, batch?: DsdBatchRef): DsdSignal {
     const c = this.current;
     if (c === null) return signal('reject', 'dsd_not_started', 'start the check-in first');
     if (c.closed) return signal('reject', 'dsd_already_closed', `check-in ${c.checkInId} is closed`);
-    const hb: DsdHandBack = { handBackId, productId, quantityMinor, reason, note: null, at: this.now() };
+    // OB-611: the hand-back carries the batch the person chose; head office posts the per-batch figures from it.
+    const hb: DsdHandBack = { handBackId, productId, quantityMinor, reason, note: null, at: this.now(), ...(batch === undefined ? {} : { batch: { batchId: batch.batchId, expiry: batch.expiry, manufacturedOn: batch.manufacturedOn } }) };
     try { reconcileDsd({ against: c.against.kind, expected: c.expected, scans: c.scans, handBacks: [...c.handBacks, hb] }); } catch (e) {
       if (e instanceof DsdRefusedError) return signal('reject', e.code as DsdFeedbackCode, e.message);
       throw e;
     }
     c.handBacks.push(hb);
-    return signal('accept', 'dsd_handed_back', `${quantityMinor} × ${productId} handed back (${reason}) — on the delivery's debit note`);
+    return signal('accept', 'dsd_handed_back', `${quantityMinor} × ${productId}${batch === undefined || batch.batchId === null ? '' : ` batch ${batch.batchId}`} handed back (${reason}) — on the delivery's debit note`);
   }
 
   /** The live view: what was expected, scanned, handed back and kept, and every difference by name. */

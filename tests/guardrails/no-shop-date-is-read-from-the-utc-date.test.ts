@@ -17,6 +17,15 @@ import { loadCodeEntries, scan, sample, type Rule } from './lib/scan';
  *   • a `now` port's moment sliced to its date: `now().slice(0, 10)`, `deps.now().slice(0, 10)`, `nowIso.slice(0, 10)`,
  *     `input.now.slice(0, 10)`;
  *   • the UTC date of now (or of a moment named `at`) moved by a span: `new Date(Date.parse(input.now) + n * DAY)…slice(0, 10)`.
+ * **Round 16 (R16-A · P4): the UTC MONTH of now, and an instant passed into a function and sliced THERE.** The tripwire also
+ * fails on:
+ *   • a `now` port's moment sliced to its MONTH: `now().slice(0, 7)` — the UTC month, wrong from 18:30 UTC on the last day;
+ *   • a value whose NAME says it holds an instant — a parameter or field named `asOf`, `at`, `atIso`, `iso`, `instant`,
+ *     `moment`, `when`, or ending in `…At` / `…Iso` (`raisedAt`, `input.at`, `opts.asOf`) — sliced to its UTC date or month
+ *     (`.slice(0, 10)`, `.slice(0, 7)`, `.split('T')[0]`). Round 16 found the plan in force (`inForcePlanogram(all, asOf)`),
+ *     the price pack's build date (`opts.asOf.slice(0, 10)`) and a rebate claim's "raised on" doing exactly this: the moment
+ *     was handed IN, so no "now" idiom was on the line. A name is a heuristic: a value named otherwise is not seen (see the
+ *     limits in the round 16 report).
  * A moment first turned into the shop's wall clock (`wallClockIn(now(), zone).slice(0, 10)`) is the shop's date and is not
  * matched.
  * Date ARITHMETIC on a date that is already a shop date (`new Date(Date.parse(\`${day}T00:00:00Z\`) + n * DAY)…`) is not
@@ -24,10 +33,17 @@ import { loadCodeEntries, scan, sample, type Rule } from './lib/scan';
  */
 
 const UTC_DAY = String.raw`(?:\.(?:slice|substring|substr)\(\s*0\s*,\s*10\s*\)|\.split\(\s*['"]T['"]\s*\)\s*\[\s*0\s*\])`;
+/** R16-A: the UTC date OR month of a moment's ISO text. */
+const UTC_DAY_OR_MONTH = String.raw`(?:\.(?:slice|substring|substr)\(\s*0\s*,\s*(?:10|7)\s*\)|\.split\(\s*['"]T['"]\s*\)\s*\[\s*0\s*\])`;
+/** R16-A: a name that says it holds an instant (a parameter, a variable or a field) — not the `now` port, matched above. */
+const INSTANT_NAME = String.raw`(?<![\w$])(?!now(?:Iso|ISO|At)?\b)(?:asOf|at|atIso|iso|isoInstant|instant|moment|when|[a-z][A-Za-z0-9]*At|[a-z][A-Za-z0-9]*Iso)`;
 const RULES: Rule[] = [
   { rule: 'the UTC date of new Date()', re: new RegExp(String.raw`new Date\(\s*\)\s*\.to(?:ISOString|JSON)\(\)\s*${UTC_DAY}`) },
   { rule: 'the UTC date of Date.now()', re: new RegExp(String.raw`new Date\(\s*Date\.now\(\)[^;\n]*?\)\s*\.to(?:ISOString|JSON)\(\)\s*${UTC_DAY}`) },
   { rule: 'a now() moment sliced to its UTC date', re: new RegExp(String.raw`\bnow(?:Iso|ISO|At)?\s*(?:\(\s*\))?\s*${UTC_DAY}`) },
+  // R16-A (P4): the UTC MONTH of now, and an instant handed in and sliced where it arrived.
+  { rule: 'a now() moment sliced to its UTC month', re: new RegExp(String.raw`\bnow(?:Iso|ISO|At)?\s*(?:\(\s*\))?\s*\.(?:slice|substring|substr)\(\s*0\s*,\s*7\s*\)`) },
+  { rule: 'an instant (named asOf / at / …At / …Iso) sliced to its UTC date or month', re: new RegExp(String.raw`${INSTANT_NAME}\s*${UTC_DAY_OR_MONTH}`) },
   { rule: 'the UTC date of now (or a moment `at`) moved by a span', re: new RegExp(String.raw`new Date\(\s*Date\.parse\(\s*[\w.]*\b(?:now|nowIso|at)\s*(?:\(\s*\))?\s*\)\s*[+-][^;\n]*?\)\s*\.to(?:ISOString|JSON)\(\)\s*${UTC_DAY}`) },
 ];
 
@@ -43,6 +59,19 @@ const ALLOWED: readonly { readonly file: string; readonly line: string; readonly
   {
     file: 'packages/integration/src/secrets.ts', line: 'const oldValidUntil = new Date(Date.parse(input.at)',
     why: 'a rotated credential\'s grace end for the platform\'s secret store — a technical validity in UTC, said in the rotation note and compared by nothing on the shop\'s day; not a business date',
+  },
+  // R16-A (P4): the instant-named slices that are not a shop date of a moment, each with its reason.
+  {
+    file: 'apps/b2b-app/src/b2b-portal-session.ts', line: '? data.asAt.slice(0, 10) : shopDateIn(data.asAt, servedShopZone());',
+    why: 'the slice is the branch where `asAt` does NOT parse as a moment (head office sent a plain date): its text is already the date; a moment is read in the shop\'s zone on the other branch',
+  },
+  {
+    file: 'packages/integration/src/secrets.ts', line: 'lastRotatedOn: input.at.slice(0, 10),',
+    why: 'the platform secret store\'s rotation stamp — a technical UTC record of when a credential was rotated, judged against no shop business day (as the grace end above)',
+  },
+  {
+    file: 'packages/integration/src/secrets.ts', line: "revokedOn: input.at.slice(0, 10) },",
+    why: 'the platform secret store\'s revocation stamp — a technical UTC record of when a credential was revoked, judged against no shop business day',
   },
   {
     file: 'packages/platform-admin/src/support-access.ts', line: 'const cutoff = new Date(Date.parse(input.now) + warnDays',
@@ -88,14 +117,30 @@ describe('no shop date is read from the UTC date of "now" (M01-FR-02)', () => {
       "const today = nowIso.slice(0, 10);",
       "const cutoff = new Date(Date.parse(input.now) + warnDays * 86_400_000).toISOString().slice(0, 10);",
       "const until = new Date(Date.parse(input.at) + grace * DAY_MS).toISOString().slice(0, 10);",
+      // R16-A (P4): the UTC month of now, and an instant handed in and sliced where it arrived.
+      "const month = now().slice(0, 7);",
+      "const month = deps.now().substring(0, 7);",
+      "const day = asOf.slice(0, 10);",
+      "const asOfDate = opts.asOf.slice(0, 10);",
+      "raisedOn: v.raisedAt.slice(0, 10),",
+      "const day = (at: string): string => at.slice(0, 10);",
+      "if (atIso.slice(0, 7) !== period) return;",
+      "const d = input.at.split('T')[0];",
+      "const month = row.postedAt.slice(0, 7);",
     ];
     const good = [
       "const today = shopDateIn(new Date().toISOString());",
       "const next = new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);",
       "const at = new Date().toISOString();",
       "const today = await shopToday(deps, tenantId);",
-      "const month = now().slice(0, 7);",
       "const today = wallClockIn(deps.now(), timeZone).slice(0, 10);",
+      // R16-A: a shop date (or a month of one) sliced is not a moment; a name that is not an instant is not matched.
+      "const month = today.slice(0, 7);",
+      "const period = day.slice(0, 7);",
+      "const belongsTo = tradingDay.slice(0, 7);",
+      "const when = shopDateIn(at, zone);",
+      "const hash = digest.slice(0, 10);",
+      "const ok = format.slice(0, 7);",
       "const today = shown(now()).slice(0, 10);",
     ];
     expect(scan([sample('apps/x/bad.ts', bad.join('\n'))], RULES).map((f) => f.line)).toEqual(bad.map((_, i) => i + 1));

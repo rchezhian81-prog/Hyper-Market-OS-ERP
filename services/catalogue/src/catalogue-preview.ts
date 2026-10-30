@@ -30,6 +30,8 @@ import { medicineReason } from '../../../packages/restricted-sales/src/medicines
 import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
 import { cessRateOn, type CessRate, type CessRatePeriod } from '../../../packages/finance/src/cess';
 import type { BundleDefinition } from '../../../packages/product/src/bundles';
+import { shopClock, shopDateIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { instantOf } from '../../../packages/calendar/src/trading-day';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
@@ -55,6 +57,11 @@ export interface CataloguePreviewDeps {
     readonly allowedEntries: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
     readonly zoneOfStore: (tenantId: string, storeId: string) => Promise<string | undefined>;
   };
+  /**
+   * R16-A (M01-FR-02 · P-08): the shop's calendar — the pack's build DATE (the MRP, the GST and cess rate and the tobacco
+   * warning picture in force) is the SHOP's date of the build moment, never its UTC date. Absent → the shop default zone.
+   */
+  readonly calendar?: ShopCalendarOf;
   /**
    * A7: the compensation-cess schedule per HSN (`cess-rates.ts`). The cess in force on the build date rides the pack on each
    * product of that HSN, signed. Absent → no product carries a cess (a deployment that has not wired it).
@@ -153,7 +160,12 @@ export async function assembleCatalogueSnapshot(
   deps: CataloguePreviewDeps,
   opts: { readonly tenantId: string; readonly storeId: string; readonly asOf: string; readonly version: number },
 ): Promise<BuildSnapshotResult & { readonly notSold?: readonly NotSoldProduct[] }> {
-  const asOfDate = opts.asOf.slice(0, 10); // date part, for the effective-dated tax + MRP lookups
+  // R16-A: the SHOP's date of the build moment, for the effective-dated MRP, tax, cess and tobacco-warning lookups. A date
+  // given (?asOf=YYYY-MM-DD) is already the shop's date. Before round 16 this was the moment's UTC date: a pack built from
+  // 00:00 to 05:30 in the shop carried yesterday's MRP and rates, so an MRP starting that day missed the pack.
+  const zone = (await shopClock(deps.calendar).calendar(opts.tenantId)).timeZone;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(opts.asOf);
+  const asOfDate = dateOnly ? opts.asOf : shopDateIn(opts.asOf, zone);
   // B17 (TASMAC · OB-288 P2): liquor never reaches a pack — a product master published before the rule (by its flag or its
   // HSN) is LEFT OUT and said, so no till is ever handed one to sell, offline or not.
   const everything = await deps.products(opts.tenantId);
@@ -170,7 +182,7 @@ export async function assembleCatalogueSnapshot(
   // OUT and said — so a new picture coming into force takes it off sale on the next pack. One that is confirmed carries
   // the last day its confirmation stays good (the day before the next notified picture), so a till that gets no new pack
   // stops selling it on that day by its own clock, offline.
-  const asOfDay = opts.asOf.slice(0, 10);
+  const asOfDay = asOfDate;
   const unconfirmed = all.filter((r) => isTobacco(r) && !warningStanding(r.tobaccoWarning, asOfDay).sellable);
   const records = all.filter((r) => !unconfirmed.includes(r));
   const confirmedUntil = new Map(records.filter(isTobacco).flatMap((r) => {
@@ -228,7 +240,7 @@ export async function assembleCatalogueSnapshot(
     version: opts.version,
     asOf: opts.asOf,
     products: records.map((r) => {
-      const plain = toMaster(r, opts.asOf);
+      const plain = toMaster(r, asOfDate); // R16-A: the MRP in force on the shop's date
       const until = confirmedUntil.get(r.productId);
       const confirmed = until === undefined ? plain : { ...plain, regulatedFlags: { ...(plain.regulatedFlags ?? {}), tobaccoWarningConfirmedUntil: until } };
       const expiredBatches = expiredOf.get(r.productId);
@@ -248,7 +260,7 @@ export async function assembleCatalogueSnapshot(
   });
   // SF-01: the launched offers the lanes apply — active and not yet ended at build time (one starting later rides along:
   // the lane checks each offer's window against its own clock). A draft or stopped offer never reaches a lane.
-  const at = Date.parse(opts.asOf.length === 10 ? `${opts.asOf}T00:00:00Z` : opts.asOf);
+  const at = Date.parse(dateOnly ? instantOf(`${opts.asOf}T00:00`, zone) : opts.asOf); // R16-A: a date given starts at the SHOP's midnight
   const promotions = (deps.promotions === undefined ? [] : await deps.promotions(opts.tenantId))
     .filter((p) => p.status === 'active' && Date.parse(p.endsAt) >= at)
     .sort((a, b) => (a.id < b.id ? -1 : 1));

@@ -37,6 +37,7 @@
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError, notFound, assertBranchInScope, ApiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopClock, shopDateIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import {
   readFloorDeviceRegistration, readFloorEvent, deviceBatchMessage, admitBatch, rfidCountObservation, linkCameraEvents,
   FLOOR_DEVICE_SWITCH, HARDWARE_NOT_VERIFIED,
@@ -110,6 +111,8 @@ export interface EslVendorPort {
 
 export interface FloorDeviceDeps {
   readonly now: () => string;
+  /** R16-A (M01-FR-02): the shop's calendar — a camera event belongs to the SHOP's day it happened on, never its UTC date. */
+  readonly calendar?: ShopCalendarOf;
   readonly log: (tenantId: string) => Promise<readonly FloorDeviceLogEntry[]>;
   readonly recordLog: (tenantId: string, entry: FloorDeviceLogEntry) => Promise<void>;
   readonly events: (tenantId: string) => Promise<readonly StoredFloorEvent[]>;
@@ -515,11 +518,13 @@ export function floorDeviceRoutes(deps: FloorDeviceDeps): readonly Route[] {
         const day = (ctx.query['day'] ?? '').trim();
         if (!DAY.test(day)) throw apiError(400, { code: 'day_not_given', whatHappened: 'Say which day (?day=YYYY-MM-DD).', wasItSaved: 'not_saved', nextSafeAction: 'Send the day. Nothing was changed; this only reads.' });
         const fleet = new Map(floorDevices(await deps.log(ctx.tenantId)).map((d) => [d.deviceId, d] as const));
+        const zone = (await shopClock(deps.calendar).calendar(ctx.tenantId)).timeZone;
         const cameraEvents: CameraEventFact[] = [];
         for (const e of await deps.events(ctx.tenantId)) {
           const d = fleet.get(e.deviceId);
           if (e.branchId !== branchId || e.outcome.state !== 'recorded' || e.event?.type !== 'cctv.event' || d?.binding.kind !== 'cctv_source') continue;
-          if (e.event.from.slice(0, 10) > day || e.event.to.slice(0, 10) < day) continue;
+          // R16-A: the SHOP's days the event spans (an event from 19:30 UTC is on the shop's next day), never the UTC dates.
+          if (shopDateIn(e.event.from, zone) > day || shopDateIn(e.event.to, zone) < day) continue;
           cameraEvents.push({ eventId: e.eventId, deviceId: e.deviceId, cameraId: d.binding.cameraId, laneIds: d.binding.laneIds, from: e.event.from, to: e.event.to, eventKind: e.event.eventKind });
         }
         const from = cameraEvents.map((e) => e.from).sort()[0];

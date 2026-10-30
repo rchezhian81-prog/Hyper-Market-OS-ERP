@@ -36,7 +36,7 @@ import {
   foldRebateClaims, claimView, claimableFor, judgeRaise, judgeSend, judgeMatch, judgeWithdraw, matchedOfReceipts, unmatchedReceipts,
   type RebateClaimFact, type RebateClaimView, type RebateReceiptFact, type RebateScheme, type ClaimRefusal,
 } from '../../../packages/purchasing/src/index';
-import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { shopClock, shopDateIn, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import type { StoredRebateAccrual } from './rebates';
 
 /** The owner's answer period: how many days a supplier has to answer a sent claim. `days: null` = cleared. Latest applies. */
@@ -98,6 +98,12 @@ export function rebateClaimRoutes(deps: RebateClaimDeps): readonly Route[] {
     const latest = (await deps.answerPeriods(t)).at(-1);
     return { days: latest?.days ?? null, latest };
   };
+  /** R16-A (M01-FR-02): the SHOP's date of a moment, in the tenant's calendar — never the UTC date of its ISO text. */
+  const shopDateOfFor = async (t: string): Promise<(iso: string) => string> => {
+    const clock = shopClock(deps.calendar);
+    const zone = (await clock.calendar(t)).timeZone;
+    return (iso) => shopDateIn(iso, zone);
+  };
   /** Everything one decision needs, read AFTER the guard: the scheme's claims as views, what it earned and received. */
   const schemeFacts = async (t: string, schemeId: string) => {
     const [facts, accruals, receipts, { days }, today] = await Promise.all([
@@ -138,6 +144,7 @@ export function rebateClaimRoutes(deps: RebateClaimDeps): readonly Route[] {
   const documentOf = async (t: string, v: RebateClaimView, scheme: RebateScheme | undefined, accruals: readonly StoredRebateAccrual[]) => {
     const from = await deps.shopName?.(t);
     const supplierName = await deps.supplierName?.(t, v.supplierId);
+    const shopDate = await shopDateOfFor(t); // R16-A: the dates printed on the claim are the SHOP's
     return {
       title: 'Supplier rebate claim', titleTa: 'விநியோகஸ்தர் தள்ளுபடிக் கோரிக்கை',
       claimNumber: v.claimId,
@@ -147,7 +154,7 @@ export function rebateClaimRoutes(deps: RebateClaimDeps): readonly Route[] {
       scheme: scheme === undefined ? { schemeId: v.schemeId } : { schemeId: scheme.schemeId, basis: scheme.basis, rateBp: scheme.rateBp, startsOn: scheme.startsOn, endsOn: scheme.endsOn },
       earnedFrom: accruals.map((a) => ({ accrualId: a.accrualId ?? null, periodFrom: a.periodFrom ?? null, periodTo: a.periodTo ?? null, accruedMinor: a.accrued.minor })),
       amountClaimedMinor: v.amountMinor,
-      raisedOn: v.raisedAt.slice(0, 10),
+      raisedOn: shopDate(v.raisedAt),
       sentOn: v.sent?.sentOn ?? null,
       approvedByFinance: v.sent === undefined ? null : v.sent.approvedBy,
       answerDueOn: v.dueOn,
@@ -155,7 +162,7 @@ export function rebateClaimRoutes(deps: RebateClaimDeps): readonly Route[] {
       paidMinor: v.matchedMinor,
       leftToPayMinor: v.unansweredMinor,
       ...(v.note === undefined ? {} : { note: v.note }),
-      ...(v.withdrawn === undefined ? {} : { withdrawn: { reason: v.withdrawn.reason, on: v.withdrawn.withdrawnAt.slice(0, 10) } }),
+      ...(v.withdrawn === undefined ? {} : { withdrawn: { reason: v.withdrawn.reason, on: shopDate(v.withdrawn.withdrawnAt) } }),
       words: `Please pay ₹${(v.amountMinor / 100).toFixed(2)} as the rebate earned under scheme ${v.schemeId}, quoting claim ${v.claimId}.`,
     };
   };
@@ -230,10 +237,13 @@ export function rebateClaimRoutes(deps: RebateClaimDeps): readonly Route[] {
         const judged = judgeSend({ claim, accruedMinor: f.accruedMinor, receivedMinor: f.receivedMinor, schemeClaims: f.schemeClaims });
         if (!judged.ok) throw refuse(judged, judged.code === 'claim_withdrawn' ? 'Raise a new claim if money is still owed. Nothing was recorded.' : 'Withdraw this claim and raise one for what is still owed. Nothing was recorded.');
         if (judged.alreadySent) return { status: 200, body: { claim, alreadySent: true } };
-        if ((b['sentOn'] as string) < claim.raisedAt.slice(0, 10) || (b['sentOn'] as string) > f.today) {
+        // R16-A: the day the claim was raised is the SHOP's date of its moment — a claim raised at 01:00 in the shop (19:30
+        // UTC the day before) may be sent that same shop day; before round 16 the UTC date let it be "sent" the day before.
+        const raisedOn = (await shopDateOfFor(t))(claim.raisedAt);
+        if ((b['sentOn'] as string) < raisedOn || (b['sentOn'] as string) > f.today) {
           throw apiError(422, {
             code: 'sent_on_outside_the_claim',
-            whatHappened: `A claim raised on ${claim.raisedAt.slice(0, 10)} cannot be sent on ${b['sentOn']} (before it was raised, or after today, ${f.today}).`,
+            whatHappened: `A claim raised on ${raisedOn} cannot be sent on ${b['sentOn']} (before it was raised, or after today, ${f.today}).`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the day it actually went to the supplier. Nothing was recorded.',
           });

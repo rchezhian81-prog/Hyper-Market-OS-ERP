@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1941,
+  "testFiles": 1951,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -32,8 +32,8 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 28,
-        "integration": 25,
+        "unit": 30,
+        "integration": 27,
         "realDb": 12,
         "browser": 9,
         "connected": 5,
@@ -58,6 +58,8 @@
           "tests/unit/pos-receipt-numbering.test.ts",
           "tests/unit/published-templates-pull.test.ts",
           "tests/unit/r13a-screens-take-the-shops-date.test.ts",
+          "tests/unit/r16a-the-box-counts-today-on-the-shops-day.test.ts",
+          "tests/unit/r16a-the-servers-today-is-the-shops.test.ts",
           "tests/unit/receipt-numbers.test.ts",
           "tests/unit/receipt.test.ts",
           "tests/unit/reporting-consolidation.test.ts",
@@ -86,6 +88,8 @@
           "tests/integration/org-config-and-templates-on-the-production-api.test.ts",
           "tests/integration/org-structure.test.ts",
           "tests/integration/p1-config-structure-departments-and-access-review.test.ts",
+          "tests/integration/r16a-the-camera-and-the-claim-take-the-shops-day.test.ts",
+          "tests/integration/r16a-the-plan-and-the-pack-take-the-shops-today.test.ts",
           "tests/integration/receipt-numbers-come-from-the-box.test.ts",
           "tests/integration/reporting-consolidation.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",

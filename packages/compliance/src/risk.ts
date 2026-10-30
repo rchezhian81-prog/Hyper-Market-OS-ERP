@@ -19,6 +19,9 @@
 //
 // Pure and deterministic: no clock, no I/O.
 
+import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
+import { shopDateOf } from '../../calendar/src/shop-day';
+
 export type RiskSeverity = 'critical' | 'high' | 'medium' | 'low';
 export type RiskStatus = 'open' | 'mitigated' | 'accepted' | 'closed';
 
@@ -226,7 +229,8 @@ export function controlHealth(input: {
       incidentCount: incidents.length,
       overdueRemediations: overdue,
       ...(last !== undefined ? { lastAttestedAt: last.attestedAt } : {}),
-      needsAttestation: last === undefined || last.attestedAt.slice(0, 10) < staleFrom,
+      // R16-A: the SHOP's date the control was attested on, never the UTC date of the moment.
+      needsAttestation: last === undefined || shopDateOf(last.attestedAt, DEFAULT_SHOP_CALENDAR.timeZone) < staleFrom,
     };
   });
 }

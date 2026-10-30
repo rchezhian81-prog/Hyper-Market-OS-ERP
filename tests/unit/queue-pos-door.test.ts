@@ -53,6 +53,7 @@ async function door(options: Partial<Omit<QueuePosDoorDeps, 'switches'>> & { hol
     queueBaskets: baskets,
     laneFor: async () => ({ host: '127.0.0.1', port: lanePort }),
     page: (lane) => ({ posLane: { laneId: lane }, posCatalogue: { products: [] } }),
+    shopTimeZone: () => 'Asia/Kolkata',
     now: () => '2026-10-24T10:00:00.000Z',
     ...over,
   });
@@ -134,6 +135,14 @@ describe('who: signed in on THIS phone, for SELLING', () => {
     expect(html).toContain('<script>window.posLane = {"laneId":"device:hh-q1"};</script>');
     expect(html).toMatch(/window\.queuePos = \{"laneId":"device:hh-q1","boxLaneId":"lane-1","payments":true/);
     expect(html).toMatch(/data-phone-holder/);
+  });
+
+  it('OB-606/607 (R16-A): the page is served the shop\'s zone the box\'s pack names — read per page, no network call', async () => {
+    let zone = 'Asia/Dubai';
+    const { call } = await door({ shopTimeZone: () => zone });
+    expect(await (await call('/queue-pos/', { headers: { accept: 'text/html' } })).text()).toContain('<script>window.shopTimeZone = "Asia/Dubai";</script>');
+    zone = 'Asia/Kolkata'; // a new pack naming another zone reaches the next page served
+    expect(await (await call('/queue-pos/', { headers: { accept: 'text/html' } })).text()).toContain('<script>window.shopTimeZone = "Asia/Kolkata";</script>');
   });
 });
 

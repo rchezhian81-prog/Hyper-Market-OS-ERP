@@ -427,7 +427,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   const shelf = planogramStoreAdapter({ store, now });
   const map = await shelf.shelfMap(tenantId, storeId);
   if (map !== undefined) sections['shelfLocations'] = map.locations;
-  const plan = inForcePlanogram(await shelf.planograms(tenantId, storeId), now());
+  const plan = inForcePlanogram(await shelf.planograms(tenantId, storeId), now(), shopZone); // R16-A: the plan in force on the SHOP's today
   if (plan !== undefined) {
     sections['planogram'] = plan;
     sections['shelfAssignments'] = plan.assignments;

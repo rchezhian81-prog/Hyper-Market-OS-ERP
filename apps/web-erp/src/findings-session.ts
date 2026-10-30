@@ -139,6 +139,11 @@ function readFinding(raw: unknown, severity: 'critical' | 'material'): BillFindi
 export function createFindingsSession(input: {
   readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined;
   readonly fetch?: typeof globalThis.fetch; readonly now?: () => string;
+  /**
+   * OB-612: the store this page asks for — on the store PC, the box's own store (from its signed pack). Head office narrows
+   * to what the person may see and refuses a store they may not, by name. Absent: head office answers with their scope.
+   */
+  readonly storeId?: string;
 }): FindingsSession {
   const named = input.viewer?.userId !== undefined;
   const held = new Set(input.viewer?.permissions ?? []);
@@ -152,7 +157,8 @@ export function createFindingsSession(input: {
     today: () => shopDateIn(now(), servedShopZone()),
     bills: async () => {
       const no = gate('sales'); if (no !== undefined) return no;
-      const out = await call<{ critical?: unknown[]; material?: unknown[]; informational?: unknown }>('GET', '/v1/sales/exceptions');
+      const store = input.storeId?.trim() ?? '';
+      const out = await call<{ critical?: unknown[]; material?: unknown[]; informational?: unknown }>('GET', store === '' ? '/v1/sales/exceptions' : `/v1/sales/exceptions?branchId=${encodeURIComponent(store)}`);
       if (out.result !== 'ok') return out;
       const read = (list: unknown, severity: 'critical' | 'material'): BillFinding[] =>
         (Array.isArray(list) ? list : []).map((r) => readFinding(r, severity)).filter((f): f is BillFinding => f !== undefined);

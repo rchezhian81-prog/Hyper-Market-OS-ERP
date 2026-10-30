@@ -2030,6 +2030,8 @@ export function catalogueAdapter(input: {
   readonly now: () => string;
   /** D-19: the owner's zone / channel switches, applied to the price entries the pack is built from (main.ts wires it). */
   readonly pricing?: CataloguePreviewDeps['pricing'];
+  /** R16-A (M01-FR-02): the shop's calendar — the pack is built as of the SHOP's date (main.ts wires it). */
+  readonly calendar?: CataloguePreviewDeps['calendar'];
 }): CatalogueDeps {
   return {
     signer: input.signer,
@@ -2069,7 +2071,7 @@ export function catalogueAdapter(input: {
       const previous = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
       const version = (previous?.snapshot.version ?? 0) + 1;
       const result = await assembleCatalogueSnapshot(
-        cataloguePreviewAdapter({ store: input.store, now: input.now, ...(input.pricing === undefined ? {} : { pricing: input.pricing }) }),
+        { ...cataloguePreviewAdapter({ store: input.store, now: input.now, ...(input.pricing === undefined ? {} : { pricing: input.pricing }) }), ...(input.calendar === undefined ? {} : { calendar: input.calendar }) },
         { tenantId, storeId: options.storeId, asOf: options.asOf ?? input.now(), version },
       );
       return result.snapshot;
@@ -5987,15 +5989,16 @@ export function lpActivityAdapter(input: {
   readonly now: () => string;
   /**
    * The shop's calendar (time zone + trading-day cut-off) from store setup, so a day is judged by the SHOP's trading day
-   * — a void at 00:30 belongs to the day still trading (PF-07). Absent = the UTC calendar date.
+   * — a void at 00:30 belongs to the day still trading (PF-07). Absent = the shop default's calendar (R16-A), never UTC.
    */
   readonly calendar?: (tenantId: string) => Promise<TradingCalendar>;
 }): LpActivityDeps {
   const activityStream = streamName(STREAM.lossPrevention, 'activity');
   const raisedStream = streamName(STREAM.lossPrevention, 'raised');
   const tradingDayOf = async (tenantId: string, atIso: string): Promise<string> => {
-    if (input.calendar === undefined) return atIso.slice(0, 10);
-    try { return tradingDayIn(atIso, await input.calendar(tenantId)); } catch { return atIso.slice(0, 10); }
+    // R16-A: with no calendar wired (or one that cannot be read), the shop default's trading day — never the UTC date.
+    if (input.calendar === undefined) return tradingDayIn(atIso, DEFAULT_SHOP_CALENDAR);
+    try { return tradingDayIn(atIso, await input.calendar(tenantId)); } catch { return tradingDayIn(atIso, DEFAULT_SHOP_CALENDAR); }
   };
   const dayRange = async (tenantId: string, day: string): Promise<{ from: string; to: string }> => {
     if (input.calendar !== undefined) {
@@ -6003,9 +6006,11 @@ export function lpActivityAdapter(input: {
         const w = tradingDayWindow(day, await input.calendar(tenantId));
         // [from, to) as an inclusive read window.
         return { from: w.from, to: new Date(Date.parse(w.to) - 1).toISOString() };
-      } catch { /* an unreadable calendar falls back to the UTC date — said by the route's day */ }
+      } catch { /* an unreadable calendar falls back to the shop default's day (R16-A) */ }
     }
-    return { from: `${day}T00:00:00.000Z`, to: `${day}T23:59:59.999Z` };
+    // R16-A: with no calendar, the shop default's trading day — the same day `tradingDayOf` above dates an action by.
+    const w = tradingDayWindow(day, DEFAULT_SHOP_CALENDAR);
+    return { from: w.from, to: new Date(Date.parse(w.to) - 1).toISOString() };
   };
   const rules = lpRulesAdapter(input);
   const cases = lpCasesAdapter(input);

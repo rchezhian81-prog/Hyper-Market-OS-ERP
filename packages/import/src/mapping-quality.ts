@@ -18,6 +18,8 @@
 //
 // Pure and deterministic: no clock beyond the dates on the jobs, no I/O.
 
+import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
+import { shopDateOf } from '../../calendar/src/shop-day';
 import { scoreSource, type ImportJobRecord } from './job-history';
 import type { RowErrorKind } from './import-job';
 
@@ -78,7 +80,7 @@ export function assessMappingQuality(input: {
 
   const findings: MappingQualityFinding[] = [];
   for (const [sourceId, jobs] of [...bySource.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const dates = jobs.map((j) => j.uploadedAt.slice(0, 10)).sort();
+    const dates = jobs.map((j) => shopDateOf(j.uploadedAt, DEFAULT_SHOP_CALENDAR.timeZone)).filter((d) => d !== '').sort(); // R16-A: the shop's upload days
     // scoreSource's `topReasons` ranks every (column, reason) with its share and corrective action; it is
     // computed over the whole window regardless of whether there are enough rows to BAND the source, so it is
     // meaningful here even for a short history.

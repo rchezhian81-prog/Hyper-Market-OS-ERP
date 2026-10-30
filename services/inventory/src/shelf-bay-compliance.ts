@@ -22,7 +22,8 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { planogramCompliance, latestCounts, type ShelfCount, type ShelfLocation, type ShelfState } from '../../../packages/merchandising/src/index';
 import { scoreByBay, bayKeyOf, type BayScore } from '../../../packages/merchandising/src/bay-compliance';
 import type { ShelfImageRecognition, RecognisedFacing } from '../../../packages/merchandising/src/shelf-image-port';
-import { inForcePlanogram, shelfMapFor, noShelfMap, noPlanogram, type StoredShelfMap, type StoredPlanogram } from './planograms';
+import { inForcePlanogram, shelfMapFor, noShelfMap, noPlanogram, shopZoneOf, type StoredShelfMap, type StoredPlanogram } from './planograms';
+import type { ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** The media types a shelf photo may be. */
 export const SHELF_PHOTO_TYPES = Object.freeze(['image/jpeg', 'image/png', 'image/webp'] as const);
@@ -47,6 +48,8 @@ export interface StoredShelfPhoto {
 
 export interface ShelfBayComplianceDeps {
   readonly now: () => string;
+  /** R16-A (M01-FR-02): the shop's calendar — the plan in force "today" is the shop's today, never the UTC date. */
+  readonly calendar?: ShopCalendarOf;
   readonly photos: (tenantId: string, storeId: string) => Promise<readonly StoredShelfPhoto[]>;
   readonly recordPhoto: (tenantId: string, photo: StoredShelfPhoto) => Promise<void>;
   readonly counts: (tenantId: string, storeId: string) => Promise<readonly ShelfCount[]>;
@@ -147,7 +150,7 @@ export function shelfBayComplianceRoutes(deps: ShelfBayComplianceDeps): readonly
         if (storeId === '') throw apiError(400, { code: 'store_required', whatHappened: 'The bay score is per store: send ?storeId=….', wasItSaved: 'not_saved', nextSafeAction: 'Name the store. Nothing was changed; this only reads.' });
         const stored = await deps.shelfMap(ctx.tenantId, storeId);
         if (stored === undefined) noShelfMap(storeId);
-        const plan = inForcePlanogram(await deps.planograms(ctx.tenantId, storeId), deps.now());
+        const plan = inForcePlanogram(await deps.planograms(ctx.tenantId, storeId), deps.now(), await shopZoneOf(deps.calendar, ctx.tenantId));
         if (plan === undefined) noPlanogram(storeId);
         const map = shelfMapFor(stored!, plan!.assignments);
         const asOf = deps.now();

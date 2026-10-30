@@ -245,6 +245,8 @@
       /* R3 D-11: a line at the door — the product, then how many came off the van out of how many the order expects, big. */
       #dsd-start-panel:not([hidden]), #dsd-work-panel:not([hidden]) { display: grid; gap: var(--space-3); }
       #dsd-lines .item { margin-bottom: var(--space-2); }
+      #dsd-back-batches:not([hidden]) { grid-template-columns: 1fr; } /* OB-611: one batch per row — its number, expiry and what is left */
+      #dsd-back-batches button { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-start; text-align: left; font-size: 17px; padding: var(--space-2) var(--space-3); }
       #dsd-lines .item .qty { grid-column: 1; grid-row: auto; justify-self: start; text-align: left; display: block; max-width: none; }
       #dsd-lines .item .count { grid-column: 2; grid-row: 1 / span 2; font-size: 14px; color: var(--muted); text-align: right; font-variant-numeric: var(--numbers); }
       #dsd-lines .item .count .n { display: block; font-size: 24px; font-weight: 700; color: var(--ink); }
@@ -490,6 +492,8 @@
           </div>
           <div class="hint" id="dsd-back-hint" hidden></div>
           <div class="choices" id="dsd-back-products" hidden></div>
+          <!-- OB-611: which batch is handed back, asked only for a product that came off the van in more than one batch. -->
+          <div class="choices" id="dsd-back-batches" hidden></div>
           <div class="choices" id="dsd-back-reasons" hidden></div>
           <!-- The delivery note's own barcode is scanned; the driver then signs it on this screen with one tap. -->
           <button id="dsd-note" type="button" class="wide">Delivery note: scan its barcode</button>

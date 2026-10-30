@@ -9,7 +9,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { STREAM } from '../../services/api/src/adapters';
+import { STREAM, posAdapter } from '../../services/api/src/adapters';
+import type { IncomingSale } from '../../services/pos/src/sale-intake';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
@@ -22,7 +23,9 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  *     what to do, and the informational ones as a count only;
  *   • the attendance section, on the shop's today, lists Ravi's "out" with no "in" under his name, and not Anu's pair;
  *   • the page is in Tamil on the toggle (head office's own sentences stay in English, OB-553);
- *   • a cashier whom the box lets open the page is refused by head office, said in its words; nothing is written.
+ *   • a cashier whom the box lets open the page is refused by head office, said in its words; nothing is written;
+ *   • OB-612 (round 16): the page asks head office for THIS store's findings (`?branchId=` the box's own store), and a
+ *     finding on another store's bill is never on it.
  * Synthetic data only. Without a browser binary it SKIPS.
  */
 
@@ -68,6 +71,14 @@ describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page thro
     await raise({ kind: 'price_cut_above_approver_limit', severity: 'material', saleId: 'S-101', productId: 'p-ghee', differenceMinor: 6_000, detail: 'p-ghee was lowered at the till by ₹160.00 with u-mgr\'s approval; u-mgr\'s price-cut limit is ₹100.00', ownerAction: 'Ask the manager. The sale stands.' });
     await raise({ kind: 'sold_a_recalled_product', severity: 'critical', saleId: 'S-102', productId: 'p-milk', detail: 'p-milk is under recall and was sold', ownerAction: 'ACT NOW: contact the customer.' });
     await raise({ kind: 'price_differs_from_catalogue', severity: 'informational', saleId: 'S-103', detail: 'the price quotation Q-7 promised', ownerAction: 'Nothing to do.' });
+    // OB-612: another store's bill finding — never on this store's page.
+    await raise({ kind: 'sold_a_recalled_product', severity: 'critical', saleId: 'S-201', productId: 'p-milk', detail: 'p-milk is under recall and was sold at store-2', ownerAction: 'ACT NOW: contact the customer.' });
+    // OB-612: head office places each finding at the store of its banked bill (where the bill's stock left from).
+    const pos = posAdapter({ store: ho.store, now: () => EARLIER });
+    for (const [saleId, at] of [['S-101', STORE], ['S-102', STORE], ['S-103', STORE], ['S-201', 'store-2']] as const) {
+      await pos.bankSale(TENANT, { saleId, receiptNumber: `R-${saleId}`, laneId: `lane-${saleId}`, cashierId: CASHIER, tradingDay: TODAY, committedAt: EARLIER, totalMinor: 100, currency: 'INR', packVersion: 999, locationId: at,
+        lines: [{ productId: 'p-oil', quantityMinor: 1, uom: 'ea', unitPriceMinor: 100 }], tenders: [{ kind: 'cash', amountMinor: 100 }] } as unknown as IncomingSale);
+    }
 
     dir = await mkdtemp(join(tmpdir(), 'sre-ob608-findings-screen-'));
     const packFile = join(dir, 'store-pack.json');
@@ -88,14 +99,16 @@ describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page thro
   afterEach(async () => { for (const stop of stops.splice(0).reverse()) await stop(); });
 
   /** A page on the box's origin as `who`; head office's API carried on that origin, as that person. Every write is counted. */
-  const open = async (who: string): Promise<{ page: Page; errors: string[]; writes: string[] }> => {
+  const open = async (who: string): Promise<{ page: Page; errors: string[]; writes: string[]; asked: string[] }> => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', extraHTTPHeaders: { 'x-sre-user': who } });
     stops.push(() => context.close());
     const writes: string[] = [];
+    const asked: string[] = [];
     await context.route('**/v1/**', async (route) => {
       const req = route.request();
       const url = new URL(req.url());
       if (req.method() !== 'GET') writes.push(`${req.method()} ${url.pathname}`);
+      asked.push(`${url.pathname}${url.search}`);
       const answer = await ho.request({
         method: req.method() as 'GET', path: url.pathname, userId: who, tenantId: TENANT, branchId: STORE,
         ...(url.search === '' ? {} : { query: Object.fromEntries(url.searchParams) }),
@@ -108,7 +121,7 @@ describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page thro
     page.on('pageerror', (e) => errors.push(e.message));
     const res = await page.goto(`http://127.0.0.1:${edge.screens!.port}/findings/`, { waitUntil: 'load' });
     expect(res?.status(), 'the page is served by the store computer').toBe(200);
-    return { page, errors, writes };
+    return { page, errors, writes, asked };
   };
   const says = (page: Page, selector: string, pattern: RegExp): Promise<unknown> => page.waitForFunction(
     ([sel, src]) => new RegExp(src!).test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector(sel!)?.textContent ?? ''),
@@ -139,6 +152,9 @@ describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page thro
     await says(m.page, '#s-rows li[data-sale="S-102"]', /p-milk is under recall and was sold/);
     expect(m.errors).toEqual([]);
     expect(m.writes).toEqual([]);
+    // OB-612: the page asked for this store's findings only, and another store's bill is not on it.
+    expect(m.asked).toContain(`/v1/sales/exceptions?branchId=${STORE}`);
+    expect(await m.page.$$('#s-rows li[data-sale="S-201"]')).toHaveLength(0);
   });
 
   it('a cashier the box lets open the page is refused by head office, said in its words', async () => {

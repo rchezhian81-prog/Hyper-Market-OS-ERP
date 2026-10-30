@@ -24,7 +24,7 @@ import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   reconcileDsd, signDeliveryNote, heldNeedsSecondPerson, isDsdHandBackReason, DsdRefusedError, DSD_HAND_BACK_REASONS, dsdScanCaptureRefusal, dsdBatchKey,
-  type DsdExpectedLine, type DsdScan, type DsdHandBack, type DsdReconciliation, type DsdDeliveryNote,
+  type DsdExpectedLine, type DsdScan, type DsdHandBack, type DsdReconciliation, type DsdDeliveryNote, type DsdBatchRef,
 } from '../../../packages/receiving/src/dsd-checkin';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/capture';
@@ -62,7 +62,8 @@ export interface DsdDebitNote {
   readonly supplierId: string;
   readonly checkInId: string;
   readonly handBackIds: readonly string[];
-  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly reason: string }[];
+  /** OB-611: each line names the batch handed back when the hand-back did (a product that came in more than one batch). */
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly reason: string; readonly batch?: DsdBatchRef }[];
   /** Σ at cost; null when a line's cost is not known (said, never a zero). */
   readonly valueMinor: number | null;
   readonly raisedAt: string;
@@ -215,7 +216,7 @@ async function close(deps: DsdCheckInDeps, tenantId: string, rec: DsdCheckInReco
     debitNoteRef: dsdDebitNoteRef(rec.checkInId), number: seq === null ? null : formatNumber(DEBIT_NOTE_NUMBER_FORMAT, seq), seq,
     supplierId: rec.supplierId, checkInId: rec.checkInId,
     handBackIds: rec.handBacks.map((h) => h.handBackId),
-    lines: rec.handBacks.map((h) => ({ productId: h.productId, quantityMinor: h.quantityMinor, reason: h.reason })),
+    lines: rec.handBacks.map((h) => ({ productId: h.productId, quantityMinor: h.quantityMinor, reason: h.reason, ...(h.batch === undefined ? {} : { batch: h.batch }) })),
     valueMinor: reconciliation.handedBackValueMinor, raisedAt: at,
   };
   const flags = [...rec.flags];
@@ -271,9 +272,20 @@ async function judgeScans(deps: DsdCheckInDeps, tenantId: string, scans: readonl
     if (refusal !== undefined) refuse(422, refusal.code, refusal.message, nextSafeAction);
   }
 }
+/** OB-611: the batch a hand-back names — `{ batchId, expiry, manufacturedOn }` (each text, or null where none was scanned). */
+function readBatchRef(v: unknown): DsdBatchRef | undefined | 'unreadable' {
+  if (v === undefined || v === null) return undefined;
+  if (!isObj(v) || !optText(v['batchId']) || !optText(v['expiry']) || !optText(v['manufacturedOn'])) return 'unreadable';
+  const text = (x: unknown): string | null => (isStr(x) ? x.trim() : null);
+  return { batchId: text(v['batchId']), expiry: text(v['expiry']), manufacturedOn: text(v['manufacturedOn']) };
+}
 function readHandBack(handBackId: string, b: Record<string, unknown>, at: string): DsdHandBack {
-  if (!isStr(b['productId']) || !posInt(b['quantityMinor']) || !isDsdHandBackReason(b['reason'])) bad('not_readable_as_a_dsd_hand_back', `A hand-back needs { productId, quantityMinor (whole, above 0), reason: ${DSD_HAND_BACK_REASONS.join(' / ')} }.`);
-  return { handBackId, productId: (b['productId'] as string).trim(), quantityMinor: b['quantityMinor'] as number, reason: b['reason'] as DsdHandBack['reason'], note: isStr(b['note']) ? b['note'].trim() : null, at };
+  const batch = readBatchRef(b['batch']);
+  if (!isStr(b['productId']) || !posInt(b['quantityMinor']) || !isDsdHandBackReason(b['reason']) || batch === 'unreadable') bad('not_readable_as_a_dsd_hand_back', `A hand-back needs { productId, quantityMinor (whole, above 0), reason: ${DSD_HAND_BACK_REASONS.join(' / ')} }, and — for a product that came in more than one batch — batch: { batchId, expiry, manufacturedOn } as scanned (OB-611).`);
+  return {
+    handBackId, productId: (b['productId'] as string).trim(), quantityMinor: b['quantityMinor'] as number, reason: b['reason'] as DsdHandBack['reason'], note: isStr(b['note']) ? b['note'].trim() : null, at,
+    ...(batch === undefined ? {} : { batch: batch as DsdBatchRef }),
+  };
 }
 
 async function openRecord(deps: DsdCheckInDeps, ctx: RequestContext, checkInId: string, b: Record<string, unknown>, via: 'direct' | 'relayed', receivedBy: string, at: string): Promise<DsdCheckInRecord> {

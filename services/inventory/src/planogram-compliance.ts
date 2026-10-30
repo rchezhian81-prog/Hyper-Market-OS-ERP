@@ -26,9 +26,10 @@ import {
 } from '../../../packages/merchandising/src/index';
 
 import {
-  isStr, isObj, isInt, isLoc, isAssign, isBackstock, toLocations, toAssignments, shelfMapFor, noShelfMap, noPlanogram, inForcePlanogram, latestPlanograms,
+  isStr, isObj, isInt, isLoc, isAssign, isBackstock, toLocations, toAssignments, shelfMapFor, noShelfMap, noPlanogram, inForcePlanogram, latestPlanograms, shopZoneOf,
   type RawLoc, type RawAssign, type StoredShelfMap, type StoredPlanogram,
 } from './planograms';
+import type { ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 export interface PlanogramComplianceDeps {
   /** Every shelf count recorded in a store — the observations the plan is judged against. */
@@ -37,6 +38,8 @@ export interface PlanogramComplianceDeps {
   readonly shelfMap?: (tenantId: string, storeId: string) => Promise<StoredShelfMap | undefined> | StoredShelfMap | undefined;
   readonly planograms?: (tenantId: string, storeId: string) => Promise<readonly StoredPlanogram[]> | readonly StoredPlanogram[];
   readonly now: () => string;
+  /** R16-A (M01-FR-02): the shop's calendar — the plan in force "today" is the shop's today, never the UTC date. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 export function planogramComplianceRoutes(deps: PlanogramComplianceDeps): readonly Route[] {
@@ -109,7 +112,7 @@ export function planogramComplianceRoutes(deps: PlanogramComplianceDeps): readon
           const all = deps.planograms === undefined ? [] : await deps.planograms(ctx.tenantId, storeId);
           const chosen = isStr(b['planogramId'])
             ? latestPlanograms(all).find((x) => x.planogramId === b['planogramId'])
-            : inForcePlanogram(all, deps.now());
+            : inForcePlanogram(all, deps.now(), await shopZoneOf(deps.calendar, ctx.tenantId));
           if (chosen === undefined) noPlanogram(storeId);
           map = shelfMapFor(stored!, chosen!.assignments);
           planogram = chosen!;

@@ -146,8 +146,25 @@ export function headOfficePagePayload(): Record<string, unknown> {
   return { permissions: [], servedBy: 'store_computer' };
 }
 
-/** Screen → payload builder, for screen-data.ts `BUILDERS`. Every page gets the same identity-only payload. */
-export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze(Object.fromEntries(HEAD_OFFICE_PAGE_SCREENS.map((s) => [s, headOfficePagePayload]))) as Readonly<Record<HeadOfficePageScreen, () => Record<string, unknown>>>;
+/** The part of the store pack a page's own store is read from (its branch, as head office names it). */
+interface PackBranchSource { readonly pack: { readonly policies: { readonly known: boolean; readonly value?: { readonly branchId?: string | null } } } }
+
+/**
+ * OB-612 (owner, 30 Oct 2026): the Bill findings page on the store PC asks head office for THIS store's findings — the
+ * branch the box's signed pack names (head office still narrows to what the person may see, and refuses a store they may
+ * not, by name). A box whose pack names no branch asks for none, and head office answers with the person's own scope.
+ */
+export function findingsPagePayload(input: PackBranchSource): Record<string, unknown> {
+  const branchId = input.pack.policies.known ? input.pack.policies.value?.branchId : undefined;
+  return { ...headOfficePagePayload(), ...(typeof branchId === 'string' && branchId.trim() !== '' ? { storeId: branchId.trim() } : {}) };
+}
+
+/** Screen → payload builder, for screen-data.ts `BUILDERS`. Every page gets the same identity-only payload (the Bill
+ *  findings page its store too, OB-612). */
+export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
+  ...Object.fromEntries(HEAD_OFFICE_PAGE_SCREENS.map((s) => [s, headOfficePagePayload])),
+  findings: findingsPagePayload,
+}) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */
 export function isHeadOfficeCall(path: string | undefined): boolean {

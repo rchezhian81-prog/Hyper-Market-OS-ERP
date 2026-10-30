@@ -6,10 +6,17 @@ import { createFindingsSession, findingsWords, findingsOutcomeWords, flagWords, 
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
+/** OB-612: the store the box named for this page, when it named one. */
+const storeOf = (raw: unknown): { storeId?: string } => {
+  const id = raw !== null && typeof raw === 'object' ? (raw as { storeId?: unknown }).storeId : undefined;
+  return typeof id === 'string' && id.trim() !== '' ? { storeId: id.trim() } : {};
+};
+
 export function wireFindings(win: Record<string, unknown>, viewerIdentity: (raw: unknown) => Viewer | undefined): void {
   if (win['findingsData'] === undefined) return;
   win['findings'] = {
-    session: createFindingsSession({ viewer: viewerIdentity(win['findingsData']) }),
+    // OB-612: on the store PC the box names its own store (`findingsData.storeId`) — the page asks head office for it.
+    session: createFindingsSession({ viewer: viewerIdentity(win['findingsData']), ...storeOf(win['findingsData']) }),
     words: findingsWords, outcomeWords: findingsOutcomeWords, flagWords, moment: shopMomentOf,
     rupees: (minor: number): string => `₹${(minor / 100).toFixed(2)}`,
   };
