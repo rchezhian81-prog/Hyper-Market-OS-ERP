@@ -55,8 +55,8 @@ The test-mode pilot runs without these, but each has a long lead time and blocks
 - [ ] **Try every device on the real equipment** (D14-FR-01). **Who:** IT + a cashier. **Done when:** every scanner,
   printer, scale, drawer and display has been used in a real sale, and each shows as working on the Devices page.
 - [ ] **Scan speed on a real till** (M12-FR-01, QG-05). The roadmap target: from scan to the line on screen in 300 ms
-  or less, for 95 of every 100 scans. **Who:** IT + a cashier. **Done when:** the till's own speed reading on the
-  the till's own scan-speed reading (which the store computer keeps) shows 300 ms or less after a full shift.
+  or less, for 95 of every 100 scans. **Who:** IT + a cashier. **Done when:** the till's own scan-speed
+  reading (which the store computer keeps) shows 300 ms or less after a full shift.
 - [ ] **The 72-hour run on store equipment** (QG-04). The system runs for three days on the store's own machines
   without the queue of waiting sales building up. **Who:** IT. **Done when:** the three days are over and the store
   computer's status shows nothing stuck.
