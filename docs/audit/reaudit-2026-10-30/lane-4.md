@@ -9,7 +9,9 @@
 **How it was checked.** For each row: the code path, the route it is served on (`docs/api/openapi.json`, generated from the router), the screen that calls it where a person must act, and the assertions of the named test. A script compared every `/v1/...` path the apps and the store computer call against the 1,508 OpenAPI paths: **no screen calls a route that does not exist** (the only unmatched strings were comments and the deliberately absent `/v1/ingest`, which is named only in a comment in `edge/sync-agent/src/http-transport.ts`).
 
 **Tests run** (PostgreSQL `audit_lane_4`, trust auth):
-TESTRUN_PLACEHOLDER
+- **Every test file cited in the tables below (101 files, unit + integration + guardrail), in one run:** 100 files passed, 689 tests passed, 1 failed. The failure was `tests/integration/the-customers-own-account-suggestions-and-help.test.ts` on its PostgreSQL half: "Test timed out in 5000ms" under load. Run alone it passed (2 of 2 tests). So all 690 pass.
+- **The 14 browser tests cited below** (`vitest.e2e.config.ts`, Chromium `/opt/pw-browsers/chromium`): 14 files passed, 37 tests passed.
+- **An earlier, wider run was stopped part-way.** It used every test file that traceability links to this slice (528 files) and had reached 135 files when stopped. Five files outside this slice failed only on their PostgreSQL halves while other lanes were running. Run again alone, four passed. One still failed: `tests/integration/the-never-received-check-is-one-read-per-prefix.test.ts` ("8 lanes x 500 … well under 200 ms": 253 ms against 200 ms). That is a timing check on a shared, busy machine. It belongs to the box sale-sync rows, not to this slice, and is listed here so the lane that owns those rows can re-run it on a quiet machine.
 
 ---
 
@@ -192,7 +194,18 @@ All five carry scenario lists held by `tests/guardrails/every-workflow-scenario-
 
 ## 8. Summary
 
-COUNTS_PLACEHOLDER
+138 rows (36 FR + 5 WF + 42 D + 10 agents + 15 AI governance + 21 C + 9 R8), the same inventory as 23 Oct.
+
+| status | count |
+|---|---|
+| DONE | 111 |
+| PARTIAL | 5 (M31-FR-04, M35-FR-04, D10-FR-01, AI-SCREEN, R8-8) |
+| MISSING | 0 |
+| DECISION | 0 |
+| EXTERNAL | 18 (M29-FR-03, M29-FR-04, M32-FR-04, M35-FR-01, WF-16, WF-19, D08-FR-04, D08-FR-05, D14-FR-01, D14-FR-03, D14-FR-04, D14-FR-05, C11, C21, R8-4, R8-5, R8-6, R8-7) |
+| DEFERRED | 4 (A01, A04, A05, QG-11 — all OB-382, R8) |
+
+By section (DONE/PARTIAL/EXTERNAL/DEFERRED): M28–M36 30/2/4/0 · WF 3/0/2/0 · D08–D14 35/1/6/0 · agents 7/0/0/3 · AI governance 13/1/0/1 · C rows 19/0/2/0 · R8 4/1/4/0.
 
 **Rows not DONE, not EXTERNAL, not DEFERRED (all PARTIAL; each is a missing screen over a built, tested route):**
 1. **M31-FR-04** — do-not-contact register has no screen (`/v1/notifications/suppressions*` called by nothing in `apps/`).
