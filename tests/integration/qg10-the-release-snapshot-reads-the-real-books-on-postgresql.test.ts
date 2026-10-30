@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -77,5 +77,63 @@ describe.skipIf(!DATABASE_URL)('QG-10: the release snapshot reads the real books
     expect(bad.stdout).toMatch(/DIFFERENCE — \d+ new dead letter\(s\) in the outbox since the release/);
     // The connection string is never printed.
     expect(`${b.stdout}${b.stderr}${a.stdout}${a.stderr}`).not.toContain(DATABASE_URL!);
+  }, 60_000);
+
+  // The ledger's sequence is drawn when an append STARTS. An append still open when the snapshot begins holds a LOWER
+  // sequence than one that committed after it; reading the horizon then would later see an event "appear in the past" —
+  // a false DIFFERENCE while the shop trades through a release (and what made this file flaky beside other writers).
+  // The snapshot waits for every append in flight before it counts, and says so plainly if one never finishes.
+  const appendOpen = async (T: string, n: number) => {
+    const conn = await pool.connect();
+    await conn.query('BEGIN');
+    await conn.query("SELECT set_config('app.tenant_id', $1, true)", [T]);
+    await conn.query(
+      "INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, version, payload) VALUES ($1, $2, 'sales', 'SaleCommitted', now(), $3, 'test/qg10', 1, '{}'::jsonb)",
+      [randomUUID(), T, `qg10-open-${T}-${n}`],
+    );
+    return conn;
+  };
+  const runLater = (...args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+    const p = spawn('node', [CLI, ...args], { env: { ...process.env, DATABASE_URL: DATABASE_URL ?? '' } });
+    let stdout = ''; let stderr = '';
+    p.stdout.on('data', (c) => { stdout += String(c); });
+    p.stderr.on('data', (c) => { stderr += String(c); });
+    p.on('close', (status) => done({ status, stdout, stderr }));
+  });
+
+  it('an append still in flight when the snapshot begins is waited for, so nothing later appears below its horizon', async () => {
+    const T = randomUUID();
+    const store = new SqlEventStore(pgPoolClient(pool));
+    await store.registerTenant(T, 'test/provision');
+    const open = await appendOpen(T, 1); // holds a LOWER sequence, not yet committed
+    await store.append(T, 'sales', makeEvent({ id: randomUUID(), type: 'SaleCommitted', occurredAt: '2026-10-26T09:00:00.000Z', idempotencyKey: `qg10-later-${T}`, source: 'test/qg10', payload: {} }));
+    const snap = runLater('snapshot');
+    await new Promise((r) => setTimeout(r, 1_000)); // the snapshot is waiting on the open append
+    await open.query('COMMIT'); open.release();
+    const b = await snap;
+    expect(b.status, b.stderr).toBe(0);
+    const before = parseSnapshot(b.stdout)!;
+    writeFileSync(join(dir, 'race-before.json'), b.stdout);
+    const a = run('snapshot', '--upto', String(before.ledger.maxSeq));
+    writeFileSync(join(dir, 'race-after.json'), a.stdout);
+    const after = parseSnapshot(a.stdout)!;
+    expect(after.upTo).toMatchObject({ seq: before.ledger.maxSeq, count: before.ledger.count, digest: before.ledger.digest });
+    const ok = run('compare', join(dir, 'race-before.json'), join(dir, 'race-after.json'), '--max-backlog-growth', '1000000', '--max-dead-letter-growth', '1000000');
+    expect(ok.stdout).toContain('RECONCILED');
+  }, 60_000);
+
+  it('an append that never finishes is said, and no snapshot is printed', async () => {
+    const T = randomUUID();
+    const store = new SqlEventStore(pgPoolClient(pool));
+    await store.registerTenant(T, 'test/provision');
+    const open = await appendOpen(T, 2);
+    try {
+      const s = await runLater('snapshot', '--settle-seconds', '1');
+      expect(s.status).toBe(1);
+      expect(s.stdout).toBe('');
+      expect(s.stderr).toMatch(/the books did not settle — \d+ transaction\(s\) .* still open after 1 s/);
+    } finally {
+      await open.query('ROLLBACK'); open.release();
+    }
   }, 60_000);
 });
