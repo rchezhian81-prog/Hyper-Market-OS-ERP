@@ -25,6 +25,8 @@ import {
   evaluateLossPrevention, type LpRule, type ActivityEvent, type SignalKind, type LpException,
 } from '../../../packages/loss-prevention/src/loss-prevention';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
+import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 
 const KINDS: readonly EvidenceKind[] = ['transaction_record', 'cctv_reference', 'witness_statement', 'stock_count', 'settlement_record', 'note'];
 const OUTCOMES: readonly CaseOutcome[] = ['proven', 'unfounded', 'inconclusive', 'process_failure', 'referred_to_police'];
@@ -357,7 +359,7 @@ async function exceptionsOn(deps: LpActivityDeps, tenantId: string, day: string)
 }
 
 const dayOf = async (deps: LpActivityDeps, tenantId: string, atIso: string): Promise<string> =>
-  deps.tradingDayOf === undefined ? atIso.slice(0, 10) : await deps.tradingDayOf(tenantId, atIso);
+  deps.tradingDayOf === undefined ? tradingDayIn(atIso, DEFAULT_SHOP_CALENDAR) : await deps.tradingDayOf(tenantId, atIso); // R16-A: never the UTC date
 
 /** Read a relayed till action, or say why not. */
 function readTillActivity(activityId: string, b: Record<string, unknown>): Omit<TillActivity, 'relayedBy' | 'approverAuthorityHeld'> | undefined {

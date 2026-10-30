@@ -70,6 +70,7 @@ import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
 import { packTimeZone } from './shop-zone';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { myRosterOnBox, foodHandlingForViewer, rosterCopyOnBox } from './workforce-pack'; // Round 7 · OB-507 · OB-502 · Round 8 · OB-531
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
@@ -522,7 +523,18 @@ export type TodayFigure =
   | { readonly known: false; readonly why: string };
 
 const notGiven = (what: string): TodayFigure => ({ known: false, why: `the store computer has not been given ${what}` });
-const dateOf = (v: unknown): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
+/** An ISO-8601 moment WITH its zone ("Z" or "±HH:MM") — read in the shop's zone; anything else dated is already a shop date. */
+const MOMENT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
+/**
+ * R16-A (M01-FR-02 · P-08): the SHOP's date of a value the pack carries. A moment (a delivery slot's start, a batch's
+ * `expiresAt`) is read in the shop's zone — a slot at 19:30 UTC is on the shop's NEXT day; a plain date (or a date-time with
+ * no zone, already the shop's wall clock) is kept. Before round 16 every value's first ten characters were taken, so a
+ * moment counted on its UTC date: "deliveries today" missed the 00:00–05:30 slots and "expiring soon" moved a day.
+ */
+const dateOf = (v: unknown, zone: string): string | null => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(v)) return null;
+  return MOMENT.test(v.trim()) && !Number.isNaN(Date.parse(v)) ? shopDateIn(v.trim(), zone) : v.slice(0, 10);
+};
 const daysBetween = (fromDay: string, toDay: string): number => Math.round((Date.parse(`${toDay}T00:00:00Z`) - Date.parse(`${fromDay}T00:00:00Z`)) / 86_400_000);
 
 /**
@@ -532,6 +544,7 @@ const daysBetween = (fromDay: string, toDay: string): number => Math.round((Date
  */
 export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
   const pack = input.pack;
+  const zone = packTimeZone(pack); // R16-A: the shop's zone from the signed pack — no network call
   const day = salesOn(input.sales, input.tradingDay);
   const takings = day.sales.reduce((sum, sale) => sum + (sale.total ?? 0), 0);
   const salesToday: TodayFigure = {
@@ -575,7 +588,7 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
   else {
     const window = pack.expiryPolicy.value.nearExpiryDays;
     const rows = pack.batches.value.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
-    const dated = rows.map((r) => dateOf(r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'])).filter((d): d is string => d !== null);
+    const dated = rows.map((r) => dateOf(r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'], zone)).filter((d): d is string => d !== null);
     expiringSoon = rows.length > 0 && dated.length === 0
       ? { known: false, why: 'the batch records carry no expiry date' }
       : { known: true, value: dated.filter((d) => daysBetween(input.tradingDay, d) <= window).length, note: `within ${window} days, of ${rows.length} batches` };
@@ -592,7 +605,7 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
   }
 
   const deliveriesToday: TodayFigure = pack.deliveries.known
-    ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt) === input.tradingDay).length, note: 'customer deliveries in today\'s slots' }
+    ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt, zone) === input.tradingDay).length, note: 'customer deliveries in today\'s slots' }
     : notGiven('the delivery slots');
 
   // D04-FR-05: the tills' devices — how many are failed or not working properly, each named. No report is "not known",

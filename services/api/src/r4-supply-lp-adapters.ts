@@ -225,11 +225,12 @@ const shelfPhotos = (storeId: string): string => streamName(STREAM.inventory, 's
  * the store's shelf counts, shelf map and planograms (the existing registers), head office's on-hand at the store (what is
  * "in the building"), and the recognition link — ALWAYS the switched-off one here, so no photo leaves the shop.
  */
-export function shelfBayComplianceAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): ShelfBayComplianceDeps {
+export function shelfBayComplianceAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder } & Calendared): ShelfBayComplianceDeps {
   const { store, now } = input;
   const plans = planogramStoreAdapter({ store, now });
   return {
     now,
+    ...(input.calendar === undefined ? {} : { calendar: input.calendar }), // R16-A: the plan in force on the shop's today
     photos: async (t, storeId) => (await store.readStream(t, shelfPhotos(storeId), { type: 'ShelfPhotoKept' })).map((e) => e.event.payload as StoredShelfPhoto),
     recordPhoto: async (t, p) => {
       await store.append(t, shelfPhotos(p.storeId), makeEvent({

@@ -82,7 +82,9 @@ describe('every menu item the store computer may offer is answered by its server
       const m = new RegExp(`<script>window\\.${p.global} = (\\{[^<]*\\});</script>`).exec(got.body);
       expect(m, `${p.screen} carries ${p.global}`).not.toBeNull();
       const payload = JSON.parse(m![1]!) as Record<string, unknown>;
-      expect(Object.keys(payload).sort(), p.screen).toEqual(['permissions', 'servedBy', 'userId']);
+      // OB-612 (R16-A): the Bill findings page is also told WHICH store this box is (its signed pack's branch), so it asks head
+      // office for this store's findings — the box's own identity, as the Devices page is told it (OB-601), never a figure.
+      expect(Object.keys(payload).sort(), p.screen).toEqual(p.screen === 'findings' && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
       expect(payload['userId']).toBe('u-owner');
     }
   });

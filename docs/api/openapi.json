@@ -155594,7 +155594,57 @@
         "x-derived-from": "services/pos/src/returns.ts"
       },
       "GetSalesExceptionsReply": {
-        "$ref": "#/components/schemas/IntakeSummary",
+        "type": "object",
+        "required": [
+          "branchId",
+          "banked",
+          "resends",
+          "critical",
+          "material",
+          "informational",
+          "detail",
+          "ownerAction"
+        ],
+        "properties": {
+          "branchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "banked": {
+            "type": "number"
+          },
+          "resends": {
+            "type": "number"
+          },
+          "critical": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleException"
+            }
+          },
+          "material": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleException"
+            }
+          },
+          "informational": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "ownerAction": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/pos/src/index.ts"
       },
@@ -197723,6 +197773,42 @@
       "PostInventoryDsdCheckinsByCheckInIdHandBacksByHandBackIdRequest": {
         "type": "object",
         "properties": {
+          "batch": {
+            "type": "object",
+            "properties": {
+              "batchId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "expiry": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "manufacturedOn": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
           "note": {
             "type": "string"
           },
@@ -200213,6 +200299,42 @@
               "properties": {
                 "at": {
                   "type": "string"
+                },
+                "batch": {
+                  "type": "object",
+                  "properties": {
+                    "batchId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "expiry": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "manufacturedOn": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
                 },
                 "handBackId": {
                   "type": "string"
@@ -265295,6 +265417,47 @@
         },
         "additionalProperties": true
       },
+      "DsdBatchRef": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "expiry",
+          "manufacturedOn"
+        ],
+        "properties": {
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "expiry": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "manufacturedOn": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
       "DsdDebitNote": {
         "type": "object",
         "required": [
@@ -265362,6 +265525,9 @@
                 },
                 "reason": {
                   "type": "string"
+                },
+                "batch": {
+                  "$ref": "#/components/schemas/DsdBatchRef"
                 }
               },
               "additionalProperties": true
@@ -265451,6 +265617,9 @@
                     "other",
                     "temperature_breach"
                   ]
+                },
+                "batch": {
+                  "$ref": "#/components/schemas/DsdBatchRef"
                 }
               },
               "additionalProperties": true
@@ -265560,6 +265729,9 @@
           },
           "at": {
             "type": "string"
+          },
+          "batch": {
+            "$ref": "#/components/schemas/DsdBatchRef"
           }
         },
         "additionalProperties": true
@@ -275348,48 +275520,6 @@
             "items": {
               "$ref": "#/components/schemas/ShortfallLine"
             }
-          }
-        },
-        "additionalProperties": true
-      },
-      "IntakeSummary": {
-        "type": "object",
-        "required": [
-          "banked",
-          "resends",
-          "critical",
-          "material",
-          "informational",
-          "detail",
-          "ownerAction"
-        ],
-        "properties": {
-          "banked": {
-            "type": "number"
-          },
-          "resends": {
-            "type": "number"
-          },
-          "critical": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SaleException"
-            }
-          },
-          "material": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SaleException"
-            }
-          },
-          "informational": {
-            "type": "number"
-          },
-          "detail": {
-            "type": "string"
-          },
-          "ownerAction": {
-            "type": "string"
           }
         },
         "additionalProperties": true

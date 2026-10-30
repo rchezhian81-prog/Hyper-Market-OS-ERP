@@ -2,10 +2,11 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { STREAM } from '../../services/api/src/adapters';
+import { STREAM, posAdapter } from '../../services/api/src/adapters';
+import type { IncomingSale } from '../../services/pos/src/sale-intake';
 import { createFindingsSession, findingsWords, flagWords, shopMomentOf, FINDINGS_COPY, ATTENDANCE_FLAGS } from '../../apps/web-erp/src/findings-session';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
-import { HEAD_OFFICE_PAGE_SCREENS } from '../../edge/store-edge/src/head-office-pages';
+import { HEAD_OFFICE_PAGE_SCREENS, HEAD_OFFICE_PAGE_BUILDERS } from '../../edge/store-edge/src/head-office-pages';
 
 // OB-609 (owner, 29 Oct 2026) · P-03 · P-08 · M29-FR-03 · M25-FR-01: the Bill findings and attendance flags page reads what head
 // office already kept and no screen showed. Driven here against head office's REAL routes (the pipeline, its permission
@@ -56,6 +57,14 @@ beforeAll(async () => {
   await raise({ kind: 'price_cut_above_approver_limit', severity: 'material', saleId: 'S-101', productId: 'p-ghee', differenceMinor: 6_000, detail: 'p-ghee was lowered at the till by ₹160.00 with u-mgr\'s approval; u-mgr\'s price-cut limit is ₹100.00', ownerAction: 'Ask the manager. The sale stands.' });
   await raise({ kind: 'sold_a_recalled_product', severity: 'critical', saleId: 'S-102', productId: 'p-milk', detail: 'p-milk is under recall and was sold', ownerAction: 'ACT NOW: contact the customer.' });
   await raise({ kind: 'price_differs_from_catalogue', severity: 'informational', saleId: 'S-103', productId: 'p-oil', differenceMinor: -2_000, detail: 'the price quotation Q-7 promised', ownerAction: 'Nothing to do.' });
+  // OB-612: and a bill of ANOTHER store (S2) — never on S1's page.
+  await raise({ kind: 'sold_a_recalled_product', severity: 'critical', saleId: 'S-201', productId: 'p-milk', detail: 'p-milk is under recall and was sold at S2', ownerAction: 'ACT NOW: contact the customer.' });
+  // OB-612: head office places each finding at the store of its banked bill (where its stock left from).
+  const pos = posAdapter({ store: h.store, now: () => at('11:00') });
+  for (const [saleId, store] of [['S-101', STORE], ['S-102', STORE], ['S-103', STORE], ['S-201', 'S2']] as const) {
+    await pos.bankSale(T, { saleId, receiptNumber: `R-${saleId}`, laneId: `lane-${saleId}`, cashierId: CASHIER, tradingDay: DAY, committedAt: at('11:00'), totalMinor: 100, currency: 'INR', packVersion: 999, locationId: store,
+      lines: [{ productId: 'p-oil', quantityMinor: 1, uom: 'ea', unitPriceMinor: 100 }], tenders: [{ kind: 'cash', amountMinor: 100 }] } as unknown as IncomingSale);
+  }
 });
 
 describe('OB-609 — bill findings: what head office raised on till bills, critical first', () => {
@@ -69,6 +78,17 @@ describe('OB-609 — bill findings: what head office raised on till bills, criti
       ['material', 'S-101', 'price_cut_above_approver_limit'],
     ]);
     expect(out.value.findings[1]).toMatchObject({ productId: 'p-ghee', differenceMinor: 6_000, ownerAction: 'Ask the manager. The sale stands.' });
+  });
+
+  it('OB-612: the store PC asks for its own store; another store is refused by head office by name; the owner sees every store\'s', async () => {
+    const own = await createFindingsSession({ viewer: { userId: MGR, permissions: BOTH }, fetch: fetchAs(MGR), storeId: STORE }).bills();
+    expect(own.result === 'ok' ? own.value.findings.map((f) => f.saleId) : own).toEqual(['S-102', 'S-101']);
+    const other = await createFindingsSession({ viewer: { userId: MGR, permissions: BOTH }, fetch: fetchAs(MGR), storeId: 'S2' }).bills();
+    expect(other.result).toBe('refused');
+    const owner = await createFindingsSession({ viewer: { userId: OWNER, permissions: BOTH }, fetch: fetchAs(OWNER) }).bills();
+    expect(owner.result === 'ok' ? owner.value.findings.map((f) => f.saleId) : owner).toEqual(['S-102', 'S-201', 'S-101']);
+    const ownerAtS2 = await createFindingsSession({ viewer: { userId: OWNER, permissions: BOTH }, fetch: fetchAs(OWNER), storeId: 'S2' }).bills();
+    expect(ownerAtS2.result === 'ok' ? ownerAtS2.value.findings.map((f) => f.saleId) : ownerAtS2).toEqual(['S-201']);
   });
 
   it('a cashier is refused by head office, said in its words; the page offers nothing without the word', async () => {
@@ -117,5 +137,16 @@ describe('OB-609 — the page is reachable and speaks both languages', () => {
     }
     expect(flagWords('en', 'a_new_flag')).toBe('a_new_flag');
     expect(findingsWords('ta', 'title')).toBe(FINDINGS_COPY.ta.title);
+  });
+});
+
+describe('OB-612 — the store computer names its own store to the Bill findings page', () => {
+  it('the page\'s payload carries the branch the signed pack names; a pack naming none names no store (head office then uses the person\'s own scope)', () => {
+    const build = HEAD_OFFICE_PAGE_BUILDERS.findings;
+    expect(build({ pack: { policies: { known: true, value: { branchId: 'S1' } } } })).toEqual({ permissions: [], servedBy: 'store_computer', storeId: 'S1' });
+    expect(build({ pack: { policies: { known: true, value: { branchId: null } } } })).toEqual({ permissions: [], servedBy: 'store_computer' });
+    expect(build({ pack: { policies: { known: false } } })).toEqual({ permissions: [], servedBy: 'store_computer' });
+    // Every other office page still gets the identity-only payload.
+    expect(HEAD_OFFICE_PAGE_BUILDERS.payroll({ pack: { policies: { known: true, value: { branchId: 'S1' } } } })).toEqual({ permissions: [], servedBy: 'store_computer' });
   });
 });

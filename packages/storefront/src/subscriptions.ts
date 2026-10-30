@@ -10,6 +10,9 @@
 //
 // Pure and deterministic: days are YYYY-MM-DD in the shop's own calendar, passed in.
 
+import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
+import { shopDateOf } from '../../calendar/src/shop-day';
+
 export type SubscriptionSchedule =
   | { readonly kind: 'every_days'; readonly days: number }
   | { readonly kind: 'weekdays'; readonly weekdays: readonly number[] };
@@ -129,7 +132,7 @@ export function dueToPlace(input: {
 }): { readonly place: readonly string[]; readonly missed: readonly string[] } {
   const { plan, changes, done, today, now } = input;
   if (subscriptionStateAt(changes, now) === 'cancelled') return { place: [], missed: [] };
-  const created = plan.createdAt.slice(0, 10);
+  const created = shopDateOf(plan.createdAt, DEFAULT_SHOP_CALENDAR.timeZone); // R16-A: the SHOP's day the plan was made (the days `d` are shop days)
   const place: string[] = [];
   const missed: string[] = [];
   for (let d = addDays(today, -7); d <= addDays(today, 1); d = addDays(d, 1)) {

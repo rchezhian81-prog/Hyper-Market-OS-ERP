@@ -403,6 +403,8 @@ describe('the service on the kernel', () => {
       bankSale: (_t, s) => { banked.add(s.saleId); },
       recordExceptions: (_t, e) => { recorded.push(...e); },
       openExceptions: () => recorded,
+      // OB-612: head office places each banked bill at its store — here the caller's own (b-main).
+      branchOfSales: async (_t, ids) => new Map(ids.map((id) => [id, 'b-main'] as const)),
       now: () => '2026-08-07T12:00:00Z',
     };
     const built = buildRouter(posRoutes(deps));

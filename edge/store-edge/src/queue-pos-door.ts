@@ -82,6 +82,11 @@ export interface QueuePosDoorDeps {
   readonly laneFor: (deviceId: string) => Promise<{ readonly host: string; readonly port: number } | null>;
   /** The globals the page is served with for this handheld's lane: the signed pack, the lane, the receipt template. */
   readonly page: (handheldLane: string) => Readonly<Record<string, unknown>>;
+  /**
+   * OB-606/607 (R16-A): the shop's zone from the box's SIGNED store pack (`packTimeZone`, else the shop default) — the queue
+   * till's page dates "today" and shows every time by it, never by the phone's own zone. Read per page; no network call.
+   */
+  readonly shopTimeZone: () => string;
   readonly now: () => string;
   readonly maxBytes?: number;
 }
@@ -312,7 +317,7 @@ export function queuePosDoor(deps: QueuePosDoorDeps): QueuePosDoor {
           displayName: selling.displayName, signOutAction: QUEUE_POS_SIGN_OUT, expiresAt: selling.expiresAt, now: deps.now(),
           lockTo: { url: `${QUEUE_POS_SIGN_IN}?ended=1`, page: queuePosSignInPage({ en: 'Your sign-in on this handheld has ended. Sign in again.', ta: 'இந்தக் கருவியில் உங்கள் உள்நுழைவு முடிந்தது. மீண்டும் உள்நுழையவும்.' }) },
         });
-        const globals = { ...deps.page(lane), queuePos: { laneId: lane, boxLaneId: switches.laneId, payments: switches.payments, signedIn: { userId: selling.userId, displayName: selling.displayName, expiresAt: selling.expiresAt } }, laneWriteBase: '' };
+        const globals = { ...deps.page(lane), shopTimeZone: deps.shopTimeZone(), queuePos: { laneId: lane, boxLaneId: switches.laneId, payments: switches.payments, signedIn: { userId: selling.userId, displayName: selling.displayName, expiresAt: selling.expiresAt } }, laneWriteBase: '' };
         send(res, 200, TYPES['.html']!, injectPayload(withPhoneHolderStrip(body.toString('utf8'), strip), 'queuePosPage', null, globals));
         return;
       }

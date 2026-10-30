@@ -18,6 +18,7 @@
 // changes stock or tasks; it changes what the shop is measured against, which is why it is versioned.
 
 import type { Route } from '../../kernel/src/index';
+import { DEFAULT_SHOP_CALENDAR, shopClock, shopDateIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   ShelfMap, ShelfMappingError,
@@ -80,6 +81,13 @@ export interface PlanogramStoreDeps {
   readonly recordShelfMap: (tenantId: string, map: StoredShelfMap) => Promise<void> | void;
   readonly recordPlanogram: (tenantId: string, planogram: StoredPlanogram) => Promise<void> | void;
   readonly now: () => string;
+  /** R16-A (M01-FR-02): the shop's calendar — the plan in force "today" is the shop's today, never the UTC date. */
+  readonly calendar?: ShopCalendarOf;
+}
+
+/** R16-A: the zone a tenant's shop keeps (its calendar, else the shop default — never UTC, never the machine's). */
+export async function shopZoneOf(calendar: ShopCalendarOf | undefined, tenantId: string): Promise<string> {
+  return (await shopClock(calendar).calendar(tenantId)).timeZone;
 }
 
 /** Newest version per plan id. */
@@ -96,9 +104,13 @@ export function latestPlanograms(all: readonly StoredPlanogram[]): readonly Stor
  * The plan in force at `asOf`: of the newest version of each plan whose effective date has been reached,
  * the one with the latest effective date (ties: the most recently published). A plan dated in the future
  * is coming, not in force — and a store with none is told so, never handed an empty plan.
+ *
+ * R16-A (M01-FR-02 · P-08): `asOf` is a moment (read as the SHOP's date in `timeZone`) or already a shop date
+ * (YYYY-MM-DD, kept). Before round 16 the moment's UTC date was used, so from 00:00 to 05:30 in the shop a plan
+ * effective that day was not yet in force — the store worked yesterday's plan for five and a half hours.
  */
-export function inForcePlanogram(all: readonly StoredPlanogram[], asOf: string): StoredPlanogram | undefined {
-  const day = asOf.slice(0, 10);
+export function inForcePlanogram(all: readonly StoredPlanogram[], asOf: string, timeZone: string = DEFAULT_SHOP_CALENDAR.timeZone): StoredPlanogram | undefined {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(asOf) ? asOf : shopDateIn(asOf, timeZone);
   return latestPlanograms(all)
     .filter((p) => p.effectiveFrom <= day)
     .sort((a, b) => (a.effectiveFrom !== b.effectiveFrom ? (a.effectiveFrom < b.effectiveFrom ? 1 : -1) : (a.publishedAt < b.publishedAt ? 1 : -1)))[0];
@@ -229,7 +241,7 @@ export function planogramRoutes(deps: PlanogramStoreDeps): readonly Route[] {
         const storeId = ctx.params['storeId'] ?? '';
         const all = await deps.planograms(ctx.tenantId, storeId);
         const latest = latestPlanograms(all);
-        const inForce = inForcePlanogram(all, deps.now());
+        const inForce = inForcePlanogram(all, deps.now(), await shopZoneOf(deps.calendar, ctx.tenantId));
         const map = await deps.shelfMap(ctx.tenantId, storeId);
         return {
           status: 200,

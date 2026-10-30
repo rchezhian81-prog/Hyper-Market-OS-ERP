@@ -105,6 +105,23 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Round 16 (30 October 2026): the independent check of rounds 10 to 15, its gaps closed; OB-611 and OB-612
+
+**What the check found:** of the rounds 10 to 15 decisions, most were proven (503 tests run, all passed), but four gaps remained and one rule had been assumed.
+
+**What changed**
+- The handhelds on the shop wifi and the queue till are now given the shop's time zone by the store computer, as the till and office pages already were (offline).
+- Head office's shelf plan "in force today", the price pack's MRP, GST and tobacco-warning dates, CCTV links by day, rebate claim dates, and the store computer's "deliveries today" / "expiring soon" now use the shop's date — they used the UTC date between 00:00 and 05:30.
+- The shop-date guardrail also catches an instant handed into a function and sliced, and the UTC month.
+- **OB-611:** a van-door hand-back of a product that came in more than one batch asks which batch (offline, English and Tamil); recall counts per batch are exact.
+- **OB-612:** a manager sees bill findings only for their own stores; another store asked for by name is refused.
+
+**Tests that ran (builder, this box, synthetic data):** full unit + integration on PostgreSQL 15,731 passed (2 failed: one test fixed for OB-612, and the QG-10 snapshot test beside other writers, now fixed by #845); full browser suite 766 of 766; fails-before for every item.
+
+**What is next:** nothing open from the checks. **Blocked / needs the owner:** nothing new.
+
+---
+
 ## QG-10 release snapshot settles before it counts (30 October 2026)
 
 **What changed**

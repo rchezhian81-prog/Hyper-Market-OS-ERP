@@ -4,7 +4,7 @@
 // this service follows from that: see `sale-intake.ts`.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, narrowScope } from '../../kernel/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import { checkOperatorStamp } from '../../../packages/identity/src/till-seal';
 import { assignSaleLots, type LotOnHand } from './sale-lots';
@@ -54,6 +54,12 @@ export interface PosDeps {
   readonly bankSale: (tenantId: string, sale: IncomingSale) => Promise<void> | void;
   readonly recordExceptions: (tenantId: string, exceptions: readonly SaleException[]) => Promise<void> | void;
   readonly openExceptions: (tenantId: string) => Promise<readonly SaleException[]> | readonly SaleException[];
+  /**
+   * OB-612 (owner, 30 Oct 2026): the branch each banked sale belongs to — head office's own answer (where the sale's stock
+   * left from, placed under its branch), for the bill findings' scope. A sale missing from the map is in no branch: its
+   * finding is shown only to a company-wide reader. Absent → no sale is placed (a branch-limited reader sees none).
+   */
+  readonly branchOfSales?: (tenantId: string, saleIds: readonly string[]) => Promise<ReadonlyMap<string, string>>;
   readonly now: () => string;
   /**
    * The permissions the named cashier holds through their grants; `undefined` when they hold none (an unknown name).
@@ -341,12 +347,27 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
       api: 'API-05', method: 'GET', path: '/v1/sales/exceptions',
       permission: 'pos.exception.read',
       handler: async (ctx) => {
+        // OB-612 (owner, 30 Oct 2026): only the branches the caller may see — their scope for this route's word, from their
+        // grants (never the request's), as OB-601 did for the handheld findings. `?branchId=` narrows to one of them; a branch
+        // they may not see is refused by name (403 scope_not_held), never silently emptied. A finding on a bill no store can
+        // be found for is shown only to a company-wide reader who names no branch (OB-83's rule for a close with no store).
+        const asked = typeof ctx.query['branchId'] === 'string' && ctx.query['branchId'].trim() !== '' ? ctx.query['branchId'].trim() : undefined;
+        const scope = narrowScope(ctx, asked === undefined ? undefined : [asked]);
         const open = await deps.openExceptions(ctx.tenantId);
+        const branches = deps.branchOfSales === undefined || open.length === 0 ? new Map<string, string>() : await deps.branchOfSales(ctx.tenantId, open.map((e) => e.saleId));
+        const seen = open.filter((e) => {
+          const branch = branches.get(e.saleId);
+          if (scope === 'all') return asked === undefined || branch === asked;
+          return branch !== undefined && scope.includes(branch);
+        });
         return {
           status: 200,
-          body: summariseIntake(open.map((e): IntakeResult => ({
-            banked: true, saleId: e.saleId, exceptions: [e], alreadyBanked: false, detail: e.detail,
-          }))),
+          body: {
+            ...summariseIntake(seen.map((e): IntakeResult => ({
+              banked: true, saleId: e.saleId, exceptions: [e], alreadyBanked: false, detail: e.detail,
+            }))),
+            branchId: asked ?? null,
+          },
         };
       },
     },

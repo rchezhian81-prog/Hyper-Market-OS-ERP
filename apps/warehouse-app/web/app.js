@@ -1112,6 +1112,10 @@ const DSD_WORDS = {
     manufacture_date_required: 'Packed goods — enter the month of manufacture first', expiry_not_readable: 'That expiry is not a date',
     // OB-605: a batch-tracked item needs its batch and its expiry.
     batch_required: 'Batch-tracked — scan the batch number first', expiry_required: 'Batch-tracked — enter the expiry date first',
+    // OB-611: goods handed back of a product that came in more than one batch.
+    hand_back_batch_required: 'Say which batch is handed back', hand_back_batch_not_scanned: 'That batch did not come off the van',
+    hand_back_more_than_batch_held: 'More handed back than that batch came in with',
+    whichBatch: 'Which batch is handed back?', batchLeft: 'left', dsdMfgShort: 'made',
     dsdBatch: 'Batch', dsdBatchNone: 'not scanned', dsdBatchTitle: 'Scan the batch number on the pack',
     dsdExpiry: 'Expiry', dsdExpiryNone: 'not entered', dsdExpiryTitle: 'Expiry date — key it as YYYYMMDD',
     dsdExpiryHint: 'From the pack, for example 20270131 for 31 January 2027. Key 0 to clear it.',
@@ -1140,6 +1144,9 @@ const DSD_WORDS = {
     app_version_too_old: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
     manufacture_date_required: 'பொதி செய்த பொருள் — முதலில் தயாரிப்பு மாதத்தை உள்ளிடவும்', expiry_not_readable: 'அந்தக் காலாவதி தேதி சரியான தேதி அல்ல',
     batch_required: 'தொகுதி கண்காணிக்கும் பொருள் — முதலில் தொகுதி எண்ணை ஸ்கேன் செய்யவும்', expiry_required: 'தொகுதி கண்காணிக்கும் பொருள் — முதலில் காலாவதி தேதியை உள்ளிடவும்',
+    hand_back_batch_required: 'எந்தத் தொகுதி திருப்பப்படுகிறது என்று சொல்லவும்', hand_back_batch_not_scanned: 'அந்தத் தொகுதி வண்டியிலிருந்து வரவில்லை',
+    hand_back_more_than_batch_held: 'அந்தத் தொகுதியில் வந்ததை விட அதிகம் திருப்பப்பட்டது',
+    whichBatch: 'எந்தத் தொகுதி திருப்பிக் கொடுக்கப்படுகிறது?', batchLeft: 'மீதம்', dsdMfgShort: 'தயாரிப்பு',
     dsdBatch: 'தொகுதி எண்', dsdBatchNone: 'ஸ்கேன் செய்யப்படவில்லை', dsdBatchTitle: 'பொதியில் உள்ள தொகுதி எண்ணை ஸ்கேன் செய்யவும்',
     dsdExpiry: 'காலாவதி தேதி', dsdExpiryNone: 'உள்ளிடப்படவில்லை', dsdExpiryTitle: 'காலாவதி தேதி — YYYYMMDD ஆக உள்ளிடவும்',
     dsdExpiryHint: 'பொதியிலிருந்து, எடுத்துக்காட்டாக 31 ஜனவரி 2027க்கு 20270131. அழிக்க 0 உள்ளிடவும்.',
@@ -1163,7 +1170,7 @@ const dsd = window.dsdSession;
 let dsdChoice = null; // { poId } | { routeId, supplierId }
 let dsdDriver = null; // the driver's mobile number, keyed
 let dsdNote = null; // the delivery note's scanned reference
-let dsdBack = null; // a hand-back in progress: { productId, quantityMinor }
+let dsdBack = null; // a hand-back in progress: { productId, quantityMinor, batch? } (OB-611: the batch chosen)
 // B4 · OB-504 (round 11): the batch facts keyed at the door; they ride on every door scan until changed or cleared.
 let dsdBatchId = null; // the batch number scanned off the pack
 let dsdExpiry = null; // YYYY-MM-DD
@@ -1313,39 +1320,69 @@ el('dsd-mfg').addEventListener('click', async () => {
   dsdMfg = `${text.slice(0, 4)}-${text.slice(4)}`;
   paintDsdBatch();
 });
+// OB-611 (owner, 30 Oct 2026): goods of a product that came off the van in MORE THAN ONE batch are handed back from the
+// batch the person picks — the screen asks, from this phone's own scans (offline), each choice 56 px with what is left of it.
+// A product in one batch: no question; the hand-back still carries that batch. Head office posts the per-batch figures.
+const hasBatchFacts = (b) => b !== undefined && (b.batchId !== null || b.expiry !== null || b.manufacturedOn !== null);
+const batchLabel = (b) => `${dt('dsdBatch')} ${b.batchId ?? dt('dsdBatchNone')}${b.expiry ? ` · ${dt('dsdExpiry')} ${b.expiry}` : ''}${b.manufacturedOn ? ` · ${dt('dsdMfgShort')} ${b.manufacturedOn}` : ''}`;
+function askWhy() {
+  el('dsd-back-hint').textContent = dt('chooseWhy');
+  el('dsd-back-reasons').hidden = false;
+  el('dsd-back-reasons').replaceChildren(...['damaged', 'temperature_breach', 'expired', 'not_ordered', 'other'].map((reason) => {
+    const r = document.createElement('button');
+    r.type = 'button';
+    r.dataset.reason = reason;
+    r.textContent = dt(reason);
+    r.addEventListener('click', () => {
+      el('dsd-back-reasons').hidden = true;
+      el('dsd-back-hint').hidden = true;
+      if (dsdBack === null) return;
+      dsdFelt(dsd.handBack(nextId('dsd-back'), dsdBack.productId, dsdBack.quantityMinor, reason, dsdBack.batch));
+      dsdBack = null;
+      renderDsd();
+    });
+    return r;
+  }));
+}
+async function askHowMany(productId, batch) {
+  const n = await awaitQty(dt('howMany'), hasBatchFacts(batch) ? `${productId} · ${batchLabel(batch)}` : productId, '1');
+  if (n === null) return;
+  dsdBack = { productId, quantityMinor: n, ...(hasBatchFacts(batch) ? { batch: { batchId: batch.batchId, expiry: batch.expiry, manufacturedOn: batch.manufacturedOn } } : {}) };
+  askWhy();
+}
+function askWhichBatch(productId, held) {
+  el('dsd-back-hint').textContent = `${dt('whichBatch')} — ${productId}`;
+  el('dsd-back-batches').hidden = false;
+  el('dsd-back-batches').replaceChildren(...held.map((b) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.batch = b.batchId ?? '';
+    say(button, `${batchLabel(b)} — ${dt('batchLeft')} ${b.leftMinor}`, 'barcode');
+    button.addEventListener('click', () => {
+      el('dsd-back-batches').hidden = true;
+      void askHowMany(productId, b);
+    });
+    return button;
+  }));
+}
 el('dsd-hand-back').addEventListener('click', () => {
   const view = dsd ? dsd.view() : null;
   if (view === null) return;
   el('dsd-back-hint').hidden = false;
   el('dsd-back-hint').textContent = dt('chooseItemBack');
+  el('dsd-back-batches').hidden = true;
+  el('dsd-back-reasons').hidden = true;
   el('dsd-back-products').hidden = false;
   el('dsd-back-products').replaceChildren(...view.lines.filter((l) => l.keptMinor > 0).map((l) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.product = l.productId;
     button.textContent = l.productId;
-    button.addEventListener('click', async () => {
-      const n = await awaitQty(dt('howMany'), l.productId, '1');
-      if (n === null) return;
-      dsdBack = { productId: l.productId, quantityMinor: n };
+    button.addEventListener('click', () => {
       el('dsd-back-products').hidden = true;
-      el('dsd-back-hint').textContent = dt('chooseWhy');
-      el('dsd-back-reasons').hidden = false;
-      el('dsd-back-reasons').replaceChildren(...['damaged', 'temperature_breach', 'expired', 'not_ordered', 'other'].map((reason) => {
-        const r = document.createElement('button');
-        r.type = 'button';
-        r.dataset.reason = reason;
-        r.textContent = dt(reason);
-        r.addEventListener('click', () => {
-          el('dsd-back-reasons').hidden = true;
-          el('dsd-back-hint').hidden = true;
-          if (dsdBack === null) return;
-          dsdFelt(dsd.handBack(nextId('dsd-back'), dsdBack.productId, dsdBack.quantityMinor, reason));
-          dsdBack = null;
-          renderDsd();
-        });
-        return r;
-      }));
+      const held = dsd.handBackBatches(l.productId).filter((b) => b.leftMinor > 0);
+      if (held.length > 1) { askWhichBatch(l.productId, held); return; }
+      void askHowMany(l.productId, held[0]);
     });
     return button;
   }));

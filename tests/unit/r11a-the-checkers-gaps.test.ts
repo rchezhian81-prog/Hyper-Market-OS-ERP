@@ -84,7 +84,7 @@ describe('OB-504: the DSD door judges each scan by that rule and carries the bat
     expect(isDsdExpiryDate('2031-02-29')).toBe(false);
   });
 
-  it('OB-604: the reconciliation splits a product by batch — hand-backs off the last batch, receivable from the first, the rest held', () => {
+  it('OB-604 · OB-611: the reconciliation splits a product by batch — hand-backs off the batch they name, receivable from the first, the rest held', () => {
     const scans = [
       { scanId: 's1', productId: 'p-det', quantityMinor: 2, at: AT, batchId: 'B-1', expiry: '2031-01-31', manufacturedOn: '2030-05' },
       { scanId: 's2', productId: 'p-det', quantityMinor: 1, at: AT, batchId: 'B-1', expiry: '2031-01-31', manufacturedOn: '2030-05' },
@@ -92,11 +92,12 @@ describe('OB-504: the DSD door judges each scan by that rule and carries the bat
       { scanId: 's4', productId: 'p-oil', quantityMinor: 4, at: AT, batchId: 'O-2', expiry: '2031-04-30' },
       { scanId: 's5', productId: 'p-brm', quantityMinor: 1, at: AT },
     ];
-    const handBacks = [{ handBackId: 'h1', productId: 'p-oil', quantityMinor: 1, reason: 'damaged' as const, note: null, at: AT }];
+    // OB-611 (owner, 30 Oct 2026): the hand-back names its batch (the handheld asks) — the round-11 "scanned last" rule is gone.
+    const handBacks = [{ handBackId: 'h1', productId: 'p-oil', quantityMinor: 1, reason: 'damaged' as const, note: null, at: AT, batch: { batchId: 'O-2', expiry: '2031-04-30', manufacturedOn: null } }];
     const r = reconcileDsd({ against: 'po', expected: [{ productId: 'p-oil', expectedMinor: 5, unitCostMinor: 100 }, { productId: 'p-det', expectedMinor: 3 }, { productId: 'p-brm', expectedMinor: 1 }], scans, handBacks });
     const lineOf = (p: string) => r.lines.find((l) => l.productId === p)!;
     expect(lineOf('p-det').batches).toEqual([{ batchId: 'B-1', expiry: '2031-01-31', manufacturedOn: '2030-05', scannedMinor: 3, handedBackMinor: 0, keptMinor: 3, receivableMinor: 3, heldMinor: 0 }]);
-    // Oil: 7 came off the van in two batches; 1 handed back (off O-2, scanned last); 6 kept; the order wants 5 — O-1's 3 and
+    // Oil: 7 came off the van in two batches; 1 handed back (off O-2, as the hand-back names); 6 kept; the order wants 5 — O-1's 3 and
     // 2 of O-2 are received; O-2's last 1 is held for a second person. The parts add up to the line.
     expect(lineOf('p-oil')).toMatchObject({ scannedMinor: 7, handedBackMinor: 1, keptMinor: 6, receivableMinor: 5, heldMinor: 1 });
     expect(lineOf('p-oil').batches).toEqual([
@@ -192,7 +193,7 @@ describe('OB-504: the DSD door judges each scan by that rule and carries the bat
     for (const id of ['dsd-batch', 'dsd-expiry', 'dsd-mfg']) expect(html).toContain(`id="${id}"`);
     const js = readFileSync('apps/warehouse-app/web/app.js', 'utf8');
     const words = js.slice(js.indexOf('const DSD_WORDS'), js.indexOf('const dt = '));
-    for (const k of ['manufacture_date_required', 'expiry_not_readable', 'batch_required', 'expiry_required', 'dsdBatch', 'dsdExpiry', 'dsdMfg', 'needExpiry']) expect(words.split(`${k}:`).length - 1, k).toBe(2);
+    for (const k of ['manufacture_date_required', 'expiry_not_readable', 'batch_required', 'expiry_required', 'dsdBatch', 'dsdExpiry', 'dsdMfg', 'needExpiry']) expect(words.split(new RegExp(`(?<![\\w])${k}:`)).length - 1, k).toBe(2);
     expect(js).toMatch(/say\(el\('dsd-batch'\), .*'barcode'\)/);
     expect(js).toMatch(/say\(el\('dsd-mfg'\), .*'calendar'\)/);
     expect(js).toMatch(/dsd\.scan\(nextId\('dsd-scan'\), code, \{/);
@@ -258,7 +259,7 @@ describe('OB-504 at head office: the door routes read the product master\'s pack
 
   it('OB-604: one product in two batches → one received movement per batch; the held excess is its batch\'s, approved as its own movement; ids never change', async () => {
     const { recs, movements, call } = make();
-    const relayed = { ...open, checkInId: 'c-3', receivedBy: 'u-recv', handBacks: [{ handBackId: 'h1', productId: 'p-det', quantityMinor: 1, reason: 'damaged', at: AT }], deliveryNote: { noteRef: 'N', driverSignedName: 'Ravi' }, at: AT,
+    const relayed = { ...open, checkInId: 'c-3', receivedBy: 'u-recv', handBacks: [{ handBackId: 'h1', productId: 'p-det', quantityMinor: 1, reason: 'damaged', at: AT, batch: { batchId: 'B-2', expiry: '2032-02-29', manufacturedOn: '2030-05' } }], deliveryNote: { noteRef: 'N', driverSignedName: 'Ravi' }, at: AT,
       scans: [{ scanId: 'x1', productId: 'p-det', quantityMinor: 3, at: AT, batchId: 'B-1', expiry: '2032-01-31', manufacturedOn: '2030-04' }, { scanId: 'x2', productId: 'p-det', quantityMinor: 4, at: AT, batchId: 'B-2', expiry: '2032-02-29', manufacturedOn: '2030-05' }] };
     expect((await call('/v1/inventory/dsd-checkins/:checkInId/synced', { checkInId: 'c-3' }, relayed, 'u-box')).status).toBe(201);
     const rec = recs.get('c-3')!;

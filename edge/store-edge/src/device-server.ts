@@ -50,6 +50,7 @@ import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
   HANDHELD_AUTHORITY, signInEndedMessageFor, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
 } from './handheld-sign-in';
+import { packTimeZone } from './shop-zone'; // OB-606/607 (R16-A): the handhelds date and time by the pack's zone
 import type { QueuePosDoor } from './queue-pos-door'; // D04-FR-05 queue-busting (OB-288 Pkg 6b): the queue till's door
 import { ensureDeviceTls, sayDeviceTlsEvent, RENEW_CHECK_MS, type DeviceTlsEvent, type DeviceTlsMaterial } from './device-tls'; // OB-422: TLS only
 
@@ -513,6 +514,9 @@ export function startDeviceServer(input: {
       const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}`, expiresAt: holder.expiresAt, now: input.now(), lockTo: signInLockOf(screen, PHONE_SIGN_IN_ROUTE) }));
       send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId), {
         catalogueFreshness: catalogueFreshness(snap),
+        // OB-606/607 (R16-A): the shop's zone from this box's SIGNED store pack (else the shop default), as the screens server
+        // gives every page — the handheld shows "today" and every time by it, never by its phone's own zone; no network call.
+        shopTimeZone: packTimeZone(snap.pack),
         // Same origin: the shell's drain and badge post to `/lane/…` on THIS socket, under the device's cookie.
         laneWriteBase: '',
         deviceId: auth.deviceId,

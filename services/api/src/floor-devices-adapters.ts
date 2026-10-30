@@ -21,6 +21,7 @@ import { createPublicKey, verify as verifySignature } from 'node:crypto';
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { decideRollout, type RolloutChange } from '../../../packages/platform/src/rollout';
 import type { BookUnits, LaneException } from '../../../packages/integration/src/floor-devices';
@@ -42,6 +43,8 @@ export interface FloorDevicesInput {
   /** The label vendor. Absent → the stand-in (the only adapter in this build; no live vendor is ever called). */
   readonly eslVendor?: EslVendorPort;
   readonly recordAudit?: Recorder;
+  /** R16-A (M01-FR-02): the shop's calendar — the CCTV links of a day are the SHOP's day. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 const DEVICES_STREAM = streamName(STREAM.platform, 'floor-devices');
@@ -214,7 +217,7 @@ function eslOnPriceChange(surface: Route[], deps: FloorDeviceDeps, now: () => st
 export function floorDevicesSurface(surface: Route[], raw: FloorDevicesInput): void {
   const input = { store: raw.store ?? new InMemoryEventStore(), now: raw.now, eslVendor: raw.eslVendor ?? new StandInEslVendor(), ...(raw.recordAudit === undefined ? {} : { recordAudit: raw.recordAudit }) };
   const deps = floorDevicesAdapter(input, surface);
-  surface.push(...floorDeviceRoutes(deps));
+  surface.push(...floorDeviceRoutes(raw.calendar === undefined ? deps : { ...deps, calendar: raw.calendar }));
   surface.push(...selfCheckoutBasketRoutes(selfCheckoutBasketAdapter(input)));
   eslOnPriceChange(surface, deps, input.now);
 }

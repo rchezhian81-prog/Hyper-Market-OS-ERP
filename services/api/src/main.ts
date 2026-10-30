@@ -377,6 +377,7 @@ import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liabil
 import { qualitySampleAdapter, inMemoryQualitySamples, scaleStampExpirySweep } from './r6b-quality-scale-adapters'; // Round 6 · R6-B — quality samples (M10-FR-02), scale-stamp alerts (B7)
 import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
 import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 — store floor devices (ESL, RFID, IoT, CCTV events)
+import { r16aSaleBranches } from './r16a-check-gaps-adapters'; // R16-A · OB-612: the bill findings narrow to the caller's branches
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
 import { gatesRoutes, gateBlockersBeyondRisks, twoSignatureAdapter } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
@@ -801,7 +802,7 @@ export function buildSurface(deps: {
         signer, currentPack: empty(undefined), storePack: () => {},
         buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
         approvalsSince: empty([]), now,
-      } : catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */ })),
+      } : catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */, calendar: shopCalendar /* R16-A: the shop's date */ })),
       // The owner's bulk-publish threshold (ADR-0013 point 4, Stage E slice 1) — read from the durable tenant
       // settings at request time, so a bulk or regulated-product publish asks for a fresh second-factor sign-in.
       bulkPublishThreshold: (tenantId) => settings.value(tenantId, SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD),
@@ -841,7 +842,7 @@ export function buildSurface(deps: {
     // Catalogue pack ASSEMBLY/preview (slice 2) — fold master + prices + barcodes + tax rates for a store.
     ...cataloguePreviewRoutes(store === undefined
       ? { products: empty([]), priceEntries: empty([]), barcodes: empty([]), taxSchedule: empty([]), now }
-      : cataloguePreviewAdapter({ store, now, pricing: packPricingFor({ store, now }) /* D-19: the preview is the pack */ })),
+      : { ...cataloguePreviewAdapter({ store, now, pricing: packPricingFor({ store, now }) /* D-19: the preview is the pack */ }), calendar: shopCalendar /* R16-A */ }),
     ...calendared(pricingRoutes)(store === undefined
       ? { recordPriceChange: () => {}, now }
       : {
@@ -1088,12 +1089,12 @@ export function buildSurface(deps: {
       : { ...shelfCountAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Planogram compliance (M04-FR-03) — the CONSUMER: recorded counts drive refill-vs-reorder tasks,
     // reading the same shelf-count stream the producer above writes.
-    ...planogramComplianceRoutes(store === undefined
+    ...calendared(planogramComplianceRoutes)(store === undefined
       ? { counts: empty([]), now }
       : { counts: shelfCountAdapter({ store, now }).counts, ...planogramStoreAdapter({ store, now }), now }),
     // The shelf map and planograms the store KEEPS (M04-FR-02/03, un-parks CH-02): versioned, validated against
     // the stored map by the same engine, and read by the compliance run above when no plan is sent.
-    ...planogramRoutes(store === undefined
+    ...calendared(planogramRoutes)(store === undefined
       ? { shelfMap: empty(undefined), planograms: empty([]), recordShelfMap: () => {}, recordPlanogram: () => {}, now }
       : planogramStoreAdapter({ store, now })),
     // Space productivity + supplier display-contract governance (M04-FR-04) — margin-per-sq-ft ranking
@@ -1292,7 +1293,7 @@ export function buildSurface(deps: {
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
       permissionsOfUser: empty(undefined),
     } : {
-      ...posAdapter({ store, now }), tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
+      ...posAdapter({ store, now }), ...r16aSaleBranches({ store, now }) /* OB-612 */, tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
       // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
       huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
@@ -2243,7 +2244,7 @@ export function buildSurface(deps: {
   lpWorkforceSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 LP, workforce, facilities and adoption (M15-FR-02/03 · M25 · M26 · M28-FR-01 · QG-09 · D11 · OB-301/317/320/323)
   ownerReportingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 4 · P2 (M29-FR-01/03/04 · M28-FR-04 · D13)
   saasRolloutSurface(surface, { store, now, calendar: shopCalendar, plans: PROPOSED_PLANS, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P4 (M36-FR-01/03 · D12-FR-05/06 · R8-2 · R8-9 · C8 · C9 · OB-316/321/324)
-  floorDevicesSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
+  floorDevicesSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
   fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.

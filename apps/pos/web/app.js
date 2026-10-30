@@ -26,6 +26,11 @@ const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 // OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
 const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
+/** R16-A: the shop's date of a moment for the bundle-less stand-in — the zone the box served (`shopTimeZone`), else India's. */
+function standInShopDate(at) {
+  const day = (zone) => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at));
+  try { return day(typeof window.shopTimeZone === 'string' && window.shopTimeZone !== '' ? window.shopTimeZone : 'Asia/Kolkata'); } catch { return day('Asia/Kolkata'); }
+}
 
 /** Exact minor units in, rupees out. The model never sees a float. */
 const inr = (minor) =>
@@ -686,7 +691,8 @@ function demoSession() {
     ageConfirmedAtLeast: () => 0,
     // No identity without the bundle either — the stand-in says so rather than inventing a lane or a cashier.
     signIn() {}, signOut() {}, operator: () => undefined,
-    lane: () => ({ laneId: null, tradingDayCutoff: '00:00', tradingDayAt: (at) => at.slice(0, 10) }),
+    // R16-A: the stand-in's day is the SHOP's date of the moment (the zone the box served, else the shop default), never UTC.
+    lane: () => ({ laneId: null, tradingDayCutoff: '00:00', tradingDayAt: (at) => standInShopDate(at) }),
     // No store computer, so no receipt numbers: the stand-in refuses to take money rather than mint one (audit PF-04).
     nextReceipt: () => Promise.reject(Object.assign(new Error('no store computer'), { laneMessage: 'This till has no store computer to number its bills. Do not take money — tell the manager.' })),
     tenderCash: (_id, number) => Promise.resolve(number),

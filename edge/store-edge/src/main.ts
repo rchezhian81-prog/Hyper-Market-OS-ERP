@@ -2334,6 +2334,7 @@ export async function startEdge(
           ...(template === undefined ? {} : { posReceiptTemplate: template }),
         };
       },
+      shopTimeZone: () => packTimeZone(snapshot().pack), // OB-606/607 (R16-A): the pack's zone, as the screens server gives it
       now: () => new Date().toISOString(),
     }),
   });
