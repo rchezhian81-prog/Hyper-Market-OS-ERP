@@ -6,7 +6,8 @@
 to be witnessed before the shop trades on the new system. This run-sheet puts those same drills
 **in an order, across days, with the people each one needs** — so the pilot is a booked plan, not a
 pile of tasks. It **adds nothing**: every line carries its **UAT-##** and comes straight from the
-checklist (which comes from `docs/registers/uat-calendar.md`, the source of truth).
+checklist (which comes from `docs/registers/uat-calendar.md`, the source of truth), or its **UATR-…** role
+case from `docs/pilot/UAT-ROLE-CHECKLIST.md`, where the steps and the expected result are written out.
 
 **How to use it:** the days are **relative** ("Set-up Day 1", "Pilot Day 2") so you drop your own
 calendar dates in the blank column. Shift and merge days freely — a slow week could do a "day" in
@@ -124,6 +125,40 @@ selling.*
 | UAT-20 | Invoice-layout freeze — change the invoice address, reprint last month's — it still shows the OLD address | Owner |  |
 | UAT-33 | Second-shop demonstration — the system runs as a different imaginary retailer from the same install | Owner |  |
 | UAT-35 | Leave-tomorrow export — all your data, every domain, in files another system can read, each with a checksum | Owner |  |
+
+## Pilot Day 5 — the back door, the till's rules, and shop time *(added 30 Oct 2026)*
+
+*Date: __________  ·  a van delivery (or a supplier's practice delivery) booked for the morning; one laptop
+whose clock you can set to another country (London or New York) — set it back to India time afterwards.*
+
+| Case | What to do | Who | ✓ |
+| --- | --- | --- | --- |
+| UATR-WH-01…03, UATR-R16-21, -23, -24 | Receive with the wifi out: month of manufacture, batch and expiry asked for; every difference names its owner; the receiver cannot match the bill | Warehouse + manager |  |
+| UATR-R16-22 | One product in two batches; hand some back — the phone asks which batch (Tamil too) | Warehouse |  |
+| UATR-R16-25, -26 | Put-away on an out-of-date handheld; counter label USE BY and the 06:00 rota gap message | Warehouse + manager |  |
+| UATR-R16-01, -02, -03, -04 | Price cuts within the limits; a cut line's quantity is locked; quotation numbers and held baskets; an out-of-date till | Cashier + manager |  |
+| UATR-R16-06 | Shelf tags in English, Tamil and both; price per kg/litre | Manager |  |
+| UATR-R16-11, -15, -16 | On the foreign-clock laptop: day book, GST month, task deadline, food-safety date; a one-day promotion; typed dock / incident / competitor times | Manager + owner |  |
+
+## One night of the pilot — after midnight *(between 00:00 and 05:30 shop time)*
+
+| Case | What to do | Who | ✓ |
+| --- | --- | --- | --- |
+| UATR-R16-12 | Waste analytics, floor heat map, Today "deliveries today", a shelf plan dated today — all on the shop's date | Manager |  |
+| UATR-R16-17 | Publish the price pack on a day a new MRP starts — the till charges it that morning | Owner + cashier |  |
+
+## The role cases on the other days *(added 30 Oct 2026)*
+
+Run each day's role cases alongside its drills; they come from `docs/pilot/UAT-ROLE-CHECKLIST.md`, where
+the steps and the expected result are written out. Each session is written up in
+`docs/registers/sp10-staff-uat.md`.
+
+| Day | Role cases |
+| --- | --- |
+| Pilot Day 1 | UATR-CASH-01…04 (with UAT-39, -08, -14, -16); UATR-R16-05 (concession tag with the cable out) |
+| Pilot Day 2 | UATR-MGR-01…04; UATR-ACC-01…03; UATR-OWN-01…04; UATR-R16-07, -08, -09, -10 (certificates, Rota copy, Devices, Bill findings); UATR-R16-13, -14, -18, -19, -20 (quotations and Match the bill) |
+| Pilot Day 3 | UATR-PICK-01, -02; UATR-DEL-01, -02; UATR-SUP-01, -02; UATR-CUST-01…03; UATR-BUY-01, -02 |
+| Pilot Day 4 | UATR-CA-01, -02 (with UAT-17); UATR-PA-01…03 (with UAT-33, -35) |
 
 ---
 

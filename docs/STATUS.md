@@ -105,6 +105,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## Pilot run sheet carries the staff role cases (30 October 2026)
+
+- `docs/runbooks/pilot-run-sheet.md` (the day-by-day pilot plan, last changed 7 August) scheduled the 58 witness drills but none of the role cases. It now places every role case on a day: the original 40 alongside each day's drills, and the 26 from rounds 6 to 16 on a new **Pilot Day 5** (the back door, the till's rules, shop time on a foreign-clock laptop) and **one night** between 00:00 and 05:30. Nothing new is required; dates and people are the owner's to fill in.
+- **Follow-up (test reliability):** three guardrails (`every-box-menu-item-is-answered-by-the-store-computer`, `no-shop-date-is-read-from-the-utc-date`, `plain-text-source`) failed together twice on a first full local run on 30 Oct and passed on the next full run and alone (19/19); CI has not shown it. Ruled out: missing bundles, and the box-menu test writing files under apps/ or edge/. To find: loop the full guardrail run and log every file whose mtime changes during it.
+
+---
+
 ## Staff trial checklist brought up to date (30 October 2026)
 
 - `docs/pilot/UAT-ROLE-CHECKLIST.md` was last updated on 5 October, so nothing from rounds 6 to 16 was in the staff trials. Section 13 now adds 26 cases (UATR-R16-01 to -26) for the cashier, store manager, owner, accountant and warehouse roles: price-cut limits, quotations on the till and held baskets, out-of-date tills, shelf tags, food-handling certificates, the Rota copy, Devices and Bill findings by store, Match the bill, the accountant's approvals, batches and hand-backs at the van door, and the shop's date and time on a device set to another country and between 00:00 and 05:30.
