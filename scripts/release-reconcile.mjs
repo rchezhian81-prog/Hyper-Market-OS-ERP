@@ -3,11 +3,14 @@
 //
 // `infra/deploy/release.sh` runs it on the box, around every release:
 //
-//   node scripts/release-reconcile.mjs snapshot [--upto <seq>]
+//   node scripts/release-reconcile.mjs snapshot [--upto <seq>] [--settle-seconds N]
 //       Read head office's books and print ONE JSON snapshot: the ledger's count, last sequence, a digest over
 //       (sequence, id, idempotency key) and the count per ledger family; the outbox's pending and dead-letter counts and
 //       the age of its oldest pending message. With --upto, the same ledger figures again for the events up to <seq> —
-//       the ones that were there before the release. READ ONLY (one read-only transaction). It runs INSIDE the stack's
+//       the ones that were there before the release. The ledger figures stop at a SETTLED horizon: the snapshot first waits
+//       (up to --settle-seconds, default 60) for every append that was in flight when it began, because a sequence is
+//       handed out before its append commits; an append still open after that is said, and the snapshot exits 1.
+//       READ ONLY (read-only transactions; it writes nothing and takes no lock). It runs INSIDE the stack's
 //       own `migrate` container (release.sh: `docker compose run … migrate node scripts/release-reconcile.mjs snapshot`),
 //       so it reads DATABASE_URL from that container's own environment — the release script never sees a secret, and
 //       this script never prints the connection string or any value from it.
@@ -32,7 +35,7 @@ import { compareSnapshots, parseSnapshot, qg10Record, postQg10Note } from './lib
 
 const [, , verb, ...rest] = process.argv;
 const usage = () => {
-  process.stderr.write('usage: release-reconcile.mjs snapshot [--upto <seq>] | max-seq <before.json> | compare <before.json> <after.json> [--max-backlog-growth N] [--max-dead-letter-growth N] [--json <out>] | qg10 --sha … | post-qg10 --line <file> --url <head office> [--token-file <key file>]\n');
+  process.stderr.write('usage: release-reconcile.mjs snapshot [--upto <seq>] [--settle-seconds N] | max-seq <before.json> | compare <before.json> <after.json> [--max-backlog-growth N] [--max-dead-letter-growth N] [--json <out>] | qg10 --sha … | post-qg10 --line <file> --url <head office> [--token-file <key file>]\n');
   process.exit(64);
 };
 const flag = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
@@ -56,9 +59,39 @@ async function snapshot() {
   }
   let pg;
   try { pg = (await import('pg')).default; } catch { process.stderr.write('release-reconcile: the database driver is not installed here.\n'); process.exit(1); }
+  const settleSeconds = count(flag('--settle-seconds'), 60);
   const client = new pg.Client({ connectionString: url });
   try {
     await client.connect();
+    // The ledger's sequence is handed out when an append STARTS, not when it commits, so an append still in flight can
+    // land BELOW the highest sequence already visible. A horizon read while one is in flight would later "grow events in
+    // the past" — a false difference while trading carries on during the release. So: read the horizon, then draw a
+    // transaction id of our own a moment later (a read-only transaction may; it writes nothing) and wait until every
+    // transaction older than it has finished — the oldest still running (the snapshot's xmin) has passed it. Every
+    // append that drew a sequence at or below the horizon is older, so after that the figures up to it are final.
+    // (A snapshot's in-progress list leaves out the newest running transactions, so it cannot be waited on alone.)
+    await client.query('BEGIN READ ONLY');
+    await client.query("SELECT set_config('app.tenant_id', '*', true)");
+    const horizon = Number((await client.query('SELECT coalesce(max(seq), 0)::bigint AS horizon FROM event_ledger')).rows[0].horizon);
+    await client.query('ROLLBACK');
+    await new Promise((r) => setTimeout(r, 100));
+    await client.query('BEGIN READ ONLY');
+    const mark = String((await client.query('SELECT pg_current_xact_id()::text AS x')).rows[0].x);
+    await client.query('COMMIT');
+    const deadline = Date.now() + settleSeconds * 1000;
+    for (;;) {
+      const open = Number((await client.query(
+        'SELECT CASE WHEN pg_snapshot_xmin(pg_current_snapshot()) > $1::xid8 THEN 0 ELSE (SELECT count(*) FROM pg_snapshot_xip(pg_current_snapshot()) x WHERE x < $1::xid8) END::bigint AS n',
+        [mark],
+      )).rows[0].n);
+      if (open === 0) break;
+      if (Date.now() > deadline) {
+        process.stderr.write(`release-reconcile: the books did not settle — ${open} transaction(s) that were running when the snapshot began are still open after ${settleSeconds} s, so the ledger up to sequence ${horizon} is not final yet. Nothing was compared; take the snapshot again.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
     await client.query('BEGIN READ ONLY');
     // The platform scope operator tools read in (migration 0012): every shop's rows, read only.
     await client.query("SELECT set_config('app.tenant_id', '*', true)");
@@ -66,7 +99,8 @@ async function snapshot() {
       const r = (await client.query(LEDGER_SQL, [seq ?? null])).rows[0];
       return { count: Number(r.count), maxSeq: Number(r.max_seq), digest: String(r.digest), byFamily: Object.fromEntries(Object.entries(r.by_family ?? {}).map(([k, v]) => [k, Number(v)])) };
     };
-    const ledger = await facts(undefined);
+    // The ledger as it stands up to the settled horizon (events after it are later trading, counted by the next snapshot).
+    const ledger = await facts(horizon);
     const states = Object.fromEntries((await client.query('SELECT state, count(*)::bigint AS n FROM sync_outbox GROUP BY state')).rows.map((r) => [r.state, Number(r.n)]));
     const oldest = (await client.query("SELECT extract(epoch FROM now() - min(created_at))::bigint AS s FROM sync_outbox WHERE state = 'pending'")).rows[0]?.s;
     const at = (await client.query('SELECT now() AS at')).rows[0].at;

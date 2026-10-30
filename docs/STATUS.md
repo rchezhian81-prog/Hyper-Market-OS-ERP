@@ -105,6 +105,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **Needs an owner decision**
 - None. (The owner is not on the staff list unless added, so his own text messages stay English until he is added to it and his language set.)
+## QG-10 release snapshot settles before it counts (30 October 2026)
+
+**What changed**
+- The release reconcile's snapshot (`scripts/release-reconcile.mjs snapshot`) now waits for every save that was still in progress when it began before it counts the books. A ledger record number is handed out when a save starts, not when it finishes, so a save still open could land below the counted line and make the after-release check report "some events appeared in the past" during normal trading — a false difference. Read-only as before; a save that never finishes is said plainly (`--settle-seconds`, default 60) and nothing is compared.
+- Found because its PostgreSQL test failed when other tests wrote to the same database; that was the same race.
+
+**Tests that ran:** the snapshot test file (3 tests, including two new ones for the race) 10 runs out of 10 while the full integration suite wrote to the same database; before the fix the two new tests fail. The other release-reconcile tests: 53 passed (one guardrail timed out under that load and passed 6 of 6 alone). Type check and lint clean.
+
+**What is next:** the fixes from the independent check of rounds 10 to 15.
+
+---
+
 ## Round 15 (29 October 2026): typed times read as shop time (OB-608); labels and rota messages on the shop's clock (OB-607); promotion days (OB-610)
 
 **What changed**
