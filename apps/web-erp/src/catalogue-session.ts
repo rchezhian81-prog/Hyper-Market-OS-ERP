@@ -61,6 +61,26 @@ import {
   rupees,
   type ApprovalAsk, type ApprovalRequestView, type AskResult, type InboxRead,
 } from './approvals-session';
+import type { HttpAnswer } from './head-office-http';
+import { offerDefinitionBody, type OfferDefinitionInput, type OfferDefinitionProblem } from './offer-definition';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
+
+/**
+ * M05-FR-03/04 (re-audit 30 Oct 2026): the authenticated POST that records an offer's RULE at head office
+ * (`POST /v1/promotions/:promotionId/definition`) under the person's own session. Head office creates it as a DRAFT that
+ * applies to nothing until the governed launch switches it on.
+ */
+export interface PromotionDefinitionPort {
+  post(promotionId: string, body: Readonly<Record<string, unknown>>): Promise<HttpAnswer>;
+}
+
+/** What head office said when asked to record an offer's rule — or why nothing was sent. */
+export type OfferDefinitionOutcome =
+  | { readonly kind: 'defined'; readonly promotionId: string; readonly status: string; readonly startsAt: string; readonly endsAt: string }
+  | { readonly kind: 'invalid'; readonly problem: OfferDefinitionProblem }
+  | { readonly kind: 'refused'; readonly code: string; readonly whatHappened: string }
+  | { readonly kind: 'lost_link' }
+  | { readonly kind: 'not_connected' };
 
 /** The simulation input an offer is worked out (and launched) from. */
 export type PromotionSimulationInput = Parameters<typeof simulatePromotion>[0];
@@ -480,6 +500,12 @@ export interface CataloguePorts {
    */
   launchPromotion?(): PromotionLaunchPort;
   /**
+   * Records an offer's RULE at head office (M05-FR-03/04) — what it takes off, on which products, when, whether it stacks,
+   * and its abuse cap — so the launch has something to switch on. Absent for a read-only screen: `defineOffer` then says
+   * "not connected" and sends nothing.
+   */
+  definePromotion?(): PromotionDefinitionPort;
+  /**
    * Records a governed price change at head office (M05-FR-02). Absent for a read-only screen (or a test that
    * never changes a price): `changePriceInCloud` then refuses rather than pretending. The cloud is the
    * authority — it re-runs `checkPrice` and checks the approval — so this only carries the ask and reports back
@@ -505,6 +531,8 @@ export interface CatalogueConfig {
   readonly today: string;
   /** Minimum gross margin in basis points. Per-tenant policy (M05-FR-02). */
   readonly marginFloorBps: number;
+  /** The shop's time zone (the one the store computer served), so an offer's days are whole shop days (OB-610). */
+  readonly timeZone?: string;
 }
 
 /** What a product record looks like to somebody deciding whether to work on it. */
@@ -686,6 +714,18 @@ export interface CatalogueSession {
    * through `askLaunchApproval` then `launchWithApproval`.
    */
   launchToCloud(input: PromotionLaunchInput): Promise<PromotionLaunchOutcome>;
+
+  /** True when this screen can record an offer's rule at head office (M05-FR-03/04). */
+  readonly canDefineOffer: boolean;
+
+  /**
+   * Record an offer's RULE at head office (M05-FR-03/04, re-audit 30 Oct 2026) — the step before Start: head office
+   * refuses to launch an offer it has no rule for (`promotion_not_defined`). Builds exactly the definition route's body
+   * from what was typed (kind, products or group, whole shop days, coupon, members only, exclusive group, abuse cap,
+   * minimum spend) and sends it; head office judges it and creates a DRAFT that applies to nothing until launched. A
+   * refusal comes back in head office's own words; no answer claims nothing.
+   */
+  defineOffer(input: OfferDefinitionInput): Promise<OfferDefinitionOutcome>;
 
   /**
    * True when this screen can record a price change at head office (M05-FR-02). The view reads it to choose the
@@ -1053,6 +1093,25 @@ export function createCatalogueSession(
       // The cloud is the authority — it re-simulates the input and checks any approval. The screen renders
       // whatever it decides and invents nothing.
       return port().post(input);
+    },
+
+    canDefineOffer: ports.definePromotion !== undefined,
+
+    defineOffer: async (input) => {
+      const built = offerDefinitionBody(input, config.timeZone ?? servedShopZone());
+      if (!built.ok) return { kind: 'invalid', problem: built.problem };
+      const port = ports.definePromotion;
+      if (port === undefined) return { kind: 'not_connected' };
+      const answer = await port().post(built.promotionId, built.body);
+      if (answer.result === 'lost_link') return { kind: 'lost_link' };
+      if (answer.result === 'refused') return { kind: 'refused', code: answer.code, whatHappened: answer.whatHappened };
+      const b = (answer.body ?? {}) as { promotionId?: unknown; status?: unknown; startsAt?: unknown; endsAt?: unknown };
+      // A 2xx that does not name the offer it recorded is not a confirmation (P-08).
+      if (b.promotionId !== built.promotionId) return { kind: 'refused', code: 'unreadable_answer', whatHappened: '' };
+      return {
+        kind: 'defined', promotionId: built.promotionId, status: typeof b.status === 'string' ? b.status : '',
+        startsAt: typeof b.startsAt === 'string' ? b.startsAt : '', endsAt: typeof b.endsAt === 'string' ? b.endsAt : '',
+      };
     },
 
     canChangePriceInCloud: ports.changePrice !== undefined,
