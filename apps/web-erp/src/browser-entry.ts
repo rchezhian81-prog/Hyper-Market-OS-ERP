@@ -52,6 +52,7 @@ import {
   type RegisterItem,
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
+import { readLiveCounts, todayLiveFigures } from './today-live-counts'; // screen gap audit Round A: Today's head-office counts
 import {
   createBuyingSession,
   type BuyingPorts, type BuyingSession, type InvoiceLine,
@@ -5147,6 +5148,8 @@ interface ManagerWindow {
   sreQuantity?: { readonly label: typeof officeQuantityLabel };
   managerSession?: ManagerSession;
   managerData?: ManagerData;
+  /** Round A (screen gap audit): Today's approvals and purchase-order counts, read live from head office as the signed-in person. */
+  todayLive?: { readonly read: () => ReturnType<typeof readLiveCounts>; readonly figures: typeof todayLiveFigures };
   /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
   boxClockView?: typeof boxClockView;
   /**
@@ -6508,6 +6511,9 @@ if (browserWindow !== undefined) {
   const managerRelay = openManagerRelay(browserWindow.laneWriteBase, browserWindow.managerSession, managerOutbox);
   if (managerRelay !== undefined) browserWindow.managerRelay = managerRelay;
   if (managerStorageProblem !== undefined) browserWindow.managerStorageProblem = managerStorageProblem;
+  // Round A: Today also counts what waits for this person at head office and head office's open orders — in their own
+  // session, read only; offline the store computer's figures stay and the tiles say head office was not reached.
+  browserWindow.todayLive = Object.freeze({ read: () => readLiveCounts((globalThis as { fetch?: typeof fetch }).fetch), figures: todayLiveFigures });
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
   // The buyer's DURABLE device queue (SP-7a · F02): opened per store so the session writes into it and the relay drains
