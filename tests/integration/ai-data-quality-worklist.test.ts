@@ -71,7 +71,7 @@ async function seedGaps(h: ApiHarness): Promise<void> {
 }
 async function armA08(h: ApiHarness): Promise<void> {
   await put(h, 'u-owner', '/v1/ai/kill-switch', { on: false }, 'k');
-  await put(h, 'u-owner', '/v1/ai/agents/enabled', { agents: ['A08'] }, 'e');
+  await put(h, 'u-owner', '/v1/ai/agents/enabled', { expected: [], agents: ['A08'] }, 'e');
 }
 
 describe('the Data Quality steward inbox (A08) on the live surface', () => {
@@ -162,7 +162,7 @@ describe('the Data Quality steward inbox (A08) on the live surface', () => {
     const h3 = apiHarness();
     await h3.seedOwner(A, 'u-owner');
     await seedGaps(h3);
-    await put(h3, 'u-owner', '/v1/ai/agents/enabled', { agents: ['A08'] }, 'e'); // enable only; kill switch stays ON by default
+    await put(h3, 'u-owner', '/v1/ai/agents/enabled', { expected: [], agents: ['A08'] }, 'e'); // enable only; kill switch stays ON by default
     const killed = (await worklist(h3, 'u-owner')).body as WorklistBody;
     expect(killed.agentActive).toBe(false);
     expect(killed.openCount).toBe(0);

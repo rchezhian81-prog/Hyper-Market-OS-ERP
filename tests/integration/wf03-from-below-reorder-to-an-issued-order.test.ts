@@ -77,7 +77,7 @@ describe.each(backings)('WF-03 — below reorder → requisition → RFQ → com
       totalMinor: 54_000, currency: 'INR', packVersion: 1, lines: [{ productId: 'P-OIL', quantityMinor: 3, uom: 'ea', unitPriceMinor: 18_000, lineTotalMinor: 54_000 }], tenders: [{ kind: 'cash', amountMinor: 54_000 }],
     })).status).toBeLessThan(300);
     await h.request({ method: 'PUT', path: '/v1/ai/kill-switch', userId: P3.OWNER, tenantId: T, idempotencyKey: 'k0', body: { on: false } });
-    await h.request({ method: 'PUT', path: '/v1/ai/agents/enabled', userId: P3.OWNER, tenantId: T, idempotencyKey: 'e1', body: { agents: ['A02'] } });
+    await h.request({ method: 'PUT', path: '/v1/ai/agents/enabled', userId: P3.OWNER, tenantId: T, idempotencyKey: 'e1', body: { expected: [], agents: ['A02'] } });
     const run = (await call('POST', '/v1/ai/agents/A02/runs', P3.OWNER, {})).body as { proposals: { proposalId: string }[] };
     const draftId = run.proposals[0]!.proposalId;
 

@@ -259,6 +259,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   TransferReceiptRecorded: '/v1/warehouse/transfers/:transferId/receive/synced',
   // OB-333: a quality-hold release decided at the store (release only — the box never places a hold).
   QualityHoldReleaseDecided: '/v1/quality/holds/:batchId/release/synced',
+  // M10-FR-02 "evidence captured offline; queued" (with OB-513): a quality SAMPLE recorded on a held batch at the store. It
+  // is queued before the release that depends on it, so it reaches head office first; head office re-checks the recorder and
+  // that the hold is still the one the store saw. A conflict (the batch already released there) is 422 → kept, visible.
+  QualitySampleRecorded: '/v1/quality/holds/:batchId/samples/:sampleId/synced',
   // OB-288 LP/workforce package: the facilities page's manual reading, the write-off capture page's stock loss, and the help
   // page's SOP acknowledgement, each taken with the line down. The ids are plain top-level payload fields matching the
   // params; a refusal (a person without the right, an unknown room, a big loss with no photo) is kept here, visible.

@@ -164,6 +164,7 @@
         <h2 id="agents-title">The assistants</h2>
         <p class="lead" id="agents-lead">What each assistant may do, who decides after it, and whether it is running. Stopped ones are listed first.</p>
         <div class="bill" id="forbidden-box"></div>
+        <p class="lead" id="enable-note" hidden></p>
         <div id="agent-list"></div>
       </section>
 
@@ -178,6 +179,16 @@
         <h2 id="cost-title">What it costs</h2>
         <p class="lead" id="cost-lead">What the assistants have cost this month, each against its own limit and all of them against your monthly platform limit. When one runs out it stops and the shop does not.</p>
         <div class="bill" id="cost-summary"></div>
+        <!-- AI-SCREEN: the owner's spending limits, through head office's routes (ai.budget.set); head office decides. -->
+        <div id="limit-form" hidden>
+          <h3 id="limit-title">Set the spending limits</h3>
+          <label for="cap" id="cap-label">The shop’s AI limit for the period (₹)</label>
+          <input id="cap" inputmode="decimal" autocomplete="off" />
+          <label for="period" id="period-label">The limit runs until (the end of this day)</label>
+          <input id="period" type="date" />
+          <button id="set-cap" class="wide" type="button">Set the shop’s limit</button>
+          <p class="lead" id="limit-note">A limit only caps spending. It connects no model and approves none.</p>
+        </div>
         <div id="cost-list"></div>
       </section>
 

@@ -711,17 +711,33 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       // accepted, so a typo enables nothing rather than a mystery agent.
       api: 'API-13', method: 'PUT', path: '/v1/ai/agents/enabled',
       permission: 'ai.agent.enable', idempotent: true,
+      // OB-557 (owner, 30 Oct 2026): the body also carries `expected` — the switched-on list the caller READ. When head
+      // office's list changed in between (somebody else switched an assistant on or off), the change is refused by name
+      // (409) rather than silently overwriting theirs (hard rule #10); the caller re-reads and tries again.
       handler: async (ctx) => {
-        const agents = (ctx.body as { agents?: unknown } | null)?.agents;
-        if (!Array.isArray(agents) || !agents.every((a) => typeof a === 'string' && a in AGENTS)) {
+        const body = (ctx.body ?? null) as { agents?: unknown; expected?: unknown } | null;
+        const isList = (v: unknown): v is AgentId[] => Array.isArray(v) && v.every((a) => typeof a === 'string' && a in AGENTS);
+        if (!isList(body?.agents) || !isList(body?.expected)) {
           throw apiError(400, {
             code: 'not_readable_as_an_agent_list',
-            whatHappened: 'Enabling agents needs a list of agent ids from the authority catalogue (A01…A10).',
+            whatHappened: 'Enabling agents needs the new list and the list you read, as agent ids from the authority catalogue (A01…A10).',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send { "agents": ["A08", …] }. Nothing was changed — read GET /v1/ai/agents for the catalogue.',
+            nextSafeAction: 'Send { "expected": [the switched-on list you read], "agents": ["A08", …] }. Nothing was changed — read GET /v1/ai/control for the current list.',
           });
         }
-        const unique = [...new Set(agents as AgentId[])];
+        const unique = [...new Set(body.agents)];
+        const sameSet = (a: readonly string[], b: readonly string[]): boolean => new Set(a).size === new Set(b).size && a.every((x) => b.includes(x));
+        const stored = await deps.enabledAgents(ctx.tenantId);
+        // Already exactly so (a retry, or two people asking for the same thing): nothing to change, nothing overwritten.
+        if (sameSet(stored, unique)) return { status: 200, body: { enabled: [...stored], by: ctx.userId, at: deps.now(), unchanged: true } };
+        if (!sameSet(stored, body.expected)) {
+          throw apiError(409, {
+            code: 'enabled_list_changed',
+            whatHappened: `Somebody changed which assistants are switched on since you read it: head office now has ${stored.length === 0 ? 'none' : [...stored].sort().join(', ')} switched on, not ${body.expected.length === 0 ? 'none' : [...body.expected].sort().join(', ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Read the list again and make your change on what is there now. Nothing was changed.',
+          });
+        }
         await deps.setEnabledAgents(ctx.tenantId, unique, ctx.userId, deps.now());
         return { status: 200, body: { enabled: unique, by: ctx.userId, at: deps.now() } };
       },

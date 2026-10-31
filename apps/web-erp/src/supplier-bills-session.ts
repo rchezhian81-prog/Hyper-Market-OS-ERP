@@ -15,6 +15,9 @@
 //     route (`/v1/purchase/invoices/:id/capture`), the manual-entry path head office already has. The capture names the
 //     scan (`documentId`), so head office itself records "typed as invoice X" on it and lists the scan as `captured` —
 //     nothing about it is remembered only on this screen (round 12 follow-up).
+//     The freight, duty and other charges the paper prints beside its lines ride as `charges` (M07-FR-04, re-audit 30 Oct
+//     2026); an e-invoice's other charges (`OthChrg`) are read by head office itself. Head office adds them to the total,
+//     keeps them on the bill and spreads them into the goods' cost at the match — none of that is decided here.
 //   • CHECK it against the order: the three-way match head office runs over what IT holds (`/match`), its exceptions
 //     shown line by line.
 //
@@ -72,6 +75,8 @@ export interface BillDocument {
   readonly extracted: {
     readonly supplierGstin: string | null; readonly supplierInvoiceNo: string | null; readonly invoiceDate: string | null;
     readonly irn: string | null; readonly statedTotalMinor: number | null; readonly engine: string;
+    /** M07-FR-04: the e-invoice's other charges (`OthChrg`) head office read beside the lines — part of the printed total. */
+    readonly otherChargesMinor?: number;
   } | null;
   readonly lines: readonly BillLine[];
   readonly problems: readonly string[];
@@ -99,12 +104,28 @@ export interface MatchView {
   readonly payableMinor: number;
   readonly invoicedMinor: number;
   readonly withheldMinor: number;
+  /** M07-FR-04: the bill's freight / duty / other charges inside `invoicedMinor` (0 when it has none) — head office's figure. */
+  readonly chargesMinor: number;
+  /** OB-556: how the bill's other charges stand — null when it has none. Head office's own standing, never worked out here. */
+  readonly otherCharges: OtherChargesView | null;
   readonly ownerAction: string;
   readonly lines: readonly MatchLineView[];
   /** Head office's flags on the match (`invoice_unknown`, `order_over_invoiced`, …) — shown, never hidden. */
   readonly flags: readonly string[];
   readonly matchedBy: string;
   readonly matchedAt: string;
+}
+
+/**
+ * OB-556 (owner, 30 Oct 2026): a bill's other charges of unknown kind are in its total but NOT in stock cost until a person
+ * who may match bills marks them freight/cost (then in stock cost) or a tax the supplier charged (never). Head office's standing.
+ */
+export interface OtherChargesView {
+  readonly otherMinor: number;
+  readonly kind: 'not_marked' | 'cost' | 'tax';
+  readonly inStockCost: boolean;
+  readonly markedBy: string | null;
+  readonly reason: string | null;
 }
 
 /** A file the buyer picked, as the page read it: its name, media type, bytes (base64) and, for a JSON file, its text. */
@@ -192,16 +213,23 @@ export function confirmBody(doc: BillDocument, input: { readonly invoiceId: stri
 /** One typed line of a bill head office could not read (the scan path with no OCR engine). */
 export interface TypedLine { readonly productId: string; readonly quantity: string; readonly unitPrice: string; readonly amount: string; readonly cgst?: string; readonly sgst?: string }
 
+/**
+ * M07-FR-04 (re-audit 30 Oct 2026): the freight, duty and other charges the paper prints beside its lines, as typed (rupees).
+ * Each is optional; a blank is none. They are part of the bill's total — head office keeps them on the bill and, when the
+ * bill is matched against an issued order, spreads them into the cost of the goods (its rule, not this screen's).
+ */
+export interface TypedCharges { readonly freight?: string; readonly duty?: string; readonly other?: string }
+
 export type TypedCapture =
   | { readonly ok: true; readonly invoiceId: string; readonly body: Record<string, unknown> }
-  | { readonly ok: false; readonly problem: 'needs_invoice_supplier_total' | 'not_money'; readonly line?: number };
+  | { readonly ok: false; readonly problem: 'needs_invoice_supplier_total' | 'not_money' | 'charges_not_money'; readonly line?: number };
 
 /**
  * The typed-capture body (`POST /v1/purchase/invoices/:invoiceId/capture`): the bill as the paper says it. Only the shape is
  * checked here (an invoice number, a supplier, a total, figures that are money) — whether the lines multiply and add up to
  * the total is head office's judgement, refused in its words.
  */
-export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[]; readonly documentId?: string }): TypedCapture {
+export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[]; readonly documentId?: string; readonly charges?: TypedCharges }): TypedCapture {
   const declaredTotalMinor = rupeesToPaise(input.total);
   if (input.invoiceId.trim() === '' || input.supplierId.trim() === '' || input.total.trim() === '' || input.lines.length === 0) return { ok: false, problem: 'needs_invoice_supplier_total' };
   if (declaredTotalMinor === undefined) return { ok: false, problem: 'not_money' };
@@ -215,10 +243,16 @@ export function typedCaptureBody(input: { readonly invoiceId: string; readonly s
     if (l.productId.trim() === '' || quantity === undefined || unitPriceMinor === undefined || lineTotalMinor === undefined || cgstMinor === undefined || sgstMinor === undefined) return { ok: false, problem: 'not_money', line: i + 1 };
     lines.push({ productId: l.productId.trim(), quantity, unitPriceMinor, lineTotalMinor, ...(cgstMinor > 0 ? { cgstMinor } : {}), ...(sgstMinor > 0 ? { sgstMinor } : {}) });
   }
+  // M07-FR-04: the charges beside the lines, exact paise; a blank is none, and none at all sends no `charges` (as before).
+  const charge = (text: string | undefined): number | undefined => (text === undefined || text.trim() === '' ? 0 : rupeesToPaise(text));
+  const freightMinor = charge(input.charges?.freight); const dutyMinor = charge(input.charges?.duty); const otherMinor = charge(input.charges?.other);
+  if (freightMinor === undefined || dutyMinor === undefined || otherMinor === undefined) return { ok: false, problem: 'charges_not_money' };
+  const charges = freightMinor + dutyMinor + otherMinor === 0 ? undefined : { freightMinor, dutyMinor, otherMinor };
   return {
     ok: true, invoiceId: input.invoiceId.trim(),
     body: {
       supplierId: input.supplierId.trim(), ...(input.poId !== undefined && input.poId.trim() !== '' ? { poId: input.poId.trim() } : {}), declaredTotalMinor, lines,
+      ...(charges === undefined ? {} : { charges }),
       // The scan this bill was typed from: head office links it (and refuses by name a scan that is not waiting to be typed).
       ...(input.documentId !== undefined && input.documentId.trim() !== '' ? { documentId: input.documentId.trim() } : {}),
     },
@@ -236,6 +270,8 @@ export function presentMatch(raw: unknown): MatchView | null {
   return {
     invoiceId: m['invoiceId'], poId: typeof m['poId'] === 'string' ? m['poId'] : null, blocked: m['blocked'],
     payableMinor: Number(m['payableMinor'] ?? 0), invoicedMinor: Number(m['invoicedMinor'] ?? 0), withheldMinor: Number(m['withheldMinor'] ?? 0),
+    chargesMinor: Number((m['landedCharges'] as { totalMinor?: unknown } | undefined)?.totalMinor ?? 0),
+    otherCharges: presentOtherCharges(m['otherCharges']),
     ownerAction: String(m['ownerAction'] ?? ''),
     // Exceptions first (P-03): a blocked line before one within tolerance before a matched one.
     lines: [...lines].sort((a, b) => rank(a.status) - rank(b.status)),
@@ -243,6 +279,74 @@ export function presentMatch(raw: unknown): MatchView | null {
     matchedBy: String(m['matchedBy'] ?? ''), matchedAt: String(m['matchedAt'] ?? ''),
   };
 }
+/** Head office's other-charges standing → the screen's; null when the bill has none (or the answer is not one). */
+export function presentOtherCharges(raw: unknown): OtherChargesView | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const kind = o['kind'];
+  if (typeof o['otherMinor'] !== 'number' || (kind !== 'not_marked' && kind !== 'cost' && kind !== 'tax')) return null;
+  const marking = (o['marking'] ?? null) as { markedBy?: unknown; reason?: unknown } | null;
+  return {
+    otherMinor: o['otherMinor'], kind, inStockCost: o['inStockCost'] === true,
+    markedBy: typeof marking?.markedBy === 'string' ? marking.markedBy : null, reason: typeof marking?.reason === 'string' ? marking.reason : null,
+  };
+}
+
+const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Every word of the other-charges marking (OB-556), English and Tamil. */
+export const OTHER_CHARGES_WORDS: Readonly<Record<BillMatchLang, Readonly<Record<string, string>>>> = Object.freeze({
+  en: {
+    not_marked: 'of other charges on this bill are NOT yet in stock cost — nobody has said what they are. Mark them below.',
+    cost: 'of other charges were marked freight / part of the goods\' cost by', costTail: '— they are in stock cost.',
+    tax: 'of other charges were marked a tax by', taxTail: '— they are never in stock cost.',
+    markedCost: 'Marked as freight / cost — they are now in the stock\'s cost.', markedTax: 'Marked as tax — they stay out of the stock\'s cost.',
+    alreadyMarked: 'They were already marked that way — nothing was changed.',
+    reason_needed: 'Write why you say so first — nothing was sent.',
+    other_charges_already_marked: 'Not changed — somebody already marked these charges the other way. A marking is never overwritten; raise it with the accountant.',
+    segregation_of_duties: 'Not marked — you raised, received or paid this order, so another person must say what its charges are.',
+    forbidden: 'Not marked — your role cannot match supplier bills.',
+    no_other_charges: 'Not marked — this bill has no other charges.',
+    invoice_unknown: 'Not marked — that bill is not on head office\'s register.',
+    unreachable: 'Head office cannot be reached — nothing was changed. Try again when connected.',
+    other: 'Not marked — head office refused it.', headOfficeSaid: 'Head office said:',
+  },
+  ta: {
+    not_marked: 'இந்த பில்லில் உள்ள பிற கட்டணங்கள் இன்னும் சரக்கு விலையில் சேர்க்கப்படவில்லை — அவை என்ன என்று யாரும் சொல்லவில்லை. கீழே குறிக்கவும்.',
+    cost: 'பிற கட்டணங்களைச் சரக்குக் கட்டணம் / பொருட்களின் விலையின் பகுதி எனக் குறித்தவர்', costTail: '— அவை சரக்கு விலையில் உள்ளன.',
+    tax: 'பிற கட்டணங்களை வரி எனக் குறித்தவர்', taxTail: '— அவை ஒருபோதும் சரக்கு விலையில் சேராது.',
+    markedCost: 'சரக்குக் கட்டணம் / விலை எனக் குறிக்கப்பட்டது — அவை இப்போது சரக்கின் விலையில் உள்ளன.', markedTax: 'வரி எனக் குறிக்கப்பட்டது — அவை சரக்கின் விலையில் சேராது.',
+    alreadyMarked: 'ஏற்கனவே அப்படியே குறிக்கப்பட்டுள்ளது — எதுவும் மாற்றப்படவில்லை.',
+    reason_needed: 'முதலில் ஏன் என்று எழுதுங்கள் — எதுவும் அனுப்பப்படவில்லை.',
+    other_charges_already_marked: 'மாற்றப்படவில்லை — இந்தக் கட்டணங்களை ஏற்கனவே ஒருவர் வேறு விதமாகக் குறித்துள்ளார். குறிப்பு ஒருபோதும் மேலெழுதப்படாது; கணக்காளரிடம் தெரிவிக்கவும்.',
+    segregation_of_duties: 'குறிக்கப்படவில்லை — இந்த ஆர்டரை நீங்கள் போட்டீர்கள், பெற்றீர்கள் அல்லது செலுத்தினீர்கள்; எனவே அதன் கட்டணங்கள் என்ன என்று வேறு ஒருவர் சொல்ல வேண்டும்.',
+    forbidden: 'குறிக்கப்படவில்லை — உங்கள் பங்கால் சப்ளையர் பில்களைப் பொருத்த முடியாது.',
+    no_other_charges: 'குறிக்கப்படவில்லை — இந்த பில்லில் பிற கட்டணங்கள் இல்லை.',
+    invoice_unknown: 'குறிக்கப்படவில்லை — அந்த பில் தலைமை அலுவலகப் பதிவேட்டில் இல்லை.',
+    unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை. இணைப்பு கிடைத்ததும் மீண்டும் முயலவும்.',
+    other: 'குறிக்கப்படவில்லை — தலைமை அலுவலகம் மறுத்தது.', headOfficeSaid: 'தலைமை அலுவலகம் சொன்னது:',
+  },
+});
+
+/** How a bill's other charges stand, in the reader's language — ₹X not yet in stock cost is said plainly (P-08). */
+export function otherChargesSaid(lang: BillMatchLang, o: OtherChargesView): string {
+  const w = OTHER_CHARGES_WORDS[lang];
+  if (o.kind === 'not_marked') return `${rupees(o.otherMinor)} ${w['not_marked']!}`;
+  const reason = o.reason === null ? '' : ` (${o.reason})`;
+  return o.kind === 'cost' ? `${rupees(o.otherMinor)} ${w['cost']!} ${o.markedBy ?? ''}${reason} ${w['costTail']!}` : `${rupees(o.otherMinor)} ${w['tax']!} ${o.markedBy ?? ''}${reason} ${w['taxTail']!}`;
+}
+
+export type OtherChargesAnswer = Answer<{ readonly otherCharges: OtherChargesView | null; readonly alreadyMarked: boolean; readonly kind: 'cost' | 'tax' }> | { readonly ok: false; readonly unreachable: false; readonly status: 0; readonly code: 'reason_needed'; readonly whatHappened: ''; readonly nextSafeAction: '' };
+
+/** The marking's answer in plain words: what happened; for a refusal, head office's own words beside it. */
+export function otherChargesWords(lang: BillMatchLang, answer: OtherChargesAnswer): { readonly good: boolean; readonly text: string } {
+  const w = OTHER_CHARGES_WORDS[lang];
+  if (answer.ok) return { good: true, text: answer.value.alreadyMarked ? w['alreadyMarked']! : answer.value.kind === 'cost' ? w['markedCost']! : w['markedTax']! };
+  if (answer.unreachable) return { good: false, text: w['unreachable']! };
+  const plain = w[answer.code] ?? w['other']!;
+  return { good: false, text: answer.whatHappened === '' ? plain : `${plain} ${w['headOfficeSaid']!} ${answer.whatHappened}` };
+}
+
 const rank = (s: MatchLineView['status']): number => (s === 'blocked' ? 0 : s === 'within_tolerance' ? 1 : 2);
 
 /** What still needs a person on a document, so the register can say it (control by exception, P-03). */
@@ -393,6 +497,10 @@ export interface SupplierBillsSession {
   matchToReceipt(grnId: string, invoiceId: string): Promise<Answer<ReceiptBillMatchView> | { readonly ok: false; readonly unreachable: false; readonly status: 0; readonly code: 'pick_a_bill'; readonly whatHappened: ''; readonly nextSafeAction: '' }>;
   /** OB-509 (G3): the match's answer in plain English or Tamil (`billMatchWords`), for the page to show as it is. */
   matchWords(lang: BillMatchLang, answer: Answer<ReceiptBillMatchView>): { readonly good: boolean; readonly text: string };
+  /** OB-556: mark a bill's other charges as freight/cost or tax, with a reason — head office decides and records it. */
+  markOtherCharges(invoiceId: string, kind: 'cost' | 'tax', reason: string): Promise<OtherChargesAnswer>;
+  otherChargesWords(lang: BillMatchLang, answer: OtherChargesAnswer): { readonly good: boolean; readonly text: string };
+  otherChargesSaid(lang: BillMatchLang, o: OtherChargesView): string;
 }
 
 export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { readonly permissions: readonly string[] }): SupplierBillsSession {
@@ -426,7 +534,11 @@ export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { reado
       const r = answerOf(await call({ method: 'POST', path: `/v1/purchase/invoices/${encodeURIComponent(invoiceId)}/match`, body: {}, idempotencyKey: key }), presentMatch);
       return r.ok && r.value === null ? { ok: false, unreachable: false, status: 200, code: 'unreadable_match', whatHappened: 'head office answered with something that is not a match', nextSafeAction: '' } : r as Answer<MatchView>;
     },
-    latestMatch: async (invoiceId) => answerOf(await call({ method: 'GET', path: `/v1/purchase/invoices/${encodeURIComponent(invoiceId)}` }), (b) => presentMatch((b as { match?: unknown }).match ?? null)),
+    latestMatch: async (invoiceId) => answerOf(await call({ method: 'GET', path: `/v1/purchase/invoices/${encodeURIComponent(invoiceId)}` }), (b) => {
+      const r = (b ?? {}) as { match?: unknown; otherCharges?: unknown };
+      // OB-556: the bill's other-charges standing rides beside its latest match (head office reads it fresh each time).
+      return r.match === null || r.match === undefined || typeof r.match !== 'object' ? null : presentMatch({ ...(r.match as object), otherCharges: r.otherCharges ?? null });
+    }),
     waitingForBill: async () => answerOf(await call({ method: 'GET', path: '/v1/inventory/receipts-cost-not-known' }), asWaitingList),
     matchToReceipt: async (grnId, invoiceId) => {
       if (invoiceId.trim() === '' || grnId.trim() === '') return { ok: false, unreachable: false, status: 0, code: 'pick_a_bill', whatHappened: '', nextSafeAction: '' };
@@ -438,6 +550,14 @@ export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { reado
         });
     },
     matchWords: billMatchWords,
+    markOtherCharges: async (invoiceId, kind, reason) => {
+      if (reason.trim() === '') return { ok: false, unreachable: false, status: 0, code: 'reason_needed', whatHappened: '', nextSafeAction: '' };
+      const body = { kind, reason: reason.trim() };
+      return answerOf(await call({ method: 'POST', path: `/v1/purchase/invoices/${encodeURIComponent(invoiceId)}/other-charges`, body, idempotencyKey: bodyKey(`other-charges-${invoiceId}`, body) }),
+        (b) => { const r = (b ?? {}) as { otherCharges?: unknown; alreadyMarked?: unknown }; return { otherCharges: presentOtherCharges(r.otherCharges), alreadyMarked: r.alreadyMarked === true, kind }; });
+    },
+    otherChargesWords,
+    otherChargesSaid,
   };
 }
 

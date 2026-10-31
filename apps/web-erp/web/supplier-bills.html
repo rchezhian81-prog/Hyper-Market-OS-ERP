@@ -129,12 +129,18 @@
 
         <div id="type-part" hidden>
           <h3 id="type-h">Type this bill from the paper</h3>
-          <p class="lede" id="type-lede">No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines add up to the total.</p>
+          <p class="lede" id="type-lede">No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines, with any freight, duty or other charges, add up to the total.</p>
           <div class="row">
             <label for="type-invoice"><span id="l-type-invoice">Invoice number on our register</span><input id="type-invoice" autocomplete="off" /></label>
             <label for="type-supplier"><span id="l-type-supplier">Supplier code</span><input id="type-supplier" autocomplete="off" /></label>
             <label for="type-po"><span id="l-type-po">Purchase order number</span><input id="type-po" autocomplete="off" /></label>
             <label for="type-total"><span id="l-type-total">Total printed on the bill (₹)</span><input id="type-total" inputmode="decimal" autocomplete="off" /></label>
+          </div>
+          <!-- M07-FR-04: the charges the paper prints beside its lines — part of the total; blank is none. -->
+          <div class="row">
+            <label for="type-freight"><span id="l-type-freight">Freight on the bill (₹)</span><input id="type-freight" inputmode="decimal" autocomplete="off" /></label>
+            <label for="type-duty"><span id="l-type-duty">Duty on the bill (₹)</span><input id="type-duty" inputmode="decimal" autocomplete="off" /></label>
+            <label for="type-other"><span id="l-type-other">Other charges on the bill (₹)</span><input id="type-other" inputmode="decimal" autocomplete="off" /></label>
           </div>
           <div class="table-wrap"><table id="type-lines"></table></div>
           <button id="type-add-line" type="button">Add a line</button>
@@ -149,6 +155,16 @@
           <button id="run-match" class="primary" type="button">Check this bill against the order</button>
           <p class="status" id="match-status" role="status" aria-live="polite"></p>
           <div class="verdict" id="match-verdict" hidden></div>
+          <!-- OB-556: other charges of unknown kind are not in stock cost until a person says what they are. -->
+          <div id="other-part" hidden>
+            <p class="status" id="other-said" role="status"></p>
+            <div id="other-mark" hidden>
+              <label for="other-reason"><span id="l-other-reason">Why do you say so (for example, what the supplier's bill calls them)</span><input id="other-reason" autocomplete="off" /></label>
+              <button id="other-cost" type="button">They are freight / part of the goods' cost</button>
+              <button id="other-tax" type="button">They are a tax, not part of the goods' cost</button>
+            </div>
+            <p class="status" id="other-status" role="status" aria-live="polite"></p>
+          </div>
           <div class="table-wrap"><table id="match-lines"></table></div>
         </div>
       </section>

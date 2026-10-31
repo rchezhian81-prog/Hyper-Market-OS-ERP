@@ -1672,30 +1672,26 @@ describe('the merchandising screen is fed, and an uncounted shelf stays uncounte
     expect(bare.check()).toEqual({ why: 'this_store_has_no_shelf_map' });
   });
 
-  it('routes a drop with stock on hand to clearance, never to a deletion', async () => {
-    // The pack says 10 of `p1` are available, and the box serves that as on-hand. Serving nothing
-    // would be the dangerous default here: every drop would delist, and the stock still on the
-    // shelf would become invisible — not counted, not replenished, eventually written off.
+  it('serves on-hand for the screen, but a range drop is head office\'s word: unconnected it claims nothing, and the box\'s figure never travels', async () => {
+    // M04-FR-01 (re-audit 30 Oct 2026, P-08): the pack says 10 of `p1` are available and the box serves that — but the drop
+    // is judged by head office on ITS stock position (clearance with stock, never a deletion), so the box's copy is not
+    // sent. With no head office wired the screen says so and claims nothing (before, it said "Taken out" and saved nothing).
     const base = await serve(snapshotOf());
     const payload = (await payloadFromScreen(base, 'merchandising'))!;
     expect(payload['onHand']).toEqual({ p1: 10 });
 
-    const merch = bootMerchandising(payload as never)!;
-    const outcome = merch.drop({ productId: 'p1', reason: 'poor_sales' });
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.decision.outcome).toBe('routed_to_clearance');
-    expect(outcome.decision.detail).toContain('10 still on hand');
-  });
+    expect(await bootMerchandising(payload as never)!.drop({ productId: 'p1', reason: 'poor_sales' })).toEqual({ ok: false, refusal: 'not_connected' });
 
-  it('delists cleanly only when the shop genuinely has none left', async () => {
-    const base = await serve(snapshotOf({
-      pack: pack({ products: known([{ ...PRODUCTS[0]!, availableMinor: 0 }]) }),
-    }));
-    const merch = bootMerchandising((await payloadFromScreen(base, 'merchandising'))! as never)!;
-    const outcome = merch.drop({ productId: 'p1', reason: 'supplier_discontinued' });
-    if (!outcome.ok) return;
-    expect(outcome.decision.outcome).toBe('delisted');
+    const sent: unknown[] = [];
+    const merch = bootMerchandising(payload as never, {
+      headOffice: {
+        get: async () => ({ result: 'lost_link' }),
+        post: async (path, body) => { sent.push({ path, body }); return { result: 'ok', status: 201, body: { outcome: 'routed_to_clearance', status: 'clearance', effectiveFrom: payload['today'], detail: '10 still on hand — the item goes to clearance and stays sellable until it is gone; it is not reordered' } }; },
+      },
+    })!;
+    const outcome = await merch.drop({ productId: 'p1', reason: 'poor_sales' });
+    expect(outcome).toMatchObject({ ok: true, outcome: 'routed_to_clearance' });
+    expect(sent).toEqual([{ path: `/v1/merchandising/assortment/${String(payload['storeId'])}/p1/drop`, body: { reason: 'poor_sales', effectiveFrom: payload['today'] } }]);
   });
 
   it('checks the range against what this box’s OWN log says was sold', async () => {

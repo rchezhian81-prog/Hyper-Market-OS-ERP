@@ -16,6 +16,11 @@
 // **Nothing here commits.** A draft's "approve" records a person's decision; the act itself is the ordinary route the
 // draft names, with its own permissions and approvals (P-05, hard rule 5).
 // **What no assistant may ever do is shown as a list.** A rule nobody can see is a rule nobody trusts.
+// **Switching an assistant on, and the spending limits, are the owner's acts** (re-audit 30 Oct 2026, AI-SCREEN): sent
+// through head office's existing routes under `ai.agent.enable` / `ai.budget.set`, which decide. Switching one on lets it
+// run on its tested rules — it still only recommends. Nothing here lifts the shop-wide switch or connects a model: the
+// live-model parts wait for R8 behind the owner's switch and a cost cap (OB-382), and head office refuses a cap above D3.
+// **A draft's "to act" is said in plain words** (O-2) — the route it names is kept out of sight, for the record only.
 //
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
@@ -83,6 +88,14 @@ const WORDS = {
     asAt: 'as at',
     actionsTitle: 'What needs you today — from the owner’s assistant (A01)', actionsNone: 'Nothing needs you from the assistants today.',
     actionsOff: 'The owner’s assistant (A01) is not running, so it has no list for you. The figures are on the dashboard as always.',
+    switchOn: 'Switch on', switchOff: 'Switch off', switchedOn: 'Switched on. It runs on its tested rules and only recommends — a person decides.',
+    switchedOff: 'Switched off. The work it helped with carries on without it.',
+    listChanged: 'Somebody else changed which assistants are switched on since this screen read it. Nothing was changed. The screen now shows the latest — look again and press the button once more if you still want the change.',
+    enableNote: 'Switching an assistant on lets it run on its tested rules. It still only recommends; a person decides every price, payment, refund, purchase, stock or access change. While the shop-wide switch or a kill switch is on, it stays stopped.',
+    limitTitle: 'Set the spending limits', capLabel: 'The shop’s AI limit for the period (₹)', periodLabel: 'The limit runs until (the end of this day)', setCap: 'Set the shop’s limit',
+    capSet: 'The shop’s AI limit is set.', ceilingSet: 'The assistant’s limit is set.',
+    limitNote: 'A limit only caps spending. It connects no model and approves none: no model is called while none is connected and approved (OB-296), and the live-model parts — the owner’s questions (A01), guided shopping (A04), free-text answers (A05) — wait for release R8, with the owner’s approval and a cost cap (OB-382). Head office refuses a limit above the ₹15,000 monthly ceiling for the whole system.',
+    ceilingLabel: 'Its own limit (₹)', rateLabel: 'Requests an hour at most (blank for none)', setCeiling: 'Set its limit',
   },
   ta: {
     title: 'AI கட்டுப்பாடு',
@@ -136,6 +149,14 @@ const WORDS = {
     asAt: 'நிலவரம்',
     actionsTitle: 'இன்று உங்களுக்குத் தேவையானவை — உரிமையாளரின் உதவியாளரிடமிருந்து (A01)', actionsNone: 'இன்று உதவியாளர்களிடமிருந்து உங்களுக்கு எதுவும் இல்லை.',
     actionsOff: 'உரிமையாளரின் உதவியாளர் (A01) இயங்கவில்லை, எனவே உங்களுக்குப் பட்டியல் இல்லை. எண்ணிக்கைகள் எப்போதும் போல் டாஷ்போர்டில் உள்ளன.',
+    switchOn: 'இயக்கு', switchOff: 'நிறுத்தி வை', switchedOn: 'இயக்கப்பட்டது. இது சோதிக்கப்பட்ட விதிகளில் இயங்கி பரிந்துரை மட்டுமே செய்யும் — ஒருவர் முடிவு செய்வார்.',
+    switchedOff: 'நிறுத்தி வைக்கப்பட்டது. அது உதவிய வேலை அது இல்லாமல் தொடரும்.',
+    listChanged: 'இந்தத் திரை படித்த பிறகு வேறொருவர் எந்த உதவியாளர்கள் இயக்கத்தில் உள்ளன என்பதை மாற்றியுள்ளார். எதுவும் மாற்றப்படவில்லை. திரை இப்போது சமீபத்தியதைக் காட்டுகிறது — மீண்டும் பார்த்து, மாற்றம் இன்னும் வேண்டுமென்றால் பொத்தானை மீண்டும் அழுத்துங்கள்.',
+    enableNote: 'ஒரு உதவியாளரை இயக்கினால் அது சோதிக்கப்பட்ட விதிகளில் இயங்கும். அது பரிந்துரை மட்டுமே செய்யும்; ஒவ்வொரு விலை, பணம், திருப்பித் தருதல், கொள்முதல், இருப்பு அல்லது அணுகல் மாற்றத்தையும் ஒருவரே முடிவு செய்வார். கடை முழுவதற்குமான சுவிட்ச் அல்லது நிறுத்தும் சுவிட்ச் ON ஆக இருக்கும் வரை அது நிறுத்தியே இருக்கும்.',
+    limitTitle: 'செலவு வரம்புகளை அமை', capLabel: 'காலத்திற்கான கடையின் AI வரம்பு (₹)', periodLabel: 'வரம்பு இந்த நாள் முடியும் வரை', setCap: 'கடையின் வரம்பை அமை',
+    capSet: 'கடையின் AI வரம்பு அமைக்கப்பட்டது.', ceilingSet: 'உதவியாளரின் வரம்பு அமைக்கப்பட்டது.',
+    limitNote: 'வரம்பு செலவை மட்டுமே கட்டுப்படுத்தும். அது எந்த மாதிரியையும் இணைக்காது, அனுமதிக்காது: மாதிரி இணைக்கப்பட்டு அனுமதிக்கப்படும் வரை எதுவும் அழைக்கப்படாது (OB-296); நேரடி மாதிரிப் பகுதிகள் — உரிமையாளரின் கேள்விகள் (A01), வழிகாட்டும் ஷாப்பிங் (A04), தானாக எழுதும் பதில்கள் (A05) — உரிமையாளரின் அனுமதியுடனும் செலவு வரம்புடனும் R8 வெளியீட்டுக்காகக் காத்திருக்கின்றன (OB-382). முழு அமைப்புக்கான மாதம் ₹15,000 வரம்பை மீறும் வரம்பைத் தலைமை அலுவலகம் மறுக்கும்.',
+    ceilingLabel: 'அதன் சொந்த வரம்பு (₹)', rateLabel: 'மணிக்கு அதிகபட்சக் கோரிக்கைகள் (இல்லையென்றால் காலியாக)', setCeiling: 'அதன் வரம்பை அமை',
   },
 };
 let lang = 'en';
@@ -162,6 +183,18 @@ const ACT_REFUSAL_WORDS = {
   not_yours: {
     en: 'This has already been decided. Nothing was sent.',
     ta: 'இது ஏற்கனவே முடிவு செய்யப்பட்டது. எதுவும் அனுப்பப்படவில்லை.',
+  },
+  not_money: {
+    en: 'A limit is an amount in rupees (such as 1000 or 1000.50), and requests an hour a whole number. Nothing was sent.',
+    ta: 'வரம்பு ரூபாய்த் தொகையாக இருக்க வேண்டும் (எ.கா. 1000 அல்லது 1000.50); மணிக்குக் கோரிக்கைகள் முழு எண்ணாக இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.',
+  },
+  period_needed: {
+    en: 'Choose the day the limit runs until. Nothing was sent.',
+    ta: 'வரம்பு எந்த நாள் வரை என்று தேர்வு செய்யுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+  },
+  already_so: {
+    en: 'Head office already has it that way — somebody may have just changed it. Nothing was sent; the screen now shows the latest.',
+    ta: 'தலைமை அலுவலகத்தில் ஏற்கனவே அப்படியே உள்ளது — யாராவது இப்போதுதான் மாற்றியிருக்கலாம். எதுவும் அனுப்பப்படவில்லை; திரை இப்போது சமீபத்தியதைக் காட்டுகிறது.',
   },
 };
 
@@ -221,6 +254,8 @@ async function act(check, good) {
   if (!check.ok) { tell(t('read'), words(ACT_REFUSAL_WORDS, check.refusal)); return false; }
   const out = await send(check);
   if (!out.ok) {
+    // OB-557: the switched-on list changed since this screen read it — said in plain words, and the latest is shown.
+    if (out.body?.error?.code === 'enabled_list_changed') { tell(t('read'), t('listChanged')); await refresh(); return false; }
     tell(t('read'), out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
     return false;
   }
@@ -407,8 +442,29 @@ function renderAgents() {
       // Never evaluated is a different fact from evaluated and scoring nought, and it is said.
       what.append(line(evaluationWords(agent)));
       row.append(what);
+      // AI-SCREEN: the owner switches an assistant on or off here — head office's route, his permission (ai.agent.enable).
+      if (view.may.enable) {
+        const acts = document.createElement('span');
+        acts.className = 'acts';
+        const b = button(agent.enabled ? t('switchOff') : t('switchOn'), agent.enabled ? 'pause' : 'plug', agent.enabled ? 'enable-toggle' : 'primary enable-toggle', () => { void switchAgent(agent.agentId, !agent.enabled); });
+        b.dataset.on = String(!agent.enabled);
+        acts.append(b);
+        row.append(acts);
+      }
       return row;
     })));
+  el('enable-note').hidden = view === null || !view.may.enable;
+  el('enable-note').textContent = t('enableNote');
+}
+
+/**
+ * Switch one assistant on or off. Head office's route takes the WHOLE list of switched-on assistants; the page sends the
+ * list it showed with only this one assistant changed, and the list it read as `expected` (OB-557). If somebody changed it
+ * in between, head office refuses by name, the page says so in plain words and shows the latest — nothing is overwritten.
+ */
+async function switchAgent(agentId, on) {
+  if (kit === undefined || view === null) { tell(t('read'), words(ACT_REFUSAL_WORDS, 'nobody_is_named_at_this_desk')); return; }
+  await act(kit.enable(viewer, view.agents, agentId, on), () => (on ? t('switchedOn') : t('switchedOff')));
 }
 
 function evaluationWords(agent) {
@@ -455,8 +511,10 @@ function renderQueue() {
       // AI-NFR-04: how sure, and what it cannot know — on every suggestion.
       what.append(chip(words(BAND_WORDS, p.confidence.band), `band-${p.confidence.band}`), line(`${t('cannotKnow')}: ${p.confidence.uncertainty}`));
       what.append(line(`${t('evidence')}: ${p.evidence.map((e) => `${e.source} — ${e.summary}`).join(' · ')}`));
-      const where = line(`${t('toAct')}: ${p.wouldRequire}`);
+      // O-2: what a person does, in plain words — the route itself stays out of sight (kept on the element for the record).
+      const where = line(`${t('toAct')}: ${kit.toAct(p.wouldRequire, lang)}`);
       where.className = 'where';
+      where.dataset.route = p.wouldRequire;
       what.append(where);
       if (p.outcome !== null) {
         what.append(line(`${p.outcome.decision === 'approved' ? t('approvedBy') : t('rejectedBy')} ${p.outcome.by} · ${shopWhen(p.outcome.at)}${p.outcome.reason === undefined ? '' : ` — ${p.outcome.reason}`}`));
@@ -497,6 +555,7 @@ function spendBar(spentMinor, ceilingMinor) {
 function renderCost() {
   const box = el('cost-summary');
   box.replaceChildren();
+  renderLimitForm();
   if (view === null) { box.append(emptyLine(t('unreachable'))); el('cost-list').replaceChildren(); return; }
   if (!view.cost.known) {
     // No cap means nothing that costs may run — not a comfortable nought.
@@ -523,9 +582,48 @@ function renderCost() {
       : `${t('spent')} ${money(r.spentMinor)} · ${t('ceiling')} ${money(r.ceilingMinor)}`));
     if (r.ceilingMinor !== null) what.append(spendBar(r.spentMinor, r.ceilingMinor));
     row.append(what);
+    row.dataset.agent = r.agentId;
+    // AI-SCREEN: the assistant's own limit (and, if wanted, its requests an hour) — head office checks it fits the shop's.
+    if (view.may.setBudget) {
+      const acts = document.createElement('span');
+      acts.className = 'acts';
+      const ceiling = field('input');
+      ceiling.className = 'ceiling'; ceiling.inputMode = 'decimal'; ceiling.autocomplete = 'off';
+      ceiling.setAttribute('aria-label', `${r.agentId} — ${t('ceilingLabel')}`); ceiling.placeholder = t('ceilingLabel');
+      const rate = field('input');
+      rate.className = 'rate'; rate.inputMode = 'numeric'; rate.autocomplete = 'off';
+      rate.setAttribute('aria-label', `${r.agentId} — ${t('rateLabel')}`); rate.placeholder = t('rateLabel');
+      acts.append(ceiling, rate, button(t('setCeiling'), 'indian-rupee', '', () => {
+        void act(kit.agentBudget(viewer, r.agentId, { ceiling: ceiling.value, callsPerHour: rate.value }), () => t('ceilingSet'));
+      }));
+      row.append(acts);
+    }
     return row;
   }));
 }
+
+/** The last day of the shop's current month, "YYYY-MM-DD" — the limit form's first suggestion, never sent unasked. */
+function endOfShopMonth() {
+  const month = window.sreShopDay?.thisMonth() ?? '';
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  if (m === null) return '';
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).toISOString().slice(0, 10);
+}
+
+function renderLimitForm() {
+  const form = el('limit-form');
+  form.hidden = view === null || !view.may.setBudget;
+  if (form.hidden) return;
+  if (el('period').value === '') el('period').value = endOfShopMonth();
+}
+
+el('set-cap').addEventListener('click', () => {
+  const day = el('period').value;
+  // The end of the chosen day on the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+  const periodEnds = day === '' ? '' : (window.sreShopDay?.instantOfField(`${day}T23:59`) ?? '');
+  const check = kit === undefined ? { ok: false, refusal: 'nobody_is_named_at_this_desk' } : kit.budget(viewer, { cap: el('cap').value, periodEnds });
+  void act(check, () => t('capSet')).then((sent) => { if (sent) el('cap').value = ''; });
+});
 
 // ── Models and checks ───────────────────────────────────────────────────────
 
@@ -660,11 +758,13 @@ function paintChrome() {
     ['which-label', 'whichLabel'], ['pull-reason-label', 'pullReasonLabel'],
     ['pull-note', 'pullNote'], ['unreachable', 'unreachable'],
     ['raise-title', 'raiseTitle'], ['raise-agent-label', 'raiseAgent'], ['raise-summary-label', 'raiseSummary'],
+    ['limit-title', 'limitTitle'], ['cap-label', 'capLabel'], ['period-label', 'periodLabel'], ['limit-note', 'limitNote'],
   ]) {
     el(id).textContent = t(key);
   }
   label(el('pull'), 'pause-circle', t('pull'));
   label(el('raise'), 'send', t('raise'));
+  label(el('set-cap'), 'indian-rupee', t('setCap'));
   el('unreachable').hidden = readState !== 'unreachable';
 
   const nobody = el('nobody');

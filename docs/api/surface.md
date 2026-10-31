@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1629 | 944 | 944 | 178 | 435 |
+| 13 | 1631 | 946 | 946 | 178 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -242,6 +242,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/purchase/invoices/:invoiceId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/invoices/:invoiceId/capture` | `purchase.invoice.capture` | core | yes |
 | POST | `/v1/purchase/invoices/:invoiceId/match` | `purchase.invoice.match` | core | yes |
+| POST | `/v1/purchase/invoices/:invoiceId/other-charges` | `purchase.invoice.match` | core | yes |
 | POST | `/v1/purchase/invoices/:invoiceId/reconcile` | `purchase.invoice.match` | core | yes |
 | POST | `/v1/purchase/invoices/:invoiceId/synced` | `purchase.invoice.sync` | core | yes |
 | GET | `/v1/purchase/match-policy` | `purchase.commitment.read` | core | — |
@@ -481,6 +482,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/quality/holds/:batchId/release/synced` | `quality.hold.release.sync` | core | yes |
 | GET | `/v1/quality/holds/:batchId/samples` | `quality.hold.manage` | core | — |
 | POST | `/v1/quality/holds/:batchId/samples/:sampleId` | `quality.hold.manage` | core | yes |
+| POST | `/v1/quality/holds/:batchId/samples/:sampleId/synced` | `quality.sample.record.sync` | core | yes |
 | GET | `/v1/quality/lot-trace/:batchId/chain` | `quality.lottrace.read` | core | — |
 | GET | `/v1/quality/lot-trace/:batchId/sold` | `quality.lottrace.read` | core | — |
 | GET | `/v1/quality/lot-trace/backward/customers/:customerRef` | `quality.lottrace.read` | core | — |

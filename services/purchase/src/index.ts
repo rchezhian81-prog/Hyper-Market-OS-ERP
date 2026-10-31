@@ -279,6 +279,46 @@ export function readLandedCharges(v: unknown): LandedChargesOnBill | undefined |
 }
 
 /**
+ * OB-556 (owner, 30 Oct 2026): what a person marked a bill's OTHER charges as. Until marked, other charges (an e-invoice's
+ * `OthChrg`, a typed bill's "other charges") are of UNKNOWN kind: they count in the bill's total and are paid with it, but
+ * stay OUT of the stock's cost. Marked `cost` (freight, packing — part of the goods' cost) they are spread into stock cost
+ * like freight; marked `tax` (a tax the supplier charged on the bill) they never are. Recorded append-only, once per bill.
+ */
+export interface OtherChargesMarking {
+  readonly invoiceId: string;
+  readonly kind: 'cost' | 'tax';
+  /** The other charges the marking covers, in paise — the bill's `landedCharges.otherMinor` when it was marked. */
+  readonly otherMinor: number;
+  readonly reason: string;
+  readonly markedBy: string;
+  readonly markedAt: string;
+}
+
+/** OB-556: what of a bill's charges belongs in the stock's cost — freight and duty, and other charges only once marked cost. */
+export const stockChargesOf = (invoice: Pick<SupplierInvoiceRecord, 'landedCharges'>, marking: OtherChargesMarking | undefined): number =>
+  invoice.landedCharges === undefined ? 0
+    : invoice.landedCharges.freightMinor + invoice.landedCharges.dutyMinor + (marking?.kind === 'cost' ? invoice.landedCharges.otherMinor : 0);
+
+/** OB-556: how a bill's other charges stand — said on the bill and its match, so ₹X not yet in stock cost is never silent. */
+export interface OtherChargesStanding {
+  readonly otherMinor: number;
+  readonly kind: 'not_marked' | 'cost' | 'tax';
+  readonly inStockCost: boolean;
+  readonly said: string;
+  readonly marking?: OtherChargesMarking;
+}
+export function otherChargesStanding(invoice: Pick<SupplierInvoiceRecord, 'landedCharges'>, marking: OtherChargesMarking | undefined): OtherChargesStanding | undefined {
+  const otherMinor = invoice.landedCharges?.otherMinor ?? 0;
+  if (otherMinor === 0) return undefined;
+  if (marking === undefined) {
+    return { otherMinor, kind: 'not_marked', inStockCost: false, said: `${otherMinor} paise of other charges are of unknown kind: they are in the bill's total but NOT in stock cost until a person marks them as freight/cost or as a tax.` };
+  }
+  return marking.kind === 'cost'
+    ? { otherMinor, kind: 'cost', inStockCost: true, said: `${otherMinor} paise of other charges were marked freight/cost by ${marking.markedBy}: they are in stock cost.`, marking }
+    : { otherMinor, kind: 'tax', inStockCost: false, said: `${otherMinor} paise of other charges were marked tax by ${marking.markedBy}: they are never in stock cost.`, marking };
+}
+
+/**
  * OB-288 P3: a bill's landed charges carried into its match verdict. They are part of what the supplier invoiced; when the
  * bill may be paid they are payable with it, and while it is blocked they are withheld with it. Pure.
  */
@@ -611,8 +651,16 @@ export interface PurchaseDeps {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** OB-288 P3 (M06-FR-02 · §28): who did each step of the order — a matcher who raised, received or paid it is refused. */
   readonly segregation?: Pick<SegregationPort, 'actorsOf'>;
-  /** OB-288 P3 (M07-FR-04): post the landed-cost apportionment of a matched bill's freight/duty into stock value. */
-  readonly postLandedCost?: (tenantId: string, input: { readonly invoice: SupplierInvoiceRecord; readonly order: StoredPurchaseOrder | undefined; readonly match: StoredMatch; readonly by: string }) => Promise<unknown>;
+  /**
+   * OB-288 P3 (M07-FR-04): post the landed-cost apportionment of a matched bill's freight/duty into stock value.
+   * `stockChargesMinor` (OB-556) is what of the bill's charges belongs in stock cost — freight, duty, and other charges only
+   * once a person marked them cost (`stockChargesOf`); the poster spreads exactly that, posting only the difference.
+   */
+  readonly postLandedCost?: (tenantId: string, input: { readonly invoice: SupplierInvoiceRecord; readonly order: StoredPurchaseOrder | undefined; readonly match: StoredMatch; readonly by: string; readonly stockChargesMinor: number }) => Promise<unknown>;
+  /** OB-556: the marking of a bill's other charges, or undefined while nobody has marked them. */
+  readonly otherChargesMarking?: (tenantId: string, invoiceId: string) => Promise<OtherChargesMarking | undefined> | OtherChargesMarking | undefined;
+  /** OB-556: record a marking — append-only, once per bill; answers the marking that STANDS (the first recorded). */
+  readonly recordOtherChargesMarking?: (tenantId: string, marking: OtherChargesMarking) => Promise<OtherChargesMarking>;
 }
 
 export interface Commitments {
@@ -634,11 +682,17 @@ export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string,
   readonly source?: string; readonly auditAction?: string;
   /** R3 · A17: the supplier's own invoice number and date, when the channel carries them (an e-invoice, a read scan). */
   readonly supplierInvoiceNo?: string | null; readonly supplierInvoiceDate?: string | null;
+  /**
+   * M07-FR-04 (re-audit 30 Oct 2026): the freight / duty / other charges the channel read off the bill (an e-invoice's
+   * `OthChrg`) — part of the bill's total and kept on the record exactly as the typed capture keeps them (OB-288 P3).
+   */
+  readonly charges?: LandedChargesOnBill;
 }): Promise<{ readonly ok: true; readonly record: SupplierInvoiceRecord } | { readonly ok: false; readonly code: string; readonly detail: string }> {
   const read = readInvoiceLines(input.lines, await unitsOfLines(deps, tenantId, input.lines));
   if (!read.ok) return { ok: false, code: read.code === 'line_does_not_multiply' ? 'invoice_line_does_not_multiply' : 'not_readable_as_a_supplier_invoice', detail: read.detail };
-  const totalMinor = sumOf(read.lines);
-  if (totalMinor !== input.declaredTotalMinor) return { ok: false, code: 'does_not_add_up_to_the_invoice_total', detail: `the lines add up to ${totalMinor} and the invoice says ${input.declaredTotalMinor}` };
+  const charges = input.charges === undefined || chargesTotal(input.charges) === 0 ? undefined : input.charges;
+  const totalMinor = sumOf(read.lines) + chargesTotal(charges);
+  if (totalMinor !== input.declaredTotalMinor) return { ok: false, code: 'does_not_add_up_to_the_invoice_total', detail: `the lines${charges === undefined ? '' : ' and charges'} add up to ${totalMinor} and the invoice says ${input.declaredTotalMinor}` };
   if ((await deps.invoice(tenantId, input.invoiceId)) !== undefined || (await deps.invoiceIdUsed?.(tenantId, input.invoiceId)) === true) {
     return { ok: false, code: 'invoice_id_already_used', detail: `invoice ${input.invoiceId} is already on head office's register — one bill is one record` };
   }
@@ -650,12 +704,13 @@ export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string,
     capturedBy: input.submittedBy, capturedAt: at, approvedBy: null, approvedAt: null, source: input.source ?? `supplier-portal/${input.submissionId}`, governanceFlags: flags,
     ...(typeof input.supplierInvoiceNo === 'string' && input.supplierInvoiceNo.trim() !== '' ? { supplierInvoiceNo: input.supplierInvoiceNo.trim() } : {}),
     ...(typeof input.supplierInvoiceDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.supplierInvoiceDate) ? { supplierInvoiceDate: input.supplierInvoiceDate } : {}),
+    ...(charges === undefined ? {} : { landedCharges: charges }),
   };
   await deps.recordInvoice(tenantId, record);
   await deps.recordAudit?.(tenantId, {
     actorId: input.reviewedBy, action: input.auditAction ?? 'invoice.capture.portal', objectType: 'supplier_invoice', objectId: input.invoiceId,
     at, origin: { tenantId, branchId: input.branchId }, before: null,
-    after: { supplierId: input.supplierId, poId: input.poId ?? '', lines: String(read.lines.length), totalMinor: String(totalMinor), submittedBy: input.submittedBy, submissionId: input.submissionId, flags: flags.join(',') },
+    after: { supplierId: input.supplierId, poId: input.poId ?? '', lines: String(read.lines.length), totalMinor: String(totalMinor), submittedBy: input.submittedBy, submissionId: input.submissionId, flags: flags.join(','), ...(charges === undefined ? {} : { landedChargesMinor: String(chargesTotal(charges)) }) },
     correlationId: input.invoiceId,
   });
   return { ok: true, record };
@@ -908,8 +963,11 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         };
         await deps.recordMatch(ctx.tenantId, invoiceId, stored);
         // OB-288 P3 (M07-FR-04): the bill's landed charges into the stock's cost — only the difference from what an earlier
-        // match already posted (compensating, append-only); a blocked bill takes back whatever was posted.
-        const landed = invoice === undefined ? undefined : await deps.postLandedCost?.(ctx.tenantId, { invoice, order, match: stored, by: ctx.userId });
+        // match already posted (compensating, append-only); a blocked bill takes back whatever was posted. OB-556: other
+        // charges of unknown kind stay out of stock cost until a person marks them.
+        const marking = invoice === undefined ? undefined : await deps.otherChargesMarking?.(ctx.tenantId, invoiceId);
+        const landed = invoice === undefined ? undefined : await deps.postLandedCost?.(ctx.tenantId, { invoice, order, match: stored, by: ctx.userId, stockChargesMinor: stockChargesOf(invoice, marking) });
+        const otherCharges = invoice === undefined ? undefined : otherChargesStanding(invoice, marking);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'invoice.match', objectType: 'supplier_invoice', objectId: invoiceId,
           at: matchedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
@@ -917,7 +975,63 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           after: { poId: poId ?? '', blocked: String(stored.blocked), payableMinor: String(stored.payableMinor), invoicedMinor: String(stored.invoicedMinor), withheldMinor: String(stored.withheldMinor), flags: flags.join(',') },
           correlationId: invoiceId,
         });
-        return { status: 200, body: landed === undefined ? stored : { ...stored, landedCost: landed } };
+        return { status: 200, body: { ...stored, ...(landed === undefined ? {} : { landedCost: landed }), ...(otherCharges === undefined ? {} : { otherCharges }) } };
+      },
+    },
+    {
+      // OB-556 (owner, 30 Oct 2026): a person who may match bills marks a bill's OTHER charges (of unknown kind until now) as
+      // freight/cost — then spread into stock cost like freight — or as a tax the supplier charged — never in stock cost. Body:
+      // { kind: 'cost' | 'tax', reason }. Append-only and once per bill (a second, different marking is refused by name,
+      // never overwritten); the person who raised, received or paid the order may not mark it (§28, as at the match). When
+      // the bill is already matched, the stock-cost difference is posted at once as compensating entries.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/invoices/:invoiceId/other-charges',
+      permission: 'purchase.invoice.match', idempotent: true,
+      handler: async (ctx) => {
+        const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const refuse = (status: number, code: string, whatHappened: string, nextSafeAction = 'Nothing was changed.') => apiError(status, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction });
+        if ((b['kind'] !== 'cost' && b['kind'] !== 'tax') || !isStr(b['reason']) || b['reason'].trim() === '') {
+          throw refuse(400, 'not_readable_as_an_other_charges_marking', 'Marking other charges needs { kind: "cost" | "tax", reason } — what they are, and why you say so.');
+        }
+        if (deps.otherChargesMarking === undefined || deps.recordOtherChargesMarking === undefined) {
+          throw refuse(409, 'other_charges_marking_unavailable', 'Head office cannot record what other charges are here, so nothing was recorded.');
+        }
+        const invoice = await deps.invoice(ctx.tenantId, invoiceId);
+        if (invoice === undefined) throw refuse(404, 'invoice_unknown', `No supplier invoice ${invoiceId} is on file here.`);
+        const otherMinor = invoice.landedCharges?.otherMinor ?? 0;
+        if (otherMinor === 0) throw refuse(409, 'no_other_charges', `Invoice ${invoiceId} has no other charges to mark.`);
+        const kind = b['kind'];
+        const before = await deps.otherChargesMarking(ctx.tenantId, invoiceId);
+        if (before !== undefined) {
+          if (before.kind === kind) return { status: 200, body: { marking: before, alreadyMarked: true, otherCharges: otherChargesStanding(invoice, before) } };
+          throw refuse(409, 'other_charges_already_marked', `${before.markedBy} already marked the other charges on ${invoiceId} as ${before.kind === 'cost' ? 'freight/cost' : 'tax'} (${before.reason}). A marking is never overwritten.`, 'Raise it with the accountant if it is wrong. Nothing was changed.');
+        }
+        // §28: the person who raised, received or paid the order does not decide what its bill's charges are.
+        if (deps.segregation !== undefined && invoice.poId !== null) {
+          const conflict = segregationConflict(await deps.segregation.actorsOf(ctx.tenantId, invoice.poId), 'match', ctx.userId);
+          if (conflict !== undefined) throw segregationRefusal(conflict);
+        }
+        const marking: OtherChargesMarking = { invoiceId, kind, otherMinor, reason: b['reason'].trim(), markedBy: ctx.userId, markedAt: deps.now() };
+        const standing = await deps.recordOtherChargesMarking(ctx.tenantId, marking);
+        // Two people marking at once: the first stands; a different second one is refused by name (hard rule #10).
+        if (standing.kind !== kind || standing.markedBy !== marking.markedBy || standing.markedAt !== marking.markedAt) {
+          if (standing.kind === kind) return { status: 200, body: { marking: standing, alreadyMarked: true, otherCharges: otherChargesStanding(invoice, standing) } };
+          throw refuse(409, 'other_charges_already_marked', `${standing.markedBy} marked the other charges on ${invoiceId} as ${standing.kind === 'cost' ? 'freight/cost' : 'tax'} first. A marking is never overwritten.`);
+        }
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'invoice.other_charges.mark', objectType: 'supplier_invoice', objectId: invoiceId,
+          at: marking.markedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: null,
+          after: { kind, otherMinor: String(otherMinor), reason: marking.reason },
+          correlationId: invoiceId,
+        });
+        // Already matched: the stock-cost difference now (append-only, only the delta). Not yet matched: the match posts it.
+        const match = await deps.latestMatch(ctx.tenantId, invoiceId);
+        let landed: unknown;
+        if (match !== undefined) {
+          const order = match.poId === null ? undefined : await deps.purchaseOrder(ctx.tenantId, match.poId);
+          landed = await deps.postLandedCost?.(ctx.tenantId, { invoice, order, match, by: ctx.userId, stockChargesMinor: stockChargesOf(invoice, marking) });
+        }
+        return { status: 201, body: { marking, alreadyMarked: false, otherCharges: otherChargesStanding(invoice, marking), ...(landed === undefined ? {} : { landedCost: landed }) } };
       },
     },
     {
@@ -930,7 +1044,9 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         if (invoice === undefined) {
           throw apiError(404, { code: 'not_found', whatHappened: `No supplier invoice ${invoiceId} is on file here.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the store has synchronised — the invoice may still be on the store computer.' });
         }
-        return { status: 200, body: { invoice, match: (await deps.latestMatch(ctx.tenantId, invoiceId)) ?? null } };
+        // OB-556: how its other charges stand (not yet in stock cost until marked) — said, never silent.
+        const otherCharges = otherChargesStanding(invoice, await deps.otherChargesMarking?.(ctx.tenantId, invoiceId));
+        return { status: 200, body: { invoice, match: (await deps.latestMatch(ctx.tenantId, invoiceId)) ?? null, ...(otherCharges === undefined ? {} : { otherCharges }) } };
       },
     },
     {

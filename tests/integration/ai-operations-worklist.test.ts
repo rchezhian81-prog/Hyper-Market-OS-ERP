@@ -25,7 +25,7 @@ const dismiss = (h: ApiHarness, u: string, body: unknown, key: string) =>
 async function armA06(h: ApiHarness): Promise<void> {
   expect((await put(h, '/v1/ai/kill-switch', { on: false }, 'k')).status).toBe(200);
   expect((await put(h, '/v1/ai/budget', { capMinor: 500_000, periodEnds: '2027-01-01T00:00:00Z' }, 'b')).status).toBe(200);
-  expect((await put(h, '/v1/ai/agents/enabled', { agents: ['A06'] }, 'e')).status).toBe(200);
+  expect((await put(h, '/v1/ai/agents/enabled', { expected: [], agents: ['A06'] }, 'e')).status).toBe(200);
 }
 const DEAD_LETTER_RULE = { alertId: 'dl-1', component: 'dead_letter', firesAt: 'degraded', ownerUserId: 'u-op', ownerName: 'Operator', ackWithinMinutes: 15 };
 async function raiseDeadLetterIncident(h: ApiHarness): Promise<void> {

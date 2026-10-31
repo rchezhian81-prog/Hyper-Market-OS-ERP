@@ -5,6 +5,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## The urgent five from the 30 Oct re-audit (31 October 2026): built; owner decisions OB-554 to OB-557
+- **What changed:**
+  - **Range tab (M04-FR-01):** taking an item out of the range now goes to head office and says "done" only on head office's word; with stock left, head office puts it on clearance.
+  - **Offer tab (M05-FR-03/04):** the offer's rule (products, days, coupon, members only, caps) is defined first, so Start works; whole shop days (OB-554).
+  - **Supplier bills (M07-FR-04):** freight, duty and other charges can be entered or read from the e-invoice; other charges stay out of stock cost until marked cost or tax (OB-556).
+  - **AI page:** assistants can be switched on and off and limits set from the page; a change against an out-of-date list is refused (OB-557); proposals say what to do in plain words.
+  - **Quality samples offline (M10-FR-02):** recorded at the store with the line down, sent once and re-checked at head office, through a separate narrow store-computer right (OB-555).
+- **Tests:** the joined work, full default suite on PostgreSQL: 15,766 passed, 1 failed under load (the kept-build-lease test, unrelated; passed 3 of 3 alone). Full browser suite: 775 of 775 passed. Type check and lint clean. The OB-556/557 additions were re-tested after joining (counts in the pull request).
+- **Next:** the remaining 26 partial rows from the re-audit, in one round (owner's choice B).
+- **Branch protection:** switched on for `main` by the owner (31 Oct 2026).
+- **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## Gap audit and SEC-1 (31 October 2026): which screens really work, and a permission hole closed
 
 **Why:** the owner said many modules do not really work. Four checkers opened every menu page, as the right roles, against a seeded demo copy (synthetic data only), and recorded for each one: works, empty, sample, broken, blocked by role, or dead end.

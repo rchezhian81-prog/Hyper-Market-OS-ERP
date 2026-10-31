@@ -219,9 +219,13 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
         if (unmapped.length > 0 || unsure.length > 0) {
           throw refuse(422, 'lines_need_a_person', `${unmapped.length > 0 ? `Line(s) ${unmapped.join(', ')} are not mapped to a product. ` : ''}${unsure.length > 0 ? `Line(s) ${unsure.join(', ')} were read with low confidence: type their quantity, price and amount from the paper.` : ''}`.trim(), 'Map every line and type the unsure figures, then confirm again. Nothing was recorded.');
         }
-        const declaredTotalMinor = lines.reduce((s, l) => s + (l['lineTotalMinor'] as number) + ((l['cgstMinor'] as number | undefined) ?? 0) + ((l['sgstMinor'] as number | undefined) ?? 0) + ((l['igstMinor'] as number | undefined) ?? 0), 0);
+        // M07-FR-04 (re-audit 30 Oct 2026): the other charges the bill prints beside its lines (an e-invoice's `OthChrg`) are
+        // part of what it totals — kept on the invoice as its landed charges, exactly as the typed capture keeps them.
+        const otherMinor = doc.extracted.otherChargesMinor ?? 0;
+        const charges = otherMinor > 0 ? { freightMinor: 0, dutyMinor: 0, otherMinor } : undefined;
+        const declaredTotalMinor = otherMinor + lines.reduce((s, l) => s + (l['lineTotalMinor'] as number) + ((l['cgstMinor'] as number | undefined) ?? 0) + ((l['sgstMinor'] as number | undefined) ?? 0) + ((l['igstMinor'] as number | undefined) ?? 0), 0);
         if (doc.extracted.statedTotalMinor !== null && doc.extracted.statedTotalMinor !== declaredTotalMinor && b['acceptTotalDifference'] !== true) {
-          throw refuse(422, 'does_not_add_up_to_the_bill', `The confirmed lines come to ${declaredTotalMinor} paise but the bill states ${doc.extracted.statedTotalMinor} (a round-off, a charge or a misread figure).`, 'Correct the lines, or confirm with acceptTotalDifference: true and say why on the match. Nothing was recorded.');
+          throw refuse(422, 'does_not_add_up_to_the_bill', `The confirmed lines${charges === undefined ? '' : ' and the bill\'s other charges'} come to ${declaredTotalMinor} paise but the bill states ${doc.extracted.statedTotalMinor} (a round-off, a charge or a misread figure).`, 'Correct the lines, or confirm with acceptTotalDifference: true and say why on the match. Nothing was recorded.');
         }
         const poId = isStr(b['poId']) ? b['poId'].trim() : doc.poId;
         const source = doc.channel === 'e_invoice' ? `e-invoice/${doc.extracted.irn ?? doc.extracted.supplierInvoiceNo ?? documentId}` : `ocr/${documentId}`;
@@ -230,6 +234,7 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
           submissionId: documentId, branchId: ctx.branchId ?? null, source, auditAction: doc.channel === 'e_invoice' ? 'invoice.capture.e_invoice' : 'invoice.capture.ocr',
           // R3 · A17: the bill's own number and date as read off it — what the GSTR-2B lists it by.
           supplierInvoiceNo: doc.extracted.supplierInvoiceNo, supplierInvoiceDate: doc.extracted.invoiceDate,
+          ...(charges === undefined ? {} : { charges }),
         });
         if (!out.ok) throw refuse(out.code === 'invoice_id_already_used' ? 409 : 422, out.code, out.detail);
         const at = deps.now();

@@ -167,32 +167,22 @@ export function qualityHoldRoutes(deps: QualityHoldDeps & QualitySampleDeps): re
           throw apiError(409, { code: 'not_held', whatHappened: `Batch ${batchId} has already been released, so no sample can be added to its hold.`, wasItSaved: 'not_saved', nextSafeAction: 'Place a new hold first if the batch must be checked again. Nothing was saved.' });
         }
         const current = (await samplesOf(ctx.tenantId, hold)).find((s) => s.sampleId === sampleId);
-        const test = isStr(b['test']) ? (b['test'] as string).trim() : current?.test;
-        if (test === undefined) {
-          throw apiError(400, { code: 'not_readable_as_a_quality_sample', whatHappened: 'A new sample needs what was tested (test).', wasItSaved: 'not_saved', nextSafeAction: 'Send the test name. Nothing was saved.' });
-        }
-        if (current !== undefined) {
-          if (current.result === result && current.test === test) return { status: 200, body: { sample: current, alreadyRecorded: true } };
-          if (current.test !== test) {
-            throw apiError(409, { code: 'sample_is_another_test', whatHappened: `Sample ${sampleId} on batch ${batchId} is the "${current.test}" test, not "${test}".`, wasItSaved: 'not_saved', nextSafeAction: 'Record a different test under its own sample id. Nothing was changed.' });
-          }
-          if (current.result !== 'pending') {
-            throw apiError(409, {
-              code: 'sample_result_final',
-              whatHappened: `Sample ${sampleId} on batch ${batchId} already came back ${current.result.toUpperCase()} (recorded by ${current.recordedBy} at ${current.recordedAt}); a final result is never changed.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Take a new sample and record it under its own id — the first result stays on record. Nothing was changed.',
-            });
-          }
-        }
         const at = deps.now();
-        const sample: StoredQualitySample = {
-          sampleId, batchId, holdHeldAt: hold.heldAt, test, result,
-          takenBy: current?.takenBy ?? ctx.userId,
-          takenAt: current?.takenAt ?? (isStr(takenAt) ? new Date(Date.parse(takenAt)).toISOString() : at),
-          ...(typeof b['notes'] === 'string' && b['notes'].trim() !== '' ? { notes: b['notes'].trim() } : current?.notes === undefined ? {} : { notes: current.notes }),
-          version: (current?.version ?? 0) + 1, recordedBy: ctx.userId, recordedAt: at,
-        };
+        const judged = judgeSample(current, {
+          batchId, sampleId, holdHeldAt: hold.heldAt, test: isStr(b['test']) ? (b['test'] as string).trim() : undefined, result,
+          takenAt: isStr(takenAt) ? new Date(Date.parse(takenAt)).toISOString() : at,
+          notes: typeof b['notes'] === 'string' ? b['notes'] : undefined, recordedBy: ctx.userId, recordedAt: at,
+        });
+        if (judged.kind === 'refuse') {
+          if (judged.code === 'no_test') throw apiError(400, { code: 'not_readable_as_a_quality_sample', whatHappened: judged.what, wasItSaved: 'not_saved', nextSafeAction: 'Send the test name. Nothing was saved.' });
+          throw apiError(409, {
+            code: judged.code, whatHappened: judged.what, wasItSaved: 'not_saved',
+            nextSafeAction: judged.code === 'sample_is_another_test' ? 'Record a different test under its own sample id. Nothing was changed.' : 'Take a new sample and record it under its own id — the first result stays on record. Nothing was changed.',
+          });
+        }
+        if (judged.kind === 'same') return { status: 200, body: { sample: judged.sample, alreadyRecorded: true } };
+        const { sample } = judged;
+        const test = sample.test;
         await deps.recordSample(ctx.tenantId, sample);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'quality.sample.record', objectType: 'quality_sample', objectId: `${batchId}/${sampleId}`, at,
@@ -332,11 +322,149 @@ export interface SyncedQualityHoldDeps extends QualityHoldDeps, QualitySampleDep
 
 const isIsoTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
 const asObj = (v: unknown): Record<string, unknown> => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
+/** The samples a store-decided release rests on: each sample id and the result the store saw for it (never judged on). */
+type SampleRef = { readonly sampleId: string; readonly result: QualitySample['result'] };
+const isSampleRefs = (v: unknown): v is readonly SampleRef[] => Array.isArray(v)
+  && v.every((r) => r !== null && typeof r === 'object' && isStr((r as SampleRef).sampleId) && SAMPLE_RESULTS.includes((r as SampleRef).result));
+
+// ── M10-FR-02 "Offline (§31): evidence captured offline; queued" — a quality SAMPLE recorded at the store with the line down ─
+//
+// OB-513 says a held food batch needs a recorded sample before release, and OB-333 lets that release be decided at the store
+// with the line down. Until this route the sample could only be recorded here at head office, so the two did not fit
+// together offline. Now the facilities screen keeps the sample on its durable device queue, the store computer relays it
+// HERE under the store's narrow `quality.sample.record.sync` right, and head office trusts only the FACT (who recorded which
+// result on which hold, when). It re-checks everything else on its own records:
+//   • the hold must be one head office placed, still held, and the SAME hold the store saw (`holdHeldAt`) — a batch head
+//     office already released, or released and held again since, is a conflict refused by name (422), never applied over;
+//   • the PERSON named is re-checked from THEIR grants (`quality.hold.manage`, the right the direct sample route asks for) —
+//     the box's word is never their authority;
+//   • the sample rules are the direct route's: a final result never changes, a re-test is a new sample id, the same result
+//     again is ONE sample.
+// A refusal is 422 by name, so the store computer keeps it as a visible exception (hard rules #6, #10).
+
+/** What one sample recording would do to the samples already on the hold — shared by the direct and the synced routes. */
+export type SampleJudgement =
+  | { readonly kind: 'same'; readonly sample: StoredQualitySample }
+  | { readonly kind: 'record'; readonly sample: StoredQualitySample; readonly before: StoredQualitySample | undefined }
+  | { readonly kind: 'refuse'; readonly code: 'no_test' | 'sample_is_another_test' | 'sample_result_final'; readonly what: string };
+
+/** Judge one sample recording against the current version of that sample on the hold (pure). */
+export function judgeSample(current: StoredQualitySample | undefined, input: {
+  readonly batchId: string; readonly sampleId: string; readonly holdHeldAt: string; readonly test: string | undefined;
+  readonly result: QualitySample['result']; readonly takenAt: string; readonly notes: string | undefined;
+  readonly recordedBy: string; readonly recordedAt: string;
+}): SampleJudgement {
+  const { batchId, sampleId } = input;
+  const test = input.test ?? current?.test;
+  if (test === undefined) return { kind: 'refuse', code: 'no_test', what: 'A new sample needs what was tested (test).' };
+  if (current !== undefined) {
+    if (current.result === input.result && current.test === test) return { kind: 'same', sample: current };
+    if (current.test !== test) return { kind: 'refuse', code: 'sample_is_another_test', what: `Sample ${sampleId} on batch ${batchId} is the "${current.test}" test, not "${test}".` };
+    if (current.result !== 'pending') {
+      return { kind: 'refuse', code: 'sample_result_final', what: `Sample ${sampleId} on batch ${batchId} already came back ${current.result.toUpperCase()} (recorded by ${current.recordedBy} at ${current.recordedAt}); a final result is never changed.` };
+    }
+  }
+  const notes = input.notes !== undefined && input.notes.trim() !== '' ? input.notes.trim() : current?.notes;
+  return {
+    kind: 'record', before: current,
+    sample: {
+      sampleId, batchId, holdHeldAt: input.holdHeldAt, test, result: input.result,
+      takenBy: current?.takenBy ?? input.recordedBy, takenAt: current?.takenAt ?? input.takenAt,
+      ...(notes === undefined ? {} : { notes }),
+      version: (current?.version ?? 0) + 1, recordedBy: input.recordedBy, recordedAt: input.recordedAt,
+    },
+  };
+}
 
 export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly Route[] {
   return [
     {
-      // Body: { batchId (= path), storeId, releasedBy, at, samples?, coldChain?, expiresOn?, notes?, source? }. Idempotent:
+      // Body: { batchId (= path), sampleId (= path), holdHeldAt, storeId, test, result, takenAt, recordedBy, at, notes?,
+      // source? }. Idempotent: the same result for the same sample again is 200, one sample.
+      api: 'API-04', method: 'POST', path: '/v1/quality/holds/:batchId/samples/:sampleId/synced',
+      permission: 'quality.sample.record.sync', idempotent: true,
+      handler: async (ctx) => {
+        const batchId = (ctx.params['batchId'] ?? '').trim();
+        const sampleId = (ctx.params['sampleId'] ?? '').trim();
+        const b = asObj(ctx.body);
+        const result = b['result'] as QualitySample['result'];
+        if (batchId === '' || sampleId === '' || b['batchId'] !== batchId || b['sampleId'] !== sampleId || !isIsoTime(b['holdHeldAt'])
+          || !isStr(b['test']) || !SAMPLE_RESULTS.includes(result) || !isIsoTime(b['takenAt']) || !isStr(b['recordedBy']) || !isIsoTime(b['at'])
+          || (b['notes'] !== undefined && typeof b['notes'] !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_sample',
+            whatHappened: 'This could not be read as a quality sample from the store — it needs the batch and sample ids matching the path, the hold it was taken on (holdHeldAt), what was tested and its result, when it was taken, who recorded it (recordedBy) and when (at).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const recordedBy = (b['recordedBy'] as string).trim();
+        const at = new Date(Date.parse(b['at'] as string)).toISOString();
+        const holdHeldAt = b['holdHeldAt'] as string;
+        const test = (b['test'] as string).trim();
+        const hold = await deps.hold(ctx.tenantId, batchId);
+        if (hold === undefined) {
+          throw apiError(422, {
+            code: 'no_hold_on_record',
+            whatHappened: `Head office holds no quality hold on batch ${batchId}, so there is no hold to record sample ${sampleId} on.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to look at. A hold is placed only at head office.',
+          });
+        }
+        // The same sample result already on record for the hold the store saw: one sample, even after a later release.
+        const onThatHold = currentSamples(await deps.sampleVersions(ctx.tenantId, batchId), { batchId, heldAt: holdHeldAt }).find((s) => s.sampleId === sampleId);
+        if (onThatHold !== undefined && onThatHold.result === result && onThatHold.test === test) {
+          return { status: 200, body: { batchId, sampleId, sample: onThatHold, alreadyRecorded: true } };
+        }
+        // Hard rule #10: head office moved on while the store was offline — said by name, never written over.
+        if (hold.status === 'released') {
+          throw apiError(422, {
+            code: 'batch_no_longer_held',
+            whatHappened: `Batch ${batchId} was already released by ${hold.releasedBy ?? 'someone'}${hold.releasedAt === undefined ? '' : ` at ${hold.releasedAt}`}, so the ${result.toUpperCase()} result of "${test}" recorded at the store by ${recordedBy} at ${at} is not added to its hold.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to compare. If the result matters (a FAIL above all), place a new hold at head office and record it there.',
+          });
+        }
+        if (hold.heldAt !== holdHeldAt) {
+          throw apiError(422, {
+            code: 'hold_changed_since',
+            whatHappened: `The store recorded sample ${sampleId} on batch ${batchId}'s hold placed at ${holdHeldAt}, but the hold head office has now was placed at ${hold.heldAt} — the batch was released and held again since.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to compare. Record the sample again on the hold in force now.',
+          });
+        }
+        // The person recording is re-checked HERE, from their own grants — the box's word is never their authority.
+        const held = await deps.permissionsOfUser(ctx.tenantId, recordedBy);
+        if (held === undefined || !held.includes('quality.hold.manage')) {
+          throw apiError(422, {
+            code: held === undefined ? 'recorder_unknown_at_head_office' : 'recorder_lacks_authority',
+            whatHappened: `${recordedBy} ${held === undefined ? 'is not anyone head office knows' : 'does not hold the right to record quality samples (quality.hold.manage)'}, so the sample on batch ${batchId} is not recorded in their name.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The batch stays held and is not sold. Someone who may record samples must take and record it again.',
+          });
+        }
+        const current = currentSamples(await deps.sampleVersions(ctx.tenantId, batchId), hold).find((s) => s.sampleId === sampleId);
+        const judged = judgeSample(current, {
+          batchId, sampleId, holdHeldAt: hold.heldAt, test, result, takenAt: new Date(Date.parse(b['takenAt'] as string)).toISOString(),
+          notes: typeof b['notes'] === 'string' ? b['notes'] : undefined, recordedBy, recordedAt: at,
+        });
+        if (judged.kind === 'refuse') {
+          throw apiError(422, { code: judged.code, whatHappened: judged.what, wasItSaved: 'not_saved', nextSafeAction: 'Kept at the store for a person to look at. A re-test is recorded under a new sample id. Nothing was changed.' });
+        }
+        if (judged.kind === 'same') return { status: 200, body: { batchId, sampleId, sample: judged.sample, alreadyRecorded: true } };
+        await deps.recordSample(ctx.tenantId, judged.sample);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: recordedBy, action: 'quality.sample.record', objectType: 'quality_sample', objectId: `${batchId}/${sampleId}`, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+          before: judged.before === undefined ? null : { result: judged.before.result, version: String(judged.before.version) },
+          after: { test, result, version: String(judged.sample.version), relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'unknown', storeId: isStr(b['storeId']) ? b['storeId'] : '' },
+          correlationId: `quality-hold:${batchId}`,
+        });
+        return { status: 202, body: { batchId, sampleId, sample: judged.sample, alreadyRecorded: false, relayedBy: ctx.userId } };
+      },
+    },
+    {
+      // Body: { batchId (= path), storeId, releasedBy, at, samples?, samplesRecordedHere?, coldChain?, expiresOn?, notes?, source? }. Idempotent:
       // the same release again is 200, one release.
       api: 'API-04', method: 'POST', path: '/v1/quality/holds/:batchId/release/synced',
       permission: 'quality.hold.release.sync', idempotent: true,
@@ -345,7 +473,7 @@ export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly R
         const b = asObj(ctx.body);
         if (batchId === '' || b['batchId'] !== batchId || !isStr(b['releasedBy']) || !isIsoTime(b['at'])
           || (b['samples'] !== undefined && !Array.isArray(b['samples'])) || (b['expiresOn'] !== undefined && !isStr(b['expiresOn']))
-          || (b['notes'] !== undefined && typeof b['notes'] !== 'string')) {
+          || (b['notes'] !== undefined && typeof b['notes'] !== 'string') || (b['samplesRecordedHere'] !== undefined && !isSampleRefs(b['samplesRecordedHere']))) {
           throw apiError(400, {
             code: 'not_readable_as_a_relayed_release',
             whatHappened: 'This could not be read as a quality-hold release from the store — it needs the batchId matching the path, who released it (releasedBy) and when (at).',
@@ -386,9 +514,26 @@ export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly R
             nextSafeAction: 'The batch stays held and is not sold. Someone who may release for sale must look at it.',
           });
         }
+        const recorded = currentSamples(await deps.sampleVersions(ctx.tenantId, batchId), hold);
+        // M10-FR-02 offline: a release decided on a sample recorded at the store waits for that sample to reach this hold.
+        // The store computer relays the sample first; if this release overtakes it (a lost reply, a blip mid-pass), it is
+        // 425 — kept and sent again — never judged without its sample and refused for want of it. Only ids and results ride:
+        // the release is still judged on the results head office holds, never on the store's word. A sample head office
+        // holds only as PENDING, where the store saw its final result, is not here yet either (the result is on its way).
+        const notYetHere = (isSampleRefs(b['samplesRecordedHere']) ? b['samplesRecordedHere'] : [])
+          .filter((r) => { const s = recorded.find((x) => x.sampleId === r.sampleId); return s === undefined || (s.result === 'pending' && r.result !== 'pending'); })
+          .map((r) => r.sampleId);
+        if (notYetHere.length > 0) {
+          throw apiError(425, {
+            code: 'samples_not_yet_at_head_office',
+            whatHappened: `The release of batch ${batchId} was decided on sample${notYetHere.length === 1 ? '' : 's'} ${notYetHere.join(', ')} recorded at the store, which head office does not hold on this hold yet.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store and sent again after the sample arrives. The batch stays held until then.',
+          });
+        }
         const result: QualityReleaseResult = releaseFromQualityHold({
           hold,
-          samples: currentSamples(await deps.sampleVersions(ctx.tenantId, batchId), hold),
+          samples: recorded,
           coldChain: (b['coldChain'] ?? undefined) as ColdChainAssessment | undefined,
           expiresOn: isStr(b['expiresOn']) ? (b['expiresOn'] as string) : undefined,
           releasedBy, at,

@@ -24,6 +24,10 @@ import { EVALUATION_SET, EVALUATION_SIMULATOR } from '../../services/ai/src/eval
  * kill switch changed a list in the tab. Now, through Chromium, with every `/v1` request sent under the signed-in
  * person's own token to the API exactly as `main.ts` composes it (over real PostgreSQL when DATABASE_URL is set):
  *   • the page shows head office's live registry — no sample banner — and the assistants' state;
+ *   • (re-audit 30 Oct 2026, AI-SCREEN) the owner sets the shop's AI spending limit and an assistant's own limit, and
+ *     switches the assistants ON (and one off and on again) — all from the page, through head office's own routes; a limit
+ *     above the ₹15,000 platform ceiling is refused in head office's words. Nothing here is seeded through the API any more;
+ *   • a draft's "to act" is said in plain words, never as a raw route (O-2);
  *   • a reason is required before anything is sent; the owner STOPS one assistant and head office REFUSES its run (503);
  *   • the same person cannot start it again; a second owner does, with a reason, and the run is accepted again;
  *   • a draft is shown with its confidence and evidence and the owner APPROVES it — head office records it, committing
@@ -40,7 +44,7 @@ const WEB_DIR = 'apps/web-erp/web';
 const OWNER = 'u-owner'; const OWNER2 = 'u-owner-2';
 // As many checks as the evaluation set holds for A01 (it grows with the agent; never a hard-coded count).
 const A01_CASES = EVALUATION_SET.filter((c) => c.agentId === 'A01').length;
-const PERMS = ['ai.proposal.read', 'ai.killswitch.set', 'ai.proposal.decide', 'ai.model.approve', 'ai.evaluation.run', 'ai.incident.manage', 'ai.budget.set', 'ai.agent.run'];
+const PERMS = ['ai.proposal.read', 'ai.killswitch.set', 'ai.proposal.decide', 'ai.model.approve', 'ai.evaluation.run', 'ai.incident.manage', 'ai.budget.set', 'ai.agent.enable', 'ai.agent.run'];
 const PRICING: Readonly<Record<ModelTier, TierPricing>> = {
   small: { inputPerMillionMinor: 1_000_000, outputPerMillionMinor: 2_000_000 },
   standard: { inputPerMillionMinor: 3_000_000, outputPerMillionMinor: 6_000_000 },
@@ -109,11 +113,9 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
     }
     await h.seedOwner(T, OWNER);
     await h.provisionOwner(T, OWNER2);
+    // The shop-wide switch stays the owner's own act OUTSIDE this page (the page never lifts it); the trial lifts it here.
+    // The spending limits and switching the assistants on are done FROM THE PAGE, in the first journey below.
     await act('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'e2e trial' });
-    await act('PUT', '/v1/ai/budget', OWNER, { capMinor: 100_000, periodEnds: '2099-01-01T00:00:00.000Z' });
-    await act('PUT', '/v1/ai/agents/enabled', OWNER, { agents: ['A01', 'A04', 'A08'] });
-    // A01's read-only insight lands on the register as a draft for the queue.
-    expect((await act('POST', '/v1/ai/agents/A01/runs', OWNER, {})).status).toBe(200);
     shell = await startShell(h, T);
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 180_000);
@@ -136,6 +138,96 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
     await page.waitForFunction(`!document.querySelector('#banner').hidden && (document.querySelector('#banner-text')?.textContent ?? '').includes(${JSON.stringify(text)})`, undefined, { timeout: 10_000 });
     await page.click('#banner-ok');
   };
+
+  it('the owner sets the spending limits and switches the assistants on — from the page, through head office', async () => {
+    const { page, close } = await pageAs(OWNER);
+    const control = async () => (await h.request({ method: 'GET', path: '/v1/ai/control', userId: OWNER, tenantId: T })).body as { agents: { agentId: string; enabled: boolean; ceilingMinor: number | null; callsPerHour: number | null }[]; budget: { capMinor: number; periodEnds: string } };
+    try {
+      // Nothing is switched on and no limit is set: the page says so, and nothing runs.
+      await page.click('#tab-agents');
+      expect(await page.textContent('#agent-list .row[data-agent="A04"]')).toContain('not switched on');
+      expect(await page.textContent('#enable-note')).toMatch(/It still only recommends/);
+      const before = await act('POST', '/v1/ai/agents/A01/runs', OWNER, {});
+      expect([before.status, (before.body as { error?: { code?: string } }).error?.code], 'nothing runs before it is switched on').toEqual([429, 'agent_not_permitted_here']);
+      await page.click('#tab-cost');
+      expect(await page.textContent('#cost-summary')).toContain('No AI limit is set for the shop');
+      expect(await page.textContent('#limit-note')).toMatch(/connects no model.*OB-382/s);
+
+      // A limit above the ₹15,000 platform ceiling (D3): refused in head office's words; nothing changed.
+      await page.fill('#cap', '20000');
+      let n = await reads(page);
+      await page.click('#set-cap');
+      await bannerSays(page, 'above the ₹15,000-a-month ceiling');
+      expect((await control()).budget.capMinor).toBe(0);
+      // Not money: refused on the page, nothing sent.
+      await page.fill('#cap', 'a thousand');
+      await page.click('#set-cap');
+      await bannerSays(page, 'A limit is an amount in rupees');
+      // The shop's limit: ₹1,000 until the end of the day chosen (the shop's clock).
+      await page.fill('#cap', '1000');
+      await page.fill('#period', '2099-01-31');
+      n = await reads(page);
+      await page.click('#set-cap');
+      expect(await afterAct(page, n)).toMatch(/The shop’s AI limit is set/);
+      await page.click('#banner-ok');
+      expect((await control()).budget).toMatchObject({ capMinor: 100_000, periodEnds: '2099-01-31T18:29:00.000Z' });
+      // One assistant's own limit, with a limit of requests an hour.
+      await page.waitForSelector('#cost-list .row[data-agent="A01"] input.ceiling');
+      await page.fill('#cost-list .row[data-agent="A01"] input.ceiling', '200');
+      await page.fill('#cost-list .row[data-agent="A01"] input.rate', '30');
+      n = await reads(page);
+      await page.click('#cost-list .row[data-agent="A01"] button');
+      expect(await afterAct(page, n)).toMatch(/The assistant’s limit is set/);
+      await page.click('#banner-ok');
+      expect((await control()).agents.find((a) => a.agentId === 'A01')).toMatchObject({ ceilingMinor: 20_000, callsPerHour: 30 });
+
+      // Switch A01, A04 and A08 on — one press each; head office's list grows by exactly that one.
+      await page.click('#tab-agents');
+      for (const agent of ['A01', 'A04', 'A08']) {
+        n = await reads(page);
+        await page.click(`#agent-list .row[data-agent="${agent}"] button.enable-toggle[data-on="true"]`);
+        expect(await afterAct(page, n)).toMatch(/Switched on\. It runs on its tested rules and only recommends/);
+        await page.click('#banner-ok');
+      }
+      expect((await control()).agents.filter((a) => a.enabled).map((a) => a.agentId)).toEqual(['A01', 'A04', 'A08']);
+      expect(await page.textContent('#agent-list .row[data-agent="A04"]')).toContain('running');
+      // Switch A08 off: its run is refused; switch it on again: it runs. Nobody else's setting moved.
+      n = await reads(page);
+      await page.click('#agent-list .row[data-agent="A08"] button.enable-toggle[data-on="false"]');
+      expect(await afterAct(page, n)).toMatch(/Switched off/);
+      await page.click('#banner-ok');
+      expect((await control()).agents.filter((a) => a.enabled).map((a) => a.agentId)).toEqual(['A01', 'A04']);
+      const off = await act('POST', '/v1/ai/agents/A08/runs', OWNER, {});
+      expect([off.status, (off.body as { error?: { code?: string } }).error?.code]).toEqual([429, 'agent_not_permitted_here']);
+      // OB-557: while this screen still shows A08 off, the second owner switches A04 off elsewhere. Pressing "Switch on" for
+      // A08 now is a change made against a stale list — head office refuses it by name, nothing of theirs is overwritten,
+      // and the page says so in plain words and shows the latest.
+      const elsewhere = await act('PUT', '/v1/ai/agents/enabled', OWNER2, { expected: ['A01', 'A04'], agents: ['A01'] });
+      expect(elsewhere.status).toBe(200);
+      n = await reads(page);
+      await page.click('#agent-list .row[data-agent="A08"] button.enable-toggle[data-on="true"]');
+      expect(await afterAct(page, n)).toMatch(/Somebody else changed which assistants are switched on since this screen read it\. Nothing was changed/);
+      await page.click('#banner-ok');
+      expect((await control()).agents.filter((a) => a.enabled).map((a) => a.agentId), 'the other owner\'s change stands').toEqual(['A01']);
+      expect(await page.textContent('#agent-list .row[data-agent="A04"]')).toContain('not switched on');
+      // On the list now shown: A04 and A08 switched on again, one press each.
+      for (const agent of ['A04', 'A08']) {
+        n = await reads(page);
+        await page.click(`#agent-list .row[data-agent="${agent}"] button.enable-toggle[data-on="true"]`);
+        expect(await afterAct(page, n)).toMatch(/Switched on/);
+        await page.click('#banner-ok');
+      }
+      expect((await control()).agents.filter((a) => a.enabled).map((a) => a.agentId)).toEqual(['A01', 'A04', 'A08']);
+      // A01's read-only insight lands on the register as a draft for the queue (the next journeys read it).
+      expect((await act('POST', '/v1/ai/agents/A01/runs', OWNER, {})).status).toBe(200);
+      // The new words have Tamil twins.
+      await page.click('#lang');
+      expect(await page.textContent('#agent-list .row[data-agent="A08"] button.enable-toggle')).toContain('நிறுத்தி வை');
+      expect(await page.textContent('#limit-title')).toBe('செலவு வரம்புகளை அமை');
+    } finally {
+      await close();
+    }
+  }, 120_000);
 
   it('stop one assistant from the screen — head office refuses its run; only a different person starts it again', async () => {
     const { page, close } = await pageAs(OWNER);
@@ -210,6 +302,10 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
       expect(text).toMatch(/Sure — a fact on record|Likely — check the evidence/);
       expect(text).toContain('What it cannot know');
       expect(text).toContain('what it rests on');
+      // O-2: "to act" in plain words — never the raw route the draft names.
+      const toAct = (await page.textContent(`${row} .where`)) ?? '';
+      expect(toAct).toMatch(/^To act on it: \S/);
+      expect(toAct).not.toMatch(/\/v1\/|POST |GET /);
       const id = await page.getAttribute(row, 'data-proposal');
       const n = await reads(page);
       await taps.type(`${row} textarea`, 'checked against the stock on hand');
