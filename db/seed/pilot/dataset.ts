@@ -322,9 +322,11 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
     },
     {
       productId: 'prod-rice', sku: 'DEMO-RICE-1KG', name: 'Demo Ponni Rice 1kg (demo)',
-      baseUom: 'kg', primaryCategoryId: 'cat-food', taxClass: '10063020', lifecycle: 'active',
+      // A PACKED 1 kg bag sold by the piece (`ea`), scanned by its own barcode — not loose rice sold by weight (`kg`),
+      // which the till takes only from a stamped scale's label (B6 · OB-302). Price and MRP are per bag (= per kg).
+      baseUom: 'ea', primaryCategoryId: 'cat-food', taxClass: '10063020', lifecycle: 'active',
       brand: 'DemoBrand',
-      safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store in a cool, dry place' },
+      safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store in a cool, dry place', netQuantity: '1 kg' },
       barcode: { code: '8900000000128', kind: 'ean' },
       price: { priceMinor: 6800, mrpMinor: 7500, costMinor: 5000, currency: INR, marginFloorBps: 0 },
     },
@@ -339,9 +341,10 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
     },
     {
       productId: 'prod-oil', sku: 'DEMO-OIL-1L', name: 'Demo Sunflower Oil 1L (demo)',
-      baseUom: 'L', primaryCategoryId: 'cat-food', taxClass: '15079010', lifecycle: 'active',
+      // A PACKED 1 L pouch sold by the piece (`ea`) — sold in `L` its plain barcode rang 1 ml (0.001 L at ₹0.12).
+      baseUom: 'ea', primaryCategoryId: 'cat-food', taxClass: '15079010', lifecycle: 'active',
       brand: 'DemoBrand',
-      safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store away from direct sunlight' },
+      safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store away from direct sunlight', netQuantity: '1 L' },
       barcode: { code: '8900000000142', kind: 'ean' },
       price: { priceMinor: 12000, mrpMinor: 13500, costMinor: 9000, currency: INR, marginFloorBps: 0 },
     },
@@ -445,12 +448,14 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
       // OB-509: the demo store's OPENING stock (an `opening-…` receipt keeps its cost) — a no-order DELIVERY would be booked
       // with its cost not known until its supplier bill is matched.
       grnId: 'opening-demo-001', warehouseId: WAREHOUSE_ID, receivedOnDate: RECEIVED_ON, currency: INR,
+      // OB-31 rule 1: an `ea` quantity is a count of pieces — 100 soaps is 100, never 100_000 (that was 1000 times too
+      // many). Every product here is sold by the piece, so each line is a plain count.
       lines: [
-        { lineId: 'l1', productId: 'prod-soap', orderedMinor: 100_000, countedMinor: 100_000, uom: 'ea', unitCostMinor: 2000, condition: 'good' },
-        { lineId: 'l2', productId: 'prod-brush', orderedMinor: 60_000, countedMinor: 60_000, uom: 'ea', unitCostMinor: 1500, condition: 'good' },
-        { lineId: 'l3', productId: 'prod-rice', orderedMinor: 200_000, countedMinor: 200_000, uom: 'kg', unitCostMinor: 5000, condition: 'good', batchId: 'BATCH-RICE-2609', expiry: DEMO_EXPIRY },
-        { lineId: 'l4', productId: 'prod-biscuit', orderedMinor: 80_000, countedMinor: 80_000, uom: 'ea', unitCostMinor: 1800, condition: 'good', batchId: 'BATCH-BISC-2609', expiry: DEMO_EXPIRY },
-        { lineId: 'l5', productId: 'prod-oil', orderedMinor: 120_000, countedMinor: 120_000, uom: 'L', unitCostMinor: 9000, condition: 'good', batchId: 'BATCH-OIL-2609', expiry: DEMO_EXPIRY },
+        { lineId: 'l1', productId: 'prod-soap', orderedMinor: 100, countedMinor: 100, uom: 'ea', unitCostMinor: 2000, condition: 'good' },
+        { lineId: 'l2', productId: 'prod-brush', orderedMinor: 60, countedMinor: 60, uom: 'ea', unitCostMinor: 1500, condition: 'good' },
+        { lineId: 'l3', productId: 'prod-rice', orderedMinor: 200, countedMinor: 200, uom: 'ea', unitCostMinor: 5000, condition: 'good', batchId: 'BATCH-RICE-2609', expiry: DEMO_EXPIRY },
+        { lineId: 'l4', productId: 'prod-biscuit', orderedMinor: 80, countedMinor: 80, uom: 'ea', unitCostMinor: 1800, condition: 'good', batchId: 'BATCH-BISC-2609', expiry: DEMO_EXPIRY },
+        { lineId: 'l5', productId: 'prod-oil', orderedMinor: 120, countedMinor: 120, uom: 'ea', unitCostMinor: 9000, condition: 'good', batchId: 'BATCH-OIL-2609', expiry: DEMO_EXPIRY },
       ],
     },
   ],
@@ -613,7 +618,7 @@ export const PILOT_TRANSACTIONS: PilotTransactions = {
     { code: 'DEMO50OFF', kind: 'amount_off', validUntil: '2027-03-31', maxRedemptions: 500, maxPerCustomer: 1, valueMinor: 5000 },
   ],
   orders: [
-    { orderId: 'order-demo-1', locationId: WAREHOUSE_ID, lines: [{ productId: 'prod-rice', quantityMinor: 5000 }] },
+    { orderId: 'order-demo-1', locationId: WAREHOUSE_ID, lines: [{ productId: 'prod-rice', quantityMinor: 5 }] }, // 5 bags of 1 kg (rice is sold `ea`)
   ],
   payRuns: [
     { payRunId: 'payrun-demo-2026-08', payPeriod: '2026-08', actor: 'pilot-owner', netTotalMinor: 15_000_000, employeeCount: 12 },

@@ -47,6 +47,7 @@ const STRAW = '8900000000202';
 const THIN_BAG = '8900000000303';
 const GOOD_BAG = '8900000000404';
 const RICE = '8900000000707';
+const LOOSE_OIL = '8900000000808'; // a litre-measured product's PLAIN barcode (Round B: it rang 0.001 L at ₹0.12)
 
 function signedPack() {
   const snapshot: CatalogueSnapshot = {
@@ -59,11 +60,13 @@ function signedPack() {
       { productId: 'P-THIN', sku: 'BAG-50', name: 'Carry bag 50 micron (demo)', baseUom: 'ea', unitPriceMinor: 3_00, taxBps: 1800, status: 'active', regulatedFlags: { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 50 } },
       { productId: 'P-BAG', sku: 'BAG-120', name: 'Carry bag 120 micron', baseUom: 'ea', unitPriceMinor: 5_00, taxBps: 0, status: 'active', regulatedFlags: { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 } },
       { productId: 'P-RICE', sku: 'RICE-1', name: 'Ponni rice 1kg', baseUom: 'ea', unitPriceMinor: 70_00, taxBps: 0, status: 'active' },
+      { productId: 'P-OIL', sku: 'OIL-LOOSE', name: 'Sunflower oil (loose)', baseUom: 'L', unitPriceMinor: 120_00, taxBps: 500, status: 'active' },
     ],
     barcodes: [
       { code: CIG_PACK, productId: 'P-CIG', kind: 'standard' }, { code: CIG_STICK, productId: 'P-STICK', kind: 'standard' },
       { code: STRAW, productId: 'P-STRAW', kind: 'standard' }, { code: THIN_BAG, productId: 'P-THIN', kind: 'standard' },
       { code: GOOD_BAG, productId: 'P-BAG', kind: 'standard' }, { code: RICE, productId: 'P-RICE', kind: 'standard' },
+      { code: LOOSE_OIL, productId: 'P-OIL', kind: 'standard' },
     ],
     embeddedRules: [{ prefix: '2', itemStart: 1, itemLength: 6, valueStart: 7, valueLength: 5, valueKind: 'weight' }],
   };
@@ -169,6 +172,29 @@ describe.skipIf(!HAVE_BROWSER)('the served till enforces the legal gates (B5 · 
     expect(body).toMatchObject({ committed: false, refusedBecause: 'weighed_on_lapsed_scale' });
     expect(body.laneMessage).toMatch(/^Do not take payment\. The weighing scale on this lane \(SCALE-L1\)/);
     expect(await readLog(edge.log.path)).toHaveLength(0);
+  });
+
+  it('OB-302 (Round B): a litre product scanned by its plain barcode is refused by name, in English and Tamil — never rung as 0.001 L', async () => {
+    const { page } = await till(day(120));
+    await scan(page, LOOSE_OIL);
+    await refusalShown(page);
+    expect(await page.textContent('#refusal-title')).toBe('Cannot be sold');
+    expect(await page.textContent('#refusal-text')).toBe('Sunflower oil (loose) is sold by volume (L). Its barcode does not say how much, so it was not added to the bill. Measure it and scan its measured label. A quantity is never typed in.');
+    expect(await lines(page)).toEqual([]);
+    expect(await page.textContent('#total')).toBe('₹0.00');
+    await page.click('#refusal-ok');
+    // In Tamil, the same refusal in the cashier's language.
+    await page.click('#lang');
+    await page.waitForFunction(() => (globalThis as unknown as { document: { documentElement: { lang: string } } }).document.documentElement.lang === 'ta');
+    await scan(page, LOOSE_OIL);
+    await refusalShown(page);
+    expect(await page.textContent('#refusal-text')).toContain('அளவுப்படி (L) விற்கப்படுகிறது');
+    expect(await lines(page)).toEqual([]);
+    await page.click('#refusal-ok');
+    // A scale label (the weight inside the code) on the same lane still rings exactly.
+    await scan(page, BANANA);
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.basket().length === 1);
+    expect(await lines(page)).toEqual(['P-BAN']);
   });
 
   it('B14: a loose cigarette is refused; a whole pack asks "18 or over?" and joins the bill only on Yes', async () => {

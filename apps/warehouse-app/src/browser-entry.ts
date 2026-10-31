@@ -57,7 +57,7 @@ export interface WarehouseRelay {
    * duplicate → handed; refused → a visible refusal; link down → kept, nothing lost), then ask the box where the
    * items it holds have got to and fold that into the session's sent-work list.
    */
-  syncNow(): Promise<{ readonly handed: number; readonly refused: number; readonly failed: number; readonly offline: boolean }>;
+  syncNow(): Promise<{ readonly handed: number; readonly refused: number; readonly failed: number; readonly offline: boolean; readonly notAllowed?: string }>;
 }
 
 /**
@@ -80,7 +80,7 @@ export function openWarehouseRelay(
       const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'warehouse', fetch: fetchFn, ...(clock === undefined ? {} : { onBoxTime: (box, phone) => clock.learn(box, phone) }) });
       const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
       if (statuses !== undefined) session.noteBoxStatus(statuses);
-      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline, ...(result.notAllowed === undefined ? {} : { notAllowed: result.notAllowed }) };
     },
   };
 }

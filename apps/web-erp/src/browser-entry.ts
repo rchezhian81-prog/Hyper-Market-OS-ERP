@@ -249,7 +249,7 @@ import {
   type IndentResolvePort, type ResolvePostResult as IndentResolvePostResult,
 } from './indents-session';
 import {
-  createDataIoSession,
+  createDataIoSession, exportReplyOf,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView, type ExportPeriodInput, type ExportReply,
   type LoadedJobsRead, type LoadedJobView, type UndoRequest, type RowChangeView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -359,7 +359,8 @@ import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWor
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
 // ── P3 procure-to-pay (OB-288) — the Requisitions and quotes page's session.
-import { createRequisitionsSession, requisitionsWords, requisitionsOutcomeWords, offerRows as requisitionOfferRows, rupees as requisitionRupees, type RequisitionsSession } from './requisitions-session';
+import { quantityLabel, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
+import { createRequisitionsSession, requisitionsWords, requisitionsOutcomeWords, offerRows as requisitionOfferRows, rupees as requisitionRupees, lineText as requisitionLineText, type RequisitionsSession } from './requisitions-session';
 import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, signedRupees as ppvSignedRupees, costWords as ppvCostWords, receivedCostWords as ppvReceivedCostWords, notComparedWords as ppvNotComparedWords, type ScorecardSession } from './supplier-scorecard-session';
 import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
 import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type BaysSession } from './planogram-bays-session';
@@ -3523,7 +3524,7 @@ const IMPORT_COMMIT_PERMISSION = 'purchase.import.record';
 /** POST an export (POST /v1/export/:domain) under the caller's own session — an audited artifact. */
 async function postExport(domain: string): Promise<ExportResult> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-  if (fetchFn === undefined) return 'lost_link';
+  if (fetchFn === undefined) return { kind: 'lost_link' };
   const key = globalThis.crypto?.randomUUID?.() ?? `export-${domain}`;
   try {
     const res = await fetchFn(`/v1/export/${encodeURIComponent(domain)}`, {
@@ -3531,8 +3532,11 @@ async function postExport(domain: string): Promise<ExportResult> {
       headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
       credentials: 'same-origin', body: '{}',
     });
-    return res.status >= 200 && res.status < 300 ? 'exported' : 'refused';
-  } catch { return 'lost_link'; }
+    // Head office's own CSV becomes the file the page saves; an answer with no file is said as such, never "Exported".
+    if (res.status >= 200 && res.status < 300) return exportReplyOf(domain, await res.json().catch(() => null));
+    const why = await refusalOf(res);
+    return { kind: 'refused', code: why.code, whatHappened: why.whatHappened };
+  } catch { return { kind: 'lost_link' }; }
 }
 
 /** SF-10: POST an export of a dated domain for a period ({ from, to }) — the rows taken and the columns hidden for this
@@ -3547,12 +3551,7 @@ async function postPeriodExport(domain: string, period: ExportPeriodInput): Prom
       headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
       credentials: 'same-origin', body: JSON.stringify({ from: period.from, to: period.to }),
     });
-    if (res.status >= 200 && res.status < 300) {
-      const body = (await res.json()) as { audit?: { rowCount?: unknown; redactedColumns?: unknown } };
-      const rowCount = typeof body.audit?.rowCount === 'number' ? body.audit.rowCount : 0;
-      const redacted = Array.isArray(body.audit?.redactedColumns) ? body.audit.redactedColumns.filter((c): c is string => typeof c === 'string') : [];
-      return { kind: 'exported', rowCount, redactedColumns: redacted };
-    }
+    if (res.status >= 200 && res.status < 300) return exportReplyOf(domain, await res.json().catch(() => null), period);
     const why = await refusalOf(res);
     return { kind: 'refused', code: why.code, whatHappened: why.whatHappened };
   } catch { return { kind: 'lost_link' }; }
@@ -5127,10 +5126,21 @@ export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbo
   );
 }
 
+/**
+ * OB-31 (screen audit 31 Oct 2026) — a held quantity on an office page, as a person reads it. A kg / L product's grams and
+ * millilitres read in kg and litres ("2.500 kg", the till's `quantityLabel`), never "2500 kg"; a count of items keeps the
+ * words the pages already used ("10 EA").
+ */
+export function officeQuantityLabel(quantityMinor: number, uom: string): string {
+  return minorPerUnitOf(uom) === 1 ? `${quantityMinor} ${uom}`.trim() : quantityLabel(quantityMinor, uom);
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface ManagerWindow {
   /** OB-606: the shop's day for every page — today, this month, a shown date — at the shop's clock, never the device's. */
   sreShopDay?: ShopDay;
+  /** OB-31 (screen audit 31 Oct 2026): a held quantity as a person reads it — 2500 of a kg product is "2.500 kg", never "2500 kg". */
+  sreQuantity?: { readonly label: typeof officeQuantityLabel };
   managerSession?: ManagerSession;
   managerData?: ManagerData;
   /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
@@ -5365,7 +5375,7 @@ interface ManagerWindow {
   // ── R4 Lane 4 — begin
   /** P3 (OB-288) M06-FR-02 / WF-03: the Requisitions and quotes page — who is looking; head office answers the rest. */
   requisitionsData?: ViewerIdentity;
-  requisitions?: { readonly session: RequisitionsSession; readonly words: typeof requisitionsWords; readonly outcomeWords: typeof requisitionsOutcomeWords; readonly offerRows: typeof requisitionOfferRows; readonly rupees: typeof requisitionRupees };
+  requisitions?: { readonly session: RequisitionsSession; readonly words: typeof requisitionsWords; readonly outcomeWords: typeof requisitionsOutcomeWords; readonly offerRows: typeof requisitionOfferRows; readonly rupees: typeof requisitionRupees; readonly lineText: typeof requisitionLineText };
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
   supplierScorecardData?: ViewerIdentity;
   supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES; readonly signedRupees: typeof ppvSignedRupees; readonly costWords: typeof ppvCostWords; readonly receivedCostWords: typeof ppvReceivedCostWords; readonly notComparedWords: typeof ppvNotComparedWords };
@@ -6460,6 +6470,8 @@ const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
   // OB-606: one shop's day for every page in this bundle (each page's own script reads its dates from it).
   browserWindow.sreShopDay = shopDay();
+  // OB-31: one way to word a held quantity on the office pages (the till's `quantityLabel` for kg / L).
+  browserWindow.sreQuantity = Object.freeze({ label: officeQuantityLabel });
   // The day close (M14-FR-04) reaches the store computer when the box injected its lane address;
   // without it the manager screen falls back to a local preview close that only touches this browser.
   // The manager's DURABLE device queue (SP-2a · F11): opened here so the session writes into it and the relay
@@ -7287,7 +7299,7 @@ if (browserWindow !== undefined) {
   // ── P3 procure-to-pay (OB-288): the Requisitions and quotes page — a requisition, its quotes, head office's comparison,
   // and an order PROPOSED from the chosen quote (a second person issues it on the Buying page).
   browserWindow.requisitionsData = viewerIdentity(browserWindow.requisitionsData);
-  browserWindow.requisitions = { session: createRequisitionsSession({ viewer: browserWindow.requisitionsData }), words: requisitionsWords, outcomeWords: requisitionsOutcomeWords, offerRows: requisitionOfferRows, rupees: requisitionRupees };
+  browserWindow.requisitions = { session: createRequisitionsSession({ viewer: browserWindow.requisitionsData }), words: requisitionsWords, outcomeWords: requisitionsOutcomeWords, offerRows: requisitionOfferRows, rupees: requisitionRupees, lineText: requisitionLineText };
   // ── P3 procure-to-pay — end
   // OB-288 LP/workforce package: related parties, adoption, help, appointment letters, facilities office, line-down
   // write-offs and relabel tasks — each page's tested session, attached in its own file (lpw-browser-wiring.ts).

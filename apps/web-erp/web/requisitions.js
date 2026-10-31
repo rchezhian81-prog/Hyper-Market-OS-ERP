@@ -24,6 +24,9 @@ function label(button, icon, key) {
   button.replaceChildren(...parts);
 }
 
+/** OB-31: "rice × 10.000 kg" — head office's smallest steps read in the product's unit (the session's words). */
+const lineText = (l) => (typeof api?.lineText === 'function' ? api.lineText(l) : `${l.productId} × ${l.quantity}`);
+
 function say(text, err = false) { $('page-status').className = err ? 'status err' : 'status'; $('page-status').textContent = text; }
 const sourceWords = (r) => r.source === undefined ? t('typed') : r.source.kind === 'replenishment' ? `${t('fromReplenishment')} (${r.source.storeId ?? ''})` : t('fromDrafts');
 
@@ -32,7 +35,7 @@ function paintList() {
   $('list').replaceChildren(...rows.map((r) => {
     const tr = document.createElement('tr');
     tr.dataset.requisition = r.requisitionId;
-    const cells = [r.requisitionId, r.lines.map((l) => `${l.productId} × ${l.quantity}`).join(', '), r.raisedBy ?? '—', sourceWords(r)].map((v) => { const td = document.createElement('td'); td.textContent = v; return td; });
+    const cells = [r.requisitionId, r.lines.map((l) => lineText(l)).join(', '), r.raisedBy ?? '—', sourceWords(r)].map((v) => { const td = document.createElement('td'); td.textContent = v; return td; });
     const td = document.createElement('td');
     const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet open'; label(b, 'search', 'open');
     b.addEventListener('click', () => { void openRequisition(r); });
@@ -47,7 +50,7 @@ function paintNewLines() {
     for (const [key, field] of [['product', 'productId'], ['quantity', 'quantity']]) {
       const lab = document.createElement('label'); const span = document.createElement('span'); span.textContent = t(key);
       const input = document.createElement('input'); input.value = l[field]; input.id = `new-${field}-${i}`; input.autocomplete = 'off';
-      if (field === 'quantity') input.inputMode = 'numeric';
+      if (field === 'quantity') input.inputMode = 'decimal'; // OB-31: "2.5" kg is a quantity
       input.addEventListener('input', () => { newLines[i] = { ...newLines[i], [field]: input.value }; });
       lab.htmlFor = input.id; lab.append(span, input); wrap.append(lab);
     }
@@ -59,7 +62,7 @@ function paintQuoteLines() {
   if (open === null) { $('quote-lines').replaceChildren(); return; }
   $('quote-lines').replaceChildren(...open.lines.map((l, i) => {
     const wrap = document.createElement('div'); wrap.className = 'form-row'; wrap.dataset.product = l.productId;
-    const name = document.createElement('p'); name.className = 'muted'; name.textContent = `${l.productId} × ${l.quantity}`;
+    const name = document.createElement('p'); name.className = 'muted'; name.textContent = lineText(l);
     wrap.append(name);
     for (const [key, field] of [['unitCost', 'unit'], ['leadDays', 'lead']]) {
       const lab = document.createElement('label'); const span = document.createElement('span'); span.textContent = t(key);
@@ -113,7 +116,7 @@ function paint() {
   $('raise-section').hidden = !may.raise;
   for (const id of ['record-quote', 'raise-order']) $(id).disabled = !may.raise;
   $('open-section').hidden = open === null;
-  if (open !== null) $('open-h').textContent = `${t('id')} ${open.requisitionId} · ${open.lines.map((l) => `${l.productId} × ${l.quantity}`).join(', ')}`;
+  if (open !== null) $('open-h').textContent = `${t('id')} ${open.requisitionId} · ${open.lines.map((l) => lineText(l)).join(', ')}`;
   paintList(); paintNewLines(); paintQuoteLines(); paintComparison();
 }
 

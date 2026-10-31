@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createRequisitionsSession, offerRows, orderLinesFrom, paiseFromRupees, rupees, requisitionsWords, requisitionsOutcomeWords, REQUISITIONS_COPY,
+  createRequisitionsSession, offerRows, orderLinesFrom, paiseFromRupees, rupees, requisitionsWords, requisitionsOutcomeWords, REQUISITIONS_COPY, lineText, quantityText,
   type ComparisonView,
 } from '../../apps/web-erp/src/requisitions-session';
 
@@ -51,18 +51,52 @@ describe('the Requisitions page session', () => {
     expect(ho.calls).toHaveLength(0);
   });
 
-  it('raises a requisition with whole quantities only, and reads the list from head office', async () => {
-    const ho = fakeHeadOffice((m) => m === 'GET' ? { status: 200, body: { requisitions: [{ requisitionId: 'rq-1', currency: 'INR', lines: [] }] } } : { status: 201, body: { requisition: { requisitionId: 'rq-1', currency: 'INR', lines: [{ productId: 'rice', quantity: 10 }] } } });
+  it('raises a requisition: an item in whole numbers, and reads the list from head office', async () => {
+    // Head office's product master does not hold "rice" here (404): it counts whole items, exactly as head office values it.
+    const ho = fakeHeadOffice((m, path) => path.startsWith('/v1/catalogue/products/') ? { status: 404, body: { error: { code: 'not_found' } } }
+      : m === 'GET' ? { status: 200, body: { requisitions: [{ requisitionId: 'rq-1', currency: 'INR', lines: [] }] } } : { status: 201, body: { requisition: { requisitionId: 'rq-1', currency: 'INR', lines: [{ productId: 'rice', quantity: 10 }] } } });
     const s = createRequisitionsSession({ viewer: BUYER, fetch: ho.fetch, newKey: () => 'k-1' });
     expect(await s.raise(' ', [{ productId: 'rice', quantity: '10' }])).toEqual({ result: 'invalid', why: 'needId' });
-    for (const q of ['0', '1.5', 'ten', '']) expect(await s.raise('rq-1', [{ productId: 'rice', quantity: q }])).toEqual({ result: 'invalid', why: 'needLine' });
+    // Not a positive number at all: refused before anything is asked.
+    for (const q of ['0', 'ten', '', '-2']) expect(await s.raise('rq-1', [{ productId: 'rice', quantity: q }])).toEqual({ result: 'invalid', why: 'needLine' });
     expect(await s.raise('rq-1', [{ productId: ' ', quantity: '3' }])).toEqual({ result: 'invalid', why: 'needLine' });
     expect(ho.calls).toHaveLength(0);
+    // A fraction of an ITEM is refused once head office says the product counts items — nothing is raised.
+    expect(await s.raise('rq-1', [{ productId: 'rice', quantity: '1.5' }])).toEqual({ result: 'invalid', why: 'needLine' });
+    expect(ho.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /v1/catalogue/products/rice']);
+    ho.calls.length = 0;
     const out = await s.raise(' rq-1 ', [{ productId: ' rice ', quantity: ' 10 ' }]);
     expect(out).toMatchObject({ result: 'ok', value: { requisitionId: 'rq-1' } });
-    expect(ho.calls[0]).toEqual({ method: 'POST', path: '/v1/purchase/requisitions/rq-1', body: { currency: 'INR', lines: [{ productId: 'rice', quantity: 10 }] }, key: 'k-1' });
+    expect(ho.calls[1]).toEqual({ method: 'POST', path: '/v1/purchase/requisitions/rq-1', body: { currency: 'INR', lines: [{ productId: 'rice', quantity: 10 }] }, key: 'k-1' });
     expect(await s.list()).toMatchObject({ result: 'ok', value: [{ requisitionId: 'rq-1' }] });
-    expect(ho.calls[1]).toMatchObject({ method: 'GET', path: '/v1/purchase/requisitions' });
+    expect(ho.calls[2]).toMatchObject({ method: 'GET', path: '/v1/purchase/requisitions' });
+  });
+
+  it('OB-31: 10 typed for a kg product is SENT as 10000 g (and 1.25 L as 1250 ml) — never 10 g (screen audit 31 Oct 2026)', async () => {
+    const units: Record<string, string> = { rice: 'KG', oil: 'ltr', soap: 'ea' };
+    const ho = fakeHeadOffice((m, path) => {
+      const product = /^\/v1\/catalogue\/products\/(.+)$/.exec(path)?.[1];
+      if (product !== undefined) return { status: 200, body: { product: { productId: product, baseUom: units[product] } } };
+      return { status: 201, body: { requisition: { requisitionId: 'rq-kg', currency: 'INR', lines: [] } } };
+    });
+    const s = createRequisitionsSession({ viewer: BUYER, fetch: ho.fetch, newKey: () => 'k-kg' });
+    expect(await s.raise('rq-kg', [{ productId: 'rice', quantity: '10' }, { productId: 'oil', quantity: '1.25' }, { productId: 'soap', quantity: '3' }, { productId: 'rice', quantity: '2.5' }])).toMatchObject({ result: 'ok' });
+    // The unit is asked once per product.
+    expect(ho.calls.filter((c) => c.method === 'GET').map((c) => c.path)).toEqual(['/v1/catalogue/products/rice', '/v1/catalogue/products/oil', '/v1/catalogue/products/soap']);
+    expect(ho.calls.at(-1)).toEqual({ method: 'POST', path: '/v1/purchase/requisitions/rq-kg', key: 'k-kg', body: { currency: 'INR', lines: [
+      { productId: 'rice', quantity: 10_000 }, { productId: 'oil', quantity: 1_250 }, { productId: 'soap', quantity: 3 }, { productId: 'rice', quantity: 2_500 },
+    ] } });
+    // A fourth decimal of a kg is not a whole gram: refused, never rounded.
+    ho.calls.length = 0;
+    expect(await s.raise('rq-kg', [{ productId: 'rice', quantity: '2.5005' }])).toEqual({ result: 'invalid', why: 'needLine' });
+    expect(ho.calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  it('OB-31: what head office holds in grams is SHOWN in kg — "rice × 10.000 kg", an item as its count', () => {
+    expect(lineText({ productId: 'rice', quantity: 10_000, uom: 'kg' })).toBe('rice × 10.000 kg');
+    expect(lineText({ productId: 'oil', quantity: 1_250, uom: 'L' })).toBe('oil × 1.250 L');
+    expect(lineText({ productId: 'soap', quantity: 3 })).toBe('soap × 3');
+    expect(quantityText(2_500, 'kg')).toBe('2.500 kg');
   });
 
   it('records a quote in rupees as whole paise; a bad price or day count is refused before sending', async () => {

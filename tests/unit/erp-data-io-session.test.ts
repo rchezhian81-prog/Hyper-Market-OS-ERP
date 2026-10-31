@@ -31,6 +31,7 @@ const PREVIEW: ImportPreviewView = {
 };
 const FP = 'a'.repeat(64);
 const CHECKED: ValidateResult = { preview: PREVIEW, contentFingerprint: FP };
+const EXPORTED: ExportResult = { kind: 'exported', rowCount: 1, redactedColumns: [], file: { fileName: 'products.csv', mime: 'text/csv', content: 'sku\nA\n' } };
 
 /** One of the uploader's own requests, as GET /v1/approvals/requests returns it under `mine`. */
 const request = (over: Partial<ApprovalRequestView> = {}): ApprovalRequestView => ({
@@ -47,7 +48,7 @@ const ports = (over: Partial<DataIoPorts> = {}): DataIoPorts => ({
   mayExport: () => true,
   mayImport: () => true,
   mayCommitImport: () => true,
-  runExport: async () => 'exported',
+  runExport: async () => EXPORTED,
   validate: async () => CHECKED,
   commit: async () => 'committed',
   askApproval: async (ask) => ({ result: 'asked', request: request({ summary: ask.summary, reason: ask.reason }) }),
@@ -115,17 +116,17 @@ describe('the import panel offers templates and reflects permission + identity',
 describe('running an export refuses locally before any POST', () => {
   it('refuses without export.read or with an empty domain, and never calls the port', async () => {
     let ran = 0;
-    const s = session({ mayExport: () => false, runExport: async () => { ran += 1; return 'exported'; } });
-    expect(await s.runExport('products')).toBe('refused');
-    expect(await session({ runExport: async () => { ran += 1; return 'exported'; } }).runExport('   ')).toBe('refused');
+    const s = session({ mayExport: () => false, runExport: async () => { ran += 1; return EXPORTED; } });
+    expect((await s.runExport('products')).kind).toBe('refused');
+    expect((await session({ runExport: async () => { ran += 1; return EXPORTED; } }).runExport('   ')).kind).toBe('refused');
     expect(ran).toBe(0);
   });
   it('a permitted export reaches the port and passes the result through', async () => {
     const seen: string[] = [];
-    const s = session({ runExport: async (d) => { seen.push(d); return 'exported'; } });
-    expect(await s.runExport('products')).toBe('exported');
+    const s = session({ runExport: async (d) => { seen.push(d); return EXPORTED; } });
+    expect(await s.runExport('products')).toBe(EXPORTED);
     expect(seen).toEqual(['products']);
-    expect(await session({ runExport: async () => 'lost_link' as ExportResult }).runExport('products')).toBe('lost_link');
+    expect(await session({ runExport: async (): Promise<ExportResult> => ({ kind: 'lost_link' }) }).runExport('products')).toEqual({ kind: 'lost_link' });
   });
 });
 
@@ -366,12 +367,12 @@ describe('the uploader sees their own load requests and where each stands', () =
 describe('results present as distinct, glanceable tones', () => {
   it('export / validate / ask / load outcomes each carry a tone, icon and word', () => {
     const s = session();
-    expect(s.presentExportResult('en', 'exported').tone).toBe('ok');
-    expect(s.presentExportResult('en', 'lost_link').tone).toBe('degraded');
-    expect(s.presentExportResult('en', 'refused').tone).toBe('error');
+    expect(s.presentExportResult('en', EXPORTED).tone).toBe('ok');
+    expect(s.presentExportResult('en', { kind: 'lost_link' }).tone).toBe('degraded');
+    expect(s.presentExportResult('en', { kind: 'refused', code: 'export_not_permitted', whatHappened: '' }).tone).toBe('error');
     expect(s.presentValidateResult('en', 'refused').tone).toBe('error');
     const all = [
-      s.presentExportResult('en', 'exported'), s.presentValidateResult('en', 'lost_link'),
+      s.presentExportResult('en', EXPORTED), s.presentValidateResult('en', 'lost_link'),
       s.presentAskOutcome('ta', { kind: 'not_ready' }), s.presentAskOutcome('en', { kind: 'incomplete', missing: 'why' }),
       ...(['committed', 'not_asked', 'waiting', 'expired', 'used', 'file_changed', 'lost_link', 'not_allowed'] as const).map((kind) => s.presentLoadOutcome('ta', { kind })),
     ];

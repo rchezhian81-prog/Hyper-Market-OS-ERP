@@ -5,6 +5,8 @@
 // unit and re-used if the answer is lost, so a retry never records twice. No prompt/confirm/alert; nothing on a timer.
 
 // OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+/** OB-31: a held quantity (the unit's smallest step) as a person reads it — 2500 of a kg product reads "2.500 kg". */
+const qtyText = (n, uom) => (window.sreQuantity?.label ? window.sreQuantity.label(n, uom ?? '') : `${n} ${uom ?? ''}`.trim());
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
@@ -106,7 +108,7 @@ function rowNode(item, open) {
   li.dataset.heldId = item.heldId;
   const head = document.createElement('div'); head.className = 'head';
   const headline = document.createElement('span'); headline.className = 'headline';
-  headline.textContent = `${item.productId} × ${item.quantityMinor} ${item.uom}`;
+  headline.textContent = `${item.productId} × ${qtyText(item.quantityMinor, item.uom)}`;
   const state = document.createElement('span'); state.className = 'state';
   const icon = document.createElement('span'); icon.setAttribute('aria-hidden', 'true'); icon.textContent = open ? '⚠' : '✓';
   const word = document.createElement('span'); word.textContent = t(STATE_WORD[item.state] ?? 'held');

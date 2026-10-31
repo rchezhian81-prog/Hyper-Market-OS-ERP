@@ -62,7 +62,7 @@ import {
 // cannot contain `node:http`. Same rule, one implementation — see `three-way-match.ts`.
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import { normaliseUom, valueAtUnitCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
+import { normaliseUom, valueAtUnitCost, minorPerUnitOf, typedQuantityMinor, quantityLabel, type Uom } from '../../../packages/contracts/src/quantity';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 
@@ -333,6 +333,18 @@ export interface BuyingSession {
   openCommitment(input: Parameters<typeof computeOpenCommitment>[0]): OpenCommitment;
 
   /**
+   * OB-31 — the unit this screen counts a product in, as the store's catalogue names it ('ea' when not told), so the
+   * order form can say "kg" beside the box a buyer types into.
+   */
+  unitOf(productId: string): Uom;
+  /** OB-31 — a quantity typed in the product's unit ("2.5" kg) → the smallest steps the order holds (2500); undefined = refused. */
+  orderQuantityFrom(productId: string, typed: string): number | undefined;
+  /** OB-31 — the smallest steps a line holds, as a person reads them (2500 of a kg product → "2.500 kg"; 10 items → "10"). */
+  quantityText(productId: string, quantityMinor: number): string;
+  /** OB-31 rule 3 — a line's value: smallest steps × the price per WHOLE unit, rounded once (2500 g at ₹45/kg → ₹112.50). */
+  lineValueMinor(productId: string, quantityMinor: number, unitCostMinor: number): number;
+
+  /**
    * Read a supplier invoice file and say what is wrong with it. **Writes nothing.**
    *
    * This is the whole point of the screen: the buyer sees every bad row, by line number, before
@@ -495,6 +507,11 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
     },
 
     openCommitment: (input) => computeOpenCommitment(input),
+
+    unitOf: (productId) => unitCodeOf(ports.productUom?.(productId)) as Uom,
+    orderQuantityFrom: (productId, typed) => typedQuantityMinor(typed, unitCodeOf(ports.productUom?.(productId))),
+    quantityText: (productId, quantityMinor) => quantityLabel(quantityMinor, unitCodeOf(ports.productUom?.(productId))),
+    lineValueMinor: (productId, quantityMinor, unitCostMinor) => valueAtUnitCost(quantityMinor, unitCodeOf(ports.productUom?.(productId)), unitCostMinor),
 
     previewInvoice,
 

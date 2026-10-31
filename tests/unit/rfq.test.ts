@@ -92,3 +92,22 @@ describe('compareQuotes — like-for-like, cheapest and fastest', () => {
     expect(c.cheapestOverall).toEqual({ supplierId: 'supA', quoteId: 'qA' });
   });
 });
+
+describe('OB-31 — a weighed line is grams at a price per kg (screen audit 31 Oct 2026)', () => {
+  it('2500 g of a kg product at ₹45.00 a kg costs ₹112.50 — the line cost and the total, never 2500 × ₹45', () => {
+    const r: Requisition = { requisitionId: 'rq-kg', currency: INR, lines: [{ productId: 'rice', quantity: 2_500, uom: 'kg' }, { productId: 'soap', quantity: 3 }] };
+    const q: Quote = { quoteId: 'q1', supplierId: 's1', lines: [{ productId: 'rice', unitCost: money(4_500, INR), leadTimeDays: 1 }, { productId: 'soap', unitCost: money(2_000, INR), leadTimeDays: 1 }] };
+    const c = compareQuotes({ requisition: r, quotes: [q] });
+    expect(c.lines[0]).toMatchObject({ productId: 'rice', quantity: 2_500, uom: 'kg' });
+    expect(c.lines[0]!.offers[0]!.lineCost).toEqual(money(11_250, INR));
+    expect(c.lines[1]!.offers[0]!.lineCost).toEqual(money(6_000, INR)); // no unit: whole items, as before
+    expect(c.totals[0]!.totalCost).toEqual(money(17_250, INR));
+  });
+
+  it('a litre line is millilitres at a price per litre, rounded once (1255 ml at ₹99.99/L = ₹125.49)', () => {
+    const r: Requisition = { requisitionId: 'rq-l', currency: INR, lines: [{ productId: 'oil', quantity: 1_255, uom: 'L' }] };
+    const q: Quote = { quoteId: 'q1', supplierId: 's1', lines: [{ productId: 'oil', unitCost: money(9_999, INR), leadTimeDays: 1 }] };
+    // 1255 × 9999 ÷ 1000 = 12548.745 → 12549, rounded once, half up.
+    expect(compareQuotes({ requisition: r, quotes: [q] }).lines[0]!.offers[0]!.lineCost).toEqual(money(12_549, INR));
+  });
+});

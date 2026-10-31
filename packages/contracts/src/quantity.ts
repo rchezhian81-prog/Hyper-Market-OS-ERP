@@ -185,6 +185,23 @@ export function quantityLabel(quantityMinor: number, uomCode: string): string {
   return uom === 'ea' ? decimal : `${decimal} ${uom}`;
 }
 
+/**
+ * OB-31 rule 1, at a screen — what a person TYPES in the product's own unit ("10" items, "2.5" kg, "1.25" L) as the
+ * integer count of the unit's smallest step that is stored and sent (10 · 2500 g · 1250 ml). It is `parseQuantity`, so a
+ * typed amount is never rounded: `undefined` for anything that is not a positive amount the unit holds exactly (a
+ * fraction of an item, a fourth decimal of a kg, a blank, a word, a unit this system does not know).
+ */
+export function typedQuantityMinor(typed: string, uomCode: string): number | undefined {
+  const uom = normaliseUom(uomCode);
+  if (uom === undefined) return undefined;
+  try {
+    const q = parseQuantity(typed.trim(), uom);
+    return q.minor > 0 ? q.minor : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ── OB-31: the boundary rules ───────────────────────────────────────────────────────────────────────────────────────
 
 /** Spellings people and older screens use for each unit, mapped to the one code the system stores (OB-31 rule 4). */

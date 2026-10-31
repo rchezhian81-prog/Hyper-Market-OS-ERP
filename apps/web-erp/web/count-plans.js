@@ -3,6 +3,8 @@
 // window.countPlansSession. This file only draws what the session hands it and sends a person's click through it —
 // each act once, in their own session — then reads head office again, so what is shown is what head office kept.
 
+/** OB-31: a held quantity (the unit's smallest step) as a person reads it — 2500 of a kg product reads "2.500 kg". */
+const qtyText = (n, uom) => (window.sreQuantity?.label ? window.sreQuantity.label(n, uom ?? '') : `${n} ${uom ?? ''}`.trim());
 const $ = (id) => document.getElementById(id);
 const session = window.countPlansSession ?? null;
 let lang = 'en';
@@ -127,7 +129,7 @@ function paintDrawer() {
     : view.freezeBreaches.map((b) => { const x = session.breachView(lang, b); return node('li', { className: 'tone-error', dataset: { movement: x.movementId } }, node('b', { textContent: `${x.productId} — ${x.kindWord} (${x.effectMinor > 0 ? '+' : ''}${x.effectMinor})` }), node('span', { className: 'muted', textContent: `${x.movementId} · ${window.sreShopDay?.dateTimeOf(x.occurredAt) ?? ''}` })); })));
   $('d-held').replaceChildren(...(view.heldWriteOffs.length === 0
     ? [node('li', { className: 'muted', textContent: t('noHeld') })]
-    : view.heldWriteOffs.map((h) => { const x = session.heldView(lang, h); return node('li', { className: x.state === 'applied' ? 'tone-ok' : 'tone-degraded', dataset: { held: x.heldId, state: x.state } }, node('b', { textContent: `${x.productId} — ${x.quantityMinor} ${x.uom} · ${x.value}` }), node('span', { className: 'muted', textContent: `${x.stateWord}${x.applied === null ? '' : ` · ${x.applied.writeOffId}`}` })); })));
+    : view.heldWriteOffs.map((h) => { const x = session.heldView(lang, h); return node('li', { className: x.state === 'applied' ? 'tone-ok' : 'tone-degraded', dataset: { held: x.heldId, state: x.state } }, node('b', { textContent: `${x.productId} — ${qtyText(x.quantityMinor, x.uom)} · ${x.value}` }), node('span', { className: 'muted', textContent: `${x.stateWord}${x.applied === null ? '' : ` · ${x.applied.writeOffId}`}` })); })));
 }
 
 async function refreshDrawer() {

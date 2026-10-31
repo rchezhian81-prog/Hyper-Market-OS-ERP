@@ -23,7 +23,7 @@ const TEMPLATES: readonly ImportTemplateView[] = [{ id: 'products-basic', domain
 const ports = (over: Partial<DataIoPorts> = {}): DataIoPorts => ({
   exportDomains: () => DOMAINS, recentExports: () => [], importTemplates: () => TEMPLATES,
   mayExport: () => true, mayImport: () => true, mayCommitImport: () => true,
-  runExport: async () => 'exported', validate: async () => 'refused', commit: async () => 'committed', ...over,
+  runExport: async () => ({ kind: 'exported', rowCount: 1, redactedColumns: [], file: { fileName: 'products.csv', mime: 'text/csv', content: 'sku\nA\n' } } as const), validate: async () => 'refused', commit: async () => 'committed', ...over,
 });
 const session = (over: Partial<DataIoPorts> = {}) => createDataIoSession({ userId: 'u-op' }, ports(over));
 

@@ -69,7 +69,9 @@ import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
-import { packTimeZone } from './shop-zone';
+import { packTimeZone, packTradingDay } from './shop-zone';
+import { toCloudReturn } from './cloud-return';
+import { refundLegs, type DayBookReturn } from '../../../packages/finance/src/day-book';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { myRosterOnBox, foodHandlingForViewer, rosterCopyOnBox } from './workforce-pack'; // Round 7 · OB-507 · OB-502 · Round 8 · OB-531
 
@@ -93,6 +95,11 @@ export type ScreenName = (typeof SCREENS)[number];
 export interface ScreenInput {
   readonly pack: StorePack;
   readonly sales: readonly LoggedSale[];
+  /**
+   * The refunds and exchanges on this box's returns log, parsed (any shape the till wrote). Absent on a box that holds
+   * none. The owner's takings are counted net of them — the day book's own rule (`refundLegs`), never a second one.
+   */
+  readonly returns?: readonly unknown[];
   /** Records on the disk that could not be read at all. Surfaced, never silently dropped. */
   readonly unreadableRecords: number;
   /** The store's real outbox — the only honest source for "has everything reached the cloud?". */
@@ -924,6 +931,37 @@ function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): 
   return out;
 }
 
+/**
+ * Round B: today's refunds on this box — how many, how much left the shop and by which tender — for the owner's takings.
+ * Each return is read as it reaches head office (`toCloudReturn`) and its money out is the day book's own rule
+ * (`refundLegs`: a refund by its tender; on an exchange the credit applied to the replacement plus any balance given
+ * back), so the owner's "Today" and the day book cannot disagree. Dated by the shop's own trading day of when it was
+ * taken (the pack's cut-off), the rule the till's card day uses.
+ */
+export function refundsOn(input: ScreenInput): { count: number; refundedMinor: number; tenderMix: Record<string, number> } {
+  const out = { count: 0, refundedMinor: 0, tenderMix: {} as Record<string, number> };
+  // No returns log told, or no calendar to date them by: nothing is taken off (and nothing is made up).
+  if (!input.pack.policies.known || input.returns === undefined) return out;
+  for (const record of input.returns) {
+    const ret = toCloudReturn(record);
+    if (ret.returnId === '' || ret.processedAt === '' || Number.isNaN(Date.parse(ret.processedAt))) continue;
+    if (packTradingDay(input.pack, ret.processedAt) !== input.tradingDay) continue;
+    const x = ret.exchange;
+    const asBooked: DayBookReturn = {
+      returnId: ret.returnId, originalSaleId: ret.originalSaleId, refundMinor: ret.refundMinor, refundTender: ret.refundTender, lines: ret.lines,
+      ...(x === undefined || (x.balance !== 'even' && x.balance !== 'refund' && x.balance !== 'top_up') ? {} : {
+        exchange: { appliedMinor: x.appliedMinor, balance: x.balance, balanceMinor: x.balanceMinor, ...(x.balanceTender === undefined ? {} : { balanceTender: x.balanceTender }) },
+      }),
+    };
+    out.count += 1;
+    for (const leg of refundLegs(asBooked)) {
+      out.refundedMinor += leg.amountMinor;
+      out.tenderMix[leg.kind] = (out.tenderMix[leg.kind] ?? 0) + leg.amountMinor;
+    }
+  }
+  return out;
+}
+
 export function ownerPayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.policies.known) return null;
   const policies = input.pack.policies.value;
@@ -957,6 +995,8 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
       // Round 4 (P-08): the bills that could not be costed, with what they took and how it was paid — the owner app
       // shows the takings and says the margin is not known, instead of "no sales".
       uncosted: uncostedOf(today.sales, new Set(day.facts.map((f) => f.saleId))),
+      // Round B: today's refunds, by the day book's own rule — the owner's takings are counted net of them.
+      refunds: refundsOn(input),
       exceptions,
       // Out of every day's figures, so it is named where the owner will see it rather than
       // becoming an unexplained difference against the till roll.
@@ -1140,7 +1180,21 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...batchTrackedProductIdsFor(input),
     // OB-288 lane 2 · WF-07 offline: the transfers to send from this store and to count in at it, as head office last said.
     ...transferWork(input),
+    // Round B (screen gap audit 31 Oct 2026): the names, so the handheld shows a person a product and not a code.
+    ...warehouseProductNames(input),
   };
+}
+
+/** The products' names (and Tamil names, where recorded) from the store pack; nothing when the pack holds no products. */
+function warehouseProductNames(input: ScreenInput): Record<string, unknown> {
+  if (!input.pack.products.known) return {};
+  const productNames: Record<string, string> = {};
+  const productNamesTa: Record<string, string> = {};
+  for (const p of input.pack.products.value) {
+    productNames[p.productId] = p.name;
+    if (typeof p.nameTa === 'string' && p.nameTa.trim() !== '') productNamesTa[p.productId] = p.nameTa;
+  }
+  return { productNames, ...(Object.keys(productNamesTa).length === 0 ? {} : { productNamesTa }) };
 }
 
 /** SP-8c: the handheld's issue list — one row per owed indent line, from the register the box holds. */

@@ -14,6 +14,7 @@ import {
   toDecimalString,
   precisionOf,
   isUom,
+  typedQuantityMinor,
   type Uom,
 } from '../../packages/contracts/src/quantity';
 
@@ -81,5 +82,20 @@ describe('quantity comparison, predicates and formatting', () => {
     expect(precisionOf('kg')).toBe(3);
     expect(isUom('kg')).toBe(true);
     expect(isUom('furlong')).toBe(false);
+  });
+});
+
+describe('typedQuantityMinor — what a person types in the unit, as the smallest steps stored (OB-31 · screen audit 31 Oct 2026)', () => {
+  it('10 kg is 10000 g, 2.5 kg is 2500 g, 1.25 L is 1250 ml, 12 items is 12 — any spelling of the unit', () => {
+    expect(typedQuantityMinor('10', 'kg')).toBe(10_000);
+    expect(typedQuantityMinor(' 2.5 ', 'KG')).toBe(2_500);
+    expect(typedQuantityMinor('1.25', 'ltr')).toBe(1_250);
+    expect(typedQuantityMinor('12', 'EA')).toBe(12);
+    expect(typedQuantityMinor('500', 'g')).toBe(500);
+  });
+  it('refuses, never rounds: a fraction of an item, a fourth decimal of a kg, zero, a word, an unknown unit', () => {
+    for (const [typed, uom] of [['1.5', 'ea'], ['2.5005', 'kg'], ['0', 'kg'], ['0.000', 'kg'], ['-1', 'kg'], ['ten', 'kg'], ['', 'kg'], ['1,5', 'kg'], ['3', 'box']] as const) {
+      expect(typedQuantityMinor(typed, uom)).toBeUndefined();
+    }
   });
 });

@@ -37,6 +37,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Requis
         const call = (method: 'POST', path: string, userId: string, body: unknown, idempotencyKey: string) => cloud.request({ method, path, userId, idempotencyKey, body });
         await approveSupplierWith(call, 'sup-1');
         await approveSupplierWith(call, 'sup-2');
+        // OB-31 (screen audit 31 Oct 2026): rice is loose, counted in kg on head office's product master; dal has no master
+        // entry here, so it counts whole items.
+        const pub = await cloud.request({ method: 'POST', path: '/v1/catalogue/products/rice/publish', userId: OWNER, idempotencyKey: 'pub-rice', body: {
+          product: { sku: 'SKU-RICE', name: 'Rice, loose', baseUom: 'kg', primaryCategoryId: 'grocery', taxClass: '10063020', lifecycle: 'draft' },
+          categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
+        } });
+        if (pub.status !== 201) throw new Error(`rice publish: ${pub.status} ${JSON.stringify(pub.body)}`);
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
@@ -62,19 +69,24 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Requis
       expect(await page.locator('#raise svg').count()).toBe(1);
       expect(await page.textContent('#raise')).toBe('Raise the requisition');
 
-      // A line with no whole quantity is refused before anything is sent.
+      // A fraction of an ITEM (dal counts items) is refused before anything is raised.
       await page.fill('#new-id', 'rq-1');
-      await page.fill('#new-productId-0', 'rice');
+      await page.fill('#new-productId-0', 'dal');
       await page.fill('#new-quantity-0', '2.5');
       await page.click('#raise');
-      await expect.poll(() => page.textContent('#page-status')).toMatch(/whole quantity above 0/);
+      await expect.poll(() => page.textContent('#page-status')).toMatch(/whole items, or up to three decimals of a kg/);
+      expect((await shop.cloud().request({ method: 'GET', path: '/v1/purchase/requisitions', userId: OWNER })).body).toMatchObject({ count: 0 });
+      // OB-31: 10 typed for rice is TEN KILOS — head office holds 10000 g, and the list reads it back in kg.
+      await page.fill('#new-productId-0', 'rice');
       await page.fill('#new-quantity-0', '10');
       await page.click('#add-line');
       await page.fill('#new-productId-1', 'dal');
       await page.fill('#new-quantity-1', '4');
       await page.click('#raise');
       await page.locator('#open-section:not([hidden])').waitFor({ timeout: 15_000 });
-      expect(await page.textContent('#list tr[data-requisition="rq-1"]')).toMatch(/rice × 10, dal × 4/);
+      expect(await page.textContent('#list tr[data-requisition="rq-1"]')).toMatch(/rice × 10\.000 kg, dal × 4/);
+      const held = (await shop.cloud().request({ method: 'GET', path: '/v1/purchase/requisitions', userId: OWNER })).body as { requisitions: { lines: { productId: string; quantity: number; uom?: string }[] }[] };
+      expect(held.requisitions[0]!.lines).toEqual([{ productId: 'rice', quantity: 10_000, uom: 'kg' }, { productId: 'dal', quantity: 4 }]);
       expect(await page.textContent('#no-quotes')).toBe('No quotes yet.');
 
       // Two quotes: sup-1 quotes rice only, faster; sup-2 quotes both, rice cheaper.
@@ -114,6 +126,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Requis
       const cloud = shop.cloud();
       const read = async () => (await cloud.request({ method: 'GET', path: '/v1/purchase/orders/po-rq-1', userId: OWNER })).body as { order: Record<string, unknown> };
       expect((await read()).order).toMatchObject({ status: 'proposed', requisitionId: 'rq-1', requisitionedBy: MGR, supplierId: 'sup-2', totalMinor: 75_200, buyingScope: 'local' });
+      // End to end, one unit: the order the receiving staff will count against holds the same 10000 g of rice, in kg.
+      expect(((await read()).order['lines'] as { productId: string; orderedQty: number; uom?: string }[]).find((l) => l.productId === 'rice')).toMatchObject({ orderedQty: 10_000, uom: 'kg' });
       expect((await cloud.request({ method: 'POST', path: '/v1/purchase/orders/po-rq-1/approval', userId: MGR, idempotencyKey: 'mgr-issue', body: { reason: 'mine' } })).status).toBe(403);
       expect((await cloud.request({ method: 'POST', path: '/v1/purchase/orders/po-rq-1/approval', userId: OWNER, idempotencyKey: 'own-issue', body: { reason: 'cheapest whole quote' } })).status).toBe(200);
       expect((await read()).order).toMatchObject({ status: 'issued', approvedBy: OWNER });

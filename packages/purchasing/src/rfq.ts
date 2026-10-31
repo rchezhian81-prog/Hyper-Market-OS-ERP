@@ -18,12 +18,18 @@
 // is stable. This engine decides nothing and commits nothing — it lays the choice out; a human picks and
 // a PO is raised through the approved `issuePurchaseOrder` path (§28).
 
-import { add, zero, multiplyByInteger, compare, type Money, type CurrencyCode } from '../../contracts/src/money';
+import { add, zero, money, compare, type Money, type CurrencyCode } from '../../contracts/src/money';
+import { normaliseUom, valueAtUnitCost } from '../../contracts/src/quantity';
 
 export interface RequisitionLine {
   readonly productId: string;
-  /** Whole units needed (> 0). */
+  /**
+   * How much is needed (> 0), as an integer count of the product unit's SMALLEST STEP (OB-31 rule 1): items for `ea`,
+   * GRAMS for `kg`, MILLILITRES for `L` — so 2.5 kg of rice is 2500, exactly as the purchase order it leads to holds it.
+   */
   readonly quantity: number;
+  /** OB-31: the product's unit (absent = whole items, `ea`). A quote's unit cost is per WHOLE unit — per kg, per litre. */
+  readonly uom?: string;
 }
 
 export interface Requisition {
@@ -61,7 +67,10 @@ export interface LineOffer {
 
 export interface LineComparison {
   readonly productId: string;
+  /** Smallest steps, as the requisition line holds them (OB-31). */
   readonly quantity: number;
+  /** The line's unit, when the requisition names one (OB-31). */
+  readonly uom?: string;
   readonly offers: readonly LineOffer[];
   /** The quote ref with the lowest extended cost among comparable offers. */
   readonly cheapest?: { readonly supplierId: string; readonly quoteId: string };
@@ -118,7 +127,8 @@ export function compareQuotes(input: { readonly requisition: Requisition; readon
         supplierId: q.supplierId,
         quoteId: q.quoteId,
         unitCost: ql.unitCost,
-        lineCost: multiplyByInteger(ql.unitCost, reqLine.quantity),
+        // OB-31 rule 3: smallest steps × the cost per WHOLE unit, rounded once — 2500 g at ₹45/kg is ₹112.50, never ₹1,12,500.
+        lineCost: money(valueAtUnitCost(reqLine.quantity, unitOfLine(reqLine), ql.unitCost.minor), ql.unitCost.currency),
         leadTimeDays: ql.leadTimeDays,
         comparable,
         ...(comparable ? {} : { reason: `quoted in ${ql.unitCost.currency}, not ${cur}` }),
@@ -130,6 +140,7 @@ export function compareQuotes(input: { readonly requisition: Requisition; readon
     return {
       productId: reqLine.productId,
       quantity: reqLine.quantity,
+      ...(reqLine.uom === undefined ? {} : { uom: reqLine.uom }),
       offers,
       ...(cheapest ? { cheapest: refOf(cheapest) } : {}),
       ...(fastest ? { fastest: refOf(fastest) } : {}),
@@ -170,6 +181,9 @@ export function compareQuotes(input: { readonly requisition: Requisition; readon
     summary: summarise(quotes.length, totals, cheapestOverall, fastestOverall, incompleteQuotes),
   };
 }
+
+/** OB-31: a line's unit as stored (any spelling normalised); absent or unknown counts whole items. */
+const unitOfLine = (l: RequisitionLine): string => (l.uom === undefined ? 'ea' : normaliseUom(l.uom) ?? 'ea');
 
 function pickBest<T>(items: readonly T[], better: (a: T, b: T) => number): T | undefined {
   if (items.length === 0) return undefined;

@@ -195,6 +195,10 @@
          on screen above the reason chips and pushed OK below a 720px viewport (found by the SP-4c close e2e). */
       .keypad[hidden], .reasons[hidden], .entry[hidden] { display: none; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      /* A bill number's letters: seven to a row, every key the till's full 56px. */
+      .keypad.letterpad { grid-template-columns: repeat(7, 1fr); gap: 8px; }
+      .pad-switch { min-height: var(--tap); font-size: 22px; font-weight: 700; border-radius: var(--radius-lg); justify-self: end; min-width: 120px; }
+      .pad-switch[hidden] { display: none; }
       .keypad button, .reasons button, .sheet-actions button, .refusal button {
         min-height: var(--tap); font-size: 22px; border-radius: var(--radius-lg); font-weight: 600;
       }
@@ -376,7 +380,10 @@
         <div class="hint" id="entry-hint"></div>
         <!-- One-tap answers (pos-cashier.md interaction budget): 2–6 for a quantity, the note in hand for cash. -->
         <div class="quick" id="quick" hidden></div>
+        <!-- A bill number keyed by hand (letters and digits): the switch flips between the letters pad and the digits. -->
+        <button class="pad-switch" id="pad-switch" type="button" hidden>123</button>
         <div class="keypad" id="keypad"></div>
+        <div class="keypad letterpad" id="letterpad" hidden></div>
         <div class="reasons" id="reasons" hidden></div>
         <div class="sheet-actions">
           <button id="sheet-cancel" type="button">Cancel</button>

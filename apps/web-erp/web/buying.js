@@ -67,6 +67,11 @@ const WORDS = {
     blocked: 'Do not pay this yet', agreed: 'These agree', withheld: 'Held back',
     poLead: 'Somebody else has to approve it before it goes to the supplier.',
     itemCode: 'Item code', howMany: 'How many', agreedPrice: 'Agreed price each (in rupees)',
+    // OB-31: a loose item is ordered in its own unit — "2.5" kg — and priced per whole kg / litre, never per gram.
+    howManyIn: 'How many {unit}', pricePer: 'Agreed price per {one} (in rupees)',
+    unitMany: { ea: 'items', kg: 'kg', L: 'litres', g: 'grams', ml: 'ml' },
+    unitOne: { ea: 'item', kg: 'kg', L: 'litre', g: 'gram', ml: 'ml' },
+    needWholeItems: 'Items are ordered in whole numbers. Loose goods take up to three decimals of a kg or a litre (2.5 kg).',
     addItem: 'Add this item', raiseIt: 'Raise the order', noLinesYet: 'No items added yet.',
     needPoLine: 'Add at least one item first.', needPoFields: 'Fill in the item, how many, and the price.',
     orderRaised: 'Order raised', whoApprovesPo: 'Who approved this order?',
@@ -125,6 +130,10 @@ const WORDS = {
     blocked: 'இதை இன்னும் செலுத்த வேண்டாம்', agreed: 'இவை பொருந்துகின்றன', withheld: 'நிறுத்தி வைக்கப்பட்டது',
     poLead: 'சப்ளையருக்குச் செல்வதற்கு முன் வேறு ஒருவர் ஒப்புதல் அளிக்க வேண்டும்.',
     itemCode: 'பொருள் குறியீடு', howMany: 'எத்தனை', agreedPrice: 'ஒப்புக்கொண்ட விலை (ரூபாயில்)',
+    howManyIn: 'எத்தனை {unit}', pricePer: 'ஒரு {one}-க்கு ஒப்புக்கொண்ட விலை (ரூபாயில்)',
+    unitMany: { ea: 'பொருட்கள்', kg: 'கிலோ', L: 'லிட்டர்', g: 'கிராம்', ml: 'மி.லி.' },
+    unitOne: { ea: 'பொருள்', kg: 'கிலோ', L: 'லிட்டர்', g: 'கிராம்', ml: 'மி.லி.' },
+    needWholeItems: 'பொருட்கள் முழு எண்ணில் ஆர்டர் செய்யப்படும். தளர்வான பொருட்கள் கிலோ / லிட்டரில் மூன்று தசம இடங்கள் வரை (2.5 கிலோ).',
     addItem: 'இந்தப் பொருளைச் சேர்', raiseIt: 'ஆர்டரைத் தயாரி', noLinesYet: 'இன்னும் பொருட்கள் சேர்க்கப்படவில்லை.',
     needPoLine: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needPoFields: 'பொருள், எண்ணிக்கை, விலை — எல்லாவற்றையும் நிரப்பவும்.',
     orderRaised: 'ஆர்டர் தயாரிக்கப்பட்டது', whoApprovesPo: 'இந்த ஆர்டரை யார் ஒப்புதல் அளித்தார்?',
@@ -369,6 +378,11 @@ function renderPreview(preview) {
   el('capture').textContent = t('saveInvoice');
 }
 
+/** OB-31: the smallest steps a line holds as a person reads them (2500 of a kg item → "2.500 kg") — the session's word. */
+function quantityText(productId, quantityMinor) {
+  return typeof session.quantityText === 'function' ? session.quantityText(productId, quantityMinor) : String(quantityMinor);
+}
+
 function linesTable(lines) {
   const table = document.createElement('table');
   const head = document.createElement('tr');
@@ -382,7 +396,7 @@ function linesTable(lines) {
   for (const line of lines) {
     const row = document.createElement('tr');
     for (const [text, cls] of [
-      [line.productId, ''], [String(line.quantity), 'amount'],
+      [line.productId, ''], [quantityText(line.productId, line.quantity), 'amount'],
       [inr(line.unitPriceMinor), 'amount'], [inr(line.lineTotalMinor), 'amount'],
     ]) {
       const td = document.createElement('td');
@@ -543,22 +557,49 @@ function renderPoLines() {
   }
   el('po-lines').replaceChildren(linesTable(poLines.map((l) => ({
     productId: l.productId, quantity: l.orderedQty,
-    unitPriceMinor: l.unitCostMinor, lineTotalMinor: l.unitCostMinor * l.orderedQty,
+    // OB-31 rule 3: grams × the price per kg ÷ 1000, rounded once — the session's arithmetic, never qty × price here.
+    unitPriceMinor: l.unitCostMinor,
+    lineTotalMinor: typeof session.lineValueMinor === 'function' ? session.lineValueMinor(l.productId, l.orderedQty, l.unitCostMinor) : l.unitCostMinor * l.orderedQty,
   }))));
 }
 
+/** OB-31: the unit the typed item is counted in ('ea' when the screen was not told). */
+const unitOfTyped = () => {
+  const productId = el('po-product').value.trim();
+  return productId !== '' && typeof session.unitOf === 'function' ? session.unitOf(productId) : 'ea';
+};
+
+/** The quantity and price boxes name the item's unit, so "10" beside "kg" is ten kilos — what is typed is what is ordered. */
+function paintPoUnit() {
+  const unit = unitOfTyped();
+  const many = (WORDS[lang].unitMany ?? WORDS.en.unitMany)[unit] ?? unit;
+  const one = (WORDS[lang].unitOne ?? WORDS.en.unitOne)[unit] ?? unit;
+  el('po-qty-label').textContent = t('howManyIn').replace('{unit}', many);
+  el('po-cost-label').textContent = t('pricePer').replace('{one}', one);
+}
+el('po-product').addEventListener('input', paintPoUnit);
+
 el('add-po-line').addEventListener('click', () => {
   const productId = el('po-product').value.trim();
-  const orderedQty = Number(el('po-qty').value);
+  const typedQty = el('po-qty').value.trim();
+  // OB-31 rule 1: what is typed is in the item's own unit ("10" kg); the order holds and sends its smallest steps (10000 g).
+  const orderedQty = typeof session.orderQuantityFrom === 'function'
+    ? session.orderQuantityFrom(productId, typedQty)
+    : (/^\d+$/.test(typedQty) && Number(typedQty) > 0 ? Number(typedQty) : undefined);
   const unitCostMinor = toMinor(el('po-cost').value);
-  if (productId === '' || !Number.isInteger(orderedQty) || orderedQty <= 0 || !Number.isFinite(unitCostMinor) || unitCostMinor <= 0) {
+  if (productId === '' || typedQty === '' || !Number.isFinite(unitCostMinor) || unitCostMinor <= 0) {
     tell(t('read'), t('needPoFields'));
+    return;
+  }
+  if (orderedQty === undefined) {
+    tell(t('read'), t('needWholeItems'));
     return;
   }
   poLines.push({ productId, orderedQty, unitCostMinor });
   el('po-product').value = '';
   el('po-qty').value = '';
   el('po-cost').value = '';
+  paintPoUnit();
   renderPoLines();
 });
 
@@ -752,8 +793,7 @@ function paintChrome() {
   el('po-supplier-label').textContent = t('supplier');
   el('po-store-label').textContent = t('deliverTo');
   el('po-product-label').textContent = t('itemCode');
-  el('po-qty-label').textContent = t('howMany');
-  el('po-cost-label').textContent = t('agreedPrice');
+  paintPoUnit();
   el('add-po-line').textContent = t('addItem');
   el('raise-po').textContent = t('raiseIt');
   el('sample').textContent = t('sampleData');
