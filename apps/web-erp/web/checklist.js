@@ -137,7 +137,9 @@ function paint() {
   el('whoami').textContent = window.checklistData?.userId ?? '';
   el('lang').textContent = t('langName');
 
-  el('work-count').textContent = view.toWorkCount === 0 ? t('allDone') : `${view.toWorkCount} ${t('toWorkCount')}`;
+  // Round A (P-08): the session words the line — no checklists at all says so, never "every checklist is signed".
+  el('work-count').textContent = typeof view.workLine === 'string' ? view.workLine
+    : view.checklists.length === 0 ? '' : view.toWorkCount === 0 ? t('allDone') : `${view.toWorkCount} ${t('toWorkCount')}`;
 
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;

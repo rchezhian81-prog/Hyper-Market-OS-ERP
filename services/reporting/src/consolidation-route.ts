@@ -12,6 +12,11 @@
 // SERVER's — the branches where their grants hold the permission (`ctx.scope`), narrowed to `?scope=` when they
 // ask for less; a branch they do not hold is refused by name, never widened. The total is recomputed to the
 // visible branches, the rest named as withheld. A contribution or membership names a branch the writer holds.
+//
+// Screen gap audit (31 Oct 2026) Round A: nothing ever posted a contribution, so the Company report expected no branch and
+// said "none reported" and "every branch reported" at once. The roll-up now also reads head office's OWN records
+// (`ownRecords`: its organisation register and the sales and refunds its stores sent), filling only what nobody posted —
+// and an empty roll-up never reconciles (the engine).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, assertBranchInScope, narrowScope } from '../../kernel/src/index';
@@ -47,6 +52,36 @@ export interface ConsolidationDeps {
    */
   readonly access?: (tenantId: string) => Promise<AccessControl> | AccessControl;
   readonly recordExport?: (tenantId: string, record: ExportAudit, key: string) => Promise<void> | void;
+  /**
+   * Screen gap audit (31 Oct 2026) Round A: head office's OWN records for a period and family — the branches its
+   * organisation register puts under each company, and each branch's numbers from what head office itself holds (a
+   * one-store business sends its sales and refunds to head office; nothing else posts a contribution). They fill only
+   * what nobody posted: a posted membership or contribution always wins for its branch (and its branch, period, family).
+   * Absent: the roll-up reads only what was posted, as before.
+   */
+  readonly ownRecords?: (tenantId: string, period: string, family: MetricFamily) => Promise<{
+    readonly contributions: readonly BranchContribution[];
+    readonly memberships: readonly BranchMembership[];
+  }>;
+}
+
+/**
+ * The roll-up's inputs: what was posted, filled with head office's own records where nothing was posted. A branch with a
+ * posted membership keeps it (its own word on where it sits); a (branch, period, family) with a posted contribution keeps
+ * it. Pure.
+ */
+export function withOwnRecords(
+  posted: { readonly contributions: readonly BranchContribution[]; readonly memberships: readonly BranchMembership[] },
+  own: { readonly contributions: readonly BranchContribution[]; readonly memberships: readonly BranchMembership[] } | undefined,
+): { readonly contributions: readonly BranchContribution[]; readonly memberships: readonly BranchMembership[] } {
+  if (own === undefined) return posted;
+  const placed = new Set(posted.memberships.map((m) => m.branchId));
+  const key = (c: BranchContribution): string => `${c.branchId}\u001f${c.period}\u001f${c.family}`;
+  const reported = new Set(posted.contributions.map(key));
+  return {
+    memberships: [...posted.memberships, ...own.memberships.filter((m) => !placed.has(m.branchId))],
+    contributions: [...posted.contributions, ...own.contributions.filter((c) => !reported.has(key(c)))],
+  };
 }
 
 /** The roll-up's open CSV (M30-FR-02): one row per contributing branch, branch-scoped, permission-checked, logged. */
@@ -166,12 +201,16 @@ export function consolidationRoutes(deps: ConsolidationDeps): readonly Route[] {
         // asked for; a branch they do not hold is refused by name, never silently widened to the company.
         const scope: ReportScope = { userId: ctx.userId, branchScope: narrowScope(ctx, requested) };
         const staleQ = Number(ctx.query['staleAfterSeconds']);
+        const inputs = withOwnRecords(
+          { contributions: await deps.contributions(ctx.tenantId), memberships: await deps.memberships(ctx.tenantId) },
+          await deps.ownRecords?.(ctx.tenantId, period, family as MetricFamily),
+        );
         const report = consolidate({
           nodeId: node,
           family: family as MetricFamily,
           period,
-          contributions: await deps.contributions(ctx.tenantId),
-          memberships: await deps.memberships(ctx.tenantId),
+          contributions: inputs.contributions,
+          memberships: inputs.memberships,
           scope,
           asOf: isStr(ctx.query['asOf']) ? (ctx.query['asOf'] as string) : deps.now(),
           staleAfterSeconds: Number.isInteger(staleQ) && staleQ > 0 ? staleQ : DEFAULT_STALE_SECONDS,
@@ -206,10 +245,14 @@ export function consolidationRoutes(deps: ConsolidationDeps): readonly Route[] {
           });
         }
         const branchScope = narrowScope(ctx, isStr(scopeB) ? [scopeB] : undefined);
+        const inputs = withOwnRecords(
+          { contributions: await deps.contributions(ctx.tenantId), memberships: await deps.memberships(ctx.tenantId) },
+          await deps.ownRecords?.(ctx.tenantId, period, family as MetricFamily),
+        );
         const report = consolidate({
           nodeId: node, family: family as MetricFamily, period,
-          contributions: await deps.contributions(ctx.tenantId),
-          memberships: await deps.memberships(ctx.tenantId),
+          contributions: inputs.contributions,
+          memberships: inputs.memberships,
           scope: { userId: ctx.userId, branchScope },
           asOf: deps.now(), staleAfterSeconds: DEFAULT_STALE_SECONDS,
         });

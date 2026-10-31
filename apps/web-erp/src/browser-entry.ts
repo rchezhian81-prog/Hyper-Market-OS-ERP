@@ -52,6 +52,7 @@ import {
   type RegisterItem,
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
+import { readLiveCounts, todayLiveFigures } from './today-live-counts'; // screen gap audit Round A: Today's head-office counts
 import {
   createBuyingSession,
   type BuyingPorts, type BuyingSession, type InvoiceLine,
@@ -807,6 +808,8 @@ export function categoryPolicyPortsFromData(data: CategoryPolicyData | undefined
   return {
     mayRead: () => held.has(CATEGORY_POLICY_PERMISSION),
     categories: () => data?.categories ?? [],
+    // Round A (P-08): no list at all means the box was never told — not "no categories set up".
+    known: () => Array.isArray(data?.categories),
     onDate: data?.onDate ?? '1970-01-01',
   };
 }
@@ -949,6 +952,8 @@ export function wastePortsFromData(data: WasteData | undefined): WasteReviewPort
     rows: () => data?.rows ?? [],
     // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
     mayRead: () => held.has(WASTE_READ_PERMISSION),
+    // Round A (P-08): no rows at all means the box was never told — not "nothing recorded yet".
+    known: () => Array.isArray(data?.rows),
   };
 }
 
@@ -5143,6 +5148,8 @@ interface ManagerWindow {
   sreQuantity?: { readonly label: typeof officeQuantityLabel };
   managerSession?: ManagerSession;
   managerData?: ManagerData;
+  /** Round A (screen gap audit): Today's approvals and purchase-order counts, read live from head office as the signed-in person. */
+  todayLive?: { readonly read: () => ReturnType<typeof readLiveCounts>; readonly figures: typeof todayLiveFigures };
   /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
   boxClockView?: typeof boxClockView;
   /**
@@ -6504,6 +6511,9 @@ if (browserWindow !== undefined) {
   const managerRelay = openManagerRelay(browserWindow.laneWriteBase, browserWindow.managerSession, managerOutbox);
   if (managerRelay !== undefined) browserWindow.managerRelay = managerRelay;
   if (managerStorageProblem !== undefined) browserWindow.managerStorageProblem = managerStorageProblem;
+  // Round A: Today also counts what waits for this person at head office and head office's open orders — in their own
+  // session, read only; offline the store computer's figures stay and the tiles say head office was not reached.
+  browserWindow.todayLive = Object.freeze({ read: () => readLiveCounts((globalThis as { fetch?: typeof fetch }).fetch), figures: todayLiveFigures });
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
   // The buyer's DURABLE device queue (SP-7a · F02): opened per store so the session writes into it and the relay drains

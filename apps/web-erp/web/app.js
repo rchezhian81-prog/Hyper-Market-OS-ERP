@@ -55,7 +55,7 @@ const WORDS = {
     needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing needs you right now.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screenWord: 'screen', screensWord: 'screens', open: 'Open',
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
     deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
-    attnApprovals: 'approvals you can clear', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
+    attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
     // OB-392: lane health on Today — one tap per lane.
     lanesTitle: 'Lanes', laneWord: 'Lane', laneAllWorking: 'every device working', laneProblems: 'device problem(s)', laneNotReported: 'the till has not reported its devices yet',
     lanePrinter: 'Printer', laneScanner: 'Scanner', laneCard: 'Card machine', laneLastHeard: 'Till last reported', laneUnsent: 'Not yet at head office', laneLastSync: 'Last sent to head office',
@@ -142,7 +142,7 @@ const WORDS = {
     needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இப்போது உங்களுக்கு எதுவும் தேவையில்லை.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screenWord: 'திரை', screensWord: 'திரைகள்', open: 'திற',
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
     deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
-    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
+    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnHoApprovals: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கும் ஒப்புதல்கள் — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
     lanesTitle: 'கல்லாக்கள்', laneWord: 'கல்லா', laneAllWorking: 'எல்லாச் சாதனங்களும் வேலை செய்கின்றன', laneProblems: 'சாதனச் சிக்கல்(கள்)', laneNotReported: 'கல்லா இன்னும் தன் சாதனங்களைப் பற்றிச் சொல்லவில்லை',
     lanePrinter: 'அச்சுப்பொறி', laneScanner: 'ஸ்கேனர்', laneCard: 'கார்டு இயந்திரம்', laneLastHeard: 'கல்லா கடைசியாகச் சொன்னது', laneUnsent: 'தலைமை அலுவலகத்துக்கு இன்னும் செல்லாதவை', laneLastSync: 'தலைமை அலுவலகத்துக்குக் கடைசியாக அனுப்பியது',
     devOk: 'வேலை செய்கிறது', devDegraded: 'சரியாக வேலை செய்யவில்லை', devFailed: 'செயலிழந்தது', devNotReported: 'சொல்லப்படவில்லை', laneNever: 'ஒருபோதும் இல்லை', laneBills: 'இந்தக் கல்லாவின் பில்(கள்) அல்லது திருப்பம்(கள்)',
@@ -583,6 +583,8 @@ function tile({ figure, label, note, goTo, attentionWhen, iconName, money }) {
 // ── Today (UX-2b · OB-15/OB-16): the figures the store computer sent with this screen, the rail's own workspaces ──
 // Every figure comes from `window.managerData.today` — built on the store computer from its pack and its own log —
 // or says it is not known. The page invents nothing: no figure, no name, no screen it was not given.
+/** Round A: what head office last answered for Today's approvals and purchase orders (null until it has). */
+let live = null;
 const todayFigures = () => (window.managerData && window.managerData.today && typeof window.managerData.today === 'object' ? window.managerData.today : null);
 const figureOf = (key) => { const all = todayFigures(); const f = all ? all[key] : undefined; return f && typeof f === 'object' && typeof f.known === 'boolean' ? f : { known: false, why: t('boxSilent') }; };
 const amountOf = (figure) => (figure.known ? (figure.count ?? figure.value ?? 0) : null);
@@ -615,6 +617,8 @@ function renderAttention(floor, today) {
     if (n > 0) rows.push({ tone: 'attention', n, text: t(phraseKey), target });
   };
   add(floor.approvalsIcanClear, 'approvalsLabel', 'attnApprovals', { view: 'approvals' });
+  // Round A: what waits for this person at head office is decided on the Approvals page, not this one.
+  if (today.hoApprovals) add(today.hoApprovals, 'approvalsLabel', 'attnHoApprovals', { rail: 'approval-requests' });
   add(floor.exceptions, 'exceptionsLabel', 'attnExceptions', { view: 'close' });
   add(floor.unsent, 'unsentLabel', 'attnUnsent', { view: 'close' });
   add(today.recalls, 'recallsOpen', 'attnRecalls', { rail: 'expiry' });
@@ -771,8 +775,16 @@ function renderHome() {
   el('nobody').hidden = floor.manager !== null;
   el('nobody').textContent = floor.manager === null ? t('nobodyNamed') : '';
   const clearable = floor.approvalsIcanClear;
+  // Round A (screen gap audit): once head office has answered, its approvals and open orders are counted with the store
+  // computer's own — in the reader's language, each tile saying where its number came from (or that head office was not
+  // reached). Before it answers, or with no bundle, the store computer's figures stand alone.
+  const liveFigures = live !== null && window.todayLive
+    ? window.todayLive.figures({ approvalsWaiting: floor.approvalsWaiting, approvalsIcanClear: clearable, purchaseOrdersOpen: figureOf('purchaseOrdersOpen') }, live, lang)
+    : null;
+  const allClearable = liveFigures ? liveFigures.approvalsIcanClear : clearable;
   const today = {
-    sales: figureOf('salesToday'), po: figureOf('purchaseOrdersOpen'), receipts: figureOf('receiptsRecorded'), indents: figureOf('indentsOpen'),
+    sales: figureOf('salesToday'), po: liveFigures ? liveFigures.purchaseOrdersOpen : figureOf('purchaseOrdersOpen'), receipts: figureOf('receiptsRecorded'), indents: figureOf('indentsOpen'),
+    hoApprovals: liveFigures ? liveFigures.headOffice : null,
     counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'),
     tillDevices: todayFigures() && todayFigures().tillDevices ? figureOf('tillDevices') : null,
   };
@@ -780,9 +792,9 @@ function renderHome() {
     // The takings first (OB-15: "sales today") — the box's own log, never a guess; its note says how many sales.
     tile({ figure: today.sales, label: t('salesTodayLabel'), money: true, iconName: 'rupee' }),
     tile({
-      figure: floor.approvalsWaiting,
+      figure: liveFigures ? liveFigures.approvalsWaiting : floor.approvalsWaiting,
       label: t('approvalsLabel'),
-      note: clearable.known ? `${clearable.count} ${t('youCanClear')}` : '',
+      note: [liveFigures?.approvalsWaiting.note, allClearable.known ? `${allClearable.count} ${t('youCanClear')}` : ''].filter(Boolean).join(' · '),
       goTo: 'approvals',
       attentionWhen: (n) => n > 0,
       iconName: 'check',
@@ -1574,6 +1586,14 @@ if (typeof window.managerStorageProblem === 'string' && window.managerStoragePro
 // down leaves everything saved here, and the state words say exactly that.
 void syncToBox();
 if (window.managerRelay) setInterval(() => { void syncToBox(); }, 10_000);
+// Round A: Today's head-office counts — read now, and again each minute while the page is open (a GET, read only).
+async function refreshLive() {
+  if (!window.todayLive) return;
+  live = await window.todayLive.read();
+  if (view === 'home') renderHome();
+}
+void refreshLive();
+if (window.todayLive) setInterval(() => { void refreshLive(); }, 60_000);
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //

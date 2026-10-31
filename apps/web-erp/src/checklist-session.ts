@@ -83,7 +83,7 @@ export interface ChecklistConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'listHeading' | 'toWorkCount' | 'allDone' | 'notKnown'
+  | 'listHeading' | 'toWorkCount' | 'allDone' | 'noneSetUp' | 'notKnown'
   | 'kindOpening' | 'kindClosing' | 'kindHandover'
   | 'itemsLabel' | 'blockingWord' | 'outstandingLabel' | 'signedByLabel' | 'unsignedWord'
   | 'blockedWord' | 'incompleteWord' | 'completeWord'
@@ -97,6 +97,7 @@ export const CHECKLIST_COPY: BilingualCopy<CopyKey> = {
     title: 'Checklists', langName: 'தமிழ்',
     lead: 'The opening, closing and handover checklists for the day — worst first — waiting for a manager to sign them off. A BLOCKING item still outstanding stops the shop; a checklist with nobody\'s name on it is a list, not a record. Signing records who signed, in your name; nothing is signed automatically.',
     listHeading: 'To sign off', toWorkCount: 'to sign off', allDone: 'Every checklist is signed and nothing blocking is outstanding.',
+    noneSetUp: 'There are no checklists for today — none has been set up, so there is nothing to sign. This does not mean anything was checked.',
     notKnown: 'This store computer has not been told the day\'s checklists yet, so it cannot say what is outstanding.',
     kindOpening: 'Opening', kindClosing: 'Closing', kindHandover: 'Handover',
     itemsLabel: 'Items', blockingWord: 'Blocking', outstandingLabel: 'Still outstanding', signedByLabel: 'Signed by', unsignedWord: 'Not signed',
@@ -116,6 +117,7 @@ export const CHECKLIST_COPY: BilingualCopy<CopyKey> = {
     title: 'சரிபார்ப்புப் பட்டியல்கள்', langName: 'English',
     lead: 'அன்றைய திறப்பு, மூடல், ஒப்படைப்பு சரிபார்ப்புப் பட்டியல்கள் — மோசமானது முதலில் — மேலாளர் கையொப்பமிடக் காத்திருக்கின்றன. நிலுவையில் உள்ள ஒரு தடையான உருப்படி கடையை நிறுத்தும்; யாருடைய பெயரும் இல்லாத பட்டியல் ஒரு பதிவு அல்ல, வெறும் பட்டியல். கையொப்பம் யார் கையொப்பமிட்டார்கள் என்பதை உங்கள் பெயரில் பதிவு செய்கிறது; எதுவும் தானாக கையொப்பமிடப்படாது.',
     listHeading: 'கையொப்பமிட வேண்டியவை', toWorkCount: 'கையொப்பமிட', allDone: 'ஒவ்வொரு பட்டியலும் கையொப்பமிடப்பட்டு, தடையான எதுவும் நிலுவையில் இல்லை.',
+    noneSetUp: 'இன்றைக்கு எந்தச் சரிபார்ப்புப் பட்டியலும் இல்லை — எதுவும் அமைக்கப்படவில்லை, எனவே கையொப்பமிட எதுவும் இல்லை. இதன் பொருள் எதுவும் சரிபார்க்கப்பட்டது என்பதல்ல.',
     notKnown: 'அன்றைய சரிபார்ப்புப் பட்டியல்கள் இன்னும் கடைக் கணினிக்குச் சொல்லப்படவில்லை, எனவே என்ன நிலுவையில் உள்ளது என்று சொல்ல முடியாது.',
     kindOpening: 'திறப்பு', kindClosing: 'மூடல்', kindHandover: 'ஒப்படைப்பு',
     itemsLabel: 'உருப்படிகள்', blockingWord: 'தடையானது', outstandingLabel: 'இன்னும் நிலுவையில்', signedByLabel: 'கையொப்பமிட்டவர்', unsignedWord: 'கையொப்பமிடப்படவில்லை',
@@ -170,6 +172,12 @@ export interface ChecklistView {
   readonly checklists: readonly PresentedChecklist[];
   /** Checklists that still need a manager (not complete). */
   readonly toWorkCount: number;
+  /**
+   * The one line above the list (screen gap audit Round A · P-08): how many are still to sign; "every checklist is signed"
+   * ONLY when there are checklists and all are done; "there are no checklists for today" when there are none at all —
+   * no checklists is never read as every checklist signed.
+   */
+  readonly workLine: string;
   readonly nobodyNamed: boolean;
   /** Whether to offer the sign-off action — this user holds `workforce.roster.manage`. */
   readonly mayManage: boolean;
@@ -188,7 +196,7 @@ export interface ChecklistSession {
 }
 
 const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayManage: boolean): ChecklistView => ({
-  screenState, checklists: [], toWorkCount: 0, nobodyNamed, mayManage,
+  screenState, checklists: [], toWorkCount: 0, workLine: screenState.label, nobodyNamed, mayManage,
 });
 
 /** Worst first: a blocked checklist before an unsigned one before one merely carrying items before a done one. */
@@ -264,12 +272,15 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
         .map((c) => present(lang, c))
         .sort((a, b) => RANK[a.outcome] - RANK[b.outcome] || a.kind.localeCompare(b.kind));
       const toWorkCount = checklists.filter((c) => !c.complete).length;
-      // "empty" only when there is genuinely nothing left to work — a signed, unblocked day.
+      // "empty" only when there is genuinely nothing left to work — a signed, unblocked day. Round A (P-08): a day with NO
+      // checklists at all says so in its own words; "every checklist is signed" is said only when there are some.
       const state = checklists.length === 0 || toWorkCount === 0 ? 'empty' : 'ready';
+      const none = checklists.length === 0;
       return {
-        screenState: presentScreenState({ state, label: t(state === 'empty' ? 'scrEmpty' : 'scrReady') }),
+        screenState: presentScreenState({ state, label: t(none ? 'noneSetUp' : state === 'empty' ? 'scrEmpty' : 'scrReady') }),
         checklists,
         toWorkCount,
+        workLine: none ? t('noneSetUp') : toWorkCount === 0 ? t('allDone') : `${toWorkCount} ${t('toWorkCount')}`,
         nobodyNamed,
         mayManage,
       };

@@ -158,7 +158,7 @@ export interface ConsolidatedReport {
   readonly staleBranches: readonly string[];
   /** The WORST freshness across contributors (missing when a branch never synced). */
   readonly freshness: Freshness;
-  /** True when every expected branch reported. */
+  /** True when branches are expected and every one of them reported (never for a node with no branch expected). */
   readonly reconciles: boolean;
   /** Branches hidden from this viewer by scope (§28) — named so the total is explainable. */
   readonly withheldByScope: readonly string[];
@@ -226,7 +226,10 @@ export function consolidate(input: {
     .map((c) => ({ branchId: c.branchId, measures: c.measures, lastRefreshAt: c.lastRefreshAt }))
     .sort((a, b) => (rankOf(b.measures) - rankOf(a.measures)) || a.branchId.localeCompare(b.branchId));
 
-  const reconciles = missing.length === 0;
+  // Screen gap audit (31 Oct 2026) Round A · P-08: a node with NO branch expected under it does not "reconcile" — there is
+  // nothing to reconcile, and calling an empty roll-up complete is how a page came to say "every branch reported" while no
+  // branch had. It reconciles only when branches are expected and every one of them reported.
+  const reconciles = expected.length > 0 && missing.length === 0;
   return {
     nodeId: input.nodeId,
     family: input.family,
@@ -241,7 +244,8 @@ export function consolidate(input: {
     withheldByScope,
     contributors,
     detail:
-      (reconciles ? `${reported.length}/${expected.length} branches reported` : `${missing.length} branch(es) MISSING (${missing.join(', ')}) — total is incomplete`) +
+      (expected.length === 0 ? 'no branch is expected under this node, so nothing is reported'
+        : reconciles ? `${reported.length}/${expected.length} branches reported` : `${missing.length} branch(es) MISSING (${missing.join(', ')}) — total is incomplete`) +
       (withheldByScope.length > 0 ? `; ${withheldByScope.length} branch(es) withheld by scope` : '') +
       (roll.state !== 'fresh' ? `; data is ${roll.state}` : ''),
   };

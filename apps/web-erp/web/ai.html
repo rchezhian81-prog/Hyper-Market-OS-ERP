@@ -115,6 +115,7 @@
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+      .off-r8 { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
     </style>
   </head>
   <body>
@@ -125,6 +126,8 @@
 
     <p class="sample" id="unreachable" hidden role="alert">Head office cannot be reached — nothing on this screen is current, and nothing can be stopped from here until it can.</p>
     <p class="stale" id="stale" hidden role="status"></p>
+    <!-- OB-561 (owner, 31 Oct 2026): live AI stays off until Release 8 (OB-382) — said plainly, first, on the page. -->
+    <p class="off-r8" id="off-r8" role="note">Live AI — the assistants that write words or answer in free text — is off until Release 8; the owner decided this on 31 October 2026. The switches on this page govern only the rule-based assistants.</p>
     <p class="nobody" id="nobody" hidden role="alert"></p>
 
     <nav id="tabs" aria-label="Sections">

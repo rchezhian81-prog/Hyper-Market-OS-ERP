@@ -12,10 +12,10 @@ let lang = 'en';
 function sampleSession() {
   const CHROME = {
     en: { title: 'Waste & write-off', lead: 'Sample losses. Connect the store computer to see your own.', langName: 'தமிழ்',
-      attentionCount: 'needed approval', allClear: 'No material losses — nothing needed a second approval.', totalLoss: 'Total loss today',
+      attentionCount: 'needed approval', allClear: 'No material losses — nothing needed a second approval.', totalLoss: 'Total loss recorded',
       sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'கழிவு & நீக்கம்', lead: 'மாதிரி இழப்புகள். உங்கள் சொந்தவற்றைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
-      attentionCount: 'ஒப்புதல் தேவைப்பட்டது', allClear: 'பெரிய இழப்புகள் இல்லை.', totalLoss: 'இன்றைய மொத்த இழப்பு',
+      attentionCount: 'ஒப்புதல் தேவைப்பட்டது', allClear: 'பெரிய இழப்புகள் இல்லை.', totalLoss: 'பதிவான மொத்த இழப்பு',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
   const row = (productId, tone, icon, statusLabel, quantity, value, needsAttention, evidenceLabel) => ({
@@ -88,7 +88,9 @@ function paint() {
   el('filter').textContent = attentionOnly ? vw('filterAll') : vw('filterAttention');
   el('filter').setAttribute('aria-pressed', attentionOnly ? 'true' : 'false');
 
-  el('attention-count').textContent = view.attentionCount === 0 ? t('allClear') : `${view.attentionCount} ${t('attentionCount')}`;
+  // Round A (P-08): the session words the line — "nothing recorded yet" or "not given" for an empty page, never "all clear".
+  el('attention-count').textContent = typeof view.summaryLine === 'string' ? view.summaryLine
+    : view.total === 0 ? '' : view.attentionCount === 0 ? t('allClear') : `${view.attentionCount} ${t('attentionCount')}`;
   el('total').innerHTML = '';
   el('total').append(document.createTextNode(`${t('totalLoss')}: `));
   const b = document.createElement('b'); b.textContent = view.totalValue; el('total').append(b);
