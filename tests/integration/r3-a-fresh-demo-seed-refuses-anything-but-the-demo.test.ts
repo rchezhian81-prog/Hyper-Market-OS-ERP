@@ -32,14 +32,15 @@ describe('a fresh seed of the demo copy — the refusals (pure)', () => {
   });
 });
 
-describe.skipIf(DATABASE_URL === undefined)('a fresh seed of the demo copy — on a real PostgreSQL', () => {
+describe.skipIf(!DATABASE_URL)('a fresh seed of the demo copy — on a real PostgreSQL', () => {
   const probe = `r3_reseed_probe_${Date.now().toString(36)}`;
   const at = new Date('2026-10-31T09:15:42.000Z');
   const retired = retiredNameFor(probe, at);
   const server = (db: string): pg.Client => { const u = new URL(DATABASE_URL!); u.pathname = `/${db}`; return new pg.Client({ connectionString: u.toString() }); };
-  const admin = server('postgres');
+  let admin: pg.Client; // made inside beforeAll, so collecting the file without a database never parses the address
 
   beforeAll(async () => {
+    admin = server('postgres');
     await admin.connect();
     await admin.query(`CREATE DATABASE "${probe}"`);
     const pool = new pg.Pool({ connectionString: (() => { const u = new URL(DATABASE_URL!); u.pathname = `/${probe}`; return u.toString(); })(), max: 1 });
@@ -48,6 +49,7 @@ describe.skipIf(DATABASE_URL === undefined)('a fresh seed of the demo copy — o
     await pool.end();
   }, 120_000);
   afterAll(async () => {
+    if (admin === undefined) return;
     for (const db of [probe, retired]) await admin.query(`DROP DATABASE IF EXISTS "${db}" WITH (FORCE)`); // the test's own scratch copies
     await admin.end();
   });
