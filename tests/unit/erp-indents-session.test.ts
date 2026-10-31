@@ -118,7 +118,7 @@ describe('RAISE: queued on the durable device queue before it is called saved (P
   it('a good ask is on the queue as a FloorIndentRequested from the back store to the floor, in the reader\'s name, with whole-number lines and the catalogue\'s unit', () => {
     const outbox = outboxOn();
     const s = createIndentsSession(config(), ports().ports, outbox);
-    const out = s.raise({ lines: [{ productId: 'RICE', quantityMinor: '20', uom: '' }, { productId: ' OIL ', quantityMinor: '6', uom: 'ltr' }], reason: '  shelf 4 empty ' });
+    const out = s.raise({ lines: [{ productId: 'RICE', quantity: '20', uom: '' }, { productId: ' OIL ', quantity: '6', uom: 'ltr' }], reason: '  shelf 4 empty ' });
     expect(out.ok).toBe(true);
     const indentId = out.ok ? out.indentId : '';
     expect(indentId).toMatch(/^ind-/);
@@ -128,17 +128,18 @@ describe('RAISE: queued on the durable device queue before it is called saved (P
     expect(item?.event.idempotencyKey).toBe(indentKeyFor(indentId));
     expect(item?.event.payload).toEqual({
       indentId, fromLocationId: 'S1-BACK', toLocationId: 'S1',
-      lines: [{ productId: 'RICE', quantityMinor: 20, uom: 'EA' }, { productId: 'OIL', quantityMinor: 6, uom: 'LTR' }],
+      // OB-31: 6 litres typed is 6000 ml sent (it was sent as 6 ml — the office kg/L bug, Round B follow-up).
+      lines: [{ productId: 'RICE', quantityMinor: 20, uom: 'EA' }, { productId: 'OIL', quantityMinor: 6000, uom: 'LTR' }],
       reason: 'shelf 4 empty', requestedBy: 'u-mgr', at: NOW, storeId: 'S1', source: 'indents-screen',
     });
-    expect(s.savedWork()).toEqual([expect.objectContaining({ kind: 'request', id: indentId, what: indentId, detail: 'RICE × 20 · OIL × 6', state: 'saved_here', attempts: 0 })]);
+    expect(s.savedWork()).toEqual([expect.objectContaining({ kind: 'request', id: indentId, what: indentId, detail: 'RICE × 20 · OIL × 6.000 L', state: 'saved_here', attempts: 0 })]);
     expect(s.handedKeys()).toEqual([]);
   });
 
   it('a given id is kept (the same ask again is the same record), and the work is still there when the screen is reopened over the same storage', () => {
     const storage = memory();
     const first = createIndentsSession(config(), ports().ports, outboxOn(storage));
-    expect(first.raise({ lines: [{ productId: 'RICE', quantityMinor: '5', uom: 'EA' }], reason: '', indentId: 'ind-9' })).toEqual({ ok: true, indentId: 'ind-9' });
+    expect(first.raise({ lines: [{ productId: 'RICE', quantity: '5', uom: 'EA' }], reason: '', indentId: 'ind-9' })).toEqual({ ok: true, indentId: 'ind-9' });
     expect(first.savedWork()[0]).toMatchObject({ id: 'ind-9', state: 'saved_here' });
     // A reload: a new session over the same device storage.
     const again = createIndentsSession(config(), ports().ports, outboxOn(storage));
@@ -147,14 +148,14 @@ describe('RAISE: queued on the durable device queue before it is called saved (P
 
   it('refuses — with nothing queued — the reader who lacks the right, a nameless reader, a box that named no places, no lines, a bad line, a repeated product', () => {
     const cases: [IndentsConfig, IndentsPorts, Parameters<ReturnType<typeof createIndentsSession>['raise']>[0], string][] = [
-      [config(), ports({ mayRequest: () => false }).ports, { lines: [{ productId: 'RICE', quantityMinor: '1', uom: 'EA' }], reason: '' }, 'not_permitted'],
-      [config({ userId: null }), ports().ports, { lines: [{ productId: 'RICE', quantityMinor: '1', uom: 'EA' }], reason: '' }, 'nobody_named'],
-      [config({ backStoreId: null }), ports().ports, { lines: [{ productId: 'RICE', quantityMinor: '1', uom: 'EA' }], reason: '' }, 'no_places'],
+      [config(), ports({ mayRequest: () => false }).ports, { lines: [{ productId: 'RICE', quantity: '1', uom: 'EA' }], reason: '' }, 'not_permitted'],
+      [config({ userId: null }), ports().ports, { lines: [{ productId: 'RICE', quantity: '1', uom: 'EA' }], reason: '' }, 'nobody_named'],
+      [config({ backStoreId: null }), ports().ports, { lines: [{ productId: 'RICE', quantity: '1', uom: 'EA' }], reason: '' }, 'no_places'],
       [config(), ports().ports, { lines: [], reason: '' }, 'no_lines'],
-      [config(), ports().ports, { lines: [{ productId: 'RICE', quantityMinor: '0', uom: 'EA' }], reason: '' }, 'bad_line'],
-      [config(), ports().ports, { lines: [{ productId: 'RICE', quantityMinor: 'ten', uom: 'EA' }], reason: '' }, 'bad_line'],
-      [config(), ports().ports, { lines: [{ productId: '', quantityMinor: '1', uom: 'EA' }], reason: '' }, 'bad_line'],
-      [config(), ports().ports, { lines: [{ productId: 'RICE', quantityMinor: '1', uom: 'EA' }, { productId: 'RICE', quantityMinor: '2', uom: 'EA' }], reason: '' }, 'duplicate_product'],
+      [config(), ports().ports, { lines: [{ productId: 'RICE', quantity: '0', uom: 'EA' }], reason: '' }, 'bad_line'],
+      [config(), ports().ports, { lines: [{ productId: 'RICE', quantity: 'ten', uom: 'EA' }], reason: '' }, 'bad_line'],
+      [config(), ports().ports, { lines: [{ productId: '', quantity: '1', uom: 'EA' }], reason: '' }, 'bad_line'],
+      [config(), ports().ports, { lines: [{ productId: 'RICE', quantity: '1', uom: 'EA' }, { productId: 'RICE', quantity: '2', uom: 'EA' }], reason: '' }, 'duplicate_product'],
     ];
     for (const [cfg, p, input, refusal] of cases) {
       const outbox = outboxOn();
@@ -174,7 +175,7 @@ describe('COUNT IN: the floor\'s independent receipt, queued durably; the issuer
     const outbox = outboxOn();
     const s = createIndentsSession(config(), ports().ports, outbox);
     expect(s.view('en').receivable.map((r) => [r.indentId, r.issue.issueId])).toEqual([['ind-2', 'is-1']]);
-    const out = s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantityMinor: '10' }] });
+    const out = s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantity: '10' }] });
     expect(out).toEqual({ ok: true, indentId: 'ind-2', issueId: 'is-1' });
     const [item] = outbox.pending();
     expect(item?.key).toBe(receiptKeyFor('ind-2', 'is-1'));
@@ -183,19 +184,19 @@ describe('COUNT IN: the floor\'s independent receipt, queued durably; the issuer
     expect(s.savedWork()[0]).toMatchObject({ kind: 'receipt', id: 'ind-2:is-1', what: 'ind-2 · is-1', detail: 'RICE × 10', state: 'saved_here' });
     // Saved once: the issue is no longer offered, and a second count of it is refused here.
     expect(s.view('en').receivable).toEqual([]);
-    expect(s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantityMinor: '10' }] })).toEqual({ ok: false, refusal: 'already_saved' });
+    expect(s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantity: '10' }] })).toEqual({ ok: false, refusal: 'already_saved' });
     expect(outbox.all()).toHaveLength(1);
   });
 
   it('refuses — with nothing queued — the issuer, an unknown issue, one already received, a bad count, a reader without the right', () => {
-    const count = [{ productId: 'RICE', batchId: null, quantityMinor: '12' }];
+    const count = [{ productId: 'RICE', batchId: null, quantity: '12' }];
     const cases: [IndentsConfig, IndentsPorts, { indentId: string; issueId: string; counted: typeof count }, string][] = [
       [config({ userId: 'u-back' }), ports().ports, { indentId: 'ind-2', issueId: 'is-1', counted: count }, 'issuer_cannot_receive'],
       [config(), ports().ports, { indentId: 'ind-2', issueId: 'is-9', counted: count }, 'issue_unknown'],
       [config(), ports().ports, { indentId: 'ind-9', issueId: 'is-1', counted: count }, 'issue_unknown'],
       [config(), ports().ports, { indentId: 'ind-4', issueId: 'is-1', counted: count }, 'not_in_transit'],
-      [config(), ports().ports, { indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantityMinor: '-1' }] }, 'bad_count'],
-      [config(), ports().ports, { indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantityMinor: '1.5' }] }, 'bad_count'],
+      [config(), ports().ports, { indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantity: '-1' }] }, 'bad_count'],
+      [config(), ports().ports, { indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantity: '1.5' }] }, 'bad_count'],
       [config(), ports({ mayReceive: () => false }).ports, { indentId: 'ind-2', issueId: 'is-1', counted: count }, 'not_permitted'],
       [config({ userId: null }), ports().ports, { indentId: 'ind-2', issueId: 'is-1', counted: count }, 'nobody_named'],
     ];
@@ -259,8 +260,8 @@ describe('where each saved piece of work has got to: the five shared states, "po
   it('saved here → retrying after a failed hand-off → with the store computer once acknowledged → posted / refused only as the box says', () => {
     const outbox = outboxOn();
     const s = createIndentsSession(config(), ports().ports, outbox);
-    s.raise({ lines: [{ productId: 'RICE', quantityMinor: '20', uom: 'EA' }], reason: '', indentId: 'ind-a' });
-    s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantityMinor: '12' }] });
+    s.raise({ lines: [{ productId: 'RICE', quantity: '20', uom: 'EA' }], reason: '', indentId: 'ind-a' });
+    s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantity: '12' }] });
     const key = indentKeyFor('ind-a');
     const rkey = receiptKeyFor('ind-2', 'is-1');
     expect(s.savedWork().map((w) => [w.id, w.state])).toEqual([['ind-2:is-1', 'saved_here'], ['ind-a', 'saved_here']]); // newest first
@@ -280,7 +281,7 @@ describe('where each saved piece of work has got to: the five shared states, "po
     const storage = memory();
     const words = new Map();
     const boot = createIndentsSession(config(), ports().ports, outboxOn(storage), words);
-    boot.raise({ lines: [{ productId: 'RICE', quantityMinor: '2', uom: 'EA' }], reason: '', indentId: 'ind-w' });
+    boot.raise({ lines: [{ productId: 'RICE', quantity: '2', uom: 'EA' }], reason: '', indentId: 'ind-w' });
     const outbox = outboxOn(storage);
     outbox.acknowledge(indentKeyFor('ind-w'));
     boot.noteBoxStatus([{ key: indentKeyFor('ind-w'), state: 'posted', attempts: 1 }]);
@@ -304,7 +305,7 @@ describe('Batch 2 · RESOLVE a shortfall: an online write by someone who neither
     const resolvePort: IndentResolvePort = { post: async (i) => { sent.push(i); return answer; } };
     return { sent, ports: ports({ data: SHORT, mayResolve: () => true, resolvePort: () => resolvePort, ...over }).ports };
   };
-  const input = { indentId: 'ind-5', issueId: 'is-1', reasonCode: 'miscount', note: 'searched the back store', found: [{ productId: 'RICE', batchId: null, foundMinor: '1' }] };
+  const input = { indentId: 'ind-5', issueId: 'is-1', reasonCode: 'miscount', note: 'searched the back store', found: [{ productId: 'RICE', batchId: null, found: '1' }] };
 
   it('offers the open shortfall to a third person, with the adjustment reasons in words; sends only what turned up, no resolver', async () => {
     const { sent, ports: p } = withResolve();
@@ -326,8 +327,8 @@ describe('Batch 2 · RESOLVE a shortfall: an online write by someone who neither
       [config({ userId: 'u-floor2' }), {}, input, 'counter_cannot_resolve'],
       [config(), {}, { ...input, reasonCode: 'lost_somewhere' }, 'bad_reason'],
       [config(), {}, { ...input, note: 'no' }, 'note_too_short'],
-      [config(), {}, { ...input, found: [{ productId: 'RICE', batchId: null, foundMinor: '4' }] }, 'bad_found'],
-      [config(), {}, { ...input, found: [{ productId: 'OIL', batchId: null, foundMinor: '1' }] }, 'bad_found'],
+      [config(), {}, { ...input, found: [{ productId: 'RICE', batchId: null, found: '4' }] }, 'bad_found'],
+      [config(), {}, { ...input, found: [{ productId: 'OIL', batchId: null, found: '1' }] }, 'bad_found'],
       [config(), {}, { ...input, issueId: 'is-9' }, 'issue_unknown'],
       [config(), { snapshot: () => resolvedAlready }, input, 'not_open'],
       [config(), { mayResolve: () => false }, input, 'not_permitted'],

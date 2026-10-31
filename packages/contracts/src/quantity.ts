@@ -189,14 +189,15 @@ export function quantityLabel(quantityMinor: number, uomCode: string): string {
  * OB-31 rule 1, at a screen — what a person TYPES in the product's own unit ("10" items, "2.5" kg, "1.25" L) as the
  * integer count of the unit's smallest step that is stored and sent (10 · 2500 g · 1250 ml). It is `parseQuantity`, so a
  * typed amount is never rounded: `undefined` for anything that is not a positive amount the unit holds exactly (a
- * fraction of an item, a fourth decimal of a kg, a blank, a word, a unit this system does not know).
+ * fraction of an item, a fourth decimal of a kg, a blank, a word, a unit this system does not know). `allowZero` also takes
+ * a typed nought ("0", "0.000") as 0 — for a COUNT, where "none arrived" is an answer; an order or an ask never allows it.
  */
-export function typedQuantityMinor(typed: string, uomCode: string): number | undefined {
+export function typedQuantityMinor(typed: string, uomCode: string, options: { readonly allowZero?: boolean } = {}): number | undefined {
   const uom = normaliseUom(uomCode);
   if (uom === undefined) return undefined;
   try {
     const q = parseQuantity(typed.trim(), uom);
-    return q.minor > 0 ? q.minor : undefined;
+    return q.minor > 0 || (options.allowZero === true && q.minor === 0 && !typed.trim().startsWith('-')) ? q.minor : undefined;
   } catch {
     return undefined;
   }
