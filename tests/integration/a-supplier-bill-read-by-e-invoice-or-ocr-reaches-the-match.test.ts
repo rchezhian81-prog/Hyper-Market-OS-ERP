@@ -94,6 +94,16 @@ describe('the e-invoice parser reads rupees exactly and says what it cannot read
     expect(parsed.invoice.warnings).toEqual(expect.arrayContaining(['irp_signature_not_verified', 'line 2: unit "MTR" is not one the store counts in', expect.stringMatching(/line 2: a discount of 500 paise/)]));
     expect(parseGstEInvoice({ DocDtls: {} })).toMatchObject({ ok: false });
   });
+
+  it('M07-FR-04: reads the bill\'s other charges (ValDtls.OthChrg) exactly; none printed ⇒ none; an unreadable figure is said, never guessed', () => {
+    const withFreight = parseGstEInvoice({ ...eInvoice(), ValDtls: { ...eInvoice().ValDtls, OthChrg: 60.5, TotInvVal: 1005.5 } });
+    expect(withFreight).toMatchObject({ ok: true, invoice: { otherChargesMinor: 6_050, statedTotalMinor: 100_550 } });
+    const none = parseGstEInvoice({ ...eInvoice(), ValDtls: { ...eInvoice().ValDtls, OthChrg: 0 } });
+    expect(none.ok && 'otherChargesMinor' in none.invoice).toBe(false);
+    const smudged = parseGstEInvoice({ ...eInvoice(), ValDtls: { ...eInvoice().ValDtls, OthChrg: '60.505' } });
+    expect(smudged.ok && 'otherChargesMinor' in smudged.invoice).toBe(false);
+    expect(smudged.ok && smudged.invoice.warnings).toEqual(expect.arrayContaining(['other charges "60.505" have more than two decimals or are not a number']));
+  });
 });
 
 describe.each(backings)('a supplier bill read by e-invoice or OCR reaches the three-way match through a person — on $name (D03-FR-02)', ({ harness }) => {
@@ -122,6 +132,29 @@ describe.each(backings)('a supplier bill read by e-invoice or OCR reaches the th
     // The three-way match by a SECOND person over what head office holds: everything agrees, the whole bill is payable.
     const m = await ok(call('POST', '/v1/purchase/invoices/inv-ka-101/match', 'u-checker', {}, 'm-1'), 'match');
     expect(m.body).toMatchObject({ invoiceId: 'inv-ka-101', poId: 'po-1', blocked: false, payableMinor: 94_500, lines: [{ productId: 'DAL', status: 'matched' }, { productId: 'RICE', status: 'matched' }] });
+  });
+
+  it('M07-FR-04: a bill with freight adds up and matches — an e-invoice\'s OthChrg read by head office, and a typed bill\'s freight — the charges kept on the bill and paid with it', async () => {
+    // ── The e-invoice: lines ₹945 + other charges ₹60 = printed total ₹1,005 ──────────────────────────────────────
+    const { call, ok } = await shop(harness);
+    const bill = { ...eInvoice(), ValDtls: { ...eInvoice().ValDtls, OthChrg: 60, TotInvVal: 1005 } };
+    const got = await ok(call('POST', '/v1/purchase/invoice-documents/f1', 'u-buyer', { kind: 'e_invoice', eInvoice: bill, poId: 'po-1' }, 'f1'), 'receive');
+    expect(got.body).toMatchObject({ document: { state: 'draft', extracted: { statedTotalMinor: 100_500, otherChargesMinor: 6_000 } } });
+    const confirmed = await ok(call('POST', '/v1/purchase/invoice-documents/f1/confirm', 'u-buyer', { invoiceId: 'inv-f1', lines: [{ lineNo: 1, productId: 'RICE' }, { lineNo: 2, productId: 'DAL' }] }, 'f1-c'), 'confirm (before: refused does_not_add_up_to_the_bill)');
+    expect(confirmed.body).toMatchObject({ invoice: { invoiceId: 'inv-f1', totalMinor: 100_500, declaredTotalMinor: 100_500, landedCharges: { freightMinor: 0, dutyMinor: 0, otherMinor: 6_000 }, governanceFlags: ['no_approval'] } });
+    const m = await ok(call('POST', '/v1/purchase/invoices/inv-f1/match', 'u-checker', {}, 'f1-m'), 'match');
+    expect(m.body).toMatchObject({ invoiceId: 'inv-f1', blocked: false, invoicedMinor: 100_500, payableMinor: 100_500, landedCharges: { otherMinor: 6_000, totalMinor: 6_000 } });
+
+    // ── A typed paper bill with freight: lines ₹900 + freight ₹45.50 = ₹945.50 ───────────────────────────────────
+    const typed = await shop(harness);
+    const lines = [{ productId: 'RICE', quantity: 10, unitPriceMinor: 5_000, lineTotalMinor: 50_000 }, { productId: 'DAL', quantity: 4, unitPriceMinor: 10_000, lineTotalMinor: 40_000 }];
+    // Without the freight the printed total does not add up — refused by name, as before; nothing kept.
+    const short = await typed.call('POST', '/v1/purchase/invoices/inv-t1/capture', 'u-buyer', { supplierId: 'sup-k', poId: 'po-1', declaredTotalMinor: 94_550, lines }, 't1-short');
+    expect(codeOf(short)).toBe('does_not_add_up_to_the_invoice_total');
+    const kept = await typed.ok(typed.call('POST', '/v1/purchase/invoices/inv-t1/capture', 'u-buyer', { supplierId: 'sup-k', poId: 'po-1', declaredTotalMinor: 94_550, lines, charges: { freightMinor: 4_550, dutyMinor: 0, otherMinor: 0 } }, 't1'), 'typed capture with freight');
+    expect(kept.body).toMatchObject({ invoice: { totalMinor: 94_550, landedCharges: { freightMinor: 4_550 } } });
+    const tm = await typed.ok(typed.call('POST', '/v1/purchase/invoices/inv-t1/match', 'u-checker', {}, 't1-m'), 'match');
+    expect(tm.body).toMatchObject({ blocked: false, invoicedMinor: 94_550, payableMinor: 94_550, landedCharges: { freightMinor: 4_550, totalMinor: 4_550 } });
   });
 
   it('OCR: with no engine the scan waits for typing (said); with the engine a smudged line needs the figures from the paper; a confirmed code is suggested next time', async () => {

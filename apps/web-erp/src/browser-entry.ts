@@ -307,7 +307,7 @@ import type { Device, SupportAccessRequest, SupportAction, SupportSession, Versi
 import {
   createAiSession, type AiPorts, type AiSession, type PendingProposal,
 } from './ai-session';
-import { aiControlView, pullRequest, liftRequest, decisionRequest, withoutIt, type AiViewer } from './ai-control';
+import { aiControlView, pullRequest, liftRequest, decisionRequest, withoutIt, enableRequest, budgetRequest, agentBudgetRequest, toActWords, type AiViewer } from './ai-control';
 import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/src/index';
 import {
   createMigrationSession, type MigrationPorts, type MigrationSession, type DaySignatureView, type WitnessView,
@@ -5573,7 +5573,10 @@ interface ManagerWindow {
   aiData?: AiData;
   aiSession?: AiSession;
   /** OB-288 lane 4 · P1: the AI control screen's view model over head office's live read, and who is looking. */
-  aiControl?: { readonly view: typeof aiControlView; readonly pull: typeof pullRequest; readonly lift: typeof liftRequest; readonly decide: typeof decisionRequest; readonly withoutIt: typeof withoutIt };
+  aiControl?: {
+    readonly view: typeof aiControlView; readonly pull: typeof pullRequest; readonly lift: typeof liftRequest; readonly decide: typeof decisionRequest; readonly withoutIt: typeof withoutIt;
+    readonly enable: typeof enableRequest; readonly budget: typeof budgetRequest; readonly agentBudget: typeof agentBudgetRequest; readonly toAct: typeof toActWords;
+  };
   aiViewer?: AiViewer;
   migrationData?: MigrationData;
   migrationSession?: MigrationSession;
@@ -7141,7 +7144,12 @@ if (browserWindow !== undefined) {
   // OB-288 lane 4 · P1: the AI control screen reads head office LIVE (GET /v1/ai/control) in the person's own session and
   // sends every act there. From the injected payload it keeps ONLY who is looking (and the permission words when given —
   // they decide what the page offers, never what the server allows).
-  browserWindow.aiControl = { view: aiControlView, pull: pullRequest, lift: liftRequest, decide: decisionRequest, withoutIt };
+  // AI-SCREEN (re-audit 30 Oct 2026): switching an assistant on/off and the spending limits, checked here and decided by
+  // head office; "to act" in plain words (O-2).
+  browserWindow.aiControl = {
+    view: aiControlView, pull: pullRequest, lift: liftRequest, decide: decisionRequest, withoutIt,
+    enable: enableRequest, budget: budgetRequest, agentBudget: agentBudgetRequest, toAct: toActWords,
+  };
   browserWindow.aiViewer = aiViewerFrom(browserWindow.aiData as unknown);
   // The migration screen's DURABLE device queue (2b-vi-c-4): its decisions are handed to the store computer, never left in
   // the tab — before, they lived in a queue nothing drained.
