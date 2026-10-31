@@ -13,7 +13,9 @@
           flags and visible conflicts; settled ONLY with the provider's own record;
         • the month's profit and loss from the books;
         • the month-end stock adjustment: the valuation and everything that blocks it, then one post;
-        • the budget (each save a new version) and the fixed-asset register with the monthly depreciation run.
+        • the budget (each save a new version) and the fixed-asset register with the monthly depreciation run;
+        • OB-567: closing and reopening the month — ONLY here — by two people (ADR-0024 · §28), through the tested model
+          `apps/web-erp/src/month-close-session.ts` (window.monthCloseSession), over head office's own month routes.
       Every figure and every refusal is head office's, in its own words. Nothing is written when the page opens.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
@@ -58,6 +60,10 @@
       .note { font-size: 14px; color: var(--muted); margin: 0; }
       .status { font-size: 14px; min-height: 20px; margin: 0; }
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: 72px; box-sizing: border-box; width: 100%; }
+      .month-step { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+      .month-step button { width: 100%; }
+      .month-state { font-weight: 700; margin: 0; display: flex; gap: 8px; align-items: center; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       [hidden] { display: none !important; }
       .scroll { overflow-x: auto; }
@@ -83,6 +89,7 @@
         <button id="tab-pl" type="button">Profit and loss</button>
         <button id="tab-stock" type="button">Stock adjustment</button>
         <button id="tab-plan" type="button">Budget and assets</button>
+        <button id="tab-month" type="button">Close or reopen the month</button>
       </nav>
 
       <section id="view-payments" class="panel" aria-labelledby="pay-h">
@@ -153,6 +160,32 @@
         <p class="lead" id="run-lede"></p>
         <button id="run-depreciation" type="button">Run depreciation for this month</button>
         <p class="status" id="run-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- OB-567 (owner, 31 Oct 2026): a month is closed and reopened HERE, and nowhere else — two people, head office's
+           own figures and routes. The steps are offered only to a person who holds the month-close permission. -->
+      <section id="view-month" class="panel" hidden aria-labelledby="month-h">
+        <h2 id="month-h">Close or reopen the month</h2>
+        <p class="lead" id="month-lede"></p>
+        <p class="month-state" id="month-state" role="status" aria-live="polite"></p>
+        <p class="status" id="month-status" role="status" aria-live="polite"></p>
+        <div id="close-box" class="month-step" hidden>
+          <h3 id="close-title">Close and sign this month</h3>
+          <p class="lead" id="close-lead"></p>
+          <label for="close-why"><span id="close-why-label">A note for the person signing (optional)</span><textarea id="close-why" maxlength="300"></textarea></label>
+          <button id="ask-close" type="button">Ask for the signature</button>
+          <button id="close-month" type="button" class="quiet">Close the month</button>
+          <p class="status" id="close-request" role="status" hidden></p>
+          <p class="note" id="close-note"></p>
+        </div>
+        <div id="reopen-box" class="month-step" hidden>
+          <h3 id="reopen-title">Reopen this month</h3>
+          <p class="lead" id="reopen-lead"></p>
+          <label for="reopen-reason"><span id="reopen-reason-label">Why does it need reopening?</span><textarea id="reopen-reason" maxlength="300"></textarea></label>
+          <button id="ask-reopen" type="button">Ask for approval</button>
+          <button id="reopen" type="button" class="quiet">Reopen the month</button>
+          <p class="status" id="reopen-request" role="status" hidden></p>
+        </div>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

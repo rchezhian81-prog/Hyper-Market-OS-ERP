@@ -5,7 +5,9 @@
 //   • `wasteWriteOffsSectionFor` — the Waste & write-off page (M28-FR-01): every write-off head office committed at THIS
 //     store or its back store, as the review row the page reads. The register is the append-only write-off stream every
 //     write-off path builds through (`writeOffCommittedEntry`); a correction is its own compensating write-off, shown as
-//     itself. Sent even when empty, so the page can tell "nothing recorded yet" from "never told".
+//     itself. Sent even when empty, so the page can tell "nothing recorded yet" from "never told". OB-565 (owner, 31 Oct
+//     2026): only the LAST 30 SHOP DAYS ride (today and the 29 trading days before it, by the shop's own clock), so the
+//     pack never grows without limit; older write-offs stay in head office's register and reports, and the page says so.
 //   • `categoryPolicySectionFor` — the Category rules page (M03-FR-01 · CAT-POLICY): every category on head office's list.
 //     Head office keeps NO dated rule set for a category yet (the rule engine is reached only through the read-only preview
 //     route), so each category goes with an empty history and the page shows it as "No rules in force — set them": the
@@ -19,7 +21,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { categoryRegisterAdapter, writeOffAdapter, orgStructureAdapter, storeSyncView, STREAM } from './adapters';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
-import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
+import { tradingDayIn, type TradingCalendar } from '../../../packages/calendar/src/trading-day';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import type { ReturnRecord } from '../../pos/src/returns';
 
@@ -38,17 +40,28 @@ export interface WasteReviewRow {
   readonly at: string;
 }
 
+const isoDayShift = (day: string, days: number): string => new Date(Date.parse(`${day}T00:00:00.000Z`) + days * 86_400_000).toISOString();
+
+/** OB-565: how many shop days of write-offs the Waste page carries — today counts as day 1. */
+export const WASTE_WINDOW_DAYS = 30;
+
 /**
- * The write-offs committed at this store's own places (the store and its back store), newest first. `branchOf` is the
- * builder's own "whose place is this" rule, so a write-off at a place the hierarchy puts under another store is never
- * shown here.
+ * The write-offs committed at this store's own places (the store and its back store) in the last `WASTE_WINDOW_DAYS` shop
+ * days, newest first. `branchOf` is the builder's own "whose place is this" rule, so a write-off at a place the hierarchy
+ * puts under another store is never shown here. The window is read in the shop's calendar (its zone and trading-day
+ * cut-off, never UTC): a write-off whose trading day is today or one of the 29 days before it rides; day 31 and older do
+ * not — they remain in head office's append-only register (nothing is deleted).
  */
 export async function wasteWriteOffsSectionFor(
   store: EventStore, now: () => string, tenantId: string, storeId: string, branchOf: (locationId: string) => string,
+  calendar: TradingCalendar,
 ): Promise<readonly WasteReviewRow[]> {
   const all = await writeOffAdapter({ store, now }).writeOffs(tenantId);
+  const today = tradingDayIn(now(), calendar);
+  const firstDay = isoDayShift(today, -(WASTE_WINDOW_DAYS - 1)).slice(0, 10);
   return all
     .filter((w) => branchOf(w.locationId) === storeId)
+    .filter((w) => { const day = tradingDayIn(w.at, calendar); return day >= firstDay; })
     .map((w): WasteReviewRow => ({
       id: w.id, productId: w.productId, lossType: w.lossType, qtyRemoved: w.qtyRemoved, uom: w.uom,
       valueMinor: w.valueMinor, currency: w.currency, requiredApproval: w.requiredApproval,
@@ -98,7 +111,6 @@ export interface OwnContribution {
 export interface OwnMembership { readonly branchId: string; readonly parentId: string; readonly from: string; readonly to: string | null }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const isoDayShift = (day: string, days: number): string => new Date(Date.parse(`${day}T00:00:00.000Z`) + days * 86_400_000).toISOString();
 const later = (a: string | null, b: string | null): string | null => (a === null ? b : b === null ? a : (Date.parse(a) >= Date.parse(b) ? a : b));
 
 /**

@@ -17,10 +17,9 @@
       Only a posting the accounts ACCEPTED counts as received. The queue sits beside the
       totals, never inside them.
 
-      Closing and reopening a month happen AT HEAD OFFICE, by two people (ADR-0024 / §28):
-      the closer asks for the signature here, someone who may sign a month (the accountant
-      or the CA) approves it on their own Approvals page, and only then is the month closed,
-      naming that approval. No name is ever typed on this page.
+      Closing and reopening a month happen ONLY on head office's Month-end page, by two people
+      (OB-567 · ADR-0024 / §28). This page shows the month's state and its Tally files and links
+      there. No name is ever typed on this page.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -104,26 +103,12 @@
       .qty input { width: 90px; text-align: center; }
       .empty { color: var(--muted); padding: 20px 4px; }
 
-      .banner {
-        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
-        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
-      }
-      .banner[hidden] { display: none; }
-      .banner.good { background: var(--good); color: var(--on-accent); }
-      /* Waiting on a second person: not done, not wrong — somebody has to come back to it. */
-      .banner.pending { background: var(--warn-surface); color: var(--on-warn-surface); }
-      .banner strong { font-size: 20px; }
-      .banner p { margin: 0; font-size: 16px; }
-      .banner button { background: var(--danger-surface); color: var(--on-danger); }
-      .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
-      .banner.pending button { background: var(--on-warn-surface); color: var(--warn-surface); }
-
-      /* The month's two-person steps: ask, then act. Each button a full-width 48px target. */
+      /* Where the month is closed and reopened (OB-567: head office's Month-end page). */
       .month-step { display: grid; gap: 12px; }
       .month-step[hidden] { display: none; }
-      .month-step button { width: 100%; }
-      .request-status { margin: 0; }
-      .request-status[hidden] { display: none; }
+      /* OB-567: the way to head office's Month-end page — a 48px target, an underlined link (never colour alone). */
+      .month-step a#month-end-link { display: flex; align-items: center; justify-content: center; min-height: var(--tap); border-radius: 12px; background: var(--line); color: var(--ink); font-weight: 600; text-decoration: underline; }
+      .month-step a#month-end-link:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     </style>
   </head>
   <body>
@@ -154,31 +139,13 @@
         <h3 id="blockers-title">What is stopping this month closing</h3>
         <div id="blockers"></div>
 
-        <!-- Closing happens at head office, with the signature of someone who may sign a month (never the closer). -->
+        <!-- OB-567 (owner, 31 Oct 2026): a month is closed and reopened ONLY on head office's Month-end page. This page shows
+             the month's state and its Tally files; it offers no close or reopen of its own. -->
         <div id="close-box" class="month-step">
-          <h3 id="close-title">Close and sign this month</h3>
-          <p class="lead" id="close-lead">Closing a month needs the signature of someone who may sign a month — the accountant or the CA, never you. When the figures agree, press “Ask for the signature”. Once they approve it on their Approvals page, press “Close the month”.</p>
-          <div>
-            <label for="close-why" id="close-why-label">A note for the person signing (optional)</label>
-            <textarea id="close-why" maxlength="300"></textarea>
-          </div>
-          <button id="ask-close" class="primary wide" type="button">Ask for the signature</button>
-          <button id="close-month" class="wide" type="button">Close the month</button>
-          <p class="request-status" id="close-request" hidden role="status"></p>
-          <p class="lead" id="close-note">Nothing is closed until every figure agrees and nothing is outstanding. A closed month is never edited — a correction is a new entry in the open one.</p>
-        </div>
-
-        <!-- Shown only once the month is closed. A control with no surface is one somebody works around. -->
-        <div id="reopen-box" class="month-step" hidden>
-          <h3 id="reopen-title">Reopen this month</h3>
-          <p class="lead" id="reopen-lead">A signed month reopens only with the approval of someone who may sign a month — the accountant or the CA, never you. Write why and press “Ask for approval”. Once they approve it on their Approvals page, press “Reopen the month” with the same reason.</p>
-          <div>
-            <label for="reopen-reason" id="reopen-reason-label">Why does it need reopening?</label>
-            <textarea id="reopen-reason" maxlength="300"></textarea>
-          </div>
-          <button id="ask-reopen" class="primary wide" type="button">Ask for approval</button>
-          <button id="reopen" class="danger wide" type="button">Reopen the month</button>
-          <p class="request-status" id="reopen-request" hidden role="status"></p>
+          <h3 id="close-title">Closing and reopening the month</h3>
+          <p class="lead" id="close-lead">A month is closed and reopened on head office’s Month-end page, not on this page. This page shows whether the month is closed and its Tally files.</p>
+          <a id="month-end-link" class="wide" href="../finance-close/">Open the Month-end page</a>
+          <p class="lead" id="close-note">A closed month is never edited — a correction is a new entry in the open one.</p>
         </div>
       </section>
 
@@ -203,11 +170,6 @@
       </section>
     </main>
 
-    <div class="banner" id="banner" hidden role="alert">
-      <strong id="banner-title">—</strong>
-      <p id="banner-text"></p>
-      <button id="banner-ok" type="button">I have read this</button>
-    </div>
 
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>

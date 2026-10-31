@@ -1629,6 +1629,49 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
 }
 
 /**
+ * OB-569 (owner, 31 Oct 2026): the existing right that lets a person see a product's commercial side — what it cost us and
+ * who supplies it. `supplier.view` is the word the Suppliers page opens on; the owner, the store manager and the accountant
+ * hold it, the cashier does not. (Which existing word marks this is reported to the owner to confirm.)
+ */
+export const PRODUCT_COMMERCIAL_PERMISSION = 'supplier.view';
+
+/**
+ * The fields of a product record a person WITHOUT the commercial right is sent — what the cashier's view needs to show
+ * a product's NAME (and to key it to its barcodes and its price: the id). Nothing else: no code, unit, status, MRP,
+ * category, tax class, brand, maker, supplier, attributes or app content. An allow-list, so a commercial field added to
+ * the record later stays at the store computer. (Their barcodes ride in `barcodes`; the price is read from head office.)
+ */
+const NON_COMMERCIAL_PRODUCT_FIELDS: readonly string[] = Object.freeze(['productId', 'name']);
+
+/** OB-569: the marker on a trimmed Products payload — the page then shows name, price and barcode only. */
+export const NAME_PRICE_BARCODE = 'name_price_barcode';
+
+/** The catalogue payload keys a person without the commercial right is never sent: costs, the margin floor, approvers. */
+const COMMERCIAL_CATALOGUE_KEYS: readonly string[] = Object.freeze(['costsMinor', 'marginFloorBps', 'approvers']);
+
+/**
+ * OB-569: the Products page's payload as THIS viewer may see it — filtered here, at the store computer, before the page
+ * data leaves it (never in the browser). A viewer who holds `PRODUCT_COMMERCIAL_PERMISSION` gets it whole. Anyone else —
+ * the cashier, or a viewer whose rights this box does not know (`null`, fail-safe) — gets each product's name, price and
+ * barcode: the cost map, the margin floor and the approvers are removed, each product record keeps only
+ * `NON_COMMERCIAL_PRODUCT_FIELDS`, and the payload is marked `productFields: 'name_price_barcode'`.
+ */
+export function catalogueForViewer(payload: Record<string, unknown> | null, permissions: readonly string[] | null): Record<string, unknown> | null {
+  if (payload === null) return null;
+  if (permissions !== null && permissions.includes(PRODUCT_COMMERCIAL_PERMISSION)) return payload;
+  const out: Record<string, unknown> = { productFields: NAME_PRICE_BARCODE };
+  for (const [key, value] of Object.entries(payload)) {
+    if (COMMERCIAL_CATALOGUE_KEYS.includes(key)) continue;
+    out[key] = key === 'products' && Array.isArray(value)
+      ? value.map((p) => (isPlainRecord(p) ? Object.fromEntries(Object.entries(p).filter(([field]) => NON_COMMERCIAL_PRODUCT_FIELDS.includes(field))) : p))
+      : value;
+  }
+  return out;
+}
+
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
  * The merchandising payload (M04 · D02).
  *
  * `null` when this box has never been told the refill level or how long a count stays worth acting

@@ -28,7 +28,7 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
+import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, catalogueForViewer, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
 import { packTimeZone } from './shop-zone'; // OB-606
 import { wallClockIn } from '../../../packages/calendar/src/trading-day'; // Round A: the copy's time in the shop's clock
 import { navigationPayload, type NavigationPayload, asSignedInPerson, permissionsOf } from './screen-navigation';
@@ -789,7 +789,12 @@ export function startScreenServer(input: {
         : headOfficeUser !== null ? headOfficeUser
         : input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;
       const built = payloadFor(route.screen, snap, handheld !== null && signedIn !== null ? signedIn : undefined);
-      const payload = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn) : asSignedInPerson(built, signedIn, snap.pack);
+      const addressed = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn) : asSignedInPerson(built, signedIn, snap.pack);
+      // OB-569: the Products page carries a product's costs and commercial fields only to a viewer who holds the right to
+      // see them — trimmed HERE, before the page data leaves this box, never in the browser. The viewer is the person
+      // signed in, else whoever the pack named for the screen; one whose rights this box does not know gets the trimmed copy.
+      const viewer = signedIn ?? (typeof addressed?.['userId'] === 'string' ? addressed['userId'] : null);
+      const payload = route.screen === 'catalogue' ? catalogueForViewer(addressed, viewer === null ? null : permissionsOf(viewer, snap.pack)) : addressed;
       // The till alone also gets the receipt template head office published, when this box has pulled one
       // (M01-FR-02): its own global beside the catalogue, so a bill printed offline carries the words and the
       // version. Absent when none has reached this box — the till prints with its defaults and stamps nothing.
