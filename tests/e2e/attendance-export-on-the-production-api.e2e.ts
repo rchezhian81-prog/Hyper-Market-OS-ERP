@@ -92,7 +92,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('attendance
       expect(await page.locator('#period-from-stock-movements').count()).toBe(1);
 
       const said = await exportDays(page, '2026-09-01', '2026-09-03');
-      expect(said).toBe('Exported 5 rows.');
+      expect(said).toMatch(/^Exported 5 rows\. Saved to this computer as \S+/); // Round B: the file is handed to the browser
       expect(await page.getAttribute('#export-result', 'class')).toContain('tone-ok');
       await page.locator('#recent-exports .row', { hasText: 'attendance — 5' }).waitFor({ timeout: 15_000 });
       const log = await attendanceLog();
@@ -106,7 +106,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('attendance
     const { page, close } = await open(MGR_S2, 'S2');
     try {
       const said = await exportDays(page, '2026-09-01', '2026-09-03');
-      expect(said).toBe('Exported 3 rows. Hidden for you: hours, hourlyRateMinor, costMinor.');
+      expect(said).toMatch(/^Exported 3 rows\. Hidden for you: hours, hourlyRateMinor, costMinor\. Saved to this computer as \S+/);
       const mine = (await attendanceLog()).find((e) => e.userId === MGR_S2)!;
       expect(mine).toMatchObject({ rowCount: 3, redactedColumns: ['hours', 'hourlyRateMinor', 'costMinor'] });
     } finally {

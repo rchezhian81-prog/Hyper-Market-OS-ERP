@@ -23,19 +23,19 @@ describe('the owner\'s Today shows takings it cannot cost', () => {
   it('no costed bill, 3 uncosted: the takings and tenders are shown and the margin is "not known" — never "No sales"', () => {
     const b = buildBrief(base({ uncosted: { bills: 3, takenMinor: 198_000, tenderMix: { cash: 117_100, card: 30_000, upi: 50_000, loyalty_points: 900 } } }));
     expect(b.headline).toBe('3 bills today, ₹1,980.00 taken — margin not known: the store computer has no cost for products on these bills.');
-    expect(b.takings).toEqual({ bills: 3, takenMinor: 198_000, marginUnknownBills: 3, tenderMix: { cash: 117_100, card: 30_000, upi: 50_000, loyalty_points: 900 } });
+    expect(b.takings).toEqual({ bills: 3, takenMinor: 198_000, marginUnknownBills: 3, refunds: 0, refundedMinor: 0, tenderMix: { cash: 117_100, card: 30_000, upi: 50_000, loyalty_points: 900 } });
     expect(b.kpis.basketCount).toBe(0); // the costed figures stay the costed ones
   });
 
   it('costed and uncosted together: the margin is over the costed bills, and the rest is said beside it', () => {
     const b = buildBrief(base({ sales: [costed('s1')], uncosted: { bills: 1, takenMinor: 4_000, tenderMix: { cash: 4_000 } } }));
     expect(b.headline).toMatch(/^1 bill today, ₹105\.00 taken, margin ₹30\.00 .* Also 1 bill \(₹40\.00\) whose margin is not known — products with no cost\.$/);
-    expect(b.takings).toEqual({ bills: 2, takenMinor: 14_500, marginUnknownBills: 1, tenderMix: { cash: 14_500 } });
+    expect(b.takings).toEqual({ bills: 2, takenMinor: 14_500, marginUnknownBills: 1, refunds: 0, refundedMinor: 0, tenderMix: { cash: 14_500 } });
   });
 
   it('a day with nothing at all is still "No sales recorded yet today"', () => {
     expect(buildBrief(base()).headline).toBe('No sales recorded yet today.');
-    expect(buildBrief(base({ uncosted: { bills: 0, takenMinor: 0, tenderMix: {} } })).takings).toEqual({ bills: 0, takenMinor: 0, marginUnknownBills: 0, tenderMix: {} });
+    expect(buildBrief(base({ uncosted: { bills: 0, takenMinor: 0, tenderMix: {} } })).takings).toEqual({ bills: 0, takenMinor: 0, marginUnknownBills: 0, refunds: 0, refundedMinor: 0, tenderMix: {} });
   });
 });
 

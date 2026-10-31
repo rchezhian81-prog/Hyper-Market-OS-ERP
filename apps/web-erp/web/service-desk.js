@@ -26,6 +26,7 @@ const WORDS = {
     askNote: 'A note for the assistant (optional)', askDraft: 'Ask the assistant for a reply',
     drafted: 'The assistant drafted a reply — read it, then approve, edit or reject it.', notDrafted: 'The assistant did not draft a reply:',
     stopped: 'The assistant is switched off or out of budget — write the reply yourself.',
+    noPricing: 'The assistant cannot run: no model pricing is set for this shop yet — write the reply yourself.',
     draftBy: 'Drafted by the assistant from', records: 'record(s)', notDecided: 'Waiting for a person to decide.',
     approve: 'Approve', editApprove: 'Edit and approve', reject: 'Reject', editLabel: 'Your words (edit before approving)',
     approvedBy: 'Approved by', rejectedBy: 'Rejected by', send: 'Send it', channel: 'How you reached the customer',
@@ -53,6 +54,7 @@ const WORDS = {
     askNote: 'உதவியாளருக்கு ஒரு குறிப்பு (விருப்பம்)', askDraft: 'உதவியாளரிடம் பதில் கேள்',
     drafted: 'உதவியாளர் ஒரு பதிலை வரைந்துள்ளார் — படித்து, ஒப்புதல், திருத்தம் அல்லது நிராகரிப்பு செய்யுங்கள்.', notDrafted: 'உதவியாளர் பதில் வரையவில்லை:',
     stopped: 'உதவியாளர் நிறுத்தப்பட்டுள்ளார் அல்லது செலவு வரம்பு தீர்ந்தது — பதிலை நீங்களே எழுதுங்கள்.',
+    noPricing: 'உதவியாளரை இயக்க முடியாது: இந்தக் கடைக்கு மாதிரி விலை (model pricing) இன்னும் அமைக்கப்படவில்லை — பதிலை நீங்களே எழுதுங்கள்.',
     draftBy: 'உதவியாளர் வரைந்தது — ஆதாரம்', records: 'பதிவு(கள்)', notDecided: 'ஒருவர் முடிவு செய்யக் காத்திருக்கிறது.',
     approve: 'ஒப்புதல்', editApprove: 'திருத்தி ஒப்புதல்', reject: 'நிராகரி', editLabel: 'உங்கள் வார்த்தைகள் (ஒப்புதலுக்கு முன் திருத்துங்கள்)',
     approvedBy: 'ஒப்புதல் அளித்தவர்', rejectedBy: 'நிராகரித்தவர்', send: 'அனுப்பு', channel: 'வாடிக்கையாளரை எப்படித் தொடர்பு கொண்டீர்கள்',
@@ -298,7 +300,8 @@ $('ask-draft').addEventListener('click', async () => {
   const el = $('draft-status');
   if (out.ok && out.body?.drafted === true) say(el, out, t('drafted'));
   else if (out.ok) { el.className = 'status err'; el.textContent = `${t('notDrafted')} ${out.body?.detail ?? ''}`; }
-  else if (out.status === 503 || out.status === 429) { el.className = 'status err'; el.textContent = t('stopped'); }
+  // Round B: no model pricing set for this shop is said as that, not as "switched off or out of budget".
+  else if (out.status === 503 || out.status === 429) { el.className = 'status err'; el.textContent = out.body?.error?.code === 'no_pricing' ? t('noPricing') : t('stopped'); }
   else say(el, out);
   await pick(picked.caseId);
 });

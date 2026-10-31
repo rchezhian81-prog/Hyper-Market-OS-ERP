@@ -118,7 +118,7 @@ async function startShellAndCloud(rec: Recorder): Promise<{ base: string; stop: 
         await record();
         // An export happened: the log grows (newest first) — the screen re-READS it, never pushes to it.
         rec.exports.unshift({ userId: CALLER, domain, at: '2026-09-17T10:00:00.000Z', rowCount: 42, redactedColumns: ['cost'] });
-        json(res, 200, { ok: true, domain, rowCount: 42 });
+        json(res, 200, { domain, csv: 'sku,name\nRICE,Rice\n', schema: [], audit: { rowCount: 42, redactedColumns: ['cost'], at: '2026-09-17T10:00:00.000Z' } }); // head office's real reply shape (services/purchase/src/data-export.ts)
         return;
       }
       if (req.method === 'GET' && path === '/v1/export') { await record(); json(res, 200, { domains: EXPORT_DOMAINS }); return; }

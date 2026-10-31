@@ -42,6 +42,8 @@ export const SCRAP_COPY = {
     recorded: 'Recorded at head office. It is NOT in the books until finance takes it up — it shows on the review until then.', posted: 'Marked as taken into the books.',
     needReview: 'Write the branch code and both days (YYYY-MM-DD), from on or before to.', needRecord: 'Fill in the branch, what it was, what happened to it, the weight in kg, the money in rupees (0 if none) and who handled it.',
     nobody: 'Nobody is signed in on this screen.', cannotReview: 'Your role cannot read the scrap review.', cannotRecord: 'Your role cannot record scrap disposals.',
+    // Round B · OB-515 (owner, 28 Oct 2026): the owner and the accountant record a scrap sale; a store manager reviews.
+    recordNotYours: 'You can read the review, but recording a scrap or recycling sale is for the owner or the accountant (the owner\'s decision) — your role does not hold it, so the form is not shown.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
   ta: {
@@ -59,6 +61,7 @@ export const SCRAP_COPY = {
     recorded: 'தலைமை அலுவலகத்தில் பதிவானது. நிதித்துறை எடுக்கும் வரை இது கணக்கில் இல்லை — அதுவரை மதிப்பாய்வில் காட்டப்படும்.', posted: 'கணக்கில் சேர்த்ததாகக் குறிக்கப்பட்டது.',
     needReview: 'கிளைக் குறியீட்டையும் இரண்டு நாட்களையும் (YYYY-MM-DD) எழுதுங்கள், முதல் நாள் வரை நாளுக்கு முன்.', needRecord: 'கிளை, என்ன, அதற்கு என்ன ஆனது, கிலோவில் எடை, ரூபாயில் பணம் (இல்லையெனில் 0), கையாண்டவர் ஆகியவற்றை நிரப்புங்கள்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotReview: 'உங்கள் பணி கழிவு மதிப்பாய்வைப் படிக்க முடியாது.', cannotRecord: 'உங்கள் பணி கழிவு அகற்றல்களைப் பதிவு செய்ய முடியாது.',
+    recordNotYours: 'நீங்கள் மதிப்பாய்வைப் படிக்கலாம்; ஆனால் கழிவு அல்லது மறுசுழற்சி விற்பனையைப் பதிவு செய்வது உரிமையாளர் அல்லது கணக்காளரின் பணி (உரிமையாளரின் முடிவு) — உங்கள் பணிக்கு அந்த அனுமதி இல்லை, எனவே படிவம் காட்டப்படவில்லை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
   },
 } as const;

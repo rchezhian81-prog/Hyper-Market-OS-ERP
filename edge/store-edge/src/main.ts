@@ -712,10 +712,17 @@ export async function startEdge(
    * quietly report the shop as having taken nothing all day.
    */
   let recordsNow = readSales(found.filter((r) => r.ok).map((r) => (r.ok ? r.record : '')));
+  // Round B: the refunds and exchanges on this box's returns log, re-read with the sales — the owner's takings are net of them.
+  const parsedReturns = (all: Awaited<ReturnType<typeof readLog>>): unknown[] => all.flatMap((r) => {
+    if (!r.ok) return [];
+    try { return [JSON.parse(r.record) as unknown]; } catch { return []; }
+  });
+  let returnsNow: readonly unknown[] = parsedReturns(await readLog(returnsLog.path));
   const reread = async (): Promise<void> => {
     const all = await readLog(log.path);
     recordsNow = readSales(all.filter((r) => r.ok).map((r) => (r.ok ? r.record : '')));
     recordsNow = { sales: recordsNow.sales, unreadable: all.filter((r) => !r.ok).length };
+    returnsNow = parsedReturns(await readLog(returnsLog.path));
   };
 
   const signer = hmacSigner(settings['PACK_SIGNING_KEY']!);
@@ -2203,6 +2210,7 @@ export async function startEdge(
     return {
       pack,
       sales: recordsNow.sales,
+      returns: returnsNow,
       unreadableRecords: recordsNow.unreadable,
       outbox,
       now,

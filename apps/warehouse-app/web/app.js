@@ -288,6 +288,18 @@ const STATE_SHORT = {
   posted: { en: 'posted', ta: 'பதிவாகியது' },
   refused: { en: 'refused', ta: 'மறுக்கப்பட்டது' },
 };
+/**
+ * Round B (screen gap audit 31 Oct 2026): the store computer ANSWERED "not allowed" (403). That is never "could not be
+ * reached, trying again": the work stays saved here, the screen says plainly who must act, and it stops retrying by itself
+ * (the person's next scan asks once more).
+ */
+const NOT_ALLOWED_WORDS = {
+  banner: { en: 'You are not allowed to send this work from this handheld. It is kept here and was not sent. Ask the manager to check your role, then sign in again.', ta: 'இந்தக் கருவியிலிருந்து இந்த வேலையை அனுப்ப உங்களுக்கு அனுமதி இல்லை. இது இங்கே வைக்கப்பட்டுள்ளது, அனுப்பப்படவில்லை. உங்கள் பணிப்பொறுப்பைச் சரிபார்க்க மேலாளரிடம் கேளுங்கள், பிறகு மீண்டும் உள்நுழையவும்.' },
+  state: { en: 'Saved on this handheld — not sent: you are not allowed to send this', ta: 'இந்தக் கருவியில் சேமிக்கப்பட்டது — அனுப்பப்படவில்லை: இதை அனுப்ப உங்களுக்கு அனுமதி இல்லை' },
+  box: { en: 'store computer says: not allowed', ta: 'கடை கணினி: அனுமதி இல்லை' },
+};
+/** The store computer's own reason on its last 403 to this handheld, or null while it has not said "not allowed". */
+let notAllowed = null;
 /** The kinds of work this handheld sends (the session's `SENT_WORK_KINDS`). */
 const KIND_WORDS = {
   receipt: { en: 'Received', ta: 'பெறப்பட்டது' },
@@ -315,6 +327,14 @@ const real = window.warehouseSession;
 const data = window.warehouseData;
 const outbox = window.warehouseOutbox ?? null;
 const grnId = (data && data.grnId) || 'GRN';
+// Round B (screen gap audit 31 Oct 2026): a person reads the product's NAME (the session's, from the store pack; the code
+// only when the pack does not name it) and a quantity in its unit — a kg line holds grams, so 200000 of rice is "200.000 kg",
+// never "200000 units · kg". Words only: the record each line queues keeps its integer and its code.
+const nameOf = (productId) => (real && typeof real.productName === 'function' ? real.productName(productId, lang) : productId);
+function sayAmount(node, quantityMinor, uom, tail = '') {
+  const q = real && typeof real.quantityText === 'function' ? real.quantityText(quantityMinor, uom) : { amount: String(quantityMinor), unit: null };
+  sayQty(node, q.amount, q.unit === null ? ` ${t('units')} · ${uom}${tail}` : ` ${q.unit}${tail}`);
+}
 
 let arrivalTempC = null; // Wave 3 · SF-07 part 3: the keyed arrival reading, °C, or null (declared early: the first render reads it)
 let manufacturedOn = null; // B4 · OB-504: the keyed month of manufacture (YYYY-MM) for packed goods, or null
@@ -347,8 +367,8 @@ el('scan-cancel').addEventListener('click', () => {
 let confirmResolve = null;
 function awaitConfirm(line) {
   say(el('confirm-title'), `${t('confirmPick')} — ${line.orderRef}`, 'package-check');
-  sayQty(el('confirm-qty'), line.remainingMinor, ` ${t('units')} · ${line.uom}`);
-  el('confirm-hint').textContent = `${line.productId}${line.batchId ? ` · ${line.batchId}` : ''} · ${t('fromBin')} ${line.binId}`;
+  sayAmount(el('confirm-qty'), line.remainingMinor, line.uom);
+  el('confirm-hint').textContent = `${nameOf(line.productId)}${line.batchId ? ` · ${line.batchId}` : ''} · ${t('fromBin')} ${line.binId}`;
   el('confirm-cancel').textContent = t('cancel');
   el('confirm-ok').textContent = t('confirm');
   el('confirm').hidden = false;
@@ -364,8 +384,8 @@ el('confirm-cancel').addEventListener('click', () => settleConfirm(false));
 /** SP-8c: the confirm step of an issue to the floor — the number shown before it is committed. */
 function awaitConfirmIssue(line, quantity, binId) {
   say(el('confirm-title'), `${t('confirmIssue')} — ${line.indentId}`, 'package-minus');
-  sayQty(el('confirm-qty'), quantity, ` ${t('units')} · ${line.uom}`);
-  el('confirm-hint').textContent = `${line.productId} · ${t('fromBin')} ${binId} · ${t('askedBy')} ${line.requestedBy}`;
+  sayAmount(el('confirm-qty'), quantity, line.uom);
+  el('confirm-hint').textContent = `${nameOf(line.productId)} · ${t('fromBin')} ${binId} · ${t('askedBy')} ${line.requestedBy}`;
   el('confirm-cancel').textContent = t('cancel');
   el('confirm-ok').textContent = t('confirm');
   el('confirm').hidden = false;
@@ -487,7 +507,7 @@ function setAdjustSign(sign) {
 }
 function awaitAdjustment(productId) {
   say(el('adjust-title'), t('adjustTitle'), 'sliders');
-  el('adjust-hint').textContent = productId;
+  el('adjust-hint').textContent = nameOf(productId);
   el('adjust-minus').textContent = t('missing');
   el('adjust-plus').textContent = t('found');
   el('adjust-reason-hint').textContent = t('chooseReason');
@@ -626,10 +646,10 @@ function render() {
     where.textContent = line.binId;
     const what = document.createElement('div');
     what.className = 'what';
-    what.textContent = `${line.orderRef} · ${line.productId}${line.batchId ? ` · ${line.batchId}` : ''}`;
+    what.textContent = `${line.orderRef} · ${nameOf(line.productId)}${line.batchId ? ` · ${line.batchId}` : ''}`;
     const qty = document.createElement('div');
     qty.className = 'qty';
-    sayQty(qty, line.remainingMinor, ` ${t('units')} · ${line.uom}`);
+    sayAmount(qty, line.remainingMinor, line.uom);
     row.append(where, what, qty);
     row.addEventListener('click', () => { selectedPick = line.lineId; selected = null; selectedIssue = null; render(); });
     pickHost.append(row);
@@ -650,10 +670,10 @@ function render() {
     where.textContent = line.binIds.length > 0 ? line.binIds.join(' · ') : '—';
     const what = document.createElement('div');
     what.className = 'what';
-    what.textContent = `${line.indentId} · ${line.productId} · ${t('askedBy')} ${line.requestedBy}`;
+    what.textContent = `${line.indentId} · ${nameOf(line.productId)} · ${t('askedBy')} ${line.requestedBy}`;
     const qty = document.createElement('div');
     qty.className = 'qty';
-    sayQty(qty, line.remainingMinor, ` ${t('units')} · ${line.uom} · ${t('owed')}`);
+    sayAmount(qty, line.remainingMinor, line.uom, ` · ${t('owed')}`);
     row.append(where, what, qty);
     row.addEventListener('click', () => { selectedIssue = `${line.indentId}|${line.productId}`; selectedPick = null; selected = null; render(); });
     issueHost.append(row);
@@ -676,10 +696,10 @@ function render() {
     row.setAttribute('aria-selected', String(selected === index));
     const what = document.createElement('div');
     what.className = 'what';
-    what.textContent = item.productId + (item.batchId ? ` · ${item.batchId}` : '');
+    what.textContent = nameOf(item.productId) + (item.batchId ? ` · ${item.batchId}` : '');
     const qty = document.createElement('div');
     qty.className = 'qty';
-    sayQty(qty, item.quantityMinor, ` ${t('units')} · ${item.uom}`);
+    sayAmount(qty, item.quantityMinor, item.uom);
     row.append(what, qty);
     if (item.recalled) { const f = document.createElement('div'); f.className = 'flag'; f.textContent = t('recalledFlag'); row.append(f); }
     row.addEventListener('click', () => { selected = index; selectedPick = null; selectedIssue = null; render(); });
@@ -712,7 +732,10 @@ function renderSent() {
     state.className = `pill ${w.state}`;
     // A request head office has RECORDED is not yet applied: it waits for a supervisor — say so, never "posted".
     const awaiting = w.kind === 'adjustment' && w.state === 'posted';
-    say(state, awaiting ? t('awaitingApproval') : words(STATE_WORDS, w.state), STATE_ICON[awaiting ? 'awaiting' : w.state]);
+    // Round B: work the store computer said "not allowed" to is waiting on a person, not on the network.
+    const barred = notAllowed !== null && (w.state === 'retrying' || w.state === 'saved_here');
+    if (barred) { state.className = 'pill refused'; row.dataset.notAllowed = 'true'; }
+    say(state, barred ? words(NOT_ALLOWED_WORDS, 'state') : awaiting ? t('awaitingApproval') : words(STATE_WORDS, w.state), barred ? 'circle-alert' : STATE_ICON[awaiting ? 'awaiting' : w.state]);
     row.append(what, state);
     if (w.reason) {
       const why = document.createElement('div');
@@ -808,13 +831,16 @@ async function syncToBox() {
   const relay = window.warehouseRelay;
   if (!relay) return;
   try {
-    await relay.syncNow();
+    const r = await relay.syncNow();
+    // Round B: a 403 is the store computer's answer, not a lost link — said as "not allowed"; any other answer clears it.
+    if (r && typeof r === 'object') notAllowed = typeof r.notAllowed === 'string' ? r.notAllowed : null;
   } catch {
     /* the queue is untouched; the state words say "saved here" */
   }
   render();
 }
-const syncTimer = setInterval(() => { void syncToBox(); }, 10_000);
+// The slow timer does not keep asking a store computer that said "not allowed" — the person's next scan asks once more.
+const syncTimer = setInterval(() => { if (notAllowed === null) void syncToBox(); }, 10_000);
 // Verifier hh L3: when the sign-in ends the screen locks (the strip's script); this screen's timers stop with it.
 (window.phoneSignInOnLock = Array.isArray(window.phoneSignInOnLock) ? window.phoneSignInOnLock : []).push(() => clearInterval(syncTimer));
 
@@ -985,7 +1011,7 @@ async function startPick(line, binCode = null) {
   const atBin = real.checkPick({ lineId: line.lineId, scannedBinId: bin });
   if (!atBin.ok) { pickStep = null; feltResult(atBin.signal); render(); return; }
   pickStep = 'item'; render();
-  const item = await awaitScan(`${t('scanItem')} — ${line.productId}`);
+  const item = await awaitScan(`${t('scanItem')} — ${nameOf(line.productId)}`);
   if (item === null) { pickStep = null; render(); return; }
   const withItem = real.checkPick({ lineId: line.lineId, scannedBinId: bin, scannedItem: item });
   if (!withItem.ok) { pickStep = null; feltResult(withItem.signal); render(); return; }
@@ -1015,12 +1041,12 @@ el('pick').addEventListener('click', () => {
 async function startIssue(line) {
   if (real === undefined) return;
   issueStep = 'bin'; render();
-  const bin = await awaitScan(`${t('scanIssueBin')} — ${line.productId}`);
+  const bin = await awaitScan(`${t('scanIssueBin')} — ${nameOf(line.productId)}`);
   if (bin === null) { issueStep = null; render(); return; }
   const atBin = real.checkIssue({ indentId: line.indentId, productId: line.productId, scannedBinId: bin });
   if (!atBin.ok) { issueStep = null; feltResult(atBin.signal); render(); return; }
   issueStep = 'item'; render();
-  const item = await awaitScan(`${t('scanItem')} — ${line.productId}`);
+  const item = await awaitScan(`${t('scanItem')} — ${nameOf(line.productId)}`);
   if (item === null) { issueStep = null; render(); return; }
   const withItem = real.checkIssue({ indentId: line.indentId, productId: line.productId, scannedBinId: bin, scannedItem: item });
   if (!withItem.ok) { issueStep = null; feltResult(withItem.signal); render(); return; }
@@ -1476,6 +1502,7 @@ function paintBadge() {
   let boxWords;
   if (laneBase() === null) { dot.classList.add('idle'); boxWords = t('noBoxLink'); }
   else if (!box.asked) { dot.classList.add('idle'); boxWords = t('checkingBox'); }
+  else if (box.forbidden || notAllowed !== null) { dot.classList.add('error'); boxWords = words(NOT_ALLOWED_WORDS, 'box'); }
   else if (!box.reachable) { dot.classList.add('error'); boxWords = t('boxNotAnswering'); }
   else {
     const s = box.status;
@@ -1491,6 +1518,12 @@ function paintBadge() {
   if (unsent > 0 && !dot.classList.contains('error')) { dot.classList.remove('idle', 'degraded'); dot.classList.add('waiting'); }
   if (refusedCount > 0) { dot.classList.remove('idle', 'degraded', 'waiting'); dot.classList.add('error'); }
   el('box-text').textContent = boxWords;
+  // Round B: "not allowed" said plainly, with the store computer's own reason, until an answer clears it.
+  const barred = el('not-allowed');
+  if (barred) {
+    barred.hidden = notAllowed === null && !box.forbidden;
+    if (!barred.hidden) barred.textContent = `${words(NOT_ALLOWED_WORDS, 'banner')}${notAllowed ? ` (${notAllowed})` : ''}`;
+  }
 }
 
 async function refreshBadge() {
@@ -1500,7 +1533,8 @@ async function refreshBadge() {
   const timer = setTimeout(() => ctl.abort(), 3000);
   try {
     const res = await fetch(`${base}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
-    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+    // Round B: a 403 is an answer — the store computer is there and says "not allowed" — never "not answering".
+    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, forbidden: res.status === 403, status: null };
     // OB-521: the app version policy as the store computer's signed pack has it now (only an answer from the box changes it).
     if (box.reachable && box.status && 'appVersionPolicy' in box.status) window.warehouseVersion?.apply(box.status.appVersionPolicy);
   } catch {

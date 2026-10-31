@@ -174,6 +174,48 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
     }
   });
 
+  it('OB-31 (screen audit 31 Oct 2026): 10 typed for a kg item is ordered as 10 KILOS — the POST carries 10000 g, the screen shows "10.000 kg" at ₹450.00', async () => {
+    const rec: Recorder = {
+      buyingData: { buyerId: 'u-buyer', productIds: ['p-rice', 'p1'], productUoms: { 'p-rice': 'kg', p1: 'ea' } }, orderStatus: 201,
+      orderBody: { order: { status: 'proposed', requisitionedBy: 'u-buyer', totalMinor: 56_250 }, openCommitment: null }, requests: [],
+    };
+    const { page, teardown } = await openPoTab(rec);
+    try {
+      // The boxes name the item's unit as soon as its code is typed — "10" beside "kg" is ten kilos.
+      await page.fill('#po-product', 'p-rice');
+      expect(await page.textContent('#po-qty-label')).toBe('How many kg');
+      expect(await page.textContent('#po-cost-label')).toBe('Agreed price per kg (in rupees)');
+      await addLine(page, 'sup-1', 'p-rice', '10', '45');      // 10 kg at ₹45 a kg
+      await addLine(page, 'sup-1', 'p-rice', '2.5', '45');     // 2.5 kg — a loose amount, not refused as "not whole"
+      // A fraction of an ITEM is still refused, before anything is sent.
+      await addLine(page, 'sup-1', 'p1', '1.5', '20');
+      await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
+      expect((await page.textContent('#banner-text')) ?? '').toMatch(/whole numbers/);
+      await page.click('#banner-ok');
+
+      const table = (await page.textContent('#po-lines')) ?? '';
+      expect(table).toContain('10.000 kg');
+      expect(table).toContain('₹450.00');   // 10000 g × ₹45.00 a kg ÷ 1000 — not ₹4,50,000 and not ₹0.45
+      expect(table).toContain('2.500 kg');
+      expect(table).toContain('₹112.50');
+      expect(table).not.toContain('10000');
+
+      await page.click('#raise-po');
+      await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
+      const orderReq = rec.requests.find((r) => r.path.startsWith('/v1/purchase/orders/'));
+      expect(orderReq, 'the PO was not POSTed').toBeDefined();
+      const body = orderReq!.body as { lines?: unknown[] };
+      // What is typed, shown and sent agree: the order holds GRAMS (OB-31 rule 1), priced per whole kg (rule 2).
+      expect(body.lines).toEqual([
+        { productId: 'p-rice', orderedQty: 10_000, unitCost: { minor: 4_500, currency: 'INR' } },
+        { productId: 'p-rice', orderedQty: 2_500, unitCost: { minor: 4_500, currency: 'INR' } },
+      ]);
+      expect(await bannerIsGood(page)).toBe(true);
+    } finally {
+      await teardown();
+    }
+  });
+
   it('the cloud refuses (422): the screen shows the reason verbatim and never claims a raise (P-08)', async () => {
     const rec: Recorder = {
       buyingData: buyingContext(), orderStatus: 422,
@@ -296,6 +338,8 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
       await page.fill('#file-text', ['productId,quantity,unitPriceMinor,lineTotalMinor', 'p-rice,2500,4500,11250'].join('\n'));
       await page.click('#preview');
       await page.waitForSelector('#capture:not([hidden])', { timeout: 10_000 });
+      // Screen audit 31 Oct 2026: the file's grams are SHOWN in kg — "2.500 kg", never a bare 2500 read as kilos.
+      expect((await page.textContent('#lines-preview')) ?? '').toContain('2.500 kg');
       await page.click('#capture');
       await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
       expect(await bannerIsGood(page)).toBe(true);

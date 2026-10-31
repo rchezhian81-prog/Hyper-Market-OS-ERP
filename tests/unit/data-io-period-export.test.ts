@@ -18,7 +18,7 @@ const ATT: ExportDomainView = { domain: 'attendance', requires: 'workforce.roste
 const ports = (over: Partial<DataIoPorts> = {}): DataIoPorts => ({
   exportDomains: () => [PRODUCTS, ATT], recentExports: () => [], importTemplates: () => [],
   mayExport: () => true, mayImport: () => true, mayCommitImport: () => true,
-  runExport: async () => 'exported', validate: async () => 'refused', commit: async () => 'lost_link',
+  runExport: async () => ({ kind: 'exported', rowCount: 1, redactedColumns: [], file: { fileName: 'products.csv', mime: 'text/csv', content: 'sku\nA\n' } } as const), validate: async () => 'refused', commit: async () => 'lost_link',
   ...over,
 });
 const dated = (over: Partial<DataIoPorts> = {}, now = '2026-10-10T20:00:00.000Z') => createDataIoSession({ userId: 'u-op', now: () => now }, ports(over));
@@ -36,10 +36,10 @@ describe('a dated export domain takes a period (SF-10 · attendance)', () => {
 
   it('sends the period, says the rows and what was hidden, and puts a refused period in plain words (en/ta)', async () => {
     const sent: unknown[] = [];
-    const s = dated({ runPeriodExport: async (domain, period) => { sent.push([domain, period]); return { kind: 'exported', rowCount: 5, redactedColumns: ['hours'] }; } });
+    const s = dated({ runPeriodExport: async (domain, period) => { sent.push([domain, period]); return { kind: 'exported', rowCount: 5, redactedColumns: ['hours'], file: { fileName: 'attendance-2026-09-01-to-2026-09-03.csv', mime: 'text/csv', content: 'hours\n' } }; } });
     const r = await s.runPeriodExport('attendance', { from: ' 2026-09-01', to: '2026-09-03 ' });
     expect(sent).toEqual([['attendance', { from: '2026-09-01', to: '2026-09-03' }]]);
-    expect(s.presentExportReply('en', 'attendance', r).label).toBe('Exported 5 rows. Hidden for you: hours.');
+    expect(s.presentExportReply('en', 'attendance', r).label).toBe('Exported 5 rows. Hidden for you: hours. Saved to this computer as attendance-2026-09-01-to-2026-09-03.csv.');
     const refused = { kind: 'refused', code: 'export_period_not_bounded', whatHappened: "'attendance' is exported for a bounded period: { \"from\" ... }" } as const;
     const en = s.presentExportReply('en', 'attendance', refused);
     expect(en.tone).toBe('error');

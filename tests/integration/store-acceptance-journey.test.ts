@@ -734,7 +734,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     expect(boxSales.uncostable).toMatchObject({ sales: 0, products: [] });
     const boxCogs = cogsExpected['S-1'] + cogsExpected['S-2'] + cogsExpected['S-3'];
     const boxNet = boxSales.branches[0]!.sales.reduce((t, x) => t + x.netMinor, 0);
-    expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 0, tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
+    expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 0, refunds: 0, refundedMinor: 0, tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
     expect(today12.kpis).toMatchObject({ grossSalesMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, cogsMinor: boxCogs, marginMinor: boxNet - boxCogs });
     const rupees = (minor: number): string => (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     expect(today12.headline).toContain(`3 bills today, ₹1,980.00 taken, margin ₹${rupees(boxNet - boxCogs)}`);

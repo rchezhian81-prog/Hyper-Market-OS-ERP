@@ -93,6 +93,30 @@ describe('requisition / RFQ / quotation comparison (M06-FR-02)', () => {
     expect(codeOf(await raiseReq(h, 'u-mgr', 'rq-5', { currency: INR, lines: [] }, 'k4'))).toBe('not_readable_as_a_requisition');
   });
 
+  it('OB-31: a kg line is held in grams and compared at the per-kg price — 10000 g of rice at ₹45/kg is ₹450, not ₹4,50,000 (screen audit 31 Oct 2026)', async () => {
+    const h = await cast();
+    // Head office's product master counts rice in kg; the other product has no master entry (whole items, as before).
+    const pub = await h.request({
+      method: 'POST', path: '/v1/catalogue/products/p-rice/publish', userId: 'u-owner', tenantId: A, idempotencyKey: 'pub-rice',
+      body: { product: { sku: 'SKU-RICE', name: 'Rice, loose', baseUom: 'KG', primaryCategoryId: 'grocery', taxClass: '10063020', lifecycle: 'draft' }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] },
+    });
+    expect(pub.status).toBe(201);
+    await raiseReq(h, 'u-mgr', 'rq-kg', { currency: INR, lines: [{ productId: 'p-rice', quantity: 10_000 }, { productId: 'p2', quantity: 4 }] }, 'k1');
+    await putQuote(h, 'u-mgr', 'rq-kg', 'qA', { supplierId: 'supA', lines: [{ productId: 'p-rice', unitCost: cost(4_500), leadTimeDays: 2 }, { productId: 'p2', unitCost: cost(2_500), leadTimeDays: 2 }] }, 'k2');
+
+    const body = (await comparison(h, 'u-owner', 'rq-kg')).body as { comparison: { lines: { productId: string; quantity: number; uom?: string; offers: { lineCost: { minor: number } }[] }[]; totals: { totalCost: { minor: number } }[] } };
+    const rice = body.comparison.lines.find((l) => l.productId === 'p-rice')!;
+    expect(rice).toMatchObject({ quantity: 10_000, uom: 'kg' });
+    expect(rice.offers[0]!.lineCost.minor).toBe(45_000); // 10000 g × ₹45.00 a kg ÷ 1000
+    const p2 = body.comparison.lines.find((l) => l.productId === 'p2')!;
+    expect(p2.uom).toBeUndefined(); // not on the master: whole items, 4 × ₹25
+    expect(p2.offers[0]!.lineCost.minor).toBe(10_000);
+    expect(body.comparison.totals[0]!.totalCost.minor).toBe(55_000);
+    // The worklist names the unit too, so the screen reads "10.000 kg", never "10000".
+    const list = (await listReqs(h, 'u-owner')).body as { requisitions: { requisitionId: string; lines: { productId: string; uom?: string }[] }[] };
+    expect(list.requisitions.find((r) => r.requisitionId === 'rq-kg')!.lines.find((l) => l.productId === 'p-rice')!.uom).toBe('kg');
+  });
+
   it('survives a restart: the requisition, quotes and comparison rebuild from the event store', async () => {
     const h = await cast();
     await raiseReq(h, 'u-mgr', 'rq-6', reqBody(), 'k1');

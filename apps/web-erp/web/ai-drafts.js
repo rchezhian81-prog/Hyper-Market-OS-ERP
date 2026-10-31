@@ -24,6 +24,7 @@ const WORDS = {
     askSummary: 'Ask the assistant for a summary', suggested: 'Suggested order', noSummaries: 'No summaries yet.', askedBy: 'asked for by',
     drafted: 'The assistant drafted words — a different person approves them.', summarised: 'The assistant wrote a summary.',
     notDrafted: 'The assistant did not draft:', stopped: 'The assistant is switched off or out of budget.',
+    noPricing: 'The assistant cannot run: no model pricing is set for this shop yet, so head office admits no call. Nothing was drafted.',
     done: 'Done.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', cannotRead: 'Your role cannot read these.',
   },
@@ -37,6 +38,7 @@ const WORDS = {
     askSummary: 'உதவியாளரிடம் சுருக்கம் கேள்', suggested: 'பரிந்துரைக்கப்பட்ட வரிசை', noSummaries: 'இன்னும் சுருக்கங்கள் இல்லை.', askedBy: 'கேட்டவர்',
     drafted: 'உதவியாளர் வார்த்தைகளை வரைந்தார் — வேறொருவர் ஒப்புதல் அளிப்பார்.', summarised: 'உதவியாளர் ஒரு சுருக்கத்தை எழுதினார்.',
     notDrafted: 'உதவியாளர் வரையவில்லை:', stopped: 'உதவியாளர் நிறுத்தப்பட்டுள்ளார் அல்லது செலவு வரம்பு தீர்ந்தது.',
+    noPricing: 'உதவியாளரை இயக்க முடியாது: இந்தக் கடைக்கு மாதிரி விலை (model pricing) இன்னும் அமைக்கப்படவில்லை, எனவே தலைமை அலுவலகம் எந்த அழைப்பையும் ஏற்கவில்லை. எதுவும் வரையப்படவில்லை.',
     done: 'முடிந்தது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', cannotRead: 'உங்கள் பங்கால் இவற்றைப் படிக்க முடியாது.',
   },
@@ -61,11 +63,14 @@ async function post(path, body) {
     return { ok: false, status: 0, body: null };
   }
 }
+// Round B: head office names WHY the assistant did not run (`error.code`). No model pricing set for this shop is said as
+// that — not as "switched off or out of budget", which sent the reader to the wrong switch.
+const notRunWords = (out) => (out.body?.error?.code === 'no_pricing' ? t('noPricing') : t('stopped'));
 function say(el, out, good) {
   el.className = `status ${out.ok ? 'good' : 'err'}`;
   if (out.ok && out.body?.drafted === false) { el.className = 'status err'; el.textContent = `${t('notDrafted')} ${out.body.detail ?? ''}`; return; }
   el.textContent = out.ok ? (good ?? t('done'))
-    : out.status === 0 ? t('unreachable') : out.status === 503 || out.status === 429 ? t('stopped') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`;
+    : out.status === 0 ? t('unreachable') : out.status === 503 || out.status === 429 ? notRunWords(out) : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`;
 }
 
 function paintWords() {

@@ -8,6 +8,8 @@
 // prompt/confirm/alert; no timer.
 
 // OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
+/** OB-31: a held quantity (the unit's smallest step) as a person reads it — 2500 of a kg product reads "2.500 kg". */
+const qtyText = (n, uom) => (window.sreQuantity?.label ? window.sreQuantity.label(n, uom ?? '') : `${n} ${uom ?? ''}`.trim());
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -166,7 +168,7 @@ function renderRaiseLines() {
   el('raise-lines').replaceChildren(...raiseLines.map((l, index) => {
     const li = document.createElement('li');
     li.dataset.productId = l.productId;
-    const what = document.createElement('span'); what.textContent = `${l.productId} × ${l.quantityMinor} ${l.uom || ''}`.trim();
+    const what = document.createElement('span'); what.textContent = `${l.productId} × ${qtyText(l.quantityMinor, l.uom || '')}`;
     const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'minor'; remove.textContent = t('raiseRemove');
     remove.addEventListener('click', () => { raiseLines = raiseLines.filter((_, i) => i !== index); renderRaiseLines(); });
     li.append(what, remove);
