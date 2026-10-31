@@ -44,7 +44,9 @@ repository settings. Nothing below is typed into this repository.
 2. Make sure the checkout can fetch from GitHub as the `deploy` user (the same read-only deploy key or
    token the stand-up used). Test: `sudo -u deploy git -C /opt/sre/app fetch origin main`.
 3. Settings, no secrets: `sudo -u deploy cp /opt/sre/app/infra/deploy/deploy.conf.example /opt/sre/deploy.conf`
-   and edit only what differs on your box. Keep `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"` on the demo box.
+   and edit only what differs on your box. Keep `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1 PILOT_DEMO_LANE_BASE=/store-lane"` on the demo box, exactly as the example has it: the banner,
+   and the path the hosted till rings its sales on (ADR-0016) — without `PILOT_DEMO_LANE_BASE` the demo's till writes to
+   the tester's own computer and no sale reaches the demo store box. (A guardrail holds this line and the example equal.)
    The stack's public front (ADR-0018) reads `SRE_PUBLIC_HOST` / `SRE_TLS` from `infra/compose/.env.pilot`: set the
    box's domain there for a real certificate, or its public IP address for the proxy's own certificate (demo only).
 

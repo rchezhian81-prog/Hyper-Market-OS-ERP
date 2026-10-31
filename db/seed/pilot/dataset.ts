@@ -140,13 +140,19 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     { userId: 'pilot-accountant', displayName: 'Pilot Accountant (demo)', role: 'accountant' },
     { userId: 'pilot-ca', displayName: 'Pilot Chartered Accountant (demo)', role: 'chartered_accountant' },
     { userId: 'pilot-platform-admin', displayName: 'Pilot Platform Admin (demo)', role: 'platform_admin' },
+    // Round 3 (screen gap audit, Round C): the demo's WAREHOUSE SUPERVISOR — a second person in the store-manager role, the
+    // role that is the warehouse supervisor today (services/api/src/roles.ts, SP-3b: approves a handheld's adjustment, never
+    // the raiser). Transfers need three different people (proposer, sender who approves, and a settler who neither sent nor
+    // counted); with only one manager the demo could not complete one. Synthetic, like every login here.
+    { userId: 'pilot-warehouse-supervisor', displayName: 'Pilot Warehouse Supervisor (demo)', role: 'store_manager' },
     // The STORE EDGE's own machine identity, so the box can sync its queued sales (`pos.sale.sync`) for the
     // hosted offline/reconnect drill (runbook §9.4; owner decision 28 Sep 2026, option A). `cashier` is the
     // smallest existing role that carries the sync permission; a sync-only role does not exist yet. Never a
     // person's login: the demo sign-in refuses it (PILOT_MACHINE_USERS), so no human shares its identity.
     { userId: 'pilot-store-edge', displayName: 'Pilot Store Edge — machine (demo)', role: 'store_computer' },
   ],
-  entitlements: ['loyalty', 'delivery', 'dept.concession'],
+  // OB-559 (owner, 31 Oct 2026, "A"): business customers are switched ON in the demo copy, so the owner can try them.
+  entitlements: ['loyalty', 'delivery', 'dept.concession', 'b2b'],
   gstRegistrations: [
     { gstin: PILOT_DEMO_GSTIN, companyId: COMPANY_ID, legalName: LEGAL_NAME },
   ],
@@ -211,6 +217,25 @@ export const PILOT_DEMO_COMPANY = COMPANY_ID;
  * own `R-<lane>-` bill numbers are believed; any other `R-…-` it named would be refused at the door.
  */
 export const PILOT_DEMO_BOX_LANES: readonly string[] = ['lane-1'];
+
+/**
+ * Round 3 (screen gap audit, Round C): the demo till as HEAD OFFICE knows it — registered on the fleet register
+ * (`POST /v1/platform/devices/:deviceId/register`, by the platform administrator) and issued its own bill-number prefix
+ * (`POST /v1/stores/:storeId/tills/:tillId/receipt-prefix`, OB-81, by the owner). Its id is the lane the demo box IS
+ * (`EDGE_LANE_ID: lane-1`). The prefix follows the rule's own example shape (store and till numbers) and belongs to no real
+ * shop. Till PINs are NOT here: a PIN is never data — each person types their own on the demo box (scripts/demo-till-pins.mjs).
+ */
+export const PILOT_DEMO_TILL = Object.freeze({
+  tillId: 'lane-1', label: 'Demo till 1 (demo)', prefix: 'D1L1-',
+}) satisfies { readonly tillId: string; readonly label: string; readonly prefix: string };
+
+/**
+ * The demo people who need a till PIN on the demo box (each types their own; nothing is kept here but who): the cashier
+ * (sells), the store manager (closes the day; approves a refund at the till), the owner and the accountant (approve a
+ * reopen or a carried-forward payment with their own PIN). The hosted front signs a seller in from their password; the PIN
+ * is what the close, the approvals and the handhelds on the shop wifi ask for.
+ */
+export const PILOT_DEMO_TILL_PIN_HOLDERS: readonly string[] = Object.freeze(['pilot-cashier', 'pilot-manager', 'pilot-owner', 'pilot-accountant']);
 
 // ── Slice 4b: catalogue + tax/HSN + prices ────────────────────────────────────
 // A small, realistic mini-catalogue: a non-regulated household category and a
@@ -412,9 +437,22 @@ export interface SeedCustomer {
   readonly points?: { readonly movementId: string; readonly kind: 'earn'; readonly points: number; readonly sourceRef?: string };
 }
 
+/**
+ * Round 3 (screen gap audit, Round C): who puts the seeded suppliers in the SUPPLIER MASTER (M06-FR-01 · OB-32 "A") — a
+ * buyer proposes, a DIFFERENT person with the approval authority approves (§28: never one's own supplier), each through
+ * head office's own routes under their own sign-in. Until then buying refused every seeded supplier (`supplier_unknown`).
+ */
+export interface SeedSupplierMaster {
+  /** Holds `purchase.supplier.manage` (the store manager). */
+  readonly proposedBy: string;
+  /** Holds `purchase.supplier.approve` and is not the proposer (the accountant). */
+  readonly approvedBy: string;
+}
+
 export interface PilotTradingPartners {
   readonly tenantId: string;
   readonly suppliers: readonly SeedSupplier[];
+  readonly supplierMaster: SeedSupplierMaster;
   readonly bins: readonly SeedBin[];
   readonly receiptPolicy: SeedReceiptPolicy;
   readonly goodsReceipts: readonly SeedGoodsReceipt[];
@@ -435,6 +473,7 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
       logins: [],
     },
   ],
+  supplierMaster: { proposedBy: 'pilot-manager', approvedBy: 'pilot-accountant' },
   bins: [
     { binId: 'bin-demo-a1', storeId: WAREHOUSE_ID, capacityMinor: 1_000_000, pickable: true, zone: 'ambient' },
     { binId: 'bin-demo-c1', storeId: WAREHOUSE_ID, capacityMinor: 500_000, pickable: true, zone: 'chilled' },
@@ -574,8 +613,33 @@ export interface SeedEInvoice {
   readonly invoice: SeedTaxInvoice;
 }
 
+/**
+ * Round 3 (screen gap audit, Round C): the handhelds' REAL demo work — an online order picked in a wave head office assigns
+ * to a picker (`POST /v1/fulfilment/waves/:waveId/assignment`, HA-1) and delivered on a route it assigns to a driver
+ * (`POST /v1/delivery/routes/:routeId/assignment`). The demo box pulls both and the picker and driver phones show them
+ * with "head office" named, instead of their sample work. Head office re-checks that each person may do the work.
+ */
+export interface SeedWaveAssignment {
+  readonly waveId: string;
+  readonly pickerId: string;
+  readonly lines: readonly { readonly lineId: string; readonly orderRef: string; readonly productId: string; readonly description: string; readonly bin: string; readonly requiredQty: number; readonly uom: string; readonly unitPriceMinor: number }[];
+}
+export interface SeedRouteAssignment {
+  readonly routeId: string;
+  readonly driverId: string;
+  /** A coarse area, never an address (§31). */
+  readonly stops: readonly { readonly stopId: string; readonly orderRef: string; readonly area: string; readonly codMinor: number; readonly orderValueMinor?: number }[];
+}
+export interface SeedFulfilment {
+  /** Who assigns (holds `fulfilment.wave.assign` and `delivery.dispatch.manage`). */
+  readonly assignedBy: string;
+  readonly waves: readonly SeedWaveAssignment[];
+  readonly routes: readonly SeedRouteAssignment[];
+}
+
 export interface PilotTransactions {
   readonly tenantId: string;
+  readonly fulfilment: SeedFulfilment;
   readonly tillFloats: readonly SeedTillFloat[];
   readonly shiftCloses: readonly SeedShiftClose[];
   readonly serviceability: readonly SeedServiceability[];
@@ -589,8 +653,33 @@ export interface PilotTransactions {
 /** A second synthetic checksum-valid GSTIN (Tamil Nadu) for a demo B2B recipient. */
 export const PILOT_DEMO_RECIPIENT_GSTIN = '33AAECS9988Q1Z7';
 
+/** The demo's online order — reserved through the OMS promise, picked and delivered on the handhelds (Round 3). */
+export const PILOT_DEMO_ONLINE_ORDER = 'order-demo-online-1';
+/**
+ * Who picks and drives the demo's online order. Head office hands a wave or a route only to a person who may do the work
+ * (`fulfilment.pack.record` / `delivery.attempt.record`); in this release only the store manager's role holds both — the
+ * roadmap's "Picker/Delivery" role (§28) is not built yet — so the demo's work goes to the store manager (no new privilege
+ * is granted to anyone). When that role exists, a synthetic picker and driver take it over (an owner decision; see STATUS).
+ */
+export const PILOT_DEMO_PICKER = 'pilot-manager';
+export const PILOT_DEMO_DRIVER = 'pilot-manager';
+
 export const PILOT_TRANSACTIONS: PilotTransactions = {
   tenantId: PILOT_DEMO_TENANT,
+  fulfilment: {
+    assignedBy: 'pilot-owner',
+    waves: [{
+      waveId: 'wave-demo-1', pickerId: PILOT_DEMO_PICKER,
+      lines: [
+        { lineId: 'w1', orderRef: PILOT_DEMO_ONLINE_ORDER, productId: 'prod-soap', description: 'Demo Bath Soap 100g (demo)', bin: 'bin-demo-a1', requiredQty: 2, uom: 'ea', unitPriceMinor: 3500 },
+        { lineId: 'w2', orderRef: PILOT_DEMO_ONLINE_ORDER, productId: 'prod-brush', description: 'Demo Toothbrush (demo)', bin: 'bin-demo-a1', requiredQty: 1, uom: 'ea', unitPriceMinor: 2500 },
+      ],
+    }],
+    routes: [{
+      routeId: 'route-demo-1', driverId: PILOT_DEMO_DRIVER,
+      stops: [{ stopId: 'stop-demo-1', orderRef: PILOT_DEMO_ONLINE_ORDER, area: 'Demo Nagar (demo)', codMinor: 9500, orderValueMinor: 9500 }],
+    }],
+  },
   tillFloats: [
     { tillId: 'till-demo-1', movementId: 'cash-demo-open-1', amountMinor: 500_000, custodianId: 'pilot-cashier', tradingDay: RECEIVED_ON },
   ],
@@ -619,6 +708,8 @@ export const PILOT_TRANSACTIONS: PilotTransactions = {
   ],
   orders: [
     { orderId: 'order-demo-1', locationId: WAREHOUSE_ID, lines: [{ productId: 'prod-rice', quantityMinor: 5 }] }, // 5 bags of 1 kg (rice is sold `ea`)
+    // Round 3: the online order the picker and driver handhelds work on (2 soaps + 1 brush = ₹95.00, cash on delivery).
+    { orderId: PILOT_DEMO_ONLINE_ORDER, locationId: WAREHOUSE_ID, lines: [{ productId: 'prod-soap', quantityMinor: 2 }, { productId: 'prod-brush', quantityMinor: 1 }] },
   ],
   payRuns: [
     { payRunId: 'payrun-demo-2026-08', payPeriod: '2026-08', actor: 'pilot-owner', netTotalMinor: 15_000_000, employeeCount: 12 },

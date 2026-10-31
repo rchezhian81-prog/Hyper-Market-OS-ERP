@@ -52,6 +52,9 @@ RUN mkdir -p /var/lib/sre-edge && chown sre:sre /var/lib/sre-edge
 # `edge-witness` here and sets EDGE_WITNESS_DIR). Made and owned here, so a fresh named volume starts writable by `sre`
 # under the read-only root; without it every start looked like a possible restore (a new "ZZ" prefix each boot).
 RUN mkdir -p /var/lib/sre-edge-witness && chown sre:sre /var/lib/sre-edge-witness
+# Round 3 (screen gap audit): the handheld door's lock (OB-422), when a stack mounts a volume here (the hosted demo's
+# `edge-device-tls`, EDGE_DEVICE_TLS_DIR). Made and owned here, so a fresh named volume starts writable by `sre`.
+RUN mkdir -p /var/lib/sre-edge-device-tls && chown sre:sre /var/lib/sre-edge-device-tls
 VOLUME ["/var/lib/sre-edge", "/var/lib/sre-edge-witness"]
 
 USER sre

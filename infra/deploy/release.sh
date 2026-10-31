@@ -87,7 +87,7 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_COMPOSE_PROJECT:=sre-pilot}"
 : "${SRE_COMPOSE_FILES:=docker-compose.yml docker-compose.pilot.yml}"
 : "${SRE_ENV_FILE:=.env.pilot}"
-: "${SRE_BUILD_SHELLS:=pos owner-app web-erp picker-app delivery-app customer-app warehouse-app}"
+: "${SRE_BUILD_SHELLS:=pos owner-app web-erp picker-app delivery-app customer-app warehouse-app supplier-app self-checkout price-kiosk queue-pos b2b-app}"
 : "${SRE_BUILD_ENV:=}"
 : "${SRE_BUILD_TOOLS:=demo-login}"
 : "${SRE_RECREATE_SERVICES:=edge-relay}"
