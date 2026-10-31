@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { aiControlView, pullRequest, liftRequest, decisionRequest, withoutIt, ACT_REFUSAL_KINDS, type ControlRead, type ControlProposal, type ControlSwitch } from '../../apps/web-erp/src/ai-control';
+import { aiControlView, pullRequest, liftRequest, decisionRequest, withoutIt, ACT_REFUSAL_KINDS, enableRequest, budgetRequest, agentBudgetRequest, toActKey, toActWords, TO_ACT_WORDS, type ControlRead, type ControlProposal, type ControlSwitch } from '../../apps/web-erp/src/ai-control';
 import { aiViewerFrom } from '../../apps/web-erp/src/browser-entry';
 import { FORBIDDEN_TOOLS } from '../../packages/ai/src/index';
 
@@ -32,7 +32,8 @@ describe('the AI control view model', () => {
     const v = aiControlView(read(), OWNER);
     expect(v.agents.map((a) => a.agentId)).toEqual(['A04', 'A01', 'A08']);
     expect(v.queue.map((p) => [p.proposalId, p.mayDecide])).toEqual([['p-new', true], ['p-old', false]]);
-    expect(v.may).toEqual({ stop: true, decide: true, approveModel: true, evaluate: true, manageIncidents: true, setBudget: true });
+    expect(v.may).toEqual({ stop: true, decide: true, approveModel: true, evaluate: true, manageIncidents: true, setBudget: true, enable: false });
+    expect(aiControlView(read(), { ...OWNER, permissions: [...OWNER.permissions, 'ai.agent.enable'] }).may.enable).toBe(true);
     const r = aiControlView(read(), READER);
     expect(r.may.stop).toBe(false);
     expect(r.queue.every((p) => !p.mayDecide)).toBe(true);
@@ -78,11 +79,79 @@ describe('every act is checked here and SENT to head office', () => {
     expect(decisionRequest(OWNER, open, 'rejected', '')).toMatchObject({ ok: false, refusal: 'reason_needed' });
     expect(decisionRequest(OWNER, proposal('p', 'x', { decision: 'approved', by: 'u', at: 'x' }), 'approved', '')).toMatchObject({ ok: false, refusal: 'not_yours' });
     expect(decisionRequest(OWNER, open, 'approved', '')).toEqual({ ok: true, method: 'POST', path: '/v1/ai/proposals/p%201/outcome', body: { decision: 'approved' } });
-    expect(ACT_REFUSAL_KINDS).toHaveLength(5);
+    expect(ACT_REFUSAL_KINDS).toHaveLength(8);
   });
   it('says what the shop does without each assistant', () => {
     expect(withoutIt({ agentId: 'A01' })).toMatch(/only reads and drafts/);
     expect(withoutIt({ agentId: 'A03' })).toMatch(/decided by the manager/);
+  });
+});
+
+describe('AI-SCREEN (re-audit 30 Oct 2026): switching an assistant on or off, and the spending limits', () => {
+  const agents = [{ agentId: 'A08' as const, enabled: true }, { agentId: 'A01' as const, enabled: false }, { agentId: 'A04' as const, enabled: true }];
+  it('switching ONE assistant on or off sends head office\'s whole list with only that one changed — nobody else\'s setting', () => {
+    expect(enableRequest(OWNER, agents, 'A01', true)).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { agents: ['A01', 'A04', 'A08'] } });
+    expect(enableRequest(OWNER, agents, 'A04', false)).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { agents: ['A08'] } });
+    // Already so at head office (somebody just changed it): nothing is sent.
+    expect(enableRequest(OWNER, agents, 'A08', true)).toMatchObject({ ok: false, refusal: 'already_so' });
+    expect(enableRequest(OWNER, agents, 'A03', true)).toMatchObject({ ok: false, refusal: 'which_agent' });
+    expect(enableRequest(NOBODY, agents, 'A01', true)).toMatchObject({ ok: false, refusal: 'nobody_is_named_at_this_desk' });
+  });
+  it('the shop\'s limit is exact paise and a day; its shape only — head office refuses a limit above D3 itself', () => {
+    expect(budgetRequest(OWNER, { cap: '1,000.50', periodEnds: '2026-11-30T18:29:00.000Z' })).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/budget', body: { capMinor: 100_050, periodEnds: '2026-11-30T18:29:00.000Z' } });
+    // Above the ₹15,000 ceiling is NOT refused here: head office refuses it by name (over_the_platform_ceiling).
+    expect(budgetRequest(OWNER, { cap: '20000', periodEnds: '2026-11-30T18:29:00.000Z' })).toMatchObject({ ok: true, body: { capMinor: 2_000_000 } });
+    expect(budgetRequest(OWNER, { cap: '', periodEnds: '2026-11-30T18:29:00.000Z' })).toMatchObject({ ok: false, refusal: 'not_money' });
+    expect(budgetRequest(OWNER, { cap: '10.555', periodEnds: '2026-11-30T18:29:00.000Z' })).toMatchObject({ ok: false, refusal: 'not_money' });
+    expect(budgetRequest(OWNER, { cap: '-5', periodEnds: '2026-11-30T18:29:00.000Z' })).toMatchObject({ ok: false, refusal: 'not_money' });
+    expect(budgetRequest(OWNER, { cap: '100', periodEnds: '' })).toMatchObject({ ok: false, refusal: 'period_needed' });
+    expect(budgetRequest(NOBODY, { cap: '100', periodEnds: '2026-11-30T18:29:00.000Z' })).toMatchObject({ ok: false, refusal: 'nobody_is_named_at_this_desk' });
+  });
+  it('an assistant\'s own limit, and its requests an hour only when given', () => {
+    expect(agentBudgetRequest(OWNER, 'A08', { ceiling: '200', callsPerHour: '' })).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/A08/budget', body: { ceilingMinor: 20_000 } });
+    expect(agentBudgetRequest(OWNER, 'A08', { ceiling: '200.5', callsPerHour: ' 30 ' })).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/A08/budget', body: { ceilingMinor: 20_050, callsPerHour: 30 } });
+    expect(agentBudgetRequest(OWNER, 'A08', { ceiling: '200', callsPerHour: '0' })).toMatchObject({ ok: false, refusal: 'not_money' });
+    expect(agentBudgetRequest(OWNER, 'A08', { ceiling: 'lots' })).toMatchObject({ ok: false, refusal: 'not_money' });
+    expect(agentBudgetRequest(OWNER, 'A99' as 'A08', { ceiling: '1' })).toMatchObject({ ok: false, refusal: 'which_agent' });
+  });
+  it('every path is one of head office\'s existing governance routes — never the free-text switch, a model approval or the shop-wide switch', () => {
+    const paths = [enableRequest(OWNER, agents, 'A01', true), budgetRequest(OWNER, { cap: '1', periodEnds: '2026-11-30T00:00:00Z' }), agentBudgetRequest(OWNER, 'A01', { ceiling: '1' })]
+      .map((c) => (c.ok ? `${c.method} ${c.path}` : ''));
+    expect(paths).toEqual(['PUT /v1/ai/agents/enabled', 'PUT /v1/ai/budget', 'PUT /v1/ai/agents/A01/budget']);
+  });
+});
+
+describe('O-2: a draft\'s "to act" is said in plain words, never as a raw route', () => {
+  it('every route an assistant names today has its own words, in English and Tamil; an unknown one gets the general words', () => {
+    const named: readonly [string, string][] = [
+      ['POST /v1/purchase/orders/:poId by a buyer, approved by a second person (§28)', 'purchase_order'],
+      ['POST /v1/warehouse/transfers/:transferId by a person, dispatched and received by others (M09-FR-03 · §28)', 'transfer'],
+      ['POST /v1/prices/changes (markdown) or POST /v1/warehouse/transfers/:transferId, by a manager', 'markdown_or_transfer'],
+      ['POST /v1/prices/changes', 'price_change'],
+      ['POST /v1/inventory/write-off/:writeOffId', 'write_off'],
+      ['POST /v1/promotions/:promotionId/simulate then POST /v1/promotions/:promotionId/launch, by a marketing approver (§28)', 'promotion'],
+      ['a marketing approver reviews and launches a campaign to this audience (no auto-send)', 'campaign'],
+      ['POST /v1/service/cases/:caseId/first-response', 'service_reply'],
+      ['POST /v1/platform/alerts/:alertId/acknowledge', 'alert'],
+      ['POST /v1/hr/workforce/tasks/:taskId/complete', 'staff_task'],
+      ['GET /v1/purchase/import-quality/:sourceId', 'import_quality'],
+      ['GET /v1/loss-prevention/cases', 'loss_cases'],
+      ['POST /v1/catalogue/products/:productId/barcodes/:code', 'barcode'],
+      ['POST /v1/catalogue/merges/:mergeId', 'merge'],
+      ['POST /v1/catalogue/products/:productId/publish', 'publish_mrp'],
+      ['the CUSTOMER confirms any change to their cart in the app — A04 only drafts the shortlist', 'customer_confirms'],
+      ['nothing — A01 is read-only; a person decides what, if anything, to do', 'nothing'],
+      ['POST /v1/something/new', 'general'],
+    ];
+    for (const [route, key] of named) {
+      expect(toActKey(route), route).toBe(key);
+      for (const lang of ['en', 'ta'] as const) {
+        const said = toActWords(route, lang);
+        expect(said, `${route} (${lang})`).not.toMatch(/\/v1\/|POST|GET|:[a-zA-Z]+Id/);
+        expect(said.length).toBeGreaterThan(10);
+      }
+    }
+    for (const words of Object.values(TO_ACT_WORDS)) expect(words.ta).not.toBe(words.en);
   });
 });
 

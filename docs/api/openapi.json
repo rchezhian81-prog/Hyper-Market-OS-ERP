@@ -229614,6 +229614,16 @@
               "ValDtls": {
                 "type": "object",
                 "properties": {
+                  "OthChrg": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
                   "TotInvVal": {
                     "anyOf": [
                       {
@@ -269134,6 +269144,9 @@
                 "type": "number"
               }
             ]
+          },
+          "otherChargesMinor": {
+            "type": "number"
           },
           "confidence": {
             "type": "number"
