@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1959,
+  "testFiles": 1960,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -566,8 +566,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 13,
-        "integration": 30,
-        "realDb": 11,
+        "integration": 31,
+        "realDb": 12,
         "browser": 7,
         "connected": 1,
         "device": 0,
@@ -606,6 +606,7 @@
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
+          "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
@@ -628,6 +629,7 @@
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
+          "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
@@ -3712,7 +3714,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 11,
-        "integration": 13,
+        "integration": 14,
         "realDb": 9,
         "browser": 1,
         "connected": 1,
@@ -3737,6 +3739,7 @@
           "tests/integration/a01-says-why-the-takings-fell.test.ts",
           "tests/integration/ai-agents-draft-for-people.test.ts",
           "tests/integration/ai-governance-controls.test.ts",
+          "tests/integration/ai-governance.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-owner-and-purchase-agents.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",

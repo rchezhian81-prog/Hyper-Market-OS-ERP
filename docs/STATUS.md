@@ -5,6 +5,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## The urgent five from the 30 Oct re-audit (31 October 2026): built; owner decisions OB-554 to OB-557
+- **What changed:**
+  - **Range tab (M04-FR-01):** taking an item out of the range now goes to head office and says "done" only on head office's word; with stock left, head office puts it on clearance.
+  - **Offer tab (M05-FR-03/04):** the offer's rule (products, days, coupon, members only, caps) is defined first, so Start works; whole shop days (OB-554).
+  - **Supplier bills (M07-FR-04):** freight, duty and other charges can be entered or read from the e-invoice; other charges stay out of stock cost until marked cost or tax (OB-556).
+  - **AI page:** assistants can be switched on and off and limits set from the page; a change against an out-of-date list is refused (OB-557); proposals say what to do in plain words.
+  - **Quality samples offline (M10-FR-02):** recorded at the store with the line down, sent once and re-checked at head office, through a separate narrow store-computer right (OB-555).
+- **Tests:** the joined work, full default suite on PostgreSQL: 15,766 passed, 1 failed under load (the kept-build-lease test, unrelated; passed 3 of 3 alone). Full browser suite: 775 of 775 passed. Type check and lint clean. The OB-556/557 additions were re-tested after joining (counts in the pull request).
+- **Next:** the remaining 26 partial rows from the re-audit, in one round (owner's choice B).
+- **Branch protection:** switched on for `main` by the owner (31 Oct 2026).
+- **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## Fresh full roadmap re-audit (30 October 2026): 310 done, 31 half done, nothing missing
 - **What changed:** a read-only check of every roadmap row at main `5c84f4c7` (`docs/audit/REAUDIT-2026-10-30.md`, lane tables in `docs/audit/reaudit-2026-10-30/`). Of 390 distinct rows: 310 done, 31 partial, 0 missing, 0 decision, 43 external, 6 deferred to R8 in writing.
   - Most of the 31 partial rows are working, tested functions that no screen reaches, so a person cannot use them without a programmer.
