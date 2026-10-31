@@ -30,6 +30,7 @@ import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
 import { packTimeZone } from './shop-zone'; // OB-606
+import { wallClockIn } from '../../../packages/calendar/src/trading-day'; // Round A: the copy's time in the shop's clock
 import { navigationPayload, type NavigationPayload, asSignedInPerson, permissionsOf } from './screen-navigation';
 import { ERP_NAVIGATION, permissionsOpening } from '../../../apps/web-erp/src/navigation';
 import {
@@ -329,6 +330,17 @@ export function safeFile(file: string): string | null {
   const clean = normalize(decoded);
   if (clean.startsWith('..') || clean.startsWith('/') || clean.includes('\0')) return null;
   return clean;
+}
+
+/**
+ * Round A (screen gap audit 31 Oct 2026 · P-08): how old this box's copy of head office's store setup is — the time head
+ * office's setup reached this box (in the shop's own clock) and its age in whole minutes. `null` when this box has no setup
+ * from head office at all (the pages then say they were not told, section by section).
+ */
+export function storeCopyOf(snap: Pick<ScreenInput, 'pack' | 'now'>): { readonly receivedAt: string; readonly shownAt: string; readonly ageMinutes: number } | null {
+  const at = snap.pack.receivedAt;
+  if (at === null || Number.isNaN(Date.parse(at)) || Number.isNaN(Date.parse(snap.now))) return null;
+  return { receivedAt: at, shownAt: wallClockIn(at, packTimeZone(snap.pack)).replace('T', ' '), ageMinutes: Math.max(0, Math.floor((Date.parse(snap.now) - Date.parse(at)) / 60_000)) };
 }
 
 /** The screens that stay open with no office sign-in: the till alone — its cashier signs in at the till itself. */
@@ -817,6 +829,9 @@ export function startScreenServer(input: {
           // OB-606: the shop's zone from this box's SIGNED store pack (else the shop default) — every page dates "today",
           // a month and a shown date by it (packages/calendar shop-day), never by its device's own zone; no network call.
           shopTimeZone: packTimeZone(snap.pack),
+          // Round A (P-08): when head office last sent this box the store setup every office page's figures come from — the
+          // page's chrome says "the store computer's copy, as head office last sent it at …, N old" wherever a page asks.
+          ...(APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { storeCopy: storeCopyOf(snap) }),
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
           ...(posLane === undefined ? {} : { posLane }),
           ...(posRefundPolicy === undefined ? {} : { posRefundPolicy }),

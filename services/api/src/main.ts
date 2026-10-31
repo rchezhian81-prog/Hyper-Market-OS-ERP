@@ -1229,6 +1229,7 @@ export function buildSurface(deps: {
         floorDevices: floorDevicePackPoliciesOf({ store, now }), // OB-375 · OB-378: the kiosk's minutes and the self-checkout watch
         calendar: shopCalendar, // R1a: the shop's zone rides the pack, so the store box dates by it
         tillControls: tillControlsPackSectionOf({ store, now, settings, signer }), versionPolicy: versionPolicyPackSectionOf({ store, now }), // OB-500 · OB-501 (R7-A)
+        reportingRecords: REPORTING_RECORDS, // Round A: the store's Reports page reads the same list head office's catalogue does
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
