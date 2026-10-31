@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1972,
+  "testFiles": 1985,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -33,7 +33,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 30,
-        "integration": 27,
+        "integration": 28,
         "realDb": 12,
         "browser": 9,
         "connected": 5,
@@ -92,6 +92,7 @@
           "tests/integration/r16a-the-plan-and-the-pack-take-the-shops-today.test.ts",
           "tests/integration/receipt-numbers-come-from-the-box.test.ts",
           "tests/integration/reporting-consolidation.test.ts",
+          "tests/integration/round-a-the-company-report-is-fed-from-head-offices-own-records.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/stock-moves-only-at-a-registered-place.test.ts",
           "tests/integration/store-pack-policy.test.ts",
@@ -144,7 +145,7 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 31,
+        "unit": 32,
         "integration": 29,
         "realDb": 13,
         "browser": 8,
@@ -182,6 +183,7 @@
           "tests/unit/r7a-till-floor-and-limit.test.ts",
           "tests/unit/rbac.test.ts",
           "tests/unit/role-scopes.test.ts",
+          "tests/unit/round-a-today-counts-head-offices-approvals-and-orders.test.ts",
           "tests/unit/service-store-core.test.ts",
           "tests/unit/sign-in-service.test.ts",
           "tests/unit/till-operators.test.ts"
@@ -257,7 +259,7 @@
       "id": "M03",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 17,
+        "unit": 18,
         "integration": 18,
         "realDb": 2,
         "browser": 3,
@@ -281,6 +283,7 @@
           "tests/unit/product-duplicates.test.ts",
           "tests/unit/product-master.test.ts",
           "tests/unit/product-pack.test.ts",
+          "tests/unit/round-a-an-empty-page-never-says-all-clear.test.ts",
           "tests/unit/screen-router.test.ts",
           "tests/unit/service-catalogue.test.ts",
           "tests/unit/service-pos.test.ts"
@@ -468,7 +471,7 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
+        "unit": 19,
         "integration": 24,
         "realDb": 14,
         "browser": 8,
@@ -493,6 +496,7 @@
           "tests/unit/purchasing.test.ts",
           "tests/unit/requisitions-session.test.ts",
           "tests/unit/rfq.test.ts",
+          "tests/unit/round-a-today-counts-head-offices-approvals-and-orders.test.ts",
           "tests/unit/supplier-performance.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts"
@@ -1895,7 +1899,7 @@
         "unit": 27,
         "integration": 37,
         "realDb": 23,
-        "browser": 6,
+        "browser": 7,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -2000,6 +2004,7 @@
           "tests/e2e/finance-month-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts",
+          "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
         ],
         "connected": [
@@ -2066,7 +2071,7 @@
       "id": "M25",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 27,
         "realDb": 12,
         "browser": 10,
@@ -2084,6 +2089,7 @@
           "tests/unit/erp-workforce-inbox-session.test.ts",
           "tests/unit/lp-workforce-sessions.test.ts",
           "tests/unit/r7d-roster-certificates-and-attendance.test.ts",
+          "tests/unit/round-a-an-empty-page-never-says-all-clear.test.ts",
           "tests/unit/sync-http-transport.test.ts",
           "tests/unit/the-box-holds-the-help-library-and-the-rooms.test.ts",
           "tests/unit/the-findings-page-shows-what-head-office-found.test.ts",
@@ -2267,7 +2273,7 @@
       "id": "M28",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 13,
         "realDb": 7,
         "browser": 7,
@@ -2281,6 +2287,7 @@
           "tests/unit/erp-waste-review-session.test.ts",
           "tests/unit/erp-write-off-capture-session.test.ts",
           "tests/unit/lp-workforce-sessions.test.ts",
+          "tests/unit/round-a-an-empty-page-never-says-all-clear.test.ts",
           "tests/unit/the-scrap-packaging-and-compare-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/waste-sustainability.test.ts",
           "tests/unit/waste.test.ts",
@@ -2333,7 +2340,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 17,
-        "integration": 17,
+        "integration": 18,
         "realDb": 9,
         "browser": 4,
         "connected": 2,
@@ -2371,6 +2378,7 @@
           "tests/integration/owner-figures-say-how-fresh-each-store-is.test.ts",
           "tests/integration/reporting-consolidation.test.ts",
           "tests/integration/reports-reconcile-to-their-sources.test.ts",
+          "tests/integration/round-a-the-company-report-is-fed-from-head-offices-own-records.test.ts",
           "tests/integration/scheduled-brief.test.ts",
           "tests/integration/scheduled-reports-prepare-themselves.test.ts",
           "tests/integration/the-brief-sends-itself.test.ts",
@@ -3606,7 +3614,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 6,
-        "integration": 12,
+        "integration": 13,
         "realDb": 10,
         "browser": 1,
         "connected": 1,
@@ -3629,6 +3637,7 @@
           "tests/integration/owner-figures-say-how-fresh-each-store-is.test.ts",
           "tests/integration/reporting-consolidation.test.ts",
           "tests/integration/reports-reconcile-to-their-sources.test.ts",
+          "tests/integration/round-a-the-company-report-is-fed-from-head-offices-own-records.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
@@ -5024,7 +5033,7 @@
         "unit": 1,
         "integration": 16,
         "realDb": 11,
-        "browser": 3,
+        "browser": 4,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -5067,7 +5076,8 @@
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
-          "tests/e2e/finance-month-close-delivery.e2e.ts"
+          "tests/e2e/finance-month-close-delivery.e2e.ts",
+          "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts"

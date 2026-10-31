@@ -28,6 +28,11 @@ export interface CategoryPolicyPorts {
   categories(): readonly CategoryPolicy[];
   /** The store's trading day the policies are resolved on (e.g. "2026-08-14"). */
   readonly onDate: string;
+  /**
+   * Screen gap audit (Round A · P-08): whether the store computer was GIVEN the categories at all. False: never told — not
+   * "no categories set up", and never "all clear". Absent: told (older callers).
+   */
+  known?(): boolean;
 }
 
 export interface CategoryPolicyConfig {
@@ -47,7 +52,7 @@ export type CopyKey =
   | 'flagNotReturnable' | 'flagBlockExpiry' | 'flagNearExpiry' | 'flagPerishable'
   | 'controlsTitle' | 'noControls' | 'noPolicyDetail'
   | 'attentionCount' | 'allClear'
-  | 'stateReady' | 'stateEmpty' | 'stateNotPermitted' | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'stateReady' | 'stateEmpty' | 'stateNotTold' | 'stateNotPermitted' | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
 export const CATEGORY_POLICY_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -62,7 +67,8 @@ export const CATEGORY_POLICY_COPY: BilingualCopy<CopyKey> = {
     flagNotReturnable: 'Not returnable', flagBlockExpiry: 'No sale past use-by', flagNearExpiry: 'Near-expiry alert', flagPerishable: 'Perishable (rotate FEFO)',
     controlsTitle: 'Controls', noControls: 'No special controls', noPolicyDetail: 'This category has no rules in force today — every sellable category needs a policy.',
     attentionCount: 'need attention', allClear: 'Every category’s rules are in force and clear.',
-    stateReady: 'Showing category rules', stateEmpty: 'No categories have been configured yet.',
+    stateReady: 'Showing category rules', stateEmpty: 'Nothing set up yet — head office has no categories on its list.',
+    stateNotTold: 'This store computer has not been given the categories yet, so it cannot show their rules. This is not "all clear".',
     stateNotPermitted: 'You do not have permission to see category rules.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
@@ -79,7 +85,8 @@ export const CATEGORY_POLICY_COPY: BilingualCopy<CopyKey> = {
     flagNotReturnable: 'திரும்பப்பெற முடியாது', flagBlockExpiry: 'காலாவதிக்குப் பின் விற்பனை இல்லை', flagNearExpiry: 'காலாவதி நெருங்கும் எச்சரிக்கை', flagPerishable: 'அழிந்துபோகும் (FEFO சுழற்சி)',
     controlsTitle: 'கட்டுப்பாடுகள்', noControls: 'சிறப்புக் கட்டுப்பாடுகள் இல்லை', noPolicyDetail: 'இந்த வகைக்கு இன்று விதிகள் இல்லை — ஒவ்வொரு விற்பனை வகைக்கும் ஒரு கொள்கை தேவை.',
     attentionCount: 'கவனம் தேவை', allClear: 'ஒவ்வொரு வகையின் விதிகளும் நடைமுறையில் உள்ளன, தெளிவாக உள்ளன.',
-    stateReady: 'வகை விதிகளைக் காட்டுகிறது', stateEmpty: 'இன்னும் எந்த வகையும் அமைக்கப்படவில்லை.',
+    stateReady: 'வகை விதிகளைக் காட்டுகிறது', stateEmpty: 'இன்னும் எதுவும் அமைக்கப்படவில்லை — தலைமை அலுவலகப் பட்டியலில் எந்த வகையும் இல்லை.',
+    stateNotTold: 'வகைகள் இன்னும் இந்தக் கடைக் கணினிக்குக் கொடுக்கப்படவில்லை, எனவே அவற்றின் விதிகளைக் காட்ட முடியாது. இது "எல்லாம் சரி" என்பதல்ல.',
     stateNotPermitted: 'வகை விதிகளைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -132,6 +139,11 @@ export interface CategoryPolicyView {
   readonly categories: readonly PresentedCategory[];
   readonly attentionCount: number;
   readonly total: number;
+  /**
+   * The one line above the list (Round A · P-08): how many need attention; "every category clear" ONLY when there are
+   * categories and none needs attention; "nothing set up yet" for an empty list; "not given" when never told.
+   */
+  readonly summaryLine: string;
   readonly nobodyNamed: boolean;
 }
 
@@ -186,7 +198,13 @@ export function createCategoryPolicySession(config: CategoryPolicyConfig, ports:
       if (!ports.mayRead()) {
         return {
           screenState: presentScreenState({ state: 'error', label: t('stateNotPermitted') }),
-          categories: [], attentionCount: 0, total: 0, nobodyNamed: config.userId === null,
+          categories: [], attentionCount: 0, total: 0, summaryLine: t('stateNotPermitted'), nobodyNamed: config.userId === null,
+        };
+      }
+      if (ports.known !== undefined && !ports.known()) {
+        return {
+          screenState: presentScreenState({ state: 'empty', label: t('stateNotTold') }),
+          categories: [], attentionCount: 0, total: 0, summaryLine: t('stateNotTold'), nobodyNamed: config.userId === null,
         };
       }
       const raw = ports.categories();
@@ -202,6 +220,7 @@ export function createCategoryPolicySession(config: CategoryPolicyConfig, ports:
         categories: ordered,
         attentionCount,
         total: presented.length,
+        summaryLine: presented.length === 0 ? t('stateEmpty') : attentionCount === 0 ? t('allClear') : `${attentionCount} ${t('attentionCount')}`,
         nobodyNamed: config.userId === null,
       };
     },

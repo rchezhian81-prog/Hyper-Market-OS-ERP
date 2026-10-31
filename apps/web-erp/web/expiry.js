@@ -54,6 +54,7 @@ const WORDS = {
     noPhoneLabel: 'No customer has been phoned about this recall',
     withdrawNote: 'Allowed only before any customer is called or any stock is thrown away. After that, close it with evidence.',
     refused: 'Head office said no',
+    noExpiryOnRecord: '{n} more batch(es) in this shop have no expiry date on record, so they cannot be checked here.',
   },
   ta: {
     title: 'காலாவதி மற்றும் திரும்பப் பெறுதல்',
@@ -83,6 +84,7 @@ const WORDS = {
     noPhoneLabel: 'இதைப் பற்றி எந்த வாடிக்கையாளருக்கும் தொலைபேசி அழைப்பு செய்யப்படவில்லை',
     withdrawNote: 'எந்த வாடிக்கையாளரையும் அழைப்பதற்கு முன்பும், எந்தப் பொருளும் தூக்கி எறியப்படுவதற்கு முன்பும் மட்டுமே அனுமதி. அதன் பிறகு ஆதாரத்துடன் மூடவும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது',
+    noExpiryOnRecord: 'இந்தக் கடையில் மேலும் {n} batch-களுக்குக் காலாவதி தேதி பதிவில் இல்லை, எனவே அவற்றை இங்கே சரிபார்க்க முடியாது.',
   },
 };
 let lang = 'en';
@@ -213,8 +215,10 @@ function renderExpiry() {
   // The two empty states are opposite, and only one of them is good news.
   const noBatches = el('no-batches');
   const untracked = window.expiryData !== undefined && window.expiryData.batches === undefined;
-  noBatches.hidden = !untracked;
-  noBatches.textContent = untracked ? t('noBatches') : '';
+  // Round A: batches head office holds with no expiry on record are counted, never silently left off the list (P-08).
+  const undated = Number(window.expiryData?.batchesWithoutExpiry ?? 0);
+  noBatches.hidden = !untracked && !(undated > 0);
+  noBatches.textContent = untracked ? t('noBatches') : undated > 0 ? t('noExpiryOnRecord').replace('{n}', String(undated)) : '';
 
   el('expiry-list').replaceChildren(...(list.length === 0
     ? [emptyLine(untracked ? t('noBatches') : t('nothingExpiring'))]
@@ -224,7 +228,7 @@ function renderExpiry() {
       const what = document.createElement('span');
       what.className = 'what';
       const name = document.createElement('strong');
-      name.textContent = `${item.name} — ${item.qty} ${t('units')}`;
+      name.textContent = `${item.name} — ${quantityOf(item)}`;
       const sub = document.createElement('small');
       // Words as well as colour, always: one man in twelve cannot tell the two borders apart.
       sub.textContent = item.status === 'expired'
@@ -234,6 +238,22 @@ function renderExpiry() {
       row.append(what);
       return row;
     })));
+}
+
+/**
+ * A batch's quantity as a person reads it (OB-31): head office counts in the product's smallest step, so a kg product's
+ * 2500 is "2.500 kg" — worded by the office pages' one quantity label. A product whose unit this page was not told keeps
+ * the bare count and the word "units".
+ */
+function quantityOf(item) {
+  const batch = (window.expiryData?.batches ?? []).find((b) => b.batchId === item.batchId && b.productId === item.productId);
+  const uom = batch?.uom ?? window.expiryData?.productUnits?.[item.productId];
+  const label = window.sreQuantity?.label;
+  if (typeof uom === 'string' && uom !== '' && typeof label === 'function') {
+    const worded = label(item.qty, uom);
+    return /^\d+(\s+ea)?$/i.test(worded) ? `${item.qty} ${t('units')}` : worded;
+  }
+  return `${item.qty} ${t('units')}`;
 }
 
 function emptyLine(text) {

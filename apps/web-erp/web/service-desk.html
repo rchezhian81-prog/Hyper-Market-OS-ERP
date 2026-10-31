@@ -39,6 +39,7 @@
       .draft blockquote { margin: 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--bg); }
       .status { font-size: 14px; min-height: 20px; }
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .off-r8 { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: 13px; }
       .stack { display: grid; gap: 10px; }
@@ -52,6 +53,8 @@
       </span>
     </header>
     <!--SCREEN-DATA-->
+    <!-- OB-561 (owner, 31 Oct 2026): live AI stays off until Release 8 (OB-382) — said plainly, first, on the page. -->
+    <p class="off-r8" id="off-r8" role="note">The assistants are off until Release 8 — the owner decided this on 31 October 2026. No reply is drafted by an assistant yet; write the reply yourself.</p>
     <p class="nobody" id="nobody" hidden></p>
     <main>
       <section aria-labelledby="cases-h">

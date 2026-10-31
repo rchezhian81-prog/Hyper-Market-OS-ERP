@@ -114,8 +114,12 @@ export interface RecallRecord {
     readonly closedAt: string;
     /** What was actually done with the stock. A recall closed with no evidence is a recall nobody did. */
     readonly evidence: string;
-    readonly recoveredQty: number;
-    readonly disposedQty: number;
+    /**
+     * How much came back and how much was destroyed, as this screen recorded them when it closed the recall. Absent on a
+     * recall head office sent (Round A): head office keeps who closed it, when and the evidence — not these counts.
+     */
+    readonly recoveredQty?: number;
+    readonly disposedQty?: number;
   };
   /** OB-383: withdrawn as started by mistake, before anyone was told or anything disposed of. Kept, never deleted. */
   readonly withdrawal?: {
@@ -262,7 +266,9 @@ export function createExpirySession(config: ExpiryConfig, ports: ExpiryPorts): E
     }));
     return {
       recall,
-      name: nameOf(recall.productId),
+      // A recall of a batch head office cannot name to any product (Round A: no stock of it was ever recorded) is shown by
+      // its batch code — never a blank where the product's name belongs.
+      name: recall.productId === '' ? recall.batchId : nameOf(recall.productId),
       trace,
       // Out minus back. Clamped at nought: a negative would mean more came back than went out,
       // which is a different problem and not a reason to report a recall as over-complete.

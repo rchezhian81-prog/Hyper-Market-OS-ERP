@@ -3,23 +3,28 @@ import {
   createFinanceSession, monthName, monthOutcomeOfRefusal, periodCloseDetails, periodCloseRequestBody,
   periodReopenDetails, periodReopenRequestBody, presentMonthAsk, presentMonthUse,
   FINANCE_MONTH_COPY, MONTH_COPY_KEYS, MONTH_REFUSAL_CODES, PERIOD_CLOSE_KIND, PERIOD_REOPEN_KIND,
-  type FinanceConfig, type FinancePorts, type MonthActionResult, type MonthAskOutcome, type MonthUseOutcome,
+  type MonthActionResult, type MonthAskOutcome, type MonthUseOutcome,
 } from '../../apps/web-erp/src/finance-session';
+import {
+  createMonthCloseSession, MONTH_PAGE_COPY, MONTH_PAGE_KEYS, type MonthCloseConfig, type MonthClosePorts,
+} from '../../apps/web-erp/src/month-close-session';
 import type { ApprovalAsk, ApprovalRequestView, AskResult, InboxRead } from '../../apps/web-erp/src/approvals-session';
 import { APPROVAL_REFUSAL_CODES } from '../../apps/web-erp/src/catalogue-session';
-import { bootFinance, FINANCE_HEAD_OFFICE } from '../../apps/web-erp/src/browser-entry';
+import { bootFinance, FINANCE_HEAD_OFFICE, MONTH_CLOSE_HEAD_OFFICE } from '../../apps/web-erp/src/browser-entry';
 import { actionDetails, fingerprintOf, takeApproval, type ApprovalState } from '../../services/identity/src/approval-requests';
 import { bilingualGaps } from '../../packages/ui/src/index';
-import type { QueuedPosting } from '../../packages/period-close/src/index';
 
 /**
- * **A month is closed and reopened at head office, by two people (M23-FR-04 · ADR-0024 · §28 · audit PA-03).**
+ * **A month is closed and reopened at head office, by two people, on the Month-end page only (OB-567 · M23-FR-04 ·
+ * ADR-0024 · §28 · audit PA-03).**
  *
  * The Finance screen used to "close" a month in the browser alone — nothing reached head office — and reopened one on
- * an approver's name TYPED into a box. A name in a box is not anybody's approval. Now:
+ * an approver's name TYPED into a box. A name in a box is not anybody's approval. Then the steps reached head office from
+ * the Finance page; since OB-567 (owner, 31 Oct 2026) they live on head office's Month-end page (`month-close-session.ts`),
+ * where head office's OWN figures decide (the page holds no local copy of the takings to refuse on):
  *
- *   1. the closer, seeing this screen's local evidence say the figures can be signed, presses **Ask for the
- *      signature**: head office's engine records a `period_close` request for exactly this month (`{ period }`);
+ *   1. the closer presses **Ask for the signature**: head office's engine records a `period_close` request for exactly
+ *      this month (`{ period }`);
  *   2. someone who may sign a month (the accountant, the CA) approves or rejects it on their own Approvals page;
  *   3. **Close the month** finds the closer's OWN APPROVED request for this month and posts the close naming it — and
  *      when it is not asked, waiting, rejected, expired or used, says so in plain words (English and Tamil) and sends
@@ -35,20 +40,7 @@ const NOW = '2026-10-07T05:00:00.000Z';
 const PREFIXES = { takings: 'SALES', tax: 'GST', refunds: 'REFUND' } as const;
 const LEDGER = { takingsMinor: 100_000_00, taxMinor: 5_000_00, refundsMinor: 2_000_00, billCount: 412 };
 
-const posting = (over: Partial<QueuedPosting> = {}): QueuedPosting => ({
-  postingId: 'P-1', idempotencyKey: 'k-1', period: PERIOD, journalRef: 'SALES-001',
-  debitMinor: 100_000_00, creditMinor: 100_000_00, state: 'posted', attempts: 1,
-  queuedAt: '2026-09-30T23:00:00.000Z',
-  ...over,
-});
-/** Both sides agree exactly: the figures can be signed. */
-const CLEAN: QueuedPosting[] = [
-  posting({ postingId: 'P-1', journalRef: 'SALES-001', debitMinor: 100_000_00 }),
-  posting({ postingId: 'P-2', journalRef: 'GST-001', debitMinor: 5_000_00 }),
-  posting({ postingId: 'P-3', journalRef: 'REFUND-001', debitMinor: 2_000_00 }),
-];
 
-const CONFIG: FinanceConfig = { tenantId: 't1', period: PERIOD, userId: 'u-owner', now: NOW, tradingDayCutoff: '02:00', journalPrefixes: PREFIXES };
 
 /** A request as head office's inbox hands it back (JSON round-tripped, like the wire). */
 const row = (over: Omit<Partial<ApprovalRequestView>, 'details'> & Pick<ApprovalRequestView, 'requestId'> & { readonly details?: object }): ApprovalRequestView => ({
@@ -65,7 +57,8 @@ function office(opts: { mine?: ApprovalRequestView[]; inbox?: InboxRead; ask?: A
   const closeCalls: { period: string; approvalId: string }[] = [];
   const reopenCalls: { period: string; reason: string; approvalId: string }[] = [];
   let inboxReads = 0;
-  const ports: Partial<FinancePorts> = {
+  const ports: MonthClosePorts = {
+    monthState: async () => ({ closed: false }),
     askApproval: async (ask) => {
       asks.push(ask);
       return opts.ask ?? { result: 'asked', request: row({ requestId: 'areq-new', kind: ask.kind, subjectRef: ask.subjectRef, details: ask.details, summary: ask.summary, reason: ask.reason }) };
@@ -77,19 +70,10 @@ function office(opts: { mine?: ApprovalRequestView[]; inbox?: InboxRead; ask?: A
   return { ports, asks, closeCalls, reopenCalls, inboxReads: () => inboxReads };
 }
 
-function ports(over: Partial<FinancePorts> = {}): FinancePorts {
-  return {
-    ledger: () => LEDGER,
-    postings: () => CLEAN,
-    periodState: () => ({ closed: false }),
-    unsentSyncCount: () => 0,
-    openExceptionCount: () => 0,
-    ...over,
-  };
-}
-
-const finance = (over: Partial<FinancePorts> = {}, config: Partial<FinanceConfig> = {}) => createFinanceSession({ ...CONFIG, ...config }, ports(over));
-const closedMonth = { periodState: () => ({ closed: true, closedBy: 'u-owner', closedAt: '2026-10-01T10:00:00.000Z' }) };
+const CONFIG: MonthCloseConfig = { userId: 'u-owner', mayClose: true };
+/** The Month-end page's close-and-reopen session over a stub head office (open by default; `closedMonth` closes it). */
+const monthClose = (ports: Partial<MonthClosePorts> = {}, config: Partial<MonthCloseConfig> = {}) => createMonthCloseSession({ ...CONFIG, ...config }, { ...office().ports, ...ports });
+const closedMonth: Partial<MonthClosePorts> = { monthState: async () => ({ closed: true }) };
 
 const APPROVED_CLOSE = row({ requestId: 'areq-1', status: 'approved', decidedBy: 'u-accountant', decisionReason: 'checked the bank and Tally', expiresAt: '2026-10-08T04:30:00.000Z' });
 const REASON = 'supplier credit note for August arrived late';
@@ -155,14 +139,14 @@ describe('through the REAL browser ports: what the screen asked for, the engine 
       return { status: 200, json: async () => ({ closed: `${PERIOD} closed, 3 control total(s) agreed, signed by u-accountant` }) };
     };
     let asked: ApprovalAsk | undefined;
-    const s = createFinanceSession(CONFIG, ports({
+    const s = monthClose({
       askApproval: async (ask) => { asked = ask; return { result: 'asked', request: row({ requestId: 'areq-1', details: ask.details }) }; },
       approvalInbox: async () => ({ result: 'read', inbox: { waitingForMe: [], mine: [row({ requestId: 'areq-1', details: asked!.details, status: 'approved', decidedBy: 'u-accountant' })], asAt: null } }),
-      closeAtHeadOffice: FINANCE_HEAD_OFFICE.closeAtHeadOffice,
-      reopenAtHeadOffice: FINANCE_HEAD_OFFICE.reopenAtHeadOffice,
-    }));
-    expect((await s.askToClose('en', '')).kind).toBe('asked');
-    const done = await s.closeWithApproval();
+      closeAtHeadOffice: MONTH_CLOSE_HEAD_OFFICE.closeAtHeadOffice,
+      reopenAtHeadOffice: MONTH_CLOSE_HEAD_OFFICE.reopenAtHeadOffice,
+    });
+    expect((await s.askToClose('en', PERIOD, '')).kind).toBe('asked');
+    const done = await s.closeWithApproval(PERIOD);
     expect(done).toEqual({ kind: 'done', detail: `${PERIOD} closed, 3 control total(s) agreed, signed by u-accountant`, approvedBy: 'u-accountant' });
 
     expect(sent).toHaveLength(1);
@@ -186,15 +170,15 @@ describe('through the REAL browser ports: what the screen asked for, the engine 
       return { status: 200, json: async () => ({ period: PERIOD, state: 'open', reopenedBy: 'u-owner', approvedBy: 'u-accountant', detail: `${PERIOD} reopened` }) };
     };
     let asked: ApprovalAsk | undefined;
-    const s = createFinanceSession(CONFIG, ports({
+    const s = monthClose({
       ...closedMonth,
       askApproval: async (ask) => { asked = ask; return { result: 'asked', request: reopenRow({ requestId: 'areq-2', details: ask.details }) }; },
       approvalInbox: async () => ({ result: 'read', inbox: { waitingForMe: [], mine: [reopenRow({ requestId: 'areq-2', details: asked!.details, status: 'approved', decidedBy: 'u-accountant' })], asAt: null } }),
-      closeAtHeadOffice: FINANCE_HEAD_OFFICE.closeAtHeadOffice,
-      reopenAtHeadOffice: FINANCE_HEAD_OFFICE.reopenAtHeadOffice,
-    }));
-    expect((await s.askToReopen('en', `  ${REASON}  `)).kind).toBe('asked');
-    expect((await s.reopenWithApproval(`  ${REASON} `)).kind).toBe('done');
+      closeAtHeadOffice: MONTH_CLOSE_HEAD_OFFICE.closeAtHeadOffice,
+      reopenAtHeadOffice: MONTH_CLOSE_HEAD_OFFICE.reopenAtHeadOffice,
+    });
+    expect((await s.askToReopen('en', PERIOD, `  ${REASON}  `)).kind).toBe('asked');
+    expect((await s.reopenWithApproval(PERIOD, `  ${REASON} `)).kind).toBe('done');
     expect(sent[0]!.url).toBe('/v1/finance/periods/2026-09/reopen');
     expect(sent[0]!.body).toEqual({ reason: REASON, approvalId: 'areq-2' });
     const decision = await takeApproval({
@@ -206,10 +190,10 @@ describe('through the REAL browser ports: what the screen asked for, the engine 
 
   it('a refusal comes back as head office said it; a dropped link is a lost link, never "done"', async () => {
     (globalThis as { fetch?: unknown }).fetch = async () => ({ status: 422, json: async () => ({ error: { code: 'closed_by_whoever_posted', whatHappened: 'u-accountant posted into 2026-09 and cannot also certify that it is right' } }) });
-    expect(await FINANCE_HEAD_OFFICE.closeAtHeadOffice({ period: PERIOD, approvalId: 'areq-1' }))
+    expect(await MONTH_CLOSE_HEAD_OFFICE.closeAtHeadOffice({ period: PERIOD, approvalId: 'areq-1' }))
       .toEqual({ result: 'refused', code: 'closed_by_whoever_posted', whatHappened: 'u-accountant posted into 2026-09 and cannot also certify that it is right' });
     (globalThis as { fetch?: unknown }).fetch = async () => { throw new Error('offline'); };
-    expect(await FINANCE_HEAD_OFFICE.reopenAtHeadOffice({ period: PERIOD, reason: REASON, approvalId: 'areq-2' })).toEqual({ result: 'lost_link' });
+    expect(await MONTH_CLOSE_HEAD_OFFICE.reopenAtHeadOffice({ period: PERIOD, reason: REASON, approvalId: 'areq-2' })).toEqual({ result: 'lost_link' });
   });
 });
 
@@ -218,7 +202,7 @@ describe('through the REAL browser ports: what the screen asked for, the engine 
 describe('Ask for the signature — the closer\'s own request, for exactly this month; nothing is closed', () => {
   it('kind period_close, about the month, details { period }, no amount, a plain summary and the note', async () => {
     const o = office();
-    const outcome = await finance(o.ports).askToClose('en', '  bank reconciled on the 3rd  ');
+    const outcome = await monthClose(o.ports).askToClose('en', PERIOD, '  bank reconciled on the 3rd  ');
     expect(outcome.kind).toBe('asked');
     expect(o.asks).toEqual([{
       kind: 'period_close', subjectRef: PERIOD, details: { period: PERIOD }, valueMinor: null,
@@ -229,8 +213,8 @@ describe('Ask for the signature — the closer\'s own request, for exactly this 
 
   it('the note is optional: without one, the signer reads that the figures agree; the summary is in the reader\'s language', async () => {
     const o = office();
-    await finance(o.ports).askToClose('en', '   ');
-    await finance(o.ports).askToClose('ta', '');
+    await monthClose(o.ports).askToClose('en', PERIOD, '   ');
+    await monthClose(o.ports).askToClose('ta', PERIOD, '');
     expect(o.asks[0]?.reason).toBe('The figures agree exactly and nothing is outstanding.');
     expect(o.asks[1]?.summary).toBe('செப்டம்பர் 2026 மாதத்தை மூடிக் கையெழுத்திடுதல்');
     expect(o.asks[1]?.reason).toBe('எண்கள் சரியாகப் பொருந்துகின்றன, நிலுவை எதுவும் இல்லை.');
@@ -238,36 +222,32 @@ describe('Ask for the signature — the closer\'s own request, for exactly this 
 
   it('says it is waiting for someone who may sign a month — the accountant or the CA — in English and Tamil', async () => {
     const o = office();
-    const outcome = await finance(o.ports).askToClose('en', '');
+    const outcome = await monthClose(o.ports).askToClose('en', PERIOD, '');
     expect(presentMonthAsk('en', 'close', outcome).label).toBe('Asked. Waiting for someone who may sign a month — the accountant or the CA, not you — to approve it on their Approvals page. Nothing is closed yet. Close and sign September 2026');
     expect(presentMonthAsk('en', 'close', outcome).tone).not.toBe('ok');
     expect(presentMonthAsk('ta', 'close', outcome).label).toMatch(/^கேட்கப்பட்டது\. .*கணக்காளர்/);
   });
 
-  it('refuses locally — nothing asked — when the figures here cannot be signed (every blocker is on the page)', async () => {
+  it('never refuses on a guess of its own: the figures are head office\'s, and closing on nothing is refused BY head office', async () => {
+    // The Month-end page holds no local copy of the takings — it asks whatever the month looks like, and head office checks
+    // its own control totals when the close is sent (`nothing_was_checked`, `control_total_does_not_agree`).
     const o = office();
-    const blocked: MonthAskOutcome[] = [
-      await finance({ ...o.ports, ledger: () => ({ ...LEDGER, takingsMinor: 100_000_01 }) }).askToClose('en', ''),
-      await finance({ ...o.ports, postings: () => [...CLEAN, posting({ postingId: 'P-D', journalRef: 'SALES-9', state: 'dead_lettered' })] }).askToClose('en', ''),
-      await finance({ ...o.ports, unsentSyncCount: () => 2 }).askToClose('en', ''),
-      await finance({ ...o.ports, openExceptionCount: () => 1 }).askToClose('en', ''),
-    ];
-    for (const b of blocked) expect(b).toMatchObject({ kind: 'blocked', refusal: 'blocked' });
-    const noLedger = await finance({ ...o.ports, ledger: () => undefined }).askToClose('en', '');
-    expect(noLedger).toMatchObject({ kind: 'blocked', refusal: 'the_shop_has_not_told_us_what_it_took' });
-    expect(presentMonthAsk('en', 'close', noLedger).label).toBe('Nothing was asked — the shop has not said what it took this month, so there is nothing to check the accounts against.');
-    expect(presentMonthAsk('en', 'close', blocked[0]!).label).toBe('Nothing was asked — these figures cannot be signed yet. Everything stopping it is listed under “What is stopping this month closing”.');
-    expect(o.asks).toEqual([]);
+    expect((await monthClose(o.ports).askToClose('en', PERIOD, '')).kind).toBe('asked');
+    const nothing = office({ mine: [APPROVED_CLOSE], close: { result: 'refused', code: 'nothing_was_checked', whatHappened: 'no control totals for 2026-09' } });
+    const refused = await monthClose(nothing.ports).closeWithApproval(PERIOD);
+    expect(refused).toEqual({ kind: 'head_office_refused', code: 'nothing_was_checked', whatHappened: 'no control totals for 2026-09' });
+    expect(presentMonthUse('en', 'close', refused).label).toBe('Not closed — head office has no figures to check for this month, so it cannot be signed.');
+    expect(presentMonthUse('en', 'close', refused).tone).not.toBe('ok');
   });
 
   it('refuses locally with nobody named at the desk, and says head office\'s words when it refuses the ask', async () => {
     const o = office();
-    expect(await finance(o.ports, { userId: null }).askToClose('en', '')).toEqual({ kind: 'nobody_named' });
+    expect(await monthClose(o.ports, { userId: null }).askToClose('en', PERIOD, '')).toEqual({ kind: 'nobody_named' });
     expect(o.asks).toEqual([]);
     const refused = office({ ask: { result: 'refused', code: 'not_permitted_for_this_approval', whatHappened: 'u-cashier may not close and sign an accounting month, so cannot ask for it to be approved.' } });
-    const r = await finance(refused.ports).askToClose('en', '');
+    const r = await monthClose(refused.ports).askToClose('en', PERIOD, '');
     expect(presentMonthAsk('en', 'close', r).label).toBe('Not asked: u-cashier may not close and sign an accounting month, so cannot ask for it to be approved.');
-    const lost = await finance(office({ ask: { result: 'lost_link' } }).ports).askToClose('en', '');
+    const lost = await monthClose(office({ ask: { result: 'lost_link' } }).ports).askToClose('en', PERIOD, '');
     expect(presentMonthAsk('en', 'close', lost).label).toBe('No connection to head office — nothing was asked. Try again.');
   });
 });
@@ -275,27 +255,19 @@ describe('Ask for the signature — the closer\'s own request, for exactly this 
 describe('Close the month — only with the closer\'s own APPROVED request for this month', () => {
   it('posts the close naming that approval, and the month then reads as closed and signed', async () => {
     const o = office({ mine: [APPROVED_CLOSE] });
-    const s = finance(o.ports);
-    const outcome = await s.closeWithApproval();
+    const s = monthClose(o.ports);
+    const outcome = await s.closeWithApproval(PERIOD);
     expect(outcome).toEqual({ kind: 'done', detail: `${PERIOD} closed, 3 control total(s) agreed, signed by u-accountant`, approvedBy: 'u-accountant' });
     expect(o.closeCalls).toEqual([{ period: PERIOD, approvalId: 'areq-1' }]);
     expect(presentMonthUse('en', 'close', outcome).label).toBe('Closed and signed. u-accountant signed it, and that approval has now been used. A closed month is never edited — a correction is a new entry in the open month.');
     expect(presentMonthUse('en', 'close', outcome).tone).toBe('ok');
-    const view = s.period();
-    expect(view.closed).toBe(true);
-    expect(view.closedBy).toBe('u-owner');
-    expect(view.signedBy).toBe('u-accountant');
-    // The local check now agrees there is nothing left to close.
-    const again = s.close();
-    expect(again.ok).toBe(false);
-    if (!again.ok) expect(again.result?.blockers.some((b) => b.kind === 'already_closed')).toBe(true);
   });
 
   it('uses only the caller\'s own request of kind period_close about THIS month', async () => {
     const otherMonth = row({ requestId: 'areq-aug', subjectRef: '2026-08', details: { period: '2026-08' }, status: 'approved', decidedBy: 'u-accountant' });
     const aReopen = reopenRow({ requestId: 'areq-r', status: 'approved', decidedBy: 'u-accountant' });
     const o = office({ mine: [otherMonth, aReopen] });
-    expect(await finance(o.ports).closeWithApproval()).toEqual({ kind: 'not_asked' });
+    expect(await monthClose(o.ports).closeWithApproval(PERIOD)).toEqual({ kind: 'not_asked' });
     expect(o.closeCalls).toEqual([]);
   });
 
@@ -311,7 +283,7 @@ describe('Close the month — only with the closer\'s own APPROVED request for t
     ];
     for (const [mine, expected, words] of cases) {
       const o = office({ mine });
-      const outcome = await finance(o.ports).closeWithApproval();
+      const outcome = await monthClose(o.ports).closeWithApproval(PERIOD);
       expect(outcome).toEqual(expected);
       expect(presentMonthUse('en', 'close', outcome).label).toBe(words);
       expect(presentMonthUse('ta', 'close', outcome).label, `${expected.kind} in Tamil`).toMatch(/^மூடப்படவில்லை/);
@@ -322,16 +294,15 @@ describe('Close the month — only with the closer\'s own APPROVED request for t
   it('a newer approved request is used over an older one; a rejection says who and why in Tamil too', async () => {
     const older = row({ requestId: 'areq-old', status: 'approved', decidedBy: 'u-ca', requestedAt: '2026-10-06T04:00:00.000Z' });
     const o = office({ mine: [older, APPROVED_CLOSE] });
-    await finance(o.ports).closeWithApproval();
+    await monthClose(o.ports).closeWithApproval(PERIOD);
     expect(o.closeCalls[0]?.approvalId).toBe('areq-1');
     const rejected: MonthUseOutcome = { kind: 'rejected', decidedBy: 'u-accountant', reason: 'cash count missing' };
     expect(presentMonthUse('ta', 'close', rejected).label).toBe('மூடப்படவில்லை — u-accountant மறுத்தார்: “cash count missing”. அவர் சொன்னதைச் சரிசெய்து மீண்டும் கேளுங்கள்.');
   });
 
-  it('refuses locally — nothing read, nothing sent — with nobody named, or when the figures here cannot be signed', async () => {
+  it('refuses locally — nothing read, nothing sent — with nobody named', async () => {
     const o = office({ mine: [APPROVED_CLOSE] });
-    expect(await finance(o.ports, { userId: null }).closeWithApproval()).toEqual({ kind: 'nobody_named' });
-    expect(await finance({ ...o.ports, unsentSyncCount: () => 3 }).closeWithApproval()).toMatchObject({ kind: 'blocked' });
+    expect(await monthClose(o.ports, { userId: null }).closeWithApproval(PERIOD)).toEqual({ kind: 'nobody_named' });
     expect(o.inboxReads()).toBe(0);
     expect(o.closeCalls).toEqual([]);
   });
@@ -371,20 +342,23 @@ describe('head office\'s own refusals, in plain words', () => {
     };
     for (const code of APPROVAL_REFUSAL_CODES) {
       const o = office({ mine: [APPROVED_CLOSE], close: { result: 'refused', code, whatHappened: 'x' } });
-      expect((await finance(o.ports).closeWithApproval()).kind, code).toBe(expected[code]);
+      expect((await monthClose(o.ports).closeWithApproval(PERIOD)).kind, code).toBe(expected[code]);
     }
-    const unknown = await finance(office({ mine: [APPROVED_CLOSE], close: { result: 'refused', code: 'forbidden', whatHappened: 'u-owner does not hold finance.period.close.' } }).ports).closeWithApproval();
+    const unknown = await monthClose(office({ mine: [APPROVED_CLOSE], close: { result: 'refused', code: 'forbidden', whatHappened: 'u-owner does not hold finance.period.close.' } }).ports).closeWithApproval(PERIOD);
     expect(unknown).toEqual({ kind: 'refused', code: 'forbidden', whatHappened: 'u-owner does not hold finance.period.close.' });
     expect(presentMonthUse('en', 'close', unknown).label).toBe('Not closed: u-owner does not hold finance.period.close.');
     expect(presentMonthUse('en', 'close', { kind: 'refused', code: 'http_500', whatHappened: '' }).label).toBe('Not closed — head office refused it.');
-    const lost = await finance(office({ mine: [APPROVED_CLOSE], close: { result: 'lost_link' } }).ports).closeWithApproval();
+    const lost = await monthClose(office({ mine: [APPROVED_CLOSE], close: { result: 'lost_link' } }).ports).closeWithApproval(PERIOD);
     expect(presentMonthUse('en', 'close', lost).label).toBe('Not closed — no connection to head office. Nothing was changed. Try again.');
   });
 
-  it('a refused close leaves the month open on the screen', async () => {
-    const s = finance(office({ mine: [APPROVED_CLOSE], close: { result: 'refused', code: 'not_signed', whatHappened: '' } }).ports);
-    await s.closeWithApproval();
-    expect(s.period().closed).toBe(false);
+  it('the month\'s state is head office\'s word: open, closed, or not known — never "open" on a guess', async () => {
+    expect(await monthClose().state(PERIOD)).toEqual({ known: true, closed: false });
+    expect(await monthClose(closedMonth).state(PERIOD)).toEqual({ known: true, closed: true });
+    const unknown = await monthClose({ monthState: async () => undefined }).state(PERIOD);
+    expect(unknown).toEqual({ known: false });
+    expect(monthClose().presentState('en', unknown).label).toBe('Head office could not be reached, so whether this month is closed is not known. Nothing is offered on a guess.');
+    expect(monthClose().presentState('ta', { known: true, closed: true }).label).toMatch(/மூடிக் கையெழுத்திடப்பட்டுள்ளது/);
   });
 });
 
@@ -393,7 +367,7 @@ describe('head office\'s own refusals, in plain words', () => {
 describe('Reopening — a second person\'s own approval, for exactly the written reason', () => {
   it('asks with kind period_reopen and details { reason, period } — exactly the reopen body', async () => {
     const o = office();
-    const outcome = await finance({ ...o.ports, ...closedMonth }).askToReopen('en', `  ${REASON}  `);
+    const outcome = await monthClose({ ...o.ports, ...closedMonth }).askToReopen('en', PERIOD, `  ${REASON}  `);
     expect(outcome.kind).toBe('asked');
     expect(o.asks).toEqual([{
       kind: 'period_reopen', subjectRef: PERIOD, details: { reason: REASON, period: PERIOD }, valueMinor: null,
@@ -405,27 +379,26 @@ describe('Reopening — a second person\'s own approval, for exactly the written
 
   it('refuses locally — nothing asked — without a reason, or when the month is not closed', async () => {
     const o = office();
-    const noWhy = await finance({ ...o.ports, ...closedMonth }).askToReopen('en', '   ');
+    const noWhy = await monthClose({ ...o.ports, ...closedMonth }).askToReopen('en', PERIOD, '   ');
     expect(noWhy).toEqual({ kind: 'needs_why' });
     expect(presentMonthAsk('en', 'reopen', noWhy).label).toBe('Write why the month needs reopening — the person approving reads it, and so will the auditor. Nothing was asked.');
-    expect(await finance(o.ports).askToReopen('en', REASON)).toEqual({ kind: 'not_closed' });
-    expect(await finance({ ...o.ports, ...closedMonth }, { userId: null }).askToReopen('en', REASON)).toEqual({ kind: 'nobody_named' });
+    expect(await monthClose(o.ports).askToReopen('en', PERIOD, REASON)).toEqual({ kind: 'not_closed' });
+    expect(await monthClose({ ...o.ports, ...closedMonth }, { userId: null }).askToReopen('en', PERIOD, REASON)).toEqual({ kind: 'nobody_named' });
     expect(o.asks).toEqual([]);
   });
 
   it('reopens with the caller\'s own approved request for exactly this reason; the month is then open again', async () => {
     const o = office({ mine: [reopenRow({ requestId: 'areq-2', status: 'approved', decidedBy: 'u-accountant' })] });
-    const s = finance({ ...o.ports, ...closedMonth });
-    const outcome = await s.reopenWithApproval(REASON);
+    const s = monthClose({ ...o.ports, ...closedMonth });
+    const outcome = await s.reopenWithApproval(PERIOD, REASON);
     expect(outcome).toEqual({ kind: 'done', detail: `${PERIOD} reopened`, approvedBy: 'u-accountant' });
     expect(o.reopenCalls).toEqual([{ period: PERIOD, reason: REASON, approvalId: 'areq-2' }]);
     expect(presentMonthUse('en', 'reopen', outcome).label).toBe('Reopened. u-accountant approved it, and that approval has now been used. The month is open again, and it must be closed and signed again.');
-    expect(s.period().closed).toBe(false);
   });
 
   it('a changed reason is not what was approved: it says ask again, and nothing is sent', async () => {
     const o = office({ mine: [reopenRow({ requestId: 'areq-2', status: 'approved', decidedBy: 'u-accountant' })] });
-    const outcome = await finance({ ...o.ports, ...closedMonth }).reopenWithApproval(`${REASON} and a GST correction`);
+    const outcome = await monthClose({ ...o.ports, ...closedMonth }).reopenWithApproval(PERIOD, `${REASON} and a GST correction`);
     expect(outcome).toEqual({ kind: 'changed' });
     expect(presentMonthUse('en', 'reopen', outcome).label).toBe('Not reopened — this reason is not the one that was approved (it changed after you asked). Ask for approval again with this reason.');
     expect(o.reopenCalls).toEqual([]);
@@ -433,56 +406,66 @@ describe('Reopening — a second person\'s own approval, for exactly the written
 
   it('waiting / rejected / not asked / empty reason / not closed — plain words, nothing sent', async () => {
     const waiting = office({ mine: [reopenRow({ requestId: 'a' })] });
-    expect(await finance({ ...waiting.ports, ...closedMonth }).reopenWithApproval(REASON)).toEqual({ kind: 'waiting' });
+    expect(await monthClose({ ...waiting.ports, ...closedMonth }).reopenWithApproval(PERIOD, REASON)).toEqual({ kind: 'waiting' });
     const rejected = office({ mine: [reopenRow({ requestId: 'a', status: 'rejected', decidedBy: 'u-ca', decisionReason: 'post a credit note in October instead' })] });
-    const r = await finance({ ...rejected.ports, ...closedMonth }).reopenWithApproval(REASON);
+    const r = await monthClose({ ...rejected.ports, ...closedMonth }).reopenWithApproval(PERIOD, REASON);
     expect(presentMonthUse('en', 'reopen', r).label).toBe('Not reopened — u-ca rejected it: “post a credit note in October instead”. Settle what they said and ask again.');
     const none = office();
-    const notAsked = await finance({ ...none.ports, ...closedMonth }).reopenWithApproval(REASON);
+    const notAsked = await monthClose({ ...none.ports, ...closedMonth }).reopenWithApproval(PERIOD, REASON);
     expect(presentMonthUse('en', 'reopen', notAsked).label).toBe('Not reopened — nobody has been asked to approve exactly this yet. Write why and press “Ask for approval” first.');
-    expect(await finance({ ...none.ports, ...closedMonth }).reopenWithApproval('  ')).toEqual({ kind: 'needs_why' });
-    expect(await finance(none.ports).reopenWithApproval(REASON)).toEqual({ kind: 'not_closed' });
+    expect(await monthClose({ ...none.ports, ...closedMonth }).reopenWithApproval(PERIOD, '  ')).toEqual({ kind: 'needs_why' });
+    expect(await monthClose(none.ports).reopenWithApproval(PERIOD, REASON)).toEqual({ kind: 'not_closed' });
     for (const o of [waiting, rejected, none]) expect(o.reopenCalls).toEqual([]);
   });
 
   it('head office refusing the reopen reads in plain words', async () => {
     const o = office({ mine: [reopenRow({ requestId: 'areq-2', status: 'approved', decidedBy: 'u-accountant' })], reopen: { result: 'refused', code: 'reopen_refused', whatHappened: '2026-09 is not closed' } });
-    const s = finance({ ...o.ports, ...closedMonth });
-    const outcome = await s.reopenWithApproval(REASON);
+    const s = monthClose({ ...o.ports, ...closedMonth });
+    const outcome = await s.reopenWithApproval(PERIOD, REASON);
     expect(outcome).toEqual({ kind: 'head_office_refused', code: 'reopen_refused', whatHappened: '2026-09 is not closed' });
-    expect(s.period().closed, 'a refused reopen changes nothing on the screen').toBe(true);
+    // When head office's month state cannot be read, the reopen is not refused on a guess — head office decides.
+    const unread = office({ mine: [reopenRow({ requestId: 'areq-2', status: 'approved', decidedBy: 'u-accountant' })] });
+    expect((await monthClose({ ...unread.ports, monthState: async () => undefined }).reopenWithApproval(PERIOD, REASON)).kind).toBe('done');
   });
 });
 
 // ── Not wired to head office ──────────────────────────────────────────────────────────────────────────────
 
-describe('a screen not connected to head office closes and reopens nothing — and never on a typed name', () => {
-  it('every step says closing and reopening happen at head office, with a second person, and nothing changed', async () => {
-    const local = finance();
-    expect(local.connected).toBe(false);
-    const outcomes = [await local.askToClose('en', ''), await local.closeWithApproval()];
-    const closed = finance(closedMonth);
-    outcomes.push(await closed.askToReopen('en', REASON), await closed.reopenWithApproval(REASON));
-    for (const o of outcomes) expect(o).toEqual({ kind: 'not_connected' });
-    const words = 'Closing and reopening a month happen at head office, with a second person’s approval — and this screen is not connected to head office. Nothing was changed.';
-    expect(presentMonthAsk('en', 'close', { kind: 'not_connected' }).label).toBe(words);
-    expect(presentMonthUse('en', 'reopen', { kind: 'not_connected' }).label).toBe(words);
-    expect(presentMonthUse('ta', 'close', { kind: 'not_connected' }).label).toMatch(/தலைமை அலுவலகத்தில்.*எதுவும் மாற்றப்படவில்லை\.$/);
-    expect(finance().period().closed).toBe(false);
-    expect(finance(closedMonth).period().closed).toBe(true);
+describe('OB-567: the Finance page closes and reopens nothing; the Month-end page does, never on a typed name', () => {
+  it('the Finance session has no close or reopen step left — and the browser wires the Month-end page to head office', () => {
+    const fin = createFinanceSession({ tenantId: 't1', period: PERIOD, userId: 'u-owner', now: NOW, tradingDayCutoff: '02:00', journalPrefixes: PREFIXES }, {
+      ledger: () => LEDGER, postings: () => [], periodState: () => ({ closed: false }), unsentSyncCount: () => 0, openExceptionCount: () => 0,
+    });
+    for (const gone of ['askToClose', 'closeWithApproval', 'askToReopen', 'reopenWithApproval', 'yourRequests', 'connected', 'reopen']) {
+      expect(gone in fin, `${gone} is still on the Finance session`).toBe(false);
+    }
+    const data = { userId: 'u-owner', period: PERIOD, journalPrefixes: PREFIXES, ledger: LEDGER, postings: [] };
+    expect(bootFinance(data, FINANCE_HEAD_OFFICE)).not.toBeNull();
+    expect(Object.keys(FINANCE_HEAD_OFFICE)).toEqual(['readPlan']);
+    expect(Object.keys(MONTH_CLOSE_HEAD_OFFICE).sort()).toEqual(['approvalInbox', 'askApproval', 'closeAtHeadOffice', 'monthState', 'reopenAtHeadOffice']);
   });
 
-  it('has no way to take a typed approver: the old reopen-on-a-name is gone', () => {
-    const s = finance();
-    expect('reopen' in s, 'the typed-approver reopen is still on the session').toBe(false);
-    expect(s.reopenWithApproval.length, 'reopenWithApproval takes the reason only').toBe(1);
+  it('has no way to take a typed approver: the reopen takes the month and the reason only', () => {
+    const s = monthClose();
+    expect('reopen' in s, 'a typed-approver reopen is on the session').toBe(false);
+    expect(s.reopenWithApproval.length, 'reopenWithApproval takes the month and the reason only').toBe(2);
   });
 
-  it('the box\'s boot is local-only unless head office is given; the browser wires head office', () => {
-    const data = { userId: 'u-owner', period: PERIOD, journalPrefixes: PREFIXES, ledger: LEDGER, postings: CLEAN };
-    expect(bootFinance(data)!.connected).toBe(false);
-    expect(bootFinance(data, FINANCE_HEAD_OFFICE)!.connected).toBe(true);
-    expect(bootFinance(undefined, FINANCE_HEAD_OFFICE)).toBeNull();
+  it('head office\'s month list is read as it says; anything else is "not known"', async () => {
+    const originalFetch = (globalThis as { fetch?: typeof fetch }).fetch;
+    try {
+      (globalThis as { fetch?: unknown }).fetch = async () => ({ status: 200, json: async () => ({ periods: [{ period: '2026-08', state: 'closed' }, { period: PERIOD, state: 'open' }] }) });
+      expect(await MONTH_CLOSE_HEAD_OFFICE.monthState('2026-08')).toEqual({ closed: true });
+      expect(await MONTH_CLOSE_HEAD_OFFICE.monthState(PERIOD)).toEqual({ closed: false });
+      expect(await MONTH_CLOSE_HEAD_OFFICE.monthState('2026-07')).toEqual({ closed: false });
+      (globalThis as { fetch?: unknown }).fetch = async () => ({ status: 403, json: async () => ({}) });
+      expect(await MONTH_CLOSE_HEAD_OFFICE.monthState(PERIOD)).toBeUndefined();
+      (globalThis as { fetch?: unknown }).fetch = async () => { throw new Error('offline'); };
+      expect(await MONTH_CLOSE_HEAD_OFFICE.monthState(PERIOD)).toBeUndefined();
+    } finally {
+      if (originalFetch === undefined) delete (globalThis as { fetch?: typeof fetch }).fetch;
+      else (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
+    }
   });
 });
 
@@ -498,7 +481,7 @@ describe('your requests for this month — a read only', () => {
         row({ requestId: 'other-month', subjectRef: '2026-08', details: { period: '2026-08' }, status: 'rejected', decidedBy: 'u-ca' }),
       ],
     });
-    const mine = await finance(o.ports).yourRequests('en');
+    const mine = await monthClose(o.ports).yourRequests('en', PERIOD);
     expect(mine.state).toBe('read');
     expect(mine.close?.label).toBe('Approved by u-accountant — use it before 08-10-2026 10:00');
     expect(mine.reopen?.label).toBe('Waiting for a second person');
@@ -510,12 +493,11 @@ describe('your requests for this month — a read only', () => {
 
   it('a used request is history, not where things stand; nothing in play means nothing to send', async () => {
     const o = office({ mine: [row({ requestId: 'c', status: 'used', decidedBy: 'u-accountant' }), reopenRow({ requestId: 'r', status: 'used', decidedBy: 'u-accountant' })] });
-    expect(await finance(o.ports).yourRequests('en')).toEqual({ state: 'read', close: null, reopen: null, closeAsked: false, reopenReason: null });
+    expect(await monthClose(o.ports).yourRequests('en', PERIOD)).toEqual({ state: 'read', close: null, reopen: null, closeAsked: false, reopenReason: null });
   });
 
-  it('reads nothing when not connected, and says so when the read fails', async () => {
-    expect((await finance().yourRequests('en')).state).toBe('not_connected');
-    expect((await finance(office({ inbox: { result: 'lost_link' } }).ports).yourRequests('ta')).state).toBe('lost_link');
+  it('says so when the read fails', async () => {
+    expect((await monthClose(office({ inbox: { result: 'lost_link' } }).ports).yourRequests('ta', PERIOD)).state).toBe('lost_link');
   });
 });
 
@@ -524,6 +506,8 @@ describe('your requests for this month — a read only', () => {
 describe('every word the month\'s two-person flow says exists in English and Tamil', () => {
   it('the copy has no gaps in either language', () => {
     expect(bilingualGaps(FINANCE_MONTH_COPY, MONTH_COPY_KEYS)).toEqual({ en: [], ta: [] });
+    expect(bilingualGaps(MONTH_PAGE_COPY, MONTH_PAGE_KEYS)).toEqual({ en: [], ta: [] });
+    for (const key of MONTH_PAGE_KEYS) expect(MONTH_PAGE_COPY.ta[key], key).toMatch(/[஀-௿]/);
     // Every line is written in Tamil — only a pure template ("{not}: {words}") reads the same in both.
     for (const key of MONTH_COPY_KEYS) {
       if (FINANCE_MONTH_COPY.en[key].replace(/\{\w+\}/g, '').replace(/[\s:—.]/g, '') === '') continue;

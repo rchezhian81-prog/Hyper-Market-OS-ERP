@@ -5,6 +5,8 @@
 
 const $ = (id) => document.getElementById(id);
 const session = window.financeCloseSession ?? null;
+/** OB-567: closing and reopening the month — only on this page (tested in `month-close-session.ts`). */
+const month = window.monthCloseSession ?? null;
 const kit = window.financeCloseKit ?? null;
 let lang = 'en';
 const w = (key, fill) => (kit === null ? key : kit.closeWords(lang)(key, fill));
@@ -245,9 +247,81 @@ $('run-depreciation').addEventListener('click', () => busy($('run-depreciation')
   await loadAssets();
 }));
 
+// ── Close or reopen the month (OB-567 · ADR-0024 · §28) ───────────────────────────────────────────────────────
+// Head office's own word on whether the month is closed decides which step shows; every step is the person's own, in
+// their own session, on a click; head office checks its own figures and says what stops it — shown in its words.
+
+const mw = (key) => (month === null ? key : month.text(lang, key));
+let monthState = null;
+/** The reason a reopen was last asked with — "Reopen the month" sends exactly that reason. */
+let reopenAskedFor = null;
+
+function paintMonthState() {
+  const line = $('month-state');
+  if (monthState === null) { line.textContent = ''; return; }
+  const p = month.presentState(lang, monthState);
+  line.textContent = `${p.icon} ${p.label}`;
+  line.dataset.tone = p.tone;
+  const offer = month.mayClose && monthState.known;
+  $('close-box').hidden = !(offer && !monthState.closed);
+  $('reopen-box').hidden = !(offer && monthState.closed);
+  if (monthState.known && !month.mayClose) note('month-status', mw('mayNot'));
+  // Once the reopen was asked for with exactly the reason in the box, "Reopen the month" is the main action.
+  const asked = reopenAskedFor !== null && reopenAskedFor === $('reopen-reason').value.trim();
+  $('ask-reopen').classList.toggle('quiet', asked);
+  $('reopen').classList.toggle('quiet', !asked);
+}
+$('reopen-reason').addEventListener('input', () => { if (monthState !== null) paintMonthState(); });
+function paintRequest(id, presented) {
+  const line = $(id);
+  if (presented === null) { line.hidden = true; line.textContent = ''; return; }
+  line.hidden = false;
+  line.textContent = `${presented.icon} ${mw('yourRequest')}: ${presented.label}`;
+}
+async function loadMonth() {
+  if (month === null) return;
+  if (period() === '') { monthState = null; paintMonthState(); note('month-status', mw('pickMonth'), 'err'); return; }
+  monthState = await month.state(period());
+  paintMonthState();
+  const mine = await month.yourRequests(lang, period());
+  paintRequest('close-request', mine.close);
+  paintRequest('reopen-request', mine.reopen);
+  if (mine.state === 'read') reopenAskedFor = mine.reopenReason === null ? null : mine.reopenReason.trim();
+  // A reopen still in play carries its reason: put it back in the box, so "Reopen the month" sends exactly it.
+  if (mine.reopenReason !== null && $('reopen-reason').value.trim() === '') $('reopen-reason').value = mine.reopenReason;
+  paintMonthState();
+}
+/** Say what happened, in the model's own words (both languages, tested) — then read head office again. */
+async function said(presented) {
+  note('month-status', `${presented.icon} ${presented.label}`, presented.tone === 'ok' ? 'good' : presented.tone === 'error' ? 'err' : '');
+  const keep = $('month-status').textContent; const cls = $('month-status').className;
+  await loadMonth();
+  $('month-status').textContent = keep; $('month-status').className = cls;
+}
+$('ask-close').addEventListener('click', () => busy($('ask-close'), async () => {
+  const outcome = await month.askToClose(lang, period(), $('close-why').value);
+  if (outcome.kind === 'asked') $('close-why').value = '';
+  await said(month.presentAskOutcome(lang, 'close', outcome));
+}));
+$('close-month').addEventListener('click', () => busy($('close-month'), async () => {
+  await said(month.presentUseOutcome(lang, 'close', await month.closeWithApproval(period())));
+}));
+$('ask-reopen').addEventListener('click', () => busy($('ask-reopen'), async () => {
+  const reason = $('reopen-reason').value;
+  const outcome = await month.askToReopen(lang, period(), reason);
+  // The reason STAYS in the box: the reopen sends exactly the reason that was approved.
+  if (outcome.kind === 'asked') reopenAskedFor = reason.trim();
+  await said(month.presentAskOutcome(lang, 'reopen', outcome));
+}));
+$('reopen').addEventListener('click', () => busy($('reopen'), async () => {
+  const outcome = await month.reopenWithApproval(period(), $('reopen-reason').value);
+  if (outcome.kind === 'done') { reopenAskedFor = null; $('reopen-reason').value = ''; }
+  await said(month.presentUseOutcome(lang, 'reopen', outcome));
+}));
+
 // ── The frame ───────────────────────────────────────────────────────────────────────────────────────────────
 
-const TABS = ['payments', 'pl', 'stock', 'plan'];
+const TABS = ['payments', 'pl', 'stock', 'plan', 'month'];
 async function show(name) {
   tab = name;
   for (const t of TABS) { $(`view-${t}`).hidden = t !== name; $(`tab-${t}`).setAttribute('aria-current', t === name ? 'page' : 'false'); }
@@ -256,9 +330,10 @@ async function show(name) {
   if (name === 'pl') await loadPl();
   if (name === 'stock') await loadStock();
   if (name === 'plan') { await loadBudget(); await loadAssets(); }
+  if (name === 'month') { note('month-status', ''); await loadMonth(); }
 }
 for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => { void show(t); });
-$('period').addEventListener('change', () => { cache = { ...cache, pl: null, stock: null, budget: null }; $('budget-lines').replaceChildren(); void show(tab); });
+$('period').addEventListener('change', () => { cache = { ...cache, pl: null, stock: null, budget: null }; monthState = null; reopenAskedFor = null; $('budget-lines').replaceChildren(); void show(tab); });
 
 function paintWords() {
   document.title = `SRE ${w('title')}`;
@@ -269,6 +344,11 @@ function paintWords() {
     ['l-a-cost', 'cost'], ['l-a-salvage', 'salvage'], ['l-a-life', 'life'], ['l-a-in', 'inService'], ['asset-add-go', 'addAsset'], ['run-h', 'runH'], ['run-lede', 'runLede'], ['run-depreciation', 'run']]) {
     const el = $(id);
     if (el) el.textContent = w(k);
+  }
+  if (month !== null) {
+    for (const [id, k] of [['tab-month', 'tab'], ['month-h', 'heading'], ['month-lede', 'lede'], ['close-title', 'closeTitle'], ['close-lead', 'closeLead'],
+      ['close-why-label', 'closeWhyLabel'], ['ask-close', 'askClose'], ['close-month', 'closeMonth'], ['close-note', 'closeNote'], ['reopen-title', 'reopenTitle'],
+      ['reopen-lead', 'reopenLead'], ['reopen-reason-label', 'reopenReasonLabel'], ['ask-reopen', 'askReopen'], ['reopen', 'reopenIt']]) $(id).textContent = mw(k);
   }
   const nobody = $('nobody');
   nobody.hidden = session !== null;
@@ -283,6 +363,7 @@ $('lang').addEventListener('click', () => {
   paintWords();
   $('pay-list').replaceChildren(); $('assets-list').replaceChildren(); // drawers are drawn again in the new language
   renderPayments(); renderPl(); renderStock(); renderBudget(); renderAssets();
+  if (tab === 'month') void loadMonth();
 });
 
 paintWords();

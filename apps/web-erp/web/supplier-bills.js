@@ -48,7 +48,7 @@ const WORDS = {
     flags: 'Head office also says', checkedBy: 'checked by',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     reading: 'Reading the bills from head office…', empty: 'No bills handed in yet.',
-    mayNotCapture: 'Your role cannot hand in or confirm supplier bills.', mayNotMatch: 'Checking a bill against the order needs the bill-checking right — another person does it.',
+    mayNotCapture: 'Your role matches supplier bills to deliveries — below, under "Deliveries waiting for their bill". Handing in and confirming bills is done by a person with that right.', mayNotMatch: 'Checking a bill against the order needs the bill-checking right — another person does it.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.',
     typedAs: 'Typed onto the register as', typedBy: 'typed by',
     // OB-509 (G3): deliveries waiting for their bill.
@@ -98,7 +98,7 @@ const WORDS = {
     flags: 'தலைமை அலுவலகம் மேலும் சொல்வது', checkedBy: 'சரிபார்த்தவர்',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     reading: 'தலைமை அலுவலகத்திலிருந்து பில்களைப் படிக்கிறது…', empty: 'இன்னும் பில்கள் கொடுக்கப்படவில்லை.',
-    mayNotCapture: 'உங்கள் பங்கால் சப்ளையர் பில்களைக் கொடுக்கவோ உறுதிசெய்யவோ முடியாது.', mayNotMatch: 'பில்லை ஆர்டருடன் சரிபார்க்க பில் சரிபார்ப்பு உரிமை தேவை — வேறு ஒருவர் செய்வார்.',
+    mayNotCapture: 'உங்கள் பங்கு சப்ளையர் பில்களை டெலிவரிகளுடன் பொருத்துகிறது — கீழே, "பில்லுக்காகக் காத்திருக்கும் டெலிவரிகள்" என்பதில். பில்களைக் கொடுப்பதும் உறுதிசெய்வதும் அந்த உரிமை உள்ள ஒருவரின் வேலை.', mayNotMatch: 'பில்லை ஆர்டருடன் சரிபார்க்க பில் சரிபார்ப்பு உரிமை தேவை — வேறு ஒருவர் செய்வார்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.',
     typedAs: 'தட்டச்சு செய்து பதிவேட்டில் சேர்த்த எண்', typedBy: 'தட்டச்சு செய்தவர்',
     cnkH: 'பில்லுக்காகக் காத்திருக்கும் டெலிவரிகள்',
@@ -131,12 +131,15 @@ function sayLocal(el, text) { el.className = 'status err'; el.textContent = text
 async function refresh() {
   if (session === null) return;
   $('register-status').className = 'status';
+  // Round 1 (screen audit B · OB-543/OB-547/OB-548): a role with the bill-matching right but not the capture right (the
+  // accountant) is offered this page for "Deliveries waiting for their bill". The register of bills handed in is a capture
+  // read head office refuses that role, so it is not asked for — the page says plainly what this role does here instead of
+  // opening on a refusal for work the role was never given.
+  if (!session.mayCapture) { $('register-status').textContent = t('mayNotCapture'); return; }
   $('register-status').textContent = t('reading');
   const answer = await session.register();
   if (!answer.ok) {
     say($('register-status'), answer, '');
-    // A role without the capture right: head office's own refusal, with what it means here.
-    if (!session.mayCapture) $('register-status').textContent = `${t('mayNotCapture')} ${$('register-status').textContent}`;
     return;
   }
   register = answer.value;
@@ -525,6 +528,7 @@ function paint() {
   if (shownMatch !== null && !$('other-part').hidden) drawOtherCharges(shownMatch);
   $('match-h').textContent = t('matchH'); $('match-lede').textContent = t('matchLede'); $('run-match').textContent = t('runMatch');
   $('cnk-h').textContent = t('cnkH'); $('cnk-lede').textContent = t('cnkLede');
+  if (session !== null && !session.mayCapture) $('register-status').textContent = t('mayNotCapture');
   if (session !== null && !session.mayMatch) $('cnk-status').textContent = t('cnkMayNot');
   else if (waitingList !== null && waitingList.receipts.length === 0) $('cnk-status').textContent = t('cnkNone');
   if (who === null || session === null) { $('nobody').hidden = false; $('nobody').textContent = t('nobody'); }
@@ -542,7 +546,7 @@ $('lang').addEventListener('click', () => {
 if (who === null || session === null) {
   $('hand-section').hidden = true;
 } else if (!session.mayCapture) {
-  // Nothing to hand in or confirm is offered; the register is still asked for (a read), so the refusal is head office's.
+  // Nothing to hand in or confirm is offered, and the register (a capture read) is not asked for — see refresh().
   $('hand-section').hidden = true;
 }
 paint();
