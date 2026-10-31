@@ -59,14 +59,14 @@ Not row gaps, kept on the list for the round they belong to:
 - The async events document lists fewer events than §30.2 (4c).
 - The store-volume load test is never run in CI (Round 3).
 
-## Owner decisions this list needs
+## Owner decisions (answered 31 Oct 2026)
 
-1. **OB-613:** who is the second approver for the three owner-only requests.
-2. Buyer, receiver and warehouse roles (roadmap §28: Purchase User, Purchase Approver, Receiver/QC, Warehouse User).
-3. Business customers on the demo: on or off.
-4. Loyalty: the cashier enrols, or Loyalty leaves the cashier's menu.
-5. AI pages on the demo while live AI waits for R8 (OB-382).
-6. Customer sign-in on the demo before an SMS provider exists.
-7. SEC-1: a request that names nobody is refused (as built), or shows a "please sign in" page.
+1. OB-613: the second approver is the store's accountant.
+2. OB-558: add the four roadmap §28 roles (Purchase User, Purchase Approver, Receiver/QC, Warehouse User), as the roadmap defines them (Round 4c).
+3. OB-559: business customers on in the demo copy (Round 3).
+4. OB-560: the cashier enrols loyalty customers at the till (Round 4c).
+5. OB-561: AI stays off on the demo; its pages say so until Release 8 (Round 1 wording / Round 3).
+6. OB-562: customer sign-in stays off until an SMS provider is signed.
+7. OB-563: an unsigned screen request is refused, as built.
 
 Each round is built, tested in full, recorded (decisions, traceability, STATUS) and merged through its own pull request before the next one starts.

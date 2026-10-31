@@ -8,7 +8,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 ## Combined fix list (31 October 2026): one list, one session
 - **What changed:** the owner chose to join the roadmap re-audit and the screen gap audit into one de-duplicated list, fixed in this session, most serious first (`docs/audit/COMBINED-FIX-LIST-2026-10-31.md`). The urgent five merged (#851). The screen audit's session finishes the kg/litre fix it had in progress as its own pull request and starts no further fix rounds.
 - **Next:** Round 1 (wrong numbers and broken actions), then Round 2 (empty pages), Round 3 (demo copy), Round 4a–d (setup screens).
-- **Blocked:** nothing for Rounds 1 and 2. **Owner decisions needed:** the seven listed in the combined list (OB-613 second approver; roles; business customers, AI and customer sign-in on the demo; Loyalty for cashiers; the SEC-1 unsigned request).
+- **Blocked:** nothing. **Owner decisions (31 Oct 2026):** OB-613 second approver = the accountant; OB-558 the four §28 roles; OB-559 business customers on in the demo; OB-560 cashier enrols loyalty; OB-561 AI off with plain words until R8; OB-562 customer sign-in off until an SMS provider; OB-563 unsigned request refused.
 
 ## The urgent five from the 30 Oct re-audit (31 October 2026): built; owner decisions OB-554 to OB-557
 - **What changed:**
