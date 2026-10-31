@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -8,6 +8,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { writeSignedPack } from '../../edge/store-edge/src/signed-pack-file';
 import { readLog } from '../../edge/store-edge/src/file-log';
+import { QueueBaskets } from '../../edge/store-edge/src/queue-baskets';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
@@ -62,6 +63,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
   }, 120_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
+    vi.restoreAllMocks();
     for (const stop of stops.splice(0).reverse()) await stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
   });
@@ -81,6 +83,11 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
   it('enrol, sign in for selling, scan (the age asked), hand over by code, pay by card; the till rings the code; Tamil; 56 px', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-queue-till-e2e-'));
     dirs.push(dir);
+    // The risky code, every run: the box draws its four digits at random, and one in ten starts with 0 — the till's keypad
+    // once read the code as a number and dropped that 0 (0369 became 369 and was refused), which failed this test only on
+    // the runs that drew such a code. The box here hands this basket over under 0369, so the leading 0 is keyed every time.
+    const openQueueBaskets = QueueBaskets.open.bind(QueueBaskets);
+    vi.spyOn(QueueBaskets, 'open').mockImplementation((input) => openQueueBaskets({ ...input, codes: () => ['0369'] }));
     await writeSignedPack(dir, signedPack());
     const edge: EdgeProcess = (await startEdge({
       EDGE_DEVICE_TLS_DIR: deviceTls.dir,
@@ -151,7 +158,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the queue till scans in the queue and ha
     await page.click('#handover');
     await page.waitForSelector('#handed:not([hidden])');
     const code = (await page.textContent('#handed-code')) ?? '';
-    expect(code).toMatch(/^\d{4}$/);
+    expect(code).toBe('0369');
     expect(await audit(page), 'the hand-over code').toEqual([]);
     await page.click('#handed-next');
     expect(await page.isVisible('#empty')).toBe(true);
