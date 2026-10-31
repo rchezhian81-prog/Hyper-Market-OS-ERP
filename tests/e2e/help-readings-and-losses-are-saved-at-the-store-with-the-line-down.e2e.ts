@@ -148,9 +148,12 @@ describe.skipIf(!HAVE_BROWSER)('help, readings and losses saved at the store wit
     expect(records.map((r) => r.type)).toEqual(['EquipmentReadingRecorded']);
     expect(records[0]!.payload).toMatchObject({ assetId: 'cold-1', tenthsC: 35, source: 'manual_probe', recordedBy: 'u-mgr', storeId: 'S1' });
     expect(errors).toEqual([]);
+    // SEC-1 (P-04): a cashier does not hold the facilities screen's word, so the box refuses them the screen itself — the
+    // "may not open this screen" page, none of its figures, no reading form — as the PIN path does.
     const cashier = await open(edge, 'u-cash', '/facilities/');
-    await cashier.page.locator('#eq-rows li[data-asset="cold-1"]').waitFor({ timeout: 15_000 });
-    expect(await cashier.page.locator('#eq-rows form').count()).toBe(0);
+    await waitText(cashier.page, '#office-heading', 'u-cash may not open this screen');
+    expect(await cashier.page.locator('#eq-rows').count()).toBe(0);
+    expect(await cashier.page.content()).not.toContain('window.facilitiesData');
   }, 90_000);
 
   it('record a loss: saved only with the kind and the reason chosen from the closed lists, then carried by the box', async () => {

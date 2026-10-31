@@ -751,6 +751,22 @@ export function startScreenServer(input: {
         }
         headOfficeUser = ho.userId;
       }
+      // SEC-1 (P-04 least privilege): behind the authenticating front (the hosted copy, `trustForwardedUser`), the person
+      // the front signed in is held to the SAME per-screen rule as the PIN and head-office paths above — every screen but
+      // the till and the customer-facing lanes, whatever app it is (the owner's figures too). A person who may not open it
+      // gets the same refusal page and status, carrying none of this box's figures; with nobody named, a gated screen is
+      // refused outright rather than served as whoever the pack named.
+      if (officeUser === null && headOfficeUser === null && input.trustForwardedUser === true && !OPEN_SCREENS.includes(route.screen)) {
+        const front = forwardedUser(req.headers['x-sre-user']);
+        if (!mayOpenScreen(route.screen, front === null ? null : permissionsOf(front, snap.pack))) {
+          const menu = front === null ? null : withPublicPrefix(navigationPayload({ screen: route.screen, pack: snap.pack, payload: { userId: front }, screenOf: screenOfPath }), forwardedPrefix(req.headers['x-forwarded-prefix']));
+          page(res, 403, notAllowedPage({
+            displayName: front === null ? 'Nobody signed in' : displayNameIn(snap.pack, front),
+            links: menu === null ? [] : menu.groups.flatMap((g) => g.items.map((i) => ({ path: i.path, label: i.label }))),
+          }));
+          return;
+        }
+      }
       // OB-16: behind the authenticated relay the ERP screens run as the person who SIGNED IN — their id, their
       // permissions from this box's role register — never as whoever the pack named for the screen. The till is
       // untouched: the person signs in at the till itself.
