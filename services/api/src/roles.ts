@@ -258,6 +258,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // OB-333: held ONLY so the owner can approve granting the store computer its release relay (no escalation, OB-36);
       // the synced route re-checks the PERSON named from their own grants, so this releases nothing by itself.
       'quality.hold.release.sync',
+      // M10-FR-02 offline: held ONLY so the owner can approve granting the store computer its sample relay (no escalation,
+      // OB-36); the synced route re-checks the PERSON named (their own quality.hold.manage), so this records nothing itself.
+      'quality.sample.record.sync',
       // ── OB-288 integration follow-ups — end
       // ── OB-423 (QG-10 release evidence) — begin
       // Held ONLY so the owner can approve granting the release script's machine identity its role (no-escalation rule); the
@@ -1042,6 +1045,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // OB-333: a NARROW release-only right — relay a quality-hold RELEASE a person decided at the store (head office
       // re-checks that person's own quality.hold.release), and read which batches are held. Never place a hold.
       'quality.hold.release.sync',
+      // M10-FR-02 "evidence captured offline; queued": relay a quality SAMPLE a person recorded on a held batch at the store
+      // (head office re-checks that person's own quality.hold.manage, and that the hold is still the one the store saw).
+      'quality.sample.record.sync',
       // ── OB-288 integration follow-ups — end
       // ── OB-288 customer & delivery follow-ups — begin
       // OB-350: bring a customer's scan-and-go basket up at a till lane, for the cashier the box verified — once. The till

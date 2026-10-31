@@ -63,7 +63,7 @@ import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolic
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 import { permissionsOf } from './screen-navigation';
-import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, equipmentWork, helpWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
+import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, equipmentWork, helpWork, type BoxCapturedRun, type BoxQualityRelease, type BoxQualitySample } from './store-work';
 import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 import type { ActivationHoldReport } from './activation-hold';
@@ -142,6 +142,8 @@ export interface ScreenInput {
   readonly boxCapturedRuns?: readonly BoxCapturedRun[];
   /** OB-333: quality-hold releases this box's facilities screen took (the device-events queue), not yet at head office's. */
   readonly boxQualityReleases?: readonly BoxQualityRelease[];
+  /** M10-FR-02 offline (OB-513): quality samples this box's facilities screen recorded (the device-events queue). */
+  readonly boxQualitySamples?: readonly BoxQualitySample[];
   /** OB-288 lane 2 · §31.1: this box's clock against head office's, as last measured (`clock-guard.ts`). */
   readonly clock?: ClockCheck;
   /** OB-327: the bills this box took while its clock was 5+ minutes out — committed, listed for the manager to check. */

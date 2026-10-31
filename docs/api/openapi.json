@@ -98439,6 +98439,108 @@
         }
       }
     },
+    "/v1/quality/holds/{batchId}/samples/{sampleId}/synced": {
+      "post": {
+        "operationId": "postQualityHoldsByBatchIdSamplesBySampleIdSynced",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "quality.sample.record.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sampleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostQualityHoldsByBatchIdSamplesBySampleIdSyncedRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostQualityHoldsByBatchIdSamplesBySampleIdSyncedReply200"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostQualityHoldsByBatchIdSamplesBySampleIdSyncedReply202"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"quality.sample.record.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/quality/lot-trace/backward/customers/{customerRef}": {
       "get": {
         "operationId": "getQualityLotTraceBackwardCustomersByCustomerRef",
@@ -232430,6 +232532,30 @@
               "description": "Read and passed on as given; the handler does not check its type."
             }
           },
+          "samplesRecordedHere": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "result",
+                "sampleId"
+              ],
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "fail",
+                    "pass",
+                    "pending"
+                  ]
+                },
+                "sampleId": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "source": {
             "type": "string"
           },
@@ -232555,6 +232681,118 @@
               "pass",
               "pending"
             ]
+          },
+          "takenAt": {
+            "type": "string"
+          },
+          "test": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/quality-hold.ts"
+      },
+      "PostQualityHoldsByBatchIdSamplesBySampleIdSyncedReply200": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "sampleId",
+          "sample",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "sampleId": {
+            "type": "string"
+          },
+          "sample": {
+            "$ref": "#/components/schemas/StoredQualitySample"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/quality-hold.ts"
+      },
+      "PostQualityHoldsByBatchIdSamplesBySampleIdSyncedReply202": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "sampleId",
+          "sample",
+          "alreadyRecorded",
+          "relayedBy"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "sampleId": {
+            "type": "string"
+          },
+          "sample": {
+            "$ref": "#/components/schemas/StoredQualitySample"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          },
+          "relayedBy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/quality-hold.ts"
+      },
+      "PostQualityHoldsByBatchIdSamplesBySampleIdSyncedRequest": {
+        "type": "object",
+        "required": [
+          "at",
+          "holdHeldAt",
+          "recordedBy",
+          "result",
+          "takenAt",
+          "test"
+        ],
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "batchId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "holdHeldAt": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "fail",
+              "pass",
+              "pending"
+            ]
+          },
+          "sampleId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "source": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
           },
           "takenAt": {
             "type": "string"
