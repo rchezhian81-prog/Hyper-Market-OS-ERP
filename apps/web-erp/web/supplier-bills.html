@@ -129,12 +129,18 @@
 
         <div id="type-part" hidden>
           <h3 id="type-h">Type this bill from the paper</h3>
-          <p class="lede" id="type-lede">No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines add up to the total.</p>
+          <p class="lede" id="type-lede">No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines, with any freight, duty or other charges, add up to the total.</p>
           <div class="row">
             <label for="type-invoice"><span id="l-type-invoice">Invoice number on our register</span><input id="type-invoice" autocomplete="off" /></label>
             <label for="type-supplier"><span id="l-type-supplier">Supplier code</span><input id="type-supplier" autocomplete="off" /></label>
             <label for="type-po"><span id="l-type-po">Purchase order number</span><input id="type-po" autocomplete="off" /></label>
             <label for="type-total"><span id="l-type-total">Total printed on the bill (₹)</span><input id="type-total" inputmode="decimal" autocomplete="off" /></label>
+          </div>
+          <!-- M07-FR-04: the charges the paper prints beside its lines — part of the total; blank is none. -->
+          <div class="row">
+            <label for="type-freight"><span id="l-type-freight">Freight on the bill (₹)</span><input id="type-freight" inputmode="decimal" autocomplete="off" /></label>
+            <label for="type-duty"><span id="l-type-duty">Duty on the bill (₹)</span><input id="type-duty" inputmode="decimal" autocomplete="off" /></label>
+            <label for="type-other"><span id="l-type-other">Other charges on the bill (₹)</span><input id="type-other" inputmode="decimal" autocomplete="off" /></label>
           </div>
           <div class="table-wrap"><table id="type-lines"></table></div>
           <button id="type-add-line" type="button">Add a line</button>

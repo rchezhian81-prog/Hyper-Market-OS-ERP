@@ -23,8 +23,11 @@ const WORDS = {
     confirmInvoice: 'Invoice number on our register', supplierCode: 'Supplier code', poNumber: 'Purchase order number',
     confirmAccept: 'The lines differ from the bill\'s printed total and I will say why on the match', confirm: 'Confirm this bill',
     typeH: 'Type this bill from the paper',
-    typeLede: 'No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines add up to the total.',
+    typeLede: 'No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines, with any freight, duty or other charges, add up to the total.',
     typeTotal: 'Total printed on the bill (₹)', addLine: 'Add a line', typeSave: 'Save this bill',
+    typeFreight: 'Freight on the bill (₹)', typeDuty: 'Duty on the bill (₹)', typeOther: 'Other charges on the bill (₹)',
+    chargesNotMoney: 'Freight, duty or other charges is not an amount of money — leave it blank if the bill has none.',
+    otherCharges: 'other charges', charges: 'Freight and other charges',
     matchH: 'Check against the order', matchLede: 'Head office compares what was ordered, what arrived and what this bill claims. Where they disagree it holds the difference back.',
     runMatch: 'Check this bill against the order',
     line: 'Line', itemCode: 'Their item code', description: 'What the bill says', qty: 'Quantity', price: 'Price each (₹)', amount: 'Amount (₹)', tax: 'GST (₹)',
@@ -69,8 +72,11 @@ const WORDS = {
     confirmInvoice: 'நமது பதிவேட்டில் இன்வாய்ஸ் எண்', supplierCode: 'சப்ளையர் குறியீடு', poNumber: 'கொள்முதல் ஆர்டர் எண்',
     confirmAccept: 'வரிகள் பில்லில் அச்சிட்ட மொத்தத்திலிருந்து வேறுபடுகின்றன; ஏன் என்று சரிபார்ப்பில் சொல்வேன்', confirm: 'இந்த பில்லை உறுதிசெய்',
     typeH: 'இந்த பில்லைத் தாளிலிருந்து தட்டச்சு செய்',
-    typeLede: 'படிக்கும் இயந்திரம் இணைக்கப்படாததால் தலைமை அலுவலகம் இந்த ஸ்கேனைப் படிக்க முடியவில்லை. தாளில் உள்ளபடி தட்டச்சு செய்யுங்கள்; ஒவ்வொரு வரியும் பெருக்கலில் சரியா, மொத்தம் பொருந்துகிறதா என்று தலைமை அலுவலகம் சரிபார்க்கும்.',
+    typeLede: 'படிக்கும் இயந்திரம் இணைக்கப்படாததால் தலைமை அலுவலகம் இந்த ஸ்கேனைப் படிக்க முடியவில்லை. தாளில் உள்ளபடி தட்டச்சு செய்யுங்கள்; ஒவ்வொரு வரியும் பெருக்கலில் சரியா, வரிகளும் சரக்குக் கட்டணம், தீர்வை, பிற கட்டணங்களும் சேர்ந்து மொத்தத்துடன் பொருந்துகிறதா என்று தலைமை அலுவலகம் சரிபார்க்கும்.',
     typeTotal: 'பில்லில் அச்சிட்ட மொத்தம் (₹)', addLine: 'ஒரு வரியைச் சேர்', typeSave: 'இந்த பில்லைச் சேமி',
+    typeFreight: 'பில்லில் சரக்குக் கட்டணம் (₹)', typeDuty: 'பில்லில் தீர்வை (₹)', typeOther: 'பில்லில் பிற கட்டணங்கள் (₹)',
+    chargesNotMoney: 'சரக்குக் கட்டணம், தீர்வை அல்லது பிற கட்டணம் பணத் தொகை அல்ல — பில்லில் இல்லையென்றால் காலியாக விடுங்கள்.',
+    otherCharges: 'பிற கட்டணங்கள்', charges: 'சரக்கு மற்றும் பிற கட்டணங்கள்',
     matchH: 'ஆர்டருடன் சரிபார்', matchLede: 'ஆர்டர் செய்தது, வந்தது, இந்த பில் கேட்பது — மூன்றையும் தலைமை அலுவலகம் ஒப்பிடும். பொருந்தாத இடத்தில் வித்தியாசத்தை நிறுத்தி வைக்கும்.',
     runMatch: 'இந்த பில்லை ஆர்டருடன் சரிபார்',
     line: 'வரி', itemCode: 'அவர்களின் பொருள் குறியீடு', description: 'பில்லில் உள்ளது', qty: 'அளவு', price: 'ஒன்றின் விலை (₹)', amount: 'தொகை (₹)', tax: 'ஜிஎஸ்டி (₹)',
@@ -147,6 +153,8 @@ function factsOf(d) {
   if (x?.supplierInvoiceNo) parts.push(`${t('invoiceNo')} ${x.supplierInvoiceNo}`);
   if (x?.invoiceDate) parts.push(`${t('dated')} ${x.invoiceDate}`);
   if (x?.statedTotalMinor !== null && x?.statedTotalMinor !== undefined) parts.push(`${t('total')} ${inr(x.statedTotalMinor)}`);
+  // M07-FR-04: the e-invoice's other charges head office read — part of the printed total, said so the sum is checkable.
+  if (x?.otherChargesMinor) parts.push(`${t('otherCharges')} ${inr(x.otherChargesMinor)}`);
   if (d.lines.length > 0) parts.push(`${d.lines.length} ${t('linesWord')}`);
   if (d.invoiceId) parts.push(`${d.state === 'captured' ? t('typedAs') : t('onRegisterAs')} ${d.invoiceId}`);
   if (d.typedBy) parts.push(`${t('typedBy')} ${d.typedBy}`);
@@ -287,6 +295,7 @@ function renderTyping(d) {
     $('type-supplier').value = d.supplierId ?? '';
     $('type-po').value = d.poId ?? '';
     $('type-total').value = '';
+    $('type-freight').value = ''; $('type-duty').value = ''; $('type-other').value = '';
     $('type-status').textContent = '';
     typeRows = [{}];
   }
@@ -324,8 +333,9 @@ $('type-save').addEventListener('click', async () => {
     productId: r.productId ?? '', quantity: r.quantity ?? '', unitPrice: r.unitPrice ?? '', amount: r.amount ?? '', cgst: r.cgst ?? '', sgst: r.sgst ?? '',
   }));
   // The capture names this scan, so head office records it as typed — the list then reads it as captured (no tab memory).
-  const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines, documentId: d.documentId });
-  if (answer.ok === false && 'problem' in answer) { sayLocal($('type-status'), answer.problem === 'not_money' ? `${t('notMoney')} ${answer.line ?? ''}` : t('needTyped')); return; }
+  const charges = { freight: $('type-freight').value, duty: $('type-duty').value, other: $('type-other').value };
+  const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines, documentId: d.documentId, charges });
+  if (answer.ok === false && 'problem' in answer) { sayLocal($('type-status'), answer.problem === 'not_money' ? `${t('notMoney')} ${answer.line ?? ''}` : answer.problem === 'charges_not_money' ? t('chargesNotMoney') : t('needTyped')); return; }
   say($('type-status'), answer, answer.ok ? `${t('typed')} ${answer.value.invoiceId}.` : '');
   if (answer.ok) await refresh();
 });
@@ -356,7 +366,7 @@ function drawMatch(m) {
   v.dataset.invoice = m.invoiceId;
   const parts = [
     cell('strong', m.blocked ? t('blocked') : t('agreed')),
-    cell('span', `${t('payable')}: ${inr(m.payableMinor)} · ${t('invoiced')}: ${inr(m.invoicedMinor)}${m.withheldMinor > 0 ? ` · ${t('withheld')}: ${inr(m.withheldMinor)}` : ''}`),
+    cell('span', `${t('payable')}: ${inr(m.payableMinor)} · ${t('invoiced')}: ${inr(m.invoicedMinor)}${m.withheldMinor > 0 ? ` · ${t('withheld')}: ${inr(m.withheldMinor)}` : ''}${m.chargesMinor > 0 ? ` · ${t('charges')}: ${inr(m.chargesMinor)}` : ''}`),
     // Head office's own sentence on what to do — never reworded here.
     cell('span', m.ownerAction, 'muted'),
     cell('span', `${t('checkedBy')} ${m.matchedBy}`, 'muted'),
@@ -476,6 +486,7 @@ function paint() {
   $('l-confirm-accept').textContent = t('confirmAccept'); $('confirm').textContent = t('confirm');
   $('type-h').textContent = t('typeH'); $('type-lede').textContent = t('typeLede');
   $('l-type-invoice').textContent = t('confirmInvoice'); $('l-type-supplier').textContent = t('supplierCode'); $('l-type-po').textContent = t('poNumber'); $('l-type-total').textContent = t('typeTotal');
+  $('l-type-freight').textContent = t('typeFreight'); $('l-type-duty').textContent = t('typeDuty'); $('l-type-other').textContent = t('typeOther');
   $('type-add-line').textContent = t('addLine'); $('type-save').textContent = t('typeSave');
   $('match-h').textContent = t('matchH'); $('match-lede').textContent = t('matchLede'); $('run-match').textContent = t('runMatch');
   $('cnk-h').textContent = t('cnkH'); $('cnk-lede').textContent = t('cnkLede');

@@ -15,6 +15,9 @@
 //     route (`/v1/purchase/invoices/:id/capture`), the manual-entry path head office already has. The capture names the
 //     scan (`documentId`), so head office itself records "typed as invoice X" on it and lists the scan as `captured` —
 //     nothing about it is remembered only on this screen (round 12 follow-up).
+//     The freight, duty and other charges the paper prints beside its lines ride as `charges` (M07-FR-04, re-audit 30 Oct
+//     2026); an e-invoice's other charges (`OthChrg`) are read by head office itself. Head office adds them to the total,
+//     keeps them on the bill and spreads them into the goods' cost at the match — none of that is decided here.
 //   • CHECK it against the order: the three-way match head office runs over what IT holds (`/match`), its exceptions
 //     shown line by line.
 //
@@ -72,6 +75,8 @@ export interface BillDocument {
   readonly extracted: {
     readonly supplierGstin: string | null; readonly supplierInvoiceNo: string | null; readonly invoiceDate: string | null;
     readonly irn: string | null; readonly statedTotalMinor: number | null; readonly engine: string;
+    /** M07-FR-04: the e-invoice's other charges (`OthChrg`) head office read beside the lines — part of the printed total. */
+    readonly otherChargesMinor?: number;
   } | null;
   readonly lines: readonly BillLine[];
   readonly problems: readonly string[];
@@ -99,6 +104,8 @@ export interface MatchView {
   readonly payableMinor: number;
   readonly invoicedMinor: number;
   readonly withheldMinor: number;
+  /** M07-FR-04: the bill's freight / duty / other charges inside `invoicedMinor` (0 when it has none) — head office's figure. */
+  readonly chargesMinor: number;
   readonly ownerAction: string;
   readonly lines: readonly MatchLineView[];
   /** Head office's flags on the match (`invoice_unknown`, `order_over_invoiced`, …) — shown, never hidden. */
@@ -192,16 +199,23 @@ export function confirmBody(doc: BillDocument, input: { readonly invoiceId: stri
 /** One typed line of a bill head office could not read (the scan path with no OCR engine). */
 export interface TypedLine { readonly productId: string; readonly quantity: string; readonly unitPrice: string; readonly amount: string; readonly cgst?: string; readonly sgst?: string }
 
+/**
+ * M07-FR-04 (re-audit 30 Oct 2026): the freight, duty and other charges the paper prints beside its lines, as typed (rupees).
+ * Each is optional; a blank is none. They are part of the bill's total — head office keeps them on the bill and, when the
+ * bill is matched against an issued order, spreads them into the cost of the goods (its rule, not this screen's).
+ */
+export interface TypedCharges { readonly freight?: string; readonly duty?: string; readonly other?: string }
+
 export type TypedCapture =
   | { readonly ok: true; readonly invoiceId: string; readonly body: Record<string, unknown> }
-  | { readonly ok: false; readonly problem: 'needs_invoice_supplier_total' | 'not_money'; readonly line?: number };
+  | { readonly ok: false; readonly problem: 'needs_invoice_supplier_total' | 'not_money' | 'charges_not_money'; readonly line?: number };
 
 /**
  * The typed-capture body (`POST /v1/purchase/invoices/:invoiceId/capture`): the bill as the paper says it. Only the shape is
  * checked here (an invoice number, a supplier, a total, figures that are money) — whether the lines multiply and add up to
  * the total is head office's judgement, refused in its words.
  */
-export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[]; readonly documentId?: string }): TypedCapture {
+export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[]; readonly documentId?: string; readonly charges?: TypedCharges }): TypedCapture {
   const declaredTotalMinor = rupeesToPaise(input.total);
   if (input.invoiceId.trim() === '' || input.supplierId.trim() === '' || input.total.trim() === '' || input.lines.length === 0) return { ok: false, problem: 'needs_invoice_supplier_total' };
   if (declaredTotalMinor === undefined) return { ok: false, problem: 'not_money' };
@@ -215,10 +229,16 @@ export function typedCaptureBody(input: { readonly invoiceId: string; readonly s
     if (l.productId.trim() === '' || quantity === undefined || unitPriceMinor === undefined || lineTotalMinor === undefined || cgstMinor === undefined || sgstMinor === undefined) return { ok: false, problem: 'not_money', line: i + 1 };
     lines.push({ productId: l.productId.trim(), quantity, unitPriceMinor, lineTotalMinor, ...(cgstMinor > 0 ? { cgstMinor } : {}), ...(sgstMinor > 0 ? { sgstMinor } : {}) });
   }
+  // M07-FR-04: the charges beside the lines, exact paise; a blank is none, and none at all sends no `charges` (as before).
+  const charge = (text: string | undefined): number | undefined => (text === undefined || text.trim() === '' ? 0 : rupeesToPaise(text));
+  const freightMinor = charge(input.charges?.freight); const dutyMinor = charge(input.charges?.duty); const otherMinor = charge(input.charges?.other);
+  if (freightMinor === undefined || dutyMinor === undefined || otherMinor === undefined) return { ok: false, problem: 'charges_not_money' };
+  const charges = freightMinor + dutyMinor + otherMinor === 0 ? undefined : { freightMinor, dutyMinor, otherMinor };
   return {
     ok: true, invoiceId: input.invoiceId.trim(),
     body: {
       supplierId: input.supplierId.trim(), ...(input.poId !== undefined && input.poId.trim() !== '' ? { poId: input.poId.trim() } : {}), declaredTotalMinor, lines,
+      ...(charges === undefined ? {} : { charges }),
       // The scan this bill was typed from: head office links it (and refuses by name a scan that is not waiting to be typed).
       ...(input.documentId !== undefined && input.documentId.trim() !== '' ? { documentId: input.documentId.trim() } : {}),
     },
@@ -236,6 +256,7 @@ export function presentMatch(raw: unknown): MatchView | null {
   return {
     invoiceId: m['invoiceId'], poId: typeof m['poId'] === 'string' ? m['poId'] : null, blocked: m['blocked'],
     payableMinor: Number(m['payableMinor'] ?? 0), invoicedMinor: Number(m['invoicedMinor'] ?? 0), withheldMinor: Number(m['withheldMinor'] ?? 0),
+    chargesMinor: Number((m['landedCharges'] as { totalMinor?: unknown } | undefined)?.totalMinor ?? 0),
     ownerAction: String(m['ownerAction'] ?? ''),
     // Exceptions first (P-03): a blocked line before one within tolerance before a matched one.
     lines: [...lines].sort((a, b) => rank(a.status) - rank(b.status)),

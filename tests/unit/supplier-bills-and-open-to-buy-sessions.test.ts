@@ -69,6 +69,24 @@ describe('supplier bills — the screen model (D03-FR-02 · WF-05)', () => {
       .not.toMatchObject({ body: { documentId: expect.anything() } });
   });
 
+  it('M07-FR-04: freight, duty and other charges ride as exact paise beside the lines; blank is none; a figure that is not money is said', () => {
+    const line = [{ productId: 'RICE', quantity: '10', unitPrice: '50', amount: '500' }];
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '560.50', lines: line, charges: { freight: '60.50', duty: '', other: ' ' } }))
+      .toEqual({ ok: true, invoiceId: 'i', body: { supplierId: 's', declaredTotalMinor: 56_050, lines: [{ productId: 'RICE', quantity: 10, unitPriceMinor: 5_000, lineTotalMinor: 50_000 }], charges: { freightMinor: 6_050, dutyMinor: 0, otherMinor: 0 } } });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '530', lines: line, charges: { duty: '20', other: '₹10' } }))
+      .toMatchObject({ ok: true, body: { charges: { freightMinor: 0, dutyMinor: 2_000, otherMinor: 1_000 } } });
+    // No charges typed (or all nought): the body carries none — exactly as before.
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line, charges: { freight: '0', duty: '', other: '' } })).not.toMatchObject({ body: { charges: expect.anything() } });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line })).not.toMatchObject({ body: { charges: expect.anything() } });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line, charges: { freight: '12.345' } })).toEqual({ ok: false, problem: 'charges_not_money' });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line, charges: { other: '-5' } })).toEqual({ ok: false, problem: 'charges_not_money' });
+    // Whether lines + charges add up to the total is head office's judgement, never this screen's.
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '1', lines: line, charges: { freight: '60' } })).toMatchObject({ ok: true });
+    // The match shows head office's figure for the charges inside the bill; none ⇒ nought.
+    expect(presentMatch({ invoiceId: 'i', blocked: false, lines: [], landedCharges: { freightMinor: 6_000, dutyMinor: 0, otherMinor: 0, totalMinor: 6_000 } })?.chargesMinor).toBe(6_000);
+    expect(presentMatch({ invoiceId: 'i', blocked: false, lines: [] })?.chargesMinor).toBe(0);
+  });
+
   it('the match is shown exceptions first, with head office\'s own sentence and flags', () => {
     const m = presentMatch({ invoiceId: 'i', poId: 'po-1', blocked: true, payableMinor: 1, invoicedMinor: 2, withheldMinor: 1, ownerAction: 'Hold it', matchedBy: 'u', matchedAt: 't', flags: ['no_approval'],
       lines: [{ productId: 'A', status: 'matched', payableMinor: 1, detail: 'ok' }, { productId: 'B', status: 'blocked', payableMinor: 0, detail: 'short' }, { productId: 'C', status: 'within_tolerance', payableMinor: 0, detail: 'near' }] });
