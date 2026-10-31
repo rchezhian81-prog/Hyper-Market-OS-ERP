@@ -245,6 +245,7 @@ import { auditSearchRoutes } from '../../finance/src/audit-search';
 import { storedAuditTrailRoutes } from '../../finance/src/audit-trail-store';
 import { reportingRoutes } from '../../reporting/src/index';
 import { consolidationRoutes } from '../../reporting/src/consolidation-route';
+import { consolidationOwnRecords } from './r2-screen-feeds'; // screen gap audit Round A: the Company report from head office's own records
 import { scheduledBriefRoutes, type ScheduledBriefDeps } from '../../reporting/src/scheduled-brief';
 import { startBriefWorker } from '../../reporting/src/brief-worker';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
@@ -1988,6 +1989,9 @@ export function buildSurface(deps: {
       ? { recordContribution: () => {}, contributions: empty([]), recordMembership: () => {}, memberships: empty([]), now }
       : {
           ...consolidationAdapter({ store, now }),
+          // Round A (screen gap audit): head office's own branches and each one's month of sales and refunds fill what no
+          // branch feed posted — so the Company report names a silent branch missing, never "every branch reported".
+          ownRecords: consolidationOwnRecords({ store, now, calendar: shopCalendar }),
           // The export leg (EA-04): the caller's authority from the same per-tenant resolver the kernel uses, and the
           // export audit ledger every other export writes to.
           access: tenantAccessResolver(store, ROLE_CATALOGUE),

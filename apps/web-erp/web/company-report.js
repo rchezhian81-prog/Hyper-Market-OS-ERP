@@ -35,6 +35,8 @@ const WORDS = {
     orgRefused: 'Head office would not tell this page the company\'s branches for your sign-in, so it shows no figure.',
     missingBranches: 'Missing — not reported yet:', incomplete: 'The total is incomplete.',
     allReported: 'Every expected branch has reported.',
+    noBranchExpected: 'Head office has no open branch under this company for this view, so nothing is added up — this is not "every branch reported".',
+    nothingToReconcile: 'Nothing to reconcile — no branch is expected here.',
     withheld: 'Withheld from your view:', yourBranchOnly: 'The total above is your branch only.',
     reconciles: 'Reconciles: the total equals the sum of the branches shown.',
     notReconciles: 'Does NOT reconcile — a branch is missing, so the total is not the whole company.',
@@ -58,6 +60,8 @@ const WORDS = {
     orgRefused: 'உங்கள் உள்நுழைவுக்கு நிறுவனத்தின் கிளைகளைத் தலைமை அலுவலகம் இந்தப் பக்கத்துக்குச் சொல்லவில்லை; அதனால் எந்த எண்ணும் காட்டப்படவில்லை.',
     missingBranches: 'விடுபட்டவை — இன்னும் அறிக்கை அளிக்கவில்லை:', incomplete: 'மொத்தம் முழுமையற்றது.',
     allReported: 'எதிர்பார்த்த ஒவ்வொரு கிளையும் அறிக்கை அளித்துள்ளது.',
+    noBranchExpected: 'இந்தப் பார்வைக்கு இந்த நிறுவனத்தின் கீழ் தலைமை அலுவலகத்தில் திறந்த கிளை எதுவும் இல்லை, எனவே எதுவும் கூட்டப்படவில்லை — இது "ஒவ்வொரு கிளையும் அறிக்கை அளித்தது" என்பதல்ல.',
+    nothingToReconcile: 'சரிக்கட்ட எதுவும் இல்லை — இங்கு எந்தக் கிளையும் எதிர்பார்க்கப்படவில்லை.',
     withheld: 'உங்கள் பார்வையிலிருந்து மறைக்கப்பட்டவை:', yourBranchOnly: 'மேலே உள்ள மொத்தம் உங்கள் கிளை மட்டும்.',
     reconciles: 'சரிக்கட்டுகிறது: மொத்தம் காட்டப்பட்ட கிளைகளின் கூட்டுத்தொகைக்குச் சமம்.',
     notReconciles: 'சரிக்கட்டவில்லை — ஒரு கிளை விடுபட்டுள்ளது, எனவே மொத்தம் முழு நிறுவனமல்ல.',
@@ -198,8 +202,10 @@ function renderContributors(contributors) {
       return td;
     };
     tr.appendChild(cell(`${branchName(c.branchId)} (${c.branchId})`));
-    tr.appendChild(cell(rupees(c.measures.grossMinor ?? 0)));
-    tr.appendChild(cell(rupees(c.measures.netMinor ?? 0)));
+    // A measure the branch's numbers do not carry is a dash, never ₹0.00 (a refund total has no gross; a sale held at head
+    // office carries no pre-tax net) — a zero is a number somebody acts on.
+    tr.appendChild(cell(typeof c.measures.grossMinor === 'number' ? rupees(c.measures.grossMinor) : '—'));
+    tr.appendChild(cell(typeof c.measures.netMinor === 'number' ? rupees(c.measures.netMinor) : '—'));
     // OB-607: when it last synced, at the shop's clock — never the UTC clock of the moment.
     tr.appendChild(cell(c.lastRefreshAt ? window.sreShopDay?.dateTimeOf(c.lastRefreshAt) ?? '' : t('neverSynced')));
     rows.appendChild(tr);
@@ -224,9 +230,14 @@ function renderReport() {
   renderContributors(report.contributors || []);
 
   const missing = $('missing');
+  // Round A (P-08): no branch expected is said as itself — never "every expected branch has reported".
+  const noneExpected = Array.isArray(report.expectedBranches) ? report.expectedBranches.length === 0 : (report.reportedBranches || []).length === 0;
   if ((report.missingBranches || []).length > 0) {
     missing.className = 'flag err';
     missing.textContent = `${t('missingBranches')} ${named(report.missingBranches)}. ${t('incomplete')}`;
+  } else if (noneExpected) {
+    missing.className = 'flag warn';
+    missing.textContent = t('noBranchExpected');
   } else {
     missing.className = 'flag ok';
     missing.textContent = t('allReported');
@@ -242,8 +253,8 @@ function renderReport() {
   }
 
   const reconcile = $('reconcile');
-  reconcile.className = report.reconciles ? 'flag ok' : 'flag err';
-  reconcile.textContent = report.reconciles ? t('reconciles') : t('notReconciles');
+  reconcile.className = noneExpected ? 'flag warn' : report.reconciles ? 'flag ok' : 'flag err';
+  reconcile.textContent = noneExpected ? t('nothingToReconcile') : report.reconciles ? t('reconciles') : t('notReconciles');
 }
 
 function renderExport() {
