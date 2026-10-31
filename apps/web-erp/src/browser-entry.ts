@@ -807,6 +807,8 @@ export function categoryPolicyPortsFromData(data: CategoryPolicyData | undefined
   return {
     mayRead: () => held.has(CATEGORY_POLICY_PERMISSION),
     categories: () => data?.categories ?? [],
+    // Round A (P-08): no list at all means the box was never told — not "no categories set up".
+    known: () => Array.isArray(data?.categories),
     onDate: data?.onDate ?? '1970-01-01',
   };
 }
@@ -949,6 +951,8 @@ export function wastePortsFromData(data: WasteData | undefined): WasteReviewPort
     rows: () => data?.rows ?? [],
     // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
     mayRead: () => held.has(WASTE_READ_PERMISSION),
+    // Round A (P-08): no rows at all means the box was never told — not "nothing recorded yet".
+    known: () => Array.isArray(data?.rows),
   };
 }
 

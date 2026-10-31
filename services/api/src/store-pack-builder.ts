@@ -53,6 +53,7 @@ import { receivingChecklistSectionFor } from './r2-ops-adapters';
 import { packedProductIdsFor } from './r7b-receiving-adapters'; // B4 · OB-504
 import { dsdCheckInAdapter } from './r3-ops-adapters';
 import { rosterPackSection, certificationsPackSection } from './r7d-workforce-adapters'; // Round 7 · OB-507 · OB-502
+import { wasteWriteOffsSectionFor, categoryPolicySectionFor } from './r2-screen-feeds'; // screen gap audit Round A
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -474,5 +475,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   if (roster !== undefined) sections['roster'] = roster;
   const certificates = await certificationsPackSection(store, now, tenantId, storeId);
   if (certificates !== undefined) sections['certifications'] = certificates;
+  // ── Screen gap audit (31 Oct 2026) Round A: the Waste page's write-offs at this store and the Category rules page's
+  // categories, from head office's own registers. Always sent (an empty list is "nothing recorded yet", which the page now
+  // says — never "all clear"); a box on an older pack still says it was not told.
+  sections['wasteWriteOffs'] = await wasteWriteOffsSectionFor(store, now, tenantId, storeId, branchOf);
+  sections['categoryPolicyCategories'] = await categoryPolicySectionFor(store, now, tenantId);
   return sections;
 }

@@ -85,7 +85,9 @@ function paint() {
   el('filter').textContent = attentionOnly ? vw('filterAll') : vw('filterAttention');
   el('filter').setAttribute('aria-pressed', attentionOnly ? 'true' : 'false');
 
-  el('attention-count').textContent = view.attentionCount === 0 ? t('allClear') : `${view.attentionCount} ${t('attentionCount')}`;
+  // Round A (P-08): the session words the line — "nothing set up yet" or "not given" for an empty page, never "all clear".
+  el('attention-count').textContent = typeof view.summaryLine === 'string' ? view.summaryLine
+    : view.total === 0 ? '' : view.attentionCount === 0 ? t('allClear') : `${view.attentionCount} ${t('attentionCount')}`;
 
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
