@@ -57,13 +57,11 @@ describe('a measured item scanned by its plain barcode is not rung as one gram o
     expect(view.payableMinor()).toBe(0);
   });
 
-  it('a kg product on a lane with a current scale stamp: refused the same way (never 1 g), with the scale-label words', () => {
+  it('a kg product on a lane with a current scale stamp is NOT refused by this rule: it keeps the lane scale path (scan, then weigh)', () => {
     const view = lane();
-    const e = refused(() => view.scanBarcode('8900000000123'));
-    expect(e.laneMessage).toContain('sold by weight (kg)');
-    expect(e.laneMessage).toContain("scan the scale's label");
-    expect(e.laneMessage).toContain('A weight is never typed in');
-    expect(view.basket()).toHaveLength(0);
+    let thrown: unknown;
+    try { view.scanBarcode('8900000000123'); } catch (e) { thrown = e; }
+    expect(thrown).not.toBeInstanceOf(MeasuredItemNeedsLabelError);
   });
 
   it("the scale's label (weight inside the code) still rings exactly; a 1 L pouch sold by the piece scans as one", () => {

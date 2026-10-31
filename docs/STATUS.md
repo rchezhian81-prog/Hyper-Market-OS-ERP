@@ -11,7 +11,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 **What changed**
 - **kg and litre ordering:** the buying and requisitions pages ordered 10 g when 10 kg was typed. They now name the unit ("How many kg"), accept 2.5, and send grams. The supplier quote comparison was 1000 times too high for loose goods; it now prices per kg. Count plans, held returns, indents and transfers show "2.500 kg", not "2500 kg".
-- **Till:** a kg or litre product scanned by a barcode with no amount is refused by name ("weigh it and scan the scale's label"), never rung as 1 g or 1 ml (OB-302). A bill number with letters can be keyed by hand for a refund or exchange.
+- **Till:** a litre product scanned by a barcode with no amount is refused by name ("measure it and scan its measured label"), never rung as 1 ml (OB-302). A kg product keeps the existing scale rule: scanned, then weighed on a lane whose scale stamp is current (the builder's first version also refused kg there, which broke the final store acceptance journey; it was narrowed at the join because no decision removes that path). A bill number with letters can be keyed by hand for a refund or exchange.
 - **Demo seed:** opening stock counted in pieces (it was 1000 times too big); the demo rice and oil are a packed 1 kg bag and 1 L pouch sold each. A demo box already seeded keeps its old stock (append-only); the demo needs a fresh seed.
 - **Handhelds:** the warehouse phone shows names and real amounts; a 403 says "not allowed" on the warehouse, picker and driver phones and stops the endless retry.
 - **Office pages:** Export saves a real file; the owner's takings are net of refunds; the assistant pages give the real reason when no model pricing is set; the scrap page tells the manager why there is no form (OB-515).
@@ -21,7 +21,9 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - A price-carrying scale label for a kg product may ring 1 g; the till's Qty button lets a cashier key grams on a weighed line, which may go against OB-302. Both to be checked.
 - "Days of cover" reads in the millions on the demo: honest arithmetic on the old seed's stock and almost no sales.
 
-**Owner questions open:** whether the accountant may also hand in supplier bills (OB-547 says match only); whether refunds get their own tile on the owner app.
+**Owner decisions also recorded:** OB-617 (the accountant keeps match only), OB-618 (refunds stay a sentence, no tile).
+
+**Tests that ran (this box, synthetic data):** the full default suite on PostgreSQL before the till narrowing: 15,762 passed, 2 failed (the two tests the narrowing and the takings shape fixed); after the fixes, both pass, all unit tests pass (9,529), the till's legal-gates browser test passes (5), and the guardrails pass. The builders' own browser runs: 64, 87 and the six buying/requisitions files, all passing. CI runs every suite again.
 
 **What is next:** Round A (pages head office never feeds).
 

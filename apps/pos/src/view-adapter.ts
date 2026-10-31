@@ -308,10 +308,11 @@ export function createPosView(
       // D-20: today at THIS lane, so a 2D code's use-by date is judged offline with no clock in the catalogue (B8).
       const today = batch?.asOf ?? session.laneToday();
       const hit = catalogue.scan(code, { ...batch, ...(today === undefined ? {} : { asOf: today }) });
-      // OB-302: a kg / g / L / ml product read from a code that carries no amount (its plain barcode, a 2D code) would ring
-      // as ONE gram or ONE millilitre. Refused by name instead — only a scale label says how much. Nothing is added.
+      // OB-302 (Round B): an L / ml product read from a code that carries no amount (its plain barcode, a 2D code) would ring
+      // as ONE millilitre. Refused by name instead — only a measured label says how much. Nothing is added. A kg / g product
+      // is left to the lane's existing scale rule (scanned, then weighed on a lane whose scale stamp is current).
       const unit = normaliseUom(hit.product.baseUom) ?? hit.product.baseUom;
-      if (unit !== 'ea' && hit.barcodeKind !== 'weight_embedded' && hit.barcodeKind !== 'price_embedded') {
+      if ((unit === 'L' || unit === 'ml') && hit.barcodeKind !== 'weight_embedded' && hit.barcodeKind !== 'price_embedded') {
         throw new MeasuredItemNeedsLabelError(hit.product.productId, hit.product.name, unit);
       }
       // A price-embedded barcode carries the line price for one unit; a batch under markdown is charged its markdown price
