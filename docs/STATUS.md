@@ -5,6 +5,16 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Combined fix list, Rounds 1 and 2 (31 October 2026): broken actions and pages head office never filled
+- **Round 1:** the wrong-numbers items came in through #852 (the other session's Round B). Added here: the accountant opens Supplier bills without a refusal (OB-547/548/617); a test proves a bill matched before OB-556 has its other charges taken back as its own entry.
+- **Round 2 (screen audit Round A):**
+  - **Fed from head office:** Products (master and categories; prices read item by item), Expiry and recalls, Finance (month state and Tally files, no ledger side yet), Reports, GST reconciliation, Waste, Category rules (no rules yet), Company report (never falsely complete), Today's approvals and orders for the signed-in person.
+  - **Said plainly:** "no checklists"; the AI pages say the assistants are off until Release 8 (OB-561).
+  - Every office page shows how old the store computer's copy is.
+- **Tests (joined branch):** full default suite on PostgreSQL 15,863 passed, 2 failed (the evidence ledger, regenerated; one OB-103 test under load, 3/3 alone); full browser suite 795/795; type check and lint clean.
+- **Next:** the owner's six Round 2 answers (category rules, Waste window, branch dates, Finance ledger side, GST queue size, cashier's product view), then Round 3 (demo copy).
+- **Blocked:** nothing.
+
 ## Combined fix list (31 October 2026): one list, one session
 - **What changed:** the owner chose to join the roadmap re-audit and the screen gap audit into one de-duplicated list, fixed in this session, most serious first (`docs/audit/COMBINED-FIX-LIST-2026-10-31.md`). The urgent five merged (#851). The screen audit's session finishes the kg/litre fix it had in progress as its own pull request and starts no further fix rounds.
 - **Next:** Round 1 (wrong numbers and broken actions), then Round 2 (empty pages), Round 3 (demo copy), Round 4a–d (setup screens).
