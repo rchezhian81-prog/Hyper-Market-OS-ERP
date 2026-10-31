@@ -92,6 +92,15 @@ describe.skipIf(!HAVE_BROWSER)('the till keys a bill number with letters by hand
     expect(heights.length).toBeGreaterThanOrEqual(28);
     for (const h of heights) expect(h).toBeGreaterThanOrEqual(56);
 
+    // The letter C is a letter, not the digit pad's Clear: tapped after other letters it adds a C and wipes nothing
+    // (it used to clear the entry, so any bill number with a C in it could not be keyed — found by CI, 31 Oct 2026).
+    await page.click('#letterpad button:text-is("Z")');
+    await page.click('#letterpad button:text-is("C")');
+    expect(await page.textContent('#entry')).toBe('ZC');
+    await page.click('#letterpad button:text-is("⌫")');
+    await page.click('#letterpad button:text-is("⌫")');
+    expect(await page.textContent('#entry')).toBe('');
+
     // Tap the number in, a character at a time, switching pads as the number goes from letters to digits.
     for (const ch of receipt) {
       const wantLetters = /[A-Z-]/.test(ch);

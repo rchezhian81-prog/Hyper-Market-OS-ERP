@@ -1004,9 +1004,12 @@ function paintEntry() {
   el('entry').textContent = entryMasked ? '•'.repeat(entryValue.length) : entryValue;
   if (entryMasked) el('entry').setAttribute('aria-label', `${entryValue.length} / ${PIN_DIGITS}`); else el('entry').removeAttribute('aria-label');
 }
-function typeIntoEntry(key) {
+function typeIntoEntry(key, literal = false) {
   const current = entryValue;
-  const next = entryMasked
+  // A LETTER from the letters pad is always a character, never a command: the letter C is not the digit pad's Clear.
+  const next = literal
+    ? (current.length < BILL_CHARS ? current + key : current)
+    : entryMasked
     ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < PIN_DIGITS ? current + key : current))
     : entryIsCode
       ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < (entryHasLetters ? BILL_CHARS : CODE_DIGITS) ? current + key : current))
@@ -1126,7 +1129,7 @@ el('letterpad').replaceChildren(...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '-', '⌫']
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = key;
-  button.addEventListener('click', () => { typeIntoEntry(key); });
+  button.addEventListener('click', () => { typeIntoEntry(key, key !== '⌫'); });
   return button;
 }));
 el('pad-switch').addEventListener('click', () => {
