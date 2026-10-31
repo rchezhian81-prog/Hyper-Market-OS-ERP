@@ -32,6 +32,8 @@
     "token:store": "node scripts/issue-store-token.mjs",
     "seed:pilot": "node scripts/seed-pilot-hosted.mjs",
     "demo:publish-pack": "node scripts/demo-publish-pack.mjs",
+    "demo:reseed": "node scripts/demo-reseed.mjs",
+    "demo:till-pins": "node scripts/demo-till-pins.mjs",
     "build:demo-login": "node scripts/build-service.mjs demo-login",
     "build:sign-in": "node scripts/build-service.mjs sign-in",
     "build:customer-sign-in": "node scripts/build-service.mjs customer-sign-in",

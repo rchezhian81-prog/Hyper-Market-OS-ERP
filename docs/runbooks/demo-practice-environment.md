@@ -101,7 +101,7 @@ proves is safe (every migration is additive and idempotent). The backup is for t
 
 **G. The deploy user, the forced-command key and `deploy.conf`** — `docs/runbooks/automatic-deployment.md` steps 1 to 6
 (on the box: `deploy` user in the `docker` group, owner of `/opt/sre`; `deploy.conf` copied from
-`infra/deploy/deploy.conf.example` with `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"`; on your own computer: the key pair
+`infra/deploy/deploy.conf.example` with `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1 PILOT_DEMO_LANE_BASE=/store-lane"` as the example has it; on your own computer: the key pair
 `sre-pipeline-key`; on the box again: the public key as the forced command line from `infra/deploy/authorized_keys.example`).
 
 **H. GitHub → the repository → Settings → Environments → New environment `demo` → Environment secrets:**
@@ -249,7 +249,7 @@ Per `in-store-install.md` Step 6, performed by `pilot-platform-admin` or `pilot-
 Live card/UPI capture, GST / e-invoice / e-way-bill filing, payroll bank-file release and payroll approve/lock, bulk and
 sensitive-category product publish, customer SMS/WhatsApp/email, production AI, "delete my data" execution, and all
 real data. `tests/integration/pilot-feature-safety.test.ts` and the step-up guards hold these off; the DEMO banner is
-baked into every shell by `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"` in `deploy.conf`.
+baked into every shell by `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1 PILOT_DEMO_LANE_BASE=/store-lane"` in `deploy.conf`.
 
 ---
 
@@ -289,10 +289,48 @@ the screens in a browser — those are SP-10 (§7).
 | Till | `http://127.0.0.1:8091/pos/` on the store PC | the cashier signs in with **staff ID** = the demo user id (`pilot-cashier`) **and their till PIN**, set on the store PC with the administrator's command (`till/start-till.sh till-pin --user pilot-cashier --by "<name>"`, in-store-install Step 2b) — the cashier types it themselves, hidden; the store PC checks it (ADR-0020) |
 | ERP screens (manager, buying, goods receipt, indents, cash office, day book, suppliers, …) | `http://127.0.0.1:8091/<screen>/` on the store PC | run as the person who signed in at the front door (OB-16). Opened directly on the store PC with no front door, a screen names nobody and saves nothing — use the hosted demo's screens for the ERP part of the practice, see §4.3 |
 | Handhelds | `https://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4; then each person signs in on the phone with their staff ID and **the same till PIN** (OB-30) — issue one for each phone user like the cashier's |
-| Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
+| Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-warehouse-supervisor`, `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
+| Queue till, B2B portal (hosted demo) | `https://<the box>/queue-pos/`, `/b2b/` | behind the demo sign-in (Round 3). The queue till is the store box's handheld door: enrol the browser once with a code issued on the Tills & devices page (§4.4), then sign in with staff ID and till PIN; it opens only while the owner has queue-busting switched on. The B2B portal shows a business customer's own account to a `b2b_customer` login |
 
 Role restrictions are enforced by head office on every write: a cashier cannot set a price, a buyer cannot approve
 their own supplier, an issuer cannot receive their own issue. Those refusals are part of the practice.
+
+### 6.1 What the seed sets up for the screens (Round 3 of the screen gap audit, 31 Oct 2026)
+
+`pnpm run seed:pilot -- --operator "<your name>"` now also leaves head office with, each through its own route and each
+person's own sign-in: both demo suppliers **approved in the supplier master** (proposed by `pilot-manager`, approved by
+`pilot-accountant`), so buying accepts them; the demo till **`lane-1` registered** at the demo store with its own
+bill-number prefix **`D1L1-`**; a **warehouse supervisor** (`pilot-warehouse-supervisor`, store-manager role) so a transfer
+can be proposed by one person and sent by another; an **online order** (`order-demo-online-1`) with its pick wave and its
+delivery route assigned (to `pilot-manager` until the roadmap's Picker/Delivery role exists); and **business customers
+switched on** (OB-559). Re-running it changes nothing that already landed.
+
+### 6.2 Till PINs on the hosted demo box (Round 3)
+
+The day close, a manager's approval at the till and the handhelds ask for a person's **own till PIN**. On the demo box, in
+your own SSH session (never through a chat tool), with each person beside you:
+
+    pnpm run demo:till-pins -- --by "<your name>"                # pilot-cashier, pilot-manager, pilot-owner, pilot-accountant in turn
+    pnpm run demo:till-pins -- --by "<your name>" --user pilot-manager   # one person again
+
+It runs the store box's own PIN command inside the demo's edge container (the same line as in-store-install Step 2b): hand
+the keyboard to the person whose turn it is and look away — they type their new six digits twice, hidden. Nobody else sees
+it, nothing prints or keeps it, and the box records who issued it. It refuses a box whose settings are not the demo tenant.
+
+### 6.3 A fresh seed of the demo copy (Round 3 — after the stock counts were corrected, #852)
+
+The ledgers are append-only, so a corrected dataset does not change what the seed laid down earlier (the demo still holds
+the old opening stock, 1000 times too much). To start the DEMO copy over — never anything else:
+
+    pnpm run demo:reseed -- --operator "<your name>" --this-is-the-demo pilot-demo
+
+It refuses, before changing anything, a settings file that names another tenant or is production-marked, a run with no
+name or without the typed confirmation, and a database whose ledger holds **any** tenant other than the demo. When it runs
+it stops the services that write; **keeps** the old ledger as database `<name>_retired_<UTC time>` (renamed, never
+deleted); **keeps** the demo store box's old disk as a file under `/opt/sre/retired/` (`--keep-dir` to choose) before the
+box starts empty (the bill-number witness is not touched, so no bill number repeats); makes an empty database; and brings
+the stack up (the migrations run first). Then, each its own act: `pnpm run seed:pilot`, `pnpm run demo:publish-pack`, and
+`pnpm run demo:till-pins` (the old disk held the old PINs). The demo sign-in's logins live outside the database and stay.
 
 ---
 
@@ -341,7 +379,7 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
   approver's own till PIN at the store computer (2b-vi-c-4), so whoever approves reopens (`pilot-owner` or the
   accountant) needs a till PIN on the box as well; on the internet copy the person reopening needs none.
 - The store computer signs in to head office as `pilot-store-edge`, a machine identity with the store computer role (OB-36 "A").
-- Head office assigns waves and routes to phones since 3 Oct 2026 (HA-1: `POST /v1/fulfilment/waves/:waveId/assignment`, `POST /v1/delivery/routes/:routeId/assignment`; the box pulls the open ones). The pack file's `wave` / `route` sections below are the hand-written override and still work for a first practice session; the screen says which source it is holding. A head-office screen for assigning is not built yet — the two routes are called through the API.
+- Head office assigns waves and routes to phones since 3 Oct 2026 (HA-1: `POST /v1/fulfilment/waves/:waveId/assignment`, `POST /v1/delivery/routes/:routeId/assignment`; the box pulls the open ones). The pack file's `wave` / `route` sections below are the hand-written override and still work for a first practice session; the screen says which source it is holding. A head-office screen for assigning is not built yet — the two routes are called through the API (the seed assigns the demo's online order, §6.1).
 - No TLS on the shop-network leg to the phones (OA-16: staff-only wifi is the control).
 - Receipt printing, weighing scales and cash drawers are built but not attached (EX-09).
 - The seed in `main` names the demo tenant with a label; the fixed-UUID fix lives on the box until §1 is merged.

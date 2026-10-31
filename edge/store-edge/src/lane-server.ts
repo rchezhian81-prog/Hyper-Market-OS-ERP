@@ -60,9 +60,10 @@ import type { OperatorStamp, TillSealSubject } from '../../../packages/identity/
 import { concessionTagIdOf } from './cloud-concession-tag';
 import type { EdgeNode } from './index';
 import {
-  DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH, readRelayBatch,
+  DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH, readRelayBatch, isHandheldSource,
   type BoxItemStatus, type RelayReply,
 } from '../../../packages/sync/src/device-relay';
+import { HANDHELD_AUTHORITY } from './handheld-sign-in';
 import type {
   CashMovementRequest, CashMovementOutcome, ShiftCloseRequest, ShiftCloseOutcome, TillCashStatus, CountedDenomination,
 } from './till-cash';
@@ -461,6 +462,17 @@ export const OFFICE_LANE_ROUTES: Readonly<Record<string, string | null>> = Objec
 });
 const isOfficeLaneRoute = (pathname: string): boolean => Object.prototype.hasOwnProperty.call(OFFICE_LANE_ROUTES, pathname);
 
+/**
+ * Round 3 (screen gap audit, 31 Oct 2026 · SEC-1's rule · P-04): the hosted copy's HANDHELD door. Behind the hosted front the
+ * handheld screens hand their work to `/lane/outbox` through their own door (`/store-handheld`), which the front marks
+ * `X-Sre-Door: handheld` and on which it names the person signed in (`X-Sre-User`) — no longer through the till's door, which
+ * only a person who may SELL passes. On that door the box takes handheld work only, and holds the person to THAT job's own
+ * permission — the right the phone sign-in asks for (`HANDHELD_AUTHORITY`: warehouse, picker, driver) — from THIS box's role
+ * register, exactly as SEC-1 holds a screen to its own permission (screen-server.ts). Nobody named → refused outright (401);
+ * anything else → 403. The till's door is unchanged; a store box never trusts either header.
+ */
+export const HANDHELD_DOOR = 'handheld';
+
 /** The office sign-in this socket asks for its office doors (`OfficeSessions`, the very gate the screens ask). */
 export interface LaneOfficePort {
   check(token: string | undefined): Promise<OfficeCheck>;
@@ -630,6 +642,11 @@ export function startLaneServer(input: {
    */
   readonly officeScreens?: LaneOfficePort;
   /**
+   * Round 3: a person's permissions in THIS box's current role register (the store pack), for the hosted copy's handheld door
+   * (`HANDHELD_DOOR`). Absent → work on that door is refused (fails closed).
+   */
+  readonly forwardedPermissionsOf?: (userId: string) => readonly string[] | null;
+  /**
    * OB-271 (owner, 21 Oct 2026): read live — this box's own `EDGE_REAL_TRADING=1` or the store pack's `policies.realTrading`.
    * While true, a sale is kept only when its bill is a complete Rule 46 tax invoice (`real-trading.ts`, the till's own check
    * again, from `taxInvoice`), and never while the mirror pilot is on too. Absent or false: nothing here changes.
@@ -659,6 +676,25 @@ export function startLaneServer(input: {
     const forwarded = req.headers['x-sre-user'];
     const user = ops.trustForwardedUser && typeof forwarded === 'string' ? forwarded.trim() : '';
     return user === '' ? undefined : { userId: user, via: 'verified_sign_in', laneId: ops.laneId };
+  };
+
+  /**
+   * Round 3 (SEC-1's rule): on the hosted copy's handheld door only, may the person the front named hand THIS work to the
+   * box? `undefined` = not that door (a store box, or the till's door), or the person holds the job's own permission.
+   */
+  const handheldDoorRefusal = (req: IncomingMessage, source: string): { readonly status: 401 | 403; readonly refusedBecause: string; readonly reason: string } | undefined => {
+    if (input.operators?.trustForwardedUser !== true || req.headers['x-sre-door'] !== HANDHELD_DOOR) return undefined;
+    if (!isHandheldSource(source)) {
+      return { status: 403, refusedBecause: 'not_handheld_work', reason: `The handheld door takes a handheld's work only, not ${source} work. Nothing was taken.` };
+    }
+    const forwarded = req.headers['x-sre-user'];
+    const user = typeof forwarded === 'string' ? forwarded.trim() : '';
+    if (user === '') return { status: 401, refusedBecause: 'nobody_signed_in', reason: 'Nobody is signed in, so this work was not taken. Sign in and it is sent again.' };
+    const needs = HANDHELD_AUTHORITY[source];
+    if (!(input.forwardedPermissionsOf?.(user) ?? []).includes(needs)) {
+      return { status: 403, refusedBecause: 'lacks_permission', reason: `${user} may not hand over ${source} work (it needs ${needs}). Nothing was taken.` };
+    }
+    return undefined;
   };
 
   /**
@@ -1276,6 +1312,12 @@ export function startLaneServer(input: {
           const batch = readRelayBatch(body);
           if (!batch.ok) {
             send(res, 400, { acks: [], reason: batch.reason }, cors);
+            return;
+          }
+          // Round 3 · SEC-1's rule: on the hosted copy's handheld door, the named person must hold THIS job's own permission.
+          const forwardRefusal = handheldDoorRefusal(req, batch.source);
+          if (forwardRefusal !== undefined) {
+            send(res, forwardRefusal.status, { acks: [], refusedBecause: forwardRefusal.refusedBecause, reason: forwardRefusal.reason }, cors);
             return;
           }
           try {

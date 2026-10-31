@@ -13,7 +13,7 @@
 
 import { createHash } from 'node:crypto';
 import type { PilotFoundation, PilotCatalogue, PilotTradingPartners, PilotTransactions } from './dataset';
-import { PILOT_DEMO_BRANCH } from './dataset';
+import { PILOT_DEMO_BRANCH, PILOT_DEMO_TILL } from './dataset';
 import { assessShiftClose } from '../../../packages/till/src/assess-shift';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
@@ -228,6 +228,20 @@ export async function applyPilotFoundation(
     record({ what: `marketing cap ${cap.capPerWindow} per ${cap.windowDays} days (OB-42)`, ok: OK_STATUS.has(res.status), status: res.status, ...(detail === undefined ? {} : { detail }) });
   }
 
+  // 9. Round 3 (screen gap audit, Round C): the demo till as head office knows it — on the fleet register (the platform
+  //    administrator's `platform.device.manage`) and with its own bill-number prefix (the owner's `platform.setup.write`,
+  //    OB-81). Each through head office's own audited route; a re-run registers nothing new (a fixed key; the same prefix to
+  //    the same till records nothing new).
+  const till = PILOT_DEMO_TILL;
+  if (maker === undefined) {
+    record({ what: `register till ${till.tillId}`, ok: false, detail: 'no platform administrator in the cast to register the till' });
+  } else {
+    await post(`register till ${till.tillId} at ${setup.storeId}`, `/v1/platform/devices/${encodeURIComponent(till.tillId)}/register`,
+      { branchId: setup.storeId, kind: 'pos_lane', label: till.label }, `seed-till-register-${setup.storeId}-${till.tillId}`, maker);
+  }
+  await post(`bill-number prefix ${till.prefix} for till ${till.tillId}`, `/v1/stores/${store}/tills/${encodeURIComponent(till.tillId)}/receipt-prefix`,
+    { prefix: till.prefix, reason: 'the demo till\'s own bill numbers (synthetic demo)' }, `seed-till-prefix-${setup.storeId}-${till.tillId}-${till.prefix}`);
+
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
 }
 
@@ -371,6 +385,24 @@ export async function applyPilotTradingPartners(
         record({ what: `supplier login ${login}`, ok: false, detail: err instanceof Error ? err.message : String(err) });
       }
     }
+  }
+
+  // 1b. Round 3 (screen gap audit, Round C · M06-FR-01 · OB-32 "A"): each seeded supplier in the SUPPLIER MASTER, so buying
+  //     accepts it — proposed by the buyer, approved by a DIFFERENT person with the authority (§28), each in their own
+  //     session through head office's routes. A supplier already approved answers `alreadyApproved` (a re-run is safe).
+  for (const supplier of data.suppliers) {
+    await post(
+      `supplier master ${supplier.partnerId} — proposed by ${data.supplierMaster.proposedBy}`,
+      `/v1/purchase/suppliers/${encodeURIComponent(supplier.partnerId)}`,
+      { name: supplier.name },
+      `seed-supplier-master-${supplier.partnerId}-${digestOf({ name: supplier.name })}`, data.supplierMaster.proposedBy,
+    );
+    await post(
+      `supplier master ${supplier.partnerId} — approved by ${data.supplierMaster.approvedBy}`,
+      `/v1/purchase/suppliers/${encodeURIComponent(supplier.partnerId)}/approval`,
+      { reason: 'synthetic demo supplier, checked for the demo copy' },
+      `seed-supplier-approve-${supplier.partnerId}`, data.supplierMaster.approvedBy,
+    );
   }
 
   // 2. Warehouse bins.
@@ -549,6 +581,19 @@ export async function applyPilotTransactions(
       { lines: o.lines, locationId: o.locationId },
       `seed-order-${o.orderId}`,
     );
+  }
+
+  // 6b. Round 3 (screen gap audit, Round C · HA-1): the handhelds' real work — the online order's wave to its picker and its
+  //     route to its driver, assigned by a person who may (head office re-checks each assignee may do the work). The same
+  //     wave or route posted again is ONE record.
+  const f = data.fulfilment;
+  for (const w of f.waves) {
+    await post(`wave ${w.waveId} → picker ${w.pickerId}`, `/v1/fulfilment/waves/${encodeURIComponent(w.waveId)}/assignment`,
+      { storeId: PILOT_DEMO_BRANCH, pickerId: w.pickerId, lines: w.lines }, `seed-wave-${w.waveId}-${digestOf(w)}`, f.assignedBy);
+  }
+  for (const r of f.routes) {
+    await post(`route ${r.routeId} → driver ${r.driverId}`, `/v1/delivery/routes/${encodeURIComponent(r.routeId)}/assignment`,
+      { storeId: PILOT_DEMO_BRANCH, driverId: r.driverId, stops: r.stops }, `seed-route-${r.routeId}-${digestOf(r)}`, f.assignedBy);
   }
 
   // 7. Payroll — a demo-marked DRAFT pay run (no approval; clearly non-real). Drafted by the person who prepares it,

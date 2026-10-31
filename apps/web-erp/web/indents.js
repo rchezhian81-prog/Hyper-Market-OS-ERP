@@ -68,6 +68,7 @@ function sampleSession() {
     presentResolveOutcome: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
     presentApproveOutcome: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
     raiseRefusalWords: () => '', receiveRefusalWords: () => '',
+    unitOf: () => '', typedText: (n) => String(n), quantityText: (n, uom) => qtyText(n, uom),
     savedWork: () => [], handedKeys: () => [], noteBoxStatus: () => {},
   };
 }
@@ -168,7 +169,8 @@ function renderRaiseLines() {
   el('raise-lines').replaceChildren(...raiseLines.map((l, index) => {
     const li = document.createElement('li');
     li.dataset.productId = l.productId;
-    const what = document.createElement('span'); what.textContent = `${l.productId} × ${qtyText(l.quantityMinor, l.uom || '')}`;
+    // OB-31: the line holds what was TYPED, in its unit ("2.5" kg); the session turns it into grams on Save.
+    const what = document.createElement('span'); what.textContent = `${l.productId} × ${`${l.quantity} ${l.uom}`.trim()}`;
     const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'minor'; remove.textContent = t('raiseRemove');
     remove.addEventListener('click', () => { raiseLines = raiseLines.filter((_, i) => i !== index); renderRaiseLines(); });
     li.append(what, remove);
@@ -242,8 +244,10 @@ function renderReceiveLines() {
     const label = document.createElement('label');
     const inputId = `count-${l.productId}-${l.batchId ?? 'none'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
     label.htmlFor = inputId;
-    label.textContent = `${l.productId}${l.batchId ? ` · ${l.batchId}` : ''} (${t('colIssued')} ${l.quantityMinor})`;
-    const input = document.createElement('input'); input.id = inputId; input.type = 'text'; input.inputMode = 'numeric'; input.value = String(l.quantityMinor); input.className = 'counted';
+    // OB-31: issued and counted in the line's own unit — 2500 g of a kg line reads "2.500 kg" and is typed back as "2.500".
+    const unit = session.unitOf(choice.indentId, l.productId);
+    label.textContent = `${l.productId}${l.batchId ? ` · ${l.batchId}` : ''} (${t('colIssued')} ${session.quantityText(l.quantityMinor, unit)})`;
+    const input = document.createElement('input'); input.id = inputId; input.type = 'text'; input.inputMode = 'decimal'; input.value = session.typedText(l.quantityMinor, unit); input.className = 'counted';
     li.append(label, input);
     return li;
   })));
@@ -266,7 +270,7 @@ function paintReceiver(view) {
   const chosen = select.value;
   select.replaceChildren(...receivable.map((r) => {
     const opt = document.createElement('option'); opt.value = `${r.indentId}|${r.issue.issueId}`;
-    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${r.issue.lines.map((l) => `${l.productId} × ${l.quantityMinor}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
+    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${r.issue.lines.map((l) => `${l.productId} × ${session.quantityText(l.quantityMinor, session.unitOf(r.indentId, l.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
     return opt;
   }));
   if (chosen && receivable.some((r) => `${r.indentId}|${r.issue.issueId}` === chosen)) select.value = chosen;
@@ -292,8 +296,8 @@ function renderResolveLines() {
     const label = document.createElement('label');
     const inputId = `found-${s.productId}-${s.batchId ?? 'none'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
     label.htmlFor = inputId;
-    label.textContent = `${s.productId}${s.batchId ? ` · ${s.batchId}` : ''} (${t('resolveMissingWord')} ${s.quantityMinor})`;
-    const input = document.createElement('input'); input.id = inputId; input.type = 'text'; input.inputMode = 'numeric'; input.value = '0'; input.className = 'found';
+    label.textContent = `${s.productId}${s.batchId ? ` · ${s.batchId}` : ''} (${t('resolveMissingWord')} ${session.quantityText(s.quantityMinor, session.unitOf(choice.indentId, s.productId))})`;
+    const input = document.createElement('input'); input.id = inputId; input.type = 'text'; input.inputMode = 'decimal'; input.value = '0'; input.className = 'found';
     li.append(label, input);
     return li;
   })));
@@ -408,11 +412,12 @@ function paint() {
 
 el('raise-add').addEventListener('click', () => {
   const productId = el('raise-product').value.trim();
-  const quantityMinor = el('raise-qty').value.trim();
+  // OB-31: typed in the item's unit ("2.5" kg); the session checks it and turns it into grams on Save — never here.
+  const quantity = el('raise-qty').value.trim();
   const uom = el('raise-uom').value.trim();
-  if (productId === '' || !/^\d+$/.test(quantityMinor) || Number(quantityMinor) <= 0) { tell('error', session.raiseRefusalWords(lang, 'bad_line')); return; }
+  if (productId === '' || quantity === '') { tell('error', session.raiseRefusalWords(lang, 'bad_line')); return; }
   if (raiseLines.some((l) => l.productId === productId)) { tell('error', session.raiseRefusalWords(lang, 'duplicate_product')); return; }
-  raiseLines = [...raiseLines, { productId, quantityMinor, uom }];
+  raiseLines = [...raiseLines, { productId, quantity, uom }];
   el('raise-product').value = ''; el('raise-qty').value = ''; el('raise-uom').value = '';
   renderRaiseLines();
 });
@@ -445,7 +450,7 @@ el('receive-issue').addEventListener('change', renderReceiveLines);
 el('receive').addEventListener('click', () => {
   const [indentId, issueId] = el('receive-issue').value.split('|');
   const counted = [...el('receive-lines').querySelectorAll('li')].map((li) => ({
-    productId: li.dataset.productId, batchId: li.dataset.batchId === '' ? null : li.dataset.batchId, quantityMinor: li.querySelector('input.counted').value,
+    productId: li.dataset.productId, batchId: li.dataset.batchId === '' ? null : li.dataset.batchId, quantity: li.querySelector('input.counted').value,
   }));
   const outcome = session.receive({ indentId: indentId ?? '', issueId: issueId ?? '', counted });
   if (!outcome.ok) { tell('error', session.receiveRefusalWords(lang, outcome.refusal)); return; }
@@ -462,7 +467,7 @@ el('resolve').addEventListener('click', () => {
   void (async () => {
     const [indentId, issueId] = el('resolve-issue').value.split('|');
     const found = [...el('resolve-lines').querySelectorAll('li')].map((li) => ({
-      productId: li.dataset.productId, batchId: li.dataset.batchId === '' ? null : li.dataset.batchId, foundMinor: li.querySelector('input.found').value,
+      productId: li.dataset.productId, batchId: li.dataset.batchId === '' ? null : li.dataset.batchId, found: li.querySelector('input.found').value,
     }));
     const outcome = await session.resolve({ indentId: indentId ?? '', issueId: issueId ?? '', reasonCode: el('resolve-reason').value, note: el('resolve-note').value, found });
     paintResult(session.presentResolveOutcome(lang, outcome));

@@ -125,6 +125,12 @@ export interface LaneView {
 const W = (en: string, ta: string): Words => ({ en, ta });
 export const WORDS = Object.freeze({
   switchedOff: W('Self-checkout is switched off on this lane. Please use a staffed till.', 'இந்த வரிசையில் சுய-கட்டணம் நிறுத்தப்பட்டுள்ளது. ஊழியர் உள்ள கட்டண மையத்தைப் பயன்படுத்தவும்.'),
+  // Round 3 (screen gap audit, 31 Oct 2026): for the colleague, never the customer — WHERE it is switched on: the owner's
+  // "Trial switches and shop account" page (Administration menu), the `self_checkout` switch for this lane (OB-316).
+  switchedOnWhere: W(
+    'Self-checkout is off for this lane. The owner switches it on for this lane on the "Trial switches and shop account" page (Administration menu).',
+    'இந்த வரிசைக்கு சுய-கட்டணம் நிறுத்தப்பட்டுள்ளது. உரிமையாளர் "சோதனை சுவிட்சுகள் மற்றும் கடை கணக்கு" பக்கத்தில் (நிர்வாகம் பட்டியல்) இந்த வரிசைக்கு அதை இயக்குவார்.',
+  ),
   mirrorPilot: W('This lane cannot take payment during the pilot. Please use a staffed till.', 'சோதனைக் காலத்தில் இந்த வரிசையில் கட்டணம் பெற முடியாது. ஊழியர் உள்ள கட்டண மையத்தைப் பயன்படுத்தவும்.'),
   notOpened: W('This lane is closed. A colleague will open it. Please use a staffed till.', 'இந்த வரிசை மூடப்பட்டுள்ளது. எங்கள் ஊழியர் திறப்பார். ஊழியர் உள்ள கட்டண மையத்தைப் பயன்படுத்தவும்.'),
   scanItems: W('Scan your items one by one.', 'உங்கள் பொருட்களை ஒவ்வொன்றாக ஸ்கேன் செய்யவும்.'),
@@ -279,6 +285,7 @@ export function createSelfCheckoutLane(till: TillEngine, config: SelfCheckoutLan
         interventions: list,
         payment, receipt,
         attendantNotes: [
+          ...(config.switchOn ? [] : [`${WORDS.switchedOnWhere.en} — ${WORDS.switchedOnWhere.ta}`]),
           'No security scale is fitted to this lane, so weight checks are not run (the scale is an outside supplier\'s hardware).',
           config.watch === undefined
             ? 'The owner has not set the self-checkout watch numbers (random audit rate, produce and void patterns), so none is run and no risk figure is kept — not set.'
@@ -288,7 +295,7 @@ export function createSelfCheckoutLane(till: TillEngine, config: SelfCheckoutLan
     },
 
     async openLane(staffId, pin) {
-      if (!config.switchOn) return { ok: false, words: WORDS.switchedOff, refusedBecause: 'self_checkout_switched_off', detail: config.switchWhy ?? 'switched off' };
+      if (!config.switchOn) return { ok: false, words: WORDS.switchedOff, refusedBecause: 'self_checkout_switched_off', detail: `${config.switchWhy ?? 'switched off'}. ${WORDS.switchedOnWhere.en}` };
       if (config.mirrorPilot) return { ok: false, words: WORDS.mirrorPilot, refusedBecause: 'mirror_pilot' };
       const who = await colleague(staffId, pin);
       if (!who.ok) return who.answer;

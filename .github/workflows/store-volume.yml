@@ -1,0 +1,72 @@
+name: Store-volume opening load (GT-05, nightly)
+
+# GT-05 / MG-05 "repeatable full-volume migrations": the opening state at a REAL store's volume — 15 000 products, opening
+# stock across four locations, a third batch-tracked — loaded through the routes into a real PostgreSQL and read back to the
+# unit and the paisa (tests/integration/opening-load-at-store-volume.test.ts). It takes 25 minutes or more, so it is NOT on
+# the pull-request build (ci.yml, which stays as fast as it was): it runs every night on `main`, and on demand from
+# GitHub → Actions → this workflow → "Run workflow" (choose the product count there). A red run is a regression on `main`,
+# named in its log; it never blocks or slows anyone's pull request. Synthetic data only; no secret is used (hard rule #4).
+on:
+  schedule:
+    # 21:47 UTC = 03:17 the next morning in Tamil Nadu: the shop is shut and the runners are quiet.
+    - cron: '47 21 * * *'
+  workflow_dispatch:
+    inputs:
+      products:
+        description: 'How many products the synthetic store has (15000 = a 14 000 sq ft hypermarket)'
+        required: true
+        default: '15000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-volume
+  cancel-in-progress: false
+
+jobs:
+  store-volume:
+    name: Opening load at store volume (real PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sre
+          POSTGRES_DB: sre_core
+          # Throwaway container, reachable only from this job: trust auth, so no credential appears in this file.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: GT-05 — load the opening state at store volume and read it back (never skipped)
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+          GT05_STORE_VOLUME: ${{ github.event.inputs.products || '15000' }}
+          GT05_PROGRESS_FILE: /tmp/gt05-progress.log
+        run: |
+          set -o pipefail
+          pnpm exec vitest run tests/integration/opening-load-at-store-volume.test.ts --reporter=default --reporter=json --outputFile=/tmp/gt05.json 2>&1 | tee /tmp/gt05.log
+          # The test skips itself without GT05_STORE_VOLUME — a quiet green here would mean it never ran.
+          node scripts/assert-suite-ran.mjs /tmp/gt05.json --min-files 1 --min-tests 1
+
+      - name: Keep the measurements and the progress log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gt05-store-volume
+          path: |
+            /tmp/gt05.log
+            /tmp/gt05-progress.log
+          if-no-files-found: warn
