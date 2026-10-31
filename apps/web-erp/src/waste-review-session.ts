@@ -42,6 +42,11 @@ export interface WasteReviewPorts {
   rows(): readonly WriteOffRow[];
   /** Whether this user may review waste (`waste.view`). */
   mayRead(): boolean;
+  /**
+   * Screen gap audit (Round A · P-08): whether the store computer was GIVEN the write-offs at all. False: it was never told,
+   * which is not the same as "nothing recorded yet" — and neither is ever "all clear". Absent: told (older callers).
+   */
+  known?(): boolean;
 }
 
 export interface WasteReviewConfig {
@@ -56,30 +61,32 @@ export type CopyKey =
   | 'lossWastage' | 'lossDamage' | 'lossExpiry' | 'lossDonation' | 'lossDestruction'
   | 'neededApproval' | 'evidenceOnFile' | 'noEvidence' | 'raisedByLabel'
   | 'totalLoss' | 'attentionCount' | 'allClear'
-  | 'stateReady' | 'stateEmpty' | 'stateNotPermitted'
+  | 'stateReady' | 'stateEmpty' | 'stateNotTold' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
 export const WASTE_REVIEW_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Waste & write-off', langName: 'தமிழ்',
-    lead: 'What left as loss, by type and value. The material losses — the ones big enough to need a second person’s approval — come first. Recording a write-off is done where it is approved, never here.',
+    lead: 'What left as loss in the last 30 days, by type and value. Older write-offs are kept in head office’s records and reports, not shown here. The material losses — the ones big enough to need a second person’s approval — come first. Recording a write-off is done where it is approved, never here.',
     lossWastage: 'Wastage', lossDamage: 'Damage', lossExpiry: 'Expired', lossDonation: 'Donation', lossDestruction: 'Destruction',
     neededApproval: 'Needed approval', evidenceOnFile: 'Evidence on file', noEvidence: 'No evidence',
-    raisedByLabel: 'Raised by', totalLoss: 'Total loss today',
+    raisedByLabel: 'Raised by', totalLoss: 'Total loss recorded',
     attentionCount: 'needed approval', allClear: 'No material losses — nothing needed a second approval.',
-    stateReady: 'Showing the losses', stateEmpty: 'No losses have been recorded yet.',
+    stateReady: 'Showing the losses', stateEmpty: 'Nothing recorded in the last 30 days — no write-off for this store in that time. Older ones are in head office’s records.',
+    stateNotTold: 'This store computer has not been given the write-offs yet, so it cannot show any. This is not "no losses".',
     stateNotPermitted: 'You do not have permission to review waste and write-offs.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
     title: 'கழிவு & நீக்கம்', langName: 'English',
-    lead: 'இழப்பாக என்ன வெளியேறியது, வகை மற்றும் மதிப்பின்படி. இரண்டாவது நபரின் ஒப்புதல் தேவைப்படும் அளவு பெரிய இழப்புகள் முதலில். நீக்கத்தைப் பதிவு செய்வது ஒப்புதல் அளிக்கும் இடத்தில் செய்யப்படும், இங்கு அல்ல.',
+    lead: 'கடந்த 30 நாட்களில் இழப்பாக என்ன வெளியேறியது, வகை மற்றும் மதிப்பின்படி. பழைய நீக்கங்கள் தலைமை அலுவலகத்தின் பதிவுகளிலும் அறிக்கைகளிலும் உள்ளன, இங்கு காட்டப்படாது. இரண்டாவது நபரின் ஒப்புதல் தேவைப்படும் அளவு பெரிய இழப்புகள் முதலில். நீக்கத்தைப் பதிவு செய்வது ஒப்புதல் அளிக்கும் இடத்தில் செய்யப்படும், இங்கு அல்ல.',
     lossWastage: 'கழிவு', lossDamage: 'சேதம்', lossExpiry: 'காலாவதி', lossDonation: 'நன்கொடை', lossDestruction: 'அழிப்பு',
     neededApproval: 'ஒப்புதல் தேவைப்பட்டது', evidenceOnFile: 'ஆதாரம் உள்ளது', noEvidence: 'ஆதாரம் இல்லை',
-    raisedByLabel: 'பதிவு செய்தவர்', totalLoss: 'இன்றைய மொத்த இழப்பு',
+    raisedByLabel: 'பதிவு செய்தவர்', totalLoss: 'பதிவான மொத்த இழப்பு',
     attentionCount: 'ஒப்புதல் தேவைப்பட்டது', allClear: 'பெரிய இழப்புகள் இல்லை — எதற்கும் இரண்டாவது ஒப்புதல் தேவைப்படவில்லை.',
-    stateReady: 'இழப்புகளைக் காட்டுகிறது', stateEmpty: 'இன்னும் இழப்புகள் எதுவும் பதிவு செய்யப்படவில்லை.',
+    stateReady: 'இழப்புகளைக் காட்டுகிறது', stateEmpty: 'கடந்த 30 நாட்களில் எதுவும் பதிவாகவில்லை — அந்தக் காலத்தில் இந்தக் கடைக்கு எந்த நீக்கமும் இல்லை. பழையவை தலைமை அலுவலகத்தின் பதிவுகளில் உள்ளன.',
+    stateNotTold: 'நீக்கங்கள் இன்னும் இந்தக் கடைக் கணினிக்குக் கொடுக்கப்படவில்லை, எனவே எதையும் காட்ட முடியாது. இது "இழப்பு இல்லை" என்பதல்ல.',
     stateNotPermitted: 'கழிவு மற்றும் நீக்கங்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -123,8 +130,14 @@ export interface WasteReviewView {
   readonly rows: readonly PresentedWriteOff[];
   readonly attentionCount: number;
   readonly total: number;
-  /** The day's total loss value, formatted — the one number a manager wants at the top. */
+  /** The total value of the losses shown, formatted — the one number a manager wants at the top. */
   readonly totalValue: string;
+  /**
+   * The one line above the list (Round A · P-08): how many needed approval; "no material losses" ONLY when losses were
+   * recorded and none was material; "nothing recorded yet" when the register is empty; "not given" when the store computer
+   * was never told. An empty page never says "all clear".
+   */
+  readonly summaryLine: string;
   readonly nobodyNamed: boolean;
 }
 
@@ -175,7 +188,13 @@ export function createWasteReviewSession(config: WasteReviewConfig, ports: Waste
       if (!ports.mayRead()) {
         return {
           screenState: presentScreenState({ state: 'error', label: t('stateNotPermitted') }),
-          rows: [], attentionCount: 0, total: 0, totalValue: formatMoney(0), nobodyNamed: config.userId === null,
+          rows: [], attentionCount: 0, total: 0, totalValue: formatMoney(0), summaryLine: t('stateNotPermitted'), nobodyNamed: config.userId === null,
+        };
+      }
+      if (ports.known !== undefined && !ports.known()) {
+        return {
+          screenState: presentScreenState({ state: 'empty', label: t('stateNotTold') }),
+          rows: [], attentionCount: 0, total: 0, totalValue: formatMoney(0), summaryLine: t('stateNotTold'), nobodyNamed: config.userId === null,
         };
       }
       const raw = ports.rows();
@@ -198,6 +217,7 @@ export function createWasteReviewSession(config: WasteReviewConfig, ports: Waste
         attentionCount,
         total: rows.length,
         totalValue: formatMoney(totalMinor),
+        summaryLine: rows.length === 0 ? t('stateEmpty') : attentionCount === 0 ? t('allClear') : `${attentionCount} ${t('attentionCount')}`,
         nobodyNamed: config.userId === null,
       };
     },

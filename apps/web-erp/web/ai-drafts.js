@@ -25,6 +25,8 @@ const WORDS = {
     drafted: 'The assistant drafted words — a different person approves them.', summarised: 'The assistant wrote a summary.',
     notDrafted: 'The assistant did not draft:', stopped: 'The assistant is switched off or out of budget.',
     noPricing: 'The assistant cannot run: no model pricing is set for this shop yet, so head office admits no call. Nothing was drafted.',
+    // OB-561 (owner, 31 Oct 2026): live AI stays off until Release 8 (OB-382) — the plain reason, before any technical one.
+    offUntilR8: 'The assistants are off until Release 8 — the owner decided this on 31 October 2026. Nothing on this page is drafted by an assistant yet; do this work yourself.',
     done: 'Done.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', cannotRead: 'Your role cannot read these.',
   },
@@ -39,6 +41,7 @@ const WORDS = {
     drafted: 'உதவியாளர் வார்த்தைகளை வரைந்தார் — வேறொருவர் ஒப்புதல் அளிப்பார்.', summarised: 'உதவியாளர் ஒரு சுருக்கத்தை எழுதினார்.',
     notDrafted: 'உதவியாளர் வரையவில்லை:', stopped: 'உதவியாளர் நிறுத்தப்பட்டுள்ளார் அல்லது செலவு வரம்பு தீர்ந்தது.',
     noPricing: 'உதவியாளரை இயக்க முடியாது: இந்தக் கடைக்கு மாதிரி விலை (model pricing) இன்னும் அமைக்கப்படவில்லை, எனவே தலைமை அலுவலகம் எந்த அழைப்பையும் ஏற்கவில்லை. எதுவும் வரையப்படவில்லை.',
+    offUntilR8: 'உதவியாளர்கள் வெளியீடு 8 வரை அணைக்கப்பட்டுள்ளனர் — இது 31 அக்டோபர் 2026 அன்று உரிமையாளர் எடுத்த முடிவு. இந்தப் பக்கத்தில் இப்போது எதையும் உதவியாளர் வரைவதில்லை; இந்த வேலையை நீங்களே செய்யுங்கள்.',
     done: 'முடிந்தது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', cannotRead: 'உங்கள் பங்கால் இவற்றைப் படிக்க முடியாது.',
   },
@@ -65,7 +68,8 @@ async function post(path, body) {
 }
 // Round B: head office names WHY the assistant did not run (`error.code`). No model pricing set for this shop is said as
 // that — not as "switched off or out of budget", which sent the reader to the wrong switch.
-const notRunWords = (out) => (out.body?.error?.code === 'no_pricing' ? t('noPricing') : t('stopped'));
+// OB-561: the plain reason first — the assistants are off until Release 8 — then head office's technical one.
+const notRunWords = (out) => `${t('offUntilR8')} ${out.body?.error?.code === 'no_pricing' ? t('noPricing') : t('stopped')}`;
 function say(el, out, good) {
   el.className = `status ${out.ok ? 'good' : 'err'}`;
   if (out.ok && out.body?.drafted === false) { el.className = 'status err'; el.textContent = `${t('notDrafted')} ${out.body.detail ?? ''}`; return; }
@@ -75,7 +79,7 @@ function say(el, out, good) {
 
 function paintWords() {
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title', 'title'], ['camp-h', 'campH'], ['camp-lede', 'campLede'], ['l-tpl-id', 'tplId'], ['l-tpl-channel', 'channel'], ['l-tpl-brief', 'brief'], ['o-email', 'email'], ['o-push', 'push'], ['ask-campaign', 'askCampaign'], ['anom-h', 'anomH'], ['anom-lede', 'anomLede'], ['ask-summary', 'askSummary']]) {
+  for (const [id, k] of [['title', 'title'], ['off-r8', 'offUntilR8'], ['camp-h', 'campH'], ['camp-lede', 'campLede'], ['l-tpl-id', 'tplId'], ['l-tpl-channel', 'channel'], ['l-tpl-brief', 'brief'], ['o-email', 'email'], ['o-push', 'push'], ['ask-campaign', 'askCampaign'], ['anom-h', 'anomH'], ['anom-lede', 'anomLede'], ['ask-summary', 'askSummary']]) {
     const el = $(id);
     if (el) el.textContent = t(k);
   }

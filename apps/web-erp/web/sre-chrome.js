@@ -41,6 +41,9 @@
       inList: '{n} in the list',
       workspaceWord: 'Workspace', branchWorkspace: 'Branch workspace', findScreen: 'Find a screen', noScreenMatches: 'No screen matches',
       storeAlarm: 'The store computer needs you',
+      storeCopy: 'These figures are the store computer\'s copy of head office\'s records, as head office last sent it at {at} ({age}). Anything changed at head office since then is not shown yet.',
+      storeCopyNone: 'Head office has not sent this store computer its records yet, so this page shows only what the store computer itself knows.',
+      ageJustNow: 'just now', ageMinutes: '{n} minute(s) old', ageHours: '{n} hour(s) old', ageDays: '{n} day(s) old',
     },
     ta: {
       staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -56,6 +59,9 @@
       inList: 'பட்டியலில் {n}',
       workspaceWord: 'பணியிடம்', branchWorkspace: 'கிளைப் பணியிடம்', findScreen: 'ஒரு திரையைத் தேடு', noScreenMatches: 'பொருந்தும் திரை இல்லை',
       storeAlarm: 'கடை கணினிக்கு உங்கள் கவனம் தேவை',
+      storeCopy: 'இந்த எண்கள் தலைமை அலுவலகப் பதிவுகளின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {at} அன்று அனுப்பியது ({age}). அதன் பிறகு தலைமை அலுவலகத்தில் மாறியவை இன்னும் காட்டப்படவில்லை.',
+      storeCopyNone: 'தலைமை அலுவலகம் தன் பதிவுகளை இந்தக் கடைக் கணினிக்கு இன்னும் அனுப்பவில்லை, எனவே இந்தப் பக்கம் கடைக் கணினிக்குத் தெரிந்ததை மட்டுமே காட்டுகிறது.',
+      ageJustNow: 'இப்போதுதான்', ageMinutes: '{n} நிமிடம் பழையது', ageHours: '{n} மணி நேரம் பழையது', ageDays: '{n} நாள் பழையது',
     },
   };
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -212,6 +218,22 @@
       strip.append(words);
     }
     setText(words, `${own ?? t('staleShell')} ${window.sreShopDay?.dateTimeOf(at) ?? ''}`); // OB-607: the shop's clock
+  }
+
+  // ── Round A (P-08): "the store computer's copy, as head office last sent it at …, N old" ──────────────────
+  // Only on a page that asks for it with a `#store-copy` element — a page whose figures come from head office's store
+  // setup on the box. The box injects `window.storeCopy` ({ shownAt, ageMinutes } in the shop's clock, or null when head
+  // office has sent nothing yet); a page opened off the box gets no injection and the line stays hidden.
+  function paintStoreCopy() {
+    const strip = byId('store-copy');
+    if (!strip || window.storeCopy === undefined) return;
+    const copy = window.storeCopy;
+    strip.hidden = false;
+    if (copy === null || typeof copy !== 'object') { setText(strip, t('storeCopyNone')); return; }
+    const n = Math.max(0, Math.floor(Number(copy.ageMinutes) || 0));
+    const age = n < 1 ? t('ageJustNow') : n < 60 ? t('ageMinutes').replace('{n}', String(n))
+      : n < 60 * 24 ? t('ageHours').replace('{n}', String(Math.floor(n / 60))) : t('ageDays').replace('{n}', String(Math.floor(n / (60 * 24))));
+    setText(strip, t('storeCopy').replace('{at}', String(copy.shownAt ?? '')).replace('{age}', age));
   }
 
   // ── The toggle says what you get ─────────────────────────────────────────────────────────────────
@@ -828,7 +850,7 @@
   let anatomyQueued = false;
   const scheduleAnatomy = () => { if (anatomyQueued) return; anatomyQueued = true; requestAnimationFrame(() => { anatomyQueued = false; paintAnatomy(); }); };
 
-  function repaint() { paintToggle(); paintStale(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
+  function repaint() { paintToggle(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();

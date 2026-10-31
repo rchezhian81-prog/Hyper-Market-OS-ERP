@@ -54,6 +54,8 @@ const WORDS = {
     pullNote: 'The shop carries on trading. Nothing on the till, the stock or the money depends on this.',
     lift: 'Start it again', liftReason: 'Why is it safe to start again', lifted: 'Started again', stopped: 'STOPPED', running: 'running', notEnabled: 'not switched on',
     masterOn: 'The shop-wide AI switch is ON: every assistant is stopped (the owner’s decision OB-296 — the assistants stay rule-based for now).',
+    // OB-561 (owner, 31 Oct 2026): live AI stays off until Release 8 (OB-382) — said plainly at the top of the page.
+    offUntilR8: 'Live AI — the assistants that write words or answer in free text — is off until Release 8; the owner decided this on 31 October 2026. The switches on this page govern only the rule-based assistants.',
     nothingStopped: 'Nothing is stopped. Every switched-on assistant is running.',
     stoppedBy: 'stopped by', pulledAt: 'at', instead: 'Without it',
     forbiddenTitle: 'What no assistant may ever do',
@@ -115,6 +117,7 @@ const WORDS = {
     pullNote: 'கடை வழக்கம்போல் நடக்கும். பில்லிங், இருப்பு, பணம் எதுவும் இதைச் சார்ந்தது அல்ல.',
     lift: 'மீண்டும் தொடங்கு', liftReason: 'மீண்டும் தொடங்குவது ஏன் பாதுகாப்பானது', lifted: 'மீண்டும் தொடங்கியது', stopped: 'நிறுத்தப்பட்டது', running: 'இயங்குகிறது', notEnabled: 'இயக்கப்படவில்லை',
     masterOn: 'கடை முழுவதற்குமான AI சுவிட்ச் ON: எல்லா உதவியாளர்களும் நிறுத்தப்பட்டுள்ளன (உரிமையாளரின் முடிவு OB-296 — இப்போதைக்கு உதவியாளர்கள் விதிகளின் அடிப்படையில் மட்டுமே).',
+    offUntilR8: 'நேரடி AI — வார்த்தைகளை எழுதும் அல்லது கட்டற்ற உரையில் பதிலளிக்கும் உதவியாளர்கள் — வெளியீடு 8 வரை அணைக்கப்பட்டுள்ளது; இது 31 அக்டோபர் 2026 அன்று உரிமையாளர் எடுத்த முடிவு. இந்தப் பக்கத்தின் சுவிட்சுகள் விதிகளின் அடிப்படையிலான உதவியாளர்களை மட்டுமே கட்டுப்படுத்துகின்றன.',
     nothingStopped: 'எதுவும் நிறுத்தப்படவில்லை. இயக்கப்பட்ட எல்லா உதவியாளர்களும் இயங்குகின்றன.',
     stoppedBy: 'நிறுத்தியவர்', pulledAt: 'நேரம்', instead: 'அது இல்லாமல்',
     forbiddenTitle: 'எந்த உதவியாளரும் ஒருபோதும் செய்யக்கூடாதவை',
@@ -747,7 +750,7 @@ function paintChrome() {
   el('whoami').textContent = viewer.userId ?? '';
   for (const v of VIEWS) label(el(`tab-${v}`), TAB_ICONS[v], t(v));
   for (const [id, key] of [
-    ['switch-title', 'switch'], ['switch-lead', 'switchLead'],
+    ['off-r8', 'offUntilR8'], ['switch-title', 'switch'], ['switch-lead', 'switchLead'],
     ['agents-title', 'agents'], ['agents-lead', 'agentsLead'],
     ['queue-title', 'queue'], ['queue-lead', 'queueLead'],
     ['cost-title', 'cost'], ['cost-lead', 'costLead'],

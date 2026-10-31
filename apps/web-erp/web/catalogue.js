@@ -61,6 +61,8 @@ const WORDS = {
     stillNeeded: 'Still needed', cannotScore: 'This item cannot be checked',
     onSale: 'On sale', notOnSale: 'Not on sale', recallBlocked: 'Stopped — recall',
     discontinued: 'Discontinued', draft: 'Not finished', noPrice: 'No price set',
+    priceNotRead: 'price: open the item to read it from head office', pricesReading: 'Reading the prices already set from head office…',
+    showPrice: 'Show the price', noBarcode: 'no barcode', cashierLead: 'Name, price and barcode of every item. Costs and suppliers are not shown on this screen.',
     whatYouCanDo: 'What you can do', putOnSale: 'Put this on sale',
     stopSelling: 'Stop selling this everywhere', allowSelling: 'Allow selling this again',
     recallNote: 'A recall block stops the till and the app at once, and keeps working with no internet.',
@@ -131,6 +133,8 @@ const WORDS = {
     stillNeeded: 'இன்னும் தேவை', cannotScore: 'இந்தப் பொருளைச் சரிபார்க்க முடியவில்லை',
     onSale: 'விற்பனையில்', notOnSale: 'விற்பனையில் இல்லை', recallBlocked: 'நிறுத்தப்பட்டது — ரீகால்',
     discontinued: 'நிறுத்தப்பட்டது', draft: 'முடிக்கப்படவில்லை', noPrice: 'விலை நிர்ணயிக்கப்படவில்லை',
+    priceNotRead: 'விலை: தலைமை அலுவலகத்திலிருந்து படிக்கப் பொருளைத் திறக்கவும்', pricesReading: 'ஏற்கனவே நிர்ணயித்த விலைகளைத் தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
+    showPrice: 'விலையைக் காட்டு', noBarcode: 'பார்கோடு இல்லை', cashierLead: 'ஒவ்வொரு பொருளின் பெயர், விலை, பார்கோடு. அடக்க விலையும் விநியோகஸ்தர்களும் இந்தத் திரையில் காட்டப்படாது.',
     whatYouCanDo: 'நீங்கள் என்ன செய்யலாம்', putOnSale: 'இதை விற்பனைக்கு வை',
     stopSelling: 'இதை எல்லா இடத்திலும் விற்பதை நிறுத்து', allowSelling: 'மீண்டும் விற்க அனுமதி',
     recallNote: 'ரீகால் தடை பில்லிங் இயந்திரத்தையும் செயலியையும் உடனே நிறுத்தும். இணையம் இல்லாமலும் வேலை செய்யும்.',
@@ -467,8 +471,60 @@ const SELLABLE_WORDS = {
 
 let openProduct = null;
 
+// OB-569: the cashier's view — name, price and barcode only (the store computer sent nothing else; nothing here edits).
+const cashierView = window.catalogueCashierView ?? null;
+
+function cashierRow(r) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.product = r.productId;
+  const what = document.createElement('span');
+  what.className = 'what';
+  const name = document.createElement('strong');
+  name.textContent = r.name;
+  const sub = document.createElement('small');
+  sub.className = 'barcodes';
+  sub.textContent = r.barcodes.length === 0 ? t('noBarcode') : r.barcodes.join(', ');
+  what.append(name, sub);
+  const price = document.createElement('span');
+  price.className = 'pct price';
+  if (r.priceState === 'loaded') price.textContent = inr(r.priceMinor);
+  else if (r.priceState === 'none') price.textContent = t('noPrice');
+  else if (r.priceState === 'loading') price.textContent = t('pricesReading');
+  else if (r.priceState === 'lost_link' || r.priceState === 'refused') price.textContent = r.why ?? t('priceNotRead');
+  row.append(what, price);
+  if (r.priceState !== 'loaded' && r.priceState !== 'none' && r.priceState !== 'loading') {
+    const show = document.createElement('button');
+    show.type = 'button';
+    show.className = 'show-price';
+    show.textContent = t('showPrice');
+    show.setAttribute('aria-label', `${t('showPrice')}: ${r.name}`);
+    show.addEventListener('click', () => { void cashierView.loadPrice(r.productId).then(() => { renderItems(); }); renderItems(); });
+    row.append(show);
+  }
+  return row;
+}
+
 function renderItems() {
   const query = el('item-search').value.trim().toLowerCase();
+  if (cashierView !== null) {
+    const rows = cashierView.rows(query);
+    if (rows.length === 0) {
+      const none = document.createElement('p');
+      none.className = 'empty';
+      none.textContent = t('noItems');
+      el('item-list').replaceChildren(none);
+    } else {
+      const lead = document.createElement('p');
+      lead.className = 'empty cashier-lead';
+      lead.textContent = t('cashierLead');
+      el('item-list').replaceChildren(lead, ...rows.map(cashierRow));
+    }
+    el('dupes-title').textContent = '';
+    el('dupes-lead').textContent = '';
+    el('dupes').replaceChildren();
+    return;
+  }
   const views = session.shelf().filter((v) =>
     query === ''
     || v.product.name.toLowerCase().includes(query)
@@ -527,7 +583,7 @@ function itemRow(view) {
   name.textContent = view.product.name === '' ? view.product.productId : view.product.name;
   const sub = document.createElement('small');
   sub.textContent = `${view.product.sku} · ${t(SELLABLE_WORDS[view.sellable] ?? 'notOnSale')}`
-    + ` · ${view.priceToday === null ? t('noPrice') : inr(view.priceToday.price.minor)}`;
+    + ` · ${priceWords(view)}`;
   what.append(name, sub);
 
   const pct = document.createElement('span');
@@ -559,8 +615,37 @@ function itemRow(view) {
   return row;
 }
 
+// ── Round A: the prices already set, read from head office item by item (the store computer's relay) ─────────────
+// The store setup never carries every price ever set; `window.cataloguePrices` reads one item's when it is opened. An item
+// not read yet is never shown as "no price set", and a read that failed says why for that item (P-08).
+const prices = window.cataloguePrices ?? null;
+function priceWords(view) {
+  const state = prices === null ? 'loaded' : prices.state(view.product.productId);
+  if (state === 'loaded' || state === 'none') return view.priceToday === null ? t('noPrice') : inr(view.priceToday.price.minor);
+  if (state === 'loading') return t('pricesReading');
+  if (state === 'not_loaded') return t('priceNotRead');
+  return prices.why(view.product.productId) ?? t('priceNotRead');
+}
+function readPrices(productId, again = false) {
+  if (prices === null) return;
+  const before = prices.state(productId);
+  // Read once; a failed read is asked again only when the person opens the item again (never in a loop).
+  if (!(before === 'not_loaded' || (again && (before === 'lost_link' || before === 'refused')))) return;
+  void prices.load(productId).then(() => {
+    renderItems();
+    if (!el('view-price').hidden && productIdOfPriceForm() === productId) { renderLimits(); renderHistory(productId); }
+    if (openProduct !== null && openProduct.productId === productId) renderItem();
+  });
+}
+function productIdOfPriceForm() {
+  const code = el('price-item').value.trim();
+  const found = session.shelf().find((v) => v.product.sku === code || v.product.productId === code);
+  return found === undefined ? code : found.product.productId;
+}
+
 /** OB-390: open "Change a price" holding this item — the code filled, the limits shown, the cursor in the price. */
 function openPriceFor(product) {
+  readPrices(product.productId, true);
   show('price');
   el('price-item').value = product.sku;
   el('new-price').value = '';
@@ -576,6 +661,7 @@ function openPriceFor(product) {
 // ── One item ────────────────────────────────────────────────────────────────
 
 function openItem(product) {
+  readPrices(product.productId, true);
   openProduct = product;
   show('item');
   renderItem();
@@ -703,6 +789,7 @@ function renderLimits() {
     return;
   }
   el('price-limits').hidden = false;
+  readPrices(view.product.productId); // Round A: an item typed into the form has its prices read too
 
   const mrp = (view.product.mrpHistory ?? [])
     .filter((m) => m.effectiveFrom <= today())
@@ -924,6 +1011,15 @@ el('save-price').addEventListener('click', () => {
 
 function renderHistory(productId) {
   el('history-title').textContent = t('historyTitle');
+  const state = prices === null ? 'loaded' : prices.state(productId);
+  if (state !== 'loaded' && state !== 'none') {
+    // Not read from head office (yet, or it could not be): say so — never "this item has never had a price set".
+    const note = document.createElement('p');
+    note.className = 'empty';
+    note.textContent = state === 'loading' || state === 'not_loaded' ? t('pricesReading') : (prices.why(productId) ?? t('pricesReading'));
+    el('price-history').replaceChildren(note);
+    return;
+  }
   const entries = session.historyFor(productId);
   if (entries.length === 0) {
     const none = document.createElement('p');

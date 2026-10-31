@@ -152,7 +152,7 @@ export type CopyKey =
 export const GST_RECON_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'GST reconciliation',
-    lead: 'Every e-invoice and e-way bill, and what it needs. The ones needing attention are first. Nothing here changes a document — a stuck one is chased up and a disagreement is investigated by a person.',
+    lead: 'Every e-invoice and e-way bill that still needs attention, whatever its month, and every one of this GST return month and the month before, with what it needs. Older settled documents are not shown here — the full register is at head office. The ones needing attention are first. Nothing here changes a document — a stuck one is chased up and a disagreement is investigated by a person.',
     langName: 'தமிழ்',
     colDocument: 'Document', colNumber: 'Number', colStatus: 'Status', colAction: 'What to do',
     docEInvoice: 'E-invoice', docEWayBill: 'E-way bill', noNumber: 'no number yet',
@@ -164,7 +164,7 @@ export const GST_RECON_COPY: BilingualCopy<CopyKey> = {
     actWait: 'Wait — it is still in progress',
     mayAct: 'You can do this', needsRole: 'Needs the GST-portal role',
     attentionCount: 'need attention', allClear: 'Everything is settled — nothing needs attention.',
-    stateReady: 'Showing the queue', stateEmpty: 'There are no documents in the queue yet.',
+    stateReady: 'Showing the queue', stateEmpty: 'No document needs attention, and none is recorded for this GST return month or the month before. The full register is at head office.',
     stateError: 'The queue could not be read.', stateNotPermitted: 'You do not have permission to see the GST reconciliation queue.',
     queuedPending: 'Requested — it will be sent to the portal when there is a connection.',
     queuedSent: 'Sent to the portal — the answer will appear when the queue next refreshes.',
@@ -176,7 +176,7 @@ export const GST_RECON_COPY: BilingualCopy<CopyKey> = {
   },
   ta: {
     title: 'GST சரிபார்ப்பு',
-    lead: 'ஒவ்வொரு மின்-விலைப்பட்டியல் மற்றும் மின்-வழிச்சீட்டு, அதற்கு என்ன தேவை என்பதும். கவனம் தேவைப்படுபவை முதலில். இங்கு எந்த ஆவணமும் மாற்றப்படாது — சிக்கியது பின்தொடரப்படும், முரண்பாடு ஒருவரால் விசாரிக்கப்படும்.',
+    lead: 'இன்னும் கவனம் தேவைப்படும் ஒவ்வொரு மின்-விலைப்பட்டியல் மற்றும் மின்-வழிச்சீட்டு, எந்த மாதமாக இருந்தாலும், மேலும் இந்த GST ரிட்டர்ன் மாதம் மற்றும் முந்தைய மாதத்தின் ஒவ்வொன்றும், அதற்கு என்ன தேவை என்பதுடன். பழைய தீர்க்கப்பட்ட ஆவணங்கள் இங்கு காட்டப்படாது — முழுப் பதிவேடு தலைமை அலுவலகத்தில் உள்ளது. கவனம் தேவைப்படுபவை முதலில். இங்கு எந்த ஆவணமும் மாற்றப்படாது — சிக்கியது பின்தொடரப்படும், முரண்பாடு ஒருவரால் விசாரிக்கப்படும்.',
     langName: 'English',
     colDocument: 'ஆவணம்', colNumber: 'எண்', colStatus: 'நிலை', colAction: 'என்ன செய்ய வேண்டும்',
     docEInvoice: 'மின்-விலைப்பட்டியல்', docEWayBill: 'மின்-வழிச்சீட்டு', noNumber: 'இன்னும் எண் இல்லை',
@@ -188,7 +188,7 @@ export const GST_RECON_COPY: BilingualCopy<CopyKey> = {
     actWait: 'காத்திருங்கள் — இன்னும் நடந்து கொண்டிருக்கிறது',
     mayAct: 'நீங்கள் இதைச் செய்யலாம்', needsRole: 'GST-போர்ட்டல் அனுமதி தேவை',
     attentionCount: 'கவனம் தேவை', allClear: 'அனைத்தும் தீர்க்கப்பட்டன — எதற்கும் கவனம் தேவையில்லை.',
-    stateReady: 'வரிசையைக் காட்டுகிறது', stateEmpty: 'வரிசையில் இன்னும் ஆவணங்கள் இல்லை.',
+    stateReady: 'வரிசையைக் காட்டுகிறது', stateEmpty: 'எந்த ஆவணத்துக்கும் கவனம் தேவையில்லை, இந்த GST ரிட்டர்ன் மாதம் அல்லது முந்தைய மாதத்துக்கு எதுவும் பதிவாகவில்லை. முழுப் பதிவேடு தலைமை அலுவலகத்தில் உள்ளது.',
     stateError: 'வரிசையைப் படிக்க முடியவில்லை.', stateNotPermitted: 'GST சரிபார்ப்பு வரிசையைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     queuedPending: 'கோரப்பட்டது — இணைப்பு கிடைக்கும்போது போர்ட்டலுக்கு அனுப்பப்படும்.',
     queuedSent: 'போர்ட்டலுக்கு அனுப்பப்பட்டது — வரிசை புதுப்பிக்கும்போது பதில் தோன்றும்.',

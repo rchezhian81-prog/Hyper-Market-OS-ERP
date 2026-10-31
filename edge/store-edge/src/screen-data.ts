@@ -597,13 +597,18 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
   else {
     const window = pack.expiryPolicy.value.nearExpiryDays;
     const rows = pack.batches.value.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
-    const dated = rows.map((r) => dateOf(r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'], zone)).filter((d): d is string => d !== null);
+    // Round A: head office's batches carry `expiry` (the batch register's own field, `packages/fefo` Batch).
+    const dated = rows.map((r) => dateOf(r['expiry'] ?? r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'], zone)).filter((d): d is string => d !== null);
     expiringSoon = rows.length > 0 && dated.length === 0
       ? { known: false, why: 'the batch records carry no expiry date' }
       : { known: true, value: dated.filter((d) => daysBetween(input.tradingDay, d) <= window).length, note: `within ${window} days, of ${rows.length} batches` };
   }
 
-  const recallsOpen: TodayFigure = pack.recalls.known ? { known: true, value: pack.recalls.value.length, note: 'recall notices on the box' } : notGiven('the recall notices');
+  // Round A: head office sends every recall it holds, closed and withdrawn ones too (kept, hard rule #6) — only an OPEN one
+  // (no closure, no withdrawal) is counted as open.
+  const recallsOpen: TodayFigure = pack.recalls.known
+    ? { known: true, value: pack.recalls.value.filter((r) => typeof r !== 'object' || r === null || ((r as Record<string, unknown>)['closure'] === undefined && (r as Record<string, unknown>)['withdrawal'] === undefined)).length, note: 'recall notices on the box' }
+    : notGiven('the recall notices');
 
   let checklistOpen: TodayFigure;
   if (!pack.checklist.known) checklistOpen = notGiven('the day\'s checklist');
@@ -1624,6 +1629,49 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
 }
 
 /**
+ * OB-569 (owner, 31 Oct 2026): the existing right that lets a person see a product's commercial side — what it cost us and
+ * who supplies it. `supplier.view` is the word the Suppliers page opens on; the owner, the store manager and the accountant
+ * hold it, the cashier does not. (Which existing word marks this is reported to the owner to confirm.)
+ */
+export const PRODUCT_COMMERCIAL_PERMISSION = 'supplier.view';
+
+/**
+ * The fields of a product record a person WITHOUT the commercial right is sent — what the cashier's view needs to show
+ * a product's NAME (and to key it to its barcodes and its price: the id). Nothing else: no code, unit, status, MRP,
+ * category, tax class, brand, maker, supplier, attributes or app content. An allow-list, so a commercial field added to
+ * the record later stays at the store computer. (Their barcodes ride in `barcodes`; the price is read from head office.)
+ */
+const NON_COMMERCIAL_PRODUCT_FIELDS: readonly string[] = Object.freeze(['productId', 'name']);
+
+/** OB-569: the marker on a trimmed Products payload — the page then shows name, price and barcode only. */
+export const NAME_PRICE_BARCODE = 'name_price_barcode';
+
+/** The catalogue payload keys a person without the commercial right is never sent: costs, the margin floor, approvers. */
+const COMMERCIAL_CATALOGUE_KEYS: readonly string[] = Object.freeze(['costsMinor', 'marginFloorBps', 'approvers']);
+
+/**
+ * OB-569: the Products page's payload as THIS viewer may see it — filtered here, at the store computer, before the page
+ * data leaves it (never in the browser). A viewer who holds `PRODUCT_COMMERCIAL_PERMISSION` gets it whole. Anyone else —
+ * the cashier, or a viewer whose rights this box does not know (`null`, fail-safe) — gets each product's name, price and
+ * barcode: the cost map, the margin floor and the approvers are removed, each product record keeps only
+ * `NON_COMMERCIAL_PRODUCT_FIELDS`, and the payload is marked `productFields: 'name_price_barcode'`.
+ */
+export function catalogueForViewer(payload: Record<string, unknown> | null, permissions: readonly string[] | null): Record<string, unknown> | null {
+  if (payload === null) return null;
+  if (permissions !== null && permissions.includes(PRODUCT_COMMERCIAL_PERMISSION)) return payload;
+  const out: Record<string, unknown> = { productFields: NAME_PRICE_BARCODE };
+  for (const [key, value] of Object.entries(payload)) {
+    if (COMMERCIAL_CATALOGUE_KEYS.includes(key)) continue;
+    out[key] = key === 'products' && Array.isArray(value)
+      ? value.map((p) => (isPlainRecord(p) ? Object.fromEntries(Object.entries(p).filter(([field]) => NON_COMMERCIAL_PRODUCT_FIELDS.includes(field))) : p))
+      : value;
+  }
+  return out;
+}
+
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
  * The merchandising payload (M04 · D02).
  *
  * `null` when this box has never been told the refill level or how long a count stays worth acting
@@ -1949,12 +1997,22 @@ export function expiryPayload(input: ScreenInput): Record<string, unknown> | nul
 
   if (input.pack.batches.known) payload['batches'] = input.pack.batches.value;
   if (input.pack.recalls.known) payload['recalls'] = input.pack.recalls.value;
+  // Round A: batches head office holds with no expiry on record — counted, so the list never reads as all of them (P-08).
+  if (input.pack.batchesWithoutExpiry?.known === true) payload['batchesWithoutExpiry'] = input.pack.batchesWithoutExpiry.value;
+  // Round A (P-08): when head office last sent this box its copy — the page says how old the list is.
+  if (input.pack.batches.known || input.pack.recalls.known) payload['copyReceivedAt'] = input.pack.receivedAt;
 
-  // The names, so a screen about food safety shows a person a product and not a code.
+  // The names, so a screen about food safety shows a person a product and not a code — and each product's unit (OB-31), so
+  // a batch's quantity (its smallest step: grams for a kg product) reads "2.500 kg", never "2500 units".
   if (input.pack.products.known) {
     const names: Record<string, string> = {};
-    for (const p of input.pack.products.value) names[p.productId] = p.name;
+    const units: Record<string, string> = {};
+    for (const p of input.pack.products.value) {
+      names[p.productId] = p.name;
+      if (typeof p.uom === 'string' && p.uom !== '') units[p.productId] = p.uom;
+    }
     payload['productNames'] = names;
+    payload['productUnits'] = units;
   }
 
   return payload;

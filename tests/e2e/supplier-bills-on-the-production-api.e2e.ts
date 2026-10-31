@@ -226,10 +226,21 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
     } finally { await s.close(); }
   }, 180_000);
 
-  it('an accountant (no capture right) is offered nothing and writes nothing; the page speaks Tamil', async () => {
+  it('an accountant (no capture right) is offered nothing and writes nothing — and, with the bill-matching right (OB-543/OB-547/OB-548), is not refused on open: the page says what the role does here and asks head office only what it may read; the page speaks Tamil', async () => {
     const s = await open(ACCT);
+    const reads: string[] = []; const refusals: string[] = [];
+    s.page.on('response', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/v1/')) { reads.push(`${r.request().method()} ${u.pathname}`); if (r.status() === 401 || r.status() === 403) refusals.push(`${r.status()} ${u.pathname}`); } });
     try {
-      await says(s.page, 'register-status', /^Your role cannot hand in or confirm supplier bills\. Head office refused: /);
+      await s.page.reload({ waitUntil: 'load' });
+      // Round 1 (screen audit B): the menu offers this page to the accountant for "Deliveries waiting for their bill"; the page
+      // no longer opens on head office refusing a capture read the role was never given.
+      await says(s.page, 'register-status', /^Your role matches supplier bills to deliveries/);
+      expect(await s.page.getAttribute('#register-status', 'class')).not.toContain('err');
+      await says(s.page, 'cnk-status', /\S/);
+      expect(await s.page.textContent('#cnk-status')).not.toMatch(/refused|needs the bill-checking right/);
+      expect(reads).toContain('GET /v1/inventory/receipts-cost-not-known');
+      expect(reads).not.toContain('GET /v1/purchase/invoice-documents');
+      expect(refusals).toEqual([]);
       expect(await s.page.locator('#hand-section').isHidden()).toBe(true);
       expect(await s.page.locator('#register li').count()).toBe(0);
       await s.page.click('#lang');
