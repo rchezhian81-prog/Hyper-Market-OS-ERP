@@ -2975,13 +2975,16 @@ export async function startEdge(
           if (zoneAfter.needsAttention && (!zoneBefore.needsAttention || zoneBefore.shopTimeZone !== zoneAfter.shopTimeZone)) say(`TIME ZONE: ${zoneAfter.staffMessage}`);
         },
         // PA-06-r1: the same setup signed again — keep the renewed envelope (version, issue, expiry); nothing is rebuilt.
-        renew: async (env) => {
+        renew: async (env, receivedAt) => {
           try {
             await writeHeldStorePack(settings['EDGE_DATA_DIR']!, env);
           } catch (e) {
             say(`the renewed store setup could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is in use now and will be pulled again next time.`);
           }
           heldStorePack = env;
+          // Round A (P-08): head office has just confirmed this copy is its current one, so the copy's age counts from now
+          // (the pages say "as head office last sent it at …") — a restart reads the renewed envelope's own issue time.
+          pack = { ...pack, receivedAt };
         },
       },
     });

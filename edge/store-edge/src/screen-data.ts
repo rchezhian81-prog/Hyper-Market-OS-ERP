@@ -597,13 +597,18 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
   else {
     const window = pack.expiryPolicy.value.nearExpiryDays;
     const rows = pack.batches.value.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
-    const dated = rows.map((r) => dateOf(r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'], zone)).filter((d): d is string => d !== null);
+    // Round A: head office's batches carry `expiry` (the batch register's own field, `packages/fefo` Batch).
+    const dated = rows.map((r) => dateOf(r['expiry'] ?? r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'], zone)).filter((d): d is string => d !== null);
     expiringSoon = rows.length > 0 && dated.length === 0
       ? { known: false, why: 'the batch records carry no expiry date' }
       : { known: true, value: dated.filter((d) => daysBetween(input.tradingDay, d) <= window).length, note: `within ${window} days, of ${rows.length} batches` };
   }
 
-  const recallsOpen: TodayFigure = pack.recalls.known ? { known: true, value: pack.recalls.value.length, note: 'recall notices on the box' } : notGiven('the recall notices');
+  // Round A: head office sends every recall it holds, closed and withdrawn ones too (kept, hard rule #6) — only an OPEN one
+  // (no closure, no withdrawal) is counted as open.
+  const recallsOpen: TodayFigure = pack.recalls.known
+    ? { known: true, value: pack.recalls.value.filter((r) => typeof r !== 'object' || r === null || ((r as Record<string, unknown>)['closure'] === undefined && (r as Record<string, unknown>)['withdrawal'] === undefined)).length, note: 'recall notices on the box' }
+    : notGiven('the recall notices');
 
   let checklistOpen: TodayFigure;
   if (!pack.checklist.known) checklistOpen = notGiven('the day\'s checklist');
@@ -1949,12 +1954,22 @@ export function expiryPayload(input: ScreenInput): Record<string, unknown> | nul
 
   if (input.pack.batches.known) payload['batches'] = input.pack.batches.value;
   if (input.pack.recalls.known) payload['recalls'] = input.pack.recalls.value;
+  // Round A: batches head office holds with no expiry on record — counted, so the list never reads as all of them (P-08).
+  if (input.pack.batchesWithoutExpiry?.known === true) payload['batchesWithoutExpiry'] = input.pack.batchesWithoutExpiry.value;
+  // Round A (P-08): when head office last sent this box its copy — the page says how old the list is.
+  if (input.pack.batches.known || input.pack.recalls.known) payload['copyReceivedAt'] = input.pack.receivedAt;
 
-  // The names, so a screen about food safety shows a person a product and not a code.
+  // The names, so a screen about food safety shows a person a product and not a code — and each product's unit (OB-31), so
+  // a batch's quantity (its smallest step: grams for a kg product) reads "2.500 kg", never "2500 units".
   if (input.pack.products.known) {
     const names: Record<string, string> = {};
-    for (const p of input.pack.products.value) names[p.productId] = p.name;
+    const units: Record<string, string> = {};
+    for (const p of input.pack.products.value) {
+      names[p.productId] = p.name;
+      if (typeof p.uom === 'string' && p.uom !== '') units[p.productId] = p.uom;
+    }
     payload['productNames'] = names;
+    payload['productUnits'] = units;
   }
 
   return payload;

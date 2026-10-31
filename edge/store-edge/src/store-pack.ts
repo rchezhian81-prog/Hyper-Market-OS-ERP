@@ -1302,6 +1302,11 @@ export interface StorePack {
   readonly batches: Register<readonly unknown[]>;
   /** Recalls already started, so one is never started twice and closure is auditable (M10-FR-04). */
   readonly recalls: Register<readonly unknown[]>;
+  /**
+   * Round A: how many of this store's batches on hand have NO expiry on record at head office — they cannot go on an expiry
+   * list, so the page counts them rather than leaving them out silently (P-08). Absent: none (or not told).
+   */
+  readonly batchesWithoutExpiry?: Register<number>;
   /** The near-expiry window and who is on the desk. Per-tenant. */
   readonly expiryPolicy: Register<PackExpiryPolicy>;
   /**
@@ -1592,6 +1597,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     suspensionPolicy: notKnown(why),
     batches: notKnown(why),
     recalls: notKnown(why),
+    batchesWithoutExpiry: notKnown(why),
     expiryPolicy: notKnown(why),
     tallyPostings: notKnown(why),
     financeLedger: notKnown(why),
@@ -1742,6 +1748,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     suspensionPolicy: section<SuspensionPolicy>('suspensionPolicy'),
     batches: section<readonly unknown[]>('batches'),
     recalls: section<readonly unknown[]>('recalls'),
+    batchesWithoutExpiry: section<number>('batchesWithoutExpiry'),
     expiryPolicy: section<PackExpiryPolicy>('expiryPolicy'),
     tallyPostings: section<readonly unknown[]>('tallyPostings'),
     financeLedger: section<unknown>('financeLedger'),

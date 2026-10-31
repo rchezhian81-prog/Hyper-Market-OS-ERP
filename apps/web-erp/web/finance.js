@@ -306,8 +306,13 @@ function renderTotals() {
 function stoppingNow(view) {
   const stopping = [];
   if (view.closed) {
-    const signed = view.signedBy === undefined ? '' : ` · ${t('signedBy')} ${view.signedBy}`;
-    stopping.push({ kind: 'already_closed', detail: `${t('closedBy')} ${view.closedBy ?? ''}${signed}` });
+    // Round A: head office's month carries who SIGNED it (and when), not always who pressed close — each part only when known.
+    const parts = [
+      ...(view.closedBy === undefined ? [] : [`${t('closedBy')} ${view.closedBy}`]),
+      ...(view.signedBy === undefined ? [] : [`${t('signedBy')} ${view.signedBy}`]),
+      ...(view.closedAt === undefined ? [] : [window.sreShopDay?.dateTimeOf?.(view.closedAt) ?? view.closedAt]),
+    ];
+    stopping.push({ kind: 'already_closed', detail: parts.join(' · ') });
   }
   if (view.totals === undefined || !view.allReconcile) {
     const differing = (view.totals ?? []).filter((t2) => !t2.reconciles);

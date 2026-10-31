@@ -23,6 +23,14 @@
 //   receiptNumbering
 //   buyingPolicy       ← the three-way-match policy head office applies (no buyer is named: the screen runs as the
 //                        signed-in person — PA-06 part 3b)
+//   categories /       ← Round A (screen gap audit 31 Oct 2026, round-a-pack-sections.ts): the category register and the
+//   productMaster        product master; the price entries are read through the store computer's relay, not the pack
+//   batches / recalls  ← this store's batches on hand with their expiry, and every recall head office holds
+//   periodState /      ← this month's close at head office and its daily Tally files (not the ledger side — see there)
+//   tallyPostings
+//   gstReconciliationQueue ← every e-invoice and e-way bill in the lifecycle, in the operator's queue categories
+//   reportingRecords   ← what the shop records, as head office's composition root declares it (the same list its own
+//                        report catalogue reads)
 // Not yet built here (DF-3-c): the practice warehouse delivery and bins, counts.
 
 import { DEFAULT_SHOP_CALENDAR, shopClock, shopDateIn, tradingMonthIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
@@ -54,6 +62,7 @@ import { packedProductIdsFor } from './r7b-receiving-adapters'; // B4 · OB-504
 import { dsdCheckInAdapter } from './r3-ops-adapters';
 import { rosterPackSection, certificationsPackSection } from './r7d-workforce-adapters'; // Round 7 · OB-507 · OB-502
 import { wasteWriteOffsSectionFor, categoryPolicySectionFor } from './r2-screen-feeds'; // screen gap audit Round A
+import { catalogueMasterSections, expirySections, financeSections, gstReconciliationQueueSection } from './round-a-pack-sections'; // Round A
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -102,6 +111,12 @@ export interface StorePackBuildInput {
   readonly tillControls?: (tenantId: string, storeId: string) => Promise<unknown>;
   /** OB-501 (R7-A): head office's app version policy (minimum supported, withdrawn builds). Sent only when one is set. */
   readonly versionPolicy?: (tenantId: string) => Promise<unknown>;
+  /**
+   * Round A (screen gap audit, 31 Oct 2026): what the shop records — the SAME list head office's own report catalogue
+   * reads (services/api/src/main.ts `REPORTING_RECORDS`), so the store's Reports page and head office's agree on which
+   * reports can run (P-02). Absent → the section is left out and the page says it was not told (never an empty list).
+   */
+  readonly reportingRecords?: readonly string[];
 }
 
 /**
@@ -193,8 +208,9 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
 
   // ── products: what head office published, its category, the ledger at this store ───────────────────────────────
   const published = await catalogueAdapter({ store, now, signer: input.signer }).currentPack(tenantId);
+  const masterRecords = await productMasterAdapter({ store, now }).products(tenantId);
   if (published !== undefined) {
-    const master = new Map((await productMasterAdapter({ store, now }).products(tenantId)).map((p) => [p.productId, p] as const));
+    const master = new Map(masterRecords.map((p) => [p.productId, p] as const));
     const onHand = new Map<string, number>();
     for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
       // the store's stock: on its floor and in its back store (every place the store holds)
@@ -277,11 +293,17 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     sections['managerPolicy'] = { approvalLimitMinor: rules.approvalLimitMinor };
     sections['pricingPolicy'] = { approvers: approversOf('price.change.approve'), marginFloorBps: rules.marginFloorBps };
     sections['reportingPolicy'] = { laggingAfterMinutes: rules.reporting.laggingAfterMinutes, staleAfterMinutes: rules.reporting.staleAfterMinutes };
-    sections['reportingRecords'] = [];
+    // Round A: what the shop records, from the composition root's one declaration — left out when not wired (not told).
+    if (input.reportingRecords !== undefined) sections['reportingRecords'] = [...input.reportingRecords];
     sections['expiryPolicy'] = { nearExpiryDays: rules.nearExpiryDays };
     sections['servicePolicy'] = { ...rules.service };
     if (settings !== undefined) {
-      sections['financePolicy'] = { period: tradingMonthIn(now(), packCalendar), tradingDayCutoff: settings.tradingDayCutoff, journalPrefixes: { ...rules.journalPrefixes } };
+      const period = tradingMonthIn(now(), packCalendar);
+      sections['financePolicy'] = { period, tradingDayCutoff: settings.tradingDayCutoff, journalPrefixes: { ...rules.journalPrefixes } };
+      // Round A: the month's state at head office and its daily Tally files — the ledger side is not sent (round-a-pack-sections).
+      const month = await financeSections({ store, now }, tenantId, period);
+      sections['periodState'] = month.periodState;
+      sections['tallyPostings'] = month.tallyPostings;
     }
     sections['adminPolicy'] = { dormantAfterDays: rules.dormantAfterDays, permissions: [] };
     sections['aiPolicy'] = { staleAfterMinutes: rules.aiStaleAfterMinutes, period: tradingMonthIn(now(), packCalendar) };
@@ -480,5 +502,19 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // says — never "all clear"); a box on an older pack still says it was not told.
   sections['wasteWriteOffs'] = await wasteWriteOffsSectionFor(store, now, tenantId, storeId, branchOf);
   sections['categoryPolicyCategories'] = await categoryPolicySectionFor(store, now, tenantId);
+
+  // ── Round A (screen gap audit, 31 Oct 2026): the office pages head office never fed (round-a-pack-sections.ts) ─────
+  // Products and pricing: the category register and the whole product master (one stream, already read above).
+  const masterSections = await catalogueMasterSections({ store, now }, tenantId, masterRecords);
+  sections['categories'] = masterSections.categories;
+  sections['productMaster'] = masterSections.productMaster;
+  // Expiry and recalls: this store's batches (floor and back store) with their expiry, and every recall.
+  const uomOf = new Map(masterRecords.map((p) => [p.productId, p.baseUom] as const));
+  const expiry = await expirySections({ store, now }, tenantId, (locationId) => branchOf(locationId) === storeId, (productId) => uomOf.get(productId));
+  sections['batches'] = expiry.batches;
+  sections['recalls'] = expiry.recalls;
+  if (expiry.batchesWithoutExpiry > 0) sections['batchesWithoutExpiry'] = expiry.batchesWithoutExpiry;
+  // GST reconciliation: the e-invoice and e-way bill queue.
+  sections['gstReconciliationQueue'] = await gstReconciliationQueueSection({ store, now }, tenantId);
   return sections;
 }

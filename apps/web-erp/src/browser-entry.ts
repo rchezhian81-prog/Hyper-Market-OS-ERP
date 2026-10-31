@@ -632,6 +632,10 @@ export interface ExpiryData {
   readonly batches?: readonly Batch[];
   readonly recalls?: readonly RecallRecord[];
   readonly productNames?: Readonly<Record<string, string>>;
+  /** Round A (OB-31): each product's unit, so a batch's smallest-step count reads in kg or L. */
+  readonly productUnits?: Readonly<Record<string, string>>;
+  /** Round A (P-08): batches head office holds with no expiry on record — counted on the page, never dropped silently. */
+  readonly batchesWithoutExpiry?: number;
 }
 
 export function expiryPortsFromData(
@@ -687,7 +691,8 @@ export interface FinanceData {
   /** What the shop's own record says it took. **Absent means nothing to compare against.** */
   readonly ledger?: LedgerSide;
   readonly postings?: readonly QueuedPosting[];
-  readonly periodState?: { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string };
+  /** Round A: head office's word on the month — closed or not, and who SIGNED it and when (its period lifecycle). */
+  readonly periodState?: { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string; readonly signedBy?: string };
   readonly unsentSyncCount?: number;
   readonly openExceptionCount?: number;
 }
@@ -5180,6 +5185,8 @@ interface ManagerWindow {
   catalogueSession?: CatalogueSession;
   catalogueData?: CatalogueData;
   catalogueGaps?: readonly CatalogueGap[];
+  /** Round A: the prices already set, read from head office item by item (absent when the box sent them). */
+  cataloguePrices?: CataloguePriceRelay;
   catalogueOutbox?: SyncOutbox;
   merchandisingSession?: MerchandisingSession;
   merchandisingData?: MerchandisingData;
@@ -6016,18 +6023,86 @@ export const CATALOGUE_GAPS = Object.freeze([
 export type CatalogueGap = (typeof CATALOGUE_GAPS)[number];
 
 /** Everything the product-and-pricing screen was not given. Empty means it was told all of it. */
-export function catalogueGaps(data: CatalogueData | undefined): readonly CatalogueGap[] {
+export function catalogueGaps(data: CatalogueData | undefined, pricesRelayed = false): readonly CatalogueGap[] {
   const gaps: CatalogueGap[] = [];
   if (data?.products === undefined) gaps.push('what_the_shop_sells');
   if (data?.categories === undefined) gaps.push('what_each_department_needs');
   if (data?.costsMinor === undefined) gaps.push('what_things_cost');
-  if (data?.priceEntries === undefined) gaps.push('the_prices_already_set');
+  // Round A: with the price relay the prices already set are read from head office item by item, and each item says when
+  // they could not be read — not a gap of the whole page.
+  if (data?.priceEntries === undefined && !pricesRelayed) gaps.push('the_prices_already_set');
   if (data?.barcodes === undefined) gaps.push('which_barcodes_are_taken');
   if (data?.shelfLocations === undefined) gaps.push('where_things_sit_on_the_shelves');
   // Only worth saying once the shop HAS shelves. Asking a shop with no shelf map which zones it
   // collects last is asking about a walk that does not exist yet.
   else if (data.zoneOrder === undefined) gaps.push('which_zones_to_collect_last');
   return gaps;
+}
+
+/** Where one item's prices stand on the page: not asked yet, being read, read (or none set), or not readable and why. */
+export type CataloguePriceState = 'not_loaded' | 'loading' | 'loaded' | 'none' | 'lost_link' | 'refused';
+
+/**
+ * Round A (screen gap audit, 31 Oct 2026): the prices already set, read from head office ITEM BY ITEM through the store
+ * computer's relay (`GET /v1/prices/list/:productId/history`, in the person's own head-office session) — never carried in
+ * the store pack, because each product keeps its own price stream and the full history is the largest thing the shop
+ * keeps. Read only: nothing is changed by reading. A dropped link or a refusal is said for that item (P-08), and an item
+ * that was never read is never shown as "no price set".
+ */
+export interface CataloguePriceRelay {
+  state(productId: string): CataloguePriceState;
+  /** Head office's own words when it refused, or the lost-link words — for the item the page is showing. */
+  why(productId: string): string | undefined;
+  /** Read this item's prices (once; a failed read may be asked again). Resolves with where it stands. */
+  load(productId: string): Promise<CataloguePriceState>;
+  /** Every price entry read so far, for the session's price port. */
+  entries(): readonly PriceEntry[];
+}
+
+export function openCataloguePriceRelay(fetchFn: typeof fetch | undefined = (globalThis as { fetch?: typeof fetch }).fetch): CataloguePriceRelay {
+  const state = new Map<string, CataloguePriceState>();
+  const reasons = new Map<string, string>();
+  const read = new Map<string, readonly PriceEntry[]>();
+  const pending = new Map<string, Promise<CataloguePriceState>>();
+  const settle = (productId: string, to: CataloguePriceState, why?: string): CataloguePriceState => {
+    state.set(productId, to);
+    if (why === undefined) reasons.delete(productId); else reasons.set(productId, why);
+    return to;
+  };
+  const lostLink = 'Head office cannot be reached from this store computer just now, so the prices already set for this item are not shown. Nothing was changed.';
+  return {
+    state: (productId) => state.get(productId) ?? 'not_loaded',
+    why: (productId) => reasons.get(productId),
+    entries: () => [...read.values()].flat(),
+    load: (productId) => {
+      const now = state.get(productId);
+      if (now === 'loaded' || now === 'none') return Promise.resolve(now);
+      const inFlight = pending.get(productId);
+      if (inFlight !== undefined) return inFlight;
+      state.set(productId, 'loading');
+      const run = (async (): Promise<CataloguePriceState> => {
+        if (fetchFn === undefined) return settle(productId, 'lost_link', lostLink);
+        try {
+          const res = await fetchFn(`/v1/prices/list/${encodeURIComponent(productId)}/history`, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+          if (res.status === 404) { read.set(productId, []); return settle(productId, 'none'); }
+          if (res.status >= 200 && res.status < 300) {
+            const body = (await res.json().catch(() => ({}))) as { entries?: unknown };
+            const entries = Array.isArray(body.entries) ? (body.entries as PriceEntry[]).filter((e) => e !== null && typeof e === 'object' && e.productId === productId) : [];
+            read.set(productId, entries);
+            return settle(productId, entries.length === 0 ? 'none' : 'loaded');
+          }
+          const refusal = await refusalOf(res);
+          return settle(productId, 'refused', refusal.whatHappened === '' ? 'Head office did not show the prices already set for this item.' : refusal.whatHappened);
+        } catch {
+          return settle(productId, 'lost_link', lostLink);
+        } finally {
+          pending.delete(productId);
+        }
+      })();
+      pending.set(productId, run);
+      return run;
+    },
+  };
 }
 
 /**
@@ -6183,7 +6258,7 @@ export type CatalogueApprovalPorts = HeadOfficeApprovalPorts;
 /** The live engine: the same POST and GET the import screen, the Approvals page and the finance screen use. */
 export const CATALOGUE_APPROVALS: CatalogueApprovalPorts = HEAD_OFFICE_APPROVALS;
 
-export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts, definePromotion?: PromotionDefinitionPort): CataloguePorts {
+export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts, definePromotion?: PromotionDefinitionPort, priceRelay?: CataloguePriceRelay): CataloguePorts {
   const costOf = (productId: string): CostRegister => {
     const minor = data?.costsMinor?.[productId];
     if (minor === undefined) {
@@ -6215,7 +6290,8 @@ export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?:
   return {
     categories: () => data?.categories ?? [],
     products: () => data?.products ?? [],
-    priceEntries: () => data?.priceEntries ?? [],
+    // Round A: what the box was given, else what the relay has read from head office so far (item by item).
+    priceEntries: () => data?.priceEntries ?? priceRelay?.entries() ?? [],
     costOf,
     barcodesInUse: () => data?.barcodes ?? [],
     promotions: () => data?.promotions ?? [],
@@ -6262,7 +6338,7 @@ export function openMrpReplacePort(): MrpReplacePort {
 /** Build the product-and-pricing session, or `null` when this box was told nothing about it. The outbox, when
  *  given, is the durable queue the Save button commits a publish to; `approvals` is head office's maker-checker
  *  engine — without it nothing that needs a second person can be saved from this screen. */
-export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts, definePromotion?: PromotionDefinitionPort): CatalogueSession | null {
+export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts, definePromotion?: PromotionDefinitionPort, priceRelay?: CataloguePriceRelay): CatalogueSession | null {
   if (data === undefined) return null;
   return createCatalogueSession(
     {
@@ -6277,7 +6353,7 @@ export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutb
       // OB-610: an offer's days are whole days in the shop's zone — the one the store computer served this page.
       timeZone: servedShopZone(),
     },
-    cataloguePortsFromData(data, outbox, launchPromotion, changePrice, approvals, definePromotion),
+    cataloguePortsFromData(data, outbox, launchPromotion, changePrice, approvals, definePromotion, priceRelay),
   );
 }
 
@@ -6537,10 +6613,13 @@ if (browserWindow !== undefined) {
   // (M05-FR-02) are online governed actions that POST to head office on an explicit click — the cloud re-runs
   // the guard (re-simulate / re-check the MRP+cost+floor). One that needs a second person is ASKED for on head
   // office's approval engine and sent naming the approval (ADR-0024) — never a typed approver.
-  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort(), CATALOGUE_APPROVALS, openPromotionDefinitionPort());
+  // Round A: a box that sent no prices (head office's store setup never carries them) has them read item by item.
+  const priceRelay = browserWindow.catalogueData !== undefined && browserWindow.catalogueData.priceEntries === undefined ? openCataloguePriceRelay() : undefined;
+  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort(), CATALOGUE_APPROVALS, openPromotionDefinitionPort(), priceRelay);
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
-    browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
+    browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData, priceRelay !== undefined);
+    if (priceRelay !== undefined) browserWindow.cataloguePrices = priceRelay;
     browserWindow.catalogueOutbox = catalogueOutbox;
   }
   // The merchandising screen (SP-8c-ii · F08 · §31): its count and its refill indent go onto the SAME durable device queue

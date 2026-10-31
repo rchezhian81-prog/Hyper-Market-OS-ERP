@@ -78,7 +78,7 @@ export interface FinancePorts {
   /** Every posting for the period, in whatever state it reached. */
   postings(): readonly QueuedPosting[];
   /** Whether this period is already closed, and by whom. */
-  periodState(): { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string };
+  periodState(): { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string; readonly signedBy?: string };
   /** Sales the cloud has not received. Any at all blocks the close. */
   unsentSyncCount(): number;
   /** Differences nobody has explained yet. */
