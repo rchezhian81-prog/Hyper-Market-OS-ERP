@@ -27,6 +27,8 @@ const WORDS = {
     drafted: 'The assistant drafted a reply — read it, then approve, edit or reject it.', notDrafted: 'The assistant did not draft a reply:',
     stopped: 'The assistant is switched off or out of budget — write the reply yourself.',
     noPricing: 'The assistant cannot run: no model pricing is set for this shop yet — write the reply yourself.',
+    // OB-561 (owner, 31 Oct 2026): live AI stays off until Release 8 (OB-382) — the plain reason, before any technical one.
+    offUntilR8: 'The assistants are off until Release 8 — the owner decided this on 31 October 2026. No reply is drafted by an assistant yet; write the reply yourself.',
     draftBy: 'Drafted by the assistant from', records: 'record(s)', notDecided: 'Waiting for a person to decide.',
     approve: 'Approve', editApprove: 'Edit and approve', reject: 'Reject', editLabel: 'Your words (edit before approving)',
     approvedBy: 'Approved by', rejectedBy: 'Rejected by', send: 'Send it', channel: 'How you reached the customer',
@@ -55,6 +57,7 @@ const WORDS = {
     drafted: 'உதவியாளர் ஒரு பதிலை வரைந்துள்ளார் — படித்து, ஒப்புதல், திருத்தம் அல்லது நிராகரிப்பு செய்யுங்கள்.', notDrafted: 'உதவியாளர் பதில் வரையவில்லை:',
     stopped: 'உதவியாளர் நிறுத்தப்பட்டுள்ளார் அல்லது செலவு வரம்பு தீர்ந்தது — பதிலை நீங்களே எழுதுங்கள்.',
     noPricing: 'உதவியாளரை இயக்க முடியாது: இந்தக் கடைக்கு மாதிரி விலை (model pricing) இன்னும் அமைக்கப்படவில்லை — பதிலை நீங்களே எழுதுங்கள்.',
+    offUntilR8: 'உதவியாளர்கள் வெளியீடு 8 வரை அணைக்கப்பட்டுள்ளனர் — இது 31 அக்டோபர் 2026 அன்று உரிமையாளர் எடுத்த முடிவு. இப்போது எந்தப் பதிலையும் உதவியாளர் வரைவதில்லை; பதிலை நீங்களே எழுதுங்கள்.',
     draftBy: 'உதவியாளர் வரைந்தது — ஆதாரம்', records: 'பதிவு(கள்)', notDecided: 'ஒருவர் முடிவு செய்யக் காத்திருக்கிறது.',
     approve: 'ஒப்புதல்', editApprove: 'திருத்தி ஒப்புதல்', reject: 'நிராகரி', editLabel: 'உங்கள் வார்த்தைகள் (ஒப்புதலுக்கு முன் திருத்துங்கள்)',
     approvedBy: 'ஒப்புதல் அளித்தவர்', rejectedBy: 'நிராகரித்தவர்', send: 'அனுப்பு', channel: 'வாடிக்கையாளரை எப்படித் தொடர்பு கொண்டீர்கள்',
@@ -110,7 +113,7 @@ const say = (el, outcome, good) => {
 
 function paintWords() {
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title', 'title'], ['cases-h', 'casesH'], ['cases-lede', 'casesLede'], ['th-case', 'case'], ['th-kind', 'kind'], ['th-priority', 'priority'], ['th-state', 'state'], ['th-first', 'first'], ['th-resolution', 'resolution'],
+  for (const [id, k] of [['title', 'title'], ['off-r8', 'offUntilR8'], ['cases-h', 'casesH'], ['cases-lede', 'casesLede'], ['th-case', 'case'], ['th-kind', 'kind'], ['th-priority', 'priority'], ['th-state', 'state'], ['th-first', 'first'], ['th-resolution', 'resolution'],
     ['open-h', 'openH'], ['l-new-id', 'caseNo'], ['l-new-kind', 'kind'], ['l-new-priority', 'priority'], ['l-new-customer', 'customer'], ['l-new-order', 'order'], ['l-new-channel', 'reachedBy'], ['o-ch-none', 'notSaid'], ['o-ch-phone', 'phone'], ['o-ch-in_person', 'in_person'], ['o-ch-email', 'email'], ['l-new-summary', 'said'], ['open-case', 'openCase'],
     ['o-complaint', 'complaint'], ['o-enquiry', 'enquiry'], ['o-warranty', 'warranty'], ['o-lost_and_found', 'lost_and_found'], ['o-low', 'low'], ['o-normal', 'normal'], ['o-high', 'high'], ['o-urgent', 'urgent'],
     ['l-first-clock', 'firstClock'], ['l-resolution-clock', 'resolutionClock'], ['drafts-h', 'draftsH'], ['drafts-lede', 'draftsLede'], ['l-ask-note', 'askNote'], ['ask-draft', 'askDraft'],
@@ -301,7 +304,8 @@ $('ask-draft').addEventListener('click', async () => {
   if (out.ok && out.body?.drafted === true) say(el, out, t('drafted'));
   else if (out.ok) { el.className = 'status err'; el.textContent = `${t('notDrafted')} ${out.body?.detail ?? ''}`; }
   // Round B: no model pricing set for this shop is said as that, not as "switched off or out of budget".
-  else if (out.status === 503 || out.status === 429) { el.className = 'status err'; el.textContent = out.body?.error?.code === 'no_pricing' ? t('noPricing') : t('stopped'); }
+  // OB-561: the plain reason first — the assistants are off until Release 8 — then head office's technical one.
+  else if (out.status === 503 || out.status === 429) { el.className = 'status err'; el.textContent = `${t('offUntilR8')} ${out.body?.error?.code === 'no_pricing' ? t('noPricing') : t('stopped')}`; }
   else say(el, out);
   await pick(picked.caseId);
 });
