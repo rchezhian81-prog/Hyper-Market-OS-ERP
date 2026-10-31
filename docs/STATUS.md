@@ -17,6 +17,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Branch protection:** switched on for `main` by the owner (31 Oct 2026).
 - **Blocked:** nothing. **Owner decisions needed:** none.
 
+## Gap audit and SEC-1 (31 October 2026): which screens really work, and a permission hole closed
+
+**Why:** the owner said many modules do not really work. Four checkers opened every menu page, as the right roles, against a seeded demo copy (synthetic data only), and recorded for each one: works, empty, sample, broken, blocked by role, or dead end.
+
+**What the audit found (about 160 pages and screens)**
+- **Works:** roughly half. Till selling, refunds, hold and recall, price kiosk, concessions, store tasks, GST returns, ITC review, risk, quality gates and more do their job end to end.
+- **Empty forever:** Finance, Reports, GST reconciliation and the Company report. Head office never sends these pages their data in the store setup (`services/api/src/store-pack-builder.ts`). Products, Pricing and Expiry are empty for the same reason.
+- **Dead ends:** pages whose first step needs a setup screen that does not exist. Examples: posting map and Tally ledger names (Day book, Tally files, Month-end), staff list and roster (Rota, Certificates, Appointment letters), facilities and food-safety schedules, and promotion, rebate and recipe editors.
+- **Broken:** kg and litre quantities are 1000 times off on buying and requisitions; the demo's rice and oil cannot be sold correctly; the queue till and B2B portal cannot be reached on the demo; Export gives no file.
+- **Security (fixed now, SEC-1):** on the hosted copy a cashier, or the supplier login, could open the owner, manager and Admin pages and see takings and margin.
+- **Owner deadlock:** three requests only the owner may approve can never be approved when the owner raises them. The owner chose a second approver (OB-613); the person is still to be named.
+- Full results: `docs/audit/SCREEN-GAP-AUDIT-2026-10-31.md` (all four lanes combined, four proposed fix rounds A–D, seven owner decisions).
+
+**SEC-1 (this pull request)**
+- `edge/store-edge/src/screen-server.ts`: behind the sign-in front, every screen except the till and the two customer-facing lanes now checks the signed-in person's own permissions. A person who may not open it gets the "may not open this screen" page with no figures, and a list of the pages they can open. A request that names nobody is refused.
+- New test: `tests/integration/sec1-the-front-forwarded-person-opens-only-their-screens.test.ts` (5 tests; 4 fail with the fix removed).
+- Tests that had leaned on the hole now give each person the right role; none was weakened.
+
+**What is next:** the owner sees the combined gap list and picks the order of the fix rounds; the owner names the OB-613 second approver.
+
+**Blocked:** nothing. **Owner decisions needed:** OB-613 (who is the second approver); the order of the fix rounds.
+
+---
 ## Fresh full roadmap re-audit (30 October 2026): 310 done, 31 half done, nothing missing
 - **What changed:** a read-only check of every roadmap row at main `5c84f4c7` (`docs/audit/REAUDIT-2026-10-30.md`, lane tables in `docs/audit/reaudit-2026-10-30/`). Of 390 distinct rows: 310 done, 31 partial, 0 missing, 0 decision, 43 external, 6 deferred to R8 in writing.
   - Most of the 31 partial rows are working, tested functions that no screen reaches, so a person cannot use them without a programmer.

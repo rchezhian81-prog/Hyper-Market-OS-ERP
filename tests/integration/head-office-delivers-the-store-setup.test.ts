@@ -360,8 +360,11 @@ describe('PA-06 — head office delivers each store its setup', () => {
     const asManager = await payloadOf('counts', 'u-mgr');
     expect(asManager).toMatchObject({ userId: 'u-mgr' });
     expect(asManager!['permissions']).toEqual(expect.arrayContaining(['count.view']));
-    // Someone head office never granted at this store: their own empty permissions — nothing borrowed from anyone.
-    expect((await payloadOf('counts', 'u-box2'))!['permissions']).toEqual([]);
+    // Someone head office never granted at this store holds nothing here — nothing borrowed from anyone — so (SEC-1 · P-04)
+    // the box refuses them the screen outright, with the refusal page and none of its figures.
+    const stranger = await savedFetch(`${base}/counts`, { headers: { 'x-sre-user': 'u-box2' } });
+    expect(stranger.status).toBe(403);
+    expect(await stranger.text()).not.toContain(`window.${GLOBAL_FOR.counts} =`);
   });
 
   // ── DF-3-b-2: the work waiting at the store, and what the store computer holds ───────────────────────────────────

@@ -1017,7 +1017,16 @@ describe('the box plans the driver’s route itself (M19-FR-03)', () => {
 describe('the buyer’s screen is fed, and fed only what the box actually knows', () => {
   // PA-06 part 3b: the buyer is the person who SIGNED IN (the relay's X-Sre-User), never the pack's named person — so the
   // screen is served signed in, as u-buyer, unless a case says otherwise.
-  const serveSignedIn = (snap: () => ScreenInput): Promise<string> => serve(snap, true);
+  // SEC-1 (P-04): behind the front the box holds the signed-in person to the screen's own permission, as the PIN path does —
+  // so the buyer and the manager here hold the buying screen's word (and the manager the Today screen's) in the box's register.
+  const withBuyers = (snap: () => ScreenInput): (() => ScreenInput) => () => {
+    const s = snap();
+    return { ...s, pack: { ...s.pack,
+      roles: known([{ id: 'buyer', name: 'Buyer', permissions: ['purchase.commitment.read'] }, { id: 'mgr', name: 'Manager', permissions: ['purchase.commitment.read', 'till.dayclose.read'] }]),
+      roleAssignments: known([{ userId: 'u-buyer', roleId: 'buyer', branchScope: 'all' }, { userId: 'u-manager', roleId: 'mgr', branchScope: 'all' }]),
+    } };
+  };
+  const serveSignedIn = (snap: () => ScreenInput): Promise<string> => serve(withBuyers(snap), true);
   const buyingAs = (base: string, userId = 'u-buyer'): Promise<Record<string, unknown> | null> => payloadFromScreen(base, 'buying', { 'x-sre-user': userId });
 
   it('PA-06 part 3b: the buyer is whoever signed in — with nobody signed in, nobody is named and nothing can be saved', async () => {
@@ -1028,7 +1037,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(buyingGaps(nobody as never)[0]).toBe('who_is_buying');
     expect(bootBuying(nobody as never)).toBeNull(); // no session: nothing is saved under a stand-in name
     // the manager signs in on the buying screen: the manager is the buyer, and not one of their own approvers
-    const signedIn = await serve(snapshotOf(), true);
+    const signedIn = await serveSignedIn(snapshotOf());
     const manager = (await buyingAs(signedIn, 'u-manager'))!;
     expect(manager['buyerId']).toBe('u-manager');
     expect(manager['approvers']).toEqual(['u-buyer']);
@@ -1054,11 +1063,11 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     // Both screens live in `apps/web-erp/web` and share one bundle. A bare `/buying` that resolved
     // to `index.html` would put a day close in front of somebody who came to capture an invoice.
     const base = await serveSignedIn(snapshotOf());
-    const html = await (await fetch(`${base}/buying`)).text();
+    const html = await (await fetch(`${base}/buying`, { headers: { 'x-sre-user': 'u-buyer' } })).text();
     expect(html).toContain('id="declared-total"');
     expect(html, 'the manager’s screen was served to the buyer').not.toContain('id="close-title"');
     // …and the manager's own page is still the manager's.
-    const manager = await (await fetch(`${base}/manager`)).text();
+    const manager = await (await fetch(`${base}/manager`, { headers: { 'x-sre-user': 'u-manager' } })).text();
     expect(manager).toContain('id="close-title"');
   });
 
@@ -2872,12 +2881,17 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     const payload = await payloadFromScreen(base, 'counts', { 'x-sre-user': 'u-owner' });
     expect(payload!['userId']).toBe('u-owner');
     expect(payload!['permissions']).toEqual(['count.view']);
-    // a signed-in person the register does not know: their own empty rail, no permissions — nothing guessed
-    expect(await menuFromScreen(base, '/counts/', { 'x-sre-user': 'u-nobody' })).toMatchObject({ userId: 'u-nobody', person: null, why: null, groups: [] });
-    expect((await payloadFromScreen(base, 'counts', { 'x-sre-user': 'u-nobody' }))!['permissions']).toEqual([]);
-    // an odd header names nobody: the pack's named person stands
-    expect((await menuFromScreen(base, '/counts/', { 'x-sre-user': 'u-owner, u-mgr' }))!['userId']).toBe('u-mgr');
-    expect((await menuFromScreen(base, '/counts/'))!['userId']).toBe('u-mgr');
+    // SEC-1 (P-04): a signed-in person the register does not know holds nothing, so the screen is refused — 403, the box's
+    // "may not open this screen" page, none of its figures — exactly as on the PIN path; nothing guessed.
+    // An odd header, or none, names nobody: refused too — never served as the pack's named person.
+    for (const headers of [{ 'x-sre-user': 'u-nobody' }, { 'x-sre-user': 'u-owner, u-mgr' }, {} as Record<string, string>]) {
+      const refused = await fetch(`${base}/counts/`, { headers });
+      expect(refused.status, JSON.stringify(headers)).toBe(403);
+      const body = await refused.text();
+      expect(body).toContain('may not open this screen');
+      expect(body).not.toContain(`window.${GLOBAL_FOR.counts} =`);
+      expect(body).not.toContain('window.sreNavigation =');
+    }
     // the till is not re-addressed: the cashier signs in at the till itself
     const till = await fetch(`${base}/pos/`, { headers: { 'x-sre-user': 'u-owner' } });
     expect(till.status).toBe(200);

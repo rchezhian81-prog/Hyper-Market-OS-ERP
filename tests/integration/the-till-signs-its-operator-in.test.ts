@@ -28,12 +28,12 @@ afterEach(async () => {
 
 const PEOPLE = [{ userId: 'u-meena', displayName: 'Meena' }, { userId: 'u-ravi', displayName: 'Ravi' }, { userId: 'u-floor', displayName: 'Floor', till: false }];
 
-const startBox = async (opts: { readonly dir?: string; readonly extra?: Record<string, string>; readonly laneId?: string | null; readonly pack?: boolean } = {}): Promise<EdgeProcess> => {
+const startBox = async (opts: { readonly dir?: string; readonly extra?: Record<string, string>; readonly laneId?: string | null; readonly pack?: boolean; readonly packBody?: Record<string, unknown> } = {}): Promise<EdgeProcess> => {
   const dir = opts.dir ?? await mkdtemp(join(tmpdir(), 'sre-till-signin-'));
   if (opts.dir === undefined) dirs.push(dir);
   const ready = opts.pack === false
     ? { EDGE_LANE_ID: 'lane-1' }
-    : await prepareTillBox({ dir, key: KEY, people: PEOPLE, ...(opts.laneId === undefined ? {} : { laneId: opts.laneId }) });
+    : await prepareTillBox({ dir, key: KEY, people: PEOPLE, ...(opts.laneId === undefined ? {} : { laneId: opts.laneId }), ...(opts.packBody === undefined ? {} : { pack: opts.packBody }) });
   const edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
     ...ready, ...(opts.extra ?? {}),
@@ -172,7 +172,9 @@ describe('the hosted copy\'s verified sign-in — only where its overlay switche
   });
 
   it('EDGE_SCREEN_TRUST_FORWARDED_USER=1 reaches the box: an ERP screen runs as the person the front names (the setting was dropped by the settings loader before this slice)', async () => {
-    const screenBox = async (trust: boolean) => startBox({ extra: { EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', ...(trust ? { EDGE_SCREEN_TRUST_FORWARDED_USER: '1' } : {}) } });
+    // SEC-1 (P-04): behind the front the person must also hold the screen's own word in the box's register to open it.
+    const COUNTER = { roles: [{ id: 'floor', name: 'Floor', permissions: ['count.view'] }], roleAssignments: [{ userId: 'u-meena', roleId: 'floor', branchScope: 'all' }] };
+    const screenBox = async (trust: boolean) => startBox({ packBody: COUNTER, extra: { EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', ...(trust ? { EDGE_SCREEN_TRUST_FORWARDED_USER: '1' } : {}) } });
     const trusted = await screenBox(true);
     const html = await (await fetch(`http://127.0.0.1:${trusted.screens!.port}/counts/`, { headers: { 'x-sre-user': 'u-meena' } })).text();
     expect(html).toContain('"userId":"u-meena"');
