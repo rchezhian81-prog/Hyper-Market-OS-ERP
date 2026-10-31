@@ -226,7 +226,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
     } finally { await s.close(); }
   }, 180_000);
 
-  it('an accountant (bill matching, no capture right — OB-543/OB-547/OB-548) is not refused on open: the page says what the role does here, asks head office only what it may read, and writes nothing; the page speaks Tamil', async () => {
+  it('an accountant (no capture right) is offered nothing and writes nothing — and, with the bill-matching right (OB-543/OB-547/OB-548), is not refused on open: the page says what the role does here and asks head office only what it may read; the page speaks Tamil', async () => {
     const s = await open(ACCT);
     const reads: string[] = []; const refusals: string[] = [];
     s.page.on('response', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/v1/')) { reads.push(`${r.request().method()} ${u.pathname}`); if (r.status() === 401 || r.status() === 403) refusals.push(`${r.status()} ${u.pathname}`); } });
