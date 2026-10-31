@@ -16,7 +16,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Broken:** kg and litre quantities are 1000 times off on buying and requisitions; the demo's rice and oil cannot be sold correctly; the queue till and B2B portal cannot be reached on the demo; Export gives no file.
 - **Security (fixed now, SEC-1):** on the hosted copy a cashier, or the supplier login, could open the owner, manager and Admin pages and see takings and margin.
 - **Owner deadlock:** three requests only the owner may approve can never be approved when the owner raises them. The owner chose a second approver (OB-613); the person is still to be named.
-- Full results: four lane reports, combined into one list for the owner; fix rounds follow.
+- Full results: `docs/audit/SCREEN-GAP-AUDIT-2026-10-31.md` (all four lanes combined, four proposed fix rounds A–D, seven owner decisions).
 
 **SEC-1 (this pull request)**
 - `edge/store-edge/src/screen-server.ts`: behind the sign-in front, every screen except the till and the two customer-facing lanes now checks the signed-in person's own permissions. A person who may not open it gets the "may not open this screen" page with no figures, and a list of the pages they can open. A request that names nobody is refused.
