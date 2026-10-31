@@ -98,7 +98,10 @@ export async function readLiveCounts(fetchFn: typeof fetch | undefined): Promise
     if (fetchFn === undefined) return { result: 'lost_link' };
     try {
       const res = await fetchFn(path, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
-      if (res.status >= 400) return { result: 'refused', status: res.status };
+      // Only a sign-in head office would not serve (401 / 403) is a refusal; any other failure (no head office on this
+      // origin, a fault, a timeout) means head office was not reached, and the store computer's figures stand.
+      if (res.status === 401 || res.status === 403) return { result: 'refused', status: res.status };
+      if (res.status >= 400) return { result: 'lost_link' };
       const body = (await res.json()) as unknown;
       return { result: 'read', value: shape(body !== null && typeof body === 'object' ? body as Record<string, unknown> : {}) };
     } catch {

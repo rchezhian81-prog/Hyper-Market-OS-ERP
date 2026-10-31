@@ -43,6 +43,9 @@ describe('the two reads, in the person\'s own session', () => {
     expect(counts).toEqual({ approvals: { result: 'read', value: { waitingForMe: 1, routedToOwner: 1 } }, purchaseOrders: { result: 'refused', status: 403 } });
     const offline = await readLiveCounts((async () => { throw new Error('offline'); }) as unknown as typeof fetch);
     expect(offline).toEqual({ approvals: { result: 'lost_link' }, purchaseOrders: { result: 'lost_link' } });
+    // No head office behind this origin (404) or a fault (502) is "not reached", never a refusal or a zero.
+    const absent = await readLiveCounts((async (url: string) => reply(url.includes('approvals') ? 404 : 502, {})) as unknown as typeof fetch);
+    expect(absent).toEqual({ approvals: { result: 'lost_link' }, purchaseOrders: { result: 'lost_link' } });
   });
 });
 

@@ -73,6 +73,9 @@ const ROUTES: Record<string, unknown> = {
   ] },
   '/v1/finance/gst/controls': { controls: { reverseCharge: { value: false }, einvoice30DayGuard: { value: false }, timeBarWarningDays: { value: 180, decision: 'OB-191' } }, said: { reverseCharge: 'off', einvoice30DayGuard: 'off', timeBarWarningDays: '180' } },
   '/v1/finance/e-invoice/reporting-guard': { switchedOn: false, said: 'off' },
+  // Round A (screen gap audit): Today also counts what waits for the person at head office and head office's open orders.
+  '/v1/approvals/requests': { waitingForMe: [], mine: [], routedToOwnerAboveYourLimit: 0, asAt: AT },
+  '/v1/purchase/orders': { orders: [], count: 0, awaitingApprovalCount: 0, storeNotNamedCount: 0 },
   '/v1/finance/filing-calendar': { nearBarNotJudged: false, entries: [{ type: 'GSTR3B', period: '082026', dueDate: '2026-09-20', timeBarDate: '2029-11-30', warning: 'overdue', daysOverdue: 28 }] },
   gstr3b: { basis: 'gstr1_filed_not_yet_locked', table31: { a: half(3_000_000), c: half(0), d: half(0) }, table4: { a3ReverseCharge: half(0), a5AllOther: { status: 'not_reconciled' } },
     reconciliation: { salesLedger: { netGrossMinor: 3_280_000 }, differences: [{ code: 'changed_after_gstr1_filed', explained: false, grossMinor: 10_500, detail: 'sale S-3 reached head office late' }] }, exceptions: [] },
