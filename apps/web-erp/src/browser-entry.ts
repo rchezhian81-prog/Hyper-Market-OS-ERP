@@ -6516,6 +6516,9 @@ if (browserWindow !== undefined) {
     const merchandising = bootMerchandising(merchandisingData, {
       outbox: merchandisingOutbox, boxWords: merchandisingBoxWords,
       ...(refillIndents === null ? {} : { indents: refillIndentPortOf(refillIndents) }),
+      // M04-FR-01 (re-audit 30 Oct 2026): a range drop goes to head office's own assortment route on this origin, as the
+      // signed-in person — "taken out" is head office's word, never this page's.
+      headOffice: headOfficeHttp(),
     });
     if (merchandising !== null) {
       browserWindow.merchandisingSession = merchandising;

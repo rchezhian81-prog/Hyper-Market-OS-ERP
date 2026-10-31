@@ -189,13 +189,18 @@ describe('the count is taken blind', () => {
 });
 
 describe('a range drop never makes stock invisible', () => {
-  it('reads the REAL on-hand rather than letting a screen guess zero', () => {
+  it('lets HEAD OFFICE judge the drop on its own stock — no screen guesses zero, and no stock figure travels', () => {
     // Zero is the dangerous default: it turns "route to clearance" into "delete", and the stock on
-    // the shelf becomes invisible — uncounted, unreplenished, eventually written off.
-    expect(code(MODEL)).toMatch(/onHandMinor: ports\.onHand\(\)\[input\.productId\] \?\? 0/);
-    // …and it is the port's real answer, not a figure the view passed in.
-    const drop = code(MODEL).slice(code(MODEL).indexOf('drop: (input)'));
-    expect(drop.slice(0, 900), 'the on-hand comes from the form').not.toMatch(/input\.onHand/);
+    // the shelf becomes invisible — uncounted, unreplenished, eventually written off. M04-FR-01 (re-audit 30 Oct 2026,
+    // P-08): the drop is head office's, on head office's stock position, through its own assortment route — and the
+    // body carries no on-hand (head office refuses one by name, `drop_carries_caller_stock`).
+    const drop = code(MODEL).slice(code(MODEL).indexOf('drop: async (input)'));
+    expect(drop.length, 'the drop is no longer asynchronous, so it cannot be asking head office').toBeGreaterThan(0);
+    const body = drop.slice(drop.indexOf('device.headOffice.post('), drop.indexOf('if (answer.result'));
+    expect(body).toMatch(/\/v1\/merchandising\/assortment\/\$\{enc\(config\.storeId\)\}\/\$\{enc\(input\.productId\)\}\/drop/);
+    expect(body, 'a stock figure travels with the drop').not.toMatch(/onHand/);
+    // …and nothing on the form sets the stock.
+    expect(drop.slice(0, 1800), 'the on-hand comes from the form').not.toMatch(/input\.onHand/);
   });
 
   it('has no delete on this surface at all', () => {
