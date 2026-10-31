@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { FINANCE_MONTH_COPY, MONTH_COPY_KEYS } from '../../apps/web-erp/src/finance-session';
 import { buildControlTotals, closePeriod } from '../../packages/period-close/src/index';
+import { closePeriod as headOfficeClosePeriod } from '../../services/finance/src/index';
+import { MONTH_PAGE_COPY, MONTH_PAGE_KEYS } from '../../apps/web-erp/src/month-close-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
 /**
@@ -26,7 +28,10 @@ import { bilingualGaps } from '../../packages/ui/src/index';
  *
  * And one more, since ADR-0024 (audit PA-03): **a month is closed and reopened at head office, by two
  * people** — the closer asks, someone who may sign a month approves it in their own session, and the
- * close names that approval. No name typed on this screen is ever taken as a signature or an approval.
+ * close names that approval. No name typed on any screen is ever taken as a signature or an approval.
+ * Since OB-567 (owner, 31 Oct 2026) those steps live ONLY on head office's Month-end page
+ * (`month-close-session.ts`, `finance-close.html|.js`), where head office's own control totals decide —
+ * and a month with nothing checked is refused there, by head office. The Finance page has neither step.
  */
 
 const TOTALS = readFileSync('packages/period-close/src/control-totals.ts', 'utf8');
@@ -36,6 +41,11 @@ const VIEW = readFileSync('apps/web-erp/web/finance.js', 'utf8');
 const HTML = readFileSync('apps/web-erp/web/finance.html', 'utf8');
 const ENTRY = readFileSync('apps/web-erp/src/browser-entry.ts', 'utf8');
 const SCREEN_DATA = readFileSync('edge/store-edge/src/screen-data.ts', 'utf8');
+/** OB-567: where a month is closed and reopened — head office's Month-end page. */
+const MONTH = readFileSync('apps/web-erp/src/month-close-session.ts', 'utf8');
+const ME_VIEW = readFileSync('apps/web-erp/web/finance-close.js', 'utf8');
+const ME_HTML = readFileSync('apps/web-erp/web/finance-close.html', 'utf8');
+const ROUTE = readFileSync('services/finance/src/index.ts', 'utf8');
 
 const code = (source: string): string => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -195,22 +205,32 @@ describe('what is outstanding blocks the close, and is never discarded', () => {
     expect(close, 'the close returns on the first blocker').not.toMatch(/return \{[^}]*closed: false[^}]*\};\s*\n\s*if \(/);
   });
 
-  it('closes only with a signature someone else GAVE at head office, for exactly this month', () => {
+  it('closes only with a signature someone else GAVE at head office, for exactly this month — on the Month-end page', () => {
     // ADR-0024 · §28: the close names the closer's own APPROVED `period_close` request, found in head office's
     // inbox for exactly `{ period }` — never a name, never the closer's own say-so.
-    const close = code(MODEL).slice(code(MODEL).indexOf('closeWithApproval: async ()'));
-    expect(close).toMatch(/findOwnApproval\(ports\.approvalInbox, PERIOD_CLOSE_KIND, config\.period, periodCloseDetails\(config\.period\), null\)/);
-    expect(close).toMatch(/ports\.closeAtHeadOffice!\(\{ period: config\.period, approvalId: found\.requestId \}\)/);
-    // This box's own evidence is checked first: a month whose figures cannot be signed is never sent.
-    expect(close.indexOf('beforeClosing()')).toBeLessThan(close.indexOf('findOwnApproval('));
-    expect(code(MODEL).slice(code(MODEL).indexOf('const beforeClosing'))).toMatch(/const local = close\(\);/);
+    const close = code(MONTH).slice(code(MONTH).indexOf('closeWithApproval: async (period)'));
+    expect(close).toMatch(/findOwnApproval\(\(\) => ports\.approvalInbox\(\), PERIOD_CLOSE_KIND, period, periodCloseDetails\(period\), null\)/);
+    expect(close).toMatch(/ports\.closeAtHeadOffice\(\{ period, approvalId: found\.requestId \}\)/);
+    expect(close.indexOf('before(period)')).toBeLessThan(close.indexOf('findOwnApproval('));
+  });
+
+  it('a month with NOTHING checked is refused by head office at the close — the page never decides it on a guess', () => {
+    // The Month-end page holds no copy of the shop's takings, so the month is judged where the figures are: the route
+    // passes head office's OWN control totals to the engine at that moment, and an empty list is refused by name.
+    const route = code(ROUTE).slice(code(ROUTE).indexOf("path: '/v1/finance/periods/:period/close'"));
+    expect(route).toMatch(/checks: await deps\.controlTotals\(ctx\.tenantId, period\)/);
+    expect(headOfficeClosePeriod({ period: '2026-07', checks: [], closedBy: 'u-owner', postedBy: [], signedBy: 'u-acct' }))
+      .toMatchObject({ ok: false, refusedBecause: 'nothing_was_checked' });
+    // …and that refusal reads in plain words on the page, never as success.
+    expect(FINANCE_MONTH_COPY.en.hoNothingChecked).toMatch(/no figures to check for this month, so it cannot be signed/);
+    expect(code(MONTH)).not.toMatch(/ledger|controlTotals|allReconcile/);
   });
 
   it('reopens only with a DIFFERENT person\'s own approval, for exactly the written reason', () => {
-    const reopen = code(MODEL).slice(code(MODEL).indexOf('reopenWithApproval: async (reason)'));
-    expect(reopen).toMatch(/findOwnApproval\(ports\.approvalInbox, PERIOD_REOPEN_KIND, config\.period, periodReopenDetails\(why, config\.period\), null\)/);
+    const reopen = code(MONTH).slice(code(MONTH).indexOf('reopenWithApproval: async (period, reason)'));
+    expect(reopen).toMatch(/findOwnApproval\(\(\) => ports\.approvalInbox\(\), PERIOD_REOPEN_KIND, period, periodReopenDetails\(why, period\), null\)/);
     expect(reopen).toMatch(/reason: why, approvalId: found\.requestId/);
-    const before = code(MODEL).slice(code(MODEL).indexOf('const beforeReopening'));
+    const before = code(MONTH).slice(code(MONTH).indexOf('const beforeReopening'));
     expect(before).toMatch(/needs_why/);
     expect(before).toMatch(/not_closed/);
   });
@@ -221,66 +241,66 @@ describe('what is outstanding blocks the close, and is never discarded', () => {
     expect(HTML, 'a text box someone could type a name into').not.toMatch(/<input/);
     expect(code(VIEW)).not.toMatch(/approvedBy|reopen-approver/);
     expect(code(MODEL)).not.toMatch(/readonly approvedBy: string \}/);
+    const steps = code(ME_VIEW).slice(code(ME_VIEW).indexOf('const mw = '), code(ME_VIEW).indexOf('const TABS'));
+    expect(steps.length).toBeGreaterThan(500);
+    expect(steps).not.toMatch(/approvedBy|signedBy|reopen-approver/);
+    expect(code(MONTH)).not.toMatch(/approvedBy:\s*(input|name|typed)|signedBy/);
+    expect(ME_HTML).not.toMatch(/reopen-approver|signer-name/);
     // The bodies are built by the same functions the approval's details come from.
     expect(code(ENTRY)).toMatch(/periodCloseRequestBody\(approvalId\)/);
     expect(code(ENTRY)).toMatch(/periodReopenRequestBody\(reason, approvalId\)/);
   });
 
-  it('OB-567: the Finance page closes NO month — it says the month is closed on head office\'s Month-end page, and links there', () => {
-    // The owner (31 Oct 2026): a month is closed only on head office's Month-end page. The Finance page keeps the month's
-    // state and its Tally files, and offers no close step of its own — no ask, no close button, no note box.
-    expect(HTML).not.toMatch(/id="ask-close"|id="close-month"|id="close-why"|id="close-request"/);
-    expect(code(VIEW)).not.toMatch(/session\.askToClose\(|session\.closeWithApproval\(|el\('ask-close'\)|el\('close-month'\)/);
-    // Where the month IS closed — in English and Tamil — with a link to the Month-end page of the menu (`/finance-close`).
+  it('OB-567: the Finance page closes and reopens NO month — it says both happen on head office\'s Month-end page, and links there', () => {
+    // The owner (31 Oct 2026): a month is closed only on head office's Month-end page — and reopened there too, so both
+    // live in one place. The Finance page keeps the month's state and its Tally files, and offers no step of its own.
+    expect(HTML).not.toMatch(/id="ask-close"|id="close-month"|id="close-why"|id="close-request"|id="ask-reopen"|id="reopen"|id="reopen-reason"/);
+    expect(code(VIEW)).not.toMatch(/askToClose|closeWithApproval|askToReopen|reopenWithApproval|yourRequests/);
+    expect(code(MODEL)).not.toMatch(/askToClose|closeWithApproval|askToReopen|reopenWithApproval|closeAtHeadOffice|reopenAtHeadOffice/);
     expect(HTML).toMatch(/<a id="month-end-link"[^>]*href="\.\.\/finance-close\/"/);
-    expect(code(VIEW)).toMatch(/closeLead: 'A month is closed on head office’s Month-end page, not on this page\./);
-    expect(code(VIEW)).toMatch(/closeLead: 'மாதம் தலைமை அலுவலகத்தின் மாத இறுதி பக்கத்தில் மூடப்படுகிறது/);
+    expect(code(VIEW)).toMatch(/closeLead: 'A month is closed and reopened on head office’s Month-end page, not on this page\./);
+    expect(code(VIEW)).toMatch(/closeLead: 'மாதம் தலைமை அலுவலகத்தின் மாத இறுதி பக்கத்தில் மூடப்பட்டு மீண்டும் திறக்கப்படுகிறது/);
     expect(code(VIEW)).toMatch(/el\('month-end-link'\)\.textContent = t\('monthEndLink'\)/);
   });
 
-  it('offers reopening on the SCREEN, so the control is not worked around', () => {
-    // A capability the session has and the screen does not is the fault this codebase keeps
-    // finding. Reopening is shown only once the month is actually closed.
-    expect(HTML).toMatch(/id="ask-reopen"/);
-    expect(HTML).toMatch(/id="reopen"/);
-    expect(code(VIEW)).toMatch(/session\.askToReopen\(/);
-    expect(code(VIEW)).toMatch(/session\.reopenWithApproval\(/);
-    expect(code(VIEW)).toMatch(/el\('reopen-box'\)\.hidden = !session\.period\(\)\.closed/);
+  it('offers closing and reopening on the Month-end SCREEN, so the control is not worked around', () => {
+    // A capability the session has and the screen does not is the fault this codebase keeps finding.
+    for (const id of ['ask-close', 'close-month', 'close-why', 'ask-reopen', 'reopen', 'reopen-reason']) expect(ME_HTML).toMatch(new RegExp(`id="${id}"`));
+    for (const call of ['month.askToClose(', 'month.closeWithApproval(', 'month.askToReopen(', 'month.reopenWithApproval(']) expect(code(ME_VIEW)).toContain(call);
+    // Which step shows is head office's own word on the month; only a holder of the month-close word is offered either.
+    expect(code(ME_VIEW)).toMatch(/\$\('close-box'\)\.hidden = !\(offer && !monthState\.closed\)/);
+    expect(code(ME_VIEW)).toMatch(/\$\('reopen-box'\)\.hidden = !\(offer && monthState\.closed\)/);
+    expect(code(ENTRY)).toMatch(/mayClose: \(closeViewer\.permissions \?\? \[\]\)\.includes\(MONTH_CLOSE_PERMISSION\)/);
+    expect(code(MONTH)).toMatch(/MONTH_CLOSE_PERMISSION = 'finance\.period\.close'/);
   });
 
-  it('asks and reopens ONLY on a click — never at load — and the view sends no write of its own', () => {
-    const view = code(VIEW);
-    for (const call of ['session.askToReopen(', 'session.reopenWithApproval(']) {
+  it('asks, closes and reopens ONLY on a click — never at load — and the page sends no write of its own', () => {
+    const view = code(ME_VIEW);
+    for (const call of ['month.askToClose(', 'month.closeWithApproval(', 'month.askToReopen(', 'month.reopenWithApproval(']) {
       const at = view.indexOf(call);
-      expect(at, `${call} is missing`).toBeGreaterThan(-1);
       expect(view.indexOf(call, at + 1), `${call} is called twice`).toBe(-1);
-      const before = view.slice(Math.max(0, at - 260), at);
-      expect(before, `${call} is not inside a click handler`).toMatch(/addEventListener\('click', \(\) => \{\s*void busy\('[a-z-]+', async \(\) => \{/);
+      const before = view.slice(Math.max(0, at - 220), at);
+      expect(before, `${call} is not inside a click handler`).toMatch(/addEventListener\('click', \(\) => busy\(\$\('[a-z-]+'\), async \(\) => \{/);
     }
-    expect(view.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? []).toEqual([]);
     expect(view).not.toMatch(/\bfetch\(/);
+    expect(code(VIEW)).not.toMatch(/\bfetch\(/);
   });
 
-  it('wires the browser to head office, and a page that is not wired closes and reopens nothing', () => {
+  it('wires the Month-end page to head office\'s own month routes; the Finance page only to its reads', () => {
     expect(code(ENTRY)).toMatch(/bootFinance\(browserWindow\.financeData, FINANCE_HEAD_OFFICE\)/);
-    const model = code(MODEL);
-    const before = model.slice(model.indexOf('const beforeClosing'), model.indexOf('const ask = async'));
-    expect(before.match(/if \(!connected\) return \{ kind: 'not_connected' \};/g) ?? []).toHaveLength(2);
-    // The sample stand-in is connected to nothing and says so.
-    expect(code(VIEW)).toMatch(/reopenWithApproval: async \(\) => \(\{ kind: 'not_connected' \}\)/);
+    expect(code(ENTRY)).toMatch(/createMonthCloseSession\([\s\S]{0,200}MONTH_CLOSE_HEAD_OFFICE,/);
+    expect(code(ENTRY)).toMatch(/\/v1\/finance\/periods\/\$\{encodeURIComponent\(period\)\}\/close/);
   });
 
   it('closes and reopens nothing under a name nobody holds', () => {
     expect(code(MODEL)).toMatch(/readonly userId: string \| null/);
-    for (const fn of ['const close = (): CloseOutcome =>', 'const beforeClosing', 'const beforeReopening']) {
-      const at = code(MODEL).indexOf(fn);
-      expect(at, `${fn} is missing`).toBeGreaterThan(-1);
-      const body = code(MODEL).slice(at, at + 400);
-      expect(body.indexOf('config.userId === null'), `${fn} does not check who is asking`)
-        .toBeGreaterThan(-1);
-    }
+    const close = code(MODEL).slice(code(MODEL).indexOf('const close = (): CloseOutcome =>'));
+    expect(close.slice(0, 400)).toContain('config.userId === null');
+    expect(code(MONTH).slice(code(MONTH).indexOf('const before = '), code(MONTH).indexOf('const before = ') + 400)).toContain('config.userId === null');
+    expect(code(ENTRY)).toMatch(/userId: closeViewer\.userId \?\? null/);
     expect(code(ENTRY)).toMatch(/userId: data\.userId === undefined \? null : data\.userId/);
     expect(HTML).toMatch(/id="nobody"/);
+    expect(ME_HTML).toMatch(/id="nobody"/);
   });
 });
 
@@ -308,11 +328,13 @@ describe('the screen somebody puts their name to', () => {
   });
 
   it('has words for every refusal and every blocker, in both languages', () => {
-    // Every reopen outcome is said by the model's presenters (tested, both languages); the view shows them. (No close
-    // is offered here — OB-567: the month is closed on head office's Month-end page.)
+    // Every close / reopen outcome is said by the model's presenters (tested, both languages); the Month-end page shows
+    // them (OB-567), with its own words in both languages too.
     expect(bilingualGaps(FINANCE_MONTH_COPY, MONTH_COPY_KEYS)).toEqual({ en: [], ta: [] });
-    expect(code(VIEW)).toMatch(/session\.presentAskOutcome\(lang, 'reopen', outcome\)/);
-    expect(code(VIEW)).toMatch(/session\.presentUseOutcome\(lang, 'reopen', outcome\)/);
+    expect(bilingualGaps(MONTH_PAGE_COPY, MONTH_PAGE_KEYS)).toEqual({ en: [], ta: [] });
+    for (const [action, kind] of [['close', 'Ask'], ['close', 'Use'], ['reopen', 'Ask'], ['reopen', 'Use']]) {
+      expect(code(ME_VIEW)).toMatch(new RegExp(`month\\.present${kind}Outcome\\(lang, '${action}'`));
+    }
     expectWordsFor(
       ['control_totals_do_not_reconcile', 'dead_lettered_postings', 'unsent_sync_items', 'open_exceptions', 'already_closed'],
       'BLOCKER_WORDS',
@@ -329,7 +351,7 @@ describe('the screen somebody puts their name to', () => {
 
   it('never interrupts anybody with a browser dialog', () => {
     expect(code(VIEW)).not.toMatch(/\b(prompt|confirm|alert)\s*\(/);
-    expect(code(VIEW)).toMatch(/function tell\(/);
+    expect(code(ME_VIEW)).not.toMatch(/\b(prompt|confirm|alert)\s*\(/);
   });
 
   it('is offered in Tamil everywhere it is offered in English', () => {

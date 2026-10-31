@@ -83,6 +83,8 @@ import {
   createFinanceCloseSession, browserFinanceCloseHttp, closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords,
   type FinanceCloseSession,
 } from './finance-close-session';
+import { createCashierProductView, NAME_PRICE_BARCODE, type CashierProductView } from './catalogue-cashier-view';
+import { createMonthCloseSession, MONTH_CLOSE_PERMISSION, type MonthClosePorts, type MonthCloseSession } from './month-close-session';
 import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
 import {
   createReportingSession,
@@ -444,6 +446,8 @@ export interface CatalogueData {
   readonly today?: string;
   /** Now on the box's clock (ISO) — the competitor-price panel dates a sighting with it unless the person says when. */
   readonly now?: string;
+  /** OB-569: `name_price_barcode` when the store computer trimmed this payload for a viewer without `supplier.view`. */
+  readonly productFields?: string;
   /** What the person holds (head office's `GET /v1/identity/me`) — the competitor-price panel offers recording only with `price.change.propose`. */
   readonly permissions?: readonly string[];
   /** Minimum gross margin in basis points. Per-tenant policy (M05-FR-02). */
@@ -697,11 +701,9 @@ export interface FinanceData {
   readonly openExceptionCount?: number;
 }
 
-/** Head office as the finance screen reaches it (ADR-0024 · API-09): the approval engine (ask + inbox) and the month's
- *  close and reopen routes — every call in the caller's OWN session. Without it the screen closes and reopens nothing. */
-export interface FinanceHeadOfficePorts extends HeadOfficeApprovalPorts {
-  readonly closeAtHeadOffice: NonNullable<FinancePorts['closeAtHeadOffice']>;
-  readonly reopenAtHeadOffice: NonNullable<FinancePorts['reopenAtHeadOffice']>;
+/** Head office as the finance screen reaches it: the month's budget and the fixed-asset register (two reads, OB-57). The
+ *  month is closed and reopened on head office's Month-end page, never here (OB-567 — `MONTH_CLOSE_HEAD_OFFICE`). */
+export interface FinanceHeadOfficePorts {
   readonly readPlan?: NonNullable<FinancePorts['readPlan']>;
 }
 
@@ -715,19 +717,13 @@ export function financePortsFromData(data: FinanceData | undefined, headOffice?:
     periodState: () => data?.periodState ?? { closed: false },
     unsentSyncCount: () => data?.unsentSyncCount ?? 0,
     openExceptionCount: () => data?.openExceptionCount ?? 0,
-    // Wired to head office only when given: a local-only screen asks nothing and closes nothing (it says so).
-    ...(headOffice === undefined ? {} : {
-      askApproval: headOffice.askApproval,
-      approvalInbox: headOffice.approvalInbox,
-      closeAtHeadOffice: headOffice.closeAtHeadOffice,
-      reopenAtHeadOffice: headOffice.reopenAtHeadOffice,
-      ...(headOffice.readPlan === undefined ? {} : { readPlan: headOffice.readPlan }),
-    }),
+    // OB-57: head office's budget and register, only when given. Nothing here closes or reopens a month (OB-567).
+    ...(headOffice?.readPlan === undefined ? {} : { readPlan: headOffice.readPlan }),
   };
 }
 
-/** Build the finance screen, or `null` when the box was told no chart-of-accounts headings. `headOffice` wires the
- *  month's close and reopen to head office's engine and routes; without it the screen is a local evidence view. */
+/** Build the finance screen, or `null` when the box was told nothing. `headOffice` wires the budget and asset reads; the
+ *  month is closed and reopened on head office's Month-end page (OB-567). */
 export function bootFinance(data: FinanceData | undefined, headOffice?: FinanceHeadOfficePorts): FinanceSession | null {
   if (data === undefined) return null;
   return createFinanceSession(
@@ -3847,8 +3843,9 @@ async function postMonthAction(path: string, body: Record<string, unknown>, key:
   }
 }
 
-/** The live head office for the finance screen: the shared approval engine and the month's two routes. */
-export const FINANCE_HEAD_OFFICE: FinanceHeadOfficePorts = Object.freeze({
+/** OB-567: the live head office for the Month-end page's close and reopen — the shared approval engine, the month's two
+ *  routes, and head office's own word on whether a month is closed (`GET /v1/finance/periods`). */
+export const MONTH_CLOSE_HEAD_OFFICE: MonthClosePorts = Object.freeze({
   ...HEAD_OFFICE_APPROVALS,
   closeAtHeadOffice: ({ period, approvalId }: { readonly period: string; readonly approvalId: string }) => postMonthAction(
     `/v1/finance/periods/${encodeURIComponent(period)}/close`, periodCloseRequestBody(approvalId),
@@ -3858,6 +3855,25 @@ export const FINANCE_HEAD_OFFICE: FinanceHeadOfficePorts = Object.freeze({
     `/v1/finance/periods/${encodeURIComponent(period)}/reopen`, periodReopenRequestBody(reason, approvalId),
     globalThis.crypto?.randomUUID?.() ?? `period-reopen-${period}-${approvalId}`,
   ),
+  // Anything but a 2xx with a list is "not known" — never "open" on a guess (P-08).
+  monthState: async (period: string): Promise<{ readonly closed: boolean } | undefined> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) return undefined;
+    try {
+      const res = await fetchFn('/v1/finance/periods', { headers: { accept: 'application/json' }, credentials: 'same-origin' });
+      if (res.status < 200 || res.status >= 300) return undefined;
+      const body = (await res.json().catch(() => null)) as { periods?: unknown } | null;
+      if (body === null || !Array.isArray(body.periods)) return undefined;
+      const row = (body.periods as { period?: unknown; state?: unknown }[]).find((p) => p.period === period);
+      return { closed: row?.state === 'closed' };
+    } catch {
+      return undefined;
+    }
+  },
+});
+
+/** The live head office for the finance screen: the month's budget and the fixed-asset register (OB-57). */
+export const FINANCE_HEAD_OFFICE: FinanceHeadOfficePorts = Object.freeze({
   // OB-57: two reads in the person's own session; anything but a 2xx is "not known", never an empty budget.
   readPlan: async (period: string): Promise<FinancePlan | undefined> => {
     const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
@@ -5185,6 +5201,8 @@ interface ManagerWindow {
   catalogueSession?: CatalogueSession;
   catalogueData?: CatalogueData;
   catalogueGaps?: readonly CatalogueGap[];
+  /** OB-569: the cashier's name-price-barcode list (only on a trimmed payload). */
+  catalogueCashierView?: CashierProductView;
   /** Round A: the prices already set, read from head office item by item (absent when the box sent them). */
   cataloguePrices?: CataloguePriceRelay;
   catalogueOutbox?: SyncOutbox;
@@ -5276,6 +5294,8 @@ interface ManagerWindow {
   financeCloseSession?: FinanceCloseSession;
   /** The page's words and readings, from the same tested module (the page holds no rule of its own). */
   financeCloseKit?: typeof FINANCE_CLOSE_KIT;
+  /** OB-567: closing and reopening a month, on the Month-end page only. */
+  monthCloseSession?: MonthCloseSession;
   /** Round 12 (D06-FR-05): the competitor-price panel on the catalogue page, over head office's own routes. */
   competitorPriceSession?: CompetitorPriceSession;
   competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
@@ -6615,7 +6635,12 @@ if (browserWindow !== undefined) {
   // office's approval engine and sent naming the approval (ADR-0024) — never a typed approver.
   // Round A: a box that sent no prices (head office's store setup never carries them) has them read item by item.
   const priceRelay = browserWindow.catalogueData !== undefined && browserWindow.catalogueData.priceEntries === undefined ? openCataloguePriceRelay() : undefined;
-  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort(), CATALOGUE_APPROVALS, openPromotionDefinitionPort(), priceRelay);
+  // OB-569: a viewer without the right to see costs and suppliers (the cashier) was sent name, price and barcode only. Their
+  // list is its own view (`catalogue-cashier-view.ts`); the full session is given no product records to judge as masters.
+  const cashierOnly = browserWindow.catalogueData?.productFields === NAME_PRICE_BARCODE;
+  if (cashierOnly && browserWindow.catalogueData !== undefined) browserWindow.catalogueCashierView = createCashierProductView(browserWindow.catalogueData, priceRelay);
+  const catalogueData = cashierOnly && browserWindow.catalogueData !== undefined ? { ...browserWindow.catalogueData, products: [] } : browserWindow.catalogueData;
+  const catalogue = bootCatalogue(catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort(), CATALOGUE_APPROVALS, openPromotionDefinitionPort(), priceRelay);
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData, priceRelay !== undefined);
@@ -7287,6 +7312,11 @@ if (browserWindow !== undefined) {
     const period = (rawClose as { period?: unknown }).period;
     browserWindow.financeCloseKit = FINANCE_CLOSE_KIT;
     browserWindow.financeCloseSession = createFinanceCloseSession({ ...closeViewer, ...(typeof period === 'string' ? { period } : {}) }, browserFinanceCloseHttp());
+    // OB-567: closing and reopening a month live here, on the Month-end page, over head office's own routes.
+    browserWindow.monthCloseSession = createMonthCloseSession(
+      { userId: closeViewer.userId ?? null, mayClose: (closeViewer.permissions ?? []).includes(MONTH_CLOSE_PERMISSION) },
+      MONTH_CLOSE_HEAD_OFFICE,
+    );
   }
   // Round 12: the competitor-price panel reads who is looking from the catalogue's payload (its permissions, its store).
   // Only where head office told the page who is looking (its permissions): the store computer's catalogue payload names no

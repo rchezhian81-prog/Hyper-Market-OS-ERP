@@ -68,8 +68,10 @@ describe.skipIf(!HAVE_BROWSER)('OB-569 — the cashier\'s Products page carries 
   const open = async (who: string): Promise<{ page: Page; html: string; errors: string[] }> => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', extraHTTPHeaders: { 'x-sre-user': who } });
     stops.push(() => context.close());
-    // Head office is not part of this proof: anything the page asks of it is answered "not reachable".
-    await context.route('**/v1/**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
+    // Head office: the item's price list (the price the page shows, read item by item); anything else is "not reachable".
+    await context.route('**/v1/**', (route) => (new URL(route.request().url()).pathname === '/v1/prices/list/OIL/history'
+      ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ entries: [{ id: 'p1', productId: 'OIL', scope: 'store', scopeRef: STORE, price: { minor: 16_500, currency: 'INR' }, effectiveFrom: `${TODAY.slice(0, 4)}-01-01T00:00:00.000Z`, status: 'active', version: 1 }] }) })
+      : route.fulfill({ status: 503, contentType: 'application/json', body: '{}' })));
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -85,12 +87,19 @@ describe.skipIf(!HAVE_BROWSER)('OB-569 — the cashier\'s Products page carries 
     expect(data).not.toHaveProperty('costsMinor');
     expect(data).not.toHaveProperty('marginFloorBps');
     expect(data!['barcodes']).toEqual([{ barcode: '8901234567890', productId: 'OIL' }]);
-    const products = data!['products'] as Record<string, unknown>[];
-    expect(products.map((p) => p['name'])).toEqual(['Sunflower oil 1 L']);
-    for (const field of ['brand', 'manufacturer', 'unitCostMinor']) expect(products[0]).not.toHaveProperty(field);
-    // Nothing commercial in ANY byte the store computer sent this browser.
-    expect(html).not.toMatch(new RegExp(`${COST}|costsMinor|unitCostMinor|Sunny Oils|marginFloorBps`));
-    await page.waitForFunction(() => /Sunflower oil 1 L/.test((globalThis as unknown as { document: { body: { textContent: string | null } } }).document.body.textContent ?? ''), undefined, { timeout: 15_000 });
+    // Each product carries exactly its id (to key its barcode and price) and its name — nothing else.
+    expect(data!['products']).toEqual([{ productId: 'OIL', name: 'Sunflower oil 1 L' }]);
+    expect(data!['productFields']).toBe('name_price_barcode');
+    // Nothing commercial in ANY byte the store computer sent this browser — not the cost, the maker, the code, the MRP.
+    expect(html).not.toMatch(new RegExp(`${COST}|costsMinor|unitCostMinor|Sunny|marginFloorBps|OIL-1L|mrpHistory|taxClass|1512`));
+    // On screen: the name and the barcode; the price once read from head office.
+    const row = page.locator('#item-list .row[data-product="OIL"]');
+    await row.waitFor({ timeout: 15_000 });
+    expect((await row.locator('strong').textContent())?.trim()).toBe('Sunflower oil 1 L');
+    expect((await row.locator('.barcodes').textContent())?.trim()).toBe('8901234567890');
+    await row.locator('button.show-price').click();
+    await page.waitForFunction(() => /₹165\.00/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector('#item-list .row[data-product="OIL"] .price')?.textContent ?? ''), undefined, { timeout: 15_000 });
+    expect(await page.locator('#item-list').textContent()).toContain('Costs and suppliers are not shown on this screen.');
     expect(errors).toEqual([]);
   });
 

@@ -12,6 +12,7 @@ import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 import { WASTE_REVIEW_COPY } from '../../apps/web-erp/src/waste-review-session';
 import { GST_RECON_COPY } from '../../apps/web-erp/src/gst-reconciliation-session';
 import type { StoredWriteOff } from '../../services/inventory/src/write-off';
+import { createCashierProductView } from '../../apps/web-erp/src/catalogue-cashier-view';
 
 /**
  * The owner's Round 2 answers (31 Oct 2026), each proven at its boundary:
@@ -140,16 +141,20 @@ describe('OB-569 — a cashier is sent name, price and barcode only; costs never
     expect(ROLE_CATALOGUE.find((r) => r.id === 'cashier')!.permissions).toContain('catalogue.pack.read');
   });
 
-  it('without the right (or with rights unknown): no cost map, no margin floor, no approvers; each product keeps only its non-commercial fields', () => {
+  it('without the right (or with rights unknown): no cost map, no margin floor, no approvers; each product keeps its id and name only', () => {
     for (const permissions of [['catalogue.pack.read'], null]) {
       const out = catalogueForViewer(FULL, permissions)!;
       expect(out).not.toHaveProperty('costsMinor');
       expect(out).not.toHaveProperty('marginFloorBps');
       expect(out).not.toHaveProperty('approvers');
-      expect(out['products']).toEqual([{ productId: 'OIL', tenantId: T, sku: 'OIL-1L', name: 'Sunflower oil 1 L', primaryCategoryId: 'grocery', baseUom: 'ea', taxClass: '1512', lifecycle: 'active', mrpHistory: FULL.products[0]!.mrpHistory }]);
+      // Exactly the fields the cashier's view needs to show name, price and barcode — no code, unit, status, MRP, category,
+      // tax class, brand, maker or attributes.
+      expect(out['products']).toEqual([{ productId: 'OIL', name: 'Sunflower oil 1 L' }]);
+      expect(Object.keys((out['products'] as object[])[0]!).sort()).toEqual(['name', 'productId']);
+      expect(out['productFields']).toBe('name_price_barcode');
       expect(out['priceEntries']).toEqual(FULL.priceEntries);
       expect(out['barcodes']).toEqual(FULL.barcodes);
-      expect(JSON.stringify(out)).not.toMatch(/13250|Sunny|sup-9|cost/i);
+      expect(JSON.stringify(out)).not.toMatch(/13250|Sunny|sup-9|cost|1512|OIL-1L|mrpHistory|lifecycle|taxClass|primaryCategoryId/i);
     }
   });
 
@@ -193,13 +198,29 @@ describe('OB-569 — a cashier is sent name, price and barcode only; costs never
       expect(cashier.payload).not.toHaveProperty('costsMinor');
       expect(cashier.payload).not.toHaveProperty('marginFloorBps');
       expect(cashier.payload['barcodes']).toEqual([{ barcode: '8901234567890', productId: 'OIL' }]);
-      expect((cashier.payload['products'] as { name: string }[])[0]!.name).toBe('Sunflower oil 1 L');
+      expect(cashier.payload['products']).toEqual([{ productId: 'OIL', name: 'Sunflower oil 1 L' }]);
+      expect(cashier.payload['productFields']).toBe('name_price_barcode');
       // Not the cost figure, not the maker or the supplier — anywhere in the page the box sent.
       expect(cashier.html).not.toMatch(/13250|costsMinor|unitCostMinor|Sunny Oils|sup-9/);
 
       const manager = await productsPage(base, 'u-mgr');
       expect(manager.payload['costsMinor']).toEqual({ OIL: 13_250 });
       expect(manager.payload['marginFloorBps']).toBe(2_000);
+      expect(manager.payload).not.toHaveProperty('productFields');
     });
+  });
+
+  it('the cashier\'s page shows name, price and barcode: looked up by name or barcode, the price read from head office for today', async () => {
+    let state: 'not_loaded' | 'loaded' = 'not_loaded';
+    const entry = { id: 'p1', productId: 'OIL', scope: 'store' as const, scopeRef: 'S-A', price: { minor: 16_500, currency: 'INR' as const }, effectiveFrom: '2026-10-01T00:00:00.000Z', status: 'active' as const, version: 1 };
+    const view = createCashierProductView(
+      { storeId: 'S-A', today: '2026-10-31', products: [{ productId: 'OIL', name: 'Sunflower oil 1 L' }, { productId: 'SALT', name: 'Salt 1 kg' }], barcodes: [{ barcode: '8901234567890', productId: 'OIL' }] },
+      { state: (id) => (id === 'OIL' ? state : 'not_loaded'), why: () => undefined, load: async () => { state = 'loaded'; return state; }, entries: () => (state === 'loaded' ? [entry] : []) },
+    );
+    expect(view.rows('').map((r) => r.name)).toEqual(['Salt 1 kg', 'Sunflower oil 1 L']);
+    expect(view.rows('89012').map((r) => r.productId)).toEqual(['OIL']);
+    expect(view.rows('salt')[0]).toEqual({ productId: 'SALT', name: 'Salt 1 kg', barcodes: [], priceState: 'not_loaded', priceMinor: null });
+    expect(await view.loadPrice('OIL')).toBe('loaded');
+    expect(view.rows('oil')[0]).toEqual({ productId: 'OIL', name: 'Sunflower oil 1 L', barcodes: ['8901234567890'], priceState: 'loaded', priceMinor: 16_500 });
   });
 });

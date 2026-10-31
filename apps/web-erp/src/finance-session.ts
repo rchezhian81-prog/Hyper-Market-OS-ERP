@@ -44,10 +44,10 @@
 // Reopening works the same way (`period_reopen`), for exactly the written reason: a changed reason is asked again.
 // With no head office behind the page, nothing is closed or reopened at all — and the screen says so.
 //
-// OB-567 (owner, 31 Oct 2026): a month is closed ONLY on head office's Month-end page. The office Finance page
-// (`apps/web-erp/web/finance.html|.js`) no longer offers steps 1 and 3 — it shows the month's state and its Tally files
-// and says where the month is closed. The close steps stay in this tested model, unused by the Finance page, for the
-// Month-end page to take over (which page carries them is reported to the owner).
+// OB-567 (owner, 31 Oct 2026): a month is closed and reopened ONLY on head office's Month-end page. The steps above now
+// run there (`month-close-session.ts`), over the same routes, with the words, request bodies, approval details and refusal
+// mapping kept HERE (one set, exported). The office Finance page shows the month's state and its Tally files, and points
+// to the Month-end page; this model no longer asks, closes or reopens anything.
 //
 // ── And the one that follows ────────────────────────────────────────────────
 //
@@ -63,11 +63,8 @@ import {
 } from '../../../packages/period-close/src/index';
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
-import {
-  presentRequestStatus,
-  type ApprovalAsk, type ApprovalRequestView, type AskResult, type InboxRead, type LostLink, type Refused,
-} from './approvals-session';
-import { detailsOfBody, findOwnApproval, useOutcomeOfRefusal, type ApprovalUseOutcome } from './catalogue-session';
+import { type ApprovalRequestView, type LostLink, type Refused } from './approvals-session';
+import { detailsOfBody, useOutcomeOfRefusal, type ApprovalUseOutcome } from './catalogue-session';
 
 /** The approval kinds a month is closed and reopened under (head office's maker-checker engine, ADR-0024). */
 export const PERIOD_CLOSE_KIND = 'period_close';
@@ -88,16 +85,6 @@ export interface FinancePorts {
   unsentSyncCount(): number;
   /** Differences nobody has explained yet. */
   openExceptionCount(): number;
-  /** Ask head office's approval engine (POST /v1/approvals/requests) in the caller's own session — the caller is the
-   *  maker. Only from an explicit action. Absent when the page is not wired to head office: nothing is then asked. */
-  askApproval?(ask: ApprovalAsk): Promise<AskResult>;
-  /** The caller's approvals inbox (GET /v1/approvals/requests) — read only. Absent when not wired to head office. */
-  approvalInbox?(): Promise<InboxRead>;
-  /** Close the month at head office (POST /v1/finance/periods/:period/close, body `{ approvalId }`). Only from an
-   *  explicit action. Absent when not wired: then nothing is closed. */
-  closeAtHeadOffice?(input: { readonly period: string; readonly approvalId: string }): Promise<MonthActionResult>;
-  /** Reopen the month at head office (POST /v1/finance/periods/:period/reopen, body `{ reason, approvalId }`). */
-  reopenAtHeadOffice?(input: { readonly period: string; readonly reason: string; readonly approvalId: string }): Promise<MonthActionResult>;
   /** OB-57 (D10-FR-05): head office's budget against the books and its fixed-asset register for the month — two GETs. */
   readPlan?(period: string): Promise<FinancePlan | undefined>;
 }
@@ -459,43 +446,19 @@ export interface FinanceSession {
   evidence(): EvidencePack | { readonly signable: false; readonly why: string };
   /**
    * The LOCAL check of this box's figures: would this month close? Returns every blocker at once. It closes NOTHING —
-   * a month is closed at head office, with a second person's signature (`closeWithApproval`).
+   * a month is closed on head office's Month-end page, with a second person's signature (OB-567, `month-close-session.ts`).
    */
   close(): CloseOutcome;
-  /** True when this screen is wired to head office (its approval engine and the month routes). */
-  readonly connected: boolean;
-  /** The closer asks for the month's signature (`period_close`, details `{ period }`) in their own session. Refused
-   *  locally — nothing asked — with nobody named, with no head office behind the page, or when the figures here cannot
-   *  be signed. `note` is optional: what the signer reads. */
-  askToClose(lang: Lang, note: string): Promise<MonthAskOutcome>;
-  /** Close the month at head office, naming the closer's own APPROVED `period_close` request for this month. Not
-   *  asked, waiting, rejected (who and why), expired, used — each is said plainly, and nothing is sent. */
-  closeWithApproval(): Promise<MonthUseOutcome>;
-  /** Ask a second person to approve reopening this month for exactly this reason (`period_reopen`, details
-   *  `{ reason, period }`). Refused locally without a reason, when the month is not closed, or when not wired. */
-  askToReopen(lang: Lang, reason: string): Promise<MonthAskOutcome>;
-  /** Reopen at head office with this reason, naming the caller's own APPROVED request for exactly it. A changed reason
-   *  is asked again. Never a typed approver. */
-  reopenWithApproval(reason: string): Promise<MonthUseOutcome>;
-  /** Where the caller's own newest requests for this month stand (a GET — read only). */
-  yourRequests(lang: Lang): Promise<MonthRequestsView>;
   /** OB-57: the month's budget against the books and the fixed-asset register — `undefined` when head office cannot be read. */
   plan(): Promise<FinancePlan | undefined>;
-  presentAskOutcome(lang: Lang, action: MonthAction, outcome: MonthAskOutcome): StatusPresentation;
-  presentUseOutcome(lang: Lang, action: MonthAction, outcome: MonthUseOutcome): StatusPresentation;
 }
 
 export function createFinanceSession(config: FinanceConfig, ports: FinancePorts): FinanceSession {
   const NO_LEDGER =
     'this store box has not told finance what the shop took in this period, so there is nothing to check the accounts against. A month cannot close on one side of a comparison.';
 
-  /** What head office did from THIS screen just now (closed or reopened the month) — the box's word catches up later. */
-  let atHeadOffice: { readonly closed: boolean; readonly closedBy?: string; readonly signedBy?: string } | undefined;
-  const stateNow = (): { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string; readonly signedBy?: string } =>
-    atHeadOffice ?? ports.periodState();
-
-  const connected = ports.askApproval !== undefined && ports.approvalInbox !== undefined
-    && ports.closeAtHeadOffice !== undefined && ports.reopenAtHeadOffice !== undefined;
+  /** Head office's word on the month, as the store computer last heard it (OB-567: closed only on the Month-end page). */
+  const stateNow = (): { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string; readonly signedBy?: string } => ports.periodState();
 
   const totalsNow = (): readonly ControlTotal[] | undefined => {
     const ledger = ports.ledger();
@@ -572,37 +535,6 @@ export function createFinanceSession(config: FinanceConfig, ports: FinancePorts)
       : { ok: false, refusal: CLOSE_REFUSAL_VALUES.blocked, detail: result.detail, result };
   };
 
-  /** The checks every close step makes before anything reaches head office: who, wired, and this box's own evidence. */
-  const beforeClosing = (): MonthLocalRefusal | null => {
-    if (config.userId === null) return { kind: 'nobody_named' };
-    if (!connected) return { kind: 'not_connected' };
-    const local = close();
-    if (!local.ok) {
-      // `nobody_is_named_at_this_desk` was answered above; what is left is the figures themselves.
-      const refusal = local.refusal === 'the_shop_has_not_told_us_what_it_took' ? local.refusal : 'blocked';
-      return { kind: 'blocked', refusal, detail: local.detail };
-    }
-    return null;
-  };
-
-  /** The checks every reopen step makes before anything reaches head office. */
-  const beforeReopening = (reason: string): MonthLocalRefusal | null => {
-    if (config.userId === null) return { kind: 'nobody_named' };
-    if (!connected) return { kind: 'not_connected' };
-    if (!stateNow().closed) return { kind: 'not_closed' };
-    if (reason.trim() === '') return { kind: 'needs_why' };
-    return null;
-  };
-
-  const ask = async (request: ApprovalAsk): Promise<MonthAskOutcome> => {
-    const port = ports.askApproval;
-    if (port === undefined) return { kind: 'not_connected' };
-    const asked = await port(request);
-    if (asked.result === 'asked') return { kind: 'asked', request: asked.request };
-    if (asked.result === 'lost_link') return { kind: 'lost_link' };
-    return { kind: 'refused', code: asked.code, whatHappened: asked.whatHappened };
-  };
-
   return {
     period: view,
 
@@ -622,92 +554,7 @@ export function createFinanceSession(config: FinanceConfig, ports: FinancePorts)
     },
 
     close,
-    connected,
-
-    // The CLOSER's step: ask for the signature of exactly this month. Nothing is closed by asking.
-    askToClose: async (lang, note) => {
-      const refused = beforeClosing();
-      if (refused !== null) return refused;
-      const t = translator(FINANCE_MONTH_COPY, lang);
-      return ask({
-        kind: PERIOD_CLOSE_KIND, subjectRef: config.period,
-        // EXACTLY what the close route fingerprints: its body (nothing but the approval) plus the month — `{ period }`.
-        details: periodCloseDetails(config.period), valueMinor: null,
-        summary: fill(t('summaryClose'), { month: monthName(lang, config.period) }),
-        reason: note.trim() === '' ? t('closeReasonDefault') : note.trim(),
-      });
-    },
-
-    // The close, naming the closer's own APPROVED request for this month. Never a typed signer.
-    closeWithApproval: async () => {
-      const refused = beforeClosing();
-      if (refused !== null) return refused;
-      const found = await findOwnApproval(ports.approvalInbox, PERIOD_CLOSE_KIND, config.period, periodCloseDetails(config.period), null);
-      if (!('requestId' in found)) return found.kind === 'done' || found.kind === 'cannot_check' ? { kind: 'not_asked' } : found;
-      const r = await ports.closeAtHeadOffice!({ period: config.period, approvalId: found.requestId });
-      if (r.result === 'lost_link') return { kind: 'lost_link' };
-      if (r.result === 'refused') return monthOutcomeOfRefusal(r.code, r.whatHappened);
-      atHeadOffice = {
-        closed: true,
-        ...(config.userId === null ? {} : { closedBy: config.userId }),
-        ...(found.decidedBy === null ? {} : { signedBy: found.decidedBy }),
-      };
-      return { kind: 'done', detail: r.detail, approvedBy: found.decidedBy };
-    },
-
-    // Ask a second person to approve reopening for exactly this reason. Nothing is reopened by asking.
-    askToReopen: async (lang, reason) => {
-      const refused = beforeReopening(reason);
-      if (refused !== null) return refused;
-      const t = translator(FINANCE_MONTH_COPY, lang);
-      const why = reason.trim();
-      return ask({
-        kind: PERIOD_REOPEN_KIND, subjectRef: config.period,
-        // EXACTLY what the reopen route fingerprints: its body less the approval, plus the month — `{ reason, period }`.
-        details: periodReopenDetails(why, config.period), valueMinor: null,
-        summary: fill(t('summaryReopen'), { month: monthName(lang, config.period) }),
-        reason: why,
-      });
-    },
-
-    // The reopen, naming the caller's own APPROVED request for exactly this reason. Never a typed approver.
-    reopenWithApproval: async (reason) => {
-      const refused = beforeReopening(reason);
-      if (refused !== null) return refused;
-      const why = reason.trim();
-      const found = await findOwnApproval(ports.approvalInbox, PERIOD_REOPEN_KIND, config.period, periodReopenDetails(why, config.period), null);
-      if (!('requestId' in found)) return found.kind === 'done' || found.kind === 'cannot_check' ? { kind: 'not_asked' } : found;
-      const r = await ports.reopenAtHeadOffice!({ period: config.period, reason: why, approvalId: found.requestId });
-      if (r.result === 'lost_link') return { kind: 'lost_link' };
-      if (r.result === 'refused') return monthOutcomeOfRefusal(r.code, r.whatHappened);
-      atHeadOffice = { closed: false };
-      return { kind: 'done', detail: r.detail, approvedBy: found.decidedBy };
-    },
 
     plan: async () => (ports.readPlan === undefined ? undefined : ports.readPlan(config.period)),
-
-    yourRequests: async (lang) => {
-      const none = (state: MonthRequestsView['state']): MonthRequestsView => ({ state, close: null, reopen: null, closeAsked: false, reopenReason: null });
-      if (!connected || ports.approvalInbox === undefined) return none('not_connected');
-      const read = await ports.approvalInbox();
-      if (read.result !== 'read') return none(read.result);
-      const newest = (kind: string): ApprovalRequestView | undefined => read.inbox.mine
-        .filter((r) => r.kind === kind && r.subjectRef === config.period)
-        .slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
-      const inPlay = (r: ApprovalRequestView | undefined): boolean => r !== undefined && (r.status === 'waiting' || r.status === 'approved');
-      // A used request is history — the action it allowed is done — so it is not shown as where things stand.
-      const shown = (r: ApprovalRequestView | undefined): StatusPresentation | null =>
-        (r === undefined || r.status === 'used' ? null : presentRequestStatus(lang, r));
-      const closeRow = newest(PERIOD_CLOSE_KIND);
-      const reopenRow = newest(PERIOD_REOPEN_KIND);
-      const reason = reopenRow?.details['reason'];
-      return {
-        state: 'read', close: shown(closeRow), reopen: shown(reopenRow), closeAsked: inPlay(closeRow),
-        reopenReason: inPlay(reopenRow) && typeof reason === 'string' && reason.trim() !== '' ? reason : null,
-      };
-    },
-
-    presentAskOutcome: (lang, action, outcome) => presentMonthAsk(lang, action, outcome),
-    presentUseOutcome: (lang, action, outcome) => presentMonthUse(lang, action, outcome),
   };
 }
