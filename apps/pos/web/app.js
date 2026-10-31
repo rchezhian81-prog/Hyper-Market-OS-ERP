@@ -1468,7 +1468,9 @@ el('qty').addEventListener('click', async () => {
   const qty = Number(answer);
   if (!Number.isInteger(qty) || qty <= 0) return;
   try {
-    session.setQuantity(selectedLineId, qty);
+    // OB-302 "never key a weight": a number keyed here on a kg / g / L / ml line is refused by the till's model (it used to be
+    // taken as grams — "2" for 2 kg rang 2 g); a count line takes it as before.
+    if (typeof session.keyQuantity === 'function') session.keyQuantity(selectedLineId, qty); else session.setQuantity(selectedLineId, qty);
   } catch (e) {
     // B6 · B14: a loose-cigarette count, or a weight on a lane whose scale stamp ran out, is refused; the line keeps its quantity.
     // OB-500: so is a new quantity on a line whose price a manager cut — said in the screen's language.
@@ -3065,6 +3067,8 @@ window.addEventListener('keydown', (event) => {
       if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }
       // OB-302: a kg / litre product scanned by a code that does not say how much — refused, never rung as 1 g or 1 ml.
       if (e && e.name === 'MeasuredItemNeedsLabelError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
+      // OB-302 · B5: a scale label the till cannot ring safely (a price-only label for a kg item, a weight label on a piece).
+      if (e && e.name === 'ScaleLabelRefusedError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
       // OB-501 (R7-A): this till's build may not start a new bill — said in the cashier's language.
       if (e && e.name === 'NewBillRefusedError') { tell(t('newBillRefusedTitle'), saidInLang(e), STOP); return; }
       tell(t('read'), String(e && e.message ? e.message : e), STOP);

@@ -522,6 +522,59 @@ export class MeasuredItemNeedsLabelError extends Error {
 }
 
 /**
+ * OB-302 · B5 · OB-31 (Round B follow-up): a scale label this till cannot ring safely, refused by name and nothing added.
+ *
+ *  • `price_only_label_for_measured_item` — a label whose barcode carries only a PRICE, for a product sold by weight or
+ *    volume (kg, g, L, ml). It says nothing about how much is in the pack, so the till could only ring it as one gram (a kg
+ *    item at ₹765 rang as ₹0.77 — the customer under-charged and the stock ledger told 1 g left the shelf). Working a weight
+ *    back from the price would be a guess whenever the scale's price per kg and the till's differ. Only a label carrying
+ *    the WEIGHT is rung (the weight × the till's own price per kg, the B5 rule); a price-only label is refused.
+ *  • `weight_label_for_counted_item` — a weight label for a product sold by the piece (`ea`): its grams would ring as that
+ *    many pieces (850 g as 850 items). The product's unit or the label is wrong; refused until the office corrects it.
+ *
+ * A weight is never keyed instead (OB-302 "never key a weight"). Said in the cashier's words, English and Tamil.
+ */
+export class ScaleLabelRefusedError extends Error {
+  readonly laneMessage: string;
+  readonly laneMessageTa: string;
+  constructor(
+    public readonly productId: string,
+    public readonly description: string,
+    public readonly uom: string,
+    public readonly reason: 'price_only_label_for_measured_item' | 'weight_label_for_counted_item',
+  ) {
+    super(reason === 'price_only_label_for_measured_item'
+      ? `${description} is sold by ${uom}; this label carries only a price, not how much, so it was not added.`
+      : `${description} is sold by the piece; this label carries a weight, so it was not added.`);
+    this.name = 'ScaleLabelRefusedError';
+    this.laneMessage = reason === 'price_only_label_for_measured_item'
+      ? `${description} is sold by ${uom}. This label's barcode carries only a price, not the weight, so the till cannot ring it correctly and it was not added to the bill. Weigh it on a verified scale set to print the weight in the barcode, and scan that label. A weight is never typed in.`
+      : `${description} is sold by the piece, but this label's barcode carries a weight, so it was not added to the bill. Scan the item's own barcode, and ask the office to check how this product is set up.`;
+    this.laneMessageTa = reason === 'price_only_label_for_measured_item'
+      ? `${description} ${uom} அளவில் விற்கப்படுகிறது. இந்த லேபிளின் பார்கோடில் விலை மட்டுமே உள்ளது, எடை இல்லை, எனவே சரியாகப் பில் போட முடியாது; பில்லில் சேர்க்கப்படவில்லை. பார்கோடில் எடையை அச்சிடும்படி அமைக்கப்பட்ட சரிபார்க்கப்பட்ட தராசில் எடைபோட்டு, அந்த லேபிளை ஸ்கேன் செய்யவும். எடையைக் கையால் உள்ளிட வேண்டாம்.`
+      : `${description} ஒவ்வொன்றாக விற்கப்படுகிறது, ஆனால் இந்த லேபிளின் பார்கோடில் எடை உள்ளது, எனவே பில்லில் சேர்க்கப்படவில்லை. பொருளின் சொந்தப் பார்கோடை ஸ்கேன் செய்யவும்; இந்தப் பொருளின் அமைப்பைச் சரிபார்க்க அலுவலகத்திடம் சொல்லவும்.`;
+  }
+}
+
+/**
+ * OB-302 "never key a weight" (Round B follow-up): the cashier's Qty keypad on a line sold by weight or volume (kg, g, L, ml).
+ * The keypad asked "Quantity" and took the number as GRAMS — "2" for 2 kg rang 2 g — and any number keyed there is a
+ * weight typed by hand, which the owner ruled out. The line keeps the quantity its scale label gave it. For more of the
+ * item, weigh it again and scan the new label; to take it off, void the line. Said in the cashier's words, English and Tamil.
+ */
+export class MeasuredLineQuantityRefusedError extends Error {
+  readonly reason = 'measured_line_quantity_keyed' as const;
+  readonly laneMessage: string;
+  readonly laneMessageTa: string;
+  constructor(public readonly description: string, public readonly uom: string) {
+    super(`${description} is sold by ${uom}; its quantity cannot be keyed.`);
+    this.name = 'MeasuredLineQuantityRefusedError';
+    this.laneMessage = `${description} is sold by ${uom}, so its quantity comes only from the scale's label and cannot be typed in. Nothing was changed. For a different amount, weigh it again and scan the new label (void this line if it is wrong).`;
+    this.laneMessageTa = `${description} ${uom} அளவில் விற்கப்படுகிறது, எனவே அதன் அளவு தராசின் லேபிளிலிருந்து மட்டுமே வரும்; கையால் உள்ளிட முடியாது. எதுவும் மாற்றப்படவில்லை. வேறு அளவுக்கு, மீண்டும் எடைபோட்டு புதிய லேபிளை ஸ்கேன் செய்யவும் (இந்த வரி தவறு என்றால் அதை ரத்து செய்யவும்).`;
+  }
+}
+
+/**
  * OB-501 (R7-A · M33-FR-02): this till's app build is withdrawn or below the minimum supported version, so it may finish the
  * bill in progress but may not START a new one until it is updated. Said in the cashier's words, English and Tamil.
  */

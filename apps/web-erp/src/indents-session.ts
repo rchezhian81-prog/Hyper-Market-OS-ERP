@@ -27,6 +27,7 @@ import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { deviceItemState, deviceItemReason, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 import { ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
+import { normaliseUom, quantityLabel, toDecimalString, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
 
 // ── what the screen was last told (the register, one snapshot) ───────────────────────────────────────────────
 
@@ -214,12 +215,12 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     issueLabel: 'Issue', issuedByLabel: 'issued by', issueInTransit: 'on the trolley', issueReceived: 'counted in',
     flagShortStock: 'The back store had less than asked', flagShortAllocated: 'Less was allocated than asked', flagPartialIssue: 'Issued in parts',
     flagPartialReceipt: 'Something did not arrive — a valued exception is on the exceptions list', flagCancelledRemainder: 'The remainder was cancelled',
-    raiseHeading: 'Raise an indent', raiseProductLabel: 'Product', raiseQtyLabel: 'How many', raiseUomLabel: 'Unit', raiseAddLine: 'Add the line', raiseLinesHeading: 'Lines on this indent', raiseRemove: 'Remove',
+    raiseHeading: 'Raise an indent', raiseProductLabel: 'Product', raiseQtyLabel: 'How many, in its unit (2.5 = 2.5 kg)', raiseUomLabel: 'Unit', raiseAddLine: 'Add the line', raiseLinesHeading: 'Lines on this indent', raiseRemove: 'Remove',
     raiseReasonLabel: 'Why (optional)', raiseReasonPlaceholder: 'e.g. shelf 4 is empty', raiseBtn: 'Save the indent on this device',
     raiseSaved: 'Indent saved on this device — it will go to the store computer and head office, and a different person must approve it.',
     raiseNotPermitted: 'You do not have permission to raise an indent.', raiseNobodyNamed: 'This store computer has not been told who is using this screen — an indent carries a name.',
     raiseNoPlaces: 'This store computer has not been told its floor and back store, so nothing can be asked for.', raiseNoLines: 'Add at least one line before saving.',
-    raiseBadLine: 'A line needs a product and a whole number of units above zero.', raiseDuplicateProduct: 'That product is already on this indent — change its quantity instead.',
+    raiseBadLine: 'A line needs a product and an amount above zero in its unit: whole items, or kg / litres to three decimals (2.5 kg).', raiseDuplicateProduct: 'That product is already on this indent — change its quantity instead.',
     approveHeading: 'Approve an indent', approveChoiceLabel: 'Which indent', approveReasonLabel: 'Note for the record (optional)', approveReasonPlaceholder: 'e.g. allocated what the back store holds',
     approveBtn: 'Approve and allocate', approveNoneWaiting: 'No indent is waiting for your approval.', approveOwnAsk: 'asked by you — someone else must approve it',
     approveRecorded: 'Indent approved — the back store can issue it.', approveAlready: 'This indent was already approved.',
@@ -227,13 +228,13 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     approveSelf: 'You raised this indent, so you cannot approve it. A different person must (nothing was sent).',
     approveNotPermitted: 'You do not have permission to approve an indent.', approveNotRequested: 'This indent is not waiting for approval.',
     approveNoLink: 'This page cannot reach head office, so nothing can be approved from it.',
-    receiveHeading: 'Count in an issue from the back store', receiveChoiceLabel: 'Which issue', receiveCountedLabel: 'Counted on the floor', receiveBtn: 'Save the count on this device',
+    receiveHeading: 'Count in an issue from the back store', receiveChoiceLabel: 'Which issue', receiveCountedLabel: 'Counted on the floor, in each line\'s unit (2.5 = 2.5 kg)', receiveBtn: 'Save the count on this device',
     receiveNoneOnTrolley: 'Nothing is on the trolley for you to count in.', receiveOwnIssue: 'issued by you — someone else must count it in',
     receiveSaved: 'Count saved on this device — it will go to the store computer and head office, which puts what arrived on the shelf.',
     receiveNotPermitted: 'You do not have permission to receive stock on the floor.', receiveNobodyNamed: 'This store computer has not been told who is using this screen — a receipt carries a name.',
     receiveIssueUnknown: 'That issue is not on the register.', receiveNotInTransit: 'That issue has already been counted in.',
     receiveIssuerCannot: 'You issued this stock, so you cannot count it in on the floor — a different person must (nothing was saved).',
-    receiveBadCount: 'Each line needs a whole number of units, zero or more.', receiveAlreadySaved: 'This count is already saved on this device.',
+    receiveBadCount: 'Each line needs an amount in its unit, zero or more: whole items, or kg / litres to three decimals.', receiveAlreadySaved: 'This count is already saved on this device.',
     resolveHeading: 'Resolve a shortfall', resolveChoiceLabel: 'Which issue arrived short', resolveFoundLabel: 'Found again', resolveReasonLabel: 'Why the rest is gone',
     resolveNoteLabel: 'What was done to look for it', resolveNotePlaceholder: 'e.g. searched the back store and the trolley bay',
     resolveBtn: 'Record the resolution', resolveNoneOpen: 'No shortfall is waiting for you to resolve.',
@@ -244,7 +245,7 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     resolveIssuerCannot: 'You issued this stock, so you cannot resolve its shortfall — a different person must (nothing was sent).',
     resolveCounterCannot: 'You counted this stock in, so you cannot resolve its shortfall — a different person must (nothing was sent).',
     resolveBadReason: 'Choose why the rest is gone.', resolveNoteTooShort: 'Say what was done to look for the stock (a few words at least).',
-    resolveBadFound: 'Found again is a whole number, zero or more, and never more than went missing.',
+    resolveBadFound: 'Found again is an amount in its unit (whole items, or kg / litres to three decimals), zero or more, and never more than went missing.',
     noResolve: 'You can see the indents, but resolving a shortfall needs the stock-adjustment approval permission.',
     issueShortWord: 'short', issueResolvedBy: 'shortfall resolved by', issueLostWord: 'lost', resolveMissingWord: 'missing',
     reason_damaged: 'Damaged', reason_expired: 'Expired', reason_miscount: 'Miscounted', reason_found: 'Found', reason_theft_suspected: 'Theft suspected', reason_other: 'Other',
@@ -269,12 +270,12 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     issueLabel: 'வழங்கல்', issuedByLabel: 'வழங்கியவர்', issueInTransit: 'தள்ளுவண்டியில்', issueReceived: 'எண்ணி வாங்கப்பட்டது',
     flagShortStock: 'கேட்டதை விட பின் கடையில் குறைவாக இருந்தது', flagShortAllocated: 'கேட்டதை விட குறைவாக ஒதுக்கப்பட்டது', flagPartialIssue: 'பகுதிகளாக வழங்கப்பட்டது',
     flagPartialReceipt: 'ஏதோ வந்து சேரவில்லை — மதிப்பிடப்பட்ட விதிவிலக்கு விதிவிலக்குப் பட்டியலில் உள்ளது', flagCancelledRemainder: 'மீதி ரத்து செய்யப்பட்டது',
-    raiseHeading: 'கோரிக்கையை எழுப்பு', raiseProductLabel: 'பொருள்', raiseQtyLabel: 'எத்தனை', raiseUomLabel: 'அலகு', raiseAddLine: 'வரியைச் சேர்', raiseLinesHeading: 'இந்தக் கோரிக்கையின் வரிகள்', raiseRemove: 'நீக்கு',
+    raiseHeading: 'கோரிக்கையை எழுப்பு', raiseProductLabel: 'பொருள்', raiseQtyLabel: 'எத்தனை, அதன் அலகில் (2.5 = 2.5 கிலோ)', raiseUomLabel: 'அலகு', raiseAddLine: 'வரியைச் சேர்', raiseLinesHeading: 'இந்தக் கோரிக்கையின் வரிகள்', raiseRemove: 'நீக்கு',
     raiseReasonLabel: 'ஏன் (விருப்பம்)', raiseReasonPlaceholder: 'எ.கா. அடுக்கு 4 காலியாக உள்ளது', raiseBtn: 'கோரிக்கையை இந்தக் கருவியில் சேமி',
     raiseSaved: 'கோரிக்கை இந்தக் கருவியில் சேமிக்கப்பட்டது — கடை கணினிக்கும் தலைமை அலுவலகத்திற்கும் செல்லும்; வேறு ஒருவர் ஒப்புதல் அளிக்க வேண்டும்.',
     raiseNotPermitted: 'கோரிக்கையை எழுப்ப உங்களுக்கு அனுமதி இல்லை.', raiseNobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை — கோரிக்கையில் பெயர் இருக்கும்.',
     raiseNoPlaces: 'இந்தக் கடை கணினிக்கு அதன் தளமும் பின் கடையும் சொல்லப்படவில்லை, அதனால் எதுவும் கேட்க முடியாது.', raiseNoLines: 'சேமிக்கும் முன் குறைந்தது ஒரு வரியைச் சேர்க்கவும்.',
-    raiseBadLine: 'ஒரு வரிக்கு பொருளும் பூஜ்ஜியத்திற்கு மேல் முழு எண் அலகுகளும் தேவை.', raiseDuplicateProduct: 'அந்தப் பொருள் இந்தக் கோரிக்கையில் ஏற்கனவே உள்ளது — அதன் அளவை மாற்றுங்கள்.',
+    raiseBadLine: 'ஒரு வரிக்கு பொருளும் அதன் அலகில் பூஜ்ஜியத்திற்கு மேல் அளவும் தேவை: முழு எண் பொருட்கள், அல்லது மூன்று தசம இடங்கள் வரை கிலோ / லிட்டர் (2.5 கிலோ).', raiseDuplicateProduct: 'அந்தப் பொருள் இந்தக் கோரிக்கையில் ஏற்கனவே உள்ளது — அதன் அளவை மாற்றுங்கள்.',
     approveHeading: 'கோரிக்கைக்கு ஒப்புதல்', approveChoiceLabel: 'எந்தக் கோரிக்கை', approveReasonLabel: 'பதிவுக்கான குறிப்பு (விருப்பம்)', approveReasonPlaceholder: 'எ.கா. பின் கடையில் உள்ளதை ஒதுக்கினேன்',
     approveBtn: 'ஒப்புதல் அளித்து ஒதுக்கு', approveNoneWaiting: 'உங்கள் ஒப்புதலுக்கு எந்தக் கோரிக்கையும் காத்திருக்கவில்லை.', approveOwnAsk: 'நீங்கள் கேட்டது — வேறு ஒருவர் ஒப்புதல் அளிக்க வேண்டும்',
     approveRecorded: 'கோரிக்கை ஒப்புதல் பெற்றது — பின் கடை வழங்கலாம்.', approveAlready: 'இந்தக் கோரிக்கை ஏற்கனவே ஒப்புதல் பெற்றது.',
@@ -282,13 +283,13 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     approveSelf: 'இந்தக் கோரிக்கையை நீங்களே எழுப்பினீர்கள், அதனால் ஒப்புதல் அளிக்க முடியாது. வேறு ஒருவர் அளிக்க வேண்டும் (எதுவும் அனுப்பப்படவில்லை).',
     approveNotPermitted: 'கோரிக்கைக்கு ஒப்புதல் அளிக்க உங்களுக்கு அனுமதி இல்லை.', approveNotRequested: 'இந்தக் கோரிக்கை ஒப்புதலுக்குக் காத்திருக்கவில்லை.',
     approveNoLink: 'இந்தப் பக்கம் தலைமை அலுவலகத்தை அடைய முடியாது, அதனால் இங்கிருந்து ஒப்புதல் அளிக்க முடியாது.',
-    receiveHeading: 'பின் கடையிலிருந்து வந்ததை எண்ணி வாங்கு', receiveChoiceLabel: 'எந்த வழங்கல்', receiveCountedLabel: 'தளத்தில் எண்ணியது', receiveBtn: 'எண்ணிக்கையை இந்தக் கருவியில் சேமி',
+    receiveHeading: 'பின் கடையிலிருந்து வந்ததை எண்ணி வாங்கு', receiveChoiceLabel: 'எந்த வழங்கல்', receiveCountedLabel: 'தளத்தில் எண்ணியது, ஒவ்வொரு வரியின் அலகில் (2.5 = 2.5 கிலோ)', receiveBtn: 'எண்ணிக்கையை இந்தக் கருவியில் சேமி',
     receiveNoneOnTrolley: 'நீங்கள் எண்ணி வாங்க தள்ளுவண்டியில் எதுவும் இல்லை.', receiveOwnIssue: 'நீங்கள் வழங்கியது — வேறு ஒருவர் எண்ணி வாங்க வேண்டும்',
     receiveSaved: 'எண்ணிக்கை இந்தக் கருவியில் சேமிக்கப்பட்டது — கடை கணினிக்கும் தலைமை அலுவலகத்திற்கும் செல்லும்; வந்ததை அது அடுக்கில் வைக்கும்.',
     receiveNotPermitted: 'தளத்தில் சரக்கு பெற உங்களுக்கு அனுமதி இல்லை.', receiveNobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை — பெறுதலில் பெயர் இருக்கும்.',
     receiveIssueUnknown: 'அந்த வழங்கல் பதிவேட்டில் இல்லை.', receiveNotInTransit: 'அந்த வழங்கல் ஏற்கனவே எண்ணி வாங்கப்பட்டது.',
     receiveIssuerCannot: 'இந்தச் சரக்கை நீங்கள் வழங்கினீர்கள், அதனால் தளத்தில் எண்ணி வாங்க முடியாது — வேறு ஒருவர் வாங்க வேண்டும் (எதுவும் சேமிக்கப்படவில்லை).',
-    receiveBadCount: 'ஒவ்வொரு வரிக்கும் பூஜ்ஜியம் அல்லது அதற்கு மேல் முழு எண் அலகுகள் தேவை.', receiveAlreadySaved: 'இந்த எண்ணிக்கை ஏற்கனவே இந்தக் கருவியில் சேமிக்கப்பட்டது.',
+    receiveBadCount: 'ஒவ்வொரு வரிக்கும் அதன் அலகில் பூஜ்ஜியம் அல்லது அதற்கு மேல் அளவு தேவை: முழு எண் பொருட்கள், அல்லது மூன்று தசம இடங்கள் வரை கிலோ / லிட்டர்.', receiveAlreadySaved: 'இந்த எண்ணிக்கை ஏற்கனவே இந்தக் கருவியில் சேமிக்கப்பட்டது.',
     resolveHeading: 'குறைவைத் தீர்', resolveChoiceLabel: 'எந்த வழங்கல் குறைவாக வந்தது', resolveFoundLabel: 'மீண்டும் கிடைத்தது', resolveReasonLabel: 'மீதி ஏன் இல்லை',
     resolveNoteLabel: 'தேட என்ன செய்யப்பட்டது', resolveNotePlaceholder: 'எ.கா. பின் கடையிலும் தள்ளுவண்டி இடத்திலும் தேடினோம்',
     resolveBtn: 'தீர்வைப் பதிவு செய்', resolveNoneOpen: 'நீங்கள் தீர்க்க எந்தக் குறைவும் காத்திருக்கவில்லை.',
@@ -299,7 +300,7 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     resolveIssuerCannot: 'இந்தச் சரக்கை நீங்கள் வழங்கினீர்கள், அதனால் அதன் குறைவைத் தீர்க்க முடியாது — வேறு ஒருவர் தீர்க்க வேண்டும் (எதுவும் அனுப்பப்படவில்லை).',
     resolveCounterCannot: 'இந்தச் சரக்கை நீங்கள் எண்ணி வாங்கினீர்கள், அதனால் அதன் குறைவைத் தீர்க்க முடியாது — வேறு ஒருவர் தீர்க்க வேண்டும் (எதுவும் அனுப்பப்படவில்லை).',
     resolveBadReason: 'மீதி ஏன் இல்லை என்பதைத் தேர்ந்தெடுக்கவும்.', resolveNoteTooShort: 'சரக்கைத் தேட என்ன செய்யப்பட்டது என்று சொல்லுங்கள் (குறைந்தது சில சொற்கள்).',
-    resolveBadFound: 'மீண்டும் கிடைத்தது பூஜ்ஜியம் அல்லது அதற்கு மேல் முழு எண்; காணாமல் போனதை விட அதிகமாக இருக்கக் கூடாது.',
+    resolveBadFound: 'மீண்டும் கிடைத்தது அதன் அலகில் ஓர் அளவு (முழு எண் பொருட்கள், அல்லது மூன்று தசம இடங்கள் வரை கிலோ / லிட்டர்), பூஜ்ஜியம் அல்லது அதற்கு மேல்; காணாமல் போனதை விட அதிகமாக இருக்கக் கூடாது.',
     noResolve: 'கோரிக்கைகளைப் பார்க்கலாம், ஆனால் குறைவைத் தீர்க்க சரக்குச் சரிசெய்தல் ஒப்புதல் அனுமதி தேவை.',
     issueShortWord: 'குறைவு', issueResolvedBy: 'குறைவைத் தீர்த்தவர்', issueLostWord: 'இழப்பு', resolveMissingWord: 'காணவில்லை',
     reason_damaged: 'சேதமடைந்தது', reason_expired: 'காலாவதியானது', reason_miscount: 'தவறாக எண்ணப்பட்டது', reason_found: 'கிடைத்தது', reason_theft_suspected: 'திருட்டு சந்தேகம்', reason_other: 'மற்றவை',
@@ -368,12 +369,21 @@ export interface IndentsView {
   readonly nobodyNamed: boolean;
 }
 
-export interface RaiseLineInput { readonly productId: string; readonly quantityMinor: string; readonly uom: string }
+/**
+ * One line of an ask (OB-31 rule 1). From the raise form it is AS TYPED: `quantity` in the item's own unit — "10" items,
+ * "2.5" kg, "1.25" L — and the session sends the integer count of the unit's smallest step (10 · 2500 g · 1250 ml). From
+ * another screen's model (the shelf-refill draft) it already IS that count: `quantityMinor`, a whole number, sent as is.
+ * `uom` blank = the catalogue's.
+ */
+export type RaiseLineInput =
+  | { readonly productId: string; readonly quantity: string; readonly uom: string }
+  | { readonly productId: string; readonly quantityMinor: string; readonly uom: string };
 export interface RaiseInput { readonly lines: readonly RaiseLineInput[]; readonly reason: string; readonly indentId?: string }
 export type RaiseRefusal = 'not_permitted' | 'nobody_named' | 'no_places' | 'no_lines' | 'bad_line' | 'duplicate_product';
 export type RaiseOutcome = { readonly ok: true; readonly indentId: string } | { readonly ok: false; readonly refusal: RaiseRefusal };
 
-export interface ReceiveInput { readonly indentId: string; readonly issueId: string; readonly counted: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: string }[] }
+/** A count-in, AS TYPED in each line's own unit ("2.5" of a kg line is 2500 g; "0" = none arrived) — OB-31 rule 1. */
+export interface ReceiveInput { readonly indentId: string; readonly issueId: string; readonly counted: readonly { readonly productId: string; readonly batchId: string | null; readonly quantity: string }[] }
 export type ReceiveRefusal = 'not_permitted' | 'nobody_named' | 'issue_unknown' | 'not_in_transit' | 'issuer_cannot_receive' | 'bad_count' | 'already_saved';
 export type ReceiveOutcome = { readonly ok: true; readonly indentId: string; readonly issueId: string } | { readonly ok: false; readonly refusal: ReceiveRefusal };
 
@@ -382,8 +392,8 @@ export interface ResolveInput {
   readonly issueId: string;
   readonly reasonCode: string;
   readonly note: string;
-  /** What turned up per shortfall line, as typed; a line not named was not found. */
-  readonly found: readonly { readonly productId: string; readonly batchId: string | null; readonly foundMinor: string }[];
+  /** What turned up per shortfall line, as typed in the line's own unit (OB-31 rule 1); a line not named was not found. */
+  readonly found: readonly { readonly productId: string; readonly batchId: string | null; readonly found: string }[];
 }
 export type ResolveOutcome =
   | { readonly outcome: 'resolved' | 'already_resolved' | 'lost_link' | 'not_permitted' | 'no_link' | 'issue_unknown' | 'not_open' | 'issuer_cannot_resolve' | 'counter_cannot_resolve' | 'bad_reason' | 'note_too_short' | 'bad_found' }
@@ -420,6 +430,12 @@ export interface IndentsSession {
   presentResolveOutcome(lang: Lang, outcome: ResolveOutcome): StatusPresentation;
   raiseRefusalWords(lang: Lang, refusal: RaiseRefusal): string;
   receiveRefusalWords(lang: Lang, refusal: ReceiveRefusal): string;
+  /** OB-31: the unit a line of this indent is counted in — the indent's own line, else the catalogue's; '' when not known. */
+  unitOf(indentId: string, productId: string): string;
+  /** OB-31: a held quantity as the number a person types back in its unit (2500 of a kg line → "2.500"; 12 items → "12"). */
+  typedText(quantityMinor: number, uom: string): string;
+  /** OB-31: a held quantity as a person reads it (2500 of a kg line → "2.500 kg"; 12 items → "12"). */
+  quantityText(quantityMinor: number, uom: string): string;
   /** Everything this screen saved, newest first, from the durable queue — the same after a reload. */
   savedWork(): readonly SavedIndentWork[];
   /** The queue keys the store computer has taken, to ask it where they have got to. */
@@ -431,6 +447,19 @@ export interface IndentsSession {
 const isPosInt = (n: number): boolean => Number.isInteger(n) && n > 0;
 const isNonNegInt = (n: number): boolean => Number.isInteger(n) && n >= 0;
 const wholeNumber = (raw: string): number | undefined => (/^\d+$/.test(raw.trim()) ? Number(raw.trim()) : undefined);
+/**
+ * OB-31 rule 1 — a typed amount in the line's own unit as the integer count of its smallest step, through the ONE shared
+ * reading (`typedQuantityMinor`): "2.5" of a kg line is 2500 g, "10" items is 10, a fraction of an item is refused. A unit
+ * this system does not know as a unit (a pack level the product master defines, e.g. a case) keeps the whole-number count
+ * it always took — head office converts pack levels to base units — and is never scaled by a guess.
+ */
+const typedIn = (raw: string, uom: string, allowZero: boolean): number | undefined => {
+  if (normaliseUom(uom) === undefined) {
+    const n = wholeNumber(raw);
+    return n === undefined || (n === 0 && !allowZero) ? undefined : n;
+  }
+  return typedQuantityMinor(raw, uom, { allowZero });
+};
 
 /** A fresh indent / receipt id on this device: the browser's own random id, or a time-and-counter fallback. */
 let counter = 0;
@@ -457,6 +486,11 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
   const shortfallOpen = (i: IndentIssueView): boolean => i.state === 'received' && (i.shortfall ?? []).some((s) => s.quantityMinor > 0) && (i.resolvedBy ?? null) === null;
   /** Receipts already saved on this device for an issue — offered no second time. */
   const receiptSavedHere = (indentId: string, issueId: string): boolean => outbox.find(receiptKeyFor(indentId, issueId)) !== undefined;
+  /** The unit a line is counted in: the indent's own line first (what head office holds), then the catalogue's. */
+  const unitOf = (indentId: string, productId: string): string => {
+    const row = (ports.snapshot().indents ?? []).find((r) => r.indentId === indentId);
+    return row?.lines.find((l) => l.productId === productId)?.uom ?? config.products.find((p) => p.productId === productId)?.uom ?? '';
+  };
 
   const present = (lang: Lang, row: IndentRowView): PresentedIndent => {
     const t = translator(INDENTS_COPY, lang);
@@ -543,8 +577,9 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
       const lines: { productId: string; quantityMinor: number; uom: string }[] = [];
       for (const l of input.lines) {
         const productId = l.productId.trim();
-        const qty = wholeNumber(l.quantityMinor);
         const uom = (l.uom.trim() === '' ? config.products.find((p) => p.productId === productId)?.uom ?? 'EA' : l.uom.trim()).toUpperCase();
+        // OB-31: typed in the item's unit — "10" kg is 10,000 g, never 10 g (the bug the buying screen had, OB-614).
+        const qty = 'quantityMinor' in l ? wholeNumber(l.quantityMinor) : typedIn(l.quantity, uom, false);
         if (productId === '' || qty === undefined || !isPosInt(qty)) return { ok: false, refusal: 'bad_line' };
         if (lines.some((x) => x.productId === productId)) return { ok: false, refusal: 'duplicate_product' };
         lines.push({ productId, quantityMinor: qty, uom });
@@ -573,7 +608,8 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
       if (receiptSavedHere(input.indentId, input.issueId)) return { ok: false, refusal: 'already_saved' };
       const counted: { productId: string; batchId: string | null; quantityMinor: number }[] = [];
       for (const c of input.counted) {
-        const qty = wholeNumber(c.quantityMinor);
+        // OB-31: counted in the line's unit — "2.5" of a kg line is 2500 g; "0" says none of it arrived.
+        const qty = typedIn(c.quantity, unitOf(input.indentId, c.productId.trim()), true);
         if (c.productId.trim() === '' || qty === undefined || !isNonNegInt(qty)) return { ok: false, refusal: 'bad_count' };
         counted.push({ productId: c.productId.trim(), batchId: c.batchId, quantityMinor: qty });
       }
@@ -612,8 +648,8 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
       if (note.length < 4) return { outcome: 'note_too_short' };
       const lines: { productId: string; batchId: string | null; foundMinor: number }[] = [];
       for (const f of input.found) {
-        const raw = f.foundMinor.trim() === '' ? '0' : f.foundMinor;
-        const qty = wholeNumber(raw);
+        const raw = f.found.trim() === '' ? '0' : f.found;
+        const qty = typedIn(raw, unitOf(row.indentId, f.productId), true);
         const missing = (issue.shortfall ?? []).find((s) => s.productId === f.productId && s.batchId === f.batchId);
         if (qty === undefined || !isNonNegInt(qty) || missing === undefined || qty > missing.quantityMinor) return { outcome: 'bad_found' };
         if (qty > 0) lines.push({ productId: f.productId, batchId: f.batchId, foundMinor: qty });
@@ -669,6 +705,13 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
       return t(key[refusal]);
     },
 
+    unitOf,
+    typedText: (quantityMinor, uom) => {
+      const unit = normaliseUom(uom);
+      return unit === undefined ? String(quantityMinor) : toDecimalString({ minor: quantityMinor, uom: unit });
+    },
+    quantityText: (quantityMinor, uom) => quantityLabel(quantityMinor, uom),
+
     savedWork: () => outbox.all()
       .filter((item) => item.event.type === FLOOR_INDENT_REQUESTED || item.event.type === FLOOR_INDENT_RECEIVED)
       .map((item): SavedIndentWork => {
@@ -677,10 +720,10 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
         const common = { at: item.event.occurredAt, state: deviceItemState(item, box), attempts: item.attempts, ...(reason === undefined ? {} : { reason }) };
         if (item.event.type === FLOOR_INDENT_REQUESTED) {
           const p = item.event.payload as FloorIndentRequestedPayload;
-          return { kind: 'request', id: p.indentId, what: p.indentId, detail: p.lines.map((l) => `${l.productId} × ${l.quantityMinor}`).join(' · '), ...common };
+          return { kind: 'request', id: p.indentId, what: p.indentId, detail: p.lines.map((l) => `${l.productId} × ${quantityLabel(l.quantityMinor, l.uom)}`).join(' · '), ...common };
         }
         const p = item.event.payload as FloorIndentReceivedPayload;
-        return { kind: 'receipt', id: `${p.indentId}:${p.issueId}`, what: `${p.indentId} · ${p.issueId}`, detail: p.counted.map((c) => `${c.productId} × ${c.quantityMinor}`).join(' · '), ...common };
+        return { kind: 'receipt', id: `${p.indentId}:${p.issueId}`, what: `${p.indentId} · ${p.issueId}`, detail: p.counted.map((c) => `${c.productId} × ${quantityLabel(c.quantityMinor, unitOf(p.indentId, c.productId))}`).join(' · '), ...common };
       })
       .reverse(),
 
