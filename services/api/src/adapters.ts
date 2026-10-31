@@ -207,7 +207,7 @@ import { receiptRuleFor } from '../../inventory/src/goods-receipt';
 import { COLD_CHAIN_CLASS_DEFAULTS } from '../../../packages/fulfilment/src/packing';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
-import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy } from '../../purchase/src/index';
+import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy, OtherChargesMarking } from '../../purchase/src/index';
 import { capturePortalInvoice } from '../../purchase/src/index';
 import type { Asn } from '../../../packages/receiving/src/asn';
 import { foldAllSupplierAccounts, foldSupplierAccount, doorDebitNotesFrom, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue, type DoorCheckInForAccount } from '../../purchase/src/supplier-account'; // R3 OB-196: doorDebitNotesFrom
@@ -8323,6 +8323,18 @@ export function purchaseAdapter(input: {
       return all.filter((m) => m.invoiceId === invoiceId).at(-1);
     },
 
+    // OB-556: what a person marked a bill's other charges as — append-only, ONCE per bill: the event is keyed on the bill,
+    // so a second marking collapses onto the first, which is what stands (and what the route compares, refusing a different one).
+    otherChargesMarking: async (tenantId, invoiceId) =>
+      (await input.store.findByIdempotencyKey(tenantId, `other-charges-${tenantId}-${invoiceId}`))?.event.payload as OtherChargesMarking | undefined,
+    recordOtherChargesMarking: async (tenantId, marking) => {
+      const key = `other-charges-${tenantId}-${marking.invoiceId}`;
+      await input.store.append(tenantId, STREAM.purchase, makeEvent({
+        id: keyedEventId('other-charges', key), type: 'OtherChargesMarked', occurredAt: marking.markedAt,
+        idempotencyKey: key, source: 'api/purchase', payload: marking as unknown as Record<string, unknown>,
+      }));
+      return (await input.store.findByIdempotencyKey(tenantId, key))!.event.payload as OtherChargesMarking;
+    },
     // SP-7c (M06-FR-01 · §28): who created the supplier's master record — they may never approve its bank details.
     supplierCreatedBy: async (tenantId, supplierId) => (await latestSupplierRecord(input.store, tenantId, supplierId))?.createdBy,
     // SP-7b: the tenant's match tolerances — set by the owner, applied by /match, said on every verdict. Latest wins.

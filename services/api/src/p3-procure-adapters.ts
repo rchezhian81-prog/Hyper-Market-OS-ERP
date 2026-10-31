@@ -494,13 +494,16 @@ export function p3ReceiptHooks(input: { readonly store: EventStore; readonly now
 // ── M07-FR-04 — a matched bill's landed charges into stock value ────────────────────────────────────────────────────
 
 /**
- * Post the landed-cost apportionment of a matched bill: when the bill may be paid against an issued order, its charges are
+ * Post the landed-cost apportionment of a matched bill: when the bill may be paid against an issued order, its charges
+ * that belong in stock cost (freight, duty; other charges once marked cost — OB-556) are
  * apportioned (to the paisa) across the products paid for by value, then across the places each was received at by
  * quantity; only the DIFFERENCE from what this bill already posted is appended (one atomic batch). A blocked bill, or one
  * with no order, posts back whatever it had posted. Returns what was posted and what now stands.
  */
 export async function postLandedCostOf(input: Base, tenantId: string, a: Parameters<NonNullable<PurchaseDeps['postLandedCost']>>[1]) {
-  const total = chargesTotal(a.invoice.landedCharges);
+  // OB-556: what of the bill's charges belongs in stock cost — freight, duty, and other charges only once a person marked
+  // them freight/cost (`stockChargesOf`, decided by the route). Never more than the bill's charges.
+  const total = Math.min(a.stockChargesMinor, chargesTotal(a.invoice.landedCharges));
   const poId = a.match.poId;
   const targets = new Map<string, LandedCostTarget>();
   if (poId !== null) {
@@ -521,7 +524,9 @@ export async function postLandedCostOf(input: Base, tenantId: string, a: Paramet
   const at = input.now();
   const events = deltas.map((d) => {
     const adj: StockCostAdjustment = {
-      adjustmentId: `landed:${a.invoice.invoiceId}:${a.match.matchedAt}:${d.productId}:${d.locationId}`, invoiceId: a.invoice.invoiceId, poId,
+      // OB-556: a posting on a basis other than the bill's full charges (other charges not yet in stock cost) carries that
+      // basis in its id, so a later marking under the SAME match is its own compensating entry, never collapsed onto this one.
+      adjustmentId: `landed:${a.invoice.invoiceId}:${a.match.matchedAt}${total === chargesTotal(a.invoice.landedCharges) ? '' : `:stock${total}`}:${d.productId}:${d.locationId}`, invoiceId: a.invoice.invoiceId, poId,
       productId: d.productId, locationId: d.locationId, quantityMinor: d.quantityMinor, valueMinor: d.valueMinor, occurredAt: at, postedBy: a.by, matchedAt: a.match.matchedAt,
     };
     return { stream: STOCK_COST_ADJUSTMENTS_STREAM, event: makeEvent({

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1963,
+  "testFiles": 1972,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 102,
     "browser": 91,
-    "connected": 71,
+    "connected": 72,
     "device": 0,
     "uat": 0
   },
@@ -330,7 +330,7 @@
         "unit": 9,
         "integration": 10,
         "realDb": 3,
-        "browser": 3,
+        "browser": 4,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -367,7 +367,8 @@
         "browser": [
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
-          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts"
+          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
+          "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
@@ -383,10 +384,10 @@
       "id": "M05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
+        "unit": 19,
         "integration": 21,
         "realDb": 7,
-        "browser": 6,
+        "browser": 7,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -397,6 +398,7 @@
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/erp-catalogue-approvals.test.ts",
           "tests/unit/erp-catalogue-boot.test.ts",
+          "tests/unit/erp-catalogue-offer-definition.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/migration-load-command.test.ts",
           "tests/unit/p2-offers-are-deterministic-and-never-reach-tobacco.test.ts",
@@ -445,6 +447,7 @@
           "tests/integration/the-store-trades-a-day.test.ts"
         ],
         "browser": [
+          "tests/e2e/an-offer-is-defined-then-started-through-the-store-computer.e2e.ts",
           "tests/e2e/catalogue-price-change-delivery.e2e.ts",
           "tests/e2e/catalogue-promotion-launch-delivery.e2e.ts",
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
@@ -562,11 +565,11 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
-        "integration": 29,
-        "realDb": 10,
-        "browser": 6,
-        "connected": 0,
+        "unit": 13,
+        "integration": 31,
+        "realDb": 12,
+        "browser": 7,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -582,6 +585,7 @@
           "tests/unit/purchase-match-lines.test.ts",
           "tests/unit/receiving-asn.test.ts",
           "tests/unit/supplier-account-fold.test.ts",
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/warehouse-handheld-receives-against-the-cached-asn.test.ts"
         ],
@@ -589,6 +593,7 @@
           "tests/integration/a-direct-receipt-is-booked-at-the-orders-cost.test.ts",
           "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
@@ -601,6 +606,7 @@
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
+          "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
@@ -619,9 +625,11 @@
         "realDb": [
           "tests/integration/a-direct-receipt-is-booked-at-the-orders-cost.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
+          "tests/integration/other-charges-stay-out-of-stock-cost-until-marked.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
@@ -629,6 +637,7 @@
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [
+          "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
@@ -636,12 +645,14 @@
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
           "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M08",
@@ -747,7 +758,7 @@
       "id": "M09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 14,
+        "unit": 15,
         "integration": 31,
         "realDb": 12,
         "browser": 9,
@@ -759,6 +770,7 @@
         "unit": [
           "tests/unit/counts.test.ts",
           "tests/unit/demand-sales-history.test.ts",
+          "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-counts-session.test.ts",
           "tests/unit/erp-indents-session.test.ts",
           "tests/unit/erp-manager-session.test.ts",
@@ -844,16 +856,17 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 28,
-        "integration": 32,
+        "unit": 29,
+        "integration": 34,
         "realDb": 11,
-        "browser": 7,
+        "browser": 8,
         "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/a-quality-sample-is-recorded-at-the-facilities-screen-offline.test.ts",
           "tests/unit/a-recalled-unit-returned-at-the-till-is-held.test.ts",
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/catalogue.test.ts",
@@ -884,6 +897,7 @@
           "tests/unit/traceability.test.ts"
         ],
         "integration": [
+          "tests/integration/a-held-food-batch-is-sampled-and-released-at-the-store-offline.test.ts",
           "tests/integration/a-lot-trace-reaches-supplier-to-customer-from-stored-facts.test.ts",
           "tests/integration/a-quality-release-reads-the-samples-recorded-on-its-hold.test.ts",
           "tests/integration/a-recall-blocks-the-offline-till-and-tells-the-owner-at-once.test.ts",
@@ -891,6 +905,7 @@
           "tests/integration/a-recall-tells-the-customers-who-consented.test.ts",
           "tests/integration/a-recalled-product-cannot-be-ordered.test.ts",
           "tests/integration/a-returned-item-keeps-its-lot.test.ts",
+          "tests/integration/a-sample-recorded-at-the-store-is-re-checked-at-head-office.test.ts",
           "tests/integration/a-trace-runs-backwards-from-a-sale.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
@@ -931,6 +946,7 @@
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [
+          "tests/e2e/a-held-food-batch-is-sampled-at-the-facilities-screen-with-the-line-down.e2e.ts",
           "tests/e2e/a-quality-hold-is-released-at-the-facilities-screen-with-the-line-down.e2e.ts",
           "tests/e2e/expiry-recall-delivery.e2e.ts",
           "tests/e2e/food-safety-checks-are-saved-with-the-line-down.e2e.ts",
@@ -3703,7 +3719,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 11,
-        "integration": 13,
+        "integration": 14,
         "realDb": 9,
         "browser": 1,
         "connected": 1,
@@ -3728,6 +3744,7 @@
           "tests/integration/a01-says-why-the-takings-fell.test.ts",
           "tests/integration/ai-agents-draft-for-people.test.ts",
           "tests/integration/ai-governance-controls.test.ts",
+          "tests/integration/ai-governance.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-owner-and-purchase-agents.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",

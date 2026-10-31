@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createSupplierBillsSession, readPickedFile, confirmBody, typedCaptureBody, presentMatch, rupeesToPaise, quantityToSteps, documentIdFor,
+  presentOtherCharges, otherChargesSaid, OTHER_CHARGES_WORDS,
   type BillDocument, type HeadOfficeCall,
 } from '../../apps/web-erp/src/supplier-bills-session';
 import { createOpenToBuySession, presentOpenToBuy, budgetHistory, waitingOrders, budgetEntry } from '../../apps/web-erp/src/open-to-buy-session';
@@ -69,6 +70,24 @@ describe('supplier bills — the screen model (D03-FR-02 · WF-05)', () => {
       .not.toMatchObject({ body: { documentId: expect.anything() } });
   });
 
+  it('M07-FR-04: freight, duty and other charges ride as exact paise beside the lines; blank is none; a figure that is not money is said', () => {
+    const line = [{ productId: 'RICE', quantity: '10', unitPrice: '50', amount: '500' }];
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '560.50', lines: line, charges: { freight: '60.50', duty: '', other: ' ' } }))
+      .toEqual({ ok: true, invoiceId: 'i', body: { supplierId: 's', declaredTotalMinor: 56_050, lines: [{ productId: 'RICE', quantity: 10, unitPriceMinor: 5_000, lineTotalMinor: 50_000 }], charges: { freightMinor: 6_050, dutyMinor: 0, otherMinor: 0 } } });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '530', lines: line, charges: { duty: '20', other: '₹10' } }))
+      .toMatchObject({ ok: true, body: { charges: { freightMinor: 0, dutyMinor: 2_000, otherMinor: 1_000 } } });
+    // No charges typed (or all nought): the body carries none — exactly as before.
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line, charges: { freight: '0', duty: '', other: '' } })).not.toMatchObject({ body: { charges: expect.anything() } });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line })).not.toMatchObject({ body: { charges: expect.anything() } });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line, charges: { freight: '12.345' } })).toEqual({ ok: false, problem: 'charges_not_money' });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '500', lines: line, charges: { other: '-5' } })).toEqual({ ok: false, problem: 'charges_not_money' });
+    // Whether lines + charges add up to the total is head office's judgement, never this screen's.
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '1', lines: line, charges: { freight: '60' } })).toMatchObject({ ok: true });
+    // The match shows head office's figure for the charges inside the bill; none ⇒ nought.
+    expect(presentMatch({ invoiceId: 'i', blocked: false, lines: [], landedCharges: { freightMinor: 6_000, dutyMinor: 0, otherMinor: 0, totalMinor: 6_000 } })?.chargesMinor).toBe(6_000);
+    expect(presentMatch({ invoiceId: 'i', blocked: false, lines: [] })?.chargesMinor).toBe(0);
+  });
+
   it('the match is shown exceptions first, with head office\'s own sentence and flags', () => {
     const m = presentMatch({ invoiceId: 'i', poId: 'po-1', blocked: true, payableMinor: 1, invoicedMinor: 2, withheldMinor: 1, ownerAction: 'Hold it', matchedBy: 'u', matchedAt: 't', flags: ['no_approval'],
       lines: [{ productId: 'A', status: 'matched', payableMinor: 1, detail: 'ok' }, { productId: 'B', status: 'blocked', payableMinor: 0, detail: 'short' }, { productId: 'C', status: 'within_tolerance', payableMinor: 0, detail: 'near' }] });
@@ -98,6 +117,41 @@ describe('supplier bills — the screen model (D03-FR-02 · WF-05)', () => {
     expect(confirms[0]?.idempotencyKey).toBe(confirms[1]?.idempotencyKey);
     await s.confirm(draft(), { invoiceId: 'j', entries: [] });
     expect(calls.filter((c) => c.path.endsWith('/confirm'))[2]?.idempotencyKey).not.toBe(confirms[0]?.idempotencyKey);
+  });
+});
+
+describe('OB-556: other charges of unknown kind — not in stock cost until a person marks them', () => {
+  it('says plainly that ₹X is not yet in stock cost; a marking is said with who and why, in English and Tamil', () => {
+    const notMarked = presentOtherCharges({ otherMinor: 6_000, kind: 'not_marked', inStockCost: false, said: 'x' });
+    expect(notMarked).toEqual({ otherMinor: 6_000, kind: 'not_marked', inStockCost: false, markedBy: null, reason: null });
+    expect(otherChargesSaid('en', notMarked!)).toBe('₹60.00 of other charges on this bill are NOT yet in stock cost — nobody has said what they are. Mark them below.');
+    expect(otherChargesSaid('ta', notMarked!)).toMatch(/^₹60\.00 .*சரக்கு விலையில் சேர்க்கப்படவில்லை/);
+    const tax = presentOtherCharges({ otherMinor: 50, kind: 'tax', inStockCost: false, marking: { markedBy: 'u-acct', reason: 'tax on the bill' } })!;
+    expect(otherChargesSaid('en', tax)).toBe('₹0.50 of other charges were marked a tax by u-acct (tax on the bill) — they are never in stock cost.');
+    expect(presentOtherCharges(undefined)).toBeNull();
+    expect(presentOtherCharges({ otherMinor: 1, kind: 'maybe' })).toBeNull();
+    expect(presentMatch({ invoiceId: 'i', blocked: false, lines: [] })?.otherCharges).toBeNull();
+    for (const k of Object.keys(OTHER_CHARGES_WORDS.en)) expect(OTHER_CHARGES_WORDS.ta[k], k).toBeTruthy();
+  });
+
+  it('marking sends only { kind, reason } to head office; a blank reason sends nothing; refusals are said in plain words', async () => {
+    const { call, calls } = recorder({
+      'POST /v1/purchase/invoices/inv-1/other-charges': { status: 201, body: { marking: { kind: 'cost', markedBy: 'u-m', reason: 'loading' }, alreadyMarked: false, otherCharges: { otherMinor: 1_000, kind: 'cost', inStockCost: true, marking: { markedBy: 'u-m', reason: 'loading' } } } },
+      'POST /v1/purchase/invoices/inv-2/other-charges': { status: 409, body: { error: { code: 'segregation_of_duties', whatHappened: 'u-recv received this order.' } } },
+      'GET /v1/purchase/invoices/inv-1': { status: 200, body: { invoice: {}, match: { invoiceId: 'inv-1', blocked: false, lines: [] }, otherCharges: { otherMinor: 1_000, kind: 'not_marked', inStockCost: false } } },
+    });
+    const s = createSupplierBillsSession(call, { permissions: ['purchase.invoice.match'] });
+    expect(await s.markOtherCharges('inv-1', 'cost', '  ')).toMatchObject({ ok: false, code: 'reason_needed' });
+    expect(calls).toHaveLength(0);
+    const ok = await s.markOtherCharges('inv-1', 'cost', ' loading charges ');
+    expect(calls[0]).toMatchObject({ method: 'POST', path: '/v1/purchase/invoices/inv-1/other-charges', body: { kind: 'cost', reason: 'loading charges' } });
+    expect(ok).toMatchObject({ ok: true, value: { kind: 'cost', alreadyMarked: false, otherCharges: { kind: 'cost', inStockCost: true } } });
+    expect(s.otherChargesWords('en', ok).text).toMatch(/now in the stock's cost/);
+    const refused = await s.markOtherCharges('inv-2', 'tax', 'a tax on the bill');
+    expect(s.otherChargesWords('en', refused)).toEqual({ good: false, text: 'Not marked — you raised, received or paid this order, so another person must say what its charges are. Head office said: u-recv received this order.' });
+    expect(s.otherChargesWords('ta', { ok: false, unreachable: true }).good).toBe(false);
+    // The bill's standing rides beside its latest match.
+    expect(await s.latestMatch('inv-1')).toMatchObject({ ok: true, value: { otherCharges: { kind: 'not_marked', otherMinor: 1_000 } } });
   });
 });
 

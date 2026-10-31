@@ -40,6 +40,11 @@ export interface ExtractedInvoice {
   readonly lines: readonly ExtractedInvoiceLine[];
   /** What the bill itself says it totals (with tax), or null when it says nothing readable. */
   readonly statedTotalMinor: number | null;
+  /**
+   * M07-FR-04 (re-audit 30 Oct 2026): the bill's OTHER CHARGES beside its lines, in paise — the e-invoice's `ValDtls.OthChrg`
+   * (freight, packing and the like that belong to no one line). Part of the printed total. Absent when the bill prints none.
+   */
+  readonly otherChargesMinor?: number;
   readonly confidence: number;
   readonly warnings: readonly string[];
 }
@@ -127,13 +132,17 @@ export function parseGstEInvoice(json: unknown): { readonly ok: true; readonly i
   });
   const val = json['ValDtls'];
   const statedTotalMinor = isObj(val) ? rupeesToPaise(val['TotInvVal']) ?? null : null;
+  // M07-FR-04: the invoice-level other charges (`OthChrg`) are part of `TotInvVal`; read exactly, or said — never guessed.
+  const rawOther = isObj(val) ? val['OthChrg'] : undefined;
+  const otherChargesMinor = rawOther === undefined || rawOther === null ? 0 : rupeesToPaise(rawOther);
+  if (otherChargesMinor === undefined) warnings.push(`other charges "${String(rawOther)}" have more than two decimals or are not a number`);
   return {
     ok: true,
     invoice: {
       channel: 'e_invoice', engine: 'gst-e-invoice-json',
       supplierGstin: str((seller as Record<string, unknown>)['Gstin'])?.toUpperCase() ?? null,
       supplierInvoiceNo: str((doc as Record<string, unknown>)['No']), invoiceDate: isoFromDdMmYyyy((doc as Record<string, unknown>)['Dt']),
-      irn: str(json['Irn']), lines, statedTotalMinor, confidence: 1, warnings,
+      irn: str(json['Irn']), lines, statedTotalMinor, ...(otherChargesMinor !== undefined && otherChargesMinor > 0 ? { otherChargesMinor } : {}), confidence: 1, warnings,
     },
   };
 }

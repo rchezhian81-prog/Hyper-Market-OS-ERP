@@ -27,6 +27,12 @@
 // hand; the same shelves asked once a day. The relay (window.merchandisingRelay) hands the queue to
 // the store computer after every save and when the page comes back — never on a timer.
 //
+// ── A range drop is head office's word (M04-FR-01 · re-audit 30 Oct 2026 · P-08) ─
+//
+// "Take it out of the range" goes to head office's own assortment route through the session; the banner says "Taken out
+// of the range" only when head office answered that it recorded it — clearance when its stock position holds any — and
+// shows head office's own words when it refuses. Before, the drop was decided here and saved nowhere.
+//
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
 const el = (id) => document.getElementById(id);
@@ -61,6 +67,9 @@ const WORDS = {
     nothingCarried: 'This screen has not been told what the shop carries.',
     rangeClean: 'The range and the shop agree.',
     dropped: 'Taken out of the range', toClearance: 'Put on clearance', delisted: 'Delisted',
+    hoSays: 'Head office recorded it', dropRefused: 'Head office refused:',
+    dropUnreachable: 'Head office cannot be reached, so nothing was taken out of the range. Try again when the line is back.',
+    dropNotConnected: 'This screen is not connected to head office, so nothing was taken out of the range.',
     spaceLead: 'What each part of the floor earns per square foot. Margin, not turnover — a big seller on a thin margin can be the worst use of space in the building.',
     area: 'Area', sqft: 'Sq ft', salesPerSqFt: 'Sales / sq ft', marginPerSqFt: 'Margin / sq ft',
     notMeaningful: 'not measured', tooMuchSpace: 'takes more space than it earns',
@@ -108,6 +117,9 @@ const WORDS = {
     nothingCarried: 'கடை என்ன வைத்திருக்கிறது என்று இந்தத் திரைக்குத் தெரியவில்லை.',
     rangeClean: 'வரிசையும் கடையும் பொருந்துகின்றன.',
     dropped: 'வரிசையிலிருந்து நீக்கப்பட்டது', toClearance: 'கிளியரன்ஸில் வைக்கப்பட்டது', delisted: 'நீக்கப்பட்டது',
+    hoSays: 'தலைமை அலுவலகம் பதிவு செய்தது', dropRefused: 'தலைமை அலுவலகம் மறுத்தது:',
+    dropUnreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே வரிசையிலிருந்து எதுவும் நீக்கப்படவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
+    dropNotConnected: 'இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை, எனவே வரிசையிலிருந்து எதுவும் நீக்கப்படவில்லை.',
     spaceLead: 'தரையின் ஒவ்வொரு பகுதியும் ஒரு சதுர அடிக்கு எவ்வளவு ஈட்டுகிறது. விற்பனை அல்ல, லாபம் — அதிகம் விற்றாலும் குறைந்த லாபம் என்றால் அது கடையின் மோசமான இட பயன்பாடாக இருக்கலாம்.',
     area: 'பகுதி', sqft: 'சதுர அடி', salesPerSqFt: 'விற்பனை / சதுர அடி', marginPerSqFt: 'லாபம் / சதுர அடி',
     notMeaningful: 'அளக்கப்படவில்லை', tooMuchSpace: 'ஈட்டுவதை விட அதிக இடம் எடுக்கிறது',
@@ -242,7 +254,7 @@ function sampleSession() {
     raiseRefill: () => ({ ok: false, refusal: 'no_indent_link' }),
     check: () => ({ why: 'this_store_has_no_shelf_map' }),
     range: () => [],
-    drop: () => ({ ok: false, detail: 'this is sample data' }),
+    drop: async () => ({ ok: false, refusal: 'not_connected' }),
     rangeIssues: () => [],
     space: () => [],
     contracts: () => [],
@@ -573,26 +585,37 @@ el('drop-item').addEventListener('click', () => {
   const reason = el('drop-reason').value;
   if (productId === '' || reason === '') { tell(t('read'), t('needDropFields')); return; }
   const replacement = el('drop-replacement').value.trim();
-
-  const outcome = session.drop({
+  const button = el('drop-item');
+  if (button.disabled) return;
+  // Asked once: the button waits for head office's answer, so a double tap sends one drop.
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  // M04-FR-01 (P-08): the drop goes to HEAD OFFICE through the session, and "taken out" is said only on its word.
+  void session.drop({
     productId,
     reason,
     ...(replacement === '' ? {} : { replacedByProductId: replacement }),
+  }).then((outcome) => {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    if (!outcome.ok) {
+      // The engine's own refusal (the one that insists a replacement is named) or head office's own words — said rather
+      // than swallowed. No answer is no answer: nothing is claimed.
+      if (outcome.refusal === 'refused_here') tell(t('read'), outcome.detail);
+      else if (outcome.refusal === 'head_office_refused') tell(t('read'), `${t('dropRefused')} ${outcome.detail === '' ? outcome.code : outcome.detail}`);
+      else if (outcome.refusal === 'head_office_unreachable') tell(t('read'), t('dropUnreachable'));
+      else tell(t('read'), t('dropNotConnected'));
+      return;
+    }
+    el('drop-product').value = '';
+    el('drop-replacement').value = '';
+    renderRange();
+    tell(
+      t('dropped'),
+      `${outcome.productId} — ${outcome.outcome === 'routed_to_clearance' ? t('toClearance') : t('delisted')} (${t('hoSays')}). ${outcome.detail}`,
+      true,
+    );
   });
-  if (!outcome.ok) {
-    // The engine's own refusal, said rather than swallowed — it is the one that stops a stocked
-    // item being deleted, and the one that insists a replacement is named.
-    tell(t('read'), outcome.detail);
-    return;
-  }
-  el('drop-product').value = '';
-  el('drop-replacement').value = '';
-  renderRange();
-  tell(
-    t('dropped'),
-    `${productId} — ${outcome.decision.outcome === 'routed_to_clearance' ? t('toClearance') : t('delisted')}. ${outcome.decision.detail}`,
-    true,
-  );
 });
 
 // ── Space ───────────────────────────────────────────────────────────────────

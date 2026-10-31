@@ -99,7 +99,7 @@ describe.skipIf(!HAVE_BROWSER)('the till keys a bill number with letters by hand
       const before = (await page.textContent('#entry')) ?? '';
       await page.click(`${wantLetters ? '#letterpad' : '#keypad'} button:text-is("${ch}")`);
       // Each tap must land before the next (a lost tap names the key, rather than a shorter number at the end).
-      await page.waitForFunction(([want]) => document.getElementById('entry')?.textContent === want, [before + ch], { timeout: 5_000 });
+      await page.waitForFunction(([want]) => (globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('entry')?.textContent === want, [before + ch], { timeout: 5_000 });
     }
     expect(await page.textContent('#entry')).toBe(receipt);
     await page.click('#sheet-ok');

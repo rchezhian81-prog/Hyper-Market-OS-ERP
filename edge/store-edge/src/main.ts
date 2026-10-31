@@ -150,7 +150,7 @@ import { readHeldWorkFeeds, writeHeldWorkFeeds, type HeldWorkFeeds } from './wor
 import { ClockGuard, clockObservingFetch, readClockThresholds, type ClockCheck } from './clock-guard';
 import { boxLoginGate } from './box-login-gate'; // OB-429
 import { activationHoldReport, type ActivationHoldReport } from './activation-hold';
-import type { BoxCapturedRun } from './store-work';
+import type { BoxCapturedRun, BoxQualitySample } from './store-work';
 
 /** The returns pipeline's own cursor file, so the sale and refund logs advance independently. */
 const RETURNS_CURSOR = 'sync-cursor-returns';
@@ -2104,6 +2104,19 @@ export async function startEdge(
       return typeof p['batchId'] === 'string' && typeof p['releasedBy'] === 'string' && typeof p['at'] === 'string'
         ? [{ batchId: p['batchId'], releasedBy: p['releasedBy'], at: p['at'], state: String(i.state), reason: i.reason }] : [];
     });
+  /** M10-FR-02 offline: the quality samples this box's facilities screen recorded and still holds (the device-events queue). */
+  const boxQualitySamples = (): readonly BoxQualitySample[] => deviceEventsOutbox.all()
+    .filter((i) => i.event.type === 'QualitySampleRecorded')
+    .flatMap((i) => {
+      const p = i.event.payload as Record<string, unknown>;
+      return ['batchId', 'sampleId', 'holdHeldAt', 'test', 'result', 'takenAt', 'recordedBy', 'at'].every((k) => typeof p[k] === 'string')
+        ? [{
+            batchId: String(p['batchId']), sampleId: String(p['sampleId']), holdHeldAt: String(p['holdHeldAt']), test: String(p['test']),
+            result: String(p['result']), takenAt: String(p['takenAt']), recordedBy: String(p['recordedBy']), at: String(p['at']),
+            key: i.key, state: String(i.state), reason: i.reason,
+          }]
+        : [];
+    });
   /** The production runs this box's screen captured and still holds (the device-events queue) — labelled before head office has them. */
   const boxCapturedRuns = (): readonly BoxCapturedRun[] => deviceEventsOutbox.all()
     .filter((i) => i.event.type === 'ProductionRunCaptured')
@@ -2223,6 +2236,7 @@ export async function startEdge(
       workFeeds,
       boxCapturedRuns: boxCapturedRuns(),
       boxQualityReleases: boxQualityReleases(), // OB-333
+      boxQualitySamples: boxQualitySamples(), // M10-FR-02 offline (OB-513)
       clock: clockGuard.check(),
       clockFlaggedBills: clockGuard.flaggedBills(recordsNow.sales),
       zone: zoneNow(), // R1a · P-08: the machine's zone against the shop's

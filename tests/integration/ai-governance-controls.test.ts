@@ -96,7 +96,7 @@ describe.each(backings)('the AI is governed by people, on the server — on $nam
     // ── The owner switches the assistants on for the trial.
     expect(code(await req('PUT', '/v1/ai/kill-switch', OWNER, { on: true }))).toBe('kill_switch_needs_a_reason');
     expect((await req('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'trial' })).status).toBe(200);
-    expect((await req('PUT', '/v1/ai/agents/enabled', OWNER, { agents: ['A01', 'A02', 'A03', 'A04', 'A05', 'A06'] })).status).toBe(200);
+    expect((await req('PUT', '/v1/ai/agents/enabled', OWNER, { expected: [], agents: ['A01', 'A02', 'A03', 'A04', 'A05', 'A06'] })).status).toBe(200);
 
     // ── AI-NFR-10: a scoped kill switch — reason required, customer-facing only, instant, no approval.
     expect((await req('POST', '/v1/ai/kill-switches', CASH, { scope: 'customer_facing', reason: 'x' })).status).toBe(403);

@@ -55,7 +55,7 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
   await move('m4', 'MILK-HERITAGE', 'S1', 'received', 3);
   await move('m5', 'MILK-S2ONLY', 'S2', 'received', 9);
   await move('m6', 'RICE-5', 'S1', 'received', 10);
-  await ok('PUT', '/v1/ai/agents/enabled', { agents: ['A04'] }, 'en');
+  await ok('PUT', '/v1/ai/agents/enabled', { expected: [], agents: ['A04'] }, 'en');
   await ok('PUT', '/v1/ai/kill-switch', { on: false, reason: 'trial of the shopping agent' }, 'unkill');
 }
 

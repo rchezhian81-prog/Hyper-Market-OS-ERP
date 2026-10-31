@@ -305,10 +305,46 @@ setInterval(() => { void syncFoodSafety(); }, 15_000);
 // ── OB-333: batches on quality hold, released through the store computer (works with the line down) ──────────────────
 const qhq = window.qualityReleaseQueue ?? null;
 const qt = (key) => (qhq === null ? key : qhq.text(lang, key));
-function qhButton(word) {
-  const b = document.createElement('button'); b.type = 'submit'; b.className = 'qh-release';
-  if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord('shield-check', word)); else b.textContent = word;
+function qhButton(word, cls = 'qh-release', icon = 'shield-check') {
+  const b = document.createElement('button'); b.type = 'submit'; b.className = cls;
+  if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord(icon, word)); else b.textContent = word;
   return b;
+}
+// M10-FR-02 offline: say what happened to a sample recording — saved on the store computer for head office, or why not.
+function qsSay(out) {
+  const box = el('qh-result'); box.hidden = false;
+  el('qh-result-icon').textContent = out.ok ? '✓' : '✕';
+  el('qh-result-text').textContent = out.ok ? qt('qsSaved') : out.words;
+  paintQualityHolds();
+  void syncQualityHolds();
+}
+// A new sample on a held batch: what was tested, its result, and optional notes.
+function qsForm(row) {
+  const form = document.createElement('form'); form.className = 'qs-form';
+  const head = document.createElement('div'); head.className = 'saved qs-heading'; head.textContent = qt('qsHeading');
+  const test = document.createElement('input'); test.className = 'qs-test'; test.autocomplete = 'off';
+  const result = document.createElement('select'); result.className = 'qs-result';
+  for (const [value, key] of [['pass', 'qhPass'], ['fail', 'qhFail'], ['pending', 'qhPending']]) {
+    const o = document.createElement('option'); o.value = value; o.textContent = qt(key); result.append(o);
+  }
+  const notes = document.createElement('input'); notes.className = 'qs-notes'; notes.autocomplete = 'off';
+  form.append(head, fsField(qt('qsTest'), test), fsField(qt('qsResult'), result), fsField(qt('qsNotes'), notes), qhButton(qt('qsRecord'), 'qs-record', 'clipboard-check'));
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    qsSay(qhq.recordSample(lang, { batchId: row.batchId, test: test.value, result: result.value, notes: notes.value }));
+  });
+  return form;
+}
+// The result of a sample still waiting for it: two buttons, each with its word.
+function qsCameBack(row, s) {
+  const form = document.createElement('form'); form.className = 'qs-came-back'; form.dataset.sample = s.sampleId;
+  const lead = document.createElement('div'); lead.className = 'saved'; lead.textContent = `${s.test} — ${qt('qsCameBack')}`;
+  const pass = qhButton(qt('qhPass'), 'qs-pass', 'circle-check'); pass.type = 'button';
+  const fail = qhButton(qt('qhFail'), 'qs-fail', 'circle-alert'); fail.type = 'button';
+  pass.addEventListener('click', () => { qsSay(qhq.recordSample(lang, { batchId: row.batchId, sampleId: s.sampleId, result: 'pass' })); });
+  fail.addEventListener('click', () => { qsSay(qhq.recordSample(lang, { batchId: row.batchId, sampleId: s.sampleId, result: 'fail' })); });
+  form.append(lead, pass, fail);
+  return form;
 }
 function qhForm(row) {
   const form = document.createElement('form');
@@ -351,7 +387,15 @@ function paintQualityHolds() {
         const item = document.createElement('li'); item.dataset.sample = s.sampleId; item.dataset.result = s.result;
         const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = s.icon;
         const w = document.createElement('span'); w.textContent = ` ${s.test} — ${s.resultWord} (${qt('qhTakenBy')} ${s.takenBy}, ${window.sreShopDay?.dateTimeOf(s.takenAt) ?? ''})`;
-        item.append(ic, w); ul.append(item);
+        item.append(ic, w);
+        // M10-FR-02 offline: a sample recorded at the store says where it has got to; one head office refused says why.
+        if (s.here) {
+          item.dataset.here = s.here.state;
+          const hw = document.createElement('div'); hw.className = s.here.state === 'refused' ? 'exc qs-here' : 'saved qs-here'; hw.textContent = s.here.stateWord; item.append(hw);
+          if (s.here.reason) { const ex = document.createElement('div'); ex.className = 'exc'; ex.textContent = s.here.reason; item.append(ex); }
+        }
+        if (row.canRecordSample && s.result === 'pending' && (!s.here || s.here.state !== 'refused')) item.append(qsCameBack(row, s));
+        ul.append(item);
       }
       li.append(ul);
     }
@@ -362,6 +406,7 @@ function paintQualityHolds() {
       const s = document.createElement('div'); s.className = 'saved'; s.textContent = row.saved.stateWord; li.append(s);
       if (row.saved.reason) { const ex = document.createElement('div'); ex.className = 'exc'; ex.textContent = row.saved.reason; li.append(ex); }
     }
+    if (row.canRecordSample) li.append(qsForm(row));
     if (row.canRelease) li.append(qhForm(row));
     return li;
   }));

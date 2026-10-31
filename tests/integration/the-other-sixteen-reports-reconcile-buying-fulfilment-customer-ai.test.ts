@@ -225,7 +225,7 @@ describe.each(backings)('D13 — the other buying, fulfilment, customer and assi
   it('what the assistant suggested = its proposal register; a person\'s dismissal is counted as a decision', async () => {
     await ok(call('PUT', '/v1/ai/kill-switch', 'u-owner', { on: false }), 200);
     await ok(call('PUT', '/v1/ai/budget', 'u-owner', { capMinor: 500_000, periodEnds: '2099-01-01T00:00:00Z' }), 200);
-    await ok(call('PUT', '/v1/ai/agents/enabled', 'u-owner', { agents: ['A08'] }), 200);
+    await ok(call('PUT', '/v1/ai/agents/enabled', 'u-owner', { expected: [], agents: ['A08'] }), 200);
     await ok(call('POST', '/v1/catalogue/products/p-noscan/publish', 'u-owner', { product: { sku: 'SKU-NOSCAN', name: 'Loose Poha', brand: 'Local', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft' }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }), 200, 201);
     await ok(call('POST', '/v1/ai/agents/A08/runs', 'u-owner', { estimatedCostMinor: 1_000 }), 200, 201);
     const proposals = ((await ok(call('GET', '/v1/ai/proposals', 'u-owner'), 200)).body as { proposals: { agent: string }[] }).proposals;

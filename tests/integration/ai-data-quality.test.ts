@@ -46,7 +46,7 @@ const runA08 = (h: ApiHarness, key: string) =>
 async function armA08(h: ApiHarness): Promise<void> {
   expect((await put(h, '/v1/ai/kill-switch', { on: false }, 'k')).status).toBe(200);
   expect((await put(h, '/v1/ai/budget', { capMinor: 500_000, periodEnds: '2027-01-01T00:00:00Z' }, 'b')).status).toBe(200);
-  expect((await put(h, '/v1/ai/agents/enabled', { agents: ['A08'] }, 'e')).status).toBe(200);
+  expect((await put(h, '/v1/ai/agents/enabled', { expected: [], agents: ['A08'] }, 'e')).status).toBe(200);
 }
 
 const base = { baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft' };
@@ -81,7 +81,7 @@ describe('the Data Quality agent (A08) drafts evidence-backed suggestions on the
     expect((await runA08(h, 'r0')).status).toBe(429);
 
     // Now enable A08 by name — and only then does the run pass the gate.
-    expect((await put(h, '/v1/ai/agents/enabled', { agents: ['A08'] }, 'e')).status).toBe(200);
+    expect((await put(h, '/v1/ai/agents/enabled', { expected: [], agents: ['A08'] }, 'e')).status).toBe(200);
     const res = await runA08(h, 'r1');
     expect(res.status).toBe(200);
     const body = res.body as RunBody;

@@ -57,6 +57,13 @@
       }
       .field textarea { min-height: 90px; }
       .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .field[hidden] { display: none; }
+      .check { display: flex; gap: 10px; align-items: center; min-height: var(--tap); margin-bottom: 12px; color: var(--ink); }
+      .check input { width: 24px; height: 24px; }
+      .rule { background: var(--panel); border-radius: 14px; padding: 14px 16px; margin: 12px 0; border-left: 6px solid var(--info); }
+      .rule h3 { margin-top: 0; }
+      #define-status[data-ok='yes'] { color: var(--ink); font-weight: 600; }
+      #define-status[data-ok='no'] { color: var(--danger-text); font-weight: 600; }
 
       button {
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
@@ -316,7 +323,7 @@
       <!-- An offer, simulated before anybody can launch it. -->
       <section id="view-promo" hidden>
         <h2 id="promo-title">Offer</h2>
-        <p class="lead" id="promo-lead">See what an offer does to the margin before it starts.</p>
+        <p class="lead" id="promo-lead">1. See what an offer does to the margin. 2. Record its rule at head office. 3. Start it.</p>
 
         <div class="field">
           <label for="promo-id" id="promo-id-label">Give this offer a name</label>
@@ -355,6 +362,113 @@
 
         <button id="simulate" class="primary wide" type="button">Work out what it costs</button>
         <div id="promo-verdict" hidden></div>
+        <!-- M05-FR-03/04 (re-audit 30 Oct 2026): the offer's RULE, recorded at head office before it can start. Head office
+             refuses to start an offer it has no rule for; the rule is a draft that applies to nothing until started. -->
+        <div class="rule" id="promo-rule">
+          <h3 id="rule-title">The offer's rule</h3>
+          <p class="lead" id="rule-lead">Tell head office what the offer is. It is kept as a draft and does nothing until you start it.</p>
+          <div class="field">
+            <label for="rule-kind" id="rule-kind-label">Kind of offer</label>
+            <select id="rule-kind"></select>
+          </div>
+          <div class="field">
+            <label for="rule-products" id="rule-products-label">Item codes it is on (leave blank for the whole bill)</label>
+            <input id="rule-products" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="rule-group" id="rule-group-label">Or a group of items (optional)</label>
+            <input id="rule-group" type="text" autocomplete="off" />
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="rule-starts" id="rule-starts-label">First day</label>
+              <input id="rule-starts" type="date" />
+            </div>
+            <div class="field">
+              <label for="rule-ends" id="rule-ends-label">Last day</label>
+              <input id="rule-ends" type="date" />
+            </div>
+          </div>
+          <div class="field" data-kinds="percent_off mix_match">
+            <label for="rule-percent" id="rule-percent-label">How much off (%)</label>
+            <input id="rule-percent" type="text" inputmode="decimal" autocomplete="off" />
+          </div>
+          <div class="field" data-kinds="amount_off">
+            <label for="rule-amount" id="rule-amount-label">Rupees off</label>
+            <input id="rule-amount" type="text" inputmode="decimal" autocomplete="off" />
+          </div>
+          <div class="two">
+            <div class="field" data-kinds="buy_x_get_y mix_match">
+              <label for="rule-buy" id="rule-buy-label">Buy how many</label>
+              <input id="rule-buy" type="number" inputmode="numeric" min="1" step="1" />
+            </div>
+            <div class="field" data-kinds="buy_x_get_y mix_match">
+              <label for="rule-get" id="rule-get-label">Get how many</label>
+              <input id="rule-get" type="number" inputmode="numeric" min="1" step="1" />
+            </div>
+          </div>
+          <div class="field" data-kinds="member_price">
+            <label for="rule-member-price" id="rule-member-price-label">Members' price for one (in rupees)</label>
+            <input id="rule-member-price" type="text" inputmode="decimal" autocomplete="off" />
+          </div>
+          <div class="two">
+            <div class="field" data-kinds="multibuy">
+              <label for="rule-multi-qty" id="rule-multi-qty-label">How many (2 or more)</label>
+              <input id="rule-multi-qty" type="number" inputmode="numeric" min="2" step="1" />
+            </div>
+            <div class="field" data-kinds="multibuy">
+              <label for="rule-multi-price" id="rule-multi-price-label">For how many rupees</label>
+              <input id="rule-multi-price" type="text" inputmode="decimal" autocomplete="off" />
+            </div>
+          </div>
+          <div class="field" data-kinds="bundle_price">
+            <label for="rule-bundle-items" id="rule-bundle-items-label">The set (e.g. RICE x 2, DAL x 1)</label>
+            <input id="rule-bundle-items" type="text" autocomplete="off" />
+          </div>
+          <div class="field" data-kinds="bundle_price">
+            <label for="rule-bundle-price" id="rule-bundle-price-label">Price of the whole set (in rupees)</label>
+            <input id="rule-bundle-price" type="text" inputmode="decimal" autocomplete="off" />
+          </div>
+          <div class="two">
+            <div class="field" data-kinds="mix_match">
+              <label for="rule-buy-products" id="rule-buy-products-label">Buy from these item codes</label>
+              <input id="rule-buy-products" type="text" autocomplete="off" />
+            </div>
+            <div class="field" data-kinds="mix_match">
+              <label for="rule-buy-group" id="rule-buy-group-label">Or buy from this group</label>
+              <input id="rule-buy-group" type="text" autocomplete="off" />
+            </div>
+          </div>
+          <div class="two">
+            <div class="field" data-kinds="mix_match">
+              <label for="rule-get-products" id="rule-get-products-label">Get from these item codes</label>
+              <input id="rule-get-products" type="text" autocomplete="off" />
+            </div>
+            <div class="field" data-kinds="mix_match">
+              <label for="rule-get-group" id="rule-get-group-label">Or get from this group</label>
+              <input id="rule-get-group" type="text" autocomplete="off" />
+            </div>
+          </div>
+          <div class="field" data-kinds="percent_off amount_off">
+            <label for="rule-min-spend" id="rule-min-spend-label">Least the items must add up to (in rupees, optional)</label>
+            <input id="rule-min-spend" type="text" inputmode="decimal" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="rule-coupon" id="rule-coupon-label">Coupon code the customer must give (optional)</label>
+            <input id="rule-coupon" type="text" autocomplete="off" />
+          </div>
+          <label class="check" for="rule-member-only"><input id="rule-member-only" type="checkbox" /> <span id="rule-member-only-label">Members only</span></label>
+          <div class="field">
+            <label for="rule-exclusive" id="rule-exclusive-label">Does not add to other offers in this group (optional — blank means it adds on)</label>
+            <input id="rule-exclusive" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="rule-cap" id="rule-cap-label">Most times it applies on one bill (optional)</label>
+            <input id="rule-cap" type="number" inputmode="numeric" min="1" step="1" />
+          </div>
+          <button id="define-offer" class="primary wide" type="button">Record this rule at head office</button>
+          <p class="lead" id="define-status" role="status" aria-live="polite"></p>
+        </div>
         <!-- An offer that loses margin needs a SECOND person's own approval, asked for here (ADR-0024 · §28). -->
         <div class="approval" id="promo-approval" hidden>
           <p class="lead" id="promo-approval-lead">This offer loses margin, so it needs a second person. Write why and press “Ask for approval”; once someone else who may approve prices approves it on their Approvals page, press “Start this offer”.</p>

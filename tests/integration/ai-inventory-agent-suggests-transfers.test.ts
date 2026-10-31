@@ -72,7 +72,7 @@ describe.each(backings)('A03 suggests transfers from where the company holds sto
 
     expect((await put('/v1/ai/kill-switch', { on: false }, 'k')).status).toBe(200);
     expect((await put('/v1/ai/budget', { capMinor: 500_000, periodEnds: '2027-01-01T00:00:00Z' }, 'b')).status).toBe(200);
-    expect((await put('/v1/ai/agents/enabled', { agents: ['A03'] }, 'e')).status).toBe(200);
+    expect((await put('/v1/ai/agents/enabled', { expected: [], agents: ['A03'] }, 'e')).status).toBe(200);
     const run = await post('/v1/ai/agents/A03/runs', {}, 'run-1');
     expect(run.status).toBe(200);
     const body = run.body as { proposals: Proposal[]; committedAnything: boolean };
