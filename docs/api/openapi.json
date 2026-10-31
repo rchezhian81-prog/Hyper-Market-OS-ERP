@@ -93993,6 +93993,100 @@
         }
       }
     },
+    "/v1/purchase/invoices/{invoiceId}/other-charges": {
+      "post": {
+        "operationId": "postPurchaseInvoicesByInvoiceIdOtherCharges",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.invoice.match",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseInvoicesByInvoiceIdOtherChargesRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseInvoicesByInvoiceIdOtherChargesReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseInvoicesByInvoiceIdOtherChargesReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.invoice.match\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/purchase/invoices/{invoiceId}/reconcile": {
       "post": {
         "operationId": "postPurchaseInvoicesByInvoiceIdReconcile",
@@ -150766,6 +150860,9 @@
           "match"
         ],
         "properties": {
+          "otherCharges": {
+            "$ref": "#/components/schemas/OtherChargesStanding"
+          },
           "invoice": {
             "$ref": "#/components/schemas/SupplierInvoiceRecord"
           },
@@ -229833,222 +229930,217 @@
         "x-derived-from": "services/purchase/src/index.ts"
       },
       "PostPurchaseInvoicesByInvoiceIdMatchReply": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/StoredMatch"
+        "type": "object",
+        "required": [
+          "invoiceId",
+          "poId",
+          "matchedBy",
+          "matchedAt",
+          "sources",
+          "flags",
+          "lines",
+          "payableMinor",
+          "invoicedMinor",
+          "withheldMinor",
+          "blocked",
+          "detail",
+          "ownerAction"
+        ],
+        "properties": {
+          "otherCharges": {
+            "$ref": "#/components/schemas/OtherChargesStanding"
           },
-          {
+          "landedCost": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "invoiceId": {
+            "type": "string"
+          },
+          "poId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "matchedBy": {
+            "type": "string"
+          },
+          "matchedAt": {
+            "type": "string"
+          },
+          "sources": {
             "type": "object",
             "required": [
-              "landedCost",
-              "invoiceId",
-              "poId",
-              "matchedBy",
-              "matchedAt",
-              "sources",
-              "flags",
-              "lines",
-              "payableMinor",
-              "invoicedMinor",
-              "withheldMinor",
-              "blocked",
-              "detail",
-              "ownerAction"
+              "invoice",
+              "order",
+              "received"
             ],
             "properties": {
-              "landedCost": {
+              "invoice": {
                 "anyOf": [
                   {
                     "type": "null"
                   },
                   {
-                    "type": "object",
-                    "additionalProperties": true
-                  }
-                ]
-              },
-              "invoiceId": {
-                "type": "string"
-              },
-              "poId": {
-                "anyOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "type": "string"
-                  }
-                ]
-              },
-              "matchedBy": {
-                "type": "string"
-              },
-              "matchedAt": {
-                "type": "string"
-              },
-              "sources": {
-                "type": "object",
-                "required": [
-                  "invoice",
-                  "order",
-                  "received"
-                ],
-                "properties": {
-                  "invoice": {
-                    "anyOf": [
-                      {
-                        "type": "null"
-                      },
-                      {
-                        "type": "object",
-                        "required": [
-                          "capturedBy",
-                          "capturedAt",
-                          "totalMinor"
-                        ],
-                        "properties": {
-                          "capturedBy": {
-                            "type": "string"
-                          },
-                          "capturedAt": {
-                            "type": "string"
-                          },
-                          "totalMinor": {
-                            "type": "number"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    ]
-                  },
-                  "order": {
-                    "anyOf": [
-                      {
-                        "type": "null"
-                      },
-                      {
-                        "type": "object",
-                        "required": [
-                          "status",
-                          "supplierId",
-                          "lineCount"
-                        ],
-                        "properties": {
-                          "status": {
-                            "type": "string"
-                          },
-                          "supplierId": {
-                            "type": "string"
-                          },
-                          "lineCount": {
-                            "type": "number"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    ]
-                  },
-                  "received": {
-                    "type": "string",
-                    "enum": [
-                      "goods_receipts_folded_into_the_order",
-                      "none"
-                    ]
-                  },
-                  "policy": {
                     "type": "object",
                     "required": [
-                      "quantityToleranceBps",
-                      "priceToleranceBps",
-                      "immaterialMinor",
-                      "defaulted"
+                      "capturedBy",
+                      "capturedAt",
+                      "totalMinor"
                     ],
                     "properties": {
-                      "quantityToleranceBps": {
-                        "type": "number"
+                      "capturedBy": {
+                        "type": "string"
                       },
-                      "priceToleranceBps": {
-                        "type": "number"
+                      "capturedAt": {
+                        "type": "string"
                       },
-                      "immaterialMinor": {
+                      "totalMinor": {
                         "type": "number"
-                      },
-                      "defaulted": {
-                        "type": "boolean"
                       }
                     },
                     "additionalProperties": true
-                  },
-                  "invoicedBefore": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "number"
-                    }
                   }
-                },
-                "additionalProperties": true
+                ]
               },
-              "flags": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
+              "order": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "status",
+                      "supplierId",
+                      "lineCount"
+                    ],
+                    "properties": {
+                      "status": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      },
+                      "lineCount": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                ]
               },
-              "tax": {
-                "$ref": "#/components/schemas/MatchTax"
+              "received": {
+                "type": "string",
+                "enum": [
+                  "goods_receipts_folded_into_the_order",
+                  "none"
+                ]
               },
-              "landedCharges": {
+              "policy": {
                 "type": "object",
                 "required": [
-                  "freightMinor",
-                  "dutyMinor",
-                  "otherMinor",
-                  "totalMinor"
+                  "quantityToleranceBps",
+                  "priceToleranceBps",
+                  "immaterialMinor",
+                  "defaulted"
                 ],
                 "properties": {
-                  "freightMinor": {
+                  "quantityToleranceBps": {
                     "type": "number"
                   },
-                  "dutyMinor": {
+                  "priceToleranceBps": {
                     "type": "number"
                   },
-                  "otherMinor": {
+                  "immaterialMinor": {
                     "type": "number"
                   },
-                  "totalMinor": {
-                    "type": "number"
+                  "defaulted": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": true
               },
-              "lines": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/LineMatch"
+              "invoicedBefore": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
                 }
-              },
-              "payableMinor": {
-                "type": "number"
-              },
-              "invoicedMinor": {
-                "type": "number"
-              },
-              "withheldMinor": {
-                "type": "number"
-              },
-              "blocked": {
-                "type": "boolean"
-              },
-              "detail": {
-                "type": "string"
-              },
-              "ownerAction": {
-                "type": "string"
               }
             },
             "additionalProperties": true
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tax": {
+            "$ref": "#/components/schemas/MatchTax"
+          },
+          "landedCharges": {
+            "type": "object",
+            "required": [
+              "freightMinor",
+              "dutyMinor",
+              "otherMinor",
+              "totalMinor"
+            ],
+            "properties": {
+              "freightMinor": {
+                "type": "number"
+              },
+              "dutyMinor": {
+                "type": "number"
+              },
+              "otherMinor": {
+                "type": "number"
+              },
+              "totalMinor": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineMatch"
+            }
+          },
+          "payableMinor": {
+            "type": "number"
+          },
+          "invoicedMinor": {
+            "type": "number"
+          },
+          "withheldMinor": {
+            "type": "number"
+          },
+          "blocked": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "ownerAction": {
+            "type": "string"
           }
-        ],
+        },
+        "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/index.ts"
       },
@@ -230080,6 +230172,81 @@
           "received": {
             "x-unchecked": true,
             "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/index.ts"
+      },
+      "PostPurchaseInvoicesByInvoiceIdOtherChargesReply200": {
+        "type": "object",
+        "required": [
+          "marking",
+          "alreadyMarked"
+        ],
+        "properties": {
+          "marking": {
+            "$ref": "#/components/schemas/OtherChargesMarking"
+          },
+          "alreadyMarked": {
+            "type": "boolean"
+          },
+          "otherCharges": {
+            "$ref": "#/components/schemas/OtherChargesStanding"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/index.ts"
+      },
+      "PostPurchaseInvoicesByInvoiceIdOtherChargesReply201": {
+        "type": "object",
+        "required": [
+          "marking",
+          "alreadyMarked"
+        ],
+        "properties": {
+          "landedCost": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "marking": {
+            "$ref": "#/components/schemas/OtherChargesMarking"
+          },
+          "alreadyMarked": {
+            "type": "boolean"
+          },
+          "otherCharges": {
+            "$ref": "#/components/schemas/OtherChargesStanding"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/index.ts"
+      },
+      "PostPurchaseInvoicesByInvoiceIdOtherChargesRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "reason"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cost",
+              "tax"
+            ]
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -282960,6 +283127,74 @@
           },
           "version": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "OtherChargesMarking": {
+        "type": "object",
+        "required": [
+          "invoiceId",
+          "kind",
+          "otherMinor",
+          "reason",
+          "markedBy",
+          "markedAt"
+        ],
+        "properties": {
+          "invoiceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cost",
+              "tax"
+            ]
+          },
+          "otherMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "markedBy": {
+            "type": "string"
+          },
+          "markedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "OtherChargesStanding": {
+        "type": "object",
+        "required": [
+          "otherMinor",
+          "kind",
+          "inStockCost",
+          "said"
+        ],
+        "properties": {
+          "otherMinor": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cost",
+              "not_marked",
+              "tax"
+            ]
+          },
+          "inStockCost": {
+            "type": "boolean"
+          },
+          "said": {
+            "type": "string"
+          },
+          "marking": {
+            "$ref": "#/components/schemas/OtherChargesMarking"
           }
         },
         "additionalProperties": true

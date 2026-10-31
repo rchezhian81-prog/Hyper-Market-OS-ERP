@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createSupplierBillsSession, readPickedFile, confirmBody, typedCaptureBody, presentMatch, rupeesToPaise, quantityToSteps, documentIdFor,
+  presentOtherCharges, otherChargesSaid, OTHER_CHARGES_WORDS,
   type BillDocument, type HeadOfficeCall,
 } from '../../apps/web-erp/src/supplier-bills-session';
 import { createOpenToBuySession, presentOpenToBuy, budgetHistory, waitingOrders, budgetEntry } from '../../apps/web-erp/src/open-to-buy-session';
@@ -116,6 +117,41 @@ describe('supplier bills — the screen model (D03-FR-02 · WF-05)', () => {
     expect(confirms[0]?.idempotencyKey).toBe(confirms[1]?.idempotencyKey);
     await s.confirm(draft(), { invoiceId: 'j', entries: [] });
     expect(calls.filter((c) => c.path.endsWith('/confirm'))[2]?.idempotencyKey).not.toBe(confirms[0]?.idempotencyKey);
+  });
+});
+
+describe('OB-556: other charges of unknown kind — not in stock cost until a person marks them', () => {
+  it('says plainly that ₹X is not yet in stock cost; a marking is said with who and why, in English and Tamil', () => {
+    const notMarked = presentOtherCharges({ otherMinor: 6_000, kind: 'not_marked', inStockCost: false, said: 'x' });
+    expect(notMarked).toEqual({ otherMinor: 6_000, kind: 'not_marked', inStockCost: false, markedBy: null, reason: null });
+    expect(otherChargesSaid('en', notMarked!)).toBe('₹60.00 of other charges on this bill are NOT yet in stock cost — nobody has said what they are. Mark them below.');
+    expect(otherChargesSaid('ta', notMarked!)).toMatch(/^₹60\.00 .*சரக்கு விலையில் சேர்க்கப்படவில்லை/);
+    const tax = presentOtherCharges({ otherMinor: 50, kind: 'tax', inStockCost: false, marking: { markedBy: 'u-acct', reason: 'tax on the bill' } })!;
+    expect(otherChargesSaid('en', tax)).toBe('₹0.50 of other charges were marked a tax by u-acct (tax on the bill) — they are never in stock cost.');
+    expect(presentOtherCharges(undefined)).toBeNull();
+    expect(presentOtherCharges({ otherMinor: 1, kind: 'maybe' })).toBeNull();
+    expect(presentMatch({ invoiceId: 'i', blocked: false, lines: [] })?.otherCharges).toBeNull();
+    for (const k of Object.keys(OTHER_CHARGES_WORDS.en)) expect(OTHER_CHARGES_WORDS.ta[k], k).toBeTruthy();
+  });
+
+  it('marking sends only { kind, reason } to head office; a blank reason sends nothing; refusals are said in plain words', async () => {
+    const { call, calls } = recorder({
+      'POST /v1/purchase/invoices/inv-1/other-charges': { status: 201, body: { marking: { kind: 'cost', markedBy: 'u-m', reason: 'loading' }, alreadyMarked: false, otherCharges: { otherMinor: 1_000, kind: 'cost', inStockCost: true, marking: { markedBy: 'u-m', reason: 'loading' } } } },
+      'POST /v1/purchase/invoices/inv-2/other-charges': { status: 409, body: { error: { code: 'segregation_of_duties', whatHappened: 'u-recv received this order.' } } },
+      'GET /v1/purchase/invoices/inv-1': { status: 200, body: { invoice: {}, match: { invoiceId: 'inv-1', blocked: false, lines: [] }, otherCharges: { otherMinor: 1_000, kind: 'not_marked', inStockCost: false } } },
+    });
+    const s = createSupplierBillsSession(call, { permissions: ['purchase.invoice.match'] });
+    expect(await s.markOtherCharges('inv-1', 'cost', '  ')).toMatchObject({ ok: false, code: 'reason_needed' });
+    expect(calls).toHaveLength(0);
+    const ok = await s.markOtherCharges('inv-1', 'cost', ' loading charges ');
+    expect(calls[0]).toMatchObject({ method: 'POST', path: '/v1/purchase/invoices/inv-1/other-charges', body: { kind: 'cost', reason: 'loading charges' } });
+    expect(ok).toMatchObject({ ok: true, value: { kind: 'cost', alreadyMarked: false, otherCharges: { kind: 'cost', inStockCost: true } } });
+    expect(s.otherChargesWords('en', ok).text).toMatch(/now in the stock's cost/);
+    const refused = await s.markOtherCharges('inv-2', 'tax', 'a tax on the bill');
+    expect(s.otherChargesWords('en', refused)).toEqual({ good: false, text: 'Not marked — you raised, received or paid this order, so another person must say what its charges are. Head office said: u-recv received this order.' });
+    expect(s.otherChargesWords('ta', { ok: false, unreachable: true }).good).toBe(false);
+    // The bill's standing rides beside its latest match.
+    expect(await s.latestMatch('inv-1')).toMatchObject({ ok: true, value: { otherCharges: { kind: 'not_marked', otherMinor: 1_000 } } });
   });
 });
 
