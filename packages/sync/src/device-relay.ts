@@ -118,6 +118,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // narrow release-only right. Head office re-checks the person and re-runs its release engine; a refusal is kept,
   // visible. There is deliberately NO hold-placing event: the store computer can never put a batch on hold.
   QualityHoldReleaseDecided: { surfaces: ['manager'] },
+  // M10-FR-02 (with OB-513): a quality SAMPLE result recorded on a held batch at the facilities screen with the line down, so
+  // a held food batch can be sampled and released at the store. Head office re-checks the recorder and the hold.
+  QualitySampleRecorded: { surfaces: ['manager'] },
   // OB-288 LP/workforce package (§31 · P-01): work done on the ERP pages the box serves, with the line down — a manual
   // equipment reading on the facilities page (M26-FR-02 "readings cache/queue"), a stock loss on the write-off capture page
   // (M28-FR-01 "queued; approval on sync": a big one waits at head office for a second person), and an SOP acknowledgement

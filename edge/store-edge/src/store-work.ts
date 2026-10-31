@@ -69,18 +69,37 @@ export interface BoxQualityRelease {
 }
 
 /**
+ * M10-FR-02 offline (with OB-513): a quality sample this box's facilities screen recorded on a held batch (the device-events
+ * queue) — known here before head office has it, with where it has got to (pending, posted, or refused by head office).
+ */
+export interface BoxQualitySample {
+  readonly batchId: string; readonly sampleId: string; readonly holdHeldAt: string; readonly test: string;
+  readonly result: string; readonly takenAt: string; readonly recordedBy: string; readonly at: string;
+  /** The device item's key, so a screen can tell its own sample from one another screen recorded. */
+  readonly key?: string;
+  readonly state?: string;
+  readonly reason?: string | null;
+}
+
+/**
  * OB-333: the batches head office holds on quality hold, as it last said (with how old), each marked when a person
  * released it on this box since (`releasedOnThisBox` — those releases are also listed apart, with where they have got
  * to) — or null when the box was never told. A release head office refused leaves its batch held, unmarked.
+ * M10-FR-02 offline: each hold also carries the samples recorded on it on THIS box (`samplesOnThisBox`) — only those taken
+ * on the same hold head office last said (its `heldAt`), each with its state, a refusal said with its reason.
  */
 export function qualityHoldWork(input: ScreenInput): Record<string, unknown> {
   const held = input.workFeeds?.['quality-holds'];
   const releasedHere = input.boxQualityReleases ?? [];
+  const sampledHere = input.boxQualitySamples ?? [];
   if (held === undefined) return { qualityHolds: null, qualityReleasesHere: releasedHere };
   // A release refused by head office leaves its batch HELD (it is listed apart, with the refusal); any other is done here.
   const done = new Set(releasedHere.filter((r) => r.state === undefined || !/refused|dead/.test(r.state)).map((r) => r.batchId));
   const holds = (held.feed.body['holds'] as readonly Record<string, unknown>[]).filter(isObj)
-    .map((h) => (done.has(String(h['batchId'])) ? { ...h, releasedOnThisBox: true } : h));
+    .map((h) => {
+      const mine = sampledHere.filter((s) => s.batchId === String(h['batchId']) && s.holdHeldAt === String(h['heldAt']));
+      return { ...h, ...(done.has(String(h['batchId'])) ? { releasedOnThisBox: true } : {}), ...(mine.length === 0 ? {} : { samplesOnThisBox: mine }) };
+    });
   return { qualityHolds: { ...asOf(held, input.now), holds }, qualityReleasesHere: releasedHere };
 }
 
