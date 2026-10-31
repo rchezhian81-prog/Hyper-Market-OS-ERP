@@ -61,12 +61,12 @@ Not row gaps, kept on the list for the round they belong to:
 
 ## Owner decisions (answered 31 Oct 2026)
 
-1. OB-613: the second approver is the store's accountant.
-2. OB-558: add the four roadmap §28 roles (Purchase User, Purchase Approver, Receiver/QC, Warehouse User), as the roadmap defines them (Round 4c).
+1. OB-613: the second approver is the store's accountant (the owner settled a conflicting answer given in the other session).
+2. OB-615: add the four roadmap §28 roles (Purchase User, Purchase Approver, Receiver/QC, Warehouse User), as the roadmap defines them; the owner sees and approves each role's permissions before it goes live (Round 4c).
 3. OB-559: business customers on in the demo copy (Round 3).
 4. OB-560: the cashier enrols loyalty customers at the till (Round 4c).
 5. OB-561: AI stays off on the demo; its pages say so until Release 8 (Round 1 wording / Round 3).
 6. OB-562: customer sign-in stays off until an SMS provider is signed.
-7. OB-563: an unsigned screen request is refused, as built.
+7. OB-616: an unsigned screen request is refused, as built.
 
 Each round is built, tested in full, recorded (decisions, traceability, STATUS) and merged through its own pull request before the next one starts.
