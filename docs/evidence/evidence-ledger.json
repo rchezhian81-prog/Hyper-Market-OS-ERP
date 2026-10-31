@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1982,
+  "testFiles": 1985,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1899,7 +1899,7 @@
         "unit": 27,
         "integration": 37,
         "realDb": 23,
-        "browser": 6,
+        "browser": 7,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -2004,6 +2004,7 @@
           "tests/e2e/finance-month-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts",
+          "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
         ],
         "connected": [
@@ -5032,7 +5033,7 @@
         "unit": 1,
         "integration": 16,
         "realDb": 11,
-        "browser": 3,
+        "browser": 4,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -5075,7 +5076,8 @@
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
-          "tests/e2e/finance-month-close-delivery.e2e.ts"
+          "tests/e2e/finance-month-close-delivery.e2e.ts",
+          "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts"

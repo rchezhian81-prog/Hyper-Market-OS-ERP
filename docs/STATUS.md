@@ -12,7 +12,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Said plainly:** "no checklists"; the AI pages say the assistants are off until Release 8 (OB-561).
   - Every office page shows how old the store computer's copy is.
 - **Tests (joined branch):** full default suite on PostgreSQL 15,863 passed, 2 failed (the evidence ledger, regenerated; one OB-103 test under load, 3/3 alone); full browser suite 795/795; type check and lint clean.
-- **Next:** the owner's six Round 2 answers (category rules, Waste window, branch dates, Finance ledger side, GST queue size, cashier's product view), then Round 3 (demo copy).
+- **Owner's Round 2 answers (OB-564 to OB-569), built:** Waste shows the last 30 days; the month is closed and reopened only on head office's Month-end page (a new tab there; the Finance page points to it); the GST page carries what needs attention plus this and last return month; a cashier sees only name, price and barcode on Products. Category rules are deferred to R8 (OB-564); branch dates are accepted while there is one store (OB-566).
+- **Next:** Round 3 (demo copy).
 - **Blocked:** nothing.
 
 ## Combined fix list (31 October 2026): one list, one session
