@@ -34,6 +34,7 @@
 // Not yet built here (DF-3-c): the practice warehouse delivery and bins, counts.
 
 import { DEFAULT_SHOP_CALENDAR, shopClock, shopDateIn, tradingMonthIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { monthBefore } from '../../../packages/calendar/src/shop-day';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
@@ -500,7 +501,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // ── Screen gap audit (31 Oct 2026) Round A: the Waste page's write-offs at this store and the Category rules page's
   // categories, from head office's own registers. Always sent (an empty list is "nothing recorded yet", which the page now
   // says — never "all clear"); a box on an older pack still says it was not told.
-  sections['wasteWriteOffs'] = await wasteWriteOffsSectionFor(store, now, tenantId, storeId, branchOf);
+  sections['wasteWriteOffs'] = await wasteWriteOffsSectionFor(store, now, tenantId, storeId, branchOf, packCalendar); // OB-565: last 30 shop days
   sections['categoryPolicyCategories'] = await categoryPolicySectionFor(store, now, tenantId);
 
   // ── Round A (screen gap audit, 31 Oct 2026): the office pages head office never fed (round-a-pack-sections.ts) ─────
@@ -514,7 +515,9 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   sections['batches'] = expiry.batches;
   sections['recalls'] = expiry.recalls;
   if (expiry.batchesWithoutExpiry > 0) sections['batchesWithoutExpiry'] = expiry.batchesWithoutExpiry;
-  // GST reconciliation: the e-invoice and e-way bill queue.
-  sections['gstReconciliationQueue'] = await gstReconciliationQueueSection({ store, now }, tenantId);
+  // GST reconciliation: the e-invoice and e-way bill queue — OB-568: what needs attention, plus the current and the previous
+  // GST return month (the shop's calendar), never the whole history.
+  const gstMonth = tradingMonthIn(now(), packCalendar);
+  sections['gstReconciliationQueue'] = await gstReconciliationQueueSection({ store, now }, tenantId, [gstMonth, monthBefore(gstMonth)]);
   return sections;
 }

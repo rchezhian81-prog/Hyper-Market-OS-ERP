@@ -93,7 +93,7 @@ describe('Round A store-pack sections', () => {
   });
 
   it('GST queue: nothing in the lifecycle is an EMPTY queue (head office answered), sorted by document then id', async () => {
-    expect(await gstReconciliationQueueSection({ store: new InMemoryEventStore(), now }, T)).toEqual([]);
+    expect(await gstReconciliationQueueSection({ store: new InMemoryEventStore(), now }, T, ['2026-10', '2026-09'])).toEqual([]);
   });
 
   it('the pack stays reasonable: a product master record and a batch row are each well under a kilobyte', () => {

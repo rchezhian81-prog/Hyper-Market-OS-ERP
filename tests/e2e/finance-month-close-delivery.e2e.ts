@@ -24,18 +24,16 @@ import { budgetAssetRoutes, type BudgetVersion, type FixedAssetFact } from '../.
  * engine's `approvalRequestRoutes` and finance's `financeRoutes` (period close and reopen) — over in-memory storage,
  * with the pipeline's one job here (the caller's permission for the route) done in front of them:
  *
- *   • CLOSE: "Close the month" before asking says nobody was asked (nothing sent); **Ask for the signature** records
- *     the closer's own `period_close` request for exactly `{ period }`; "Close the month" while it waits says so;
- *     once the ACCOUNTANT approves it in their own session, "Close the month" posts `{ approvalId }` — no signer named —
- *     head office closes the month, signed by the accountant, and uses the approval once; the page then offers reopening;
+ *   • CLOSE (OB-567, owner, 31 Oct 2026): the month is closed ONLY on head office's Month-end page. The Finance page
+ *     offers no close of its own: it says so in English and Tamil, links to the Month-end page, and sends nothing; once
+ *     head office has the month closed, the page reads it as closed and signed and offers reopening;
  *   • REOPEN: the typed approver box is gone; Ask without a reason is refused on the page; **Ask for approval** records
  *     `{ reason, period }`; a reason changed after asking is not what was approved (nothing sent); with the approval,
  *     "Reopen the month" posts `{ reason, approvalId }` and head office reopens it;
- *   • rejected → who and why, in English and Tamil; head office's own refusal (the signer posted into the month) →
- *     plain words, the month stays open and the signature is not spent;
+ *   • rejected → who and why, in English and Tamil (on the reopen); nothing is sent and the month stays closed;
  *   • a typed signer or approver sent straight to head office is refused by name;
  *   • the steps pass the same accessibility audit as every page (48px targets, labels), in English and Tamil;
- *   • a page with no head office behind it (the sample) asks nothing and closes nothing, and says so.
+ *   • a page with no head office behind it (the sample) asks nothing and closes nothing.
  *
  * The browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS.
  */
@@ -296,74 +294,44 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
 
   const hidden = (page: Page, id: string) => page.evaluate((i) => (globalThis as unknown as BrowserGlobals).document.getElementById(i)?.hidden ?? true, id);
 
-  it('CLOSE: ask for the signature, the accountant approves, and the close names that approval — and nothing else', async () => {
+  it('CLOSE (OB-567): no close on the Finance page — it says, in English and Tamil, that the month is closed on head office\'s Month-end page, and links there', async () => {
     const ho = newHeadOffice();
     const { page, errors, teardown } = await openFinance(ho);
     try {
-      // The local evidence says the figures can be signed; the close step is on the page, the reopen step is not.
+      // The month's state still shows; the page carries no close step of its own — no button, no note box.
       expect(await page.textContent('#verdict')).toBe('These figures agree exactly and nothing is outstanding. They can be signed.');
       expect(await hidden(page, 'close-box')).toBe(false);
       expect(await hidden(page, 'reopen-box')).toBe(true);
-      // The page's own controls (the shared chrome's menu search box aside): no box to type a name into.
+      for (const gone of ['#ask-close', '#close-month', '#close-why', '#close-request']) {
+        expect(await page.locator(gone).count(), `${gone} is still on the Finance page`).toBe(0);
+      }
       expect(await page.locator('main input').count(), 'a box to type a signer or approver into is still on the page').toBe(0);
-      expect(await page.getAttribute('#ask-close', 'class')).toContain('primary');
-      expect(await page.getAttribute('#close-month', 'class')).not.toContain('primary');
+      expect((await page.textContent('#close-lead'))?.trim()).toBe('A month is closed on head office’s Month-end page, not on this page. This page shows whether the month is closed and its Tally files.');
+      expect((await page.textContent('#month-end-link'))?.trim()).toBe('Open the Month-end page');
+      // The link goes to the Month-end page of the menu (`/finance-close`), relative so a front's prefix is kept.
+      expect(await page.getAttribute('#month-end-link', 'href')).toBe('../finance-close/');
 
-      // Close BEFORE asking: refused on the page, nothing sent.
-      const early = await clickFor(page, '#close-month', /nobody has been asked/);
-      expect(early.text).toBe('Not closed — nobody has been asked to sign it yet. Press “Ask for the signature” first.');
+      await page.click('#lang');
+      await page.waitForFunction('document.documentElement.lang === "ta"');
+      expect((await page.textContent('#close-lead'))?.trim()).toBe('மாதம் தலைமை அலுவலகத்தின் மாத இறுதி பக்கத்தில் மூடப்படுகிறது, இந்தப் பக்கத்தில் அல்ல. மாதம் மூடப்பட்டதா என்பதையும் அதன் Tally கோப்புகளையும் இந்தப் பக்கம் காட்டுகிறது.');
+      expect((await page.textContent('#month-end-link'))?.trim()).toBe('மாத இறுதி பக்கத்தைத் திற');
+
+      // Nothing on this page asked for a signature or closed anything.
+      expect(posts(ho, '/v1/approvals/requests')).toHaveLength(0);
       expect(posts(ho, CLOSE_PATH)).toHaveLength(0);
-
-      // Ask for the signature — the closer's OWN request, for exactly this month.
-      await page.fill('#close-why', 'bank reconciled on the 3rd');
-      const asked = await clickFor(page, '#ask-close', /^Asked\./);
-      expect(asked.title).toBe('Waiting for approval');
-      expect(asked.cls).toContain('pending');
-      expect(asked.text).toBe('Asked. Waiting for someone who may sign a month — the accountant or the CA, not you — to approve it on their Approvals page. Nothing is closed yet. Close and sign September 2026');
-      const ask = posts(ho, '/v1/approvals/requests');
-      expect(ask).toHaveLength(1);
-      expect(ask[0]!.body).toEqual({
-        kind: 'period_close', subjectRef: PERIOD, details: { period: PERIOD }, valueMinor: null,
-        summary: 'Close and sign September 2026', reason: 'bank reconciled on the 3rd',
-      });
-      expect(ask[0]!.headers['idempotency-key'], 'the ask carries an idempotency key').toBeTruthy();
-      expect(posts(ho, CLOSE_PATH), 'asking closes nothing').toHaveLength(0);
-      await page.waitForSelector('#close-request:not([hidden])');
-      expect((await page.textContent('#close-request'))?.trim()).toBe('…Your request: Waiting for a second person');
-      expect(await page.getAttribute('#close-month', 'class')).toContain('primary');
-      expect(await page.getAttribute('#ask-close', 'class')).not.toContain('primary');
-
-      // Close while it waits: says so, nothing sent.
-      expect((await clickFor(page, '#close-month', /still waiting/)).text)
-        .toBe('Not closed — still waiting for someone who may sign a month (the accountant or the CA — not you) to approve it on their Approvals page.');
-      expect(posts(ho, CLOSE_PATH)).toHaveLength(0);
-
-      // The ACCOUNTANT approves it, in their own session.
-      const requestId = await decideAsAccountant(ho, 'approved', 'checked the bank and Tally for September');
-
-      // Close the month — one POST naming the approval; no signer, no name, no reason in the body.
-      const closed = await clickFor(page, '#close-month', /^Closed and signed/);
-      expect(closed.title).toBe('Closed and signed');
-      expect(closed.cls).toContain('good');
-      expect(closed.text).toBe('Closed and signed. u-accountant signed it, and that approval has now been used. A closed month is never edited — a correction is a new entry in the open month.');
-      const close = posts(ho, CLOSE_PATH);
-      expect(close).toHaveLength(1);
-      expect(close[0]!.body).toEqual({ approvalId: requestId });
-      for (const typed of ['signedBy', 'approvedBy', 'approval', 'rationale']) expect(close[0]!.body).not.toHaveProperty(typed);
-      expect(close[0]!.headers['idempotency-key'], 'the close carries an idempotency key').toBeTruthy();
-
-      // Head office closed it, signed by the accountant, and used the signature once.
-      expect(ho.periods.get(PERIOD)).toBe('closed');
-      expect(ho.closedBy.get(PERIOD)).toBe(ACCOUNTANT);
-      expect(ho.approvals.get(requestId)?.usedBy).toBe(`period-close:${PERIOD}`);
-
-      // The page now reads the month as closed and signed, and offers reopening instead of closing.
-      expect(await hidden(page, 'close-box')).toBe(true);
-      expect(await hidden(page, 'reopen-box')).toBe(false);
-      expect(await page.textContent('#blockers')).toContain(`closed by ${CLOSER} · signed by ${ACCOUNTANT}`);
       expect(errors).toEqual([]);
     } finally {
       await teardown();
+    }
+    // Once head office has the month closed (on its Month-end page), the Finance page reads it as closed and offers reopening.
+    const closed = newHeadOffice({ closed: true });
+    const after = await openFinance(closed);
+    try {
+      expect(await hidden(after.page, 'close-box')).toBe(true);
+      expect(await hidden(after.page, 'reopen-box')).toBe(false);
+      expect(after.errors).toEqual([]);
+    } finally {
+      await after.teardown();
     }
   });
 
@@ -451,37 +419,27 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
     }
   });
 
-  it('REJECTED says who and why, in English and Tamil; head office\'s own refusal is plain words and spends nothing', async () => {
-    const ho = newHeadOffice();
+  it('REJECTED says who and why, in English and Tamil — a rejected reopen sends nothing and the month stays closed', async () => {
+    // OB-567: the Finance page no longer closes a month, so a rejection is proven on the step it still offers — the reopen.
+    const ho = newHeadOffice({ closed: true });
     const { page, teardown } = await openFinance(ho);
     try {
-      await clickFor(page, '#ask-close', /^Asked\./);
-      await decideAsAccountant(ho, 'rejected', 'the cash count for the 14th is missing');
-      expect((await clickFor(page, '#close-month', /rejected it/)).text)
-        .toBe('Not closed — u-accountant rejected it: “the cash count for the 14th is missing”. Settle what they said and ask again.');
-      expect(posts(ho, CLOSE_PATH), 'a rejected close must not be sent').toHaveLength(0);
-      expect((await page.textContent('#close-request'))?.trim()).toBe('✕Your request: Rejected by u-accountant: the cash count for the 14th is missing');
+      await page.fill('#reopen-reason', REASON);
+      await clickFor(page, '#ask-reopen', /^Asked\./);
+      await decideAsAccountant(ho, 'rejected', 'the credit note is not on file yet');
+      expect((await clickFor(page, '#reopen', /rejected it/)).text)
+        .toBe('Not reopened — u-accountant rejected it: “the credit note is not on file yet”. Settle what they said and ask again.');
+      expect(posts(ho, REOPEN_PATH), 'a rejected reopen must not be sent').toHaveLength(0);
+      await page.waitForSelector('#reopen-request:not([hidden])');
+      expect((await page.textContent('#reopen-request'))?.trim()).toBe('✕Your request: Rejected by u-accountant: the credit note is not on file yet');
 
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"');
-      expect(await page.textContent('#ask-close')).toBe('கையெழுத்து கேள்');
-      expect(await page.textContent('#close-month')).toBe('மாதத்தை மூடு');
-      const ta = await clickFor(page, '#close-month', /மறுத்தார்/);
-      expect(ta.text).toBe('மூடப்படவில்லை — u-accountant மறுத்தார்: “the cash count for the 14th is missing”. அவர் சொன்னதைச் சரிசெய்து மீண்டும் கேளுங்கள்.');
-      expect(posts(ho, CLOSE_PATH)).toHaveLength(0);
-      await page.click('#lang');
-      await page.waitForFunction('document.documentElement.lang === "en"');
-
-      // Ask again; the accountant approves — but they posted into the month, so head office refuses them as signer.
-      await clickFor(page, '#ask-close', /^Asked\./);
-      const second = await decideAsAccountant(ho, 'approved', 'fine now');
-      ho.posters = ['u-cashier-sync', ACCOUNTANT];
-      expect((await clickFor(page, '#close-month', /posted entries into this month/)).text)
-        .toBe('Not closed — the person who signed also posted entries into this month, and cannot also certify that it is right. Ask again, and have someone else who may sign a month — who did not post into it — approve it.');
-      expect(posts(ho, CLOSE_PATH)).toHaveLength(1);
-      expect(ho.periods.get(PERIOD), 'the month stays open').toBe('open');
-      expect(ho.approvals.get(second)?.usedBy, 'a refused close spends no signature').toBeUndefined();
-      expect(await hidden(page, 'close-box')).toBe(false);
+      const ta = await clickFor(page, '#reopen', /மறுத்தார்/);
+      expect(ta.text).toBe('மீண்டும் திறக்கப்படவில்லை — u-accountant மறுத்தார்: “the credit note is not on file yet”. அவர் சொன்னதைச் சரிசெய்து மீண்டும் கேளுங்கள்.');
+      expect(posts(ho, REOPEN_PATH)).toHaveLength(0);
+      expect(ho.periods.get(PERIOD), 'the month stays closed').toBe('closed');
+      expect(await hidden(page, 'reopen-box')).toBe(false);
     } finally {
       await teardown();
     }
@@ -506,20 +464,16 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
     }
   });
 
-  it('the steps and the waiting banner pass the same accessibility audit as every page — in English and in Tamil', async () => {
+  it('the steps pass the same accessibility audit as every page — in English and in Tamil', async () => {
     const ho = newHeadOffice();
     const { page, teardown } = await openFinance(ho);
     try {
-      // Contrast, names, labels (the note box has one), 48px targets, one language — with the close step showing.
-      expect(await auditPage(page, { minTarget: 48 }), 'the close step').toEqual([]);
-      await page.click('#ask-close');
-      await page.waitForSelector('#banner.pending:not([hidden])', { timeout: 10_000 });
-      expect(await auditPage(page, { minTarget: 48 }), 'the waiting banner').toEqual([]);
-      await page.click('#banner-ok');
+      // Contrast, names, 48px targets, one language — with the "closed on the Month-end page" step showing (OB-567).
+      expect(await auditPage(page, { minTarget: 48 }), 'the month-end step').toEqual([]);
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"');
-      expect(await page.textContent('#close-why-label')).toBe('கையெழுத்திடுபவருக்கு ஒரு குறிப்பு (விருப்பமானால்)');
-      expect(await auditPage(page, { minTarget: 48, expectLang: 'ta' }), 'the close step in Tamil').toEqual([]);
+      expect(await page.textContent('#month-end-link')).toBe('மாத இறுதி பக்கத்தைத் திற');
+      expect(await auditPage(page, { minTarget: 48, expectLang: 'ta' }), 'the month-end step in Tamil').toEqual([]);
     } finally {
       await teardown();
     }
@@ -541,9 +495,10 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
     const { page, errors, teardown } = await openFinance(ho, false);
     try {
       expect(await hidden(page, 'sample')).toBe(false);
-      const said = await clickFor(page, '#ask-close', /not connected to head office/);
-      expect(said.text).toBe('This is sample data and is not connected to head office. Closing and reopening a month happen at head office, with a second person’s approval — nothing was asked and nothing was changed.');
-      expect((await clickFor(page, '#close-month', /not connected to head office/)).title).toBe('Please read this');
+      // OB-567: the sample has no close step either — only where the month is closed.
+      expect(await page.locator('#ask-close').count()).toBe(0);
+      expect(await page.locator('#close-month').count()).toBe(0);
+      expect(await hidden(page, 'close-box')).toBe(false);
       expect(ho.requests.filter((r) => r.method !== 'GET'), 'the sample sent something').toEqual([]);
       expect(errors).toEqual([]);
     } finally {

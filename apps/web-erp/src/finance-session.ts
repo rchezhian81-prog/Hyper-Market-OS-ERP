@@ -44,6 +44,11 @@
 // Reopening works the same way (`period_reopen`), for exactly the written reason: a changed reason is asked again.
 // With no head office behind the page, nothing is closed or reopened at all — and the screen says so.
 //
+// OB-567 (owner, 31 Oct 2026): a month is closed ONLY on head office's Month-end page. The office Finance page
+// (`apps/web-erp/web/finance.html|.js`) no longer offers steps 1 and 3 — it shows the month's state and its Tally files
+// and says where the month is closed. The close steps stay in this tested model, unused by the Finance page, for the
+// Month-end page to take over (which page carries them is reported to the owner).
+//
 // ── And the one that follows ────────────────────────────────────────────────
 //
 // **A closed period is append-only.** Reopening needs a different person's approval, and a

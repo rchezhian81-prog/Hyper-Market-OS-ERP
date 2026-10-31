@@ -31,7 +31,7 @@ describe('the Waste page (M28-FR-01)', () => {
       expect(v.summaryLine).not.toBe(WASTE_REVIEW_COPY[lang].allClear);
       expect(v.screenState.label).toBe(WASTE_REVIEW_COPY[lang].stateEmpty);
     }
-    expect(waste([]).view('en').summaryLine).toMatch(/^Nothing recorded yet/);
+    expect(waste([]).view('en').summaryLine).toMatch(/^Nothing recorded in the last 30 days/); // OB-565: the window is said
   });
 
   it('never given the write-offs: says the store computer was not told, not "nothing recorded"', () => {

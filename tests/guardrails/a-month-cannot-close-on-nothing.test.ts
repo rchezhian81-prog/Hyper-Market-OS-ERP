@@ -226,23 +226,31 @@ describe('what is outstanding blocks the close, and is never discarded', () => {
     expect(code(ENTRY)).toMatch(/periodReopenRequestBody\(reason, approvalId\)/);
   });
 
-  it('offers closing and reopening on the SCREEN, so the control is not worked around', () => {
+  it('OB-567: the Finance page closes NO month — it says the month is closed on head office\'s Month-end page, and links there', () => {
+    // The owner (31 Oct 2026): a month is closed only on head office's Month-end page. The Finance page keeps the month's
+    // state and its Tally files, and offers no close step of its own — no ask, no close button, no note box.
+    expect(HTML).not.toMatch(/id="ask-close"|id="close-month"|id="close-why"|id="close-request"/);
+    expect(code(VIEW)).not.toMatch(/session\.askToClose\(|session\.closeWithApproval\(|el\('ask-close'\)|el\('close-month'\)/);
+    // Where the month IS closed — in English and Tamil — with a link to the Month-end page of the menu (`/finance-close`).
+    expect(HTML).toMatch(/<a id="month-end-link"[^>]*href="\.\.\/finance-close\/"/);
+    expect(code(VIEW)).toMatch(/closeLead: 'A month is closed on head office’s Month-end page, not on this page\./);
+    expect(code(VIEW)).toMatch(/closeLead: 'மாதம் தலைமை அலுவலகத்தின் மாத இறுதி பக்கத்தில் மூடப்படுகிறது/);
+    expect(code(VIEW)).toMatch(/el\('month-end-link'\)\.textContent = t\('monthEndLink'\)/);
+  });
+
+  it('offers reopening on the SCREEN, so the control is not worked around', () => {
     // A capability the session has and the screen does not is the fault this codebase keeps
     // finding. Reopening is shown only once the month is actually closed.
-    expect(HTML).toMatch(/id="ask-close"/);
-    expect(HTML).toMatch(/id="close-month"/);
     expect(HTML).toMatch(/id="ask-reopen"/);
     expect(HTML).toMatch(/id="reopen"/);
-    expect(code(VIEW)).toMatch(/session\.askToClose\(/);
-    expect(code(VIEW)).toMatch(/session\.closeWithApproval\(/);
     expect(code(VIEW)).toMatch(/session\.askToReopen\(/);
     expect(code(VIEW)).toMatch(/session\.reopenWithApproval\(/);
     expect(code(VIEW)).toMatch(/el\('reopen-box'\)\.hidden = !session\.period\(\)\.closed/);
   });
 
-  it('asks, closes and reopens ONLY on a click — never at load — and the view sends no write of its own', () => {
+  it('asks and reopens ONLY on a click — never at load — and the view sends no write of its own', () => {
     const view = code(VIEW);
-    for (const call of ['session.askToClose(', 'session.closeWithApproval(', 'session.askToReopen(', 'session.reopenWithApproval(']) {
+    for (const call of ['session.askToReopen(', 'session.reopenWithApproval(']) {
       const at = view.indexOf(call);
       expect(at, `${call} is missing`).toBeGreaterThan(-1);
       expect(view.indexOf(call, at + 1), `${call} is called twice`).toBe(-1);
@@ -259,7 +267,6 @@ describe('what is outstanding blocks the close, and is never discarded', () => {
     const before = model.slice(model.indexOf('const beforeClosing'), model.indexOf('const ask = async'));
     expect(before.match(/if \(!connected\) return \{ kind: 'not_connected' \};/g) ?? []).toHaveLength(2);
     // The sample stand-in is connected to nothing and says so.
-    expect(code(VIEW)).toMatch(/closeWithApproval: async \(\) => \(\{ kind: 'not_connected' \}\)/);
     expect(code(VIEW)).toMatch(/reopenWithApproval: async \(\) => \(\{ kind: 'not_connected' \}\)/);
   });
 
@@ -301,10 +308,9 @@ describe('the screen somebody puts their name to', () => {
   });
 
   it('has words for every refusal and every blocker, in both languages', () => {
-    // Every close / reopen outcome is said by the model's presenters (tested, both languages); the view shows them.
+    // Every reopen outcome is said by the model's presenters (tested, both languages); the view shows them. (No close
+    // is offered here — OB-567: the month is closed on head office's Month-end page.)
     expect(bilingualGaps(FINANCE_MONTH_COPY, MONTH_COPY_KEYS)).toEqual({ en: [], ta: [] });
-    expect(code(VIEW)).toMatch(/session\.presentAskOutcome\(lang, 'close', outcome\)/);
-    expect(code(VIEW)).toMatch(/session\.presentUseOutcome\(lang, 'close', outcome\)/);
     expect(code(VIEW)).toMatch(/session\.presentAskOutcome\(lang, 'reopen', outcome\)/);
     expect(code(VIEW)).toMatch(/session\.presentUseOutcome\(lang, 'reopen', outcome\)/);
     expectWordsFor(

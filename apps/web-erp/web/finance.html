@@ -122,6 +122,9 @@
       .month-step { display: grid; gap: 12px; }
       .month-step[hidden] { display: none; }
       .month-step button { width: 100%; }
+      /* OB-567: the way to head office's Month-end page — a 48px target, an underlined link (never colour alone). */
+      .month-step a#month-end-link { display: flex; align-items: center; justify-content: center; min-height: var(--tap); border-radius: 12px; background: var(--line); color: var(--ink); font-weight: 600; text-decoration: underline; }
+      .month-step a#month-end-link:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .request-status { margin: 0; }
       .request-status[hidden] { display: none; }
     </style>
@@ -154,18 +157,13 @@
         <h3 id="blockers-title">What is stopping this month closing</h3>
         <div id="blockers"></div>
 
-        <!-- Closing happens at head office, with the signature of someone who may sign a month (never the closer). -->
+        <!-- OB-567 (owner, 31 Oct 2026): a month is closed ONLY on head office's Month-end page. This page shows the month's
+             state and its Tally files; it offers no close of its own. -->
         <div id="close-box" class="month-step">
-          <h3 id="close-title">Close and sign this month</h3>
-          <p class="lead" id="close-lead">Closing a month needs the signature of someone who may sign a month — the accountant or the CA, never you. When the figures agree, press “Ask for the signature”. Once they approve it on their Approvals page, press “Close the month”.</p>
-          <div>
-            <label for="close-why" id="close-why-label">A note for the person signing (optional)</label>
-            <textarea id="close-why" maxlength="300"></textarea>
-          </div>
-          <button id="ask-close" class="primary wide" type="button">Ask for the signature</button>
-          <button id="close-month" class="wide" type="button">Close the month</button>
-          <p class="request-status" id="close-request" hidden role="status"></p>
-          <p class="lead" id="close-note">Nothing is closed until every figure agrees and nothing is outstanding. A closed month is never edited — a correction is a new entry in the open one.</p>
+          <h3 id="close-title">Closing the month</h3>
+          <p class="lead" id="close-lead">A month is closed on head office’s Month-end page, not on this page. This page shows whether the month is closed and its Tally files.</p>
+          <a id="month-end-link" class="wide" href="../finance-close/">Open the Month-end page</a>
+          <p class="lead" id="close-note">A closed month is never edited — a correction is a new entry in the open one.</p>
         </div>
 
         <!-- Shown only once the month is closed. A control with no surface is one somebody works around. -->

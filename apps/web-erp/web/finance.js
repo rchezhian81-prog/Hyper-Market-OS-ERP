@@ -20,11 +20,11 @@
 // **Nothing on this screen can discard a refused posting.** They are listed in full, with the
 // reason the accounts gave (hard rule #6).
 //
-// **A month is closed and reopened at head office, by two people (ADR-0024 · §28).** The closer asks
-// for the signature here; someone who may sign a month (the accountant or the CA) approves it on
-// their own Approvals page; only then does "Close the month" send the close, naming that approval.
-// Reopening is the same, for exactly the written reason. No name is typed anywhere on this page, and
-// a page that is not connected to head office closes and reopens nothing — it says so.
+// **A month is closed on head office's Month-end page — never here (OB-567, owner, 31 Oct 2026).**
+// This page shows the month's state (closed or not, who signed it) and its Tally files, and says in
+// both languages where the month is closed, with a link to that page. Reopening a signed month stays
+// a two-person step at head office (ADR-0024 · §28), for exactly the written reason. No name is typed
+// anywhere on this page, and a page that is not connected to head office reopens nothing — it says so.
 //
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
@@ -42,12 +42,10 @@ const WORDS = {
     totalsLead: "Every figure is stated twice: what this shop's own record says, and what the accounts actually received. They are worked out separately and must agree exactly.",
     queueLead: 'A posting waiting in the queue is money the accounts have never seen. A refused one is money they would not take. Neither counts as received, and nothing here is ever thrown away.',
     blockersTitle: 'What is stopping this month closing',
-    closeTitle: 'Close and sign this month',
-    closeLead: 'Closing a month needs the signature of someone who may sign a month — the accountant or the CA, never you. When the figures agree, press “Ask for the signature”. Once they approve it on their Approvals page, press “Close the month”.',
-    closeWhyLabel: 'A note for the person signing (optional)',
-    askClose: 'Ask for the signature',
-    closeMonth: 'Close the month',
-    closeNote: 'Nothing is closed until every figure agrees and nothing is outstanding. A closed month is never edited — a correction is a new entry in the open one.',
+    closeTitle: 'Closing the month',
+    closeLead: 'A month is closed on head office’s Month-end page, not on this page. This page shows whether the month is closed and its Tally files.',
+    monthEndLink: 'Open the Month-end page',
+    closeNote: 'A closed month is never edited — a correction is a new entry in the open one.',
     deadTitle: 'Refused outright',
     ourRecord: 'our record', theAccounts: 'the accounts', difference: 'difference',
     agrees: 'agrees exactly', doesNotAgree: 'DOES NOT AGREE',
@@ -62,7 +60,7 @@ const WORDS = {
     signable: 'These figures agree exactly and nothing is outstanding. They can be signed.',
     notSignable: 'These figures do NOT agree, or something is outstanding. Do not sign them.',
     ok: 'OK', read: 'Please read this', done: 'Closed and signed', reopened: 'Reopened', waitingTitle: 'Waiting for approval',
-    nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be closed — a month close carries the name of whoever closed it, and a CA signs after them.',
+    nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be asked or reopened here — every step carries the name of the person who took it.',
     sampleData: 'Sample data — this is not your shop.',
     plan: 'Budget and assets',
     planLead: "The month's budget beside what the books hold, and the shop's equipment with what it is still worth in the books.",
@@ -78,12 +76,10 @@ const WORDS = {
     totalsLead: 'ஒவ்வொரு எண்ணும் இரண்டு முறை சொல்லப்படுகிறது: கடையின் சொந்தப் பதிவு என்ன சொல்கிறது, கணக்குகள் உண்மையில் என்ன பெற்றன. இவை தனித்தனியாகக் கணக்கிடப்பட்டு சரியாகப் பொருந்த வேண்டும்.',
     queueLead: 'வரிசையில் காத்திருக்கும் பதிவு என்பது கணக்குகள் இதுவரை பார்க்காத பணம். மறுக்கப்பட்டது அவை எடுக்க மறுத்த பணம். இரண்டும் பெறப்பட்டதாகக் கணக்கிடப்படாது, இங்கு எதுவும் தூக்கி எறியப்படாது.',
     blockersTitle: 'இந்த மாதம் மூட எது தடையாக உள்ளது',
-    closeTitle: 'இந்த மாதத்தை மூடிக் கையெழுத்திடு',
-    closeLead: 'மாதத்தை மூட, மாதத்திற்குக் கையெழுத்திடக்கூடியவரின் கையெழுத்து தேவை — கணக்காளர் அல்லது பட்டயக் கணக்காளர் (CA), ஒருபோதும் நீங்கள் அல்ல. எண்கள் பொருந்தும்போது “கையெழுத்து கேள்” அழுத்தவும். அவர் தனது அனுமதிகள் பக்கத்தில் அனுமதித்ததும், “மாதத்தை மூடு” அழுத்தவும்.',
-    closeWhyLabel: 'கையெழுத்திடுபவருக்கு ஒரு குறிப்பு (விருப்பமானால்)',
-    askClose: 'கையெழுத்து கேள்',
-    closeMonth: 'மாதத்தை மூடு',
-    closeNote: 'ஒவ்வொரு எண்ணும் பொருந்தி, நிலுவை எதுவும் இல்லாத வரை எதுவும் மூடப்படாது. மூடிய மாதம் திருத்தப்படாது — திருத்தம் என்பது திறந்த மாதத்தில் ஒரு புதிய பதிவு.',
+    closeTitle: 'மாதத்தை மூடுதல்',
+    closeLead: 'மாதம் தலைமை அலுவலகத்தின் மாத இறுதி பக்கத்தில் மூடப்படுகிறது, இந்தப் பக்கத்தில் அல்ல. மாதம் மூடப்பட்டதா என்பதையும் அதன் Tally கோப்புகளையும் இந்தப் பக்கம் காட்டுகிறது.',
+    monthEndLink: 'மாத இறுதி பக்கத்தைத் திற',
+    closeNote: 'மூடிய மாதம் திருத்தப்படாது — திருத்தம் என்பது திறந்த மாதத்தில் ஒரு புதிய பதிவு.',
     deadTitle: 'முற்றிலும் மறுக்கப்பட்டவை',
     ourRecord: 'நமது பதிவு', theAccounts: 'கணக்குகள்', difference: 'வித்தியாசம்',
     agrees: 'சரியாகப் பொருந்துகிறது', doesNotAgree: 'பொருந்தவில்லை',
@@ -98,7 +94,7 @@ const WORDS = {
     signable: 'இந்த எண்கள் சரியாகப் பொருந்துகின்றன, நிலுவை எதுவும் இல்லை. கையெழுத்திடலாம்.',
     notSignable: 'இந்த எண்கள் பொருந்தவில்லை, அல்லது ஏதோ நிலுவையில் உள்ளது. கையெழுத்திட வேண்டாம்.',
     ok: 'சரி', read: 'இதைப் படிக்கவும்', done: 'மூடிக் கையெழுத்திடப்பட்டது', reopened: 'மீண்டும் திறக்கப்பட்டது', waitingTitle: 'அனுமதிக்காகக் காத்திருக்கிறது',
-    nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைப் பெட்டிக்குத் தெரியவில்லை. எதையும் மூட முடியாது — மாத முடிப்பு அதைச் செய்தவரின் பெயரைச் சுமக்கும்.',
+    nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைப் பெட்டிக்குத் தெரியவில்லை. இங்கு எதையும் கேட்கவோ மீண்டும் திறக்கவோ முடியாது — ஒவ்வொரு படியும் அதைச் செய்தவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     plan: 'பட்ஜெட் மற்றும் சொத்துகள்',
     planLead: 'இந்த மாதப் பட்ஜெட்டும் கணக்குப் புத்தகங்களில் உள்ளதும் அருகருகே; கடையின் உபகரணங்களும் புத்தகங்களில் அவற்றின் இன்றைய மதிப்பும்.',
@@ -150,8 +146,6 @@ function sampleSession() {
     evidence: () => ({ signable: false, why: 'this is sample data' }),
     close: () => ({ ok: false, refusal: 'nobody_is_named_at_this_desk', detail: 'this is sample data' }),
     connected: false,
-    askToClose: async () => ({ kind: 'not_connected' }),
-    closeWithApproval: async () => ({ kind: 'not_connected' }),
     askToReopen: async () => ({ kind: 'not_connected' }),
     reopenWithApproval: async () => ({ kind: 'not_connected' }),
     yourRequests: async () => ({ state: 'not_connected', close: null, reopen: null, closeAsked: false, reopenReason: null }),
@@ -365,20 +359,16 @@ function totalRow(total) {
   return row;
 }
 
-// ── Closing and reopening: at head office, by two people (ADR-0024 · §28) ───
+// ── Reopening: at head office, by two people (ADR-0024 · §28). Closing is on the Month-end page (OB-567). ───
 
-/** Whether the closer has asked for this month's signature — then "Close the month" is the one main action. */
-let closeAsked = false;
 /** The reason a reopen was last asked with — "Reopen the month" sends exactly that reason. */
 let reopenAskedFor = null;
 
-/** Which box shows (close while open, reopen once closed) and which button is the main action. */
+/** Which box shows (where the month is closed, while open; reopen once closed) and which button is the main action. */
 function paintMonthSteps() {
   el('close-box').hidden = session.period().closed;
   // Only offered once the month is actually closed — there is nothing to reopen otherwise.
   el('reopen-box').hidden = !session.period().closed;
-  el('ask-close').classList.toggle('primary', !closeAsked);
-  el('close-month').classList.toggle('primary', closeAsked);
   const asked = reopenAskedFor !== null && reopenAskedFor === el('reopen-reason').value.trim();
   el('ask-reopen').classList.toggle('primary', !asked);
 }
@@ -404,11 +394,9 @@ function paintRequest(id, presented) {
 /** Read where the person's own requests for this month stand (a GET — read only), and show it. */
 async function refreshRequests() {
   const mine = await session.yourRequests(lang);
-  paintRequest('close-request', mine.close);
   paintRequest('reopen-request', mine.reopen);
   // Head office's list is the word on what was asked; with no answer, what this page saw is kept.
   if (mine.state === 'read') {
-    closeAsked = mine.closeAsked;
     reopenAskedFor = mine.reopenReason === null ? null : mine.reopenReason.trim();
   }
   // A reopen still in play carries its reason: put it back in the box, so "Reopen the month" sends exactly it.
@@ -416,32 +404,12 @@ async function refreshRequests() {
   paintMonthSteps();
 }
 
-/** After any close or reopen step: the month as it now stands, and where the person's requests stand. */
+/** After any reopen step: the month as it now stands, and where the person's requests stand. */
 async function afterMonthStep() {
   renderTotals();
   paintMonthSteps();
   await refreshRequests();
 }
-
-// Ask for the signature — the closer's OWN request, in their own session, for exactly this month. Nothing is closed.
-el('ask-close').addEventListener('click', () => {
-  void busy('ask-close', async () => {
-    const outcome = await session.askToClose(lang, el('close-why').value);
-    if (outcome.kind === 'asked') { closeAsked = true; el('close-why').value = ''; }
-    tellMonth('close', outcome.kind, session.presentAskOutcome(lang, 'close', outcome));
-    await afterMonthStep();
-  });
-});
-
-// Close the month — head office closes it naming the closer's own APPROVED request. Never a typed signer.
-el('close-month').addEventListener('click', () => {
-  void busy('close-month', async () => {
-    const outcome = await session.closeWithApproval();
-    if (outcome.kind === 'done') closeAsked = false;
-    tellMonth('close', outcome.kind, session.presentUseOutcome(lang, 'close', outcome));
-    await afterMonthStep();
-  });
-});
 
 /**
  * Reopening a signed month.
@@ -531,9 +499,7 @@ function paintChrome() {
   el('blockers-title').textContent = t('blockersTitle');
   el('close-title').textContent = t('closeTitle');
   el('close-lead').textContent = t('closeLead');
-  el('close-why-label').textContent = t('closeWhyLabel');
-  el('ask-close').textContent = t('askClose');
-  el('close-month').textContent = t('closeMonth');
+  el('month-end-link').textContent = t('monthEndLink');
   el('close-note').textContent = t('closeNote');
   el('queue-title').textContent = t('queue');
   el('queue-lead').textContent = t('queueLead');

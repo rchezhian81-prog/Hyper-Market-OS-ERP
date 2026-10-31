@@ -177,8 +177,12 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   roles: known([{
     id: 'analyst', name: 'Analyst',
     permissions: ['reporting.sales.export', 'reporting.operations.export'],
+  }, {
+    // OB-569: the person the pack names for the Products page holds the right to see costs and suppliers, so the page
+    // is served whole to them (a viewer without it gets name, price and barcode only — tests/unit/r2-owner-answers).
+    id: 'pricing', name: 'Pricing', permissions: ['catalogue.pack.read', 'supplier.view'],
   }]),
-  roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
+  roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }, { userId: 'u-pricing', roleId: 'pricing', branchScope: ['b1'] }]),
   people: notKnown('not pulled'),
   reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
   // Who runs the manager screen on this box (Stage G slice 5c).

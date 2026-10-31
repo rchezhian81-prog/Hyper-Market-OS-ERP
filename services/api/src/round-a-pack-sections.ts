@@ -12,8 +12,10 @@
 //     and every recall head office holds (M10-FR-04), each in the shape the page reads.
 //   • finance — whether this month is closed and who signed it (head office's period lifecycle) and the month's daily Tally
 //     files in whatever state each reached (the Tally outbox, OB-293). NOT the ledger side: see `financeSections`.
-//   • GST reconciliation — every e-invoice and e-way bill in the lifecycle, folded by head office's own engines into the
-//     operator's queue categories (API-09 · A20/A23).
+//   • GST reconciliation — the e-invoices and e-way bills in the lifecycle, folded by head office's own engines into the
+//     operator's queue categories (API-09 · A20/A23). OB-568 (owner, 31 Oct 2026): only the documents that still need
+//     attention (every category that is not settled) and those of the current and the previous GST return month ride —
+//     never the whole history; the full register stays at head office.
 //
 // Who may SEE each section is the screen's own permission (SEC-1): the store computer serves a page — and so its data —
 // only to a person who holds that page's word (the product master to `catalogue.pack.read`, the batches to
@@ -201,16 +203,41 @@ export interface GstQueueRowSection {
 }
 
 /**
- * Every e-invoice and e-way bill in the lifecycle, each folded by head office's own engine and categorised exactly as its
- * register routes do (`GET /v1/finance/e-invoice/register`, `GET /v1/finance/e-way-bill/register`). A disagreement with
- * the portal rides as it was observed — surfaced, never applied (hard rule #10).
+ * OB-568: the queue categories that are SETTLED — the portal accepted the document (an IRN registered, an e-way bill
+ * generated) or it was cancelled. Every other category (processing, rejected, unknown, error, and a mismatch on ANY
+ * document, settled or not) still needs a person, so it always rides whatever its month.
  */
-export async function gstReconciliationQueueSection(input: Base, tenantId: string): Promise<readonly GstQueueRowSection[]> {
+export const GST_SETTLED_CATEGORIES: ReadonlySet<string> = new Set(['registered', 'generated', 'cancelled']);
+
+/** OB-568: the GST return month (YYYY-MM) of a document, from its own document date; undefined when it carries none. */
+const returnMonthOf = (documentDate: string | undefined): string | undefined => /^(\d{4}-\d{2})-\d{2}/.exec(documentDate ?? '')?.[1];
+
+/**
+ * OB-568: does a document ride the pack? It needs attention (a category that is not settled), or it belongs to one of
+ * `months` (the current and the previous GST return month, by the shop's calendar). A document with no document date on
+ * record cannot be placed in a month, so it rides rather than vanish unseen (P-08).
+ */
+const ridesThePack = (category: string, documentDate: string | undefined, months: ReadonlySet<string>): boolean => {
+  if (!GST_SETTLED_CATEGORIES.has(category)) return true;
+  const month = returnMonthOf(documentDate);
+  return month === undefined || months.has(month);
+};
+
+/**
+ * The e-invoices and e-way bills the GST reconciliation page needs (OB-568), each folded by head office's own engine and
+ * categorised exactly as its register routes do (`GET /v1/finance/e-invoice/register`, `GET /v1/finance/e-way-bill/register`):
+ * every one that still needs attention, plus the settled ones of `months` (the current and the previous GST return month).
+ * The full register stays at head office. A disagreement with the portal rides as it was observed — surfaced, never
+ * applied (hard rule #10).
+ */
+export async function gstReconciliationQueueSection(input: Base, tenantId: string, months: readonly string[]): Promise<readonly GstQueueRowSection[]> {
   const rows: GstQueueRowSection[] = [];
+  const inMonths = new Set(months);
   const einv = eInvoiceAdapter(input);
   for (const id of await einv.listInvoiceIds(tenantId)) {
     const agg = await einv.load(tenantId, id);
     if (agg === undefined) continue;
+    if (!ridesThePack(eInvoiceRowCategory(agg), agg.request?.documentDate, inMonths)) continue;
     rows.push({
       documentType: 'e_invoice', id, category: eInvoiceRowCategory(agg), detail: agg.detail,
       ...(agg.irn === undefined ? {} : { number: agg.irn }),
@@ -221,6 +248,7 @@ export async function gstReconciliationQueueSection(input: Base, tenantId: strin
   for (const id of await ewb.listMovementIds(tenantId)) {
     const agg = await ewb.load(tenantId, id);
     if (agg === undefined) continue;
+    if (!ridesThePack(ewbRowCategory(agg), agg.request?.documentDate, inMonths)) continue;
     rows.push({
       documentType: 'e_way_bill', id, category: ewbRowCategory(agg), detail: agg.detail,
       ...(agg.ewbNo === undefined ? {} : { number: agg.ewbNo }),
