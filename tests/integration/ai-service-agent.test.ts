@@ -22,7 +22,7 @@ const runA05 = (h: ApiHarness, key: string) =>
 async function armA05(h: ApiHarness): Promise<void> {
   expect((await put(h, '/v1/ai/kill-switch', { on: false }, 'k')).status).toBe(200);
   expect((await put(h, '/v1/ai/budget', { capMinor: 500_000, periodEnds: '2027-01-01T00:00:00Z' }, 'b')).status).toBe(200);
-  expect((await put(h, '/v1/ai/agents/enabled', { agents: ['A05'] }, 'e')).status).toBe(200);
+  expect((await put(h, '/v1/ai/agents/enabled', { expected: [], agents: ['A05'] }, 'e')).status).toBe(200);
 }
 
 // The AI run route reads the REAL clock (no ?asOf=), and a case's openedAt is stamped server-side at

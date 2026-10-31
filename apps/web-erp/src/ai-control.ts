@@ -158,8 +158,9 @@ export type ActRefusal = (typeof ACT_REFUSAL_KINDS)[number];
 
 /**
  * Switch ONE assistant on or off. Head office's route takes the whole list of switched-on assistants
- * (`PUT /v1/ai/agents/enabled`), so the list is built from what head office said is switched on in `agents` — the page
- * re-reads it immediately before sending — with this one assistant added or taken away; nobody else's setting is touched.
+ * (`PUT /v1/ai/agents/enabled`), so the list is built from what head office said is switched on in `agents` (the list the
+ * screen read), with this one assistant added or taken away. The list it read rides as `expected` (OB-557): if somebody
+ * changed it in between, head office refuses by name (`enabled_list_changed`, 409) and nothing of theirs is overwritten.
  * Switching on lets it run on its rules: a stopped shop (the shop-wide switch, a kill switch) keeps it stopped.
  */
 export function enableRequest(viewer: AiViewer, agents: readonly Pick<ControlAgent, 'agentId' | 'enabled'>[], agentId: AgentId, on: boolean): ActCheck {
@@ -167,8 +168,9 @@ export function enableRequest(viewer: AiViewer, agents: readonly Pick<ControlAge
   const current = agents.find((a) => a.agentId === agentId);
   if (current === undefined || !(agentId in AGENTS)) return { ok: false, refusal: 'which_agent', detail: 'Choose an assistant head office knows.' };
   if (current.enabled === on) return { ok: false, refusal: 'already_so', detail: `${agentId} is already switched ${on ? 'on' : 'off'}.` };
+  const expected = agents.filter((a) => a.enabled).map((a) => a.agentId).sort();
   const enabled = agents.filter((a) => (a.agentId === agentId ? on : a.enabled)).map((a) => a.agentId).sort();
-  return { ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { agents: enabled } };
+  return { ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { expected, agents: enabled } };
 }
 
 /** Rupees as typed ("1,000", "250.50", "₹15000") → paise exactly from the text; undefined when it is not money. */

@@ -199,10 +199,24 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
       expect((await control()).agents.filter((a) => a.enabled).map((a) => a.agentId)).toEqual(['A01', 'A04']);
       const off = await act('POST', '/v1/ai/agents/A08/runs', OWNER, {});
       expect([off.status, (off.body as { error?: { code?: string } }).error?.code]).toEqual([429, 'agent_not_permitted_here']);
+      // OB-557: while this screen still shows A08 off, the second owner switches A04 off elsewhere. Pressing "Switch on" for
+      // A08 now is a change made against a stale list — head office refuses it by name, nothing of theirs is overwritten,
+      // and the page says so in plain words and shows the latest.
+      const elsewhere = await act('PUT', '/v1/ai/agents/enabled', OWNER2, { expected: ['A01', 'A04'], agents: ['A01'] });
+      expect(elsewhere.status).toBe(200);
       n = await reads(page);
       await page.click('#agent-list .row[data-agent="A08"] button.enable-toggle[data-on="true"]');
-      await afterAct(page, n);
+      expect(await afterAct(page, n)).toMatch(/Somebody else changed which assistants are switched on since this screen read it\. Nothing was changed/);
       await page.click('#banner-ok');
+      expect((await control()).agents.filter((a) => a.enabled).map((a) => a.agentId), 'the other owner\'s change stands').toEqual(['A01']);
+      expect(await page.textContent('#agent-list .row[data-agent="A04"]')).toContain('not switched on');
+      // On the list now shown: A04 and A08 switched on again, one press each.
+      for (const agent of ['A04', 'A08']) {
+        n = await reads(page);
+        await page.click(`#agent-list .row[data-agent="${agent}"] button.enable-toggle[data-on="true"]`);
+        expect(await afterAct(page, n)).toMatch(/Switched on/);
+        await page.click('#banner-ok');
+      }
       expect((await control()).agents.filter((a) => a.enabled).map((a) => a.agentId)).toEqual(['A01', 'A04', 'A08']);
       // A01's read-only insight lands on the register as a draft for the queue (the next journeys read it).
       expect((await act('POST', '/v1/ai/agents/A01/runs', OWNER, {})).status).toBe(200);

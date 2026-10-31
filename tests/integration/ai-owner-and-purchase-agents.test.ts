@@ -34,7 +34,7 @@ async function shop(): Promise<ApiHarness> {
     lines: [{ productId: 'P-OIL', quantityMinor: 3, uom: 'ea', unitPriceMinor: 18_000, lineTotalMinor: 54_000 }], tenders: [{ kind: 'cash', amountMinor: 54_000 }],
   } })).status).toBe(202);
   expect((await put(h, '/v1/ai/kill-switch', { on: false }, 'k0')).status).toBe(200);
-  expect((await put(h, '/v1/ai/agents/enabled', { agents: ['A01', 'A02'] }, 'e1')).status).toBe(200);
+  expect((await put(h, '/v1/ai/agents/enabled', { expected: [], agents: ['A01', 'A02'] }, 'e1')).status).toBe(200);
   return h;
 }
 

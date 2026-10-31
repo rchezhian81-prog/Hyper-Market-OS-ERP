@@ -90,6 +90,7 @@ const WORDS = {
     actionsOff: 'The owner’s assistant (A01) is not running, so it has no list for you. The figures are on the dashboard as always.',
     switchOn: 'Switch on', switchOff: 'Switch off', switchedOn: 'Switched on. It runs on its tested rules and only recommends — a person decides.',
     switchedOff: 'Switched off. The work it helped with carries on without it.',
+    listChanged: 'Somebody else changed which assistants are switched on since this screen read it. Nothing was changed. The screen now shows the latest — look again and press the button once more if you still want the change.',
     enableNote: 'Switching an assistant on lets it run on its tested rules. It still only recommends; a person decides every price, payment, refund, purchase, stock or access change. While the shop-wide switch or a kill switch is on, it stays stopped.',
     limitTitle: 'Set the spending limits', capLabel: 'The shop’s AI limit for the period (₹)', periodLabel: 'The limit runs until (the end of this day)', setCap: 'Set the shop’s limit',
     capSet: 'The shop’s AI limit is set.', ceilingSet: 'The assistant’s limit is set.',
@@ -150,6 +151,7 @@ const WORDS = {
     actionsOff: 'உரிமையாளரின் உதவியாளர் (A01) இயங்கவில்லை, எனவே உங்களுக்குப் பட்டியல் இல்லை. எண்ணிக்கைகள் எப்போதும் போல் டாஷ்போர்டில் உள்ளன.',
     switchOn: 'இயக்கு', switchOff: 'நிறுத்தி வை', switchedOn: 'இயக்கப்பட்டது. இது சோதிக்கப்பட்ட விதிகளில் இயங்கி பரிந்துரை மட்டுமே செய்யும் — ஒருவர் முடிவு செய்வார்.',
     switchedOff: 'நிறுத்தி வைக்கப்பட்டது. அது உதவிய வேலை அது இல்லாமல் தொடரும்.',
+    listChanged: 'இந்தத் திரை படித்த பிறகு வேறொருவர் எந்த உதவியாளர்கள் இயக்கத்தில் உள்ளன என்பதை மாற்றியுள்ளார். எதுவும் மாற்றப்படவில்லை. திரை இப்போது சமீபத்தியதைக் காட்டுகிறது — மீண்டும் பார்த்து, மாற்றம் இன்னும் வேண்டுமென்றால் பொத்தானை மீண்டும் அழுத்துங்கள்.',
     enableNote: 'ஒரு உதவியாளரை இயக்கினால் அது சோதிக்கப்பட்ட விதிகளில் இயங்கும். அது பரிந்துரை மட்டுமே செய்யும்; ஒவ்வொரு விலை, பணம், திருப்பித் தருதல், கொள்முதல், இருப்பு அல்லது அணுகல் மாற்றத்தையும் ஒருவரே முடிவு செய்வார். கடை முழுவதற்குமான சுவிட்ச் அல்லது நிறுத்தும் சுவிட்ச் ON ஆக இருக்கும் வரை அது நிறுத்தியே இருக்கும்.',
     limitTitle: 'செலவு வரம்புகளை அமை', capLabel: 'காலத்திற்கான கடையின் AI வரம்பு (₹)', periodLabel: 'வரம்பு இந்த நாள் முடியும் வரை', setCap: 'கடையின் வரம்பை அமை',
     capSet: 'கடையின் AI வரம்பு அமைக்கப்பட்டது.', ceilingSet: 'உதவியாளரின் வரம்பு அமைக்கப்பட்டது.',
@@ -252,6 +254,8 @@ async function act(check, good) {
   if (!check.ok) { tell(t('read'), words(ACT_REFUSAL_WORDS, check.refusal)); return false; }
   const out = await send(check);
   if (!out.ok) {
+    // OB-557: the switched-on list changed since this screen read it — said in plain words, and the latest is shown.
+    if (out.body?.error?.code === 'enabled_list_changed') { tell(t('read'), t('listChanged')); await refresh(); return false; }
     tell(t('read'), out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
     return false;
   }
@@ -454,17 +458,13 @@ function renderAgents() {
 }
 
 /**
- * Switch one assistant on or off. Head office's route takes the WHOLE list of switched-on assistants, so the list is
- * re-read from head office immediately before sending and only this one assistant is changed in it. If head office
- * already has it that way (somebody just changed it), nothing is sent and the screen shows the latest.
+ * Switch one assistant on or off. Head office's route takes the WHOLE list of switched-on assistants; the page sends the
+ * list it showed with only this one assistant changed, and the list it read as `expected` (OB-557). If somebody changed it
+ * in between, head office refuses by name, the page says so in plain words and shows the latest — nothing is overwritten.
  */
 async function switchAgent(agentId, on) {
-  if (kit === undefined) { tell(t('read'), words(ACT_REFUSAL_WORDS, 'nobody_is_named_at_this_desk')); return; }
-  await load();
-  if (readState !== 'ok' || view === null) { paintChrome(); tell(t('read'), t('unreachable')); return; }
-  const check = kit.enable(viewer, view.agents, agentId, on);
-  if (!check.ok && check.refusal === 'already_so') paintChrome();
-  await act(check, () => (on ? t('switchedOn') : t('switchedOff')));
+  if (kit === undefined || view === null) { tell(t('read'), words(ACT_REFUSAL_WORDS, 'nobody_is_named_at_this_desk')); return; }
+  await act(kit.enable(viewer, view.agents, agentId, on), () => (on ? t('switchedOn') : t('switchedOff')));
 }
 
 function evaluationWords(agent) {

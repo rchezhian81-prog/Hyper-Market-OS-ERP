@@ -76,7 +76,7 @@ describe.each(backings)('the customer\'s own account, suggestions and help (M20-
     expect(off).toMatchObject({ answered: false, escalate: true });
     expect(off.notice.en).toMatch(/given automatically by the shop's assistant/);
     await ok(req('PUT', '/v1/ai/kill-switch', { on: false }, OWNER), 'unkill');
-    await ok(req('PUT', '/v1/ai/agents/enabled', { agents: ['A05'] }, OWNER), 'enable A05');
+    await ok(req('PUT', '/v1/ai/agents/enabled', { expected: [], agents: ['A05'] }, OWNER), 'enable A05');
     const on = (await ok(help({ topic: 'order_status', orderId: 'ORD-B' }), 'help on')).body as { answered: boolean; text: string; source: string };
     expect(on.answered).toBe(true);
     expect(on.text).toContain('ORD-B');

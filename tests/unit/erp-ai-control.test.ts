@@ -90,8 +90,8 @@ describe('every act is checked here and SENT to head office', () => {
 describe('AI-SCREEN (re-audit 30 Oct 2026): switching an assistant on or off, and the spending limits', () => {
   const agents = [{ agentId: 'A08' as const, enabled: true }, { agentId: 'A01' as const, enabled: false }, { agentId: 'A04' as const, enabled: true }];
   it('switching ONE assistant on or off sends head office\'s whole list with only that one changed — nobody else\'s setting', () => {
-    expect(enableRequest(OWNER, agents, 'A01', true)).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { agents: ['A01', 'A04', 'A08'] } });
-    expect(enableRequest(OWNER, agents, 'A04', false)).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { agents: ['A08'] } });
+    expect(enableRequest(OWNER, agents, 'A01', true)).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { expected: ['A04', 'A08'], agents: ['A01', 'A04', 'A08'] } });
+    expect(enableRequest(OWNER, agents, 'A04', false)).toEqual({ ok: true, method: 'PUT', path: '/v1/ai/agents/enabled', body: { expected: ['A04', 'A08'], agents: ['A08'] } });
     // Already so at head office (somebody just changed it): nothing is sent.
     expect(enableRequest(OWNER, agents, 'A08', true)).toMatchObject({ ok: false, refusal: 'already_so' });
     expect(enableRequest(OWNER, agents, 'A03', true)).toMatchObject({ ok: false, refusal: 'which_agent' });

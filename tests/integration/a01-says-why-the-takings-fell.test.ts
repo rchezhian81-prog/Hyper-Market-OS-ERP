@@ -73,7 +73,7 @@ describe.each(backings)('A01 says the likely cause of a takings drop, on $name',
     await sale('Y-1', yesterday, `${yesterday}T10:00:00.000Z`, [{ productId: 'P-RICE', qty: 100, unit: 5_000 }]);
     await sale('T-1', today, new Date(now.getTime() - 1_000).toISOString(), [{ productId: 'P-RICE', qty: 6, unit: 5_000 }]);
     await ok(owner('PUT', '/v1/ai/kill-switch', { on: false }), 'kill switch off');
-    await ok(owner('PUT', '/v1/ai/agents/enabled', { agents: ['A01'] }), 'A01 on');
+    await ok(owner('PUT', '/v1/ai/agents/enabled', { expected: [], agents: ['A01'] }), 'A01 on');
 
     // A cashier may not run the owner's agent.
     expect((await h.request({ method: 'POST', path: '/v1/ai/agents/A01/runs', userId: TILL, tenantId: T, idempotencyKey: 'run-cash', body: {} })).status).toBe(403);

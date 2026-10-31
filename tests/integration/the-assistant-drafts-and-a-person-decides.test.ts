@@ -90,7 +90,7 @@ describe.each(backings)('the assistant drafts, a person decides and sends — on
     await h.provisionRole(T, CASHIER, 'cashier');
     expect((await call('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'test' })).status).toBe(200);
     expect((await call('PUT', '/v1/ai/budget', OWNER, { capMinor: 1_000_000, periodEnds: '2099-01-01T00:00:00.000Z' })).status).toBe(200);
-    expect((await call('PUT', '/v1/ai/agents/enabled', OWNER, { agents: ['A05', 'A07', 'A09'] })).status).toBe(200);
+    expect((await call('PUT', '/v1/ai/agents/enabled', OWNER, { expected: [], agents: ['A05', 'A07', 'A09'] })).status).toBe(200);
     // AI-NFR-01 (OB-288 lane 4 · P1): only a model on the approved register may be called — evaluate and approve one.
     await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A05' });
   }, 120_000);
@@ -223,13 +223,13 @@ describe('with no model provider (production today), a draft request is answered
     const put = (path: string, body: unknown) => h.request({ method: 'PUT', path, userId: OWNER, tenantId: T, idempotencyKey: `k-${randomUUID()}`, body });
     await put('/v1/ai/kill-switch', { on: false, reason: 'test' });
     await put('/v1/ai/budget', { capMinor: 1_000_000, periodEnds: '2099-01-01T00:00:00.000Z' });
-    await put('/v1/ai/agents/enabled', { agents: ['A05'] });
+    await put('/v1/ai/agents/enabled', { expected: [], agents: ['A05'] });
     await h.request({ method: 'POST', path: '/v1/service/cases/K-1', userId: OWNER, tenantId: T, idempotencyKey: 'open', body: { kind: 'enquiry', customerRef: 'c-1', priority: 'low', summary: 'hours?', assignedTo: OWNER } });
     const r = await h.request({ method: 'POST', path: '/v1/service/cases/K-1/ai-drafts', userId: OWNER, tenantId: T, idempotencyKey: 'd', body: { draftId: 'd-1' } });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ drafted: false, outcome: 'no_provider' });
     // An agent not enabled by name is refused before anything.
-    await put('/v1/ai/agents/enabled', { agents: [] });
+    await put('/v1/ai/agents/enabled', { expected: ['A05'], agents: [] });
     const off = await h.request({ method: 'POST', path: '/v1/service/cases/K-1/ai-drafts', userId: OWNER, tenantId: T, idempotencyKey: 'd2', body: { draftId: 'd-2' } });
     expect(off.status).toBe(429);
   });

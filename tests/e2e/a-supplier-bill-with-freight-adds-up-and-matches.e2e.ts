@@ -19,6 +19,9 @@ import type { RealCloud } from '../support/real-store';
  *     the charges said on the verdict;
  *   • a paper bill (a scan; no reading engine is connected) is typed with its real printed total: without the freight it is
  *     refused in head office's words; with ₹45.50 typed as freight it is saved, and its match agrees too;
+ *   • (OB-556) the e-invoice's other charges are of unknown kind: the page says plainly that ₹60 is NOT yet in stock cost; the
+ *     manager (who neither raised nor received the order) marks them freight/cost with a reason, and the stock's value at
+ *     head office rises by exactly ₹60; the typed bill's freight went into stock cost at its match, as before;
  *   • head office's own records carry the charges on each bill (read back from the API, not from the page).
  *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
@@ -90,6 +93,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a supplier
       throw new Error(`#${id} never said ${String(expected)} — it says "${await page.locator(`#${id}`).textContent()}"`, { cause: e });
     }
   };
+  const stockValue = async (): Promise<number> => ((await shop.cloud().request({ method: 'GET', path: '/v1/inventory/valuation', userId: OWNER })).body as { totalValueMinor: number }).totalValueMinor;
   const handIn = async (page: Page, name: string, mimeType: string, buffer: Buffer, po: string): Promise<void> => {
     await page.setInputFiles('#bill-file', { name, mimeType, buffer });
     await page.fill('#hand-po', po);
@@ -121,6 +125,18 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a supplier
       expect(await page.locator('#match-verdict').getAttribute('data-blocked')).toBe('false');
       expect(await page.locator('#match-verdict').innerText()).toMatch(/May be paid: ₹1,005\.00 · Billed: ₹1,005\.00 · Freight and other charges: ₹60\.00/);
 
+      // ── OB-556: the ₹60 is of unknown kind — said plainly, not in stock cost until a person marks it ─────────────────
+      await says(page, 'other-said', /^₹60\.00 of other charges on this bill are NOT yet in stock cost/);
+      const before = await stockValue();
+      await page.click('#other-cost');
+      await says(page, 'other-status', /^Write why you say so first — nothing was sent\./);
+      await page.fill('#other-reason', 'the supplier says it is lorry freight');
+      await page.click('#other-cost');
+      await says(page, 'other-status', /^Marked as freight \/ cost — they are now in the stock's cost\./);
+      await says(page, 'other-said', new RegExp(`^₹60\\.00 of other charges were marked freight / part of the goods' cost by ${MGR} \\(the supplier says it is lorry freight\\)`));
+      expect(await page.locator('#other-mark').isHidden(), 'a marked bill is not offered for marking again').toBe(true);
+      expect(await stockValue() - before, 'the ₹60 now in stock value at head office').toBe(6_000);
+
       // ── A paper bill typed with freight ───────────────────────────────────────────────────────────────────────
       await handIn(page, 'INV-90.png', 'image/png', SCAN, 'po-2');
       await says(page, 'hand-status', /no reading engine is connected/);
@@ -146,14 +162,18 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a supplier
       await page.click('#type-save');
       await says(page, 'type-status', /^Saved — the bill is on head office's register as sup-k-INV-90\./);
       await page.locator('#register li[data-state="captured"]').waitFor({ timeout: 15_000 });
+      const beforeTyped = await stockValue();
       await page.click('#run-match');
       await page.locator('#match-verdict[data-invoice="sup-k-INV-90"]').waitFor({ timeout: 15_000 });
       await says(page, 'match-status', /These agree — the bill may be paid/);
+      expect(await page.locator('#other-part').isHidden(), 'a bill with only freight has nothing to mark').toBe(true);
+      expect(await stockValue() - beforeTyped, 'typed freight goes into stock cost at the match, as before').toBe(4_550);
       expect(await page.locator('#match-verdict').innerText()).toMatch(/May be paid: ₹945\.50 · Billed: ₹945\.50 · Freight and other charges: ₹45\.50/);
 
       // The words have Tamil twins.
       await page.click('#lang');
       expect(await page.locator('#l-type-freight').innerText()).toBe('பில்லில் சரக்குக் கட்டணம் (₹)');
+      expect(await page.locator('#other-cost').innerText()).toBe('அவை சரக்குக் கட்டணம் / பொருட்களின் விலையின் பகுதி');
       expect(errors).toEqual([]);
     } finally { await context.close(); }
 

@@ -83,7 +83,7 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
   await ok(req(h, T, OWNER, 'POST', '/v1/catalogue/products/p-nomrp/barcodes/8901000000002', { kind: 'ean' }), 'barcode');
   // Switch on the three agents by name, the kill switch off (AI starts stopped).
   await ok(req(h, T, OWNER, 'PUT', '/v1/ai/kill-switch', { on: false }), 'unkill');
-  await ok(req(h, T, OWNER, 'PUT', '/v1/ai/agents/enabled', { agents: ['A06', 'A08', 'A10'] }), 'enable');
+  await ok(req(h, T, OWNER, 'PUT', '/v1/ai/agents/enabled', { expected: [], agents: ['A06', 'A08', 'A10'] }), 'enable');
 }
 
 async function journey(make: () => ApiHarness, T: string): Promise<void> {

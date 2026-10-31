@@ -54,7 +54,7 @@ async function journey(make: (opts: { transport?: ModelTransport; pricing?: type
   // ── No pricing configured: nothing can be admitted — refused, audited, transport untouched.
   const bare = make({ transport });
   await bare.seedOwner(T, OWNER);
-  await put(bare, T, '/v1/ai/agents/enabled', { agents: ['A01', 'A04'] }, 'en');
+  await put(bare, T, '/v1/ai/agents/enabled', { expected: [], agents: ['A01', 'A04'] }, 'en');
   await put(bare, T, '/v1/ai/budget', { capMinor: 2_450, periodEnds: '2026-10-31T23:59:59.000Z' }, 'bud');
   await put(bare, T, '/v1/ai/kill-switch', { on: false, reason: 'the owner switched AI on for the trial' }, 'unkill'); // AI starts OFF
   const unpriced = await call(bare, T, 'A01', 'a01-takings', 'c0');
@@ -150,7 +150,7 @@ describe('a model call is governed on the server (EA-08)', () => {
     const T = 'ab000000-0000-4000-8000-0000000ea018';
     const h = apiHarness({ modelTransport: simulatedTransport(EVALUATION_SIMULATOR), modelPricing: PRICING });
     await h.seedOwner(T, OWNER);
-    await put(h, T, '/v1/ai/agents/enabled', { agents: [...new Set(EVALUATION_SET.map((c) => c.agentId))] }, 'en');
+    await put(h, T, '/v1/ai/agents/enabled', { expected: [], agents: [...new Set(EVALUATION_SET.map((c) => c.agentId))] }, 'en');
     await put(h, T, '/v1/ai/budget', { capMinor: 1_000_000, periodEnds: '2026-10-31T23:59:59.000Z' }, 'bud');
   await put(h, T, '/v1/ai/kill-switch', { on: false, reason: 'evaluation run' }, 'unkill');
     await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A01' });

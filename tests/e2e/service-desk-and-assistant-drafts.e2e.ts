@@ -120,7 +120,7 @@ describe.skipIf(!HAVE_BROWSER)('the service desk and the assistant\'s drafts, in
     await h.provisionRole(T, DESK, 'store_manager');
     await act('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'e2e' });
     await act('PUT', '/v1/ai/budget', OWNER, { capMinor: 1_000_000, periodEnds: '2099-01-01T00:00:00.000Z' });
-    await act('PUT', '/v1/ai/agents/enabled', OWNER, { agents: ['A05', 'A07', 'A09'] });
+    await act('PUT', '/v1/ai/agents/enabled', OWNER, { expected: [], agents: ['A05', 'A07', 'A09'] });
     // AI-NFR-01 (OB-288 lane 4 · P1): only a model on the approved register may be called — evaluate and approve one.
     await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A05' });
     await act('POST', '/v1/orders/ORD-9/promise', OWNER, { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: 'store-1' });
