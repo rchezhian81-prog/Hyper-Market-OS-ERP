@@ -28,7 +28,7 @@ const runA09 = (h: ApiHarness, key: string) =>
 async function armA09(h: ApiHarness): Promise<void> {
   expect((await put(h, '/v1/ai/kill-switch', { on: false }, 'k')).status).toBe(200);
   expect((await put(h, '/v1/ai/budget', { capMinor: 500_000, periodEnds: '2027-01-01T00:00:00Z' }, 'b')).status).toBe(200);
-  expect((await put(h, '/v1/ai/agents/enabled', { agents: ['A09'] }, 'e')).status).toBe(200);
+  expect((await put(h, '/v1/ai/agents/enabled', { expected: [], agents: ['A09'] }, 'e')).status).toBe(200);
 }
 
 interface Proposal {

@@ -87,7 +87,7 @@ describe.each(backings)('the agents draft for people and commit nothing — on $
     expect((await req('POST', '/v1/purchase/requisitions/RQ-1/quotes/Q-B', OWNER, { supplierId: 'SUP-LAKSHMI', lines: [{ productId: 'OIL', unitCost: { minor: 12_150, currency: 'INR' }, leadTimeDays: 1 }] }, 'q-b')).status).toBeLessThan(300);
 
     expect((await req('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'trial' })).status).toBe(200);
-    expect((await req('PUT', '/v1/ai/agents/enabled', OWNER, { agents: ['A01', 'A02', 'A03', 'A04', 'A05'] })).status).toBe(200);
+    expect((await req('PUT', '/v1/ai/agents/enabled', OWNER, { expected: [], agents: ['A01', 'A02', 'A03', 'A04', 'A05'] })).status).toBe(200);
 
     // ── A02: the forecast stock-out and the quotation comparison — for a buyer; no quantity, nothing ordered.
     const a02 = (await req('POST', '/v1/ai/agents/A02/runs', OWNER, {}, 'run-a02')).body as { proposals: Draft[]; committedAnything: boolean };

@@ -70,7 +70,7 @@ export async function startInboxShop(input: {
   }
   await input.seed(cloud);
   await ok(cloud.request({ method: 'PUT', path: '/v1/ai/kill-switch', userId: OWNER, idempotencyKey: 'unkill', body: { on: false } }), 'unkill');
-  await ok(cloud.request({ method: 'PUT', path: '/v1/ai/agents/enabled', userId: OWNER, idempotencyKey: 'enable', body: { agents: ['A06', 'A08', 'A10'] } }), 'enable');
+  await ok(cloud.request({ method: 'PUT', path: '/v1/ai/agents/enabled', userId: OWNER, idempotencyKey: 'enable', body: { expected: [], agents: ['A06', 'A08', 'A10'] } }), 'enable');
 
   const tokenFor = (req: IncomingMessage): string => {
     const cookie = req.headers.cookie ?? '';

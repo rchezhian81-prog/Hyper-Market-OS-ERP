@@ -244181,14 +244181,93 @@
         "x-derived-from": "services/ai/src/governance.ts"
       },
       "PutAiAgentsEnabledReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "enabled",
+              "by",
+              "at",
+              "unchanged"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "A01",
+                    "A02",
+                    "A03",
+                    "A04",
+                    "A05",
+                    "A06",
+                    "A07",
+                    "A08",
+                    "A09",
+                    "A10"
+                  ]
+                }
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "unchanged": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "enabled",
+              "by",
+              "at"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "A01",
+                    "A02",
+                    "A03",
+                    "A04",
+                    "A05",
+                    "A06",
+                    "A07",
+                    "A08",
+                    "A09",
+                    "A10"
+                  ]
+                }
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/index.ts"
+      },
+      "PutAiAgentsEnabledRequest": {
         "type": "object",
         "required": [
-          "enabled",
-          "by",
-          "at"
+          "agents",
+          "expected"
         ],
         "properties": {
-          "enabled": {
+          "agents": {
             "type": "array",
             "items": {
               "type": "string",
@@ -244206,24 +244285,7 @@
               ]
             }
           },
-          "by": {
-            "type": "string"
-          },
-          "at": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": true,
-        "x-body-schema": "derived",
-        "x-derived-from": "services/ai/src/index.ts"
-      },
-      "PutAiAgentsEnabledRequest": {
-        "type": "object",
-        "required": [
-          "agents"
-        ],
-        "properties": {
-          "agents": {
+          "expected": {
             "type": "array",
             "items": {
               "type": "string",
