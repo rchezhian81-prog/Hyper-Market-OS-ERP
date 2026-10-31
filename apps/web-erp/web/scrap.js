@@ -49,7 +49,12 @@ function paintReview() {
     $('finding-rows').append(li);
   }
 }
+// What the page says about the person on it: nobody signed in, may not read the review — or (Round B · OB-515, the owner's
+// decision: the owner and the accountant record, a store manager reviews) may read it but not record, so the record form
+// is not shown and the page SAYS why rather than leaving it silently missing. Repainted in the chosen language.
+const pageStatusKey = !may.named ? 'nobody' : !may.review ? 'cannotReview' : !may.record ? 'recordNotYours' : null;
 function paint() {
+  $('page-status').textContent = pageStatusKey === null ? '' : t(pageStatusKey);
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['review-h', 'reviewH'], ['v-branch-l', 'branch'], ['v-from-l', 'from'], ['v-to-l', 'to'], ['v-show-text', 'show'],
@@ -67,9 +72,7 @@ async function showReview() {
 for (const [id, name] of [['v-show', 'search'], ['s-record', 'list-plus']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
-if (!may.named) $('page-status').textContent = t('nobody');
-else if (!may.review) $('page-status').textContent = t('cannotReview');
-else {
+if (may.named && may.review) {
   const today = api.today();
   $('v-from').value = today; $('v-to').value = today;
   $('review').hidden = false;

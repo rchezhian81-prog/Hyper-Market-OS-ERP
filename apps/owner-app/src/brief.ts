@@ -65,6 +65,11 @@ export interface BuildBriefInput {
    * are real and are shown; only their margin is not known. Absent / zero bills = every bill was costed.
    */
   readonly uncosted?: { readonly bills: number; readonly takenMinor: number; readonly tenderMix: Readonly<Record<string, number>> };
+  /**
+   * Round B: today's refunds (and exchange credits) as the store computer counted them by the day book's own rule — how
+   * many, how much left the shop, by which tender. The takings are net of them. Absent = none told.
+   */
+  readonly refunds?: { readonly count: number; readonly refundedMinor: number; readonly tenderMix: Readonly<Record<string, number>> };
 }
 
 export interface OwnerBrief {
@@ -75,7 +80,17 @@ export interface OwnerBrief {
    * Round 4: EVERY bill today and what they took, by tender — the costed ones (in `kpis`) and the ones whose margin is not
    * known (`marginUnknownBills`) together. The takings are never hidden because a cost is missing.
    */
-  readonly takings: { readonly bills: number; readonly takenMinor: number; readonly tenderMix: Readonly<Record<string, number>>; readonly marginUnknownBills: number };
+  readonly takings: {
+    readonly bills: number;
+    /** Round B: what today's bills took, LESS today's refunds — net, as the till close and the day book count it. */
+    readonly takenMinor: number;
+    /** By tender, net of the refunds given by that tender. */
+    readonly tenderMix: Readonly<Record<string, number>>;
+    readonly marginUnknownBills: number;
+    /** Round B: today's refunds — how many and how much — taken off the takings above. */
+    readonly refunds: number;
+    readonly refundedMinor: number;
+  };
   /** How current the numbers are — always shown, never implied (P-08). */
   readonly freshness: Freshness;
   /** Plain-sentence summary of the day, numbers beside the words. */
@@ -182,27 +197,35 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
   const unc = input.uncosted !== undefined && input.uncosted.bills > 0 ? input.uncosted : undefined;
   const tenderMix: Record<string, number> = { ...kpis.tenderMix };
   for (const [kind, minor] of Object.entries(unc?.tenderMix ?? {})) tenderMix[kind] = (tenderMix[kind] ?? 0) + minor;
+  // Round B: the money that went back to customers today comes off the takings, by the tender it went back by.
+  const refunds = input.refunds !== undefined && input.refunds.count > 0 ? input.refunds : undefined;
+  for (const [kind, minor] of Object.entries(refunds?.tenderMix ?? {})) tenderMix[kind] = (tenderMix[kind] ?? 0) - minor;
   const takings = {
     bills: kpis.basketCount + (unc?.bills ?? 0),
-    takenMinor: kpis.grossSalesMinor + (unc?.takenMinor ?? 0),
+    takenMinor: kpis.grossSalesMinor + (unc?.takenMinor ?? 0) - (refunds?.refundedMinor ?? 0),
     tenderMix,
     marginUnknownBills: unc?.bills ?? 0,
+    refunds: refunds?.count ?? 0,
+    refundedMinor: refunds?.refundedMinor ?? 0,
   };
   const plural = (n: number): string => `${n} bill${n === 1 ? '' : 's'}`;
   // Round 4 (P-08): a bill whose margin cannot be worked out is still a sale — its takings are said, and so is the fact
   // that its margin is not known. Never "No sales recorded" while the till took money.
+  // Round B: the refunds are said beside the sales, with what the day took after them — the same figure as the sales tile,
+  // so the sentence and the tile never disagree.
+  const refundNote = refunds === undefined ? '' : ` Refunds today: ${rupees(refunds.refundedMinor)} — ${rupees(takings.takenMinor)} taken after refunds.`;
   const headline =
     takings.bills === 0
-      ? `No sales recorded yet today.${staleNote}`
+      ? `No sales recorded yet today.${refundNote}${staleNote}`
       : kpis.basketCount === 0
         ? `${plural(takings.bills)} today, ${rupees(takings.takenMinor)} taken — margin not known: ` +
-          `the store computer has no cost for products on ${unc!.bills === 1 ? 'this bill' : 'these bills'}.${staleNote}`
+          `the store computer has no cost for products on ${unc!.bills === 1 ? 'this bill' : 'these bills'}.${refundNote}${staleNote}`
         : `${plural(kpis.basketCount)} today, ` +
           `${rupees(kpis.grossSalesMinor)} taken, ` +
           `margin ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%), ` +
           `average basket ${rupees(kpis.avgBasketMinor)}.` +
           (unc === undefined ? '' : ` Also ${plural(unc.bills)} (${rupees(unc.takenMinor)}) whose margin is not known — products with no cost.`) +
-          staleNote;
+          refundNote + staleNote;
 
   return {
     asOf: input.asOf,

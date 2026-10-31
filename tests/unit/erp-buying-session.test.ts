@@ -156,6 +156,55 @@ describe('OB-31 — a weighed line is grams at a price per kg (Batch 1 finding)'
   });
 });
 
+describe('OB-31 — the order form: a kg item is TYPED in kg and HELD and SENT in grams (screen audit 31 Oct 2026)', () => {
+  const kgPorts = (over: Partial<BuyingPorts> = {}): Partial<BuyingPorts> => ({
+    knownProductIds: () => ['p-rice', 'p-oil', 'p1'], productUom: (id) => (id === 'p-rice' ? 'KG' : id === 'p-oil' ? 'ltr' : 'ea'), ...over,
+  });
+
+  it('10 typed for rice is 10000 g, 2.5 is 2500 g, 1.25 L of oil is 1250 ml; an item stays its count', () => {
+    const s = session(kgPorts());
+    expect(s.unitOf('p-rice')).toBe('kg');
+    expect(s.unitOf('p-oil')).toBe('L');
+    expect(s.unitOf('p1')).toBe('ea');
+    expect(s.orderQuantityFrom('p-rice', '10')).toBe(10_000);
+    expect(s.orderQuantityFrom('p-rice', ' 2.5 ')).toBe(2_500);
+    expect(s.orderQuantityFrom('p-oil', '1.25')).toBe(1_250);
+    expect(s.orderQuantityFrom('p1', '12')).toBe(12);
+  });
+
+  it('refuses what the unit cannot hold exactly — never rounds it', () => {
+    const s = session(kgPorts());
+    for (const bad of ['1.5', '0', '', 'ten', '-3']) expect(s.orderQuantityFrom('p1', bad)).toBeUndefined();
+    for (const bad of ['2.5005', '0', '0.000', '1,5']) expect(s.orderQuantityFrom('p-rice', bad)).toBeUndefined();
+  });
+
+  it('a product the screen was not told the unit of counts whole items (as head office values it)', () => {
+    const s = session();
+    expect(s.unitOf('p1')).toBe('ea');
+    expect(s.orderQuantityFrom('p1', '10')).toBe(10);
+    expect(s.orderQuantityFrom('p1', '2.5')).toBeUndefined();
+  });
+
+  it('shows the line in kg and values it per kg: 10000 g at ₹45.00 a kg reads "10.000 kg" and is ₹450.00', () => {
+    const s = session(kgPorts());
+    expect(s.quantityText('p-rice', 10_000)).toBe('10.000 kg');
+    expect(s.quantityText('p-oil', 1_250)).toBe('1.250 L');
+    expect(s.quantityText('p1', 12)).toBe('12');
+    expect(s.lineValueMinor('p-rice', 10_000, 4_500)).toBe(45_000);
+    expect(s.lineValueMinor('p-rice', 333, 4_500)).toBe(1_499); // rounded once, half up
+    expect(s.lineValueMinor('p1', 12, 2_000)).toBe(24_000);
+  });
+
+  it('the order sent to head office carries the grams the buyer meant (10 kg → orderedQty 10000), priced per kg', async () => {
+    const sent: unknown[] = [];
+    const port: ProposePurchaseOrderPort = { post: async (input) => { sent.push(input); return { proposed: true, requisitionedBy: 'u-buyer', totalMinor: 45_000 }; } };
+    const s = session(kgPorts({ proposeOrder: () => port }));
+    const orderedQty = s.orderQuantityFrom('p-rice', '10')!;
+    await s.proposeToCloud({ poId: 'PO-KG', supplierId: 's1', deliverToLocationId: 'store-1', lines: [{ productId: 'p-rice', orderedQty, unitCostMinor: 4_500 }] });
+    expect(sent).toEqual([{ poId: 'PO-KG', supplierId: 's1', deliverToLocationId: 'store-1', lines: [{ productId: 'p-rice', orderedQty: 10_000, unitCost: money(4_500, 'INR') }] }]);
+  });
+});
+
 describe('the buyer sees every problem before anything is written', () => {
   it('names an unknown product by line, rather than importing it', () => {
     const unknown = [

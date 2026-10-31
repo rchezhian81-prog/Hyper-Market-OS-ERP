@@ -47,7 +47,7 @@ function sampleSession() {
       recent: [{ domain: 'products', userId: 'demo', at: '', rowCount: 120, redactedColumns: ['cost'] }],
     }),
     importPanel: () => ({ mayImport: true, mayCommit: true, templates: [{ id: 'products-basic', label: 'Products (SKU, name, price)', financial: false }], nobodyNamed: false }),
-    runExport: async () => 'lost_link',
+    runExport: async () => ({ kind: 'lost_link' }),
     validate: async () => 'lost_link',
     askForApproval: async () => ({ kind: 'lost_link' }),
     commit: async () => ({ kind: 'lost_link' }),
@@ -59,7 +59,7 @@ function sampleSession() {
         status: { tone: 'degraded', icon: '…', label: l === 'ta' ? 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது' : 'Waiting for a second person', announcement: '', needsAttention: true },
       }],
     }),
-    presentExportResult: (l, r) => tone(r, 'exported'),
+    presentExportResult: (l, r) => tone(r.kind, 'exported'),
     presentValidateResult: (l, r) => tone(r, '__never__'),
     presentAskOutcome: (l) => noLink(l),
     presentLoadOutcome: (l) => noLink(l),
@@ -347,10 +347,21 @@ async function busy(id, work) {
 
 // The writes — export, ask for approval, load — each run ONLY from an explicit click, never on load. Checking a file
 // is a read (it writes nothing) and also runs only on its click.
+// An export that came back with a file hands it to the browser to save — head office's own CSV, unchanged. One that
+// came back with no file says so; the page never says "Exported" for nothing.
+function saveFile(file) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([file.content], { type: file.mime }));
+  a.download = file.fileName;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
 async function runExport(domain) {
   const r = await session.runExport(domain);
+  if (r.kind === 'exported' && r.file) saveFile(r.file);
   paintResult('export-result', session.presentExportResult(lang, r));
-  if (r === 'exported') await refresh();
+  if (r.kind === 'exported') await refresh();
 }
 
 // SF-10: a dated export sends the chosen days; head office decides whether the period is allowed and the page says
@@ -359,6 +370,7 @@ async function runPeriodExport(domain) {
   if (typeof session.runPeriodExport !== 'function') return;
   const chosen = periodChosen.get(domain) ?? { from: '', to: '' };
   const r = await session.runPeriodExport(domain, { from: chosen.from, to: chosen.to });
+  if (r.kind === 'exported' && r.file) saveFile(r.file);
   if (r.kind === 'exported') await refresh();
   paintResult('export-result', session.presentExportReply(lang, domain, r));
 }

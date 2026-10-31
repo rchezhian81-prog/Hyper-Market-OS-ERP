@@ -29,7 +29,7 @@ function session(over: Partial<DataIoPorts> = {}) {
     exportDomains: () => [], recentExports: () => [],
     importTemplates: () => [{ id: 'product-update-v1', domain: 'product', label: 'Change existing products', financial: false }, { id: 'product-v1', domain: 'product', label: 'New products', financial: false }],
     mayExport: () => true, mayImport: () => true, mayCommitImport: () => true,
-    runExport: async () => 'exported', validate: async () => 'refused', commit: async () => 'committed',
+    runExport: async () => ({ kind: 'exported', rowCount: 1, redactedColumns: [], file: { fileName: 'products.csv', mime: 'text/csv', content: 'sku\nA\n' } } as const), validate: async () => 'refused', commit: async () => 'committed',
     askApproval: async (ask) => { asked.push(ask); return { result: 'asked', request: undoRequest({ summary: ask.summary, reason: ask.reason }) }; },
     approvalInbox: async () => inboxOf(undoRequest({ status: 'approved', decidedBy: 'u-mgr', decisionReason: 'ok' })),
     loadedJobs: async () => ({ result: 'read', jobs: JOBS }),

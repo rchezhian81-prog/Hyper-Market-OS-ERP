@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1961,
+  "testFiles": 1972,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1120,7 +1120,7 @@
         "unit": 27,
         "integration": 26,
         "realDb": 9,
-        "browser": 6,
+        "browser": 7,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1200,7 +1200,8 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-served-till-checks-pack-dates-bis-licences-and-recalled-returns.e2e.ts",
           "tests/e2e/the-served-till-holds-an-expired-batch-coming-back.e2e.ts",
-          "tests/e2e/the-served-till-takes-a-refund.e2e.ts"
+          "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
+          "tests/e2e/the-till-keys-a-bill-number-with-letters.e2e.ts"
         ],
         "connected": [
           "tests/e2e/held-returns-decided-on-the-production-api.e2e.ts"
@@ -2269,7 +2270,7 @@
         "unit": 8,
         "integration": 13,
         "realDb": 7,
-        "browser": 6,
+        "browser": 7,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -2315,6 +2316,7 @@
           "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts",
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts",
           "tests/e2e/the-scrap-and-packaging-screens-work-through-the-store-computer.e2e.ts",
+          "tests/e2e/the-scrap-page-says-why-the-manager-has-no-form.e2e.ts",
           "tests/e2e/write-off-capture-delivery.e2e.ts"
         ],
         "connected": [
@@ -2330,8 +2332,8 @@
       "id": "M29",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 16,
-        "integration": 16,
+        "unit": 17,
+        "integration": 17,
         "realDb": 9,
         "browser": 4,
         "connected": 2,
@@ -2348,6 +2350,7 @@
           "tests/unit/owner-reporting-engines.test.ts",
           "tests/unit/owner-scheduled-brief.test.ts",
           "tests/unit/owner-session.test.ts",
+          "tests/unit/owner-takings-net-of-refunds.test.ts",
           "tests/unit/reporting-catalogue-route.test.ts",
           "tests/unit/reporting-consolidation.test.ts",
           "tests/unit/reporting-freshness-is-the-sources.test.ts",
@@ -2373,6 +2376,7 @@
           "tests/integration/the-brief-sends-itself.test.ts",
           "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
+          "tests/integration/the-owners-takings-are-net-of-refunds.test.ts",
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
@@ -2406,7 +2410,7 @@
       "id": "M30",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 13,
         "realDb": 7,
         "browser": 5,
@@ -2417,6 +2421,7 @@
       "files": {
         "unit": [
           "tests/unit/data-export-routes.test.ts",
+          "tests/unit/data-io-export-hands-a-file.test.ts",
           "tests/unit/data-io-period-export.test.ts",
           "tests/unit/data-io-undo-and-update-session.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -3933,7 +3938,7 @@
         "unit": 3,
         "integration": 8,
         "realDb": 5,
-        "browser": 2,
+        "browser": 3,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3963,6 +3968,7 @@
         ],
         "browser": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-assistant-pages-say-no-model-pricing-is-set.e2e.ts",
           "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts"
         ],
         "connected": [
@@ -4031,7 +4037,7 @@
         "unit": 6,
         "integration": 4,
         "realDb": 3,
-        "browser": 1,
+        "browser": 2,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -4057,7 +4063,8 @@
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts"
         ],
         "browser": [
-          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"
+          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-assistant-pages-say-no-model-pricing-is-set.e2e.ts"
         ],
         "connected": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"
@@ -4131,7 +4138,7 @@
         "unit": 4,
         "integration": 4,
         "realDb": 3,
-        "browser": 1,
+        "browser": 2,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -4155,7 +4162,8 @@
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts"
         ],
         "browser": [
-          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"
+          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-assistant-pages-say-no-model-pricing-is-set.e2e.ts"
         ],
         "connected": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"

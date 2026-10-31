@@ -26,6 +26,7 @@
 
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { normaliseUom, toDecimalString } from '../../../packages/contracts/src/quantity';
 import {
   receiveScan, DEFAULT_RECEIVING_POLICY, compareAgainstAsn,
   type AsnComparison,
@@ -473,6 +474,30 @@ export interface WarehouseAssignment {
   readonly packedProductIds?: readonly string[];
   /** OB-288 lane 2 · WF-07 offline: the transfers to send from / count in at this store (absent or null: never told). */
   readonly transfers?: HeldTransfers | null;
+  /**
+   * Round B (screen gap audit 31 Oct 2026): each product's name as head office's store pack names it, so a worker reads
+   * "Demo Ponni Rice 1kg", not "prod-rice". Absent (or a product missing from it): the code is shown, never a guess.
+   */
+  readonly productNames?: Readonly<Record<string, string>>;
+  /** The Tamil names, where head office recorded one; otherwise the English name is shown in Tamil too. */
+  readonly productNamesTa?: Readonly<Record<string, string>>;
+}
+
+/**
+ * A quantity as a worker reads it (OB-31 rule 1 — look only, nothing stored changes): a `kg` or `L` line holds grams or
+ * millilitres, so 200000 of a kg product reads "200.000" + "kg" — never "200000 units". A count of pieces (`ea`, any
+ * spelling) or a unit this system does not know returns `unit: null`: the screen shows the count with its own words.
+ */
+export function handheldQuantity(quantityMinor: number, uom: string): { readonly amount: string; readonly unit: string | null } {
+  const unit = normaliseUom(uom);
+  if (unit === undefined || unit === 'ea' || !Number.isSafeInteger(quantityMinor)) return { amount: String(quantityMinor), unit: null };
+  return { amount: toDecimalString({ minor: quantityMinor, uom: unit }), unit };
+}
+
+/** The same, as one piece of text for a record line: "8 EA" stays "8 EA"; 2500 of a kg product is "2.500 kg". */
+function quantityWords(quantityMinor: number, uom: string): string {
+  const q = handheldQuantity(quantityMinor, uom);
+  return q.unit === null ? `${quantityMinor} ${uom}` : `${q.amount} ${q.unit}`;
 }
 
 /** OB-288 P3 (M07-FR-01): the supplier's advance ship notice as the box served it with the open delivery. */
@@ -623,6 +648,19 @@ export class WarehouseSession {
     return { accepted: true, transferId: held.transferId, signal: signalFor(short > 0 ? 'warn' : 'accept', 'transfer_counted_in', `transfer ${held.transferId} counted in${short > 0 ? ` — ${short} fewer than were sent; head office books the shortfall` : ''}`) };
   }
 
+  /** A product's name as the store pack names it (Tamil where recorded, when asked for); its code when not known. */
+  productName(productId: string, lang: 'en' | 'ta' = 'en'): string {
+    const ta = lang === 'ta' ? this.assignment.productNamesTa?.[productId] : undefined;
+    const en = this.assignment.productNames?.[productId];
+    const name = typeof ta === 'string' && ta.trim() !== '' ? ta : en;
+    return typeof name === 'string' && name.trim() !== '' ? name : productId;
+  }
+
+  /** A quantity in its display unit (see `handheldQuantity`) — the screen's words only. */
+  quantityText(quantityMinor: number, uom: string): { readonly amount: string; readonly unit: string | null } {
+    return handheldQuantity(quantityMinor, uom);
+  }
+
   /** The put-away worklist: goods received and not yet binned. */
   goodsIn(): readonly GoodsInItem[] {
     return [...this.goods.values()];
@@ -672,7 +710,7 @@ export class WarehouseSession {
         const withReason = reason === undefined ? {} : { reason };
         if (item.event.type === RECEIVING_SCANNED) {
           const p = item.event.payload as { commandId: string; productId: string; batchId: string | null; quantityMinor: number; uom: string; grnId: string };
-          return [{ kind: 'receipt', id: p.commandId, what: `${p.productId}${p.batchId ? ` · ${p.batchId}` : ''}`, detail: `${p.quantityMinor} ${p.uom} · ${p.grnId}`, ...common, ...withReason }];
+          return [{ kind: 'receipt', id: p.commandId, what: `${this.productName(p.productId)}${p.batchId ? ` · ${p.batchId}` : ''}`, detail: `${quantityWords(p.quantityMinor, p.uom)} · ${p.grnId}`, ...common, ...withReason }];
         }
         if (item.event.type === RECEIVING_COMPLETED) {
           const p = item.event.payload as { grnId: string; poId: string | null; scanCount: number };
@@ -683,22 +721,22 @@ export class WarehouseSession {
           const c = p.command;
           const kind: SentWorkKind = c.kind === 'pick' ? 'pick' : 'put_away';
           const bin = c.kind === 'pick' ? (c.fromBinId ?? '') : (c.toBinId ?? '');
-          return [{ kind, id: c.commandId, what: `${c.productId}${c.batchId ? ` · ${c.batchId}` : ''} · ${bin}`, detail: `${c.quantityMinor} ${c.uom}${p.orderRef ? ` · ${p.orderRef}` : ''}`, ...common, ...withReason }];
+          return [{ kind, id: c.commandId, what: `${this.productName(c.productId)}${c.batchId ? ` · ${c.batchId}` : ''} · ${bin}`, detail: `${quantityWords(c.quantityMinor, c.uom)}${p.orderRef ? ` · ${p.orderRef}` : ''}`, ...common, ...withReason }];
         }
         if (item.event.type === STOCK_COUNTED) {
           // Only what was counted — never an expected figure, which this handheld does not have (blind, W2).
           const p = item.event.payload as { countId: string; productId: string; binId: string | null; countedMinor: number; uom: string };
-          return [{ kind: 'count', id: p.countId, what: `${p.productId} · ${p.binId ?? ''}`, detail: `${p.countedMinor} ${p.uom}`, ...common, ...withReason }];
+          return [{ kind: 'count', id: p.countId, what: `${this.productName(p.productId)} · ${p.binId ?? ''}`, detail: quantityWords(p.countedMinor, p.uom), ...common, ...withReason }];
         }
         if (item.event.type === ADJUSTMENT_REQUESTED) {
           const p = item.event.payload as { requestId: string; productId: string; binId: string | null; deltaMinor: number; uom: string; reasonCode: string };
-          return [{ kind: 'adjustment', id: p.requestId, what: `${p.productId}${p.binId ? ` · ${p.binId}` : ''}`, detail: `${p.deltaMinor > 0 ? '+' : ''}${p.deltaMinor} ${p.uom} · ${p.reasonCode}`, ...common, ...withReason }];
+          return [{ kind: 'adjustment', id: p.requestId, what: `${this.productName(p.productId)}${p.binId ? ` · ${p.binId}` : ''}`, detail: `${p.deltaMinor > 0 ? '+' : ''}${quantityWords(p.deltaMinor, p.uom)} · ${p.reasonCode}`, ...common, ...withReason }];
         }
         if (item.event.type === FLOOR_INDENT_ISSUED) {
           // SP-8c: an issue against a floor indent — which indent, what, how many, from which bin.
           const p = item.event.payload as { indentId: string; issueId: string; lines: readonly { productId: string; batchId: string | null; quantityMinor: number; binId: string; uom: string }[] };
           const l = p.lines[0];
-          return [{ kind: 'issue', id: p.issueId, what: `${l?.productId ?? ''}${l?.batchId ? ` · ${l.batchId}` : ''} · ${l?.binId ?? ''}`, detail: `${l?.quantityMinor ?? 0} ${l?.uom ?? ''} · ${p.indentId}`, ...common, ...withReason }];
+          return [{ kind: 'issue', id: p.issueId, what: `${l === undefined ? '' : this.productName(l.productId)}${l?.batchId ? ` · ${l.batchId}` : ''} · ${l?.binId ?? ''}`, detail: `${l === undefined ? '0 ' : quantityWords(l.quantityMinor, l.uom)} · ${p.indentId}`, ...common, ...withReason }];
         }
         if (item.event.type === TRANSFER_DISPATCH_RECORDED) {
           const p = item.event.payload as { transferId: string };

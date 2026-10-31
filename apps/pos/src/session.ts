@@ -497,6 +497,31 @@ export class CutLineQuantityRefusedError extends Error {
 }
 
 /**
+ * OB-302 (B5 · B6 · OB-31): a product sold by weight or volume (kg, g, L, ml) was scanned by a code that says nothing about
+ * HOW MUCH is in the customer's hand (its plain barcode, a 2D code without a weight). The till never rings it as one gram
+ * or one millilitre, and never asks the cashier to key a weight (OB-302 "never key a weight"): it is weighed or measured
+ * on a verified scale and the scale's own label is scanned — the rule the self-checkout lane already applies. A product
+ * packed and sold by the piece (a 1 kg bag, a 1 L pouch) is set up with the unit `ea` and scans normally. Nothing is added
+ * to the bill. Said in the cashier's words, English and Tamil.
+ */
+export class MeasuredItemNeedsLabelError extends Error {
+  readonly reason = 'measured_item_plain_barcode' as const;
+  readonly laneMessage: string;
+  readonly laneMessageTa: string;
+  constructor(public readonly productId: string, public readonly description: string, public readonly uom: string) {
+    const weighed = uom === 'kg' || uom === 'g';
+    super(`${description} is sold by ${uom}; the code scanned does not say how much, so it was not added.`);
+    this.name = 'MeasuredItemNeedsLabelError';
+    this.laneMessage = weighed
+      ? `${description} is sold by weight (${uom}). Its barcode does not say how much, so it was not added to the bill. Weigh it on a verified scale and scan the scale's label. A weight is never typed in.`
+      : `${description} is sold by volume (${uom}). Its barcode does not say how much, so it was not added to the bill. Measure it and scan its measured label. A quantity is never typed in.`;
+    this.laneMessageTa = weighed
+      ? `${description} எடைப்படி (${uom}) விற்கப்படுகிறது. அதன் பார்கோடு எவ்வளவு என்று சொல்லாது, எனவே பில்லில் சேர்க்கப்படவில்லை. சரிபார்க்கப்பட்ட தராசில் எடைபோட்டு, தராசின் லேபிளை ஸ்கேன் செய்யவும். எடையைக் கையால் உள்ளிட வேண்டாம்.`
+      : `${description} அளவுப்படி (${uom}) விற்கப்படுகிறது. அதன் பார்கோடு எவ்வளவு என்று சொல்லாது, எனவே பில்லில் சேர்க்கப்படவில்லை. அளந்து, அதன் அளவு லேபிளை ஸ்கேன் செய்யவும். அளவைக் கையால் உள்ளிட வேண்டாம்.`;
+  }
+}
+
+/**
  * OB-501 (R7-A · M33-FR-02): this till's app build is withdrawn or below the minimum supported version, so it may finish the
  * bill in progress but may not START a new one until it is updated. Said in the cashier's words, English and Tamil.
  */

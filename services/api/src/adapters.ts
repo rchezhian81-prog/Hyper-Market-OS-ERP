@@ -7978,6 +7978,8 @@ export function rfqAdapter(input: {
   };
   return {
     now: input.now,
+    // OB-31: the product master's unit (else the published pack's) — a requisition's grams are compared at a per-kg price.
+    productUom: (tenantId, productId) => productUomFrom(input, tenantId, productId),
     requisition: async (tenantId, requisitionId) => (await foldRequisitions(tenantId)).get(requisitionId),
     requisitions: async (tenantId) => [...(await foldRequisitions(tenantId)).values()],
 

@@ -21,7 +21,7 @@ export interface SplitPart {
   readonly machineRef?: string;
 }
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
-import { DeliveryNotAvailableError, type PosSession, type SyncBadge, type DeliverySlip } from './session';
+import { DeliveryNotAvailableError, MeasuredItemNeedsLabelError, type PosSession, type SyncBadge, type DeliverySlip } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
 /** A basket line as the view renders it — display primitives only. */
@@ -308,6 +308,13 @@ export function createPosView(
       // D-20: today at THIS lane, so a 2D code's use-by date is judged offline with no clock in the catalogue (B8).
       const today = batch?.asOf ?? session.laneToday();
       const hit = catalogue.scan(code, { ...batch, ...(today === undefined ? {} : { asOf: today }) });
+      // OB-302 (Round B): an L / ml product read from a code that carries no amount (its plain barcode, a 2D code) would ring
+      // as ONE millilitre. Refused by name instead — only a measured label says how much. Nothing is added. A kg / g product
+      // is left to the lane's existing scale rule (scanned, then weighed on a lane whose scale stamp is current).
+      const unit = normaliseUom(hit.product.baseUom) ?? hit.product.baseUom;
+      if ((unit === 'L' || unit === 'ml') && hit.barcodeKind !== 'weight_embedded' && hit.barcodeKind !== 'price_embedded') {
+        throw new MeasuredItemNeedsLabelError(hit.product.productId, hit.product.name, unit);
+      }
       // A price-embedded barcode carries the line price for one unit; a batch under markdown is charged its markdown price
       // (D-20); otherwise the catalogue's unit price applies to the scanned quantity.
       const unitPriceMinor = hit.priceOverrideMinor ?? hit.markdownPriceMinor ?? hit.product.unitPriceMinor;

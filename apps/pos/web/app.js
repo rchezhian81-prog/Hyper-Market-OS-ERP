@@ -995,6 +995,10 @@ let entryMasked = false;
 /** A code (the handheld's 4 digits, the phone's 6): every digit counts, a leading 0 included — never read as a number. */
 let entryIsCode = false;
 const CODE_DIGITS = 8;
+/** A BILL NUMBER keyed by hand (this till's bills carry letters: ZZBFPJ75-000001): the keypad gains a letters pad, every
+ *  character counts, and it is as long as a bill number can be. */
+let entryHasLetters = false;
+const BILL_CHARS = 32;
 const PIN_DIGITS = 6;
 function paintEntry() {
   el('entry').textContent = entryMasked ? '•'.repeat(entryValue.length) : entryValue;
@@ -1005,7 +1009,7 @@ function typeIntoEntry(key) {
   const next = entryMasked
     ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < PIN_DIGITS ? current + key : current))
     : entryIsCode
-      ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < CODE_DIGITS ? current + key : current))
+      ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < (entryHasLetters ? BILL_CHARS : CODE_DIGITS) ? current + key : current))
     : (key === 'C' ? '0' : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0') : (current === '0' ? key : current + key));
   entryValue = next;
   paintEntry();
@@ -1026,15 +1030,21 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
-  entryIsCode = code === true;
+  // A bill number keyed by hand has letters in it: the letters pad shows first (a bill number starts with them), and the
+  // switch key flips between letters and digits. Both pads keep the till's full-size keys.
+  entryHasLetters = mode === 'number' && letters === true;
+  entryIsCode = code === true || entryHasLetters;
   entryValue = entryIsCode ? '' : initial;
   entryMasked = mask === true;
   paintEntry();
   el('entry').hidden = mode !== 'number';
-  el('keypad').hidden = mode !== 'number';
+  el('keypad').hidden = mode !== 'number' || entryHasLetters;
+  el('letterpad').hidden = !entryHasLetters;
+  el('pad-switch').hidden = !entryHasLetters;
+  el('pad-switch').textContent = '123';
   el('reasons').hidden = mode !== 'choice';
   // A typed answer with letters (OB-264: the old system's bill number) — a text field, from the keyboard or a scanner.
   sheetMode = mode;
@@ -1090,6 +1100,9 @@ function closeSheet(answer) {
   // A PIN leaves this screen with the answer and nowhere else.
   entryMasked = false;
   entryIsCode = false;
+  entryHasLetters = false;
+  el('letterpad').hidden = true;
+  el('pad-switch').hidden = true;
   entryValue = '0';
   el('entry').textContent = '';
   const resolve = sheetResolve;
@@ -1106,6 +1119,22 @@ el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C
   button.addEventListener('click', () => { typeIntoEntry(key); });
   return button;
 }));
+
+// The letters pad for a bill number keyed by hand (A–Z and the "-" a bill number carries), and the switch between it and the
+// digits. Built once, the same full-size keys as the digits.
+el('letterpad').replaceChildren(...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '-', '⌫'].map((key) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = key;
+  button.addEventListener('click', () => { typeIntoEntry(key); });
+  return button;
+}));
+el('pad-switch').addEventListener('click', () => {
+  const toDigits = el('keypad').hidden;
+  el('keypad').hidden = !toDigits;
+  el('letterpad').hidden = toDigits;
+  el('pad-switch').textContent = toDigits ? 'ABC' : '123';
+});
 
 el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
@@ -2298,7 +2327,7 @@ const takeCashToSafe = () => moveCashToBox('pickup', 'amountToSafe', 'movedToSaf
  * is SCOPED to this panel and removed when it closes, so it never leaks into the sale screen's global
  * scanner (which stays off while a panel is open).
  */
-function askScanOrKey({ title, hint = '' }) {
+function askScanOrKey({ title, hint = '', letters = false }) {
   // The button that opened this prompt must NOT keep focus: a scanner ends its code with Enter, and Enter on a focused
   // button is a click — the sign-in button would sign the cashier straight back out (found by the F09 browser test).
   if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
@@ -2322,7 +2351,8 @@ function askScanOrKey({ title, hint = '' }) {
     };
     window.addEventListener('keydown', onKey, true);
     // The keypad sheet is the manual fallback; whichever answers first wins.
-    ask({ title, mode: 'number', hint }).then((typed) => finish(typed));
+    // A bill number has letters in it (ZZBFPJ75-000001), so keying one by hand offers the letters pad too.
+    ask({ title, mode: 'number', hint, ...(letters ? { letters: true } : {}) }).then((typed) => finish(typed));
   });
 }
 
@@ -2393,7 +2423,7 @@ async function startRefund() {
     }
     if (!bill) { tell(t('read'), t('oldBillNotFound'), STOP); return; }
   } else {
-    const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint') });
+    const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint'), letters: true });
     if (receipt === null || receipt === '' || receipt === '0') return;
     try {
       bill = await session.lookupRefund(String(receipt));
@@ -2525,7 +2555,7 @@ async function startExchange() {
   if (session.basket().filter((l) => !l.voided).length === 0) { tell(t('read'), t('exchangeNeedsBasket'), STOP); return; }
 
   // 1. Find the customer's bill — scan the receipt, or key the bill number.
-  const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint') });
+  const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint'), letters: true });
   if (receipt === null || receipt === '' || receipt === '0') return;
   let bill;
   try {
@@ -3030,6 +3060,8 @@ window.addEventListener('keydown', (event) => {
       // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
       // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
       if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }
+      // OB-302: a kg / litre product scanned by a code that does not say how much — refused, never rung as 1 g or 1 ml.
+      if (e && e.name === 'MeasuredItemNeedsLabelError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
       // OB-501 (R7-A): this till's build may not start a new bill — said in the cashier's language.
       if (e && e.name === 'NewBillRefusedError') { tell(t('newBillRefusedTitle'), saidInLang(e), STOP); return; }
       tell(t('read'), String(e && e.message ? e.message : e), STOP);

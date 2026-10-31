@@ -60,6 +60,26 @@ export interface DrainToBoxResult {
   readonly failed: number;
   /** True when the box could not be reached at all; every attempted item was kept. */
   readonly offline: boolean;
+  /**
+   * Round B (screen gap audit 31 Oct 2026): set when the box ANSWERED 403 — it was reached, and the person, device or
+   * surface is not allowed to hand this work over. The box's own words when it gave any. Every item is still kept (never
+   * dead-lettered — a 403 is not a verdict on an item); a screen says "not allowed" rather than "could not be reached", and
+   * stops retrying on its own.
+   */
+  readonly notAllowed?: string;
+}
+
+/** The box's own reason on a 403, from whichever field it wrote it in; a plain default when it gave none. */
+function notAllowedReason(reply: unknown): string {
+  if (isObj(reply)) {
+    for (const k of ['laneMessage', 'reason', 'detail']) {
+      const v = reply[k];
+      if (typeof v === 'string' && v.trim() !== '') return v.trim();
+    }
+    const err = reply['error'];
+    if (isObj(err) && typeof err['whatHappened'] === 'string' && err['whatHappened'].trim() !== '') return err['whatHappened'].trim();
+  }
+  return 'the store computer answered that this is not allowed';
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -86,6 +106,7 @@ export async function drainToBox(input: DrainToBoxInput): Promise<DrainToBoxResu
   // the window ("Illegal invocation"), and a method call would hand it this options object.
   const { fetch: fetchFn } = input;
   let acks: readonly DeviceAck[];
+  let notAllowed: string | undefined;
   try {
     const res = await fetchFn(`${input.boxBase}${DEVICE_OUTBOX_PATH}`, {
       method: 'POST',
@@ -97,7 +118,8 @@ export async function drainToBox(input: DrainToBoxInput): Promise<DrainToBoxResu
     });
     // Anything but 200 is the box declining the BATCH (malformed envelope, wrong origin, too large) — not a
     // verdict on any item, so every item is kept and counted as a failed attempt, never dead-lettered.
-    const reply = res.status === 200 || res.status === 401 ? await res.json().catch(() => undefined) : undefined;
+    const reply = res.status === 200 || res.status === 401 || res.status === 403 ? await res.json().catch(() => undefined) : undefined;
+    if (res.status === 403) notAllowed = notAllowedReason(reply);
     const boxNow = isObj(reply) && typeof reply['boxNow'] === 'string' ? Date.parse(reply['boxNow']) : Number.NaN;
     if (input.onBoxTime !== undefined && Number.isFinite(boxNow)) input.onBoxTime(boxNow, (input.deviceNow ?? Date.now)());
     acks = res.status === 200 ? readAcks(reply) : [];
@@ -123,7 +145,7 @@ export async function drainToBox(input: DrainToBoxInput): Promise<DrainToBoxResu
       handed += 1;
     }
   }
-  return { attempted: batch.length, handed, refused, failed, offline: false };
+  return { attempted: batch.length, handed, refused, failed, offline: false, ...(notAllowed === undefined ? {} : { notAllowed }) };
 }
 
 /**

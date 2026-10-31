@@ -278565,6 +278565,9 @@
           "quantity": {
             "type": "number"
           },
+          "uom": {
+            "type": "string"
+          },
           "offers": {
             "type": "array",
             "items": {
@@ -293147,6 +293150,9 @@
           },
           "quantity": {
             "type": "number"
+          },
+          "uom": {
+            "type": "string"
           }
         },
         "additionalProperties": true

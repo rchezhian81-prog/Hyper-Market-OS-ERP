@@ -3,6 +3,8 @@
 // the register and the record drawer and sends a person's click — send it, count it in, settle the shortfall — once, in
 // their own session, then reads head office again. Nothing is priced here: the cost is head office's.
 
+/** OB-31: a held quantity (the unit's smallest step) as a person reads it — 2500 of a kg product reads "2.500 kg". */
+const qtyText = (n, uom) => (window.sreQuantity?.label ? window.sreQuantity.label(n, uom ?? '') : `${n} ${uom ?? ''}`.trim());
 const $ = (id) => document.getElementById(id);
 const session = window.transfersSession ?? null;
 let lang = 'en';
@@ -48,7 +50,7 @@ function paintRegister() {
     look.addEventListener('click', () => { openDrawer(v.transferId); });
     body.append(node('tr', { className: `tone-${v.tone}`, dataset: { transfer: v.transferId, state: v.state } },
       node('td', { textContent: v.transferId }), node('td', { textContent: v.route }),
-      node('td', { textContent: v.lines.map((l) => `${l.productId} ×${l.quantityMinor} ${l.uom}`).join(', ') }),
+      node('td', { textContent: v.lines.map((l) => `${l.productId} × ${qtyText(l.quantityMinor, l.uom)}`).join(', ') }),
       node('td', { textContent: [v.stateWord, ...v.flags].join(' · ') }), node('td', {}, look)));
   }
 }
@@ -74,14 +76,14 @@ function paintDrawer() {
   $('d-route').textContent = v.route;
   $('d-people').textContent = v.people.join(' · ');
   $('d-lines').replaceChildren(...v.lines.map((l) => node('li', { dataset: { product: l.productId } },
-    node('b', { textContent: `${l.productId}${l.batchId === null ? '' : ` (${l.batchId})`} — ${l.quantityMinor} ${l.uom}` }),
+    node('b', { textContent: `${l.productId}${l.batchId === null ? '' : ` (${l.batchId})`} — ${qtyText(l.quantityMinor, l.uom)}` }),
     node('span', { className: 'muted', textContent: l.cost === null ? t('costUnknown') : `${t('costEach')} ${l.cost}` }))));
 
   $('d-dispatch-box').hidden = !(v.canDispatch && session.may.move);
   $('d-cancel-box').hidden = !(v.canCancel && session.may.move);
   $('d-receive-box').hidden = !(v.canReceive && session.may.move);
   $('d-receive-lines').replaceChildren(...v.lines.map((l, i) => node('li', { dataset: { product: l.productId } },
-    node('b', { textContent: `${l.productId} — ${t('sent')} ${l.quantityMinor} ${l.uom}` }),
+    node('b', { textContent: `${l.productId} — ${t('sent')} ${qtyText(l.quantityMinor, l.uom)}` }),
     node('input', { className: 'arrived', inputMode: 'numeric', autocomplete: 'off', 'aria-label': `${t('arrived')}: ${l.productId}`, placeholder: t('arrived'), dataset: { index: String(i) } }))));
 
   $('d-short-box').hidden = v.shortfall.length === 0;

@@ -42,12 +42,31 @@ export interface ExportDomainView {
 }
 /** A period of whole days, inclusive, in the shop's calendar (YYYY-MM-DD). */
 export interface ExportPeriodInput { readonly from: string; readonly to: string }
-/** What an export of a dated domain answered: the rows taken and the columns hidden for this person, the server's
- *  refusal in its own words (`code` names which rule), or no connection. */
+/** The file an export hands the browser to save: head office's own CSV, unchanged, under a plain name. */
+export interface ExportFile { readonly fileName: string; readonly mime: string; readonly content: string }
+/** What an export answered: the rows taken, the columns hidden for this person and the FILE to save; head office took
+ *  it but sent back nothing that can be saved (`no_file` — never shown as "Exported"); the server's refusal in its own
+ *  words (`code` names which rule); or no connection. */
 export type ExportReply =
-  | { readonly kind: 'exported'; readonly rowCount: number; readonly redactedColumns: readonly string[] }
+  | { readonly kind: 'exported'; readonly rowCount: number; readonly redactedColumns: readonly string[]; readonly file: ExportFile }
+  | { readonly kind: 'no_file' }
   | { readonly kind: 'refused'; readonly code: string; readonly whatHappened: string }
   | { readonly kind: 'lost_link' };
+
+/** Read head office's answer to POST /v1/export/:domain ({ domain, csv, audit }) into what the screen hands on: the CSV
+ *  as a file to save, named for the domain and the day(s) it covers, with the rows and the hidden columns from the
+ *  audit record. An answer with no CSV text is `no_file` — the page must never say "Exported" for nothing. */
+export function exportReplyOf(domain: string, body: unknown, period?: ExportPeriodInput): ExportReply {
+  const b = (body ?? {}) as { csv?: unknown; audit?: { rowCount?: unknown; redactedColumns?: unknown; at?: unknown } };
+  if (typeof b.csv !== 'string' || b.csv.trim() === '') return { kind: 'no_file' };
+  const rowCount = typeof b.audit?.rowCount === 'number' ? b.audit.rowCount : 0;
+  const redactedColumns = Array.isArray(b.audit?.redactedColumns) ? b.audit.redactedColumns.filter((c): c is string => typeof c === 'string') : [];
+  const safe = domain.replace(/[^A-Za-z0-9_-]+/g, '-') || 'export';
+  const at = typeof b.audit?.at === 'string' && !Number.isNaN(Date.parse(b.audit.at)) ? shopDay(b.audit.at) : '';
+  const days = period !== undefined ? `${period.from}-to-${period.to}` : at;
+  const fileName = `${safe}${days === '' ? '' : `-${days}`}.csv`;
+  return { kind: 'exported', rowCount, redactedColumns, file: { fileName, mime: 'text/csv;charset=utf-8', content: b.csv } };
+}
 /** One export audit row (GET /v1/exports) — who took what, when, how many rows, what was redacted for them. */
 export interface ExportAuditView {
   readonly userId: string; readonly domain: string; readonly at: string;
@@ -92,7 +111,8 @@ export interface LoadedJobView {
 export type LoadedJobsRead = { readonly result: 'read'; readonly jobs: readonly LoadedJobView[] } | { readonly result: 'lost_link' } | { readonly result: 'refused' };
 export interface UndoRequest { readonly jobId: string; readonly reason: string; readonly approvalId: string }
 
-export type ExportResult = 'exported' | 'refused' | 'lost_link';
+/** What a plain (undated) export answered — the same shape as a dated one: the file to save, or why there is none. */
+export type ExportResult = ExportReply;
 /** A validate returns the checked file, or a signal it could not run (no permission / lost link). */
 export type ValidateResult = ValidatedImport | 'refused' | 'lost_link';
 /** A commit: loaded, no answer, or the server's refusal in its own words (`code` names which rule). */
@@ -172,7 +192,7 @@ export type CopyKey =
   | 'importHeading' | 'importLead' | 'templateLabel' | 'fileLabel' | 'filePlaceholder'
   | 'totalLabel' | 'validateBtn' | 'jobLabel' | 'whyLabel' | 'whyPlaceholder' | 'askBtn' | 'commitBtn'
   | 'previewValid' | 'previewErrors' | 'previewDupes' | 'previewReconciles' | 'previewNotReconcile' | 'previewReady' | 'previewNotReady'
-  | 'exported' | 'exportRefused' | 'exportLostLink'
+  | 'exported' | 'exportRefused' | 'exportLostLink' | 'exportedSaved' | 'exportNoFile'
   | 'periodFrom' | 'periodTo' | 'periodHint' | 'exportedRows' | 'exportedHidden' | 'periodRefused' | 'exportRefusedWords'
   | 'validateRefused' | 'validateLostLink'
   | 'summaryLine' | 'summaryTotal' | 'rowOne' | 'rowMany'
@@ -204,6 +224,8 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     previewReconciles: 'The total matches.', previewNotReconcile: 'The rows do NOT add up to the declared total.',
     previewReady: 'This file is ready — give it a name and ask a second person to approve it.', previewNotReady: 'This file is not ready — fix the problems above and check again.',
     exported: 'Exported.', exportRefused: 'Could not export — you may not have permission for this data.', exportLostLink: 'No connection — not exported. Try again.',
+    exportedSaved: 'Saved to this computer as {file}.',
+    exportNoFile: 'Not saved — head office answered but sent back no file. Nothing was saved to this computer. Try again, or tell head office.',
     periodFrom: 'From', periodTo: 'To', periodHint: 'Choose the days to export — at most {max} days.',
     exportedRows: 'Exported {n} {rowWord}.', exportedHidden: 'Hidden for you: {cols}.',
     periodRefused: 'Not exported — choose a period of at most {max} days, with "From" on or before "To". Nothing was taken.',
@@ -260,6 +282,8 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     previewReconciles: 'மொத்தம் பொருந்துகிறது.', previewNotReconcile: 'வரிசைகள் அறிவிக்கப்பட்ட மொத்தத்துடன் கூடவில்லை.',
     previewReady: 'இந்தக் கோப்பு தயார் — ஒரு பெயர் கொடுத்து இரண்டாம் நபரிடம் அனுமதி கேளுங்கள்.', previewNotReady: 'இந்தக் கோப்பு தயாராக இல்லை — மேலே உள்ள சிக்கல்களைச் சரிசெய்து மீண்டும் சரிபார்க்கவும்.',
     exported: 'ஏற்றுமதி செய்யப்பட்டது.', exportRefused: 'ஏற்றுமதி செய்ய முடியவில்லை — இந்தத் தரவுக்கு உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம்.', exportLostLink: 'இணைப்பு இல்லை — ஏற்றுமதி செய்யப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    exportedSaved: 'இந்தக் கணினியில் {file} என்ற பெயரில் சேமிக்கப்பட்டது.',
+    exportNoFile: 'சேமிக்கப்படவில்லை — தலைமை அலுவலகம் பதில் அளித்தது, ஆனால் கோப்பு எதுவும் அனுப்பவில்லை. இந்தக் கணினியில் எதுவும் சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும், அல்லது தலைமை அலுவலகத்திடம் சொல்லவும்.',
     periodFrom: 'முதல்', periodTo: 'வரை', periodHint: 'ஏற்றுமதி செய்ய வேண்டிய நாட்களைத் தேர்ந்தெடுக்கவும் — அதிகபட்சம் {max} நாட்கள்.',
     exportedRows: '{n} {rowWord} ஏற்றுமதி செய்யப்பட்டது.', exportedHidden: 'உங்களுக்கு மறைக்கப்பட்டவை: {cols}.',
     periodRefused: 'ஏற்றுமதி செய்யப்படவில்லை — அதிகபட்சம் {max} நாட்கள் கொண்ட காலத்தைத் தேர்ந்தெடுக்கவும்; "முதல்" தேதி "வரை" தேதிக்கு முன் அல்லது அதே நாளாக இருக்க வேண்டும். எதுவும் எடுக்கப்படவில்லை.',
@@ -423,6 +447,7 @@ export interface DataIoSession {
   commit(input: ImportInput): Promise<LoadOutcome>;
   /** The caller's own load requests (a GET — read only), newest first. */
   importRequests(lang: Lang): Promise<ImportRequestsView>;
+  /** Say what a plain export came to — the same words as a dated export (rows, hidden columns, the saved file). */
   presentExportResult(lang: Lang, r: ExportResult): StatusPresentation;
   presentValidateResult(lang: Lang, r: 'refused' | 'lost_link'): StatusPresentation;
   presentAskOutcome(lang: Lang, o: AskOutcome): StatusPresentation;
@@ -493,7 +518,7 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
     }),
 
     runExport: async (domain) => {
-      if (!ports.mayExport() || domain.trim() === '') return 'refused';
+      if (!ports.mayExport() || domain.trim() === '') return { kind: 'refused', code: 'export_not_permitted', whatHappened: '' };
       return ports.runExport(domain);
     },
     runPeriodExport: async (domain, period) => {
@@ -506,8 +531,10 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
       if (r.kind === 'exported') {
         const rows = fill(t('exportedRows'), { n: String(r.rowCount), rowWord: r.rowCount === 1 ? t('rowOne') : t('rowMany') });
         const hidden = r.redactedColumns.length === 0 ? '' : ` ${fill(t('exportedHidden'), { cols: r.redactedColumns.join(', ') })}`;
-        return presentStatus({ tone: 'ok', icon: '✓', label: `${rows}${hidden}`, needsAttention: false });
+        const saved = ` ${fill(t('exportedSaved'), { file: r.file.fileName })}`;
+        return presentStatus({ tone: 'ok', icon: '✓', label: `${rows}${hidden}${saved}`, needsAttention: false });
       }
+      if (r.kind === 'no_file') return presentStatus({ tone: 'error', icon: '✕', label: t('exportNoFile'), needsAttention: true });
       if (r.kind === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('exportLostLink'), needsAttention: true });
       // The server's refusal, in plain words: a period it will not take is said in the page's own words (with the limit
       // head office gave); any other refusal carries head office's own sentence, or the general one when it gave none.
@@ -623,12 +650,9 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
       return { state: 'read', rows };
     },
 
-    presentExportResult: (lang, r) => {
-      const t = translator(DATA_IO_COPY, lang);
-      if (r === 'exported') return presentStatus({ tone: 'ok', icon: '✓', label: t('exported'), needsAttention: false });
-      if (r === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('exportLostLink'), needsAttention: true });
-      return presentStatus({ tone: 'error', icon: '✕', label: t('exportRefused'), needsAttention: true });
-    },
+    // A plain export is said exactly as a dated one is: the rows, what was hidden, and the file it saved — or that
+    // head office sent back no file, or its refusal. Never a bare "Exported." with nothing in the person's hands.
+    presentExportResult: (lang, r) => session.presentExportReply(lang, '', r),
     presentValidateResult: (lang, r) => {
       const t = translator(DATA_IO_COPY, lang);
       if (r === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('validateLostLink'), needsAttention: true });

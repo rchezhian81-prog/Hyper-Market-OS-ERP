@@ -13,6 +13,7 @@ import type { IncomingSale } from '../../pos/src/sale-intake';
 import { STREAM, inventoryAdapter, rfqAdapter } from './adapters';
 import { forecastDemand } from '../../../packages/demand/src/forecast';
 import { compareQuotes } from '../../../packages/purchasing/src/rfq';
+import { withUnits } from '../../purchase/src/rfq';
 import { DEFAULT_AGEING_BUCKETS } from '../../../packages/stock/src/metrics';
 import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
 import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
@@ -89,7 +90,8 @@ export async function forecastReorders(store: EventStore, tenantId: string, now:
 export async function quotationComparisons(store: EventStore, tenantId: string, now: string): Promise<Draft[]> {
   const rfq = rfqAdapter({ store, now: () => now });
   const out: Draft[] = [];
-  for (const requisition of [...(await rfq.requisitions(tenantId))].sort((a, b) => a.requisitionId.localeCompare(b.requisitionId))) {
+  for (const raised of [...(await rfq.requisitions(tenantId))].sort((a, b) => a.requisitionId.localeCompare(b.requisitionId))) {
+    const requisition = await withUnits(rfq, tenantId, raised); // OB-31: grams compared at the per-kg price
     const quotes = await rfq.quotes(tenantId, requisition.requisitionId);
     if (quotes.length < 2 || requisition.lines.length === 0) continue;
     const c = compareQuotes({ requisition, quotes });
