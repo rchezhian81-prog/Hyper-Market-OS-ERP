@@ -557,24 +557,6 @@ export class ScaleLabelRefusedError extends Error {
 }
 
 /**
- * OB-302 "never key a weight" (Round B follow-up): the cashier's Qty keypad on a line sold by weight or volume (kg, g, L, ml).
- * The keypad asked "Quantity" and took the number as GRAMS — "2" for 2 kg rang 2 g — and any number keyed there is a
- * weight typed by hand, which the owner ruled out. The line keeps the quantity its scale label gave it. For more of the
- * item, weigh it again and scan the new label; to take it off, void the line. Said in the cashier's words, English and Tamil.
- */
-export class MeasuredLineQuantityRefusedError extends Error {
-  readonly reason = 'measured_line_quantity_keyed' as const;
-  readonly laneMessage: string;
-  readonly laneMessageTa: string;
-  constructor(public readonly description: string, public readonly uom: string) {
-    super(`${description} is sold by ${uom}; its quantity cannot be keyed.`);
-    this.name = 'MeasuredLineQuantityRefusedError';
-    this.laneMessage = `${description} is sold by ${uom}, so its quantity comes only from the scale's label and cannot be typed in. Nothing was changed. For a different amount, weigh it again and scan the new label (void this line if it is wrong).`;
-    this.laneMessageTa = `${description} ${uom} அளவில் விற்கப்படுகிறது, எனவே அதன் அளவு தராசின் லேபிளிலிருந்து மட்டுமே வரும்; கையால் உள்ளிட முடியாது. எதுவும் மாற்றப்படவில்லை. வேறு அளவுக்கு, மீண்டும் எடைபோட்டு புதிய லேபிளை ஸ்கேன் செய்யவும் (இந்த வரி தவறு என்றால் அதை ரத்து செய்யவும்).`;
-  }
-}
-
-/**
  * OB-501 (R7-A · M33-FR-02): this till's app build is withdrawn or below the minimum supported version, so it may finish the
  * bill in progress but may not START a new one until it is updated. Said in the cashier's words, English and Tamil.
  */

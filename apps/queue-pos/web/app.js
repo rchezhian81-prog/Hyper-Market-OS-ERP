@@ -217,8 +217,7 @@ async function lineMenu(line) {
   if (what === 'qty') {
     const n = await askNumber(t('qtyTitle'));
     if (n === null || n === '' || Number(n) < 1) return;
-    // OB-302: a kg / g / L / ml line refuses a keyed quantity (never a weight typed in), in the till model's own words.
-    try { if (typeof till.keyQuantity === 'function') till.keyQuantity(line.lineId, Number(n)); else till.setQuantity(line.lineId, Number(n)); } catch (e) { tell(t('read'), errorWords(e)); }
+    try { till.setQuantity(line.lineId, Number(n)); } catch (e) { tell(t('read'), errorWords(e)); }
     render();
   } else if (what === 'void') {
     const reason = await choose(t('voidTitle'), [

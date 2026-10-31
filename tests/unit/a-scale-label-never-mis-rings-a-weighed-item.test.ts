@@ -1,18 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
-  PosSession, taxRateFromPercent, createPosView, ScaleLabelRefusedError, MeasuredLineQuantityRefusedError, type PosView,
+  PosSession, taxRateFromPercent, createPosView, ScaleLabelRefusedError, type PosView,
 } from '../../apps/pos/src/index';
 import { CatalogueCache } from '../../packages/catalogue/src/index';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
 
-// Round B (PR #852) follow-ups at the till, OB-302 "never key a weight" · B5 · OB-31:
+// Round B (PR #852) follow-ups at the till, OB-302 · B5 · OB-31:
 //  1. A scale label whose barcode carries only a PRICE, for a kg item, rang as ONE gram: a ₹765.00 pack of mutton at
 //     ₹900/kg rang ₹0.76 — the customer under-charged, the stock ledger told 1 g left. Now refused by name (English and
 //     Tamil), nothing added; a label carrying the WEIGHT still rings exactly, offline (no network call anywhere here).
 //  2. A weight label on a product sold by the piece rang its grams as that many pieces (850 g → 850 items). Refused.
-//  3. The cashier's Qty keypad on a weighed line took the number as grams ("2" for 2 kg rang 2 g) — a weight typed by
-//     hand, which OB-302 rules out. Now refused by name; the line keeps the label's weight. A count line still changes.
+// (The Qty keypad on a weighed line keeps today's behaviour until the owner decides the weight-label question.)
 // Synthetic data only.
 
 const AT = '2026-10-31T06:00:00Z';
@@ -86,27 +85,5 @@ describe('a price-only scale label never rings a weighed item as one gram (OB-30
     expect(e.laneMessage).toContain('Bath soap is sold by the piece');
     expect(e.laneMessageTa.length).toBeGreaterThan(0);
     expect(view.basket()).toHaveLength(0);
-  });
-});
-
-describe('the Qty keypad never keys a weight (OB-302 "never key a weight")', () => {
-  it('on a weighed line it is refused by name, in English and Tamil, and the line keeps the label\'s weight and price', () => {
-    const view = lane();
-    const line = view.scanBarcode('2110023008500');
-    const e = thrown(() => view.keyQuantity(line.lineId, 2), MeasuredLineQuantityRefusedError);
-    expect(e.laneMessage).toContain('Mutton curry cut is sold by kg');
-    expect(e.laneMessage).toContain('cannot be typed in');
-    expect(e.laneMessage).toContain('weigh it again and scan the new label');
-    expect(e.laneMessageTa).toContain('கையால் உள்ளிட முடியாது');
-    expect(view.basket()[0]?.qty).toBe(850);
-    expect(view.payableMinor()).toBe(765_00); // not ₹1.80 for "2" taken as 2 g
-  });
-
-  it('on a count line it changes the quantity exactly as before', () => {
-    const view = lane();
-    const line = view.scanBarcode('8900000000261');
-    view.keyQuantity(line.lineId, 3);
-    expect(view.basket()[0]?.qty).toBe(3);
-    expect(view.payableMinor()).toBe(105_00);
   });
 });

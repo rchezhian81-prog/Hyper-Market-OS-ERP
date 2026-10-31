@@ -1468,9 +1468,7 @@ el('qty').addEventListener('click', async () => {
   const qty = Number(answer);
   if (!Number.isInteger(qty) || qty <= 0) return;
   try {
-    // OB-302 "never key a weight": a number keyed here on a kg / g / L / ml line is refused by the till's model (it used to be
-    // taken as grams — "2" for 2 kg rang 2 g); a count line takes it as before.
-    if (typeof session.keyQuantity === 'function') session.keyQuantity(selectedLineId, qty); else session.setQuantity(selectedLineId, qty);
+    session.setQuantity(selectedLineId, qty);
   } catch (e) {
     // B6 · B14: a loose-cigarette count, or a weight on a lane whose scale stamp ran out, is refused; the line keeps its quantity.
     // OB-500: so is a new quantity on a line whose price a manager cut — said in the screen's language.
