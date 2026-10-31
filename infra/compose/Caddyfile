@@ -83,7 +83,7 @@
 # goes straight to the API from here. The demo front never faces the public network: TLS, HSTS and the client address
 # (overwritten from the connection, as below) remain this proxy's.
 (staff-not-public) {
-	@staff path /login /login/* /pos /pos/* /owner /owner/* /erp /erp/* /picker /picker/* /delivery /delivery/* /warehouse /warehouse/* /supplier /supplier/* /store /store/* /store-lane /store-lane/*
+	@staff path /login /login/* /pos /pos/* /owner /owner/* /erp /erp/* /picker /picker/* /delivery /delivery/* /warehouse /warehouse/* /supplier /supplier/* /b2b /b2b/* /queue-pos /queue-pos/* /device /device/* /store /store/* /store-lane /store-lane/* /store-handheld /store-handheld/*
 	handle @staff {
 		header Content-Type application/json
 		respond `{"error":{"code":"staff_screens_not_public","whatHappened":"Staff screens are not served on this address: SRE_STAFF_ROUTE is staff-not-public (the default). They live on the store box.","wasItSaved":"not_saved","nextSafeAction":"Open the screen on the store box. Only the hosted DEMO switches the demo sign-in gate on (SRE_STAFF_ROUTE=staff-demo-gate)."}}` 404
@@ -91,7 +91,7 @@
 }
 
 (staff-demo-gate) {
-	@staff path /login /login/* /pos /pos/* /owner /owner/* /erp /erp/* /picker /picker/* /delivery /delivery/* /warehouse /warehouse/* /supplier /supplier/* /store /store/* /store-lane /store-lane/*
+	@staff path /login /login/* /pos /pos/* /owner /owner/* /erp /erp/* /picker /picker/* /delivery /delivery/* /warehouse /warehouse/* /supplier /supplier/* /b2b /b2b/* /queue-pos /queue-pos/* /device /device/* /store /store/* /store-lane /store-lane/* /store-handheld /store-handheld/*
 	handle @staff {
 		reverse_proxy web:80 {
 			header_up X-Forwarded-For {remote_host}

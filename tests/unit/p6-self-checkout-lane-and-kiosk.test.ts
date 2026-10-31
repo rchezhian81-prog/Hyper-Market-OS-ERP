@@ -4,6 +4,7 @@ import { createPriceKiosk } from '../../apps/price-kiosk/src/price-kiosk';
 import { readBasketEvidence, basketSummary } from '../../packages/self-checkout/src/basket-evidence';
 import { selfCheckoutWatchOf, kioskStaleAfterOf, customerFacingGlobals } from '../../edge/store-edge/src/self-checkout-screens';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
+import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 
 // R8-3 · D04-FR-06 · D14-FR-02 · OB-302 · OB-316: the self-checkout lane model over a stand-in till engine, and the price
 // kiosk model over a real catalogue. The till engine's own rules are tested where they live; this holds the lane's.
@@ -79,6 +80,13 @@ describe('the self-checkout lane', () => {
     const off = createSelfCheckoutLane(fakeTill().till, config({ switchOn: false, switchWhy: 'never set' }).config);
     expect(off.view()).toMatchObject({ open: false, closed: WORDS.switchedOff });
     expect(await off.openLane('u-attend', '111111')).toMatchObject({ ok: false, refusedBecause: 'self_checkout_switched_off' });
+    // Round 3: the colleague is told WHICH page turns it on — the owner's own menu item, word for word, in both languages.
+    const rollout = ERP_NAVIGATION.find((i) => i.id === 'rollout')!;
+    expect(off.view().attendantNotes[0]).toContain(`"${rollout.label}"`);
+    expect(off.view().attendantNotes[0]).toContain(`"${rollout.labelTa}"`);
+    expect((await off.openLane('u-attend', '111111')).detail).toContain(rollout.label);
+    expect(off.view().customerNow).toEqual(WORDS.switchedOff); // the customer is not shown an office page
+    expect(createSelfCheckoutLane(fakeTill().till, config().config).view().attendantNotes.join(' ')).not.toContain(rollout.label);
     expect(off.scan('RICE')).toMatchObject({ ok: false, refusedBecause: 'lane_closed' });
     const pilot = createSelfCheckoutLane(fakeTill().till, config({ mirrorPilot: true }).config);
     expect(await pilot.openLane('u-attend', '111111')).toMatchObject({ ok: false, refusedBecause: 'mirror_pilot' });

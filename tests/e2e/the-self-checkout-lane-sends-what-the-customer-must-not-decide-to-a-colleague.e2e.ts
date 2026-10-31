@@ -109,6 +109,8 @@ describe.skipIf(!HAVE_BROWSER)('the self-checkout lane (R8-3 · OB-302 · OB-316
   it('switched off for this lane (OB-316): it says so, and a colleague cannot open it', async () => {
     const { page } = await lane(undefined);
     expect(await now(page)).toMatch(/Self-checkout is switched off on this lane/);
+    // Round 3: the colleague's notes on the page name WHERE it is switched on — the owner's Trial switches page.
+    expect(await page.textContent('#notes')).toMatch(/switches it on for this lane on the "Trial switches and shop account" page \(Administration menu\)/);
     expect(await page.isDisabled('#pay-card')).toBe(true);
     await asColleague(page, 'u-attend', pinOf('u-attend'));
     await page.click('#open-lane');
