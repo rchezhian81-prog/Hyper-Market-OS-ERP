@@ -5,6 +5,16 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Fresh full roadmap re-audit (30 October 2026): 310 done, 31 half done, nothing missing
+- **What changed:** a read-only check of every roadmap row at main `5c84f4c7` (`docs/audit/REAUDIT-2026-10-30.md`, lane tables in `docs/audit/reaudit-2026-10-30/`). Of 390 distinct rows: 310 done, 31 partial, 0 missing, 0 decision, 43 external, 6 deferred to R8 in writing.
+  - Most of the 31 partial rows are working, tested functions that no screen reaches, so a person cannot use them without a programmer.
+  - Four matter most: the Range tab says an item was taken out of the range but saves nothing (P-08); the Offer tab's Start cannot work because no screen defines an offer; a supplier bill with freight is refused; the AI page cannot switch an agent on.
+  - Offline gap: quality sample results cannot be recorded at the store with the line down (M10-FR-02).
+- **No hard-rule breach, no dead route, every OB-500..610 decision built as decided.**
+- **`main` is not protected on GitHub** (nothing forces checks or a pull request); every recent change did use one.
+- **Next:** the owner chooses how to close the 31 rows (options in the session report), and whether to switch on branch protection.
+- **Blocked:** nothing. **Owner decisions needed:** the order of the fixes; branch protection.
+
 ## OB-609 (29 October 2026): a page for head office's bill findings and attendance flags
 
 **What changed**
