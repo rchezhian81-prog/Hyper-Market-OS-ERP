@@ -38,12 +38,13 @@ import type { CurrencyCode, Money } from '../../../packages/contracts/src/money'
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { deviceItemState, deviceItemReason, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
+import type { HeadOfficeHttp } from './head-office-http';
 import {
   Assortment, checkAssortmentIntegrity, countingWorklist, dropFromRange, latestCounts,
   planogramCompliance, recordShelfCount, reviewDisplayContracts, spacePerformance,
   RangeDecisionError,
   type AssortmentEntry, type AssortmentIssue, type CountAge, type ComplianceIssue,
-  type ContractStatus, type DisplayContract, type DropDecision, type DropReason,
+  type ContractStatus, type DisplayContract, type DropReason,
   type Planogram, type ReplenishmentTask, type ShelfCount, type CountRefusal,
   type ShelfMap, type SpaceArea, type SpacePerformanceRow,
 } from '../../../packages/merchandising/src/index';
@@ -197,7 +198,47 @@ export interface MerchandisingDevice {
   readonly indents?: RefillIndentPort;
   /** A fresh count id on this device. Injected for tests; the browser's random id otherwise. */
   readonly freshCountId?: () => string;
+  /**
+   * M04-FR-01 (re-audit 30 Oct 2026, P-08): head office, in the signed-in person's own session, on the store computer's
+   * origin. A range drop is head office's decision on head office's stock — absent, the drop says "not connected" and
+   * nothing is claimed.
+   */
+  readonly headOffice?: HeadOfficeHttp;
 }
+
+// ── M04-FR-01: a range drop is head office's word, never this page's ──────────────────────────────────────────────
+//
+// Before the 30 Oct 2026 re-audit the drop was decided HERE, on the box's copy of the stock, and saved nowhere — yet the
+// screen said "Taken out of the range". Now the drop goes to head office's own assortment route
+// (`POST /v1/merchandising/assortment/:storeId/:productId/drop`), which judges it on ITS stock position: with stock on hand
+// it becomes CLEARANCE, never a delisting (the engine's rule, `dropFromRange`, run there). The screen says "taken out" only
+// when head office answered that it recorded it; a refusal is shown in head office's own words; no answer is no answer.
+// The engine still runs here first, for the refusals that need no stock (nobody named, "replaced" with no replacement), so
+// a drop that cannot pass is never sent.
+
+/** Head office's answer to a range drop, as this screen shows it. */
+export type DropOutcome =
+  | {
+    readonly ok: true;
+    readonly productId: string;
+    /** Head office's outcome: never a delisting while its stock position holds any. */
+    readonly outcome: 'delisted' | 'routed_to_clearance';
+    readonly status: string;
+    readonly effectiveFrom: string;
+    /** Head office's own sentence (the engine's), e.g. "12 still on hand — the item goes to clearance …". */
+    readonly detail: string;
+  }
+  /** The engine refused it on this screen before anything was sent (its own words). */
+  | { readonly ok: false; readonly refusal: 'refused_here'; readonly detail: string }
+  /** Head office refused it — its code and its own words. Nothing was recorded. */
+  | { readonly ok: false; readonly refusal: 'head_office_refused'; readonly code: string; readonly detail: string }
+  /** No answer from head office: nothing is known to have happened, so nothing is claimed. */
+  | { readonly ok: false; readonly refusal: 'head_office_unreachable' }
+  /** This screen was built with no way to head office. */
+  | { readonly ok: false; readonly refusal: 'not_connected' };
+
+/** A drop head office confirmed on this screen, so the "carried today" list stops showing it without a reload. */
+interface ConfirmedDrop { readonly productId: string; readonly effectiveFrom: string }
 
 export type CountOutcome =
   | { readonly ok: true; readonly count: ShelfCount; readonly countId: string; readonly queued: boolean }
@@ -273,17 +314,18 @@ export interface MerchandisingSession {
   range(): readonly string[];
 
   /**
-   * Drop an item from the range.
+   * Drop an item from the range — AT HEAD OFFICE (M04-FR-01 · P-08).
    *
-   * With stock on hand this becomes a **clearance** listing rather than a delisting, and the engine
-   * refuses to do otherwise: removing a stocked item from the range makes its stock invisible.
+   * Head office judges it on its own stock position: with stock on hand it becomes a **clearance**
+   * listing rather than a delisting, and the engine refuses to do otherwise — removing a stocked item
+   * from the range makes its stock invisible. `ok: true` only when head office recorded it.
    */
   drop(input: {
     readonly productId: string;
     readonly reason: DropReason;
     readonly reasonNote?: string;
     readonly replacedByProductId?: string;
-  }): { readonly ok: true; readonly decision: DropDecision } | { readonly ok: false; readonly detail: string };
+  }): Promise<DropOutcome>;
 
   /** Where the range and what the shop actually did disagree. */
   rangeIssues(): readonly AssortmentIssue[];
@@ -309,6 +351,7 @@ export function createMerchandisingSession(
   const knownLocationIds = (): readonly string[] => ports.shelfMap()?.allLocations().map((l) => l.locationId) ?? [];
   const boxWord = device.boxWords ?? new Map<string, BoxItemStatus>();
   const nobodyNamed = config.userId.trim() === '';
+  const confirmedDrops: ConfirmedDrop[] = [];
 
   const tasksNow = (): readonly ReplenishmentTask[] => {
     const c = session.check();
@@ -428,30 +471,54 @@ export function createMerchandisingSession(
       };
     },
 
-    range: () => ports.assortment().listedOn(config.today),
+    range: () => {
+      const listed = ports.assortment().listedOn(config.today);
+      // What head office confirmed out on this screen is out now — without waiting for the next copy from the box.
+      return listed.filter((p) => !confirmedDrops.some((d) => d.productId === p && d.effectiveFrom <= config.today));
+    },
 
-    drop: (input) => {
+    drop: async (input) => {
+      // The engine first, for the refusals that need no stock (nobody named, "replaced" with nothing named): a drop that
+      // cannot pass is never sent. The figure here is not the one that decides clearance — head office reads its own.
       try {
-        return {
-          ok: true,
-          decision: dropFromRange({
-            storeId: config.storeId,
-            productId: input.productId,
-            // The real figure, so a stocked item cannot be delisted by a screen that guessed zero.
-            // Zero here is the dangerous default: it turns "route to clearance" into "delete", and
-            // the stock on the shelf becomes invisible — uncounted, unreplenished, written off.
-            onHandMinor: ports.onHand()[input.productId] ?? 0,
-            reason: input.reason,
-            ...(input.reasonNote === undefined ? {} : { reasonNote: input.reasonNote }),
-            ...(input.replacedByProductId === undefined ? {} : { replacedByProductId: input.replacedByProductId }),
-            decidedBy: config.userId,
-            effectiveFrom: config.today,
-          }),
-        };
+        dropFromRange({
+          storeId: config.storeId,
+          productId: input.productId,
+          onHandMinor: Math.max(0, ports.onHand()[input.productId] ?? 0),
+          reason: input.reason,
+          ...(input.reasonNote === undefined ? {} : { reasonNote: input.reasonNote }),
+          ...(input.replacedByProductId === undefined ? {} : { replacedByProductId: input.replacedByProductId }),
+          decidedBy: config.userId,
+          effectiveFrom: config.today,
+        });
       } catch (e) {
-        if (e instanceof RangeDecisionError) return { ok: false, detail: e.message };
+        if (e instanceof RangeDecisionError) return { ok: false, refusal: 'refused_here', detail: e.message };
         throw e;
       }
+      if (device.headOffice === undefined) return { ok: false, refusal: 'not_connected' };
+      // Head office's own route. No stock figure in the body — head office refuses one by name (`drop_carries_caller_stock`),
+      // because a typed "0 on hand" would delete a range line with stock on the shelf. Who decided is the signed-in person.
+      const enc = encodeURIComponent;
+      const answer = await device.headOffice.post(`/v1/merchandising/assortment/${enc(config.storeId)}/${enc(input.productId)}/drop`, {
+        reason: input.reason,
+        effectiveFrom: config.today,
+        ...(input.reasonNote === undefined || input.reasonNote.trim() === '' ? {} : { reasonNote: input.reasonNote.trim() }),
+        ...(input.replacedByProductId === undefined ? {} : { replacedByProductId: input.replacedByProductId }),
+      });
+      if (answer.result === 'lost_link') return { ok: false, refusal: 'head_office_unreachable' };
+      if (answer.result === 'refused') return { ok: false, refusal: 'head_office_refused', code: answer.code, detail: answer.whatHappened };
+      const b = (answer.body ?? {}) as { outcome?: unknown; status?: unknown; effectiveFrom?: unknown; detail?: unknown };
+      // A 2xx that does not say what it recorded is not a confirmation (P-08): it is reported as a refusal, never "taken out".
+      if (b.outcome !== 'delisted' && b.outcome !== 'routed_to_clearance') {
+        return { ok: false, refusal: 'head_office_refused', code: 'unreadable_answer', detail: '' };
+      }
+      const effectiveFrom = typeof b.effectiveFrom === 'string' ? b.effectiveFrom : config.today;
+      confirmedDrops.push({ productId: input.productId, effectiveFrom });
+      return {
+        ok: true, productId: input.productId, outcome: b.outcome,
+        status: typeof b.status === 'string' ? b.status : '', effectiveFrom,
+        detail: typeof b.detail === 'string' ? b.detail : '',
+      };
     },
 
     rangeIssues: () => checkAssortmentIntegrity({

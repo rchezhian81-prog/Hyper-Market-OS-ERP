@@ -36,7 +36,7 @@ import {
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 // OB-606: every page's "today", month and shown dates at the SHOP's clock (the zone the store computer told the page).
-import { shopDay, type ShopDay } from '../../../packages/calendar/src/shop-day';
+import { shopDay, servedShopZone, type ShopDay } from '../../../packages/calendar/src/shop-day';
 import {
   APPROVE_REASONS,
   REJECT_REASONS,
@@ -60,7 +60,7 @@ import {
 import {
   createCatalogueSession, priceChangeRequestBody, promotionLaunchBody,
   type CataloguePorts, type CatalogueSession,
-  type PromotionLaunchPort, type PromotionLaunchOutcome,
+  type PromotionLaunchPort, type PromotionLaunchOutcome, type PromotionDefinitionPort,
   type PriceChangeCloudPort, type PriceChangeCloudOutcome, type MrpReplacePort, type MrpReplaceOutcome,
 } from './catalogue-session';
 import { bootWarehouseSupervisor, type SupervisorData, type WarehouseSupervisorSession } from './warehouse-supervisor-session';
@@ -6059,6 +6059,16 @@ export function openPromotionLaunchPort(): PromotionLaunchPort {
 }
 
 /**
+ * M05-FR-03/04 (re-audit 30 Oct 2026): the authenticated POST that records an offer's RULE at head office —
+ * `POST /v1/promotions/:id/definition` under the operator's OWN session, on the store computer's origin. Head office's
+ * answer (a draft recorded, or its refusal in its own words) is returned as said; a dropped link is a lost link (P-08).
+ */
+export function openPromotionDefinitionPort(): PromotionDefinitionPort {
+  const http = headOfficeHttp();
+  return { post: (promotionId, body) => http.post(`/v1/promotions/${encodeURIComponent(promotionId)}/definition`, body) };
+}
+
+/**
  * The authenticated POST that records a governed price change at head office (M05-FR-02, API-02). One
  * operator-authenticated call under their OWN session (`credentials: 'same-origin'`, never a service token) to
  * `POST /v1/prices/changes`: the cloud re-runs `checkPrice` over the figures (MRP ceiling, cost, margin floor) and,
@@ -6153,7 +6163,7 @@ export type CatalogueApprovalPorts = HeadOfficeApprovalPorts;
 /** The live engine: the same POST and GET the import screen, the Approvals page and the finance screen use. */
 export const CATALOGUE_APPROVALS: CatalogueApprovalPorts = HEAD_OFFICE_APPROVALS;
 
-export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts): CataloguePorts {
+export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts, definePromotion?: PromotionDefinitionPort): CataloguePorts {
   const costOf = (productId: string): CostRegister => {
     const minor = data?.costsMinor?.[productId];
     if (minor === undefined) {
@@ -6192,6 +6202,7 @@ export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?:
     shelfMap: () => map,
     ...(outbox === undefined ? {} : { outbox: () => outbox }),
     ...(launchPromotion === undefined ? {} : { launchPromotion: () => launchPromotion }),
+    ...(definePromotion === undefined ? {} : { definePromotion: () => definePromotion }),
     ...(changePrice === undefined ? {} : { changePrice: () => changePrice }),
     ...(approvals === undefined ? {} : { askApproval: approvals.askApproval, approvalInbox: approvals.approvalInbox }),
     // OB-512: replacing an MRP not yet in force goes to head office with its approval — only when connected to it.
@@ -6231,7 +6242,7 @@ export function openMrpReplacePort(): MrpReplacePort {
 /** Build the product-and-pricing session, or `null` when this box was told nothing about it. The outbox, when
  *  given, is the durable queue the Save button commits a publish to; `approvals` is head office's maker-checker
  *  engine — without it nothing that needs a second person can be saved from this screen. */
-export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts): CatalogueSession | null {
+export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts, definePromotion?: PromotionDefinitionPort): CatalogueSession | null {
   if (data === undefined) return null;
   return createCatalogueSession(
     {
@@ -6243,8 +6254,10 @@ export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutb
       // till whose clock is a day out would then activate tomorrow's price today.
       today: data.today ?? '1970-01-01',
       marginFloorBps: data.marginFloorBps ?? 0,
+      // OB-610: an offer's days are whole days in the shop's zone — the one the store computer served this page.
+      timeZone: servedShopZone(),
     },
-    cataloguePortsFromData(data, outbox, launchPromotion, changePrice, approvals),
+    cataloguePortsFromData(data, outbox, launchPromotion, changePrice, approvals, definePromotion),
   );
 }
 
@@ -6499,7 +6512,7 @@ if (browserWindow !== undefined) {
   // (M05-FR-02) are online governed actions that POST to head office on an explicit click — the cloud re-runs
   // the guard (re-simulate / re-check the MRP+cost+floor). One that needs a second person is ASKED for on head
   // office's approval engine and sent naming the approval (ADR-0024) — never a typed approver.
-  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort(), CATALOGUE_APPROVALS);
+  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort(), CATALOGUE_APPROVALS, openPromotionDefinitionPort());
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
@@ -6516,6 +6529,9 @@ if (browserWindow !== undefined) {
     const merchandising = bootMerchandising(merchandisingData, {
       outbox: merchandisingOutbox, boxWords: merchandisingBoxWords,
       ...(refillIndents === null ? {} : { indents: refillIndentPortOf(refillIndents) }),
+      // M04-FR-01 (re-audit 30 Oct 2026): a range drop goes to head office's own assortment route on this origin, as the
+      // signed-in person — "taken out" is head office's word, never this page's.
+      headOffice: headOfficeHttp(),
     });
     if (merchandising !== null) {
       browserWindow.merchandisingSession = merchandising;

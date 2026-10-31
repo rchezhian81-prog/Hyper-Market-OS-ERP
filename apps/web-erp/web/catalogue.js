@@ -79,7 +79,23 @@ const WORDS = {
     priceRefused: 'This price cannot be saved', historyTitle: 'What this item has been priced at',
     noHistory: 'This item has never had a price set.', wasReplacing: 'Replaces',
     from: 'From', price: 'Price', status: 'State', version: 'Change',
-    offerLead: 'See what an offer does to the margin before it starts.',
+    offerLead: '1. See what an offer does to the margin. 2. Record its rule at head office. 3. Start it.',
+    ruleTitle: 'The offer\u2019s rule',
+    ruleLead: 'Tell head office what the offer is. It is kept as a draft and does nothing until you start it.',
+    ruleKind: 'Kind of offer', ruleProducts: 'Item codes it is on (leave blank for the whole bill)', ruleGroup: 'Or a group of items (optional)',
+    ruleStarts: 'First day', ruleEnds: 'Last day', rulePercent: 'How much off (%)', ruleAmount: 'Rupees off',
+    ruleBuy: 'Buy how many', ruleGet: 'Get how many', ruleMemberPrice: 'Members\u2019 price for one (in rupees)',
+    ruleMultiQty: 'How many (2 or more)', ruleMultiPrice: 'For how many rupees',
+    ruleBundleItems: 'The set (e.g. RICE x 2, DAL x 1)', ruleBundlePrice: 'Price of the whole set (in rupees)',
+    ruleBuyProducts: 'Buy from these item codes', ruleBuyGroup: 'Or buy from this group',
+    ruleGetProducts: 'Get from these item codes', ruleGetGroup: 'Or get from this group',
+    ruleMinSpend: 'Least the items must add up to (in rupees, optional)', ruleCoupon: 'Coupon code the customer must give (optional)',
+    ruleMemberOnly: 'Members only', ruleExclusive: 'Does not add to other offers in this group (optional — blank means it adds on)',
+    ruleCap: 'Most times it applies on one bill (optional)', defineOffer: 'Record this rule at head office',
+    ruleRecorded: 'Rule recorded at head office as a draft. It does nothing until you press \u201cStart this offer\u201d.',
+    ruleRefused: 'Head office refused:', ruleUnreachable: 'Head office cannot be reached, so the rule was not recorded. Try again when the line is back.',
+    ruleNotConnected: 'This screen is not connected to head office, so the rule was not recorded.',
+    notDefinedYet: 'Not started — head office has no rule for this offer yet. Fill in \u201cThe offer\u2019s rule\u201d with the same name and press \u201cRecord this rule at head office\u201d first. Nothing was started.',
     offerName: 'Give this offer a name', normalPrice: 'Normal price (in rupees)',
     offerPrice: 'Offer price (in rupees)', costsUs: 'What it costs us (in rupees)',
     supplierPays: 'Supplier pays per unit (in rupees)', unitsNow: 'Units you sell now',
@@ -133,7 +149,23 @@ const WORDS = {
     priceRefused: 'இந்த விலையைச் சேமிக்க முடியாது', historyTitle: 'இந்தப் பொருளுக்கு இருந்த விலைகள்',
     noHistory: 'இந்தப் பொருளுக்கு இதுவரை விலை நிர்ணயிக்கப்படவில்லை.', wasReplacing: 'மாற்றுவது',
     from: 'முதல்', price: 'விலை', status: 'நிலை', version: 'மாற்றம்',
-    offerLead: 'சலுகை தொடங்கும் முன் லாபத்தில் என்ன விளைவு என்று பாருங்கள்.',
+    offerLead: '1. சலுகையால் லாபத்தில் என்ன விளைவு என்று பாருங்கள். 2. அதன் விதியைத் தலைமை அலுவலகத்தில் பதிவு செய்யுங்கள். 3. அதைத் தொடங்குங்கள்.',
+    ruleTitle: 'சலுகையின் விதி',
+    ruleLead: 'சலுகை என்ன என்று தலைமை அலுவலகத்திற்குச் சொல்லுங்கள். அது வரைவாக வைக்கப்படும்; நீங்கள் தொடங்கும் வரை எதையும் செய்யாது.',
+    ruleKind: 'சலுகையின் வகை', ruleProducts: 'இது பொருந்தும் பொருள் குறியீடுகள் (முழு பில்லுக்கு காலியாக விடவும்)', ruleGroup: 'அல்லது பொருள் குழு (விருப்பம்)',
+    ruleStarts: 'முதல் நாள்', ruleEnds: 'கடைசி நாள்', rulePercent: 'எவ்வளவு தள்ளுபடி (%)', ruleAmount: 'தள்ளுபடி ரூபாய்',
+    ruleBuy: 'எத்தனை வாங்க வேண்டும்', ruleGet: 'எத்தனை கிடைக்கும்', ruleMemberPrice: 'உறுப்பினர் விலை ஒன்றுக்கு (ரூபாயில்)',
+    ruleMultiQty: 'எத்தனை (2 அல்லது அதற்கு மேல்)', ruleMultiPrice: 'எத்தனை ரூபாய்க்கு',
+    ruleBundleItems: 'தொகுப்பு (எ.கா. RICE x 2, DAL x 1)', ruleBundlePrice: 'முழுத் தொகுப்பின் விலை (ரூபாயில்)',
+    ruleBuyProducts: 'இந்தப் பொருள் குறியீடுகளிலிருந்து வாங்க', ruleBuyGroup: 'அல்லது இந்தக் குழுவிலிருந்து வாங்க',
+    ruleGetProducts: 'இந்தப் பொருள் குறியீடுகளிலிருந்து கிடைக்கும்', ruleGetGroup: 'அல்லது இந்தக் குழுவிலிருந்து கிடைக்கும்',
+    ruleMinSpend: 'பொருட்களின் குறைந்தபட்ச மொத்தம் (ரூபாயில், விருப்பம்)', ruleCoupon: 'வாடிக்கையாளர் தர வேண்டிய கூப்பன் குறியீடு (விருப்பம்)',
+    ruleMemberOnly: 'உறுப்பினர்களுக்கு மட்டும்', ruleExclusive: 'இந்தக் குழுவின் மற்ற சலுகைகளுடன் சேராது (விருப்பம் — காலியாக இருந்தால் சேரும்)',
+    ruleCap: 'ஒரு பில்லில் அதிகபட்சம் எத்தனை முறை (விருப்பம்)', defineOffer: 'இந்த விதியைத் தலைமை அலுவலகத்தில் பதிவு செய்',
+    ruleRecorded: 'விதி தலைமை அலுவலகத்தில் வரைவாகப் பதிவானது. “இந்தச் சலுகையைத் தொடங்கு” அழுத்தும் வரை எதையும் செய்யாது.',
+    ruleRefused: 'தலைமை அலுவலகம் மறுத்தது:', ruleUnreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே விதி பதிவாகவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
+    ruleNotConnected: 'இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை, எனவே விதி பதிவாகவில்லை.',
+    notDefinedYet: 'தொடங்கப்படவில்லை — இந்தச் சலுகைக்கு தலைமை அலுவலகத்தில் இன்னும் விதி இல்லை. அதே பெயருடன் “சலுகையின் விதி” பகுதியை நிரப்பி முதலில் “இந்த விதியைத் தலைமை அலுவலகத்தில் பதிவு செய்” அழுத்தவும். எதுவும் தொடங்கப்படவில்லை.',
     offerName: 'இந்தச் சலுகைக்கு ஒரு பெயர் கொடுங்கள்', normalPrice: 'சாதாரண விலை (ரூபாயில்)',
     offerPrice: 'சலுகை விலை (ரூபாயில்)', costsUs: 'நமக்கு ஆகும் செலவு (ரூபாயில்)',
     supplierPays: 'சப்ளையர் தரும் தொகை (ரூபாயில்)', unitsNow: 'இப்போது விற்கும் அளவு',
@@ -268,6 +300,26 @@ const GAP_WORDS = {
   },
 };
 
+/** The kinds of offer this tab defines (`OFFER_KINDS`) — the engine's list less the bank-card offer (OB-305: off). */
+const OFFER_KIND_WORDS = {
+  percent_off: { en: 'Percent off', ta: 'சதவீதத் தள்ளுபடி' },
+  amount_off: { en: 'Rupees off', ta: 'ரூபாய் தள்ளுபடி' },
+  buy_x_get_y: { en: 'Buy some, get some free', ta: 'சில வாங்கினால் சில இலவசம்' },
+  member_price: { en: 'Members\u2019 price', ta: 'உறுப்பினர் விலை' },
+  multibuy: { en: 'So many for one price (e.g. 3 for ₹99)', ta: 'இத்தனை ஒரு விலைக்கு (எ.கா. 3 ₹99க்கு)' },
+  bundle_price: { en: 'A set of items at one price', ta: 'ஒரு விலையில் பொருள் தொகுப்பு' },
+  mix_match: { en: 'Buy from one set, get from another', ta: 'ஒரு தொகுப்பில் வாங்கி மற்றொன்றில் பெறுக' },
+};
+
+/** Why a rule could not be sent — one entry per `OfferDefinitionProblem`. Nothing was sent. */
+const OFFER_PROBLEM_WORDS = {
+  needs_name: { en: 'Give the offer a name first (the same name you start it with). Nothing was sent.', ta: 'முதலில் சலுகைக்கு ஒரு பெயர் கொடுங்கள் (தொடங்கும் அதே பெயர்). எதுவும் அனுப்பப்படவில்லை.' },
+  needs_kind: { en: 'Pick the kind of offer. Nothing was sent.', ta: 'சலுகையின் வகையைத் தேர்ந்தெடுக்கவும். எதுவும் அனுப்பப்படவில்லை.' },
+  needs_days: { en: 'Give the first and the last day, the last not before the first. Nothing was sent.', ta: 'முதல் மற்றும் கடைசி நாளைக் கொடுக்கவும்; கடைசி நாள் முதல் நாளுக்கு முன் இருக்கக்கூடாது. எதுவும் அனுப்பப்படவில்லை.' },
+  not_a_number: { en: 'A figure is not a number (rupees like 12.50, whole counts like 3, a percentage like 10). Nothing was sent.', ta: 'ஒரு எண் சரியாக இல்லை (ரூபாய் 12.50 போல, எண்ணிக்கை 3 போல, சதவீதம் 10 போல). எதுவும் அனுப்பப்படவில்லை.' },
+  bad_bundle_line: { en: 'Write the set as item code x how many, separated by commas — for example RICE x 2, DAL x 1. Nothing was sent.', ta: 'தொகுப்பை பொருள் குறியீடு x எத்தனை என்று காற்புள்ளியால் பிரித்து எழுதவும் — எ.கா. RICE x 2, DAL x 1. எதுவும் அனுப்பப்படவில்லை.' },
+};
+
 const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).replace(/_/g, ' '));
 
 /**
@@ -311,6 +363,8 @@ function sampleSession() {
     launch: () => ({ ok: false, detail: 'this is sample data' }),
     canLaunchToCloud: false,
     launchToCloud: async () => ({ launched: false, reason: 'this is sample data' }),
+    canDefineOffer: false,
+    defineOffer: async () => ({ kind: 'not_connected' }),
     // A sample view is connected to nothing, so nothing that needs a second person moves — and it says so.
     canAskForApproval: false,
     askPriceApproval: async () => ({ kind: 'not_connected' }),
@@ -1120,7 +1174,8 @@ el('launch').addEventListener('click', () => {
     // nothing itself.
     if (session.canLaunchToCloud) {
       const outcome = await session.launchToCloud({ input });
-      if (!outcome.launched) { tell(t('read'), outcome.reason); return; }
+      // Head office has no rule for this offer: say what to do on THIS page, rather than its route name.
+      if (!outcome.launched) { tell(t('read'), outcome.code === 'promotion_not_defined' ? t('notDefinedYet') : outcome.reason); return; }
       tell(t('offerStarted'), input.promotionId, true);
       el('launch').hidden = true;
       return;
@@ -1134,6 +1189,71 @@ el('launch').addEventListener('click', () => {
     el('launch').hidden = true;
   });
 });
+
+// ── The offer's rule (M05-FR-03/04 · re-audit 30 Oct 2026) ─────────────────
+//
+// Head office refuses to start an offer it has no rule for. This step sends the rule — kind, products or group, the shop's
+// days, coupon, members only, the exclusive group it competes in, the abuse cap — through the tested session to head
+// office's own definition route; head office keeps it as a DRAFT that applies to nothing until "Start this offer". Its
+// answer is said as given; no answer claims nothing.
+
+const RULE_FIELDS = [
+  ['rule-kind-label', 'ruleKind'], ['rule-products-label', 'ruleProducts'], ['rule-group-label', 'ruleGroup'],
+  ['rule-starts-label', 'ruleStarts'], ['rule-ends-label', 'ruleEnds'], ['rule-percent-label', 'rulePercent'],
+  ['rule-amount-label', 'ruleAmount'], ['rule-buy-label', 'ruleBuy'], ['rule-get-label', 'ruleGet'],
+  ['rule-member-price-label', 'ruleMemberPrice'], ['rule-multi-qty-label', 'ruleMultiQty'], ['rule-multi-price-label', 'ruleMultiPrice'],
+  ['rule-bundle-items-label', 'ruleBundleItems'], ['rule-bundle-price-label', 'ruleBundlePrice'],
+  ['rule-buy-products-label', 'ruleBuyProducts'], ['rule-buy-group-label', 'ruleBuyGroup'],
+  ['rule-get-products-label', 'ruleGetProducts'], ['rule-get-group-label', 'ruleGetGroup'],
+  ['rule-min-spend-label', 'ruleMinSpend'], ['rule-coupon-label', 'ruleCoupon'], ['rule-member-only-label', 'ruleMemberOnly'],
+  ['rule-exclusive-label', 'ruleExclusive'], ['rule-cap-label', 'ruleCap'], ['define-offer', 'defineOffer'],
+  ['rule-title', 'ruleTitle'], ['rule-lead', 'ruleLead'],
+];
+
+function renderRule() {
+  for (const [id, key] of RULE_FIELDS) el(id).textContent = t(key);
+  const select = el('rule-kind');
+  const was = select.value;
+  select.replaceChildren(...Object.keys(OFFER_KIND_WORDS).map((kind) => {
+    const option = document.createElement('option');
+    option.value = kind;
+    option.textContent = words(OFFER_KIND_WORDS, kind);
+    return option;
+  }));
+  if (was !== '') select.value = was;
+  showRuleFields();
+}
+
+/** Only the boxes the chosen kind reads are shown — a figure in another kind's box is never sent either. */
+function showRuleFields() {
+  const kind = el('rule-kind').value;
+  for (const field of document.querySelectorAll('#promo-rule [data-kinds]')) {
+    field.hidden = !field.dataset.kinds.split(' ').includes(kind);
+  }
+}
+el('rule-kind').addEventListener('change', showRuleFields);
+
+function ruleSay(text, ok) { el('define-status').textContent = text; el('define-status').dataset.ok = ok ? 'yes' : 'no'; }
+
+el('define-offer').addEventListener('click', () => busy('define-offer', async () => {
+  const value = (id) => el(id).value;
+  const outcome = await session.defineOffer({
+    promotionId: value('promo-id'), kind: value('rule-kind'), startsOn: value('rule-starts'), endsOn: value('rule-ends'),
+    productIds: value('rule-products'), group: value('rule-group'), percent: value('rule-percent'), amountOff: value('rule-amount'),
+    buyQty: value('rule-buy'), getQty: value('rule-get'), memberPrice: value('rule-member-price'),
+    multibuyQty: value('rule-multi-qty'), multibuyPrice: value('rule-multi-price'),
+    bundleItems: value('rule-bundle-items'), bundlePrice: value('rule-bundle-price'),
+    buyProductIds: value('rule-buy-products'), buyGroup: value('rule-buy-group'),
+    getProductIds: value('rule-get-products'), getGroup: value('rule-get-group'),
+    minSpend: value('rule-min-spend'), coupon: value('rule-coupon'), memberOnly: el('rule-member-only').checked,
+    exclusiveGroup: value('rule-exclusive'), maxApplications: value('rule-cap'),
+  });
+  if (outcome.kind === 'defined') ruleSay(`${t('ruleRecorded')} ${outcome.promotionId} · ${value('rule-starts')} – ${value('rule-ends')}`, true);
+  else if (outcome.kind === 'invalid') ruleSay(words(OFFER_PROBLEM_WORDS, outcome.problem), false);
+  else if (outcome.kind === 'refused') ruleSay(`${t('ruleRefused')} ${outcome.whatHappened === '' ? outcome.code : outcome.whatHappened}`, false);
+  else if (outcome.kind === 'lost_link') ruleSay(t('ruleUnreachable'), false);
+  else ruleSay(t('ruleNotConnected'), false);
+}));
 
 // ── Competitor prices (D06-FR-05) ───────────────────────────────────────────
 //
@@ -1299,6 +1419,7 @@ function paintChrome() {
   el('promo-baseline-label').textContent = t('unitsNow');
   el('promo-expected-label').textContent = t('unitsExpected');
   el('simulate').textContent = t('workItOut');
+  renderRule();
   el('sample').textContent = t('sampleData');
   renderGaps();
   renderLimits();
@@ -1324,6 +1445,8 @@ el('lang').addEventListener('click', () => {
 
 el('sample').hidden = real !== undefined;
 el('price-from').value = today();
+el('rule-starts').value = today();
+el('rule-ends').value = today();
 paintChrome();
 renderItems();
 // Open the tab the menu asked for. The "Pricing" and "Promotions" menu items redirect here with

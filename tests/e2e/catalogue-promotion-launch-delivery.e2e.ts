@@ -25,6 +25,10 @@ import {
  *   • head office refuses a launch (422) → its own words, and the button stays;
  *   • a typed approver is refused by head office by name, and the screen has no box to type one.
  *
+ * The stub accepts a launch with no rule defined, which the real head office refuses (`promotion_not_defined`). The
+ * full journey — define the offer's rule on the Offer tab, then Start — runs against the REAL head office through the
+ * store computer in `an-offer-is-defined-then-started-through-the-store-computer.e2e.ts` (re-audit 30 Oct 2026).
+ *
  * The browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS.
  */
 

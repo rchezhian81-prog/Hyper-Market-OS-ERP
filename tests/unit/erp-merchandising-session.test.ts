@@ -12,6 +12,8 @@ import {
   type ShelfLocation, type SpaceArea,
 } from '../../packages/merchandising/src/index';
 import { money } from '../../packages/contracts/src/money';
+import type { HeadOfficeHttp, HttpAnswer } from '../../apps/web-erp/src/head-office-http';
+import { apiHarness, type ApiHarness } from '../support/api-harness';
 
 /**
  * **The merchandising and space surface (M04 · D02 · §28).**
@@ -193,48 +195,112 @@ describe('counting a facing', () => {
 // ── The range ───────────────────────────────────────────────────────────────
 
 describe('a range drop never makes stock invisible', () => {
-  it('routes an item with stock to clearance rather than deleting it', () => {
-    // Removing a stocked item from the range means it is not counted, not replenished, not sold,
-    // and eventually written off.
-    const outcome = session().drop({ productId: 'rice', reason: 'poor_sales' });
-    expect(outcome.ok).toBe(true);
+  // M04-FR-01 (re-audit 30 Oct 2026, P-08): the drop is HEAD OFFICE'S decision on HEAD OFFICE'S stock. These cases run the
+  // session against the real head-office surface (in memory, real routes, real permission checks) — never a stub.
+  const T = 'aaaaaaaa-aaaa-4aaa-8aaa-bbbbbbbbbbbb';
+  async function headOffice(): Promise<ApiHarness> {
+    const h = apiHarness();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-mgr', 'store_manager');
+    await h.provisionRole(T, 'u-cash', 'cashier');
+    for (const product of ['rice', 'oil']) {
+      await h.request({ method: 'POST', path: `/v1/merchandising/assortment/store-1/${product}/list`, userId: 'u-mgr', tenantId: T, idempotencyKey: `l-${product}`, body: { effectiveFrom: '2026-01-01' } });
+    }
+    // Head office's own stock position: 12 rice at the store. Oil has none.
+    await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: T, idempotencyKey: 'stock-rice', body: {
+      movementId: 'stock-rice', productId: 'rice', locationId: 'store-1', kind: 'received', quantityMinor: 12, uom: 'ea', occurredAt: '2026-01-01T00:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 100,
+    } });
+    return h;
+  }
+  /** Head office over the harness, as `who`, in the shape the browser's `headOfficeHttp` answers in — every POST recorded. */
+  const as = (h: ApiHarness, who: string, sent: { path: string; body: unknown }[] = []): HeadOfficeHttp => {
+    const answer = (r: { status: number; body: unknown }): HttpAnswer => {
+      if (r.status >= 200 && r.status < 300) return { result: 'ok', status: r.status, body: r.body };
+      const err = (r.body as { error?: { code?: string; whatHappened?: string } } | null)?.error ?? {};
+      return { result: 'refused', status: r.status, code: err.code ?? `http_${r.status}`, whatHappened: err.whatHappened ?? '' };
+    };
+    let n = 0;
+    return {
+      get: async (path) => answer(await h.request({ method: 'GET', path, userId: who, tenantId: T })),
+      post: async (path, body) => { sent.push({ path, body }); n += 1; return answer(await h.request({ method: 'POST', path, userId: who, tenantId: T, body, idempotencyKey: `k-${who}-${n}` })); },
+    };
+  };
+  const connected = (http: HeadOfficeHttp | undefined, over: Partial<MerchandisingPorts> = {}, config: Partial<MerchandisingConfig> = {}) =>
+    createMerchandisingSession({ ...CONFIG, ...config }, ports(over), http === undefined ? {} : { headOffice: http });
+  const listedAtHeadOffice = async (h: ApiHarness): Promise<string[]> =>
+    ((await h.request({ method: 'GET', path: '/v1/merchandising/assortment/store-1', userId: 'u-owner', tenantId: T, query: { onDate: TODAY } })).body as { listed: string[] }).listed;
+
+  it('routes an item with stock to clearance — on HEAD OFFICE\'s stock, even when this screen\'s copy says none', async () => {
+    const h = await headOffice();
+    // The box's copy says 0 rice: had the screen decided, it would have DELETED a range line with 12 on the shelf.
+    const s = connected(as(h, 'u-mgr'), { onHand: () => ({}) });
+    const outcome = await s.drop({ productId: 'rice', reason: 'poor_sales' });
+    expect(outcome).toMatchObject({ ok: true, productId: 'rice', outcome: 'routed_to_clearance', status: 'clearance', effectiveFrom: TODAY });
     if (!outcome.ok) return;
-    expect(outcome.decision.outcome).toBe('routed_to_clearance');
-    expect(outcome.decision.detail).toContain('40 still on hand');
+    expect(outcome.detail).toContain('12 still on hand');
+    // Head office recorded it, and this screen's "carried today" stops listing it without a reload.
+    expect(await listedAtHeadOffice(h)).toEqual(['oil']);
+    expect(s.range()).toEqual(['oil']);
   });
 
-  it('delists cleanly when there is genuinely none left', () => {
-    const outcome = session().drop({ productId: 'oil', reason: 'supplier_discontinued' });
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.decision.outcome).toBe('delisted');
+  it('delists cleanly only when head office holds none', async () => {
+    const h = await headOffice();
+    const outcome = await connected(as(h, 'u-mgr')).drop({ productId: 'oil', reason: 'supplier_discontinued' });
+    expect(outcome).toMatchObject({ ok: true, outcome: 'delisted', status: 'delisted' });
+    expect(await listedAtHeadOffice(h)).toEqual(['rice']);
   });
 
-  it('reads the REAL on-hand, so a screen cannot delist a stocked item by guessing zero', () => {
-    // Zero is the dangerous default here: it turns "route to clearance" into "delete".
-    const outcome = session({ onHand: () => ({}) }).drop({ productId: 'rice', reason: 'poor_sales' });
-    if (!outcome.ok) return;
-    // With the port genuinely empty the item really has none — the point is that the session asks
-    // the port rather than assuming, which the first case above proves.
-    expect(outcome.decision.outcome).toBe('delisted');
-    const stocked = session().drop({ productId: 'rice', reason: 'poor_sales' });
-    if (!stocked.ok) return;
-    expect(stocked.decision.outcome).toBe('routed_to_clearance');
+  it('sends head office the reason and the shop\'s day — never a stock figure, never a name typed on the form', async () => {
+    const h = await headOffice();
+    const sent: { path: string; body: unknown }[] = [];
+    await connected(as(h, 'u-mgr', sent)).drop({ productId: 'oil', reason: 'replaced_by_alternative', replacedByProductId: 'oil-2l', reasonNote: '  bigger pack  ' });
+    expect(sent).toEqual([{ path: '/v1/merchandising/assortment/store-1/oil/drop', body: { reason: 'replaced_by_alternative', effectiveFrom: TODAY, reasonNote: 'bigger pack', replacedByProductId: 'oil-2l' } }]);
   });
 
-  it('refuses to drop something as "replaced" without saying what replaced it', () => {
+  it('refuses to drop something as "replaced" without saying what replaced it — before anything is sent', async () => {
     // Otherwise the customer is simply told no.
-    const outcome = session().drop({ productId: 'oil', reason: 'replaced_by_alternative' });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    const h = await headOffice();
+    const sent: { path: string; body: unknown }[] = [];
+    const outcome = await connected(as(h, 'u-mgr', sent)).drop({ productId: 'oil', reason: 'replaced_by_alternative' });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'refused_here' });
+    if (outcome.ok || outcome.refusal !== 'refused_here') return;
     expect(outcome.detail).toContain('what replaced it');
+    expect(sent).toEqual([]);
   });
 
-  it('records who decided, from the session rather than from the form', () => {
-    const outcome = session().drop({ productId: 'oil', reason: 'poor_margin' });
-    if (!outcome.ok) return;
-    expect(outcome.decision.entry.decidedBy).toBe('u-merch');
-    expect(outcome.decision.entry.effectiveFrom).toBe(TODAY);
+  it('with nobody named at the screen, nothing is sent', async () => {
+    const h = await headOffice();
+    const sent: { path: string; body: unknown }[] = [];
+    const outcome = await connected(as(h, 'u-mgr', sent), {}, { userId: '' }).drop({ productId: 'oil', reason: 'poor_margin' });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'refused_here' });
+    expect(sent).toEqual([]);
+  });
+
+  it('head office\'s refusal comes back in head office\'s own words, and the item stays carried', async () => {
+    const h = await headOffice();
+    const s = connected(as(h, 'u-cash')); // a cashier may not change the range
+    const outcome = await s.drop({ productId: 'oil', reason: 'poor_margin' });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'head_office_refused' });
+    if (outcome.ok || outcome.refusal !== 'head_office_refused') return;
+    expect(outcome.code).toBe('forbidden');
+    expect(outcome.detail).not.toBe('');
+    expect(s.range()).toEqual(['oil', 'rice']);
+    expect(await listedAtHeadOffice(h)).toEqual(['oil', 'rice']);
+  });
+
+  it('no answer from head office claims nothing; no head office at all says so', async () => {
+    const lost: HeadOfficeHttp = { get: async () => ({ result: 'lost_link' }), post: async () => ({ result: 'lost_link' }) };
+    const s = connected(lost);
+    expect(await s.drop({ productId: 'oil', reason: 'poor_margin' })).toEqual({ ok: false, refusal: 'head_office_unreachable' });
+    expect(s.range()).toEqual(['oil', 'rice']);
+    expect(await connected(undefined).drop({ productId: 'oil', reason: 'poor_margin' })).toEqual({ ok: false, refusal: 'not_connected' });
+  });
+
+  it('a yes that does not say what was recorded is not a confirmation', async () => {
+    const vague: HeadOfficeHttp = { get: async () => ({ result: 'lost_link' }), post: async () => ({ result: 'ok', status: 201, body: {} }) };
+    const s = connected(vague);
+    expect(await s.drop({ productId: 'oil', reason: 'poor_margin' })).toMatchObject({ ok: false, refusal: 'head_office_refused', code: 'unreadable_answer' });
+    expect(s.range()).toEqual(['oil', 'rice']);
   });
 
   it('has no function on this surface that deletes a range entry', () => {
