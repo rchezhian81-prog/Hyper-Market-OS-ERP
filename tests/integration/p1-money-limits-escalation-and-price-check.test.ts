@@ -200,6 +200,27 @@ describe.each(backings)('the owner\'s approval rules on $name (OB-290/291/292)',
     expect((await req('POST', '/v1/prices/changes', 'u-cash', price(12_300))).status).toBe(403);
   });
 
+  it('a dated, scoped price-list entry is held to the same set size — no way round OB-291 (M05-FR-01)', async () => {
+    const s = await shop();
+    const { T, req } = s;
+    await s.h().provisionOwner(T, 'u-owner2');
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10); // never before the shop's today
+    const entry = (priceMinor: number, scopeRef = 'store-1') => ({ scope: 'store', scopeRef, priceMinor, mrpMinor: 50_000, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: tomorrow });
+    expect((await req('POST', '/v1/prices/list/P2/entries/e-1', 'u-owner', entry(10_000))).status).toBe(201); // a first price is not a change
+    expect((await req('POST', '/v1/prices/list/P2/entries/e-2', 'u-owner', entry(11_000))).status).toBe(201); // exactly 10%
+    const big = await req('POST', '/v1/prices/list/P2/entries/e-3', 'u-owner', entry(12_200)); // 10.9% of the ₹110 it replaces
+    expect(big.status).toBe(422);
+    expect(codeOf(big)).toBe('price_change_needs_second_person');
+    expect((big.body as { error: { whatHappened: string } }).error.whatHappened).toMatch(/P2 for store store-1 would move from ₹110\.00 to ₹122\.00.*OB-291/);
+    // Another store has its own first price — not a change.
+    expect((await req('POST', '/v1/prices/list/P2/entries/e-4', 'u-owner', entry(12_200, 'store-2'))).status).toBe(201);
+    // A second person's own approval of exactly this entry lets it through, once.
+    const approvalId = await approvedRequestId(s.h(), T, 'u-owner', 'u-owner2', { kind: 'price_list_entry', subjectRef: 'P2/e-3', details: actionDetails(entry(12_200), { productId: 'P2', entryId: 'e-3' }), valueMinor: 12_200 });
+    const ok = await req('POST', '/v1/prices/list/P2/entries/e-3', 'u-owner', { ...entry(12_200), approvalId });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    expect(ok.body).toMatchObject({ approvedBy: 'u-owner2' });
+  });
+
   it('a decision relayed from the store above the decider\'s limit is recorded, flagged and not applied', async () => {
     const s = await shop();
     const { T } = s;

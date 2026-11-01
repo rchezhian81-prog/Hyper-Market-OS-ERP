@@ -149,7 +149,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'Your reason (the person who asked will read it)', reasonPlaceholder: 'For example: checked the prices against the supplier\'s letter.',
     approveBtn: 'Approve', rejectBtn: 'Reject',
     kindDataImport: 'Apply a bulk import', kindDataImportRollback: 'Undo a bulk import', kindCategoryDefine: 'Add or change a product category', kindSupplierBank: 'Change where a supplier is paid',
-    kindPriceChange: 'Change a price by more than the set size, or below cost or the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
+    kindPriceChange: 'Change a price by more than the set size, or below cost or the margin floor', kindPriceListEntry: 'Add a price-list entry by more than the set size, or below cost or the margin floor',
     kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
     kindQuotationFloorNotKnown: 'Quote a customer a price on a product whose lowest price is not known (owner only)', // R9-A · OB-532
     kindQuotationFloorNotKnownOwnerQuoted: 'The owner quotes a customer a price on a product whose lowest price is not known (accountant approves)', // R10-A · OB-542
@@ -235,7 +235,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'உங்கள் காரணம் (கேட்டவர் இதைப் படிப்பார்)', reasonPlaceholder: 'உதாரணம்: விநியோகஸ்தரின் கடிதத்துடன் விலைகளைச் சரிபார்த்தேன்.',
     approveBtn: 'அனுமதி', rejectBtn: 'மறு',
     kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindDataImportRollback: 'மொத்த இறக்குமதியைத் திரும்பப் பெறுதல்', kindCategoryDefine: 'பொருள் வகையைச் சேர்த்தல் அல்லது மாற்றுதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
-    kindPriceChange: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலையை மாற்றுதல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
+    kindPriceChange: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலையை மாற்றுதல்', kindPriceListEntry: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே தேதியிட்ட விலைப்பட்டியல் பதிவு',
     kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
     kindQuotationFloorNotKnown: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு வாடிக்கையாளருக்கு விலை மேற்கோள் (உரிமையாளர் மட்டும்)', // R9-A · OB-532
     kindQuotationFloorNotKnownOwnerQuoted: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு உரிமையாளரே வாடிக்கையாளருக்குச் சொன்ன விலை (கணக்காளர் அனுமதிப்பார்)', // R10-A · OB-542

@@ -26,7 +26,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/durable-settings';
 import { AccessControl, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import { resolvePrice, type PriceEntry } from '../../../packages/price-list/src/price-list';
+import { resolvePrice, effectiveInstant, type PriceEntry } from '../../../packages/price-list/src/price-list';
 import { departmentOfCategory, withinDepartmentScope } from '../../../packages/org/src/departments';
 import { limitedSubjectOf, isEscalatingSubject, mayApproveValue, authorityWords, priceChangeSize, type Authority } from '../../../packages/approvals/src/authority-rules';
 import { setupItem, validateSetupAnswer } from '../../../packages/tenant/src/setup';
@@ -80,6 +80,35 @@ export function rulesStoreOf(input: Base): AuthorityRulesStore {
 /** THE port for the PO value limit (handed to procure-to-pay): a person's money authority for a kind, from the server. */
 export function authorityOfAdapter(input: Base): AuthorityOf {
   return authorityOfPort(rulesStoreOf(input));
+}
+
+/** OB-291 in words: undefined when the move is within the owner's set size; else why a second person is needed. */
+function sizeWords(productId: string, where: string, currentMinor: number, priceMinor: number, t: Parameters<typeof priceChangeSize>[2]): string | undefined {
+  const size = priceChangeSize(currentMinor, priceMinor, t);
+  if (!size.needsSecondPerson) return undefined;
+  return `${productId} ${where} would move from ₹${(currentMinor / 100).toFixed(2)} to ₹${(priceMinor / 100).toFixed(2)} — a change of ₹${(size.changeMinor / 100).toFixed(2)} (${(size.changeBps / 100).toFixed(2)}%), more than the ${(t.percentBps / 100).toFixed(2)}% or ₹${(t.amountMinor / 100).toFixed(2)} a single person may make (OB-291).`;
+}
+
+/**
+ * OB-291 at the price-list door (M05-FR-01): a scoped, dated price-list entry is judged against the price it REPLACES — the
+ * entry of the same scope, ref (and batch) in force when it starts (or now, when it starts today) — by the same set size
+ * the governed change route uses. A first price at a scope is not a change (the margin floor still judged it), exactly as
+ * on the change route.
+ */
+export function priceListEntrySize(input: Base) {
+  return async (tenantId: string, productId: string, entry: { readonly scope: PriceEntry['scope']; readonly scopeRef: string; readonly priceMinor: number; readonly effectiveFrom: string; readonly batchId?: string }): Promise<string | undefined> => {
+    const all = await payloads<PriceEntry>(input.store, tenantId, streamName(STREAM.pricing, 'list', productId), 'PriceListEntryPublished');
+    const same = all.filter((e) => e.scope === entry.scope && e.scopeRef === entry.scopeRef);
+    const startsAt = Math.max(effectiveInstant(entry.effectiveFrom), Date.parse(input.now()));
+    const ref = entry.scopeRef;
+    const current = resolvePrice(same, {
+      productId, at: new Date(startsAt).toISOString(), storeId: ref, zoneId: ref, channel: ref, customerId: ref,
+      ...(entry.batchId === undefined ? {} : { batchId: entry.batchId }),
+    });
+    if (current === null) return undefined;
+    const t = (await priceCheckOf(rulesStoreOf(input), tenantId)).value;
+    return sizeWords(productId, `for ${entry.scope} ${ref}`, current.price.minor, entry.priceMinor, t);
+  };
 }
 
 // ── department scope (M02-FR-02) ───────────────────────────────────────────────────────────────────────────────────
@@ -344,10 +373,8 @@ export function p1IdentitySurface(surface: Route[], input: {
       for (const storeId of storeIds) {
         const current = resolvePrice(entries, { productId, at, storeId });
         if (current === null) continue; // a first price is not a change; the margin floor still judged it
-        const size = priceChangeSize(current.price.minor, priceMinor, t);
-        if (size.needsSecondPerson) {
-          return `${productId} at ${storeId} would move from ₹${(current.price.minor / 100).toFixed(2)} to ₹${(priceMinor / 100).toFixed(2)} — a change of ₹${(size.changeMinor / 100).toFixed(2)} (${(size.changeBps / 100).toFixed(2)}%), more than the ${(t.percentBps / 100).toFixed(2)}% or ₹${(t.amountMinor / 100).toFixed(2)} a single person may make (OB-291).`;
-        }
+        const why = sizeWords(productId, `at ${storeId}`, current.price.minor, priceMinor, t);
+        if (why !== undefined) return why;
       }
       return undefined;
     },

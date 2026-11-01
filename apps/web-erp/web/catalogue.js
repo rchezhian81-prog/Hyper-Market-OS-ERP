@@ -448,8 +448,8 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals', 'scale'];
-const TABS = ['items', 'price', 'shelf', 'promo', 'rivals', 'scale'];
+const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals', 'scale', 'pricelist'];
+const TABS = ['items', 'price', 'shelf', 'promo', 'rivals', 'scale', 'pricelist'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
@@ -1574,6 +1574,219 @@ el('rival-record').addEventListener('click', () => busy('rival-record', async ()
   if (said.ok) { el('rival-price').value = ''; el('rival-note').value = ''; }
   await loadRivals();
 }));
+
+// ── M05-FR-01 · D-19 · OB-291 — begin: price lists, zones and channel switches ─────────────────────────────────
+//
+// A thin panel over head office's own routes, through the tested model (`price-lists-session.ts`, attached as
+// `window.priceListSession` / `priceListKit`). A dated price for a store, zone, channel or customer; every price an item has
+// had and which one is in force on a date; the zones; the channel switches and the differences report. Every rule is head
+// office's and every refusal is shown in its own words; a price that needs a second person is ASKED for (kind
+// price_list_entry) and saved only once someone else approved exactly it. Nothing is written on open.
+
+const priceLists = window.priceListSession ?? null;
+const plKit = window.priceListKit ?? null;
+const pw = (key, fill) => (plKit === null ? key : plKit.priceListWords(lang)(key, fill));
+let plEntries = null;
+let plZones = null;
+let plChannel = null;
+let plInForce = undefined;
+let plDiff = null;
+
+function plSay(id, text, ok) { el(id).textContent = text; el(id).dataset.ok = ok ? 'yes' : 'no'; }
+function plLine(text, attrs = {}) {
+  const p = document.createElement('p');
+  p.className = 'lead';
+  p.textContent = text;
+  for (const [k, v] of Object.entries(attrs)) p.dataset[k] = v;
+  return p;
+}
+const plRead = (o) => (o.kind === 'unreachable' ? pw('unreadable') : plKit.priceListOutcomeWords(lang, o).text);
+const plNoun = (scope) => pw({ store: 'nStore', zone: 'nZone', channel: 'nChannel', customer: 'nCustomer' }[scope] ?? 'nStore');
+const plEntryInput = () => ({ productId: el('pl-product').value, scope: el('pl-scope').value, scopeRef: el('pl-ref').value, price: el('pl-price').value, from: el('pl-from').value, to: el('pl-to').value });
+
+function plRefs() {
+  // What "which one" can be, for the chosen scope: this store, the zones on record, the reported channels.
+  const scope = el('pl-scope').value;
+  const values = scope === 'store' ? [priceLists?.storeId ?? ''] : scope === 'zone' ? (plZones?.kind === 'done' ? plKit.zonesOf(plZones.body.stores).map((z) => z.zoneId) : []) : scope === 'channel' ? [...plKit.channels] : [];
+  el('pl-refs').replaceChildren(...values.filter((v) => v !== '').map((v) => { const o = document.createElement('option'); o.value = v; return o; }));
+}
+
+function renderPriceLists() {
+  if (plKit === null) { el('pl-form').hidden = true; el('pl-zone-form').hidden = true; return; }
+  el('tab-pricelist').textContent = pw('tab');
+  for (const [id, k] of [['pl-title', 'h'], ['pl-lead', 'lede'], ['pl-entries-h', 'entriesH'], ['pl-product-label', 'product'], ['pl-show', 'show'],
+    ['pl-in-force-h', 'inForceH'], ['pl-on-label', 'onDay'], ['pl-at-store-label', 'store'], ['pl-at-channel-label', 'channelOpt'], ['pl-at-customer-label', 'customerOpt'], ['pl-check', 'check'],
+    ['pl-set-h', 'setH'], ['pl-scope-label', 'scope'], ['pl-ref-label', 'which'], ['pl-price-label', 'price'], ['pl-from-label', 'from'], ['pl-to-label', 'to'], ['pl-save', 'save'],
+    ['pl-approval-lead', 'needsSecond'], ['pl-why-label', 'why'], ['pl-ask', 'ask'], ['pl-save-approved', 'saveApproved'],
+    ['pl-zones-h', 'zonesH'], ['pl-zones-lead', 'zonesLede'], ['pl-zone-id-label', 'zoneId'], ['pl-zone-store-label', 'zoneStore'], ['pl-zone-save', 'putInZone'],
+    ['pl-channel-h', 'channelH'], ['pl-channel-lead', 'channelLede'], ['pl-switch-reason-label', 'switchReason'],
+    ['pl-diff-h', 'diffH'], ['pl-diff-store-label', 'store'], ['pl-diff-show', 'diffShow']]) el(id).textContent = pw(k);
+  const scope = el('pl-scope');
+  const chosen = scope.value || 'store';
+  scope.replaceChildren(...plKit.scopes.map((s) => { const o = document.createElement('option'); o.value = s; o.textContent = pw(`${s}_s`); return o; }));
+  scope.value = chosen;
+  const channel = el('pl-at-channel');
+  const wanted = channel.value;
+  channel.replaceChildren(...['', ...plKit.channels].map((c) => { const o = document.createElement('option'); o.value = c; o.textContent = c === '' ? '—' : c; return o; }));
+  channel.value = wanted;
+
+  el('pl-form').hidden = priceLists === null || !priceLists.may.set;
+  el('pl-zone-form').hidden = priceLists === null || !priceLists.may.zones;
+  el('pl-switch-reason-field').hidden = priceLists === null || !(priceLists.may.set || priceLists.may.approve);
+  for (const id of ['pl-entries', 'pl-zones', 'pl-switches', 'pl-pending', 'pl-diff']) el(id).replaceChildren();
+  if (priceLists === null) { plSay('pl-status', pw('notConnected'), false); return; }
+  if (!priceLists.may.read) { plSay('pl-status', pw('cannotRead'), false); return; }
+  plSay('pl-status', priceLists.may.set ? '' : pw('readOnly'), true);
+  plRefs();
+
+  if (plEntries !== null) {
+    if (plEntries.kind !== 'done') plSay('pl-entries-status', plRead(plEntries), false);
+    else {
+      plSay('pl-entries-status', plEntries.body.entries.length === 0 ? pw('noEntries') : '', true);
+      el('pl-entries').append(...plEntries.body.entries.map((e) => plLine(plKit.entryWords(lang, e), { entry: e.id })));
+    }
+  }
+  if (plInForce !== undefined) plSay('pl-in-force', plInForce.kind === 'done' ? plKit.inForceWords(lang, plInForce.body) : plRead(plInForce), plInForce.kind === 'done');
+
+  if (plZones !== null) {
+    if (plZones.kind !== 'done') plSay('pl-zones-status', plRead(plZones), false);
+    else {
+      const zones = plKit.zonesOf(plZones.body.stores);
+      plSay('pl-zones-status', zones.length === 0 ? pw('noZones') : priceLists.may.zones ? '' : pw('zonesReadOnly'), true);
+      el('pl-zones').append(...zones.map((z) => plLine(pw('zoneLine', { zone: z.zoneId, stores: z.storeIds.join(', ') }), { zone: z.zoneId })));
+    }
+  }
+
+  if (plChannel !== null) {
+    if (plChannel.kind !== 'done') plSay('pl-same', plRead(plChannel), false);
+    else {
+      const view = plChannel.body;
+      plSay('pl-same', view.samePriceEverywhere ? pw('samePrice') : pw('notSamePrice'), true);
+      for (const sw of view.switches) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.dataset.switch = sw.subject;
+        row.append(plLine(`${plKit.switchSubjectWords(lang, sw.subject)}: ${pw(sw.state === 'on' ? 'switchOn' : 'switchOff')}`));
+        if (priceLists.may.set) {
+          const to = sw.state === 'on' ? 'off' : 'on';
+          if (!(to === 'on' && view.pending.some((r) => r.subject === sw.subject))) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.dataset.ask = `${sw.subject}:${to}`;
+            b.textContent = pw(to === 'on' ? 'askOn' : 'turnOff');
+            b.addEventListener('click', async () => {
+              b.disabled = true;
+              const out = await priceLists.askSwitch(sw.subject, to, el('pl-switch-reason').value);
+              const said = plKit.priceListOutcomeWords(lang, out, to === 'on' ? pw('askedOn') : pw('turnedOff'));
+              plSay('pl-switch-status', said.text, said.ok);
+              if (out.kind === 'invalid') { b.disabled = false; el('pl-switch-reason').focus(); return; }
+              if (said.ok) el('pl-switch-reason').value = '';
+              await loadPriceLists();
+            });
+            row.append(b);
+          }
+        }
+        el('pl-switches').append(row);
+      }
+      if (view.pending.length === 0) el('pl-pending').append(plLine(pw('noPending')));
+      for (const r of view.pending) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.dataset.pending = r.requestId;
+        row.append(plLine(pw('pendingLine', { subject: plKit.switchSubjectWords(lang, r.subject), who: r.requestedBy, reason: r.reason })));
+        // The person who asked never approves their own (§28) — head office refuses it too; the screen does not offer it.
+        if (r.requestedBy === priceLists.userId) row.append(plLine(pw('yours')));
+        else if (priceLists.may.approve) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.approve = r.requestId;
+          b.textContent = pw('approve');
+          b.addEventListener('click', async () => {
+            b.disabled = true;
+            const out = await priceLists.approveSwitch(r.requestId, el('pl-switch-reason').value);
+            const said = plKit.priceListOutcomeWords(lang, out, pw('approved'));
+            plSay('pl-switch-status', said.text, said.ok);
+            if (out.kind === 'invalid') { b.disabled = false; el('pl-switch-reason').focus(); return; }
+            await loadPriceLists();
+          });
+          row.append(b);
+        }
+        el('pl-pending').append(row);
+      }
+    }
+  }
+
+  if (plDiff !== null) {
+    if (plDiff.kind !== 'done') plSay('pl-diff-status', plRead(plDiff), false);
+    else {
+      const r = plDiff.body;
+      plSay('pl-diff-status', r.differences.length === 0 ? pw('noDiff') : '', true);
+      el('pl-diff').append(
+        ...r.differences.map((d) => plLine(pw('diffLine', { product: d.productId, channel: d.channel, channelPrice: plKit.rupees(d.channelPriceMinor), shelfPrice: d.shelfPriceMinor === null ? '—' : plKit.rupees(d.shelfPriceMinor) }))),
+        ...r.dormantEntries.map((d) => plLine(pw('dormantLine', { product: d.productId, scope: plNoun(d.scope), ref: d.scopeRef, price: plKit.rupees(d.priceMinor) }))),
+      );
+    }
+  }
+}
+
+async function loadPriceLists() {
+  if (priceLists === null || !priceLists.may.read) { renderPriceLists(); return; }
+  [plZones, plChannel] = await Promise.all([priceLists.zones(), priceLists.channelPricing()]);
+  renderPriceLists();
+}
+
+async function loadEntries() {
+  plEntries = await priceLists.history(el('pl-product').value);
+  renderPriceLists();
+}
+
+el('tab-pricelist').addEventListener('click', () => { void loadPriceLists(); });
+el('pl-scope').addEventListener('change', () => { if (plKit !== null) plRefs(); });
+el('pl-show').addEventListener('click', () => busy('pl-show', loadEntries));
+el('pl-check').addEventListener('click', () => busy('pl-check', async () => {
+  plInForce = await priceLists.inForce(el('pl-product').value, { on: el('pl-on').value, storeId: el('pl-at-store').value, channel: el('pl-at-channel').value, customerId: el('pl-at-customer').value });
+  renderPriceLists();
+}));
+el('pl-save').addEventListener('click', () => busy('pl-save', async () => {
+  const out = await priceLists.setEntry(plEntryInput());
+  const said = plKit.priceListOutcomeWords(lang, out, out.kind === 'done' ? pw('saved', { price: plKit.rupees(out.body.priceMinor), scope: plNoun(out.body.scope), ref: out.body.scopeRef, from: out.body.effectiveFrom }) : '');
+  plSay('pl-save-status', said.text, said.ok);
+  // Below cost / floor, or more than the set size: the second person's way, never a shortcut.
+  el('pl-approval').hidden = !plKit.needsSecondPerson(out);
+  if (out.kind === 'done') { el('pl-price').value = ''; await loadEntries(); }
+}));
+el('pl-ask').addEventListener('click', () => busy('pl-ask', async () => {
+  const out = await priceLists.askEntryApproval(lang, plEntryInput(), el('pl-why').value);
+  plSay('pl-save-status', session.presentAskOutcome(lang, 'price', out).label, out.kind === 'asked');
+}));
+el('pl-save-approved').addEventListener('click', () => busy('pl-save-approved', async () => {
+  const input = plEntryInput();
+  const out = await priceLists.saveEntryWithApproval(lang, input);
+  plSay('pl-save-status', session.presentUseOutcome(lang, 'price', out, plKit.rupees(plKit.paiseOf(input.price) ?? 0)).label, out.kind === 'done');
+  if (out.kind === 'done') { el('pl-approval').hidden = true; el('pl-why').value = ''; await loadEntries(); }
+}));
+el('pl-zone-save').addEventListener('click', () => busy('pl-zone-save', async () => {
+  const zoneId = el('pl-zone-id').value.trim(); const storeId = el('pl-zone-store').value.trim();
+  const out = await priceLists.putStoreInZone(zoneId, storeId);
+  const said = plKit.priceListOutcomeWords(lang, out, pw('zoneSaved', { store: storeId, zone: zoneId }));
+  plSay('pl-zone-save-status', said.text, said.ok);
+  await loadPriceLists();
+}));
+el('pl-diff-show').addEventListener('click', () => busy('pl-diff-show', async () => {
+  plDiff = await priceLists.differences(el('pl-diff-store').value);
+  renderPriceLists();
+}));
+// The language button: re-say everything once the page has switched language — it sets <html lang>, so that change is
+// the signal (the page's own click handler runs after any listener added here).
+new MutationObserver(() => renderPriceLists()).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+{
+  const here = priceLists?.storeId ?? '';
+  el('pl-on').value = today(); el('pl-from').value = today();
+  el('pl-at-store').value = here; el('pl-diff-store').value = here; el('pl-ref').value = here;
+  renderPriceLists();
+  if (new URLSearchParams(window.location.search).get('tab') === 'pricelist') void loadPriceLists();
+}
+// ── M05-FR-01 — end
 
 // ── Language ────────────────────────────────────────────────────────────────
 

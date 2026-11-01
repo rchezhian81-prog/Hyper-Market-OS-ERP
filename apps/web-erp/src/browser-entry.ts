@@ -87,6 +87,7 @@ import { createCashierProductView, NAME_PRICE_BARCODE, type CashierProductView }
 import { createMonthCloseSession, MONTH_CLOSE_PERMISSION, type MonthClosePorts, type MonthCloseSession } from './month-close-session';
 import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
 import { createScaleRulesSession, scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, SCALE_VALUE_KINDS, type ScaleRulesSession } from './scale-label-rules-session';
+import { createPriceListSession, figuresFromPageData, priceListWords, priceListOutcomeWords, needsSecondPerson, entryWords, inForceWords, zonesOf, switchSubjectWords, rupeesOf as priceListRupees, paiseOf as priceListPaise, PRICE_SCOPES, PRICE_CHANNELS, type PriceListSession } from './price-lists-session'; // M05-FR-01
 import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
@@ -1354,6 +1355,8 @@ export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sa
 export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
 /** OB-570 "A": the scale-label rules panel's words and readings (tested in `scale-label-rules-session.ts`). */
 export const SCALE_RULES_KIT = Object.freeze({ scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, kinds: SCALE_VALUE_KINDS });
+/** M05-FR-01: the Price lists panel's words and readings (tested in `price-lists-session.ts`). */
+export const PRICE_LISTS_KIT = Object.freeze({ priceListWords, priceListOutcomeWords, needsSecondPerson, entryWords, inForceWords, zonesOf, switchSubjectWords, rupees: priceListRupees, paiseOf: priceListPaise, scopes: PRICE_SCOPES, channels: PRICE_CHANNELS });
 
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -5304,6 +5307,9 @@ interface ManagerWindow {
   competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
   scaleRulesSession?: ScaleRulesSession;
   scaleRulesKit?: typeof SCALE_RULES_KIT;
+  /** M05-FR-01: the Price lists panel on the catalogue page, over head office's own price-list, zone and channel routes. */
+  priceListSession?: PriceListSession;
+  priceListKit?: typeof PRICE_LISTS_KIT;
   /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
   supplierBillsData?: ViewerIdentity;
   supplierBillsSession?: SupplierBillsSession;
@@ -7340,6 +7346,15 @@ if (browserWindow !== undefined) {
   if (cat !== undefined) browserWindow.scaleRulesKit = SCALE_RULES_KIT;
   if (cat !== undefined && Array.isArray(cat.permissions)) {
     browserWindow.scaleRulesSession = createScaleRulesSession({ permissions: cat.permissions }, browserCompetitorHttp());
+  }
+  // M05-FR-01: the Price lists panel — the same rule: only where head office told the page who is looking. The MRP, cost and
+  // floor an entry is judged by are the page's own (the ones "Change a price" sends); a second person goes through the
+  // same approval engine (kind price_list_entry).
+  if (cat !== undefined) browserWindow.priceListKit = PRICE_LISTS_KIT;
+  if (cat !== undefined && Array.isArray(cat.permissions)) {
+    browserWindow.priceListSession = createPriceListSession({
+      permissions: cat.permissions, ...(cat.userId === undefined ? {} : { userId: cat.userId }), ...(cat.storeId === undefined ? {} : { storeId: cat.storeId }),
+    }, browserCompetitorHttp(), figuresFromPageData(cat), CATALOGUE_APPROVALS);
   }
   // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
   // no session (the page says so and offers nothing).

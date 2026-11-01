@@ -355,7 +355,7 @@ import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting
 import { customerFollowupsRoutes } from './customer-followups-adapters'; // OB-288 customer & delivery follow-ups — referrals (OB-351), scan-and-go (OB-350)
 import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
 import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
-import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
+import { p1IdentitySurface, approvalAgeSweep, priceListEntrySize } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
 import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
@@ -853,7 +853,10 @@ export function buildSurface(deps: {
       }),
     ...calendared(priceListRoutes)(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
-      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */ }),
+      : {
+        ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */,
+        entryNeedsSecondPerson: priceListEntrySize({ store, now, settings }), // OB-291: the change route's set size, at this door too
+      }),
     // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
     ...(store === undefined ? [] : competitorPriceRoutes({
       now, ...competitorPriceAdapter({ store, now }),

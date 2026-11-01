@@ -172,6 +172,7 @@
       <button id="tab-promo" type="button">Offer</button>
       <button id="tab-rivals" type="button">Competitor prices</button>
       <button id="tab-scale" type="button">Scale label rules</button>
+      <button id="tab-pricelist" type="button">Price lists</button>
     </nav>
 
     <main>
@@ -588,6 +589,135 @@
           <p class="lead" id="scale-save-status" role="status" aria-live="polite"></p>
         </div>
         <p class="lead" id="scale-note">A change reaches the tills with the next price update.</p>
+      </section>
+      <!-- M05-FR-01 · D-19 (OB-148/OB-190) · OB-291: dated prices for a store, zone, channel or customer; the price zones; the
+           channel switches — over head office's own routes (/v1/prices/list/*, /v1/prices/zones*, /v1/prices/channel-pricing*,
+           /v1/prices/channel-differences) through the tested model apps/web-erp/src/price-lists-session.ts. Head office keeps
+           every rule: above MRP refused; below cost / floor or more than the set size needs a second person's own approval. -->
+      <section id="view-pricelist" hidden>
+        <h2 id="pl-title">Price lists</h2>
+        <p class="lead" id="pl-lead">A price for one store, a price zone, a channel or a customer, from a date you choose.</p>
+        <p class="lead" id="pl-status" role="status" aria-live="polite"></p>
+
+        <h3 id="pl-entries-h">Every price this item has had</h3>
+        <div class="two">
+          <div class="field">
+            <label for="pl-product" id="pl-product-label">Item code</label>
+            <input id="pl-product" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <button id="pl-show" type="button" class="wide">Show its prices</button>
+          </div>
+        </div>
+        <div id="pl-entries"></div>
+        <p class="lead" id="pl-entries-status" role="status" aria-live="polite"></p>
+
+        <h3 id="pl-in-force-h">Which price is in force on a date</h3>
+        <div class="two">
+          <div class="field">
+            <label for="pl-on" id="pl-on-label">On</label>
+            <input id="pl-on" type="date" />
+          </div>
+          <div class="field">
+            <label for="pl-at-store" id="pl-at-store-label">At store</label>
+            <input id="pl-at-store" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <div class="two">
+          <div class="field">
+            <label for="pl-at-channel" id="pl-at-channel-label">Channel (optional)</label>
+            <select id="pl-at-channel"></select>
+          </div>
+          <div class="field">
+            <label for="pl-at-customer" id="pl-at-customer-label">Customer (optional)</label>
+            <input id="pl-at-customer" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <button id="pl-check" type="button" class="wide">Check</button>
+        <p class="lead" id="pl-in-force" role="status" aria-live="polite"></p>
+
+        <div id="pl-form" hidden>
+          <h3 id="pl-set-h">Set a dated price</h3>
+          <div class="two">
+            <div class="field">
+              <label for="pl-scope" id="pl-scope-label">Applies to</label>
+              <select id="pl-scope"></select>
+            </div>
+            <div class="field">
+              <label for="pl-ref" id="pl-ref-label">Which one</label>
+              <input id="pl-ref" type="text" autocomplete="off" list="pl-refs" />
+              <datalist id="pl-refs"></datalist>
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="pl-price" id="pl-price-label">Price (in rupees)</label>
+              <input id="pl-price" type="text" inputmode="decimal" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="pl-from" id="pl-from-label">From</label>
+              <input id="pl-from" type="date" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="pl-to" id="pl-to-label">Last day (optional)</label>
+            <input id="pl-to" type="date" />
+          </div>
+          <button id="pl-save" class="primary wide" type="button">Save this price at head office</button>
+          <p class="lead" id="pl-save-status" role="status" aria-live="polite"></p>
+          <div class="approval" id="pl-approval" hidden>
+            <p class="lead" id="pl-approval-lead">This price needs a second person.</p>
+            <div class="field">
+              <label for="pl-why" id="pl-why-label">Why this is needed (the person approving reads it)</label>
+              <textarea id="pl-why" maxlength="300"></textarea>
+            </div>
+            <button id="pl-ask" class="primary wide" type="button">Ask for approval</button>
+            <button id="pl-save-approved" class="wide" type="button">Save the approved price</button>
+          </div>
+        </div>
+
+        <h3 id="pl-zones-h">Price zones</h3>
+        <p class="lead" id="pl-zones-lead">A zone is a group of stores that share one zone price.</p>
+        <div id="pl-zones"></div>
+        <p class="lead" id="pl-zones-status" role="status" aria-live="polite"></p>
+        <div id="pl-zone-form" hidden>
+          <div class="two">
+            <div class="field">
+              <label for="pl-zone-id" id="pl-zone-id-label">Zone</label>
+              <input id="pl-zone-id" type="text" autocomplete="off" maxlength="40" />
+            </div>
+            <div class="field">
+              <label for="pl-zone-store" id="pl-zone-store-label">Store</label>
+              <input id="pl-zone-store" type="text" autocomplete="off" maxlength="40" />
+            </div>
+          </div>
+          <button id="pl-zone-save" class="wide" type="button">Put this store in this zone</button>
+          <p class="lead" id="pl-zone-save-status" role="status" aria-live="polite"></p>
+        </div>
+
+        <h3 id="pl-channel-h">Channel prices (app, delivery, zones)</h3>
+        <p class="lead" id="pl-channel-lead">Switched off, the till, the app and delivery all charge the same shelf price.</p>
+        <p class="lead" id="pl-same" role="status" aria-live="polite"></p>
+        <div id="pl-switches"></div>
+        <div class="field" id="pl-switch-reason-field">
+          <label for="pl-switch-reason" id="pl-switch-reason-label">Why (needed)</label>
+          <input id="pl-switch-reason" type="text" autocomplete="off" maxlength="200" />
+        </div>
+        <div id="pl-pending"></div>
+        <p class="lead" id="pl-switch-status" role="status" aria-live="polite"></p>
+
+        <h3 id="pl-diff-h">Prices that differ from the shelf</h3>
+        <div class="two">
+          <div class="field">
+            <label for="pl-diff-store" id="pl-diff-store-label">At store</label>
+            <input id="pl-diff-store" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <button id="pl-diff-show" type="button" class="wide">Show the differences at this store</button>
+          </div>
+        </div>
+        <div id="pl-diff"></div>
+        <p class="lead" id="pl-diff-status" role="status" aria-live="polite"></p>
       </section>
     </main>
 
