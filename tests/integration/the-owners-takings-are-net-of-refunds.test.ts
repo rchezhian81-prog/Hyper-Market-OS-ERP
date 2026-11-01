@@ -80,7 +80,7 @@ describe("the owner's takings count today's refunds", () => {
 
     const after = await ownerBrief(edge);
     // The box tells the owner app today's refunds, counted by the day book's rule …
-    expect(after.data.branches[0]!.refunds).toEqual({ count: 1, refundedMinor: 3_500, tenderMix: { cash: 3_500 } });
+    expect(after.data.branches[0]!.refunds).toEqual({ count: 1, refundedMinor: 3_500, tenderMix: { cash: 3_500 }, lines: [{ id: 'RT-1', amountMinor: 3_500, tender: 'cash' }] }); // OB-640: each refund listed for the drill
     // … and the takings are the day's after them: ₹96 − ₹35 = ₹61, in cash; the bill count is still one bill.
     expect(after.brief.takings).toMatchObject({ bills: 1, takenMinor: 6_100, refunds: 1, refundedMinor: 3_500 });
     expect(after.brief.takings.tenderMix['cash']).toBe(6_100);

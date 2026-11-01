@@ -21,6 +21,7 @@
 // keystore) supplies it instead of this.
 
 import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-607
+import { attachCharts } from '../../../packages/ui/src/charts'; // UI-3: the one chart drawing (inline SVG, no network)
 import { buildBrief } from './brief';
 import {
   APPROVE_REASONS,
@@ -221,3 +222,7 @@ export { buildBrief };
 // OB-607: this page's shop's day as `window.sreShopDay` — the dates AND times of day it shows are the shop's clock, in the
 // zone the store computer served from its signed pack (`window.shopTimeZone`; no network call), never this device's.
 attachShopDay((globalThis as { window?: unknown }).window);
+
+// UI-3: the one chart drawing as `window.sreCharts` (design system §4.3) — inside this bundle, which the service worker
+// precaches, so the owner's charts open with no signal like the figures beside them (P-01).
+attachCharts((globalThis as { window?: unknown }).window);

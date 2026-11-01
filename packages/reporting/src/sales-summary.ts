@@ -120,7 +120,7 @@ export function salesSummary(sales: readonly SaleFact[], currency: CurrencyCode 
   const basketCount = sales.length;
   const marginMinor = net - cogs;
   const marginPctBps = net === 0 ? 0 : Math.round((marginMinor * 10_000) / net);
-  const avgBasketMinor = basketCount === 0 ? 0 : Math.round(gross / basketCount);
+  const avgBasketMinor = averageBasketMinor(gross, basketCount) ?? 0;
 
   return {
     currency: ccy,
@@ -136,4 +136,13 @@ export function salesSummary(sales: readonly SaleFact[], currency: CurrencyCode 
     tenderMix,
     tenderBills,
   };
+}
+
+/**
+ * OB-640 (owner, 1 Nov 2026): the average basket is the takings divided by the number of bills — EVERY bill, whether or
+ * not the store computer could cost it — rounded to the paisa. `null` when there is no bill: an average of nothing is
+ * not known, never ₹0.00. The one rule: `salesSummary` and the owner's takings both use it.
+ */
+export function averageBasketMinor(takenMinor: number, bills: number): number | null {
+  return bills === 0 ? null : Math.round(takenMinor / bills);
 }

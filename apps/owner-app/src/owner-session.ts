@@ -63,6 +63,25 @@ export interface BranchPayload {
   readonly uncosted?: BuildBriefInput['uncosted'];
   /** Round B: today's refunds, counted by the store computer by the day book's rule — the takings are net of them. */
   readonly refunds?: BuildBriefInput['refunds'];
+  /**
+   * UI-3: today's bills by the hour they were rung, at the SHOP's clock — money on the bills, before refunds (a refund
+   * is taken off the day, not off an hour). Absent from a store computer that does not send it: then the phone draws
+   * no hourly chart and says it was not sent, rather than drawing one of nothing.
+   */
+  readonly takingsByHour?: readonly HourTakings[];
+  /** UI-3: the last trading days this store computer holds (today included), oldest first — bills before refunds. */
+  readonly recentDays?: readonly DayTakings[];
+}
+
+/** One hour of today's bills: `hour` is the shop's two-digit hour ("09"). */
+export interface HourTakings { readonly hour: string; readonly bills: number; readonly takenMinor: number }
+/** One trading day the store computer holds. */
+export interface DayTakings { readonly tradingDay: string; readonly bills: number; readonly takenMinor: number }
+
+/** The trend figures for the branch in view, exactly as the store computer sent them (`null` = not sent). */
+export interface OwnerTrends {
+  readonly byHour: readonly HourTakings[] | null;
+  readonly recentDays: readonly DayTakings[] | null;
 }
 
 export interface OwnerConfig {
@@ -211,7 +230,10 @@ export interface DrillLine {
   /** The figure this sale contributed to the KPI being drilled, in minor units. */
   readonly contributesMinor: number;
   readonly tender: string;
-  readonly units: number;
+  /** Items on the bill; `null` for a bill the store computer could not read the lines of, and for a refund. */
+  readonly units: number | null;
+  /** OB-640: what the line is — a costed bill, a bill with no cost, or a refund (a refund contributes a negative amount). */
+  readonly kind?: 'bill' | 'uncosted_bill' | 'refund';
 }
 
 export interface Drill {
@@ -225,6 +247,8 @@ export interface Drill {
    * total differs from the figure it drills is a reporting system nobody will trust again.
    */
   readonly totalMinor: number;
+  /** OB-640: bills or refunds the figure counts but the store computer did not list (an older store computer) — said. */
+  readonly unlisted?: number;
   /** For `baskets`, the count is the answer and the total is meaningless — this says which. */
   readonly countIsTheAnswer: boolean;
 }
@@ -246,6 +270,8 @@ export interface OwnerSession {
   viewBranch(branchId: string): boolean;
   /** The brief for the branch in view — deterministic, and it renders with the AI off. */
   brief(): OwnerBrief;
+  /** UI-3: the branch in view's trend figures as sent — nothing worked out here, nothing filled in. */
+  trends(): OwnerTrends;
   /** Every sale behind a figure on the brief (M29-FR-02). */
   drill(kpi: DrillableKpi): Drill;
   /** Decide an approval. Records the freshness of the ground it was decided on. */
@@ -343,22 +369,42 @@ export function createOwnerSession(
 
     brief: () => briefFor(current),
 
+    trends: () => {
+      const payload = payloadFor(current);
+      return { byHour: payload.takingsByHour ?? null, recentDays: payload.recentDays ?? null };
+    },
+
     drill: (kpi) => {
-      const sales = payloadFor(current).sales;
+      const payload = payloadFor(current);
       const contribution = CONTRIBUTION[kpi];
-      const lines = sales
-        .map((sale) => ({
-          saleId: sale.saleId,
-          contributesMinor: contribution(sale),
-          tender: sale.tender,
-          units: sale.units,
-        }))
-        .sort((a, b) => b.contributesMinor - a.contributesMinor);
+      const costed: DrillLine[] = payload.sales.map((sale) => ({
+        saleId: sale.saleId,
+        contributesMinor: contribution(sale),
+        tender: sale.tender,
+        units: sale.units,
+        kind: 'bill' as const,
+      }));
+      // OB-640 (owner, 1 Nov 2026): the takings, the bill count and the average basket are over EVERY bill, so their drill
+      // lists every bill — the ones with no cost too — and "Taken today" takes each refund off, so the drill's total is
+      // the tile's figure. The margin stays over the costed bills only: a bill with no cost has no margin to list.
+      const everyBill = kpi !== 'margin';
+      const uncosted: DrillLine[] = everyBill
+        ? (payload.uncosted?.lines ?? []).map((l) => ({ saleId: l.id, contributesMinor: l.amountMinor, tender: l.tender, units: null, kind: 'uncosted_bill' as const }))
+        : [];
+      const refunds: DrillLine[] = kpi === 'grossSales'
+        ? (payload.refunds?.lines ?? []).map((l) => ({ saleId: l.id, contributesMinor: -l.amountMinor, tender: l.tender, units: null, kind: 'refund' as const }))
+        : [];
+      const lines = [...costed, ...uncosted, ...refunds].sort((a, b) => b.contributesMinor - a.contributesMinor);
+      // A store computer that sent the counts and not the lines: say how many are missing, never let the total look whole.
+      const unlisted = everyBill
+        ? Math.max(0, (payload.uncosted?.bills ?? 0) - uncosted.length) + (kpi === 'grossSales' ? Math.max(0, (payload.refunds?.count ?? 0) - new Set(refunds.map((r) => r.saleId)).size) : 0)
+        : 0;
       return {
         kpi,
         lines,
         totalMinor: lines.reduce((sum, line) => sum + line.contributesMinor, 0),
         countIsTheAnswer: kpi === 'baskets',
+        unlisted,
       };
     },
 

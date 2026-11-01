@@ -12,6 +12,21 @@ const may = session?.may ?? { named: false, read: false, draft: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 let view = null;
+let answeredAt = null;
+// UI-3: the source line and the shared office parts (window.sreOffice, from the chrome — painted again on `sre:chrome`).
+const UI3 = {
+  en: { covers: 'This store · from {from} to {to}{dept} · pairs in at least {min} baskets · head office answered at {time}', dept: ' · department {d}', allDepts: '' },
+  ta: { covers: 'இந்தக் கடை · {from} முதல் {to} வரை{dept} · குறைந்தது {min} கூடைகளில் உள்ள ஜோடிகள் · தலைமை அலுவலகம் பதிலளித்த நேரம் {time}', dept: ' · துறை {d}', allDepts: '' },
+};
+const u3 = (k) => UI3[lang][k] ?? UI3.en[k];
+const office = () => window.sreOffice ?? null;
+function coversLine() {
+  if (view === null) return '';
+  const time = answeredAt === null ? '' : window.sreShopDay?.dateTimeOf(answeredAt) ?? answeredAt;
+  return u3('covers').split('{from}').join(view.from).split('{to}').join(view.to).split('{min}').join(String(view.minBaskets))
+    .split('{dept}').join(view.department === null ? u3('allDepts') : u3('dept').split('{d}').join(view.department)).split('{time}').join(time);
+}
+document.addEventListener('sre:chrome', () => { paint(); });
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 function say(id, out, good) { $(id).className = `status ${good ? 'good' : 'err'}`; $(id).textContent = good ? out : api.outcomeWords(lang, out); }
@@ -32,9 +47,28 @@ function paint() {
   $('show').disabled = !may.read;
   $('pairs-section').hidden = view === null;
   if (view === null) return;
-  $('totals').replaceChildren(...[['counted', view.basketCount], ['returnsTakenOut', view.returnsTakenOut], ['belowMinimum', view.belowMinimum], ['withoutCategory', view.productsWithoutCategory]].map(([k, v]) => {
-    const p = el('div', 'panel'); p.dataset.total = k; p.append(el('span', 'k', t(k)), el('span', 'v', String(v))); return p;
-  }));
+  $('pairs-covers').textContent = coversLine();
+  const totals = [['counted', view.basketCount], ['returnsTakenOut', view.returnsTakenOut], ['belowMinimum', view.belowMinimum], ['withoutCategory', view.productsWithoutCategory]];
+  const o = office();
+  if (o !== null) {
+    // The shared summary cards — each count exactly as head office answered it; a card keeps its `data-total` name.
+    o.cards($('totals'), totals.map(([k, v]) => ({ label: t(k), value: v, icon: k === 'counted' ? 'shopping-basket' : 'list', tone: k !== 'counted' && v > 0 ? 'pending' : undefined })));
+    $('totals').className = '';
+    // The cards keep the plain panels' names (`.panel[data-total] .v`), so anything that reads them still finds them.
+    $('totals').querySelectorAll('.sre-summary-card').forEach((card, i) => {
+      card.dataset.total = totals[i][0]; card.classList.add('panel');
+      card.querySelector('.sre-summary-value')?.classList.add('v');
+    });
+  } else {
+    $('totals').replaceChildren(...totals.map(([k, v]) => {
+      const p = el('div', 'panel'); p.dataset.total = k; p.append(el('span', 'k', t(k)), el('span', 'v', String(v))); return p;
+    }));
+  }
+  if (view.pairs.length === 0 && o !== null) {
+    // No pair is not "nothing goes together": it says the window and the minimum it covered (P-08).
+    const li = el('li'); o.state(li, 'empty', { title: t('noPairs'), detail: coversLine() }); $('pairs').replaceChildren(li);
+    return;
+  }
   $('pairs').replaceChildren(...(view.pairs.length === 0 ? [el('li', 'row', t('noPairs'))] : view.pairs.map((p) => {
     const li = el('li', 'row'); li.dataset.pair = `${p.productA}+${p.productB}`;
     li.append(
@@ -56,7 +90,7 @@ function paint() {
 async function show(event) {
   event?.preventDefault();
   const out = await session.pairs($('from').value, $('to').value, $('min').value, $('department').value);
-  if (out.result === 'ok') { view = out.value; $('page-status').className = 'status'; $('page-status').textContent = ''; } else { view = null; say('page-status', out, false); }
+  if (out.result === 'ok') { view = out.value; answeredAt = new Date().toISOString(); $('page-status').className = 'status'; $('page-status').textContent = ''; } else { view = null; say('page-status', out, false); }
   paint();
 }
 async function draft(pair, percent, startsAt, endsAt) {

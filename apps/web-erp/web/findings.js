@@ -14,14 +14,36 @@ function text(tag, words, cls) { const n = document.createElement(tag); n.textCo
 
 let bills = null; let billsOutcome = null; // head office's last answer, or why there is none
 let marks = null; let marksOutcome = null;
+let billsAt = null; let marksAt = null; // when head office answered (OB-607: shown at the shop's clock)
+// UI-3: the source lines and the shared office parts (window.sreOffice, from the chrome — painted again on `sre:chrome`).
+const UI3 = {
+  en: { sCovers: 'This store · the findings head office holds on its bills · read at {time}', aCovers: 'This store · attendance marks of {day} · read at {time}', marks: 'Marks read', flagged: 'With a flag' },
+  ta: { sCovers: 'இந்தக் கடை · பில்கள் மீது தலைமை அலுவலகத்தில் உள்ள கண்டறிதல்கள் · படித்த நேரம் {time}', aCovers: 'இந்தக் கடை · {day} வருகைப் பதிவுகள் · படித்த நேரம் {time}', marks: 'படித்த பதிவுகள்', flagged: 'எச்சரிக்கை உள்ளவை' },
+};
+const u3 = (k) => UI3[lang][k] ?? UI3.en[k];
+const office = () => window.sreOffice ?? null;
+const shopTime = (at) => (at === null ? '' : window.sreShopDay?.dateTimeOf(at) ?? at);
+/** An empty list that is not an all-clear: the shared "nothing yet" state, saying what it covered (P-08). */
+function emptyItem(title, detail) {
+  const o = office();
+  if (o === null) return text('li', title, 'meta');
+  const li = document.createElement('li'); o.state(li, 'empty', { title, detail }); return li;
+}
+document.addEventListener('sre:chrome', () => { paint(); });
 
 function paintBills() {
-  $('s-rows').replaceChildren(); $('s-counts').textContent = '';
+  $('s-rows').replaceChildren(); $('s-counts').textContent = ''; $('s-covers').textContent = ''; $('s-cards').replaceChildren();
   if (billsOutcome !== null) { $('s-status').textContent = api.outcomeWords(lang, billsOutcome); return; }
   if (bills === null) return;
   $('s-status').textContent = '';
   $('s-counts').textContent = `${bills.critical} · ${bills.material} · ${bills.informational}  (${t('counts')})`;
-  if (bills.findings.length === 0) { $('s-rows').append(text('li', t('salesNone'), 'meta')); return; }
+  $('s-covers').textContent = u3('sCovers').split('{time}').join(shopTime(billsAt));
+  office()?.cards($('s-cards'), [
+    { label: t('critical'), value: bills.critical, tone: bills.critical > 0 ? 'error' : undefined, icon: 'circle-alert' },
+    { label: t('material'), value: bills.material, tone: bills.material > 0 ? 'pending' : undefined, icon: 'triangle-alert' },
+    { label: t('informational'), value: bills.informational, icon: 'circle-help' },
+  ]);
+  if (bills.findings.length === 0) { $('s-rows').append(emptyItem(t('salesNone'), $('s-covers').textContent)); return; }
   $('s-rows').replaceChildren(...bills.findings.map((f) => {
     const li = document.createElement('li');
     li.className = f.severity === 'critical' ? 'tone-error' : 'tone-degraded';
@@ -39,12 +61,17 @@ function paintBills() {
 }
 
 function paintMarks() {
-  $('a-rows').replaceChildren(); $('a-counts').textContent = '';
+  $('a-rows').replaceChildren(); $('a-counts').textContent = ''; $('a-covers').textContent = ''; $('a-cards').replaceChildren();
   if (marksOutcome !== null) { $('a-status').textContent = api.outcomeWords(lang, marksOutcome); return; }
   if (marks === null) return;
   $('a-status').textContent = '';
   $('a-counts').textContent = `${marks.marksRead} ${t('marksRead')} ${marks.flagged.length}`;
-  if (marks.flagged.length === 0) { $('a-rows').append(text('li', t('attNone'), 'meta')); return; }
+  $('a-covers').textContent = u3('aCovers').split('{day}').join(marks.date).split('{time}').join(shopTime(marksAt));
+  office()?.cards($('a-cards'), [
+    { label: u3('marks'), value: marks.marksRead, icon: 'list' },
+    { label: u3('flagged'), value: marks.flagged.length, tone: marks.flagged.length > 0 ? 'pending' : undefined, icon: 'triangle-alert' },
+  ]);
+  if (marks.flagged.length === 0) { $('a-rows').append(emptyItem(t('attNone'), $('a-covers').textContent)); return; }
   $('a-rows').replaceChildren(...marks.flagged.map((m) => {
     const li = document.createElement('li'); li.className = 'tone-degraded';
     li.dataset.mark = m.markId; li.dataset.person = m.employeeId; li.dataset.flags = m.flags.join(' ');
@@ -68,14 +95,14 @@ function paint() {
 async function loadBills() {
   $('s-status').textContent = t('reading');
   const out = await session.bills();
-  if (out.result === 'ok') { bills = out.value; billsOutcome = null; } else { bills = null; billsOutcome = out; }
+  if (out.result === 'ok') { bills = out.value; billsOutcome = null; billsAt = new Date().toISOString(); } else { bills = null; billsOutcome = out; }
   paintBills();
 }
 async function loadMarks(event) {
   event?.preventDefault();
   $('a-status').textContent = t('reading');
   const out = await session.attendance($('a-day').value);
-  if (out.result === 'ok') { marks = out.value; marksOutcome = null; } else { marks = null; marksOutcome = out; }
+  if (out.result === 'ok') { marks = out.value; marksOutcome = null; marksAt = new Date().toISOString(); } else { marks = null; marksOutcome = out; }
   paintMarks();
 }
 

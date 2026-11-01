@@ -89,6 +89,8 @@
       <section aria-labelledby="tot-h">
         <h2 id="tot-h">Company total</h2>
         <div><span class="badge" id="freshness">…</span></div>
+        <!-- UI-3: what this total covers (company, month, view) and when head office answered. -->
+        <p class="lede" id="covers"></p>
         <div class="kpis" id="kpis"></div>
         <p class="flag" id="missing" role="status" aria-live="polite"></p>
         <p class="flag" id="withheld" role="status" aria-live="polite"></p>
@@ -97,7 +99,9 @@
       <section aria-labelledby="drill-h">
         <h2 id="drill-h">By branch</h2>
         <p class="lede" id="drill-lede">Drill from the total to the branches that make it up — worst first.</p>
-        <div class="sre-scroll-x">
+        <!-- UI-3: the branches side by side as a chart (window.sreCharts); the table below holds every figure. -->
+        <div id="branch-chart"></div>
+        <div class="sre-scroll-x" id="rows-register">
         <table>
           <thead>
             <tr><th id="th-branch">Branch</th><th id="th-gross">Gross</th><th id="th-net">Net</th><th id="th-refreshed">Last refreshed</th></tr>
