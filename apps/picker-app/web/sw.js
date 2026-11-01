@@ -25,7 +25,7 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-picker-shell-2daa1d9ed0d0';
+const CACHE = 'sre-picker-shell-944ee9319578';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];

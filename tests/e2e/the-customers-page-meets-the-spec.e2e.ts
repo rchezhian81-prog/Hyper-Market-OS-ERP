@@ -62,7 +62,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Custom
       expect(await page.getAttribute('#customer-rows tr[data-customer="M-bala"]', 'data-segment')).toBe('not_profiled');
       expect(await page.textContent('#customer-rows tr[data-customer="M-bala"]')).toMatch(/not profiled/);
       expect(await page.getAttribute('#customer-rows tr[data-customer="M-anu"]', 'data-profiled')).toBe('true');
-      expect(await page.textContent('#counts .panel[data-segment="not_profiled"] .v')).toBe('1');
+      expect(await page.textContent('#counts [data-segment="not_profiled"] .sre-summary-value')).toBe('1'); // W1: the segment counts are the shared summary cards
 
       // Fewer than two records: refused before anything is sent.
       await page.fill('#candidates', 'M-anu, 9840011111, yes, Anu');

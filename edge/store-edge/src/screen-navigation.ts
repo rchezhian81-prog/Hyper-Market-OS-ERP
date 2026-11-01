@@ -12,7 +12,7 @@
 // row grants nothing) rather than the whole register.
 
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
-import { ERP_NAVIGATION, NAV_GROUP_LABELS, navigationFor, type NavItem } from '../../../apps/web-erp/src/navigation';
+import { ERP_NAVIGATION, NAV_GROUP_LABELS, NAV_SEARCH_WORDS, navigationFor, type NavItem } from '../../../apps/web-erp/src/navigation';
 import type { StorePack } from './store-pack';
 import { myRosterOnBox, foodHandlingForViewer } from './workforce-pack'; // Round 7 · OB-507 · OB-502
 import type { ScreenName } from './screen-data';
@@ -25,9 +25,12 @@ export interface NavigationLink {
   readonly path: string;
   /** True on the one item that opens the screen being served — the chrome marks it `aria-current="page"`. */
   readonly current: boolean;
+  /** W1: plain words that also find this screen in the rail's search (NAV_SEARCH_WORDS), when it has any. */
+  readonly words?: Bilingual;
 }
 
-export interface NavigationGroup { readonly group: Bilingual; readonly items: readonly NavigationLink[] }
+/** `key` is the catalogue's own group key (language-free — the chrome remembers a person's open workspaces by it). */
+export interface NavigationGroup { readonly key: string; readonly group: Bilingual; readonly items: readonly NavigationLink[] }
 
 export interface NavigationPayload {
   /** Who the screen's payload named, or null when it named nobody. */
@@ -182,8 +185,14 @@ export function navigationPayload(input: {
   const person = personOf(userId, input.pack);
   if (!input.pack.roles.known || !input.pack.roleAssignments.known) return { userId, branchId, person, branch, why: 'no_roles', groups: [] };
 
-  const access = new AccessControl(rolesFrom(input.pack.roles.value), assignmentsFrom(input.pack.roleAssignments.value));
-  const groups = navigationFor(access, { userId, branchId }, boxServedItems(input.catalogue ?? ERP_NAVIGATION));
+  const assignments = assignmentsFrom(input.pack.roleAssignments.value);
+  const access = new AccessControl(rolesFrom(input.pack.roles.value), assignments);
+  // W1: the roles this person holds on this branch choose their "daily work" group — what they may open stays the
+  // permission check alone.
+  const roleIds = assignments
+    .filter((a) => a.userId === userId && (a.branchScope === 'all' || (branchId !== null && a.branchScope.includes(branchId))))
+    .map((a) => a.roleId);
+  const groups = navigationFor(access, { userId, branchId, roleIds }, boxServedItems(input.catalogue ?? ERP_NAVIGATION));
   return {
     userId,
     branchId,
@@ -191,12 +200,14 @@ export function navigationPayload(input: {
     branch,
     why: null,
     groups: groups.map((g) => ({
+      key: g.group,
       group: NAV_GROUP_LABELS[g.group] ?? { en: g.group, ta: g.group },
       items: g.items.map((item) => ({
         id: item.id,
         label: { en: item.label, ta: item.labelTa },
         path: item.path,
         current: input.screenOf(item.path) === input.screen,
+        ...(NAV_SEARCH_WORDS[item.id] === undefined ? {} : { words: NAV_SEARCH_WORDS[item.id]! }),
       })),
     })),
   };

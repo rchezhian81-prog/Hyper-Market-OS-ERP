@@ -546,3 +546,98 @@ body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sh
 .lang.sre-lang:hover { background: var(--hover); border-color: var(--line-strong); }
 .lang.sre-lang .sre-icon { width: 18px; height: 18px; color: var(--muted); }
 .stale > .sre-icon, .sre-update > span > .sre-icon { width: 20px; height: 20px; margin-right: 8px; }
+
+/* ── W1 (owner, 1 Nov 2026 · P-07 · P-08): the rail you can find things in, and the office page components ──────────
+   The rail: every workspace heading is a button that shows or hides its screens (a chevron drawn in CSS, not an icon,
+   so a heading is still words alone); pinned and recent screens sit above the workspaces; the top line carries a
+   "Pin this page" button and says how many screens the search found. */
+.sre-menu .group-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: var(--tap); margin: 0; padding: 0 8px 0 0; border: 0; border-radius: var(--radius); background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: left; cursor: pointer; }
+.sre-menu .group-toggle:hover { color: var(--on-rail); }
+.sre-menu .group-toggle::after { content: ""; flex: none; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--dur-fast) var(--ease-out); }
+.sre-menu .group-toggle[aria-expanded="true"]::after { transform: rotate(45deg); }
+.sre-menu .group:has(> .group-toggle) { padding-top: 6px; padding-bottom: 0; }
+.sre-menu .group-section[data-key="Daily"] { margin: 4px 0 6px; padding: 0 0 6px; border-bottom: 1px solid var(--rail-line); }
+.sre-menu .sre-quick { margin: 0 0 4px; }
+.sre-menu ul[hidden] { display: none; }
+.sre-pin { font-size: 15px; }
+.sre-pin[hidden], .sre-find-count:empty { display: none; }
+.sre-pin[aria-pressed="true"] { outline: 0; color: var(--accent); }
+.sre-find-count { color: var(--muted); font-size: 14px; }
+
+/* Summary cards: a figure, its label and its note — "Not known" when the page does not have it, never a nought. */
+.sre-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); }
+.sre-summary-card { display: grid; gap: 4px; align-content: start; min-height: 88px; padding: var(--space-4); background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs); color: var(--ink); text-decoration: none; }
+a.sre-summary-card:hover { background: var(--hover); box-shadow: var(--shadow-sm); }
+.sre-summary-card[data-tone="ok"] { border-left-color: var(--ok); }
+.sre-summary-card[data-tone="pending"], .sre-summary-card[data-tone="degraded"] { border-left-color: var(--degraded); }
+.sre-summary-card[data-tone="error"] { border-left-color: var(--error); }
+.sre-summary-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; font-weight: 600; }
+.sre-summary-label > .sre-icon { width: 18px; height: 18px; }
+.sre-summary-value { font-size: var(--fs-xl); font-weight: 700; line-height: var(--leading-tight); font-variant-numeric: var(--numbers); }
+.sre-summary-value.sre-unknown { font-size: var(--fs-md); }
+.sre-summary-note { color: var(--muted); font-size: 14px; }
+
+/* The register (data table): a tool row (search, filters, the column choice), the table, then "Showing 1–10 of 24" and
+   the pager. Every control is at least the tap height; the table scrolls inside its own box, never the page. */
+.sre-datatable { display: grid; gap: var(--space-3); min-width: 0; }
+.sre-datatable-tools { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
+.sre-datatable-search { position: relative; display: inline-flex; align-items: center; flex: 1 1 240px; max-width: 420px; color: var(--muted); }
+.sre-datatable-search > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
+.sre-datatable-search > .sre-input { width: 100%; padding-left: 40px; }
+.sre-datatable-filter { display: grid; gap: 4px; font-size: 14px; color: var(--muted); font-weight: 600; }
+.sre-datatable-columns { position: relative; }
+.sre-datatable-columns > summary { list-style: none; cursor: pointer; }
+.sre-datatable-columns > summary::-webkit-details-marker { display: none; }
+.sre-datatable-columns > fieldset { position: absolute; right: 0; z-index: 5; display: grid; gap: 2px; min-width: 220px; margin: 6px 0 0; padding: var(--space-3); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.sre-datatable-columns legend { padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.sre-datatable-columns label.sre-check { display: flex; align-items: center; gap: 8px; width: auto; height: auto; min-height: var(--tap); font-size: 15px; color: var(--ink); }
+.sre-datatable-columns label.sre-check > input { width: 20px; height: 20px; accent-color: var(--accent); }
+.sre-register th.sre-end, .sre-register td.sre-end { text-align: right; }
+.sre-register td.sre-unknown { color: var(--degraded); font-weight: 600; }
+.sre-sort { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); margin: -10px -12px; padding: 0 12px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.sre-sort::after { content: "↕"; color: var(--muted); font-size: 14px; }
+th[aria-sort="ascending"] > .sre-sort::after { content: "↑"; color: var(--accent); }
+th[aria-sort="descending"] > .sre-sort::after { content: "↓"; color: var(--accent); }
+.sre-sort:hover { color: var(--ink); }
+.sre-row-open { min-height: 44px; font-size: 15px; }
+.sre-datatable-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.sre-datatable-count { margin: 0; color: var(--muted); font-size: 14px; }
+.sre-pager { display: flex; align-items: center; gap: var(--space-2); }
+.sre-pager .sre-btn { font-size: 15px; }
+.sre-pager-where { color: var(--muted); font-size: 14px; }
+
+/* The states (loading · nothing yet · no match · error · offline · denied): the words first, a way on when there is one. */
+.sre-state { border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); background: var(--panel); }
+.sre-state[data-state="error"], .sre-state[data-state="offline"] { border-style: solid; border-color: var(--error); color: var(--danger-text); }
+.sre-state[data-state="error"] > strong, .sre-state[data-state="offline"] > strong { color: var(--danger-text); }
+.sre-state-detail { max-width: 60ch; }
+
+/* Form fields: the label is the field's name, "(required)" is said in words, a hint under it, the message beside it. */
+.sre-field { display: grid; gap: 6px; min-width: 0; }
+.sre-field-label { font-size: 15px; font-weight: 600; color: var(--ink); }
+.sre-req { color: var(--danger-text); font-weight: 600; }
+.sre-field-hint { color: var(--muted); font-size: 14px; }
+.sre-field-msg { color: var(--danger-text); font-size: 14px; font-weight: 600; }
+.sre-field-msg[hidden] { display: none; }
+.sre-field > .sre-input, .sre-field > .sre-select { width: 100%; }
+.sre-field > textarea.sre-input { min-height: 96px; padding: 10px 14px; }
+.sre-field > [aria-invalid="true"] { border-color: var(--error); box-shadow: 0 0 0 1px var(--error); }
+
+/* The record drawer: one record from a register, at the right of a desk, the whole screen on a phone. */
+.sre-drawer { position: fixed; inset: 0 0 0 auto; z-index: 30; width: min(560px, 100vw); display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); }
+body.sre-shell .sre-drawer { animation: sre-drawer-in var(--dur-slow) var(--ease-out) both; }
+.sre-drawer[hidden] { display: none; }
+.sre-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line); }
+.sre-drawer-head h2 { margin: 0; font-size: var(--fs-lg); }
+.sre-drawer-body { flex: 1; overflow: auto; padding: var(--space-5); display: grid; gap: var(--space-4); align-content: start; }
+@keyframes sre-drawer-in { from { transform: translateX(16px); } to { transform: none; } }
+.sre-facts { margin: 0; display: grid; gap: 0; }
+.sre-facts > div { display: grid; grid-template-columns: minmax(120px, 40%) 1fr; gap: var(--space-3); padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.sre-facts > div:first-child { border-top: 0; }
+.sre-facts dt { color: var(--muted); font-size: 14px; font-weight: 600; }
+.sre-facts dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Office pages (W1 accessibility basics): the focus ring is always seen; no page scrolls sideways at a desk or tablet. */
+body.sre-shell .sre-page { min-width: 0; }
+body.sre-shell main { min-width: 0; max-width: 100%; }
+body.sre-shell main :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }

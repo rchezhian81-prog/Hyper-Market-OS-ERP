@@ -26,7 +26,29 @@ function status(id, out, good) {
 function note(id, text, cls = '') { const el = $(id); el.className = `status ${cls}`; el.textContent = text; }
 const period = () => $('period').value;
 const node = (tag, props = {}, ...kids) => { const n = document.createElement(tag); Object.assign(n, props); n.append(...kids); return n; };
-const tile = (value, label, id) => { const t = node('div', { className: 'tile' }, node('b', { textContent: value }), node('small', { textContent: label })); if (id) t.dataset.tile = id; return t; };
+// W1: a figure is the shared summary card — its label, then the figure as head office gave it (never a made-up nought)
+const tile = (value, label, id) => { const t = node('div', { className: 'tile sre-summary-card' }, node('small', { className: 'sre-summary-label', textContent: label }), node('b', { className: 'sre-summary-value', textContent: value })); if (id) t.dataset.tile = id; return t; };
+
+// ── W1: the shared states for a list (window.sreOffice): reading · nothing yet · could not be read · not your role ──
+// An empty list here was READ from head office — it says what is (not) there and that it is not a check of the month.
+const W1 = {
+  en: { emptyDetail: 'Read from head office just now. An empty list means there is nothing here to act on — it is not a check that the month is right.' },
+  ta: { emptyDetail: 'இப்போதுதான் தலைமை அலுவலகத்திலிருந்து படிக்கப்பட்டது. காலியான பட்டியல் என்றால் இங்கு செய்ய எதுவும் இல்லை — மாதம் சரி என்ற சோதனை அல்ல.' },
+};
+const office = () => window.sreOffice ?? null;
+/** Put a state into a list as one item: `kind` is the shared state's name; `title` the page's own words for it. */
+function listState(list, kind, title, detail) {
+  const o = office();
+  const li = node('li', { className: `empty empty-state` });
+  if (o) li.append(o.state(null, kind, { title, ...(detail === undefined ? {} : { detail }) })); else li.textContent = title;
+  list.replaceChildren(li);
+}
+/** The state for an answer that is not `done`, in the page's own words from head office's answer. */
+function listStateFor(list, r) {
+  const kind = r.kind === 'unreachable' ? 'offline' : r.kind === 'not_allowed' || (r.kind === 'refused' && (r.status === 401 || r.status === 403)) ? 'denied' : 'error';
+  listState(list, kind, kit.sayOutcome(lang, r, '').text);
+}
+document.addEventListener('sre:chrome', () => { renderPayments(); renderAssets(); });
 async function busy(button, work) { button.disabled = true; try { await work(); } finally { button.disabled = false; } }
 
 // ── Card and UPI with no answer ─────────────────────────────────────────────────────────────────────────────
@@ -37,12 +59,12 @@ function renderPayments() {
   const opened = new Map([...list.querySelectorAll('li[data-attempt] details.resolve[open]')].map((d) => [d.closest('li').dataset.attempt, d]));
   list.replaceChildren(); tiles.replaceChildren();
   const r = cache.payments;
-  if (r === null) return;
-  if (r.kind !== 'done') { status('pay-status', r, ''); return; }
+  if (r === null) { if (may.read) listState(list, 'loading', w('reading')); return; }
+  if (r.kind !== 'done') { status('pay-status', r, ''); listStateFor(list, r); return; }
   const v = r.body;
   tiles.append(tile(String(v.open), w('open'), 'open'), tile(inr(v.openMinor.card), w('openCard'), 'card'), tile(inr(v.openMinor.upi), w('openUpi'), 'upi'),
     tile(inr(v.owedToCustomersMinor), w('owed'), 'owed'), tile(String(v.flagged.length), w('flagged'), 'flagged'));
-  if (v.exceptions.length === 0) { list.append(node('li', { className: 'empty', textContent: w('noPayments') })); return; }
+  if (v.exceptions.length === 0) { listState(list, 'empty', w('noPayments'), W1[lang]?.emptyDetail ?? W1.en.emptyDetail); return; }
   for (const e of v.exceptions) {
     const li = node('li', { className: `${e.state === 'open' ? 'open' : ''} ${v.flagged.includes(e.attemptId) ? 'flagged' : ''}` });
     li.dataset.attempt = e.attemptId;
@@ -192,8 +214,8 @@ function renderAssets() {
   $('run-depreciation').hidden = !may.post;
   const r = cache.assets;
   if (r === null) return;
-  if (r.kind !== 'done') { status('assets-status', r, ''); return; }
-  if (r.body.assets.length === 0) list.append(node('li', { className: 'empty', textContent: w('noAssets') }));
+  if (r.kind !== 'done') { status('assets-status', r, ''); listStateFor(list, r); return; }
+  if (r.body.assets.length === 0) listState(list, 'empty', w('noAssets'), W1[lang]?.emptyDetail ?? W1.en.emptyDetail);
   for (const a of r.body.assets) {
     const li = node('li'); li.dataset.asset = a.assetId;
     li.append(node('div', { className: 'head' }, node('span', { className: 'amt', textContent: a.name }), node('span', { className: 'state', textContent: a.state === 'in_use' ? w('inUse') : w('disposed') }),

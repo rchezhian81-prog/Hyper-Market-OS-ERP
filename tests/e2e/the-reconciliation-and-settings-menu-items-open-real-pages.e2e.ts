@@ -45,7 +45,12 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
   afterAll(async () => { await browser?.close(); await server?.stop(); });
 
   const current = (page: Page) => page.$$eval('#sre-menu a[aria-current="page"]', (as) => as.map((a) => (a.textContent ?? '').trim()));
-  const menuLink = (page: Page, words: string) => page.locator('#sre-menu a', { hasText: words }).first();
+  // W1: on a long menu a workspace may be folded — open it first, as a person does (its heading is a button).
+  const menuLink = async (page: Page, words: string) => {
+    const link = page.locator('#sre-menu .group-section:not(.sre-quick) a').filter({ hasText: new RegExp(`^${words}$`) }).first(); // exact: "GST reconciliation" is a different screen
+    if (!(await link.isVisible())) await link.locator('xpath=ancestor::div[contains(@class,"group-section")]//button[contains(@class,"group-toggle")]').click();
+    return link;
+  };
 
   it('Reconciliation opens Month-end on its payments section, and is the one item marked; Settings opens Store setup', async () => {
     const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 800 }, extraHTTPHeaders: { 'x-sre-user': 'u-owner' } });
@@ -57,14 +62,14 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
       const words = await page.$$eval('#sre-menu a', (as) => as.map((a) => (a.textContent ?? '').trim()));
       expect(words).toEqual(expect.arrayContaining(['Reconciliation', 'Month-end', 'Settings', 'Store setup']));
 
-      await menuLink(page, 'Reconciliation').click();
+      await (await menuLink(page, 'Reconciliation')).click();
       await page.waitForURL(/\/finance-close\/\?tab=payments$/, { timeout: 15_000 });
       await page.waitForFunction(`document.title === 'SRE Month-end' && ${MARKED}`, undefined, { timeout: 15_000 });
       expect(await page.getAttribute('#tab-payments', 'aria-current')).toBe('page');
       expect(await page.evaluate('document.getElementById("view-payments").hidden')).toBe(false);
       expect(await current(page)).toEqual(['Reconciliation']);
 
-      await menuLink(page, 'Settings').click();
+      await (await menuLink(page, 'Settings')).click();
       await page.waitForURL(/\/setup\/\?tab=settings$/, { timeout: 15_000 });
       await page.waitForFunction(`document.title === 'SRE Store setup' && ${MARKED}`, undefined, { timeout: 15_000 });
       expect(await current(page)).toEqual(['Settings']);

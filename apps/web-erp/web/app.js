@@ -52,7 +52,7 @@ const WORDS = {
     approvalsLabel: 'Approvals waiting', notKnown: 'Not known', nothingWaiting: 'Nothing is waiting.',
     // The Today command centre (UX-2b · OB-15/OB-16).
     salesTodayLabel: 'Sales today', boxSilent: 'the store computer has not said',
-    needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing needs you right now.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screenWord: 'screen', screensWord: 'screens', open: 'Open',
+    needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing on this list needs you right now. It covers only the figures on this page — it is not a check of the whole store.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screenWord: 'screen', screensWord: 'screens', open: 'Open',
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
     deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
     attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
@@ -139,7 +139,7 @@ const WORDS = {
     unsentLabel: 'கிளௌடுக்கு அனுப்பப்படாதவை', tasksLabel: 'இன்றைய பணிகள்',
     approvalsLabel: 'காத்திருக்கும் ஒப்புதல்கள்', notKnown: 'தெரியவில்லை',
     salesTodayLabel: 'இன்றைய விற்பனை', boxSilent: 'கடை கணினி சொல்லவில்லை',
-    needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இப்போது உங்களுக்கு எதுவும் தேவையில்லை.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screenWord: 'திரை', screensWord: 'திரைகள்', open: 'திற',
+    needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இந்தப் பட்டியலில் இப்போது உங்கள் கவனம் தேவைப்படுவது எதுவும் இல்லை. இது இந்தப் பக்கத்தின் எண்களை மட்டுமே பார்க்கிறது — முழுக் கடையின் சோதனை அல்ல.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screenWord: 'திரை', screensWord: 'திரைகள்', open: 'திற',
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
     deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
     attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnHoApprovals: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கும் ஒப்புதல்கள் — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
@@ -646,7 +646,13 @@ function renderAttention(floor, today) {
     return li;
   })));
 }
-function quiet(text) { const li = document.createElement('li'); li.className = 'quiet'; li.textContent = text; return li; }
+// W1: the empty list wears the shared "nothing yet" state (sreOffice) — its words say what the list covers, so it is
+// never read as an all-clear for the whole store (P-08).
+function quiet(text) {
+  const li = document.createElement('li'); li.className = 'quiet';
+  if (window.sreOffice) li.append(window.sreOffice.state(null, 'empty', { title: text, detail: '' })); else li.textContent = text;
+  return li;
+}
 
 /** A small figure box: the number (or "Not known" and why), its label, its note, and a way in when there is one. */
 function figureBox(tag, figure, label, target) {

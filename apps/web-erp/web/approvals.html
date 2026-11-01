@@ -27,27 +27,22 @@
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
       .summary .count { font-size:18px; font-weight:700; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
-      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); min-width:0; }
+      li.row { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-xs); padding:14px 16px; display:grid; gap:8px; border-left:6px solid var(--idle); min-width:0; }
+      li.row.empty { border:0; box-shadow:none; padding:0; background:transparent; }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
       li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .row .summary-line { font-weight:600; overflow-wrap:anywhere; }
-      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .sre-chip { justify-self:start; }
       .row .facts { font-size:14px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .row .facts span { overflow-wrap:anywhere; }
       .row .details { margin:0; padding:8px 10px; background:var(--bg); border-radius:10px; font-size:14px; display:grid; gap:2px; }
       .row .details-label { color:var(--muted); font-weight:600; }
       .row .details .kv { overflow-wrap:anywhere; }
-      .decide { display:grid; gap:8px; margin-top:4px; }
-      .decide label { font-size:14px; color:var(--muted); }
-      .decide input { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
+      .decide { display:grid; gap:10px; margin-top:4px; padding-top:10px; border-top:1px solid var(--line-soft); }
       .decide .buttons { display:flex; gap:12px; flex-wrap:wrap; }
-      button.act { min-height:var(--tap); padding:0 18px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:var(--on-info); }
-      button.act.approve { background:var(--good); color:var(--on-accent); }
-      button.act:disabled { opacity:.6; }
-      button.act:focus-visible, .decide input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      .decide .buttons .sre-btn { min-width:140px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
@@ -75,6 +70,9 @@
       <div class="summary" role="status" aria-live="polite">
         <span class="count" id="waiting-count"></span>
       </div>
+      <!-- W1: the inbox at a glance — waiting for you, your own requests still waiting, your own requests decided — as
+           the shared summary cards. "Not known" until head office has answered; never a nought it did not say. -->
+      <div id="approval-cards"></div>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
 

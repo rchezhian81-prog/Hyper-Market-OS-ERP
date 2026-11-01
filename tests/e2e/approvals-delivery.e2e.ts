@@ -210,7 +210,7 @@ describe.skipIf(!HAVE_BROWSER)('a checker approves or rejects what someone else 
       expect(mine).toContain('Approved by u-mgr — use it before 08-10-2026 07:30');
       expect(mine).toContain('Rejected by u-mgr: wrong supplier file');
       // Every reason box has a visible label.
-      expect(await page.locator('#waiting label[for="reason-areq-imp"]').innerText()).toBe('Your reason (the person who asked will read it)');
+      expect(await page.locator('#waiting label[for="reason-areq-imp"]').innerText()).toBe('Your reason (the person who asked will read it) (required)') // W1: the shared field says the reason is required, in words;
       expect(errors).toEqual([]);
     } finally {
       await teardown();

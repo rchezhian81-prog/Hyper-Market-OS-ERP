@@ -54,12 +54,27 @@ function sampleSession() {
 let session = window.approvalsSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 
+// W1 (P-08): until head office has answered, this page does NOT know what is waiting — it never says "nothing is
+// waiting" before it has asked. `inboxRead`: 'reading' → 'read' (head office answered) or 'unread' (it could not be asked).
+let inboxRead = window.approvals ? 'reading' : 'unread';
+const W = {
+  en: { cardWaiting: 'Waiting for you', cardMineWaiting: 'You asked — still waiting', cardMineDone: 'You asked — decided', cardNote: 'requests',
+    reading: 'Reading what is waiting for you from head office…', unread: 'Head office could not be asked, so what is waiting for you is not known. Nothing was decided.',
+    notKnownYet: 'Not known yet', required: 'required', needReason: 'Write your reason first — the person who asked will read it.' },
+  ta: { cardWaiting: 'உங்களுக்காகக் காத்திருப்பவை', cardMineWaiting: 'நீங்கள் கேட்டவை — இன்னும் காத்திருக்கின்றன', cardMineDone: 'நீங்கள் கேட்டவை — முடிவானவை', cardNote: 'கோரிக்கைகள்',
+    reading: 'உங்களுக்காகக் காத்திருப்பவற்றைத் தலைமை அலுவலகத்திலிருந்து படிக்கிறது…', unread: 'தலைமை அலுவலகத்திடம் கேட்க முடியவில்லை, எனவே உங்களுக்காகக் காத்திருப்பவை தெரியவில்லை. எதுவும் முடிவு செய்யப்படவில்லை.',
+    notKnownYet: 'இன்னும் தெரியவில்லை', required: 'கட்டாயம்', needReason: 'முதலில் உங்கள் காரணத்தை எழுதுங்கள் — கேட்டவர் அதைப் படிப்பார்.' },
+};
+const w = (key) => W[lang]?.[key] ?? W.en[key];
+const office = () => window.sreOffice ?? null;
+document.addEventListener('sre:chrome', () => paint());
+
+/** Where a request stands, as the shared status chip (the tone's shape and its words — never colour alone). */
 function statusNode(status) {
-  const node = document.createElement('span');
-  node.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = status.icon;
-  const words = document.createElement('span'); words.textContent = status.label;
-  node.append(icon, words);
+  const o = office();
+  const tone = ['ok', 'degraded', 'error', 'idle', 'pending', 'unknown'].includes(status.tone) ? status.tone : 'idle';
+  const node = o ? o.chip(tone, status.label) : Object.assign(document.createElement('span'), { textContent: status.label });
+  node.classList.add('status');
   node.setAttribute('aria-label', status.announcement || status.label);
   return node;
 }
@@ -104,26 +119,50 @@ function requestNode(r, waitingForMe) {
   if (waitingForMe) {
     const decideBox = document.createElement('div'); decideBox.className = 'decide';
     const inputId = `reason-${r.requestId}`;
-    const label = document.createElement('label'); label.htmlFor = inputId; label.textContent = t('reasonLabel');
-    const input = document.createElement('input'); input.type = 'text'; input.id = inputId; input.className = 'reason'; input.autocomplete = 'off'; input.maxLength = 300;
+    // W1: the shared form field — its name, "(required)" in words, and the message beside it when it is left blank
+    const field = document.createElement('div'); field.className = 'sre-field';
+    const label = document.createElement('label'); label.htmlFor = inputId; label.className = 'sre-field-label'; label.textContent = t('reasonLabel');
+    const req = document.createElement('span'); req.className = 'sre-req'; req.textContent = ` (${w('required')})`; label.append(req);
+    const input = document.createElement('input'); input.type = 'text'; input.id = inputId; input.className = 'reason sre-input'; input.autocomplete = 'off'; input.maxLength = 300;
+    input.required = true; input.setAttribute('aria-required', 'true');
     input.placeholder = t('reasonPlaceholder');
+    const msg = document.createElement('span'); msg.className = 'sre-field-msg'; msg.id = `${inputId}-msg`; msg.hidden = true;
+    input.setAttribute('aria-describedby', msg.id);
+    field.append(label, input, msg);
     const buttons = document.createElement('div'); buttons.className = 'buttons';
-    const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'act approve'; approve.textContent = t('approveBtn'); approve.dataset.requestId = r.requestId;
-    const reject = document.createElement('button'); reject.type = 'button'; reject.className = 'act reject'; reject.textContent = t('rejectBtn'); reject.dataset.requestId = r.requestId;
+    const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'act approve sre-btn sre-btn-primary'; approve.textContent = t('approveBtn'); approve.dataset.requestId = r.requestId;
+    const reject = document.createElement('button'); reject.type = 'button'; reject.className = 'act reject sre-btn sre-btn-danger'; reject.textContent = t('rejectBtn'); reject.dataset.requestId = r.requestId;
     // A decision is a HUMAN write that runs ONLY on this explicit click, never on load.
     approve.addEventListener('click', () => { void decide(r.requestId, 'approved', input, [approve, reject]); });
     reject.addEventListener('click', () => { void decide(r.requestId, 'rejected', input, [approve, reject]); });
     buttons.append(approve, reject);
-    decideBox.append(label, input, buttons);
+    decideBox.append(field, buttons);
     li.append(decideBox);
   }
   return li;
 }
 
+/** An empty list in the shared look: what is (not) there in words, and that empty is not the same as "all clear". */
 function emptyRow(text) {
-  const li = document.createElement('li'); li.className = 'row tone-idle';
-  const s = document.createElement('span'); s.textContent = text; li.append(s);
+  const li = document.createElement('li'); li.className = 'row empty';
+  const o = office();
+  if (o) li.append(o.state(null, 'empty', { title: text }));
+  else { const s = document.createElement('span'); s.textContent = text; li.append(s); }
   return li;
+}
+
+/** The inbox at a glance (W1): three summary cards — "Not known" until head office has answered. */
+function paintCards(view) {
+  const o = office();
+  if (!o) return;
+  const read = inboxRead === 'read' && view.mayUse;
+  const mineWaiting = view.mine.filter((r) => r.approvalStatus === 'waiting').length;
+  const mineDone = view.mine.length - mineWaiting;
+  o.cards(el('approval-cards'), [
+    { label: w('cardWaiting'), value: read ? view.waitingCount : null, note: read ? w('cardNote') : w('notKnownYet'), tone: read && view.waitingCount > 0 ? 'pending' : undefined, icon: 'badge-check' },
+    { label: w('cardMineWaiting'), value: read ? mineWaiting : null, note: read ? w('cardNote') : w('notKnownYet'), icon: 'clock' },
+    { label: w('cardMineDone'), value: read ? mineDone : null, note: read ? w('cardNote') : w('notKnownYet'), icon: 'circle-check' },
+  ]);
 }
 
 function paint() {
@@ -138,7 +177,9 @@ function paint() {
   nobody.hidden = !view.nobodyNamed;
   nobody.textContent = view.nobodyNamed ? t('nobodyNamed') : '';
 
-  el('waiting-count').textContent = view.waitingCount === 0 ? t('nothingWaiting') : `${view.waitingCount} ${t('waitingCount')}`;
+  const known = inboxRead === 'read' || !view.mayUse;
+  el('waiting-count').textContent = !known ? w(inboxRead === 'reading' ? 'reading' : 'unread') : view.waitingCount === 0 ? t('nothingWaiting') : `${view.waitingCount} ${t('waitingCount')}`;
+  paintCards(view);
   el('waiting-heading').textContent = t('waitingHeading');
   el('waiting').setAttribute('aria-label', t('waitingHeading'));
   // A reason being typed survives a repaint (a language switch, a re-read) — the words are the checker's, not the page's.
@@ -149,10 +190,17 @@ function paint() {
   const state = el('state');
   if (view.waiting.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
-    state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
+    // W1 (P-08): before head office answers this is "reading" or "could not be asked" — never "nothing is waiting"
+    const o = office();
+    const kind = !known ? (inboxRead === 'reading' ? 'loading' : 'offline') : !view.mayUse ? 'denied' : 'empty';
+    const words = !known ? w(inboxRead === 'reading' ? 'reading' : 'unread') : view.screenState.label;
+    if (o) { state.className = 'state-box'; state.replaceChildren(o.state(null, kind, { title: words })); }
+    else {
+      state.className = `state tone-${view.screenState.tone}`;
+      el('state-icon').textContent = view.screenState.icon;
+      el('state-text').textContent = words;
+    }
+    state.setAttribute('aria-label', words);
   } else {
     state.hidden = true;
   }
@@ -182,7 +230,10 @@ async function decide(requestId, decision, input, buttons) {
   try {
     const outcome = await session.decide(requestId, decision, input.value);
     paintResult(session.presentDecideOutcome(lang, outcome));
-    if (outcome.kind === 'needs_reason') { input.focus(); return; }
+    const msg = document.getElementById(`${input.id}-msg`);
+    if (msg) { msg.hidden = outcome.kind !== 'needs_reason'; msg.textContent = outcome.kind === 'needs_reason' ? w('needReason') : ''; }
+    if (outcome.kind === 'needs_reason') { input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
+    input.removeAttribute('aria-invalid');
     if (outcome.kind === 'decided') input.value = '';
     if (outcome.kind !== 'lost_link' && outcome.kind !== 'nobody_named' && outcome.kind !== 'not_permitted') await refresh();
   } finally {
@@ -202,7 +253,8 @@ async function refresh() {
   const api = window.approvals;
   if (!api || typeof api.refresh !== 'function') return;
   const inbox = await api.refresh();
-  if (inbox) { session = api.present(inbox); paint(); }
+  if (inbox) { inboxRead = 'read'; session = api.present(inbox); } else if (inboxRead !== 'read') inboxRead = 'unread';
+  paint();
 }
 refresh();
 

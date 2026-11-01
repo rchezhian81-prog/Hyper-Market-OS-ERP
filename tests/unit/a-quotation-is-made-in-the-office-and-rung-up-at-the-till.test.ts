@@ -101,7 +101,7 @@ describe('the Quotations page session', () => {
   });
 
   it('is on the menu (Sales), served by the store computer, and every word has a Tamil twin', () => {
-    expect(ERP_NAVIGATION.find((i) => i.id === 'quotations')).toMatchObject({ path: '/quotations', requires: 'pos.quotation.read', group: 'Sales' });
+    expect(ERP_NAVIGATION.find((i) => i.id === 'quotations')).toMatchObject({ path: '/quotations', requires: 'pos.quotation.read', group: 'Customers' });
     expect(HEAD_OFFICE_PAGE_SCREENS).toContain('quotations');
     expect(HEAD_OFFICE_PAGE_GLOBALS.quotations).toBe('quotationsData');
     expect(Object.keys(QUOTATIONS_COPY.ta).sort()).toEqual(Object.keys(QUOTATIONS_COPY.en).sort());

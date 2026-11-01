@@ -487,7 +487,8 @@ describe('the view defers to the model, uses no browser dialogs, and only decide
   });
   it('every status it draws carries a screen-reader announcement and an aria-hidden icon; every reason box has a label', () => {
     expect(VIEW).toMatch(/node\.setAttribute\('aria-label'/);
-    expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
+    // W1: the status is the shared chip (sreOffice.chip → sreIcon.chip), whose shape is aria-hidden by the one icon set
+    expect(VIEW).toMatch(/o\.chip\(tone, status\.label\)/);
     expect(VIEW).toMatch(/label\.htmlFor = inputId/);
   });
   it('the shell loads the shared bundle, carries the data marker, and labels the toggle and both lists', () => {

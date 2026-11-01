@@ -219,6 +219,49 @@ Tamil, and no animation after twenty till scans).
 | **Menu (ERP)** | One per page, from the person's real permissions and the screens this box serves; empty says why; never a link the box would 404 (Stage G slice 5b). |
 | Approval inbox item | Shows request, value, requester, and one-tap approve/reject with reason. |
 
+### 4.1 The office page components (W1, 1 November 2026) — implemented
+The owner said (1 Nov 2026) the office pages looked plain and things were hard to find. These are the shared parts every
+office page now uses, in the OB-13 look (no new brand, no new colour, no new icon). They live in the shared foundation:
+the look in `packages/ui/web/sre-foundation.css` (copied to every app by `node scripts/sync-ui-foundation.mjs`), the
+behaviour in the back office's one chrome `apps/web-erp/web/sre-chrome.js` as `window.sreOffice` (already precached, so
+every part works with no internet — P-01). A page that paints before the chrome loads listens for `sre:chrome`.
+
+| Part | Call | Rules |
+| --- | --- | --- |
+| **Register** (data table) | `sreOffice.table(host, { id, label, columns, rows, pageSize, rowKey, rowData, bodyId, drawer, empty })` | A tool row: a search over every shown column (every word must match), a filter per column marked `filter` (its choices are the values the rows really have), a "Columns" choice (remembered in this browser; one column always stays). Column headings marked `sort` are buttons that sort up then down (`aria-sort`); numbers sort as numbers. Pages of 10 by default with "Showing 1–10 of 24", Previous and Next. A row with a drawer has an "Open" button; the **record drawer** shows that row's facts (`sreOffice.facts`), Escape or Close shuts it and the focus goes back. `rows: null` is "reading"; `[]` is "nothing yet"; `setState('error' \| 'offline' \| 'denied', { detail })` says why the rows are missing. A value that is missing is drawn "Not known", never blank or nought. The table scrolls in its own box; the page never scrolls sideways. |
+| **States** | `sreOffice.state(host, kind, { title, detail, action, actionLabel })`, `sreOffice.stateOf(outcome)` | `loading` "Reading the records…" · `empty` "Nothing here yet — an empty list does not mean everything is fine" · `noMatch` "No rows match … the list still has N rows" with "Clear search and filters" · `error` "Could not read this list. Nothing was changed." · `offline` "Head office cannot be reached … nothing here is current" · `denied` "Your role cannot open this". English and Tamil. **Empty never reads as "all clear" (P-08)**: a page's own empty words say what the list covers. |
+| **Summary cards** | `sreOffice.cards(host, [{ label, value, note, tone, href, icon }])` | The label, the figure exactly as the page read it, a note. `value` null is **"Not known"** — never 0. Tone is a coloured edge AND the words (never colour alone). |
+| **Status chip** | `sreOffice.chip(tone, label)` | The tone's shape from the one icon set and its words (`ok`, `pending`, `degraded`, `error`, `idle`, `unknown`). |
+| **Form field** | `sreOffice.field({ id, label, type, required, hint, options })`, `sreOffice.check(form)` | A visible label that is the field's name; "(required)" said in words (not a lone star); a hint under it; a message beside the field in plain words when it is wrong ("Fill in "Customer code"."); the first wrong field takes the focus; nothing is sent until every field is right. |
+
+**Where they are used first (W1):** Customers (segment cards and the customer register with drawer), Approvals (inbox
+cards, request chips, a required reason said beside the field, "not known" until head office answers — never "nothing
+waiting" offline), Reports (catalogue cards, a report finder, the rows behind a report as a register), Month-end
+(figures as summary cards, every empty or unreadable list as a state), Today (the empty attention list says what it
+covers). Other pages move onto them as their builders reach them.
+
+**Accessibility on office pages (W1):** every control at least 44px; the focus ring always shows (3px, `--focus`); no
+page scrolls sideways at 1280px or at tablet width. Proved by `tests/e2e/w1-the-office-shell-finds-pages-and-shows-real-registers.e2e.ts`
+with the audit in §5.1.
+
+### 4.2 The menu you can find things in (W1, 1 November 2026) — implemented
+- **Task workspaces with plain names**, in this order: Your daily work · Today & approvals · Products & prices · Buying
+  from suppliers · Goods coming in · Stock & counts · Waste, expiry & returns · Shelves & shop floor · Customers & service
+  · Online orders & delivery · Fresh food & café · Cash, accounts & GST · Staff, rota & tasks · My work & pay · Checks &
+  investigations · Reports & figures · Setup, people & access · Tills, devices & connections · Open a device screen.
+  (`NAV_GROUP_LABELS` in `apps/web-erp/src/navigation.ts`.) Screen ids, paths and permissions did not change.
+- **A role's daily jobs first** (`DAILY_WORK`, keyed by the product's role ids): each is still opened only by its own
+  permission, and is not repeated in its workspace below. Within a workspace the most-used screens lead (`NAV_ITEM_ORDER`).
+- **A long menu is a dozen headings.** When a person may open more than 24 screens, only the daily work, the workspace
+  they are in and the workspaces they opened stand open; each heading is a button (`aria-expanded`) and this browser
+  remembers it. A short menu (a cashier's) stands fully open.
+- **Pinned and recently opened** pages sit at the top of the rail ("Pin this page" in the top line). They are this
+  browser's memory for this person only, and only ever screens the rail already offers.
+- **Search by a plain word**: every word typed must be found in a screen's name, its plain words (`NAV_SEARCH_WORDS`,
+  English and Tamil: "salary", "shortage", "GST", "காலாவதி") or its workspace's name; it says how many screens match;
+  Enter opens the first.
+- **Breadcrumbs**: "Workspace › the workspace › the screen", read off the rail.
+
 ## 5. Accessibility (NFR-07)
 - Target **WCAG 2.2 AA** for customer/web surfaces; keyboard, touch and high-contrast paths for staff surfaces.
 - Contrast ≥ 4.5:1 for text; focus indicators visible; no action requires fine motor precision.
