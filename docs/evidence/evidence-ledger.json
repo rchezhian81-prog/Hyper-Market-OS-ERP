@@ -266,8 +266,8 @@
         "unit": 21,
         "integration": 22,
         "realDb": 6,
-        "browser": 6,
-        "connected": 2,
+        "browser": 7,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -328,6 +328,7 @@
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts"
         ],
         "browser": [
+          "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
           "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
@@ -336,6 +337,7 @@
           "tests/e2e/unsellable-screen.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts"
         ],

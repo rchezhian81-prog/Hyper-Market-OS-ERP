@@ -107,7 +107,8 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
         const body = req.method === 'POST' ? await readBody(req) : undefined;
         // Round 8: the customer's own reads after sign-in (privacy, favourites, lists, cases) are kept apart from the order traffic.
         // R4 Lane 2 (B23): so are the online store's reads before payment (its details, stars and images) — reads, never orders.
-        if (req.method === 'GET' && (path.startsWith('/v1/me/') || path === '/v1/storefront/listing' || /^\/v1\/storefront\/products\/[^/]+\/image$/.test(path))) (rec.privacyReads ??= []).push({ auth: token !== undefined });
+        // Round 4a (M03-FR-04): and the basket's read of the shop's approved substitutes for each product.
+        if (req.method === 'GET' && (path.startsWith('/v1/me/') || path === '/v1/storefront/listing' || /^\/v1\/storefront\/products\/[^/]+\/(image|substitutes)$/.test(path))) (rec.privacyReads ??= []).push({ auth: token !== undefined });
         else rec.apiCalls.push({ method: req.method ?? '?', path, auth: token !== undefined });
         const out = await h.raw({
           method: (req.method ?? 'GET') as 'GET' | 'POST', path,
