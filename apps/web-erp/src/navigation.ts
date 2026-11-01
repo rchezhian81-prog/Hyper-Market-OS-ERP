@@ -210,6 +210,18 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Gated on the SAME authority the publish route checks (`catalogue.pack.publish`), so the menu never offers
   // it to someone the server would refuse — it is the publisher's action screen (M03-FR-01/03).
   { id: 'product-publish-review', label: 'Products to publish', labelTa: 'வெளியிட வேண்டிய பொருட்கள்', path: '/product-publish-review', requires: 'catalogue.pack.publish', group: 'Products' },
+  // Round 4a (M03-FR-01..04 · M05-FR-01 · WF-01 · re-audit G-1): the product master's own pages — one product's record,
+  // barcodes, pack, bundle and substitutes; the category list and the report by category; duplicates and their two-person
+  // merge; the GST and cess rates with Finance's approval of a change; and the dated, scoped price list with the zones and
+  // channel switches. Each gated on the read its routes check; every write is head office's to accept. Head-office pages
+  // served by the store computer (OB-380).
+  { id: 'product-details', label: 'Product details', labelTa: 'பொருள் விவரங்கள்', path: '/product-details', requires: 'catalogue.pack.read', group: 'Products' },
+  { id: 'product-categories', label: 'Categories', labelTa: 'வகைகள்', path: '/product-categories', requires: 'catalogue.pack.read', group: 'Products' },
+  { id: 'product-merges', label: 'Duplicates and merges', labelTa: 'நகல்களும் இணைப்புகளும்', path: '/product-merges', requires: 'catalogue.pack.read', group: 'Products' },
+  { id: 'tax-rates', label: 'GST and cess rates', labelTa: 'GST மற்றும் செஸ் விகிதங்கள்', path: '/tax-rates', requires: 'catalogue.pack.read', group: 'Products' },
+  { id: 'price-lists', label: 'Price lists', labelTa: 'விலைப் பட்டியல்கள்', path: '/price-lists', requires: 'price.change.propose', group: 'Products' },
+  // Round 4a (M05-FR-03/04): every offer, what it did against a baseline, and its Stop. Gated on the read its routes check.
+  { id: 'offer-results', label: 'Offer results', labelTa: 'சலுகை முடிவுகள்', path: '/offer-results', requires: 'promotion.read', group: 'Products' },
   // Data quality — the A08 steward inbox (missing barcodes, duplicate records, missing prices). Gated on the
   // SAME permission the worklist route checks (`ai.proposal.read`), so the menu never offers a screen the
   // server would refuse (A08 · API-13).

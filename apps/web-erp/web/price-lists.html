@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Price lists</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Price lists (Round 4a · M05-FR-01 "store/zone/channel/customer price lists with effective dates" · D-19 · OB-148/190 ·
+      OB-291 · re-audit row M05-FR-01). A THIN CLIENT over head office's scoped, effective-dated price list: a price for one
+      store, a price zone, a channel or one customer, from a date (and to a date if it ends), judged on head office's own
+      figures — the product master's MRP on that day, the average buying cost, the store rules' margin floor — read first and
+      shown (GET /v1/prices/list/:id/basis), then sent (POST /v1/prices/list/:id/entries/:entryId). A price below cost or the
+      floor, or one that moves more than the owner's set size, waits for a second person's approval on the Approvals page.
+      Every price on record for the product is listed (…/history). The stores' price zones (/v1/prices/zones) and the channel
+      and zone switches — all OFF until a second person approves switching one on (OB-148, OB-190) — with the report of any
+      channel price that differs from the shelf (/v1/prices/channel-differences). Nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.unknown { color: var(--warn); font-size: 15px; }
+      #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; display: grid; gap: 6px; }
+      .rows li .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Price lists</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Price lists</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel"><span class="k" id="k-same">One price everywhere?</span><span class="v" id="v-same">—</span></div>
+          <div class="panel"><span class="k" id="k-pending">Switch requests waiting</span><span class="v" id="v-pending">—</span></div>
+          <div class="panel"><span class="k" id="k-zoned">Stores in a price zone</span><span class="v" id="v-zoned">—</span></div>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-prices" type="button" aria-current="page">Dated prices</button>
+        <button id="tab-zones" type="button">Price zones</button>
+        <button id="tab-channels" type="button">Channel prices</button>
+      </nav>
+
+      <section id="view-prices" aria-labelledby="prices-h">
+        <h3 id="prices-h">Dated prices</h3>
+        <p class="lead" id="prices-lead"></p>
+        <div class="row">
+          <label for="p-product"><span id="l-p-product">Product id</span><input id="p-product" list="product-list" autocomplete="off" /></label>
+          <label for="p-scope"><span id="l-p-scope">Which price</span>
+            <select id="p-scope"><option value="store" id="o-store">One store's shelf price</option><option value="zone" id="o-zone">A price zone</option><option value="channel" id="o-channel">A channel (app, delivery)</option><option value="customer" id="o-customer">One customer</option></select>
+          </label>
+          <label for="p-ref"><span id="l-p-ref">Store, zone, channel or customer id</span><input id="p-ref" list="ref-list" autocomplete="off" /></label>
+          <label for="p-from"><span id="l-p-from">From (date)</span><input id="p-from" type="date" /></label>
+          <label for="p-to"><span id="l-p-to">Until (date, if it ends)</span><input id="p-to" type="date" /></label>
+          <label for="p-price"><span id="l-p-price">Price (₹)</span><input id="p-price" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <datalist id="product-list"></datalist>
+        <datalist id="ref-list"></datalist>
+        <div class="panels" id="basis" aria-live="polite">
+          <div class="panel"><span class="k" id="k-mrp">MRP that day</span><span class="v" id="v-mrp">—</span></div>
+          <div class="panel"><span class="k" id="k-cost">Buying cost</span><span class="v" id="v-cost">—</span></div>
+          <div class="panel"><span class="k" id="k-floor">Margin floor</span><span class="v" id="v-floor">—</span></div>
+          <div class="panel"><span class="k" id="k-now">Price for this scope now</span><span class="v" id="v-now">—</span></div>
+          <div class="panel"><span class="k" id="k-size">A second person checks a move of more than</span><span class="v" id="v-size">—</span></div>
+        </div>
+        <p class="muted" id="basis-say"></p>
+        <div class="row">
+          <button id="read-basis" type="button">Read head office's figures</button>
+          <button id="save" class="primary" type="button">Save the price</button>
+          <label for="p-why"><span id="l-p-why">Why (for the approver, if one is needed)</span><input id="p-why" autocomplete="off" maxlength="300" /></label>
+          <button id="ask" type="button" hidden>Ask for approval</button>
+        </div>
+        <p class="status" id="price-status" role="status" aria-live="polite"></p>
+        <h3 id="history-h">Every price on record for this product</h3>
+        <div class="table-wrap"><table aria-labelledby="history-h">
+          <thead><tr><th id="c-scope">Which price</th><th id="c-ref">For</th><th id="c-price">Price</th><th id="c-from">From</th><th id="c-to">Until</th><th id="c-ver">Version</th></tr></thead>
+          <tbody id="history"></tbody>
+        </table></div>
+      </section>
+
+      <section id="view-zones" aria-labelledby="zones-h" hidden>
+        <h3 id="zones-h">Price zones</h3>
+        <p class="lead" id="zones-lead"></p>
+        <div class="table-wrap"><table aria-labelledby="zones-h">
+          <thead><tr><th id="c-zstore">Store</th><th id="c-zone">Zone</th><th id="c-zby">Set by</th><th id="c-zat">When</th></tr></thead>
+          <tbody id="zones"></tbody>
+        </table></div>
+        <div class="row" id="zone-form">
+          <label for="z-store"><span id="l-z-store">Store</span><input id="z-store" list="store-list" autocomplete="off" /></label>
+          <label for="z-zone"><span id="l-z-zone">Zone</span><input id="z-zone" autocomplete="off" /></label>
+          <button id="z-save" type="button">Put the store in this zone</button>
+        </div>
+        <datalist id="store-list"></datalist>
+        <p class="status" id="zone-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="view-channels" aria-labelledby="channels-h" hidden>
+        <h3 id="channels-h">Channel prices</h3>
+        <p class="lead" id="channels-lead"></p>
+        <ul class="rows" id="switches" aria-label="Switches"></ul>
+        <h3 id="pending-h">Waiting for a second person</h3>
+        <ul class="rows" id="pending" aria-label="Waiting"></ul>
+        <div class="row">
+          <label for="d-store"><span id="l-d-store">Compare the channels with the shelf at store</span><input id="d-store" list="store-list" autocomplete="off" /></label>
+          <button id="d-run" type="button">Show the differences</button>
+        </div>
+        <ul class="rows" id="differences" aria-label="Differences"></ul>
+        <p class="status" id="channel-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./price-lists.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

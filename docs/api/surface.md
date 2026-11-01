@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1634 | 948 | 948 | 178 | 436 |
+| 13 | 1636 | 948 | 948 | 178 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -176,6 +176,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/prices/competitor-rule` | `price.change.propose` | core | — |
 | POST | `/v1/prices/competitor-rule` | `price.change.approve` | core | yes |
 | POST | `/v1/prices/competitor/:observationId` | `price.change.propose` | core | yes |
+| GET | `/v1/prices/list/:productId/basis` | `price.change.propose` | core | — |
 | POST | `/v1/prices/list/:productId/entries/:entryId` | `price.change.propose` | core | yes |
 | GET | `/v1/prices/list/:productId/history` | `catalogue.pack.read` | core | — |
 | GET | `/v1/prices/list/:productId/resolve` | `catalogue.pack.read` | core | — |
@@ -188,6 +189,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/pricing/relabel-tasks` | `workforce.task.read` | core | — |
 | POST | `/v1/pricing/relabel-tasks/:taskId/done` | `workforce.task.complete.own` | core | yes |
 | GET | `/v1/pricing/relabel-tasks/mine` | `workforce.task.complete.own` | core | — |
+| GET | `/v1/promotions` | `promotion.read` | core | — |
 | GET | `/v1/promotions/:promotionId` | `promotion.read` | core | — |
 | POST | `/v1/promotions/:promotionId/abuse-check` | `promotion.read` | core | yes |
 | POST | `/v1/promotions/:promotionId/activate` | `promotion.launch` | core | yes |

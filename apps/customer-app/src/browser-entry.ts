@@ -360,6 +360,8 @@ export interface OnlineShop {
   listing(): Promise<MineOutcome<unknown>>;
   /** A product's image from the shop's own server (OB-215), as a data address the page can show; none → refused. */
   image(productId: string): Promise<MineOutcome<string>>;
+  /** Round 4a (M03-FR-04): the shop's own approved substitutes for a product, in order — only those on sale now, by name. */
+  substitutes(productId: string): Promise<MineOutcome<{ readonly set: boolean; readonly substitutes: readonly { readonly productId: string; readonly name: string; readonly nameTa?: string }[] }>>;
   receiptChoice(): Promise<MineOutcome<unknown>>;
   setReceipts(on: boolean): Promise<MineOutcome<boolean>>;
   receipts(): Promise<MineOutcome<unknown>>;
@@ -669,6 +671,15 @@ export function bootShop(
         if ((b.mediaType !== 'image/jpeg' && b.mediaType !== 'image/png' && b.mediaType !== 'image/webp') || typeof b.contentBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(b.contentBase64)) return { ok: false, refusal: 'the_shop_refused' };
         return { ok: true, value: `data:${b.mediaType};base64,${b.contentBase64}` };
       },
+      substitutes: async (productId) => {
+        const a = await storefrontCall(`products/${encodeURIComponent(productId)}/substitutes`);
+        if (!a.ok) return a;
+        const b = a.body as { set?: unknown; substitutes?: unknown };
+        const list = Array.isArray(b.substitutes) ? (b.substitutes as { productId?: unknown; name?: unknown; nameTa?: unknown }[])
+          .filter((s) => typeof s.productId === 'string' && typeof s.name === 'string')
+          .map((s) => ({ productId: s.productId as string, name: s.name as string, ...(typeof s.nameTa === 'string' ? { nameTa: s.nameTa } : {}) })) : [];
+        return { ok: true, value: { set: b.set === true, substitutes: list } };
+      },
       receiptChoice: async () => { const a = await mineCall({ method: 'GET', path: 'receipts/choice' }); return a.ok ? { ok: true, value: a.body } : a; },
       setReceipts: async (on) => {
         const a = await mineCall({ method: 'POST', path: 'receipts/choice', body: { on }, idempotencyKey: `receipts-${on}-${nextId()}` });
@@ -828,7 +839,7 @@ export function bootShop(
 
   // ── R4 Lane 2 (begin) ──
   /** A read of the online store as me — the same honest answers as `mineCall`. */
-  async function storefrontCall(path: 'listing' | 'ratings' | `products/${string}/image`): Promise<{ ok: true; body: unknown } | { ok: false; refusal: MineRefusal; shopSaid?: string }> {
+  async function storefrontCall(path: 'listing' | 'ratings' | `products/${string}/image` | `products/${string}/substitutes`): Promise<{ ok: true; body: unknown } | { ok: false; refusal: MineRefusal; shopSaid?: string }> {
     if (token === undefined) return { ok: false, refusal: 'not_signed_in' };
     if (transport?.storefront === undefined) return { ok: false, refusal: 'no_road_to_the_shop' };
     const answer = await transport.storefront({ token, path });

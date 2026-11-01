@@ -9,7 +9,8 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import { cessRateRoutes } from '../../catalogue/src/cess-rates';
 import { cessRateStore } from './till-bill-stores';
-import { orgStructureAdapter, dayCloseAdapter, storeSettingsAdapter, auditTrailAdapter, saleStockLocationOf, storeOfLane, streamName, STREAM } from './adapters';
+import { orgStructureAdapter, dayCloseAdapter, storeSettingsAdapter, auditTrailAdapter, saleStockLocationOf, storeOfLane, streamName, STREAM, approvalRequestsAdapter } from './adapters';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { gstStateOf } from '../../../packages/finance/src/gst-states';
 import { dayEvidenceRoutes, type DayEvidenceDeps } from '../../pos/src/day-evidence';
@@ -119,10 +120,10 @@ export function dayEvidenceFacts(input: { readonly store: EventStore; readonly n
   };
 }
 
-export function tillBillSurface(surface: Route[], input: { readonly store: EventStore | undefined; readonly now: () => string }): void {
+export function tillBillSurface(surface: Route[], input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void }): void {
   const { store, now } = input;
   // A7: the compensation-cess schedule per HSN — what the pack carries to the tills, signed.
-  surface.push(...cessRateRoutes(store === undefined ? { setCess: () => {}, schedule: () => [] } : cessRateStore({ store, now })));
+  surface.push(...cessRateRoutes(store === undefined ? { setCess: () => {}, schedule: () => [] } : { ...cessRateStore({ store, now }), approvals: approvalRequestsAdapter({ store, now }), now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) }));
   // M14-FR-04: the closed-day evidence pack (sales, tenders, cash, over/short, exceptions, reopen history), sealed, for the CA.
   // With no store (a bare surface) the route is still served — and documented — and finds no close (404).
   if (store === undefined) {

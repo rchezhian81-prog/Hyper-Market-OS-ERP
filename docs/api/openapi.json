@@ -9448,16 +9448,14 @@
         ],
         "requestBody": {
           "required": false,
-          "description": "This route reads no body; anything sent is ignored.",
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/PostCatalogueMergesByMergeIdReverseRequest"
               }
             }
           }
         },
-        "x-request-body": "none",
         "x-body-schema": "derived",
         "responses": {
           "200": {
@@ -87906,6 +87904,63 @@
         }
       }
     },
+    "/v1/prices/list/{productId}/basis": {
+      "get": {
+        "operationId": "getPricesListByProductIdBasis",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "price.change.propose",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPricesListByProductIdBasisReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"price.change.propose\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/prices/list/{productId}/entries/{entryId}": {
       "post": {
         "operationId": "postPricesListByProductIdEntriesByEntryId",
@@ -91748,6 +91803,50 @@
         }
       }
     },
+    "/v1/promotions": {
+      "get": {
+        "operationId": "getPromotions",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "promotion.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPromotionsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"promotion.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/promotions/evaluate": {
       "post": {
         "operationId": "postPromotionsEvaluate",
@@ -92634,16 +92733,14 @@
         ],
         "requestBody": {
           "required": false,
-          "description": "This route reads no body; anything sent is ignored.",
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/PostPromotionsByPromotionIdStopRequest"
               }
             }
           }
         },
-        "x-request-body": "none",
         "x-body-schema": "derived",
         "responses": {
           "200": {
@@ -149073,6 +149170,155 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/pricing/src/competitor-drafts.ts"
       },
+      "GetPricesListByProductIdBasisReply": {
+        "type": "object",
+        "required": [
+          "asAt",
+          "productId",
+          "scope",
+          "scopeRef",
+          "on",
+          "stores",
+          "mrpMinor",
+          "mrpFrom",
+          "costMinor",
+          "costNotKnownAt",
+          "marginFloorBps",
+          "floorNotSetAt",
+          "currentPriceMinor",
+          "shelfPrices",
+          "secondPersonAbove"
+        ],
+        "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "channel",
+              "customer",
+              "store",
+              "zone"
+            ]
+          },
+          "scopeRef": {
+            "type": "string"
+          },
+          "on": {
+            "type": "string"
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mrpMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "mrpFrom": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "costMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "costNotKnownAt": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marginFloorBps": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "floorNotSetAt": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currentPriceMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "shelfPrices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "storeId",
+                "priceMinor"
+              ],
+              "properties": {
+                "storeId": {
+                  "type": "string"
+                },
+                "priceMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "secondPersonAbove": {
+            "type": "object",
+            "required": [
+              "percentBps",
+              "amountMinor"
+            ],
+            "properties": {
+              "percentBps": {
+                "type": "number"
+              },
+              "amountMinor": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/w1-products-prices-adapters.ts"
+      },
       "GetPricesListByProductIdHistoryReply": {
         "type": "object",
         "required": [
@@ -150696,6 +150942,31 @@
         ],
         "x-body-schema": "derived",
         "x-derived-from": "services/pricing/src/promotion-results.ts"
+      },
+      "GetPromotionsReply": {
+        "type": "object",
+        "required": [
+          "promotions",
+          "count",
+          "asAt"
+        ],
+        "properties": {
+          "promotions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Promotion"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/pricing/src/promotion-catalogue.ts"
       },
       "GetPurchaseBlanketOrdersByAgreementIdReply": {
         "type": "object",
@@ -166985,6 +167256,15 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/product-merge.ts"
       },
+      "PostCatalogueMergesByMergeIdReverseRequest": {
+        "type": "object",
+        "additionalProperties": {
+          "x-unchecked": true,
+          "description": "Read and passed on as given; the handler does not check its type."
+        },
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/product-merge.ts"
+      },
       "PostCataloguePackReply": {
         "type": "object",
         "required": [
@@ -167975,16 +168255,35 @@
         "x-derived-from": "services/catalogue/src/search-misses.ts"
       },
       "PostCatalogueTaxClassesByHsnCodeCessByEffectiveFromReply": {
-        "type": "object",
-        "required": [
-          "cess"
-        ],
-        "properties": {
-          "cess": {
-            "$ref": "#/components/schemas/CessRatePeriod"
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "cess"
+            ],
+            "properties": {
+              "approvedBy": {
+                "type": "string"
+              },
+              "cess": {
+                "$ref": "#/components/schemas/CessRatePeriod"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "cess"
+            ],
+            "properties": {
+              "cess": {
+                "$ref": "#/components/schemas/CessRatePeriod"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/cess-rates.ts"
       },
@@ -167996,6 +168295,12 @@
         "properties": {
           "advaloremBps": {
             "type": "integer"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
           },
           "perQuantity": {
             "type": "integer"
@@ -229092,6 +229397,17 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/pricing/src/promotion-catalogue.ts"
+      },
+      "PostPromotionsByPromotionIdStopRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
             "type": "string"
           }
         },

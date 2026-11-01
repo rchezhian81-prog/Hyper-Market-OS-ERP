@@ -250,6 +250,16 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
       },
     },
     {
+      // Round 4a (M05-FR-03/04): every offer head office holds, newest first, each with its status — the register the
+      // Offers page lists (a read; it changes nothing).
+      api: 'API-02', method: 'GET', path: '/v1/promotions',
+      permission: 'promotion.read',
+      handler: async (ctx) => {
+        const promotions = [...await deps.promotions(ctx.tenantId)].sort((a, b) => (a.startsAt < b.startsAt ? 1 : a.startsAt > b.startsAt ? -1 : a.id.localeCompare(b.id)));
+        return { status: 200, body: { promotions, count: promotions.length, asAt: deps.now() } };
+      },
+    },
+    {
       // Read a promotion definition and its current status.
       api: 'API-02', method: 'GET', path: '/v1/promotions/:promotionId/definition',
       permission: 'promotion.read',

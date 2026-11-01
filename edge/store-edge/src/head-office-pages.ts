@@ -50,6 +50,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'certificates',
   // OB-609 (owner, 29 Oct 2026): Bill findings and attendance flags.
   'findings',
+  // Round 4a (M03-FR-01..04 · M05-FR-01 · WF-01): the product-master and price-list pages.
+  'product-details', 'product-categories', 'product-merges', 'tax-rates', 'price-lists', 'offer-results',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -121,6 +123,12 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   quotations: 'quotationsData',
   certificates: 'certificatesData',
   findings: 'findingsData',
+  'product-details': 'productDetailsData',
+  'product-categories': 'productCategoriesData',
+  'product-merges': 'productMergesData',
+  'tax-rates': 'taxRatesData',
+  'price-lists': 'priceListsData',
+  'offer-results': 'offerResultsData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
