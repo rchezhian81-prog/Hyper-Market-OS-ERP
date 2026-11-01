@@ -25,7 +25,13 @@ import type { EmbeddedBarcodeRule } from '../../../packages/catalogue/src/catalo
 export interface ScaleLabelRuleDeps {
   /** Every event on the register, oldest first. */
   readonly history: (tenantId: string) => Promise<readonly ScaleLabelRuleEvent[]>;
-  readonly record: (tenantId: string, e: ScaleLabelRuleEvent) => Promise<void>;
+  /**
+   * The register's write version, read BEFORE `history` when a change is decided. `record` lands only while it still holds,
+   * so two people changing rules at the same moment never both "succeed" (hard rule #10): the second is told, by name.
+   */
+  readonly registerVersion: (tenantId: string) => Promise<number>;
+  /** 'conflict' when the register moved since `expectedVersion` was read — nothing was written. */
+  readonly record: (tenantId: string, e: ScaleLabelRuleEvent, expectedVersion: number) => Promise<'recorded' | 'conflict'>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
@@ -36,6 +42,14 @@ const reasonOf = (b: Record<string, unknown>): { reason?: string } =>
 /** The rule as the audit trail keeps it — flat text, readable on its own. */
 const flat = (r: EmbeddedBarcodeRule): Record<string, string> => ({
   prefix: r.prefix, item: `${r.itemStart}+${r.itemLength}`, value: `${r.valueStart}+${r.valueLength}`, valueKind: r.valueKind,
+});
+
+/** Another change to the register landed between this one being read and written: refused, never silently dropped. */
+const changedMeanwhile = (prefix: string): Error => apiError(409, {
+  code: 'scale_label_rules_changed_meanwhile',
+  whatHappened: `Someone else changed the scale-label rules while the change for prefix "${prefix}" was being made, so it was not applied over theirs.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Reload the rules, check what is now in force, and make the change again if it is still needed. Nothing of this change was saved.',
 });
 
 export function scaleLabelRuleRoutes(deps: ScaleLabelRuleDeps): readonly Route[] {
@@ -78,6 +92,7 @@ export function scaleLabelRuleRoutes(deps: ScaleLabelRuleDeps): readonly Route[]
           prefix, itemStart: num('itemStart') as number, itemLength: num('itemLength') as number,
           valueStart: num('valueStart') as number, valueLength: num('valueLength') as number, valueKind: b['valueKind'] as EmbeddedBarcodeRule['valueKind'],
         };
+        const version = await deps.registerVersion(ctx.tenantId); // read first: the write holds only while this does
         const history = await deps.history(ctx.tenantId);
         const problems = scaleRuleProblems(rule, activeScaleRules(history));
         if (problems.length > 0) {
@@ -95,7 +110,7 @@ export function scaleLabelRuleRoutes(deps: ScaleLabelRuleDeps): readonly Route[]
         const event: ScaleLabelRuleEvent = {
           prefix, version: lastScaleRuleVersion(history, prefix) + 1, state: 'active', rule, ...reasonOf(b), by: ctx.userId, at: deps.now(),
         };
-        await deps.record(ctx.tenantId, event);
+        if (await deps.record(ctx.tenantId, event, version) === 'conflict') throw changedMeanwhile(prefix);
         await audit(ctx.tenantId, ctx, event, standing);
         return { status: 201, body: { rule: event } };
       },
@@ -106,13 +121,14 @@ export function scaleLabelRuleRoutes(deps: ScaleLabelRuleDeps): readonly Route[]
       handler: async (ctx) => {
         const prefix = (ctx.params['prefix'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const version = await deps.registerVersion(ctx.tenantId);
         const history = await deps.history(ctx.tenantId);
         const standing = activeScaleRuleEvents(history).find((e) => e.prefix === prefix);
         if (standing === undefined) throw notFound(`scale-label rule in force for prefix ${prefix}`);
         const event: ScaleLabelRuleEvent = {
           prefix, version: lastScaleRuleVersion(history, prefix) + 1, state: 'withdrawn', rule: standing.rule, ...reasonOf(b), by: ctx.userId, at: deps.now(),
         };
-        await deps.record(ctx.tenantId, event);
+        if (await deps.record(ctx.tenantId, event, version) === 'conflict') throw changedMeanwhile(prefix);
         await audit(ctx.tenantId, ctx, event, standing);
         return { status: 201, body: { rule: event } };
       },
