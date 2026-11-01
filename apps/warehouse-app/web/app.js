@@ -54,7 +54,7 @@ function sayAction(node, text, icon, waitsFor) {
   why.textContent = waitsFor;
   node.append(why);
 }
-/** A quantity: the number on its own, big, then its words — `12 units · EA` stays exactly that text. */
+/** A quantity: the number on its own, big, then its words — `12 units` stays exactly that text. */
 function sayQty(node, n, rest) {
   const big = document.createElement('span');
   big.className = 'n';
@@ -107,6 +107,8 @@ const WORDS = {
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
+    // UI-2: the header names the job, not a code; the worker's code and the assignment sit under it, said as what they are.
+    screenTitle: 'Stock room work', staffWord: 'Staff', jobWord: 'Job',
     waiting: 'waiting to sync', allSent: 'everything sent',
     // where each accepted scan has got to (SP-3a): the list under the work, and the badge's first line
     sentHeading: 'Sent from this handheld', nothingSent: 'nothing sent yet',
@@ -200,6 +202,7 @@ const WORDS = {
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
+    screenTitle: 'ஸ்டாக் அறை வேலை', staffWord: 'ஊழியர்', jobWord: 'பணி',
     waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     sentHeading: 'இந்தக் கருவியிலிருந்து அனுப்பப்பட்டவை', nothingSent: 'இன்னும் எதுவும் அனுப்பப்படவில்லை',
     stepSelect: 'அடுக்க ஒரு பொருளைத் தொடவும், அல்லது வரவு பெறவும்',
@@ -333,7 +336,16 @@ const grnId = (data && data.grnId) || 'GRN';
 const nameOf = (productId) => (real && typeof real.productName === 'function' ? real.productName(productId, lang) : productId);
 function sayAmount(node, quantityMinor, uom, tail = '') {
   const q = real && typeof real.quantityText === 'function' ? real.quantityText(quantityMinor, uom) : { amount: String(quantityMinor), unit: null };
-  sayQty(node, q.amount, q.unit === null ? ` ${t('units')} · ${uom}${tail}` : ` ${q.unit}${tail}`);
+  // UI-2: a count of pieces reads "12 units" — the code "EA" says nothing more to a person. A unit this handheld does not
+  // know keeps its code beside the word ("4 units · CASE"), because then the code is the only thing that says what it is.
+  const plainCount = q.unit === null && String(uom).trim().toLowerCase() === 'ea';
+  sayQty(node, q.amount, q.unit !== null ? ` ${q.unit}${tail}` : plainCount ? ` ${t('units')}${tail}` : ` ${t('units')} · ${uom}${tail}`);
+}
+/** UI-2: the header — the job in words, then the worker's code and the assignment, each named. */
+function paintHeader() {
+  el('who').firstChild.textContent = `${t('screenTitle')} `; // the space keeps the heading two phrases to a screen reader
+  const parts = [data && data.workerId ? `${t('staffWord')} ${data.workerId}` : null, data && data.assignmentId ? `${t('jobWord')} ${data.assignmentId}` : null].filter((x) => x !== null);
+  el('assignment').textContent = parts.join(' · ');
 }
 
 let arrivalTempC = null; // Wave 3 · SF-07 part 3: the keyed arrival reading, °C, or null (declared early: the first render reads it)
@@ -573,6 +585,7 @@ const nextId = (prefix) => `${prefix}-${Date.now()}-${seq++}`;
 
 // ── Render ────────────────────────────────────────────────────────────────
 function render() {
+  paintHeader();
   const lines = real && typeof real.pickLines === 'function' ? real.pickLines() : [];
   const items = real && typeof real.goodsIn === 'function' ? real.goodsIn() : [];
   const issues = real && typeof real.indentLines === 'function' ? real.indentLines() : [];
@@ -1550,8 +1563,7 @@ const badgeTimer = setInterval(() => { void refreshBadge(); }, 10_000);
 window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 // ── Boot ────────────────────────────────────────────────────────────────────
-el('who').firstChild.textContent = (data && data.workerId) || '—';
-el('assignment').textContent = (data && data.assignmentId) || '';
+paintHeader();
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sample');
 paintIconSlots();

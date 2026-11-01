@@ -154,6 +154,16 @@ const WORDS = {
     // The bill as it prints (B13 · M31-FR-02): what the paper says, shown on the screen.
     receiptPreview: 'The bill', receiptNotMade: 'The sale is saved, but the bill could not be made',
     noCatalogue: 'This lane has no price list loaded, so it cannot scan. Tell the manager.',
+    // UI-2 (design system §4.3): the scan line over the bill, the keypad for a label that will not scan, the bill's line
+    // count, and a barcode the price list does not hold — what happened, that nothing was added, and what to do next.
+    scanReady: 'Ready to scan — scan the item, or type its barcode and press Enter',
+    scanTyping: 'Typed so far — press Enter to add it, Esc to clear',
+    lastAdded: 'Last added: {item} · {qty} · {amount}',
+    keyCode: 'Type a barcode', keyCodeTitle: 'Type the number under the barcode',
+    keyCodeHint: 'Then press OK. The item is added exactly as a scan would add it.',
+    billLines: '{n} line(s) on the bill',
+    unknownTitle: 'Not in the price list',
+    unknownMsg: 'Barcode {code} is not in this shop\'s price list. Nothing was added to the bill.\nScan it again, or type the number under the barcode. If it is still not found, put the item aside and call the manager.',
     hold: 'Hold', recall: 'Recall', held: 'Basket held',
     howPaying: 'How is the customer paying?', cash: 'Cash', card: 'Card', upi: 'UPI',
     onHold: 'A basket is on hold. Tap Recall to bring it back.',
@@ -393,6 +403,14 @@ const WORDS = {
     unsentNotKnownMsg: 'எத்தனை விற்பனைகள் அனுப்பக் காத்திருக்கின்றன என்று கடைப் பெட்டி சொல்லவில்லை, எனவே இந்த டில்லுக்குத் தெரியாது. பெட்டி பதிலளிக்கும் வரை 0 அல்ல — "தெரியவில்லை" என்றே காட்டும்.',
     receiptPreview: 'பில்', receiptNotMade: 'விற்பனை சேமிக்கப்பட்டது, ஆனால் பில்லை உருவாக்க முடியவில்லை',
     noCatalogue: 'இந்த லேனில் விலைப் பட்டியல் இல்லை. மேலாளரிடம் சொல்லவும்.',
+    scanReady: 'ஸ்கேன் செய்யத் தயார் — பொருளை ஸ்கேன் செய்யவும், அல்லது அதன் பார்கோடை உள்ளிட்டு Enter அழுத்தவும்',
+    scanTyping: 'இதுவரை உள்ளிட்டது — சேர்க்க Enter, அழிக்க Esc அழுத்தவும்',
+    lastAdded: 'கடைசியாகச் சேர்த்தது: {item} · {qty} · {amount}',
+    keyCode: 'பார்கோடை உள்ளிடு', keyCodeTitle: 'பார்கோடின் கீழ் உள்ள எண்ணை உள்ளிடவும்',
+    keyCodeHint: 'பிறகு சரி அழுத்தவும். ஸ்கேன் செய்தது போலவே பொருள் சேர்க்கப்படும்.',
+    billLines: 'பில்லில் {n} வரி(கள்)',
+    unknownTitle: 'விலைப் பட்டியலில் இல்லை',
+    unknownMsg: 'பார்கோடு {code} இந்தக் கடையின் விலைப் பட்டியலில் இல்லை. பில்லில் எதுவும் சேர்க்கப்படவில்லை.\nமீண்டும் ஸ்கேன் செய்யவும், அல்லது பார்கோடின் கீழ் உள்ள எண்ணை உள்ளிடவும். அப்போதும் கிடைக்கவில்லை என்றால், பொருளைத் தனியாக வைத்து மேலாளரை அழைக்கவும்.',
     hold: 'நிறுத்து', recall: 'திரும்பப் பெறு', held: 'கூடை நிறுத்தப்பட்டது',
     howPaying: 'வாடிக்கையாளர் எவ்வாறு பணம் தருகிறார்?', cash: 'ரொக்கம்', card: 'கார்டு', upi: 'UPI',
     onHold: 'ஒரு கூடை நிறுத்தி வைக்கப்பட்டுள்ளது. திரும்பப் பெற தட்டவும்.',
@@ -736,6 +754,10 @@ function refundTenders() {
   ];
 }
 let selectedLineId = null;
+// UI-2: what the scan line shows — the characters a scanner (or a keyboard) has typed since the last Enter, and the last
+// line a scan added. Declared here, above the first paint, because the language toggle repaints the scan line too.
+let scanBuffer = '';
+let lastAddedLineId = null;
 
 // ── Who is on the till (SP-4b · F09) ────────────────────────────────────────
 //
@@ -758,11 +780,14 @@ function rememberOperator(id) {
 function paintOperator() {
   const lane = session.lane ? session.lane() : { laneId: null };
   const who = session.operator ? session.operator() : undefined;
+  // OB-638: the person by NAME with the code beside it ("Ravi (u-ravi)"), as the store computer named them; the code alone
+  // when no name is known. `data-operator` below keeps the code — it is what every record carries.
+  const shown = who && typeof session.operatorShown === 'function' ? (session.operatorShown() ?? who) : who;
   const laneWords = lane.laneId ? `${t('lane')} ${lane.laneId}` : t('noLane');
   // The heading reads "Lane 1 · Signed in: …" as one line of words; on screen the lane sits over the cashier, and a
   // missing lane or nobody signed in is said in amber words (the words are the signal, the colour only helps).
   setText('lane-name', laneWords);
-  setText('cashier', who ? `${t('signedInAs')}: ${who}` : t('notSignedIn'));
+  setText('cashier', who ? `${t('signedInAs')}: ${shown}` : t('notSignedIn'));
   el('lane-name').toggleAttribute('data-missing', !lane.laneId);
   el('cashier').toggleAttribute('data-missing', !who);
   el('lane').setAttribute('data-operator', who || '');
@@ -995,6 +1020,9 @@ let entryMasked = false;
 /** A code (the handheld's 4 digits, the phone's 6): every digit counts, a leading 0 included — never read as a number. */
 let entryIsCode = false;
 const CODE_DIGITS = 8;
+// UI-2: a barcode keyed by hand — the longest a retail barcode carries (GTIN-14). Set for that one question only.
+const BARCODE_DIGITS = 14;
+let entryMaxDigits = CODE_DIGITS;
 /** A BILL NUMBER keyed by hand (this till's bills carry letters: ZZBFPJ75-000001): the keypad gains a letters pad, every
  *  character counts, and it is as long as a bill number can be. */
 let entryHasLetters = false;
@@ -1012,7 +1040,7 @@ function typeIntoEntry(key, literal = false) {
     : entryMasked
     ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < PIN_DIGITS ? current + key : current))
     : entryIsCode
-      ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < (entryHasLetters ? BILL_CHARS : CODE_DIGITS) ? current + key : current))
+      ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < (entryHasLetters ? BILL_CHARS : entryMaxDigits) ? current + key : current))
     : (key === 'C' ? '0' : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0') : (current === '0' ? key : current + key));
   entryValue = next;
   paintEntry();
@@ -1033,13 +1061,14 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, barcode = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
   // A bill number keyed by hand has letters in it: the letters pad shows first (a bill number starts with them), and the
   // switch key flips between letters and digits. Both pads keep the till's full-size keys.
   entryHasLetters = mode === 'number' && letters === true;
-  entryIsCode = code === true || entryHasLetters;
+  entryIsCode = code === true || barcode === true || entryHasLetters;
+  entryMaxDigits = barcode === true ? BARCODE_DIGITS : CODE_DIGITS;
   entryValue = entryIsCode ? '' : initial;
   entryMasked = mask === true;
   paintEntry();
@@ -1295,6 +1324,9 @@ function render() {
     return row;
   }));
   el('bill-table').hidden = lines.length === 0;
+  // UI-2: how many lines the bill holds, counted from the bill on screen (a voided line is evidence, not a line to pay).
+  const live = lines.filter((l) => !l.voided).length;
+  setText('bill-count', live === 0 ? '' : t('billLines').replace('{n}', String(live)));
 
   // On the box (PF-05): Hold while there are items, Recall when the till is empty. The stand-in keeps its flag.
   const suspended = session.holdAtTill ? (lines.length === 0 && heldCount > 0) : (session.state && session.state() === 'suspended');
@@ -1320,6 +1352,7 @@ function render() {
 
   paintOperator();
   paintBadge();
+  paintScan();
   publishToDisplay();
 }
 
@@ -2924,9 +2957,11 @@ function paintWords() {
   setText('th-qty', t('qty'));
   setText('th-amount', t('amount'));
   setText('total-label', t('totalToPay'));
+  setLabel('key-code', t('keyCode'));
+  paintScan();
 }
 // Each control takes its mark from the one set once, here; afterwards only its words change.
-for (const [id, icon] of [['signin', 'user-round'], ['unsent', 'upload'], ['lang', 'globe'], ['qty', 'calculator'], ['void', 'x'], ['hold', 'pause'], ['more', 'layout-grid'], ['tender', 'indian-rupee']]) setLabel(id, undefined, icon);
+for (const [id, icon] of [['signin', 'user-round'], ['unsent', 'upload'], ['lang', 'globe'], ['qty', 'calculator'], ['void', 'x'], ['hold', 'pause'], ['more', 'layout-grid'], ['tender', 'indian-rupee'], ['key-code', 'barcode']]) setLabel(id, undefined, icon);
 paintWords();
 
 el('lang').addEventListener('click', () => {
@@ -2962,7 +2997,6 @@ el('unsent').addEventListener('click', () => {
 // D-20: a 2D scanner (DataMatrix, GS1 QR) types more than digits — the printed "(01)…(17)…(10)…" form, a web address,
 // or the raw code with group separators (sent as Ctrl+]). Every character is collected; at Enter a code shaped like a
 // GS1 code goes to the catalogue whole, and anything else keeps ONLY its digits — exactly what a 1D scan did before.
-let scanBuffer = '';
 // M12-FR-01: when the scan's first character arrived — the scan-to-line time runs from here to the line on the screen.
 let scanStartedAt = null;
 /** M12-FR-01: time one scan to the next painted frame (the line is on the screen), and hand it to the till. */
@@ -3038,6 +3072,73 @@ async function askPackDate(refusal, retry) {
   render();
   tell(t('packDateNotSoldTitle'), fill(t('packDateNotSold')), STOP);
 }
+/**
+ * UI-2: the scan line over the bill. It says the till is ready, shows what has been typed since the last Enter (a scanner
+ * types too fast to see; a person keying a code by hand sees every digit), and names the last item a scan added. Words
+ * only: it touches nothing the sale holds. Called on every key, so it changes the page only when the words differ.
+ */
+function paintScan() {
+  const typing = scanBuffer !== '';
+  setText('scan-say', typing ? t('scanTyping') : t('scanReady'));
+  setText('scan-code', scanBuffer);
+  // Read off the bill as it is NOW, so a quantity changed since, or a line voided since, is said as it stands.
+  const line = lastAddedLineId === null ? null : session.basket().find((l) => l.lineId === lastAddedLineId && !l.voided) ?? null;
+  setText('scan-last', line === null ? '' : t('lastAdded').replace('{item}', line.description).replace('{qty}', line.qtyText ?? String(line.qty)).replace('{amount}', inr(line.amountMinor)));
+  const box = el('scan-ready');
+  const state = typing ? 'reading' : 'ready';
+  if (box.dataset.state !== state) box.dataset.state = state;
+}
+setLeadIcon(el('scan-mark'), 'scan-barcode', 30);
+
+/** The line a scan added or grew: one that was not on the bill before, or whose quantity changed; else the last line. */
+function lineAddedSince(before) {
+  const lines = session.basket();
+  return lines.find((l) => !l.voided && (!before.has(l.lineId) || before.get(l.lineId) !== l.qty)) ?? lines[lines.length - 1] ?? null;
+}
+
+/**
+ * One code into the sale — from the scanner's Enter, or from the "Type a barcode" keypad (UI-2). Exactly the path a scan
+ * always took: the same session call, the same questions, the same refusals in the gate's own words.
+ */
+function scanCode(code, startedAt) {
+  if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue'), STOP); return; }
+  const before = new Map(session.basket().map((l) => [l.lineId, l.qty]));
+  try {
+    session.scanBarcode(code);
+    lastAddedLineId = lineAddedSince(before)?.lineId ?? null;
+    render();
+    noteScanToLine(startedAt);
+  } catch (e) {
+    // An age-restricted item with no confirmed answer in this basket: the session refused to add it (PF-03). Ask, and
+    // scan again only on a yes.
+    if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, () => session.scanBarcode(code)); return; }
+    // B8 (OB-298): a perishable with no date in its barcode — one tap on the date printed on the pack, then scanned again.
+    if (e && e.name === 'PackDateCheckRequiredError') { void askPackDate(e, () => session.scanBarcode(code)); return; }
+    // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
+    // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
+    if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }
+    // OB-302: a kg / litre product scanned by a code that does not say how much — refused, never rung as 1 g or 1 ml.
+    if (e && e.name === 'MeasuredItemNeedsLabelError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
+    // OB-302 · B5: a scale label the till cannot ring safely (a price-only label for a kg item, a weight label on a piece).
+    if (e && e.name === 'ScaleLabelRefusedError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
+    // OB-501 (R7-A): this till's build may not start a new bill — said in the cashier's language.
+    if (e && e.name === 'NewBillRefusedError') { tell(t('newBillRefusedTitle'), saidInLang(e), STOP); return; }
+    // UI-2: a code the price list does not hold — what happened, that nothing was added, and what to do next, in the
+    // cashier's language (the catalogue's own sentence is English only and says neither).
+    if (e && e.name === 'UnknownBarcodeError') { tell(t('unknownTitle'), t('unknownMsg').replace('{code}', code), STOP); return; }
+    tell(t('read'), String(e && e.message ? e.message : e), STOP);
+  }
+}
+
+/** UI-2: a label that will not scan — the digits under the barcode on the till's own keypad, then the scan's own path. */
+el('key-code').addEventListener('click', async () => {
+  el('key-code').blur(); // a scanner's Enter must never press this button again (see the keydown handler)
+  const typed = await ask({ title: t('keyCodeTitle'), mode: 'number', hint: t('keyCodeHint'), barcode: true });
+  const code = typed === null ? '' : String(typed).replace(/[^0-9]/g, '');
+  if (code === '') return;
+  scanCode(code, null);
+});
+
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
   if (!el('sheet').hidden || !el('pay').hidden || !el('count').hidden || !el('refusal').hidden || !el('checking').hidden) return;
@@ -3047,43 +3148,26 @@ window.addEventListener('keydown', (event) => {
     const startedAt = scanStartedAt;
     scanStartedAt = null;
     const code = gs1Shaped(raw) ? raw : raw.replace(/[^0-9]/g, '');
-    if (code.length < 6) return; // a person pressing Enter, not a scanner
+    if (code.length < 6) { paintScan(); return; } // a person pressing Enter, not a scanner
     // A scanner ends every code with Enter, and Enter on a FOCUSED button presses it: the button last tapped — the
     // language toggle, Void, Tender — would be pressed by the next scan. The Enter belongs to the scan, so it stops here.
     event.preventDefault();
-    if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue'), STOP); return; }
-    try {
-      session.scanBarcode(code);
-      render();
-      noteScanToLine(startedAt);
-    } catch (e) {
-      // An age-restricted item with no confirmed answer in this basket: the session refused to add it (PF-03). Ask, and
-      // scan again only on a yes.
-      if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, () => session.scanBarcode(code)); return; }
-      // B8 (OB-298): a perishable with no date in its barcode — one tap on the date printed on the pack, then scanned again.
-      if (e && e.name === 'PackDateCheckRequiredError') { void askPackDate(e, () => session.scanBarcode(code)); return; }
-      // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
-      // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
-      if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }
-      // OB-302: a kg / litre product scanned by a code that does not say how much — refused, never rung as 1 g or 1 ml.
-      if (e && e.name === 'MeasuredItemNeedsLabelError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
-      // OB-302 · B5: a scale label the till cannot ring safely (a price-only label for a kg item, a weight label on a piece).
-      if (e && e.name === 'ScaleLabelRefusedError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
-      // OB-501 (R7-A): this till's build may not start a new bill — said in the cashier's language.
-      if (e && e.name === 'NewBillRefusedError') { tell(t('newBillRefusedTitle'), saidInLang(e), STOP); return; }
-      tell(t('read'), String(e && e.message ? e.message : e), STOP);
-    }
+    paintScan();
+    scanCode(code, startedAt);
     return;
   }
+  // UI-2: a person keying a code by hand can take back a digit, or clear what they typed, before Enter.
+  if (event.key === 'Escape' && scanBuffer !== '') { scanBuffer = ''; scanStartedAt = null; paintScan(); return; }
+  if (event.key === 'Backspace' && scanBuffer !== '' && !(event.target instanceof HTMLInputElement)) { scanBuffer = scanBuffer.slice(0, -1); paintScan(); return; }
   // A 2D scanner sends FNC1 as Ctrl+] (the group separator); every other printable character is kept as typed.
   if (event.ctrlKey && event.key === ']') { scanBuffer += GS; return; }
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.key.length === 1) {
     if (scanBuffer === '') scanStartedAt = event.timeStamp;
     scanBuffer += event.key;
+    paintScan();
   }
 });
-
 render();
 
 // ── The shell's own honesty about where this page came from ─────────────────

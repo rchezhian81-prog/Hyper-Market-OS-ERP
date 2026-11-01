@@ -128,7 +128,7 @@ describe.skipIf(!HAVE_BROWSER)('Round B: the handhelds name the product, read it
     expect(await page.textContent('#goods-in .item .qty')).toBe('200.000 kg');
     // A count of pieces keeps its words; the pick line names the product, not its code.
     expect(await page.textContent('#pick-lines .item .what')).toBe('ORD-77 · Demo Bath Soap 100g');
-    expect(await page.textContent('#pick-lines .item .qty')).toBe('12 units · ea');
+    expect(await page.textContent('#pick-lines .item .qty')).toBe('12 units');
     await tamil(page);
     expect(await page.textContent('#goods-in .item .what')).toBe('டெமோ பொன்னி அரிசி');
     // Allowed: no "not allowed" anywhere.
