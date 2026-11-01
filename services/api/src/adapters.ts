@@ -122,6 +122,7 @@ import type { ConcessionDeps, ConcessionContract, ConcessionSale, DepositMovemen
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
+import type { SparePart, SpareMovement } from '../../../packages/facilities/src/spares';
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
@@ -1437,6 +1438,15 @@ const forCustomer = (customerId: string): string => streamName(STREAM.consent, c
 // Data-subject requests are TENANT-WIDE (one stream, every request) so the overdue read sees the whole
 // privacy queue in one fold — the queue a regulator asks about first (M20-FR-04 / DPDP).
 const DATA_REQUESTS_STREAM = streamName(STREAM.consent, 'data-requests');
+// Round 4d (M26-FR-01): the spare-parts register's own stream, and the one guard its draws are checked and appended under.
+const SPARES_STREAM = streamName(STREAM.facilities, 'spares');
+const SPARES_GUARD = 'facilities-spares';
+/** Round 4d: whether two stored records hold the same content (keys in any order) — a setting restated, not changed. */
+const sameContent = (a: unknown, b: unknown): boolean => {
+  const norm = (v: unknown): unknown => (Array.isArray(v) ? v.map(norm) : v !== null && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k])])) : v);
+  return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
+};
 // Privacy EXECUTION sub-streams (M20-FR-04), all tenant-wide and append-only: the located-PII holdings, the
 // checker's erasure approvals, the sealed PII-free tombstones, and the processor-erasure notices enqueued.
 const PII_STREAM = streamName(STREAM.privacy, 'pii');
@@ -4369,7 +4379,8 @@ export function facilitiesAdapter(input: {
         occurredAt: input.now(), source: 'api/platform', payload: schedule,
         sameSubject: (p) => (p as typeof schedule).scheduleId === schedule.scheduleId,
         subjectKey: schedule.scheduleId,
-        sameValue: (p) => v(p as typeof schedule) === v(schedule),
+        // Round 4d: the whole record — a renamed schedule or a new escalation contact is a change too, never a silent no-op.
+        sameValue: (p) => sameContent(p, schedule),
       });
     },
 
@@ -4473,8 +4484,47 @@ export function facilitiesAssetsAdapter(input: {
         occurredAt: input.now(), source: 'api/platform', payload: asset,
         sameSubject: (p) => (p as typeof asset).assetId === asset.assetId,
         subjectKey: asset.assetId,
-        sameValue: (p) => v(p as typeof asset) === v(asset),
+        // Round 4d: the whole record — a renamed asset or a new AMC vendor is a change too, never a silent no-op.
+        sameValue: (p) => sameContent(p, asset),
       });
+    },
+
+    // Round 4d (M26-FR-01): the spare-parts register — each definition and each movement is its own fact on the spares
+    // stream (append-only); on hand is the sum of the movements.
+    spareParts: async (tenantId) => {
+      const byId = new Map<string, SparePart>();
+      for (const p of await allOf<SparePart>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSparePartSet')) byId.set(p.sparePartId, p);
+      return [...byId.values()];
+    },
+    spareMovements: (tenantId) => allOf<SpareMovement>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSpareMoved'),
+    recordSparePart: async (tenantId, part) => {
+      await input.store.append(tenantId, SPARES_STREAM, makeEvent({
+        id: `fac-spare-${part.sparePartId}-${part.definedAt}`, type: 'FacilitiesSparePartSet', occurredAt: part.definedAt,
+        idempotencyKey: `fac-spare-${tenantId}-${part.sparePartId}-${part.definedAt}`, source: 'api/platform', payload: part,
+      }));
+    },
+    appendSpareMovements: async (tenantId, movements, check) => {
+      // One guard for the store's spares: the ledger is read, checked and appended as one step, so two services drawing the
+      // last part at the same moment cannot both have it — the second re-reads and is told what is left.
+      for (let attempt = 0; ; attempt += 1) {
+        const version = await input.store.guardVersion(tenantId, SPARES_GUARD);
+        const parts = await allOf<SparePart>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSparePartSet');
+        const latestParts = [...new Map(parts.map((p) => [p.sparePartId, p])).values()];
+        const ledger = await allOf<SpareMovement>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSpareMoved');
+        const fresh = movements.filter((m) => !ledger.some((x) => x.movementId === m.movementId));
+        if (fresh.length === 0) return null; // already on the ledger: a re-send draws nothing twice
+        const problem = check(latestParts, ledger);
+        if (problem !== null) return problem;
+        try {
+          await input.store.appendBatch(tenantId, fresh.map((m) => ({ stream: SPARES_STREAM, event: makeEvent({
+            id: `fac-spare-move-${m.movementId}`, type: 'FacilitiesSpareMoved', occurredAt: m.at,
+            idempotencyKey: `fac-spare-move-${tenantId}-${m.movementId}`, source: 'api/platform', payload: m,
+          }) })), { guard: { key: SPARES_GUARD, expectedVersion: version } });
+          return null;
+        } catch (e) {
+          if (!(e instanceof ConcurrencyConflictError) || attempt >= 8) throw e;
+        }
+      }
     },
 
     recordService: async (tenantId, service) => {
@@ -4561,7 +4611,8 @@ export function facilitiesMonitoringAdapter(input: {
         occurredAt: input.now(), source: 'api/platform', payload: reg,
         sameSubject: (p) => (p as typeof reg).assetId === reg.assetId,
         subjectKey: reg.assetId,
-        sameValue: (p) => v(p as typeof reg) === v(reg),
+        // Round 4d: the whole record — a renamed room is a change too, never a silent no-op.
+        sameValue: (p) => sameContent(p, reg),
       });
     },
 
@@ -12387,6 +12438,8 @@ export function dayBookAdapter(input: {
     appendJournal: fin.appendJournal,
     now: input.now,
     postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    // Round 4d: every version ever defined (append-only), for the posting-map setup screen's history.
+    postingMapVersions: async (tenantId) => (await input.store.readStream(tenantId, STREAM.finance, { type: 'PostingMapDefined' })).map((e) => payloadOf<StoredPostingMap>(e)),
     definePostingMap: async (tenantId, map) => {
       await input.store.append(tenantId, STREAM.finance, makeEvent({
         id: `posting-map-${map.version}`,
@@ -13002,6 +13055,9 @@ export function campaignSendAdapter(input: { readonly store: EventStore; readonl
     queue: q.queue,
     enqueue: q.record,
     suppressions: q.suppressions!, // OB-288 P5 · M31-FR-04
+    // Round 4d (M21-FR-02): the shop's own bills by customer (till and online, net of returns) — the order facts the segments
+    // read, brought up to date first — so a campaign's attribution is worked out, never typed.
+    orderFacts: async (tenantId) => { await customer360Adapter(input).catchUp(tenantId); return segmentDataAdapter(input).orderFacts(tenantId); },
     frequencyPolicy: (tenantId) => latest<CampaignFrequencyPolicy>(input.store, tenantId, CAMPAIGN_FREQUENCY_STREAM, 'CampaignFrequencyPolicySet'),
     recordFrequencyPolicy: async (tenantId, p) => {
       await input.store.append(tenantId, CAMPAIGN_FREQUENCY_STREAM, makeEvent({

@@ -56,6 +56,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'users', 'audit-log', 'staff', 'settings', 'posh-committee', 'branches', 'do-not-contact', 'cert-in',
   // Wave 2 · Round 4a part 2: shelf and floor setup, supplier display space, store groups and seasons, product checks.
   'space-setup', 'display-contracts', 'range-clusters', 'product-checks',
+  // Round 4d (money, facilities and production): the accounts set-up (posting map and Tally names), the facilities set-up.
+  'posting-map', 'facilities-setup', 'production-recipes',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -145,6 +147,9 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'display-contracts': 'displayContractsData',
   'range-clusters': 'rangeClustersData',
   'product-checks': 'productChecksData',
+  'posting-map': 'postingMapData',
+  'facilities-setup': 'facilitiesSetupData',
+  'production-recipes': 'productionRecipesData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
@@ -196,6 +201,8 @@ export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
   'floor-heat-map': findingsPagePayload,
   'planogram-compliance': findingsPagePayload,
   'display-contracts': findingsPagePayload,
+  // Round 4d: the facilities set-up reads and writes the box's own store (head office keeps each to the stores the person holds).
+  'facilities-setup': findingsPagePayload,
 }) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */

@@ -50,7 +50,7 @@ import {
   produceBatch, validateRecipe, planProduction, InvalidRecipeError, InsufficientMaterialError,
   type Recipe, type RecipeInput, type ProductionException,
 } from '../../../packages/production/src/recipe';
-import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, LabelTooSmallError, readLabelTemplate, labelPrintFacts, type PackLabel } from '../../../packages/production/src/packing';
+import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, LabelTooSmallError, readLabelTemplate, labelPrintFacts, repack, RepackError, type PackLabel } from '../../../packages/production/src/packing';
 import {
   requireDepartment, operatedDepartments, DEPARTMENT_CATALOGUE,
   DepartmentNotOperatedError, UnknownDepartmentError,
@@ -318,6 +318,7 @@ function readInputs(raw: unknown): readonly RecipeInput[] | null {
 
 export function productionRoutes(deps: ProductionDeps): readonly Route[] {
   return [
+    ...repackRoutes(deps), // Round 4d · M11-FR-03
     {
       // Register a recipe / bill of materials (M11-FR-01). Validated by the authoritative engine —
       // a recipe that consumes nothing, produces nothing, or carries no shelf life is refused.
@@ -990,6 +991,97 @@ export function syncedProductionRoutes(deps: SyncedProductionDeps): readonly Rou
       handler: async (ctx) => {
         const recipes = deps.recipes === undefined ? [] : await deps.recipes(ctx.tenantId);
         return { status: 200, body: { recipes, enabledDepartments: await deps.enabledDepartments(ctx.tenantId), asAt: deps.now() } };
+      },
+    },
+  ];
+}
+
+// ── Round 4d · M11-FR-03 "repacking — a repack is traceable to its source batch" ───────────────────────────────────────
+//   • POST /v1/production/repacks/:repackId — { departmentId, productId, locationId, sourceBatchId, newBatchId, quantityMinor,
+//     uom }. A batch on hand is put into new packs under a NEW batch id, through the tested `repack()` engine
+//     (packages/production/src/packing.ts): the new batch keeps the SOURCE's expiry — a fresh wrapper does not make food
+//     fresh — and an expired source is refused. It is recorded as a production run of its own (`repack-<id>`, recipe
+//     `repack`) whose one input is the source batch: the source leaves stock (`consumed_in_production`) in the same guarded
+//     write, the new batch waits in quarantine for its quality release like any other production output (the release
+//     route), and the lot trace and the recall call list reach it exactly as they reach anything made from the source.
+//     Its value is the source's own (OB-68: the average buying cost at the store), never invented; none known → "not valued".
+export const REPACK_RECIPE_ID = 'repack';
+export const repackRunId = (repackId: string): string => `repack-${repackId}`;
+
+function repackRoutes(deps: ProductionDeps): readonly Route[] {
+  return [
+    {
+      api: 'API-04', method: 'POST', path: '/v1/production/repacks/:repackId',
+      permission: 'production.plan.commit', idempotent: true,
+      handler: async (ctx) => {
+        const repackId = (ctx.params['repackId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!/^[A-Za-z0-9._-]{1,60}$/.test(repackId) || !isStr(b['departmentId']) || !isStr(b['productId']) || !isStr(b['locationId'])
+          || !isStr(b['sourceBatchId']) || !isStr(b['newBatchId']) || !isPosInt(b['quantityMinor']) || !isStr(b['uom'])) {
+          throw apiError(400, { code: 'not_readable_as_a_repack', whatHappened: 'A repack needs a departmentId, the productId, the locationId, the sourceBatchId, a newBatchId, a whole quantityMinor and its uom.', wasItSaved: 'not_saved', nextSafeAction: 'Send the repack. Nothing was recorded.' });
+        }
+        const departmentId = (b['departmentId'] as string).trim(); const productId = (b['productId'] as string).trim(); const locationId = (b['locationId'] as string).trim();
+        const sourceBatchId = (b['sourceBatchId'] as string).trim(); const newBatchId = (b['newBatchId'] as string).trim();
+        const quantityMinor = b['quantityMinor'] as number; const uom = (b['uom'] as string).trim();
+        await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1
+        if (!(await deps.enabledDepartments(ctx.tenantId)).includes(departmentId)) {
+          throw apiError(409, { code: 'department_not_enabled', whatHappened: `The ${departmentId} department is not switched on for this shop.`, wasItSaved: 'not_saved', nextSafeAction: 'Switch the department on first, or choose one that is. Nothing was recorded.' });
+        }
+        const runId = repackRunId(repackId);
+        if (await deps.runExists(ctx.tenantId, runId)) {
+          throw apiError(409, { code: 'repack_already_recorded', whatHappened: `Repack ${repackId} is already recorded — a repack id is used once.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a new repack id. Nothing was changed.' });
+        }
+        if (deps.foodHandling !== undefined && handlesFood(departmentId)) {
+          const verdict = await deps.foodHandling(ctx.tenantId, ctx.userId, 'production_run', deps.now());
+          if (!verdict.allowed) foodHandlingRefusal(verdict);
+        }
+        if (deps.ingredientBatchesAt === undefined) {
+          throw apiError(409, { code: 'repack_batches_not_kept', whatHappened: 'This shop keeps no batch-level stock, so a repack cannot name its source.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded.' });
+        }
+        // The stock guard is read BEFORE the stock the repack is judged on: two repacks of the last packs cannot both stand.
+        const stockVersion = await deps.stockVersion?.(ctx.tenantId, locationId);
+        const source = (await deps.ingredientBatchesAt(ctx.tenantId, locationId, productId)).find((x) => x.batchId === sourceBatchId);
+        if (source === undefined || source.onHandMinor < quantityMinor) {
+          throw apiError(409, {
+            code: 'repack_source_not_on_hand',
+            whatHappened: source === undefined ? `Batch ${sourceBatchId} of ${productId} is not on hand at ${locationId}.` : `Only ${source.onHandMinor} of batch ${sourceBatchId} is on hand at ${locationId}, not ${quantityMinor}.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Name a batch that is on hand here, and no more than it holds. Nothing was recorded.',
+          });
+        }
+        if (source.expiry === undefined) {
+          throw apiError(409, { code: 'repack_source_has_no_expiry', whatHappened: `Batch ${sourceBatchId} has no expiry on record, and a repack must carry its source's expiry.`, wasItSaved: 'not_saved', nextSafeAction: 'Record the batch\'s expiry first (the goods receipt captures it). Nothing was recorded.' });
+        }
+        const at = deps.now();
+        let result: ReturnType<typeof repack>;
+        try {
+          result = repack({ repackId, productId, locationId, sourceBatchId, newBatchId, quantityMinor, uom, sourceExpiresAt: `${source.expiry}T23:59:59.999Z`, at, repackedBy: ctx.userId });
+        } catch (e) {
+          if (e instanceof RepackError) throw apiError(422, { code: 'repack_refused', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the repack. Nothing was recorded.' });
+          throw e;
+        }
+        const consumed: readonly RecipeInput[] = [{ productId, quantityMinor, uom }];
+        const average = await deps.averageCostAt?.(ctx.tenantId, locationId, productId);
+        const registered = await deps.ingredientCost(ctx.tenantId, productId);
+        const runCost = runCostOf(consumed, () => average, () => registered, quantityMinor, uom);
+        const run: StoredRun = {
+          runId, recipeId: REPACK_RECIPE_ID, departmentId, locationId, outputProductId: productId, outputBatchId: newBatchId,
+          outputQuantityMinor: quantityMinor, outputUom: uom, expiresAt: source.expiry,
+          inputCostMinor: runCost.inputCostMinor ?? 0, outputUnitCostMinor: 0, currency: 'INR', costKnown: runCost.valued, uncostedProducts: runCost.notValuedBecause,
+          yieldBp: 10_000, yieldVerdict: 'as_expected', exceptions: [], consumed, producedBy: ctx.userId, at, runCost,
+          inputBatches: [{ productId, batchId: sourceBatchId, quantityMinor, uom, source: 'captured' }], planRef: null,
+        };
+        const out = result.movements[0]!;
+        const movements: Movement[] = [{
+          movementId: `prod-run:${runId}:in-1`, productId, locationId, kind: 'consumed_in_production', quantityMinor, uom, occurredAt: at,
+          enteredBy: ctx.userId, batchId: sourceBatchId, reason: out.reason ?? `repacked into ${newBatchId}`,
+        }];
+        try {
+          await deps.recordRun(ctx.tenantId, { ...run, ledgerMovementIds: movements.map((m) => m.movementId) }, movements, stockVersion);
+        } catch (e) {
+          if (e instanceof ConcurrencyConflictError) throw concurrentChange(`the stock at ${locationId}`);
+          throw e;
+        }
+        return { status: 201, body: { repackId, runId, sourceBatchId, newBatchId, productId, quantityMinor, uom, expiresAt: source.expiry, valued: runCost.valued, awaitingRelease: true } };
       },
     },
   ];

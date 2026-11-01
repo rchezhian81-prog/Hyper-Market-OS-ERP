@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1643 | 951 | 951 | 178 | 436 |
+| 13 | 1653 | 956 | 956 | 183 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -473,6 +473,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/production/price-by-weight` | `production.read` | core | yes |
 | GET | `/v1/production/recipes` | `production.read` | core | — |
 | POST | `/v1/production/recipes/:recipeId` | `production.recipe.manage` | core | yes |
+| POST | `/v1/production/repacks/:repackId` | `production.plan.commit` | core | yes |
 | GET | `/v1/production/runs` | `production.read` | core | — |
 | POST | `/v1/production/runs/:runId` | `production.plan.commit` | core | yes |
 | POST | `/v1/production/runs/:runId/label` | `production.recipe.manage` | core | yes |
@@ -1006,6 +1007,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/concession/contracts` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/contracts/:contractId` | `concession.contract.manage` | `dept.concession` | yes |
 | GET | `/v1/concession/contracts/:contractId/charge` | `concession.charge.read` | `dept.concession` | — |
+| GET | `/v1/concession/contracts/:contractId/invoice-preview` | `concession.charge.read` | `dept.concession` | — |
+| GET | `/v1/concession/contracts/:contractId/invoices` | `concession.charge.read` | `dept.concession` | — |
+| POST | `/v1/concession/contracts/:contractId/invoices/:invoiceId` | `concession.contract.manage` | `dept.concession` | yes |
 | GET | `/v1/concession/contracts/:contractId/may-trade` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/contracts/:contractId/sales` | `concession.sale.record` | `dept.concession` | yes |
 | GET | `/v1/concession/contracts/:contractId/settlement` | `concession.charge.read` | `dept.concession` | — |
@@ -1015,6 +1019,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/concession/contracts/:contractId/tags/:tagId/adjust` | `concession.tag.record` | `dept.concession` | yes |
 | POST | `/v1/concession/contracts/:contractId/tags/:tagId/reverse` | `concession.tag.record` | `dept.concession` | yes |
 | POST | `/v1/concession/expiry-alerts/raise` | `concession.contract.manage` | `dept.concession` | yes |
+| GET | `/v1/concession/gst-treatment` | `concession.charge.read` | `dept.concession` | — |
+| PUT | `/v1/concession/gst-treatment` | `finance.posting.configure` | `dept.concession` | yes |
 | POST | `/v1/concession/stock-access` | `concession.charge.read` | `dept.concession` | yes |
 | POST | `/v1/concession/tags/synced` | `concession.tag.sync` | `dept.concession` | yes |
 | GET | `/v1/concession/trading-breaches` | `concession.charge.read` | `dept.concession` | — |
@@ -1361,8 +1367,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/facilities/scale-verification` | `facilities.asset.read` | core | — |
 | GET | `/v1/facilities/scales` | `facilities.asset.read` | core | — |
 | POST | `/v1/facilities/scales/:assetId` | `facilities.asset.manage` | core | yes |
+| GET | `/v1/facilities/schedules` | `facilities.overdue.read` | core | — |
 | POST | `/v1/facilities/schedules/:scheduleId` | `facilities.schedule.manage` | core | yes |
 | POST | `/v1/facilities/schedules/:scheduleId/tasks/:taskId` | `facilities.task.record` | core | yes |
+| GET | `/v1/facilities/spares` | `facilities.asset.read` | core | — |
+| POST | `/v1/facilities/spares/:sparePartId` | `facilities.asset.manage` | core | yes |
+| POST | `/v1/facilities/spares/:sparePartId/movements/:movementId` | `facilities.asset.manage` | core | yes |
 | POST | `/v1/facilities/tasks/:taskId/complete` | `facilities.task.record` | core | yes |
 | POST | `/v1/facilities/tasks/:taskId/verify` | `facilities.task.record` | core | yes |
 | POST | `/v1/hr/compliance/leave/:employeeId/:date` | `workforce.roster.manage` | core | yes |

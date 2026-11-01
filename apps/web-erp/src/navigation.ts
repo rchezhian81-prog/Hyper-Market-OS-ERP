@@ -152,6 +152,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'reconciliation': { en: 'card upi bank payments match settlement', ta: 'அட்டை யுபிஐ வங்கி' },
   'finance': { en: 'accounts money totals tally', ta: 'கணக்குகள்' },
   'tally-files': { en: 'tally export accounts', ta: 'டேலி' },
+  'posting-map': { en: 'posting map ledger chart of accounts mapping tally ledger names setup', ta: 'கணக்கு வரைபடம் லெட்ஜர் டேலி பெயர்' },
   'gst-returns': { en: 'gst gstr tax return filing', ta: 'ஜிஎஸ்டி வரி' },
   'gst-reconciliation': { en: 'gst e-invoice irn e-way bill', ta: 'ஜிஎஸ்டி மின் விலைப்பட்டியல்' },
   'itc-review': { en: 'gst input tax credit 2b', ta: 'ஜிஎஸ்டி உள்ளீட்டு வரி' },
@@ -174,6 +175,8 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'till': { en: 'billing pos checkout sell', ta: 'பில்லிங் விற்பனை' },
   'food-safety': { en: 'temperature fridge freezer hygiene', ta: 'வெப்பநிலை குளிர்சாதனம்' },
   'facilities': { en: 'maintenance repair electricity generator ac', ta: 'பராமரிப்பு பழுது' },
+  'production-recipes': { en: 'recipe bill of materials ingredients cafe bakery deli batch shelf life yield', ta: 'சமையல் முறை பொருட்கள் கஃபே பேக்கரி' },
+  'facilities-setup': { en: 'asset spare parts amc chiller freezer cold room range schedule pest fire food safety check setup', ta: 'சொத்து உதிரி பாகம் குளிர் அறை அட்டவணை சோதனை அமைப்பு' },
   'loss-prevention': { en: 'theft fraud investigation case', ta: 'திருட்டு மோசடி' },
   'dispatch': { en: 'delivery driver van route', ta: 'டெலிவரி' },
   'online-store': { en: 'website app online orders', ta: 'ஆன்லைன்' },
@@ -329,6 +332,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'recall-trace', label: 'Recalls & trace', labelTa: 'திரும்பப்பெறலும் தடமறிதலும்', path: '/recall-trace', requires: 'quality.lottrace.read', group: 'Waste' },
   // Production runs and QC release (M11) — gated on `production.read`; release needs `production.release`.
   { id: 'production', label: 'Production', labelTa: 'உற்பத்தி', path: '/production/', requires: 'production.read', group: 'Production' },
+  // Round 4d (M11-FR-01 · Screen D): the recipes the Production page records runs against — what each item is made from,
+  // what one batch makes, how long it keeps. A head-office page served by the store computer. Gated on the read the
+  // route checks (`production.read`); saving checks `production.recipe.manage` on the server.
+  { id: 'production-recipes', label: 'Recipes', labelTa: 'சமையல் முறைகள்', path: '/production-recipes', requires: 'production.read', group: 'Production' },
   // Warehouse oversight — occupancy, stock, §28 approvals, transfers, tasks (M09). Gated on the availability read
   // the bin and transfer routes check (`inventory.availability.read`).
   { id: 'warehouse-supervisor', label: 'Warehouse', labelTa: 'கிடங்கு', path: '/warehouse-supervisor/', requires: 'inventory.availability.read', group: 'Inventory' },
@@ -347,6 +354,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // balance — a head-office page (served by the store computer since OB-380). Gated on the read the routes check (`finance.period.read`);
   // making and requeueing check `finance.posting.configure` on the server.
   { id: 'tally-files', label: 'Tally files', labelTa: 'டேலி கோப்புகள்', path: '/tally-files', requires: 'finance.period.read', group: 'Finance' },
+  // Round 4d (M23-FR-01 · AVR-09 · Screen D): the accounts set-up — which account each kind of posting goes to (the posting
+  // map) and what each account is called in Tally. Without it the Day book, Tally files, Month-end and Supplier offer
+  // funding post nothing. A head-office page served by the store computer. Gated on the read both routes check
+  // (`finance.period.read`); saving checks `finance.posting.configure` on the server.
+  { id: 'posting-map', label: 'Accounts and Tally names', labelTa: 'கணக்குகளும் டேலி பெயர்களும்', path: '/posting-map', requires: 'finance.period.read', group: 'Finance' },
   // QG-02 lane 1 R4 (M05-FR-04): supplier funding of offers, earned from the bills and reconciled to the books. Gated on the
   // register's read (`finance.period.read`); recording an agreement needs `promotion.launch`, a receipt `finance.journal.post`.
   { id: 'promotion-funding', label: 'Supplier offer funding', labelTa: 'விநியோகஸ்தர் சலுகை நிதி', path: '/promotion-funding', requires: 'finance.period.read', group: 'Finance' },
@@ -434,6 +446,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Floor' },
   // OB-154 (owner, 16 Oct 2026, "Add screens before pilot"): the store-operations pages — head-office pages over their own
   // routes (served by the store computer since OB-380), each gated on the SAME permission its read route checks.
+  // Round 4d (M26-FR-01/02/03 · D-6 · Screen D): the facilities set-up — assets and their services with the spare parts
+  // used, the spare-parts register, the monitored rooms' ranges, the maintenance schedules and the food-safety checks the
+  // two pages above work from. A head-office page served by the store computer for its own store. Gated on the asset read
+  // (`facilities.asset.read`); head office re-checks every read and write by its own permission.
+  { id: 'facilities-setup', label: 'Facilities set-up', labelTa: 'வசதிகள் அமைப்பு', path: '/facilities-setup', requires: 'facilities.asset.read', group: 'Floor' },
   { id: 'food-safety', label: 'Food-safety checks', labelTa: 'உணவுப் பாதுகாப்புச் சோதனைகள்', path: '/food-safety', requires: 'facilities.overdue.read', group: 'Floor' },
   { id: 'price-integrity', label: 'Price mismatches', labelTa: 'விலை முரண்பாடுகள்', path: '/price-integrity', requires: 'price.integrity.audit', group: 'Products' },
   { id: 'store-tasks', label: 'Store tasks', labelTa: 'கடைப் பணிகள்', path: '/store-tasks', requires: 'workforce.task.read', group: 'People' },

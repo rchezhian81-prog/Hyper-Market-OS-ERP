@@ -242,6 +242,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   ]),
   gstReturnsPolicy: known({ userId: 'u-finance', permissions: ['finance.gstr.read'] }),
   // Waste & write-off review (M28-FR-01). The recorded losses folded to review rows, and who may review them.
+  reorderSettings: notKnown('this pack predates OB-630'),
   wasteWriteOffs: known([
     { id: 'wo-1', productId: 'RICE-5', lossType: 'damage', qtyRemoved: 4, uom: 'ea', valueMinor: 240_000, currency: 'INR', requiredApproval: true, evidenceRef: 'photo-1' },
     { id: 'wo-2', productId: 'MILK-1', lossType: 'expiry', qtyRemoved: 6, uom: 'ea', valueMinor: 30_000, currency: 'INR', requiredApproval: false },
@@ -865,7 +866,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       gstReconciliationQueue: notKnown('never'), gstReconciliationPolicy: notKnown('never'),
       categoryPolicyCategories: notKnown('never'), categoryPolicyPolicy: notKnown('never'),
       gstReturnsQueue: notKnown('never'), gstReturnsPolicy: notKnown('never'),
-      wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'), writeOffCapturePolicy: notKnown('never'),
+      reorderSettings: notKnown('never'), wasteWriteOffs: notKnown('never'), wastePolicy: notKnown('never'), writeOffCapturePolicy: notKnown('never'),
       countsQueue: notKnown('never'), countsPolicy: notKnown('never'), fleetPolicy: notKnown('never'),
       productPublishReviewPolicy: notKnown('never'),
       dataQualityPolicy: notKnown('never'), operationsInboxPolicy: notKnown('never'), lossPreventionPolicy: notKnown('never'), substitutionExceptionPolicy: notKnown('never'), dayBookPolicy: notKnown('never'), documentTemplatePolicy: notKnown('never'), returnGovernancePolicy: notKnown('never'), cashOfficePolicy: notKnown('never'), riskAcceptancePolicy: notKnown('never'), dayReopenPolicy: notKnown('never'), stockHealthPolicy: notKnown('never'), serviceDeskPolicy: notKnown('never'), aiDraftsPolicy: notKnown('never'), storedValuePolicy: notKnown('never'), integrationHealthPolicy: notKnown('never'), goodsReceiptPolicy: notKnown('never'), suppliersPolicy: notKnown('never'), indentsPolicy: notKnown('never'), floorIndents: notKnown('never'), dataIoPolicy: notKnown('never'), workforceInboxPolicy: notKnown('never'), essPolicy: notKnown('never'), rosteringPolicy: notKnown('never'), checklistPolicy: notKnown('never'), productionPolicy: notKnown('never'), facilitiesPolicy: notKnown('never'),

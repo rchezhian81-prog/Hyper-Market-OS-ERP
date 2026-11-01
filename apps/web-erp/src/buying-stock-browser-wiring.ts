@@ -5,7 +5,8 @@
 
 import { createOpenOrdersSession, openOrdersWords, openOrdersOutcomeWords, rupees, lineQty, editableQty, editablePrice } from './open-orders-session';
 import { createSupplierTermsSession, supplierTermsWords, supplierTermsOutcomeWords } from './supplier-terms-session';
-import { createReplenishmentSession, replenishmentWords, replenishmentOutcomeWords, qtyIn, editable } from './replenishment-session';
+import { createReplenishmentSession, replenishmentWords, replenishmentOutcomeWords, qtyIn, editable, heldReorderSettingsOf } from './replenishment-session';
+import { shopMomentOf } from './findings-session';
 import { createExpiredRegisterSession, expiredWords, expiredOutcomeWords, expiredRowView } from './expired-register-session';
 import { createRepeatOrdersSession, repeatWords, repeatOutcomeWords, planWords, occurrenceWords } from './repeat-orders-session';
 import { createSupplierAdvancesSession, advancesWords, advancesOutcomeWords, rupees as advanceRupees } from './supplier-advances-session';
@@ -40,7 +41,9 @@ export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerId
     // M09-FR-02 · WF-03: the stored reorder settings, head office's proposal on them, and a requisition raised from it.
     const raw = win['buyingData'] as { productUoms?: unknown } | null;
     const uoms = raw !== null && typeof raw === 'object' && raw.productUoms !== null && typeof raw.productUoms === 'object' ? raw.productUoms as Record<string, string> : undefined;
-    win['buyingReorder'] = { session: createReplenishmentSession({ viewer: buyerOf(win['buyingData']), ...(uoms === undefined ? {} : { productUoms: uoms }) }), words: replenishmentWords, outcomeWords: replenishmentOutcomeWords, qtyIn, editable };
+    // OB-630: the store pack's copy of the reorder settings, for when head office cannot be reached (shown as a copy).
+    const held = heldReorderSettingsOf(raw);
+    win['buyingReorder'] = { session: createReplenishmentSession({ viewer: buyerOf(win['buyingData']), ...(uoms === undefined ? {} : { productUoms: uoms }), ...(held === undefined ? {} : { held }) }), words: replenishmentWords, outcomeWords: replenishmentOutcomeWords, qtyIn, editable, moment: shopMomentOf };
     win['buyingOpenOrders'] = { session: createOpenOrdersSession({ viewer: buyerOf(win['buyingData']) }), words: openOrdersWords, outcomeWords: openOrdersOutcomeWords, rupees, lineQty, editableQty, editablePrice };
   }
   // M06-FR-03: supplier contracts (with the agreed lead time) on the Supplier scorecard page, rebate schemes on the Supplier

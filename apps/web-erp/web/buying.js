@@ -985,6 +985,16 @@ async function readReorder() {
   const [params, proposal] = [await rp.session.parameters(store), await rp.session.proposal(store)];
   if (params.result !== 'ok') { rpParams = null; rpProposal = null; renderReorder(); rpSay('reorder-status', params); return; }
   rpParams = params.value;
+  // OB-630 (P-08): head office cannot be reached — the store computer's COPY of the settings, said as a copy and how old;
+  // no proposal and no save until head office answers.
+  if (rpParams.copyFrom !== undefined) {
+    rpProposal = null; renderReorder();
+    el('reorder-status').className = 'otb-status err';
+    el('reorder-status').textContent = `${rt('copyFrom')} ${rp.moment(rpParams.copyFrom)}. ${rt('copyNote')}`;
+    el('reorder-params').dataset.copy = 'true';
+    return;
+  }
+  delete el('reorder-params').dataset.copy;
   if (proposal.result !== 'ok') { rpProposal = null; renderReorder(); rpSay('reorder-status', proposal); return; }
   rpProposal = proposal.value;
   el('reorder-status').className = 'otb-status'; el('reorder-status').textContent = '';

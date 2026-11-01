@@ -1553,6 +1553,12 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
       }),
     );
   }
+  // OB-630: the reorder settings as head office last sent them, and when this box received that copy — the Reorder tab
+  // shows them ONLY when head office cannot be reached, said as "copy from <time>" (P-08), never as current.
+  if (input.pack.reorderSettings.known) {
+    payload['reorderSettings'] = input.pack.reorderSettings.value;
+    payload['reorderSettingsReceivedAt'] = input.pack.receivedAt;
+  }
 
   return payload;
 }

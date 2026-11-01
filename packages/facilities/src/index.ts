@@ -15,3 +15,5 @@ export * from './schedules';
 export * from './weighing-verification';
 // D-6 (R2): scheduled food-safety / HACCP checks with corrective action; a missed check surfaces by arithmetic.
 export * from './food-safety';
+// Round 4d (M26-FR-01): the spare-parts register — on hand is the sum of append-only movements; a service draws from it.
+export * from './spares';

@@ -46,8 +46,9 @@ import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
-  issuedReceiptSeries, bankedReceiptCounts, complianceAdapter,
+  issuedReceiptSeries, bankedReceiptCounts, complianceAdapter, replenishmentParametersAdapter,
 } from './adapters';
+import { parametersAt } from '../../inventory/src/replenishment-parameters'; // OB-630
 import { currentFoodLicence } from '../../../packages/compliance/src/obligations';
 import { inForcePlanogram } from '../../inventory/src/planograms';
 import { floorPlanSpaceSection } from './p2-catalogue-adapters';
@@ -528,5 +529,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // GST return month (the shop's calendar), never the whole history.
   const gstMonth = tradingMonthIn(now(), packCalendar);
   sections['gstReconciliationQueue'] = await gstReconciliationQueueSection({ store, now }, tenantId, [gstMonth, monthBefore(gstMonth)]);
+  // OB-630 (owner, 1 Nov 2026): this store's reorder settings — each product's settings in force with every earlier
+  // version (who, when, why), read from head office's own register (M09-FR-02) — so the Buying page's Reorder tab shows
+  // the box's copy, said as a copy and how old, when head office cannot be reached (P-01 · P-08). Always sent for the
+  // store: an empty list is head office's own answer "none kept yet"; a box on an older pack says it was not told.
+  sections['reorderSettings'] = { storeId, products: parametersAt(await replenishmentParametersAdapter({ store, now }).versions(tenantId), storeId) }; // no build time inside: the content hash must not change when nothing did (PA-06 renewal)
   return sections;
 }

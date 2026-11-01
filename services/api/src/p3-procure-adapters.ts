@@ -347,6 +347,8 @@ export function tallyExportAdapter(input: Base): TallyExportDeps {
   return {
     now: input.now,
     ledgerNames: async (tenantId) => (await payloads<TallyLedgerNames>(input.store, tenantId, TALLY_LEDGER_NAMES, 'TallyLedgerNamesSet')).at(-1),
+    // Round 4d: every version ever set (append-only), for the setup screen's history.
+    ledgerNameVersions: (tenantId) => payloads<TallyLedgerNames>(input.store, tenantId, TALLY_LEDGER_NAMES, 'TallyLedgerNamesSet'),
     recordLedgerNames: async (tenantId, names) => {
       await input.store.append(tenantId, TALLY_LEDGER_NAMES, makeEvent({
         id: `tally-ledger-names-v${names.version}`, type: 'TallyLedgerNamesSet', occurredAt: names.setAt,

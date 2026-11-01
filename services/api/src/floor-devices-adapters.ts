@@ -118,7 +118,10 @@ export function floorDevicesAdapter(input: { readonly store: EventStore; readonl
     now,
     log: (t) => payloads<FloorDeviceLogEntry>(store, t, DEVICES_STREAM, 'FloorDeviceLogged'),
     recordLog: async (t, entry) => {
-      const id = entry.entry === 'registered' ? `registered-${entry.registration.deviceId}` : `status-${entry.deviceId}-${entry.at}`;
+      // A status change is keyed by its device, the status it moved to AND its time: two changes in the same millisecond
+      // (blocked, then active again) are two facts. Keyed by time alone the store kept the first and dropped the second
+      // as a replay (P-08). The same change sent twice is still one record.
+      const id = entry.entry === 'registered' ? `registered-${entry.registration.deviceId}` : `status-${entry.deviceId}-${entry.status}-${entry.at}`;
       await store.append(t, DEVICES_STREAM, makeEvent({ id: `floor-device-${safeKey(id)}`, type: 'FloorDeviceLogged', occurredAt: entry.at, idempotencyKey: `floor-device-${t}-${safeKey(id)}`, source: 'api/platform', payload: entry as unknown as Record<string, unknown> }));
     },
     events: (t) => payloads<StoredFloorEvent>(store, t, EVENTS_STREAM, 'FloorDeviceEventKept'),

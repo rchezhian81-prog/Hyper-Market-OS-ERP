@@ -11,7 +11,7 @@ import { createRelatedPartiesSession, relatedPartiesWords, relatedPartiesOutcome
 import { createAdoptionSession, adoptionWords, adoptionOutcomeWords, rupees as adoptionRupees, hoursOf } from './adoption-session';
 import { createHelpSession, helpWords, helpOutcomeWords, type HelpData } from './help-session';
 import { createAppointmentLettersSession, lettersWords, lettersOutcomeWords } from './appointment-letters-session';
-import { createFacilitiesOfficeSession, createEquipmentReadingQueue, facilitiesOfficeWords, facilitiesOfficeOutcomeWords, degrees, type HeldEquipment } from './facilities-office-session';
+import { createFacilitiesOfficeSession, createEquipmentReadingQueue, facilitiesOfficeWords, facilitiesOfficeOutcomeWords, degrees, lowSpareLines, type HeldEquipment } from './facilities-office-session';
 import { createWriteOffQueue, createWriteOffDecideSession, writeOffQueueWords, writeOffQueueOutcomeWords } from './write-off-queue-session';
 import { createRelabelSession, relabelWords, relabelOutcomeWords, relabelAssigneeWords } from './relabel-session';
 import { openBoxQueueRelay } from './lpw-box-queue';
@@ -66,7 +66,7 @@ export function wireLpWorkforcePages(win: Win, viewerIdentity: (raw: unknown) =>
   if (fac !== undefined) {
     const viewer = viewerIdentity(fac);
     const storeId = str(fac['storeId']);
-    win['facilitiesOffice'] = { session: createFacilitiesOfficeSession({ viewer }), words: facilitiesOfficeWords, outcomeWords: facilitiesOfficeOutcomeWords, rupees: lpRupees, degrees, ...(storeId === undefined ? {} : { storeId }) };
+    win['facilitiesOffice'] = { session: createFacilitiesOfficeSession({ viewer }), words: facilitiesOfficeWords, outcomeWords: facilitiesOfficeOutcomeWords, rupees: lpRupees, degrees, lowSpareLines, ...(storeId === undefined ? {} : { storeId }) };
     if (win.laneWriteBase !== undefined && storeId !== undefined && 'equipment' in fac) {
       const outbox = openLpwOutbox('facilities-readings', storeId, undefined, problem);
       const q = createEquipmentReadingQueue({ userId: viewer?.userId ?? null, storeId, permissions: viewer?.permissions ?? [], now }, (fac['equipment'] ?? null) as HeldEquipment | null, outbox);

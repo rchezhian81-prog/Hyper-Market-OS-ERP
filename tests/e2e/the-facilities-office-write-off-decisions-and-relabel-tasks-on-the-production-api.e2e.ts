@@ -44,6 +44,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
         await post('/v1/stores/br-1/rules', 'u-owner', { ...STORE_RULES, marginFloorBps: 0 });
         // Facilities: a critical cold room with no AMC, its range, a reading in range, an open incident.
         await post('/v1/facilities/assets/cold-1', 'u-owner', { branchId: 'br-1', name: 'Cold room 1', kind: 'cold_room', criticality: 'critical', installedOn: '2020-01-01', protectsValueMinor: 800_000 });
+        // Round 4d (M26-FR-01): a spare fan motor for the cold room, one on hand where the shop wants two — a low spare.
+        await post('/v1/facilities/spares/fan', 'u-owner', { branchId: 'br-1', name: 'Fan motor', compatibleAssetIds: ['cold-1'], minimumLevel: 2 });
+        await post('/v1/facilities/spares/fan/movements/rcv-1', 'u-owner', { kind: 'received', qty: 1, on: '2026-10-30' });
         await post('/v1/facilities/equipment/cold-1/range', 'u-owner', { branchId: 'br-1', name: 'Cold room 1', minTenthsC: 0, maxTenthsC: 80, graceMinutes: 30, expectEveryMinutes: 120 });
         await post('/v1/facilities/equipment/cold-1/readings/rd-1', 'u-mgr', { tenthsC: 40, at: ago(10), source: 'manual_probe', recordedBy: 'u-mgr' });
         await post('/v1/facilities/incidents/I1', 'u-mgr', { branchId: 'br-1', kind: 'near_miss', severity: 'minor', occurredAt: ago(60), reportedAt: ago(55), reportedBy: 'u-mgr', description: 'wet floor by the chiller' });
@@ -84,6 +87,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
     await page.click('#office-read');
     await page.waitForSelector('#office-parts:not([hidden])', { timeout: 15_000 });
     expect((await page.textContent('#o-alerts')) ?? '').toContain('Cold room 1 — No AMC recorded');
+    expect((await page.textContent('#o-alerts li[data-spare="fan"]')) ?? '').toContain('Spare part running low: Fan motor — 1 each on hand · keep at least 2');
     expect((await page.textContent('#o-equipment li[data-asset="cold-1"]')) ?? '').toContain('Within range');
     expect((await page.textContent('#o-equipment li[data-asset="cold-1"]')) ?? '').toContain('4.0°C');
     expect((await page.textContent('#o-incidents')) ?? '').toContain('wet floor by the chiller');

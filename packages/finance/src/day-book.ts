@@ -680,3 +680,28 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
     },
   ],
 };
+
+/**
+ * Round 4d (the posting map setup screen · M23-FR-01 · AVR-09): the posting kinds head office's other engines post that the
+ * suggested map above leaves to the accountant — no account is suggested for them, because which ledger supplier money or
+ * an advance sits in is the CA's call. Each posts one figure (`amount`) as one debit leg and one credit leg. Listed so the
+ * setup screen shows the accountant every kind that waits for a rule, with no account filled in (never guessed).
+ */
+export const POSTING_KINDS_TO_MAP: readonly { readonly kind: string; readonly components: readonly string[]; readonly legs?: readonly { readonly side: 'debit' | 'credit'; readonly component: string }[] }[] = Object.freeze([
+  // M27-FR-03 (services/finance/src/concession-invoices.ts): a concession period settled — what the tills held for the
+  // concessionaire comes off that liability (and a receivable when they owe the shop); the charge and utilities are income,
+  // the GST is output tax, the rest is payable to them. Seven figures, each its own leg; the accountant names the accounts.
+  {
+    kind: 'concession_settlement', components: ['collected', 'receivable', 'charge', 'utilities', 'cgst', 'sgst', 'igst', 'payable'],
+    legs: [
+      { side: 'debit', component: 'collected' }, { side: 'debit', component: 'receivable' },
+      { side: 'credit', component: 'charge' }, { side: 'credit', component: 'utilities' },
+      { side: 'credit', component: 'cgst' }, { side: 'credit', component: 'sgst' }, { side: 'credit', component: 'igst' }, { side: 'credit', component: 'payable' },
+    ],
+  },
+  { kind: 'promotion_funding', components: ['amount'] }, // services/finance/src/vendor-funding.ts — supplier offer funding received
+  { kind: 'supplier_rebate', components: ['amount'] }, // services/finance/src/rebate-receipts.ts — a rebate received
+  { kind: 'supplier_rebate_accrual', components: ['amount'] }, // services/finance/src/rebate-accruals.ts — a rebate earned, not yet paid
+  { kind: 'supplier_advance', components: ['amount'] }, // services/finance/src/supplier-advances.ts — paid to a supplier before the bill
+  { kind: 'supplier_advance_applied', components: ['amount'] }, // services/finance/src/supplier-advances.ts — an advance used against a bill
+]);

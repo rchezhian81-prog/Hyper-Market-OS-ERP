@@ -33,6 +33,7 @@ export const REPLENISHMENT_COPY = {
     unitUnknown: 'This screen was not told this item\'s unit, so it cannot read the figures — check the item is in the store\'s catalogue.', needTick: 'Tick at least one proposed line (and write any quantity in the item\'s unit).',
     needDraft: 'Write the draft number, the item and how many in the item\'s own unit.', proposalFirst: 'Show the proposal first.',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot read stock.', cannotSet: 'Your role cannot set reorder settings or raise requisitions.',
+    copyFrom: 'Head office cannot be reached — these are the store computer\'s copy from', copyNote: 'Nothing can be saved or proposed until head office answers; the copy may be out of date.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
   ta: {
@@ -50,6 +51,7 @@ export const REPLENISHMENT_COPY = {
     unitUnknown: 'இந்தப் பொருளின் அலகு இந்தத் திரைக்குச் சொல்லப்படவில்லை, எனவே எண்களைப் படிக்க முடியாது — பொருள் கடையின் பட்டியலில் உள்ளதா எனப் பாருங்கள்.', needTick: 'குறைந்தது ஒரு முன்மொழிந்த வரியைத் தேர்ந்தெடுங்கள் (அளவு எழுதினால் பொருளின் அலகில்).',
     needDraft: 'வரைவு எண், பொருள், எவ்வளவு என்பதைப் பொருளின் அலகில் எழுதுங்கள்.', proposalFirst: 'முதலில் முன்மொழிவைக் காட்டுங்கள்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பணி இருப்பைப் படிக்க முடியாது.', cannotSet: 'உங்கள் பணி மறு ஆணை அமைப்புகளை அமைக்கவோ கோரிக்கை எழுப்பவோ முடியாது.',
+    copyFrom: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — இவை கடைக் கணினியின் நகல், பெற்ற நேரம்', copyNote: 'தலைமை அலுவலகம் பதில் அளிக்கும் வரை எதையும் சேமிக்கவோ முன்மொழியவோ முடியாது; நகல் பழையதாக இருக்கலாம்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
   },
 } as const;
@@ -63,7 +65,19 @@ export interface StoredParameters {
   readonly storeId: string; readonly productId: string; readonly version: number; readonly maxLevel: number; readonly reorderPoint?: number; readonly safetyStock?: number;
   readonly leadTimeDays?: number; readonly minOrderQty?: number; readonly orderMultiple?: number; readonly avgDailyDemand?: number; readonly reason: string; readonly setBy: string; readonly setAt: string;
 }
-export interface ParametersView { readonly storeId: string; readonly products: readonly { readonly current: StoredParameters; readonly history: readonly StoredParameters[] }[] }
+/** OB-630: `copyFrom` is set only when these are the store computer's COPY (head office could not be reached) — when it got it. */
+export interface ParametersView { readonly storeId: string; readonly products: readonly { readonly current: StoredParameters; readonly history: readonly StoredParameters[] }[]; readonly copyFrom?: string }
+/** OB-630: the reorder settings as head office last sent them in the store pack, and when the store computer received them. */
+export interface HeldReorderSettings { readonly storeId: string; readonly products: ParametersView['products']; readonly receivedAt: string }
+
+/** The pack's copy as the buying payload carries it (`reorderSettings`, `reorderSettingsReceivedAt`), or undefined. */
+export function heldReorderSettingsOf(raw: unknown): HeldReorderSettings | undefined {
+  if (raw === null || typeof raw !== 'object') return undefined;
+  const r = raw as { reorderSettings?: unknown; reorderSettingsReceivedAt?: unknown };
+  const s = r.reorderSettings as { storeId?: unknown; products?: unknown } | undefined;
+  if (s === undefined || s === null || typeof s.storeId !== 'string' || !Array.isArray(s.products) || typeof r.reorderSettingsReceivedAt !== 'string') return undefined;
+  return { storeId: s.storeId, products: s.products as ParametersView['products'], receivedAt: r.reorderSettingsReceivedAt };
+}
 export interface ProposalLine { readonly productId: string; readonly position: number; readonly reorderPoint: number; readonly suggestedQty: number; readonly reason: string }
 export interface StoredProposal {
   readonly storeId: string; readonly proposals: readonly ProposalLine[]; readonly items: readonly Record<string, unknown>[]; readonly parametersNotSet: boolean;
@@ -121,6 +135,8 @@ export function createReplenishmentSession(input: {
   readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined;
   /** The items' units as the store computer was told them (the buying payload's `productUoms`). */
   readonly productUoms?: Readonly<Record<string, string>>;
+  /** OB-630: the store computer's copy of the reorder settings — shown only when head office cannot be reached. */
+  readonly held?: HeldReorderSettings;
   readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newId?: (prefix: string) => string;
 }): ReplenishmentSession {
   const named = input.viewer?.userId !== undefined;
@@ -136,7 +152,13 @@ export function createReplenishmentSession(input: {
     parameters: async (storeId) => {
       const no = gate('read'); if (no !== undefined) return no;
       if (storeId.trim() === '') return { result: 'invalid', why: 'needStore' };
-      return call('GET', `/v1/replenishment/parameters?storeId=${seg(storeId)}`);
+      const out = await call<ParametersView>('GET', `/v1/replenishment/parameters?storeId=${seg(storeId)}`);
+      // OB-630 (P-01 · P-08): head office cannot be reached — this store's copy from the store pack, said as a copy and when
+      // it was received; never for another store, and never when head office answered (a refusal stays a refusal).
+      if (out.result === 'lost_link' && input.held !== undefined && input.held.storeId === storeId.trim()) {
+        return { result: 'ok', value: { storeId: input.held.storeId, products: input.held.products, copyFrom: input.held.receivedAt } };
+      }
+      return out;
     },
     setParameters: async (storeId, form) => {
       const no = gate('set'); if (no !== undefined) return no;

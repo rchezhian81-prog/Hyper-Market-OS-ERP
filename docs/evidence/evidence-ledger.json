@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2051,
+  "testFiles": 2071,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -804,7 +804,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 16,
-        "integration": 32,
+        "integration": 33,
         "realDb": 13,
         "browser": 10,
         "connected": 3,
@@ -846,6 +846,7 @@
           "tests/integration/floor-indents.test.ts",
           "tests/integration/floor-restocking-asks-an-explicit-transfer-freeze.test.ts",
           "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/ob630-the-store-pack-carries-the-reorder-settings.test.ts",
           "tests/integration/replenishment-parameters-are-stored-per-store-and-drive-the-proposal.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/sales-history.test.ts",
@@ -1020,10 +1021,10 @@
       "id": "M11",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 6,
-        "integration": 8,
-        "realDb": 3,
-        "browser": 2,
+        "unit": 8,
+        "integration": 9,
+        "realDb": 4,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -1035,6 +1036,8 @@
           "tests/unit/erp-production-session.test.ts",
           "tests/unit/production-weighed.test.ts",
           "tests/unit/production.test.ts",
+          "tests/unit/r4d-production-recipes-session.test.ts",
+          "tests/unit/r4d-production-repack-session.test.ts",
           "tests/unit/the-box-works-from-what-it-holds.test.ts"
         ],
         "integration": [
@@ -1043,6 +1046,7 @@
           "tests/integration/production-durability.test.ts",
           "tests/integration/production-moves-ordinary-stock.test.ts",
           "tests/integration/production.test.ts",
+          "tests/integration/r4d-a-repack-keeps-its-source-expiry-and-a-recall-reaches-it.test.ts",
           "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/weighed-costing.test.ts"
@@ -1050,11 +1054,14 @@
         "realDb": [
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/production-moves-ordinary-stock.test.ts",
+          "tests/integration/r4d-a-repack-keeps-its-source-expiry-and-a-recall-reaches-it.test.ts",
           "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts"
         ],
         "browser": [
           "tests/e2e/production-delivery.e2e.ts",
-          "tests/e2e/production-works-at-the-counter-with-the-line-down.e2e.ts"
+          "tests/e2e/production-works-at-the-counter-with-the-line-down.e2e.ts",
+          "tests/e2e/r4d-a-batch-is-repacked-on-the-production-page.e2e.ts",
+          "tests/e2e/r4d-recipes-are-set-up-for-the-production-page.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -1808,9 +1815,9 @@
       "id": "M21",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 7,
-        "integration": 18,
-        "realDb": 4,
+        "unit": 8,
+        "integration": 19,
+        "realDb": 5,
         "browser": 3,
         "connected": 3,
         "device": 0,
@@ -1822,6 +1829,7 @@
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-service-session.test.ts",
           "tests/unit/journey-triggers-come-from-facts.test.ts",
+          "tests/unit/r4d-campaign-attribution.test.ts",
           "tests/unit/service-desk-campaigns.test.ts",
           "tests/unit/service-desk-cases.test.ts",
           "tests/unit/the-campaigns-session.test.ts"
@@ -1837,6 +1845,7 @@
           "tests/integration/journeys-are-worked-out-from-the-shops-own-facts.test.ts",
           "tests/integration/no-receipt-returns.test.ts",
           "tests/integration/notification-queue.test.ts",
+          "tests/integration/r4d-campaign-attribution-is-worked-out-from-sends-and-bills.test.ts",
           "tests/integration/returns-guard-the-refund.test.ts",
           "tests/integration/service-ai-drafts.test.ts",
           "tests/integration/service-cases.test.ts",
@@ -1849,6 +1858,7 @@
         "realDb": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
           "tests/integration/delivery-reports-are-the-providers.test.ts",
+          "tests/integration/r4d-campaign-attribution-is-worked-out-from-sends-and-bills.test.ts",
           "tests/integration/returns-guard-the-refund.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
@@ -1946,10 +1956,10 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 27,
-        "integration": 37,
-        "realDb": 23,
-        "browser": 7,
+        "unit": 28,
+        "integration": 38,
+        "realDb": 24,
+        "browser": 8,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1976,6 +1986,7 @@
           "tests/unit/merchandising-space.test.ts",
           "tests/unit/migration-sign-route.test.ts",
           "tests/unit/period-close.test.ts",
+          "tests/unit/r4d-posting-map-session.test.ts",
           "tests/unit/rate.test.ts",
           "tests/unit/reconciliation.test.ts",
           "tests/unit/settlement-t-plus-one-reversals.test.ts",
@@ -2005,6 +2016,7 @@
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/period-evidence.test.ts",
           "tests/integration/period-reopen.test.ts",
+          "tests/integration/r4d-the-posting-map-and-tally-names-are-versioned.test.ts",
           "tests/integration/rebates.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/space-and-display.test.ts",
@@ -2037,6 +2049,7 @@
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
+          "tests/integration/r4d-the-posting-map-and-tally-names-are-versioned.test.ts",
           "tests/integration/rebates.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -2052,6 +2065,7 @@
           "tests/e2e/day-book-post-delivery.e2e.ts",
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/finance-month-close-delivery.e2e.ts",
+          "tests/e2e/r4d-accounts-and-tally-names.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts",
           "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts",
@@ -2217,10 +2231,10 @@
       "id": "M26",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 4,
-        "integration": 12,
-        "realDb": 5,
-        "browser": 4,
+        "unit": 5,
+        "integration": 13,
+        "realDb": 6,
+        "browser": 5,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -2230,6 +2244,7 @@
           "tests/unit/erp-facilities-session.test.ts",
           "tests/unit/facilities.test.ts",
           "tests/unit/lp-workforce-sessions.test.ts",
+          "tests/unit/r4d-facilities-setup-session.test.ts",
           "tests/unit/the-box-holds-the-help-library-and-the-rooms.test.ts"
         ],
         "integration": [
@@ -2243,6 +2258,7 @@
           "tests/integration/facilities-incidents.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
           "tests/integration/facilities-schedules.test.ts",
+          "tests/integration/r4d-spare-parts-are-drawn-by-the-service-that-used-them.test.ts",
           "tests/integration/second-person-is-a-separate-act.test.ts",
           "tests/integration/the-store-computer-carries-readings-losses-and-acknowledgements.test.ts"
         ],
@@ -2251,12 +2267,14 @@
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/d6-food-safety-checks-are-scheduled-corrected-and-sealed.test.ts",
+          "tests/integration/r4d-spare-parts-are-drawn-by-the-service-that-used-them.test.ts",
           "tests/integration/the-store-computer-carries-readings-losses-and-acknowledgements.test.ts"
         ],
         "browser": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/facilities-delivery.e2e.ts",
           "tests/e2e/help-readings-and-losses-are-saved-at-the-store-with-the-line-down.e2e.ts",
+          "tests/e2e/r4d-facilities-set-up.e2e.ts",
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts"
         ],
         "connected": [
@@ -2273,10 +2291,10 @@
       "id": "M27",
       "label": "WIRED",
       "counts": {
-        "unit": 8,
-        "integration": 8,
-        "realDb": 3,
-        "browser": 3,
+        "unit": 10,
+        "integration": 9,
+        "realDb": 4,
+        "browser": 4,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -2289,7 +2307,9 @@
           "tests/unit/concession-tag-synced-route.test.ts",
           "tests/unit/concession-tagging.test.ts",
           "tests/unit/concession.test.ts",
+          "tests/unit/erp-approvals-session.test.ts",
           "tests/unit/lane-server-concession-tags.test.ts",
+          "tests/unit/r4d-concession-invoice.test.ts",
           "tests/unit/the-commercial-desk-sessions.test.ts"
         ],
         "integration": [
@@ -2300,15 +2320,18 @@
           "tests/integration/concession-tags-reach-settlement.test.ts",
           "tests/integration/concession-write-off-guard.test.ts",
           "tests/integration/concession.test.ts",
+          "tests/integration/r4d-a-concession-period-is-invoiced-and-settled-in-the-books.test.ts",
           "tests/integration/till-concession-tags-reach-the-cloud-through-the-edge.test.ts"
         ],
         "realDb": [
           "tests/integration/a-concession-expiry-reaches-the-owner.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
-          "tests/integration/concession-tags-reach-settlement.test.ts"
+          "tests/integration/concession-tags-reach-settlement.test.ts",
+          "tests/integration/r4d-a-concession-period-is-invoiced-and-settled-in-the-books.test.ts"
         ],
         "browser": [
           "tests/e2e/a-lapsed-counter-is-refused-on-the-tag-panel.e2e.ts",
+          "tests/e2e/r4d-a-concession-invoice-is-made-approved-and-issued.e2e.ts",
           "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
           "tests/e2e/till-concession-tag-through-the-box.e2e.ts"
         ],
@@ -2666,7 +2689,7 @@
       "id": "M33",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
+        "unit": 23,
         "integration": 20,
         "realDb": 4,
         "browser": 4,
@@ -2676,6 +2699,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-floor-device-status-change-in-the-same-millisecond-is-kept.test.ts",
           "tests/unit/a-session-bound-token-is-checked-every-request.test.ts",
           "tests/unit/background-jobs-projection.test.ts",
           "tests/unit/device-registry-projection.test.ts",
