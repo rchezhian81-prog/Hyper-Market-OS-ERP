@@ -43,7 +43,7 @@ export const HEAT_MAP_COPY = {
     underperforming: 'Earns less than its share of space', offPlan: 'Sold but not on the floor plan', offPlanNone: 'Every product sold has a place on the floor plan.',
     legendLow: 'Earns least', legendHigh: 'Earns most', legendUnknown: 'Not known', plan: 'Floor plan version', asAt: 'As at', mapLabel: 'The shop floor, seen from above; the entrance is at the bottom.',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read space performance.',
-    needStore: 'Type the store first.', needDates: 'Choose the first and the last day.', noPlan: 'This store has no floor plan yet — the merchandiser draws one first.',
+    needStore: 'Type the store first.', needDates: 'Choose the first and the last day.', noPlan: 'This store has no floor plan yet — head office draws one first, on Shelves and space, Shelf layout tab.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read.',
   },
   ta: {
@@ -55,7 +55,7 @@ export const HEAT_MAP_COPY = {
     underperforming: 'இடத்தின் பங்கை விடக் குறைவாக ஈட்டுகிறது', offPlan: 'விற்கப்பட்டது, ஆனால் தளத் திட்டத்தில் இல்லை', offPlanNone: 'விற்கப்பட்ட ஒவ்வொரு பொருளுக்கும் தளத் திட்டத்தில் இடம் உள்ளது.',
     legendLow: 'குறைவாக ஈட்டுகிறது', legendHigh: 'அதிகம் ஈட்டுகிறது', legendUnknown: 'தெரியவில்லை', plan: 'தளத் திட்டப் பதிப்பு', asAt: 'நிலவரம்', mapLabel: 'மேலிருந்து பார்க்கும் கடைத் தளம்; நுழைவாயில் கீழே உள்ளது.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு இட செயல்திறனைப் படிக்க முடியாது.',
-    needStore: 'முதலில் கடையைத் தட்டச்சு செய்யவும்.', needDates: 'முதல் மற்றும் கடைசி நாளைத் தேர்ந்தெடுக்கவும்.', noPlan: 'இந்தக் கடைக்கு இன்னும் தளத் திட்டம் இல்லை — வணிகப் பொறுப்பாளர் முதலில் வரைய வேண்டும்.',
+    needStore: 'முதலில் கடையைத் தட்டச்சு செய்யவும்.', needDates: 'முதல் மற்றும் கடைசி நாளைத் தேர்ந்தெடுக்கவும்.', noPlan: 'இந்தக் கடைக்கு இன்னும் தளத் திட்டம் இல்லை — தலைமை அலுவலகம் முதலில் அலமாரிகளும் இடமும் பக்கத்தின் அலமாரி அமைப்பு தாவலில் வரைய வேண்டும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை.',
   },
 } as const;
