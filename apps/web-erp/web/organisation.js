@@ -227,17 +227,132 @@ $('add').addEventListener('click', async () => {
   say($('add-status'), out, t('added'));
   if (out.ok) { $('add-name').value = ''; $('add-code').value = ''; }
   await load();
+  if (out.ok && kind === 'department') await loadDepartments(); // M01-FR-01: a new department appears in the pickers
 });
+
+// ── M01-FR-01 — begin: departments own categories; one department's report ─────────────────────────────────────
+//
+// Through the tested model (`org-departments-session.ts`, attached as `window.orgDepartmentsSession` / `orgDepartmentsKit`).
+// Saying which categories a department owns is a structural change: the person ASKS the owner for exactly that list (kind
+// org_structure_change); the owner approves on his Approvals page; then "Save the approved change" sends it naming that
+// approval number. Nothing here approves, and nobody's name is typed. Head office's refusals are shown in its words.
+const depts = window.orgDepartmentsSession ?? null;
+const deptKit = window.orgDepartmentsKit ?? null;
+const dw = (key, fill) => (deptKit === null ? key : deptKit.orgDeptWords(lang)(key, fill));
+let deptRead = null;   // GET /v1/org/departments (an outcome)
+let deptMine = null;   // the person's own requests for the chosen department (an outcome)
+let reportRead = null; // the last report (an outcome)
+
+function deptSay(id, said) { const e = $(id); e.className = `status ${said.ok ? 'good' : 'err'}`; e.textContent = said.text; }
+const chosenDept = () => $('dept-pick').value;
+
+function fillDeptPicks(list) {
+  for (const id of ['dept-pick', 'report-dept']) {
+    const sel = $(id); const was = sel.value;
+    sel.replaceChildren(...list.map((d) => { const o = document.createElement('option'); o.value = d.departmentId; o.textContent = `${d.name} (${d.departmentId})`; return o; }));
+    if ([...sel.options].some((o) => o.value === was)) sel.value = was;
+  }
+}
+
+function renderDepartments() {
+  if (deptKit === null || depts === null) { $('dept-section').hidden = true; $('report-section').hidden = true; return; }
+  for (const [id, k] of [['dept-h', 'h'], ['dept-lede', 'lede'], ['l-dept-pick', 'department'], ['l-dept-cats', 'pick'], ['l-dept-reason', 'reason'], ['dept-ask', 'ask'],
+    ['dept-mine-h', 'mineH'], ['report-h', 'reportH'], ['report-lede', 'reportLede'], ['l-report-dept', 'department'], ['l-report-day', 'day'], ['report-show', 'showReport']]) $(id).textContent = dw(k);
+  $('dept-section').hidden = !depts.may.read;
+  $('report-section').hidden = !(depts.may.read && depts.may.report);
+  $('dept-link').hidden = !depts.may.link;
+  const status = $('dept-status');
+  status.className = 'status'; status.textContent = depts.may.link ? '' : dw('readOnly');
+  $('dept-owns').textContent = ''; $('dept-unowned').textContent = ''; $('dept-cats').replaceChildren(); $('dept-mine').replaceChildren();
+  if (deptRead === null) return;
+  if (deptRead.kind !== 'done') { deptSay('dept-status', deptKit.orgDeptOutcomeWords(lang, deptRead, 'read')); return; }
+  const list = deptRead.body.departments;
+  fillDeptPicks(list);
+  if (list.length === 0) { status.className = 'status'; status.textContent = dw('noDepartments'); $('dept-link').hidden = true; return; }
+  const d = list.find((x) => x.departmentId === chosenDept()) ?? list[0];
+  $('dept-owns').textContent = d.categoryIds.length === 0 ? dw('ownsNothing') : dw('owns', { list: d.categoryIds.join(', ') });
+  const unowned = deptRead.body.unownedCategories;
+  $('dept-unowned').textContent = dw('unowned', { list: unowned.length === 0 ? dw('none') : unowned.join(', ') });
+  // The choice: what it owns now (ticked) and what nobody owns. A category another department owns is not offered —
+  // head office would refuse it; it is taken off that department first, with the owner's approval too.
+  for (const c of [...new Set([...d.categoryIds, ...unowned])].sort()) {
+    const lab = document.createElement('label');
+    const box = document.createElement('input'); box.type = 'checkbox'; box.value = c; box.checked = d.categoryIds.includes(c); box.dataset.cat = c;
+    lab.append(box, document.createTextNode(c));
+    $('dept-cats').append(lab);
+  }
+  if (deptMine === null || !depts.may.link) return;
+  if (deptMine.kind !== 'done') { deptSay('dept-link-status', deptKit.orgDeptOutcomeWords(lang, deptMine, 'read')); return; }
+  if (deptMine.body.length === 0) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = dw('noMine'); $('dept-mine').append(li); return; }
+  for (const r of deptMine.body) {
+    const li = document.createElement('li'); li.className = 'place'; li.dataset.request = r.requestId; li.dataset.status = r.status;
+    const line = document.createElement('span'); line.textContent = deptKit.requestLine(lang, r);
+    li.append(line);
+    if (r.status === 'approved') {
+      const use = document.createElement('button'); use.type = 'button'; use.dataset.use = r.requestId; use.textContent = dw('useApproved');
+      use.addEventListener('click', async () => {
+        use.disabled = true;
+        const out = await depts.saveApprovedLink(r);
+        deptSay('dept-link-status', deptKit.orgDeptOutcomeWords(lang, out, 'link'));
+        await loadDepartments();
+      });
+      li.append(use);
+    }
+    $('dept-mine').append(li);
+  }
+}
+
+function renderReport() {
+  if (deptKit === null || depts === null) return;
+  $('report-total').textContent = ''; $('report-lines').replaceChildren(); $('report-unowned').textContent = ''; $('report-note').textContent = '';
+  if (reportRead === null) return;
+  if (reportRead.kind !== 'done') { deptSay('report-status', deptKit.orgDeptOutcomeWords(lang, reportRead, 'read')); return; }
+  $('report-status').textContent = '';
+  const said = deptKit.reportLines(lang, reportRead.body);
+  $('report-total').textContent = said.total;
+  for (const text of said.lines) { const li = document.createElement('li'); li.className = 'place'; li.textContent = text; $('report-lines').append(li); }
+  $('report-unowned').textContent = said.unowned;
+  $('report-note').textContent = said.note ?? '';
+}
+
+async function loadDepartments() {
+  if (depts === null || !depts.may.read) { renderDepartments(); return; }
+  deptRead = await depts.departments();
+  renderDepartments(); // fills the pickers, so the chosen department is known
+  deptMine = depts.may.link && deptRead.kind === 'done' && chosenDept() !== '' ? await depts.myRequests(chosenDept()) : null;
+  renderDepartments();
+}
+
+if (depts !== null) {
+  $('dept-pick').addEventListener('change', () => { $('dept-link-status').textContent = ''; void loadDepartments(); });
+  $('dept-ask').addEventListener('click', async () => {
+    const categoryIds = [...document.querySelectorAll('#dept-cats input[type=checkbox]')].filter((b) => b.checked).map((b) => b.value);
+    const out = await depts.askLink({ departmentId: chosenDept(), categoryIds, reason: $('dept-reason').value });
+    deptSay('dept-link-status', deptKit.orgDeptOutcomeWords(lang, out, 'ask'));
+    if (out.kind === 'done') $('dept-reason').value = '';
+    if (out.kind !== 'invalid') await loadDepartments();
+  });
+  $('report-show').addEventListener('click', async () => {
+    $('report-status').className = 'status'; $('report-status').textContent = '';
+    reportRead = await depts.report($('report-dept').value, $('report-day').value);
+    renderReport();
+  });
+}
+// ── M01-FR-01 — end
 
 $('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintWords();
   render();
+  renderDepartments(); // M01-FR-01
+  renderReport();
 });
 
 paintWords();
 if (who !== null) { $('tree-status').textContent = t('reading'); void load(); }
+renderDepartments(); // M01-FR-01
+if (who !== null) void loadDepartments();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

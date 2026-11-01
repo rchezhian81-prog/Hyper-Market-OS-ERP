@@ -38,6 +38,10 @@
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: 13px; }
+      fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
+      fieldset label { display: flex; gap: 8px; align-items: center; font-weight: 500; overflow-wrap: anywhere; }
+      fieldset input[type=checkbox] { min-height: 24px; min-width: 24px; }
+      #dept-link { display: grid; gap: 10px; }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -76,6 +80,46 @@
         </div>
         <button id="add" type="button">Add this place</button>
         <p class="status" id="add-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- M01-FR-01 · M02-FR-02: which categories a department owns (over POST /v1/org/departments/:departmentId/categories,
+           ALWAYS with the owner's approval number, kind org_structure_change) and one department's sales for a day (GET
+           /v1/org/departments/:departmentId/report) — through the tested model apps/web-erp/src/org-departments-session.ts. -->
+      <section aria-labelledby="dept-h" id="dept-section" hidden>
+        <h2 id="dept-h">Departments and their categories</h2>
+        <p class="lede" id="dept-lede">Each department owns product categories; its report counts only those.</p>
+        <p class="status" id="dept-status" role="status" aria-live="polite"></p>
+        <label for="dept-pick"><span id="l-dept-pick">Department</span><select id="dept-pick"></select></label>
+        <p class="facts" id="dept-owns"></p>
+        <p class="muted" id="dept-unowned"></p>
+        <div id="dept-link" hidden>
+          <fieldset id="dept-cats-box">
+            <legend id="l-dept-cats">The categories this department should own</legend>
+            <div id="dept-cats"></div>
+          </fieldset>
+          <label for="dept-reason"><span id="l-dept-reason">Why (the owner reads this)</span><input id="dept-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="dept-ask" type="button">Ask the owner to approve this</button>
+          <p class="status" id="dept-link-status" role="status" aria-live="polite"></p>
+          <h3 id="dept-mine-h">Your requests for this department</h3>
+          <ul class="tree" id="dept-mine"></ul>
+        </div>
+      </section>
+
+      <section aria-labelledby="report-h" id="report-section" hidden>
+        <h2 id="report-h">Department report</h2>
+        <p class="lede" id="report-lede">One department's sales for one trading day.</p>
+        <div class="row">
+          <label for="report-dept"><span id="l-report-dept">Department</span><select id="report-dept"></select></label>
+          <label for="report-day"><span id="l-report-day">Trading day (empty for today)</span><input id="report-day" type="date" /></label>
+        </div>
+        <button id="report-show" type="button">Show the report</button>
+        <p class="status" id="report-status" role="status" aria-live="polite"></p>
+        <div id="report-out">
+          <p class="name" id="report-total"></p>
+          <ul class="tree" id="report-lines"></ul>
+          <p class="muted" id="report-unowned"></p>
+          <p class="muted" id="report-note"></p>
+        </div>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
