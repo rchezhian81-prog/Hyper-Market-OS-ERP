@@ -40,9 +40,10 @@
       button.quiet { background: var(--line); color: var(--ink); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-      .tile { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; }
-      .tile b { font-size: 22px; font-variant-numeric: tabular-nums; }
-      .tile small { color: var(--muted); font-size: 13px; }
+      /* W1: each figure is the shared summary card (sre-foundation.css · .sre-summary-card) */
+      .tile.sre-summary-card { min-height: 0; }
+      .tile .sre-summary-value { font-size: 22px; }
+      li.empty-state { list-style: none; border: 0; padding: 0; background: transparent; }
       ul.register { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.register > li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--bg); display: grid; gap: 6px; min-width: 0; }
       ul.register > li.open { border-left: 5px solid var(--warn); }
@@ -95,7 +96,7 @@
       <section id="view-payments" class="panel" aria-labelledby="pay-h">
         <h2 id="pay-h">Card and UPI payments with no answer</h2>
         <p class="lead" id="pay-lede"></p>
-        <div class="tiles" id="pay-tiles"></div>
+        <div class="tiles sre-summary" id="pay-tiles"></div>
         <p class="status" id="pay-status" role="status" aria-live="polite"></p>
         <ul class="register rows" id="pay-list" aria-label="Payments"></ul>
       </section>
@@ -104,7 +105,7 @@
         <h2 id="pl-h">Profit and loss</h2>
         <p class="lead" id="pl-lede"></p>
         <p class="status" id="pl-status" role="status" aria-live="polite"></p>
-        <div class="tiles" id="pl-tiles"></div>
+        <div class="tiles sre-summary" id="pl-tiles"></div>
         <div class="scroll"><table id="pl-table"></table></div>
         <ul class="blockers" id="pl-notes"></ul>
       </section>
@@ -113,7 +114,7 @@
         <h2 id="stock-h">Month-end stock adjustment</h2>
         <p class="lead" id="stock-lede"></p>
         <p class="status" id="stock-status" role="status" aria-live="polite"></p>
-        <div class="tiles" id="stock-tiles"></div>
+        <div class="tiles sre-summary" id="stock-tiles"></div>
         <h3 id="blockers-h">What stops it posting</h3>
         <ul class="blockers" id="stock-blockers"></ul>
         <p class="note" id="stock-posted"></p>

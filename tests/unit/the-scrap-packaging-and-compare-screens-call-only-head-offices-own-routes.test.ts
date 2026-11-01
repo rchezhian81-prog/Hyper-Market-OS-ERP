@@ -199,7 +199,7 @@ describe('Compare side by side — the session (M29-FR-02)', () => {
 describe('the three pages are on the menu, served by the store computer, and every word has a Tamil twin', () => {
   it('menu items gated on the words their routes check; served by the box (OB-380)', () => {
     const byId = new Map(ERP_NAVIGATION.map((i) => [i.id, i]));
-    expect(byId.get('scrap')).toMatchObject({ path: '/scrap', requires: 'scrap.review.read', group: 'Inventory' });
+    expect(byId.get('scrap')).toMatchObject({ path: '/scrap', requires: 'scrap.review.read', group: 'Waste' });
     expect(byId.get('packaging')).toMatchObject({ path: '/packaging', requires: 'inventory.availability.read', group: 'Inventory' });
     expect(byId.get('branch-compare')).toMatchObject({ path: '/branch-compare', requires: 'owner.kpi.read', group: 'Reports' });
     for (const id of ['scrap', 'packaging', 'branch-compare'] as const) {

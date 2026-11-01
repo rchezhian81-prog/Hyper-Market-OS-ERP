@@ -2776,11 +2776,12 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     expect(menu!['branchId']).toBe('b1');
     expect(menu!['why']).toBeNull();
     const groups = menu!['groups'] as { group: { en: string; ta: string }; items: { id: string; path: string; current: boolean; label: { en: string; ta: string } }[] }[];
-    expect(groups.map((g) => g.group.en)).toEqual(['Today', 'Receiving & QC', 'Inventory & backstore', 'Cash & finance']); // OB-16 workspaces
+    expect(groups.map((g) => g.group.en)).toEqual(['Today & approvals', 'Goods coming in', 'Stock & counts', 'Waste, expiry & returns', 'Cash, accounts & GST']); // W1 task workspaces
     const items = groups.flatMap((g) => g.items);
     // OB-380: Transfers and Store events (head-office pages on the same availability read) are served by the box now.
     // Round 6: Packaging and crates (M28-FR-03) on the same availability read.
-    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'dock-diary', 'counts', 'transfers', 'packaging', 'stock-health', 'unsellable', 'warehouse-supervisor', 'demand-events', 'day-reopen']);
+    // W1: within a workspace the most-used screens lead (Stock health, Stock counts, Transfers).
+    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'dock-diary', 'stock-health', 'counts', 'transfers', 'packaging', 'warehouse-supervisor', 'demand-events', 'unsellable', 'day-reopen']);
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
     // Both languages ride along, so the chrome never draws half a menu.
     for (const i of items) expect(i.label.ta, `${i.id} has no Tamil label`).toMatch(/[஀-௿]/);

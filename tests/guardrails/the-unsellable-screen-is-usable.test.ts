@@ -76,12 +76,12 @@ describe('the box and the screen cannot disagree about what nobody can sell (P-0
     expect(order[0]).toBeLessThan(order[1]!);
   });
 
-  it('is a screen the box serves, with its own global, its own shell and a menu item on the Inventory group gated on a read the routes enforce', () => {
+  it('is a screen the box serves, with its own global, its own shell and a menu item on the Waste, expiry & returns workspace gated on a read the routes enforce', () => {
     expect((SCREENS as readonly string[]).includes('unsellable')).toBe(true);
     expect(GLOBAL_FOR['unsellable']).toBe('unsellableData');
     expect(APP_SHELL['unsellable']).toEqual({ dir: 'web-erp', file: 'unsellable.html' });
     const item = ERP_NAVIGATION.find((i) => i.id === 'unsellable');
-    expect(item).toMatchObject({ path: '/unsellable', requires: 'inventory.availability.read', group: 'Inventory' });
+    expect(item).toMatchObject({ path: '/unsellable', requires: 'inventory.availability.read', group: 'Waste' }); // W1: under "Waste, expiry & returns"
     expect(item?.labelTa).toMatch(/[஀-௿]/);
     expect(HTML).toContain('<!--SCREEN-DATA-->');
     expect(readFileSync('apps/web-erp/web/sw.js', 'utf8')).toContain("'./unsellable.js'");
