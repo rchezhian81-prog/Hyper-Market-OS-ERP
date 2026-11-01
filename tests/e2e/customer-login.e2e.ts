@@ -138,7 +138,14 @@ describe.skipIf(!HAVE_BROWSER)('customer portal sign-in, end to end in a real br
       await page.fill('#phone', PHONE);
       await page.click('#send-code');
       await page.locator('#status', { hasText: 'no SMS provider is connected' }).waitFor({ timeout: 10_000 });
+      expect(await page.textContent('#status')).toContain('No code was sent');
+      // U0 · G20 (1 Nov 2026): one language at a time — the toggle shows the same refusal in Tamil, and the choice is remembered.
+      await page.click('#lang');
+      expect(await page.getAttribute('html', 'lang')).toBe('ta');
       expect(await page.textContent('#status')).toContain('குறியீடு அனுப்பப்படவில்லை');
+      expect(await page.textContent('#status')).not.toContain('No code was sent');
+      expect(await page.evaluate(() => (globalThis as unknown as { localStorage: Storage }).localStorage.getItem('sre-lang'))).toBe('ta');
+      await page.click('#lang');
       expect(await page.isHidden('#step-code')).toBe(true);
       expect(lines.join('\n')).toContain('NO PROVIDER CONNECTED');
       expect(lines.join('\n')).not.toContain(NUMBER);

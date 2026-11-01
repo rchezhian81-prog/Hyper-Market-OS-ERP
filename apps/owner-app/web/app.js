@@ -41,6 +41,7 @@ const WORDS = {
     waitingForYou: 'Waiting for you', alerts: 'Alerts', lookAgain: 'Look at these again',
     decidedNotSent: 'Decided, not yet sent', nothingToDecide: 'Nothing needs a decision right now.',
     noAlerts: 'No alerts today.', nothingWaiting: 'Nothing is waiting for you.',
+    notKnownNever: 'Not known — no data has ever reached this phone.', notKnownStale: 'Not known — the last word from the shop was',
     live: 'Live · synced', notLive: 'NOT LIVE — last synced', neverSynced: 'No data has ever reached this phone',
     justNow: 'just now', minutesAgo: 'min ago', hoursAgo: 'hours ago',
     sales: 'Sales', margin: 'Margin', bills: 'Bills', averageBasket: 'Average basket',
@@ -67,6 +68,7 @@ const WORDS = {
     waitingForYou: 'உங்களுக்காகக் காத்திருப்பவை', alerts: 'எச்சரிக்கைகள்', lookAgain: 'இவற்றை மீண்டும் பாருங்கள்',
     decidedNotSent: 'முடிவு செய்யப்பட்டது, இன்னும் அனுப்பப்படவில்லை', nothingToDecide: 'இப்போது எந்த முடிவும் தேவையில்லை.',
     noAlerts: 'இன்று எச்சரிக்கை எதுவும் இல்லை.', nothingWaiting: 'உங்களுக்காக எதுவும் காத்திருக்கவில்லை.',
+    notKnownNever: 'தெரியாது — இந்த ஃபோனுக்கு இதுவரை எந்தத் தகவலும் வரவில்லை.', notKnownStale: 'தெரியாது — கடையிலிருந்து கடைசித் தகவல் வந்தது',
     live: 'நேரலை · ஒத்திசைவு', notLive: 'நேரலை அல்ல — கடைசி ஒத்திசைவு', neverSynced: 'இந்த ஃபோனுக்கு இதுவரை எந்தத் தகவலும் வரவில்லை',
     justNow: 'இப்போதுதான்', minutesAgo: 'நிமிடங்களுக்கு முன்', hoursAgo: 'மணி நேரத்திற்கு முன்',
     sales: 'விற்பனை', margin: 'லாபம்', bills: 'பில்கள்', averageBasket: 'சராசரி கூடை',
@@ -264,12 +266,23 @@ function renderBranches() {
   }));
 }
 
-function renderAttention(items) {
+/**
+ * U0 (UI/UX gap audit, 1 Nov 2026 · P-08): an empty list is good news only on live data. On a phone that has never
+ * heard from the shop, or whose data is stale, "no alerts today" is a guess — the list says "not known" and how old
+ * the last word was, in the same words the header's freshness line uses.
+ */
+function emptyWords(freshness, key) {
+  return freshness.state === 'missing' ? t('notKnownNever')
+    : freshness.state === 'stale' ? `${t('notKnownStale')} ${ageInWords(freshness.ageSeconds)}.`
+    : t(key);
+}
+
+function renderAttention(items, freshness) {
   const host = el('attention');
   if (items.length === 0) {
     const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('nothingToDecide');
+    none.className = freshness.state === 'fresh' ? 'empty' : 'empty unknown';
+    none.textContent = emptyWords(freshness, 'nothingToDecide');
     host.replaceChildren(none);
     return;
   }
@@ -315,12 +328,12 @@ function renderKpis(kpis, takings) {
   }));
 }
 
-function renderAlerts(alerts) {
+function renderAlerts(alerts, freshness) {
   const host = el('alerts');
   if (alerts.length === 0) {
     const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('noAlerts');
+    none.className = freshness.state === 'fresh' ? 'empty' : 'empty unknown';
+    none.textContent = emptyWords(freshness, 'noAlerts');
     host.replaceChildren(none);
     return;
   }
@@ -357,12 +370,12 @@ function showAlert(alert) {
   el('drill').hidden = false;
 }
 
-function renderApprovals(approvals) {
+function renderApprovals(approvals, freshness) {
   const host = el('approvals');
   if (approvals.length === 0) {
     const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('nothingWaiting');
+    none.className = freshness.state === 'fresh' ? 'empty' : 'empty unknown';
+    none.textContent = emptyWords(freshness, 'nothingWaiting');
     host.replaceChildren(none);
     return;
   }
@@ -549,10 +562,10 @@ function render() {
   renderFreshness(brief.freshness);
   renderBranches();
   renderRecheck();
-  renderAttention(brief.attention);
+  renderAttention(brief.attention, brief.freshness);
   renderKpis(brief.kpis, brief.takings);
-  renderApprovals(brief.approvals);
-  renderAlerts(brief.alerts);
+  renderApprovals(brief.approvals, brief.freshness);
+  renderAlerts(brief.alerts, brief.freshness);
   renderQueued();
 }
 

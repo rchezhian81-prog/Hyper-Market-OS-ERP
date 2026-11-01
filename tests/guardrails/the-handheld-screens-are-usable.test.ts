@@ -81,7 +81,8 @@ describe('what both shells must hold, held by both', () => {
 
       it('announces sample work instead of passing it off as real', () => {
         expect(html).toContain('id="sample"');
-        expect(code(app)).toMatch(/el\('sample'\)\.hidden = real !== undefined/);
+        // U0: hidden with a real session, and on a real store computer that was told nothing (it then says "no work yet")
+        expect(code(app)).toMatch(/el\('sample'\)\.hidden = real !== undefined \|\| servedByBox/);
       });
 
       it('says when the device could not save the work, rather than swallowing it', () => {

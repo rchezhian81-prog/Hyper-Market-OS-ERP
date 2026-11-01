@@ -201,3 +201,27 @@ describe('signing is a human write, gated and checked before any POST (§28/P-04
     expect(s.presentSubmitResult('en', 'lost_link').tone).toBe('degraded');
   });
 });
+
+describe('U0 · G10: a submit refusal names its one real cause, that nothing was recorded, and the next step', () => {
+  const filled = () => data({
+    checklists: [list({
+      checklistId: 'C-close', kind: 'closing',
+      items: [item({ itemId: 'safe', description: 'lock the safe', done: false, blocking: true }), item({ itemId: 'lights', done: true })],
+    })],
+  });
+  it('no permission · nobody signing · a checklist the box does not hold · head office refused — each its own sentence', async () => {
+    const noRight = session(filled(), { mayManage: () => false });
+    expect(await noRight.submit('C-close', ['safe'], true)).toBe('refused');
+    expect(noRight.presentSubmitResult('en', 'refused').label).toBe('Could not record it — you do not hold the right to sign a checklist. Nothing was recorded. Ask the manager to sign it.');
+    const nobody = session(filled(), {}, null);
+    expect(await nobody.submit('C-close', ['safe'], true)).toBe('refused');
+    expect(nobody.presentSubmitResult('en', 'refused').label).toBe('Could not record it — this store computer was not told who is signing. Nothing was recorded. Sign in again.');
+    const s = session(filled());
+    expect(await s.submit('C-nope', ['safe'], true)).toBe('refused');
+    expect(s.presentSubmitResult('en', 'refused').label).toBe('Could not record it — that checklist is not on this store computer any more. Nothing was recorded. Refresh the list.');
+    const refused = session(filled(), { submitPort: () => ({ post: async () => 'refused' as SubmitResult }) });
+    expect(await refused.submit('C-close', ['safe'], true)).toBe('refused');
+    expect(refused.presentSubmitResult('en', 'refused').label).toBe('Head office refused it — a blocking item is still outstanding, or the checklist was already signed. Nothing was recorded. Finish the items marked Blocking and try again.');
+    expect(refused.presentSubmitResult('ta', 'refused').label).toMatch(/எதுவும் பதிவு செய்யப்படவில்லை/);
+  });
+});

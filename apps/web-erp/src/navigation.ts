@@ -168,7 +168,8 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'company-report': { en: 'all branches profit sales', ta: 'நிறுவன அறிக்கை' },
   'morning-brief': { en: 'summary yesterday owner brief', ta: 'காலைச் சுருக்கம்' },
   'users': { en: 'staff login role permission user', ta: 'பயனர் பங்கு' },
-  'audit': { en: 'audit trail history log who did', ta: 'தணிக்கை' },
+  'workforce': { en: 'workforce staff guidance assistant helper tasks findings', ta: 'பணியாளர் வழிகாட்டுதல் உதவியாளர்' },
+  'audit': { en: 'audit retention records kept legal hold history log who did', ta: 'தணிக்கை பதிவுகள்' },
   'fleet': { en: 'till device printer scanner', ta: 'கல்லா சாதனம்' },
   'scales': { en: 'weighing scale weight', ta: 'எடை தராசு' },
   'till': { en: 'billing pos checkout sell', ta: 'பில்லிங் விற்பனை' },
@@ -444,7 +445,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Migration — where the cutover stands, the figures, the data, the parallel run, the old system (MG-01–MG-12).
   // Gated on the exceptions read the desk route checks (`migration.cleaning.read`); a decision needs
   // `migration.exception.resolve` / `migration.controltotal.sign`, which the routes enforce.
-  { id: 'migration', label: 'Migration', labelTa: 'தரவு மாற்றம்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },  { id: 'store-setup', label: 'Store setup', labelTa: 'கடை அமைப்பு', path: '/setup', requires: 'platform.setup.read', group: 'Administration' },
+  { id: 'migration', label: 'Moving from the old system', labelTa: 'பழைய அமைப்பிலிருந்து மாறுதல்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },  { id: 'store-setup', label: 'Store setup', labelTa: 'கடை அமைப்பு', path: '/setup', requires: 'platform.setup.read', group: 'Administration' },
   // Document templates — the wording on every bill / invoice / PO / GRN / statement, versioned: drafted by one
   // person, approved by another, published; the previous version kept (M01-FR-02, §28). Gated on the SAME
   // permission the register route checks (`platform.setup.read`), so the menu never offers a screen the server
@@ -453,7 +454,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // OB-401 (owner, 27 Oct 2026): "Settings" opens Store setup, where the shop's settings are kept. Gated as that page is.
   // (`?tab=settings` names no section; it only lets the rail mark this item, not Store setup, when it was the one used.)
   { id: 'settings', label: 'Settings', labelTa: 'அமைப்புகள்', path: '/setup?tab=settings', requires: 'platform.setup.read', group: 'Administration' },
-  { id: 'audit', label: 'Audit log', labelTa: 'தணிக்கைப் பதிவு', path: '/admin/?tab=records', requires: 'audit.retention.read', group: 'Administration' },
+  // U0 (UI/UX gap audit, 1 Nov 2026): this item opens the Admin screen's "Records kept" tab — retention rules and legal
+  // holds — so it is named for what it opens. A readable AUDIT TRAIL is still the Round 4c / U6 gap ("Read the audit
+  // trail", SCREEN-GAP-AUDIT-2026-10-31 Round D); when that screen exists it gets its own item here.
+  { id: 'audit', label: 'Records kept', labelTa: 'வைத்திருக்கும் பதிவுகள்', path: '/admin/?tab=records', requires: 'audit.retention.read', group: 'Administration' },
   // Operations — the A06 incident inbox (a stuck sync queue, a growing dead-letter pile, an unwell
   // connection, each with its runbook). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A06 · API-13).
@@ -525,7 +529,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Workforce — the A10 guidance inbox (the day's late staff tasks, a critical overdue one escalated to the
   // manager on duty, each with the recommended action). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A10 · API-13).
-  { id: 'workforce', label: 'Workforce', labelTa: 'பணியாளர்கள்', path: '/workforce', requires: 'ai.proposal.read', group: 'People' },
+  { id: 'workforce', label: 'Staff guidance (assistant)', labelTa: 'பணியாளர் வழிகாட்டுதல் (உதவியாளர்)', path: '/workforce', requires: 'ai.proposal.read', group: 'People' },
   // ── OB-288 LP/workforce package — begin
   // M25-FR-04 · D11-FR-06: the role help centre and emergency procedures — the box serves it (it works with the line down).
   { id: 'help', label: 'Help and procedures', labelTa: 'உதவி மற்றும் நடைமுறைகள்', path: '/help', requires: 'workforce.help.read', group: 'Mine' },

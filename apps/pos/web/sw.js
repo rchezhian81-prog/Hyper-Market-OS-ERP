@@ -27,7 +27,7 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-pos-shell-2d4f3bcf87a1';
+const CACHE = 'sre-pos-shell-0f74a5a2d0db';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest', './customer-display.js'];

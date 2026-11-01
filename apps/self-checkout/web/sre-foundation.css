@@ -579,7 +579,11 @@ a.sre-summary-card:hover { background: var(--hover); box-shadow: var(--shadow-sm
 
 /* The register (data table): a tool row (search, filters, the column choice), the table, then "Showing 1–10 of 24" and
    the pager. Every control is at least the tap height; the table scrolls inside its own box, never the page. */
-.sre-datatable { display: grid; gap: var(--space-3); min-width: 0; }
+.sre-datatable { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); min-width: 0; }
+/* U0 (1 Nov 2026): a register never pushes its page wider than a phone — the filter and the scroll box give way, the table scrolls in its box. */
+.sre-datatable-body, .sre-datatable-body > .sre-scroll-x { min-width: 0; max-width: 100%; }
+.sre-datatable-filter { min-width: 0; max-width: 100%; }
+.sre-datatable-filter > .sre-select { min-width: 0; max-width: 100%; }
 .sre-datatable-tools { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
 .sre-datatable-search { position: relative; display: inline-flex; align-items: center; flex: 1 1 240px; max-width: 420px; color: var(--muted); }
 .sre-datatable-search > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }

@@ -66,6 +66,19 @@ describe('facilities schedules: a hollow tick is refused, a compliance miss esca
     expect(codeOf(await verify(h, A, 'u-mgr', 't2'))).toBe('nothing_to_verify');
   });
 
+  // U0 (UI/UX gap audit, 1 Nov 2026, G6 · P-08): the overdue answer says how many schedules it was judged against, so a
+  // screen can tell "nothing overdue" from "nothing scheduled" — the Facilities page read as all clear with no schedule.
+  it('says how many schedules the overdue list was judged against — nought when none is set up', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const none = (await overdue(h, A, 'u-owner', '2026-08-10')).body as Overdue & { scheduledCount?: number };
+    expect(none.overdue).toEqual([]);
+    expect(none.scheduledCount).toBe(0);
+    await defineSched(h, A, 'u-owner', 'sched-fire');
+    const one = (await overdue(h, A, 'u-owner', '2026-08-10')).body as Overdue & { scheduledCount?: number };
+    expect(one.scheduledCount).toBe(1);
+  });
+
   it('escalates a compliance-linked miss by itself, but never buries it among cleaning alerts', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');

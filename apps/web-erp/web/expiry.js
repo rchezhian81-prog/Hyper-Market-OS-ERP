@@ -27,7 +27,7 @@ const el = (id) => document.getElementById(id);
 
 const WORDS = {
   en: {
-    title: 'Expiry and recall',
+    title: 'Expiry & recalls',
     goingOut: 'Going out of date', recalls: 'Recalls',
     expiryLead: 'Earliest first. Expired stock is thrown away; stock close to its date is marked down while it can still sell.',
     recallLead: 'Open ones first. A recall is not finished when it is started — it is finished when the stock is accounted for and written down.',
@@ -37,7 +37,8 @@ const WORDS = {
     listTitle: 'Recalls in this shop',
     dispose: 'THROW AWAY — past its date', markdown: 'Mark it down — sells until',
     daysLeft: 'days left', daysAgo: 'days past its date', units: 'units',
-    nothingExpiring: 'Nothing is close to its date.',
+    nothingExpiring: 'Nothing is close to its date among the {n} batches on record.',
+    noBatchesYet: 'No batches are on record yet, so nothing can be close to its date — this is not a shop with nothing expiring.',
     noBatches: 'This shop does not record batch dates yet, so nothing can be checked. An empty list here would mean nothing is going out of date, and that is not what this is.',
     noRecalls: 'No recalls have been started in this shop.',
     stillOut: 'still out there', sold: 'sold on', canContact: 'buyers we can contact',
@@ -57,7 +58,7 @@ const WORDS = {
     noExpiryOnRecord: '{n} more batch(es) in this shop have no expiry date on record, so they cannot be checked here.',
   },
   ta: {
-    title: 'காலாவதி மற்றும் திரும்பப் பெறுதல்',
+    title: 'காலாவதி மற்றும் திரும்பப்பெறல்',
     goingOut: 'காலாவதி ஆகப் போகிறவை', recalls: 'திரும்பப் பெறுதல்கள்',
     expiryLead: 'முதலில் அவசரமானவை. காலாவதி ஆனவை தூக்கி எறியப்படும்; தேதி நெருங்குபவை விற்கும் வரை விலை குறைக்கப்படும்.',
     recallLead: 'திறந்தவை முதலில். தொடங்கியவுடன் திரும்பப் பெறுதல் முடிந்துவிடாது — பொருள் கணக்கில் வந்து எழுதப்பட்டால்தான் முடியும்.',
@@ -67,7 +68,8 @@ const WORDS = {
     listTitle: 'இந்தக் கடையில் திரும்பப் பெறுதல்கள்',
     dispose: 'தூக்கி எறி — தேதி முடிந்தது', markdown: 'விலை குறை — இந்த தேதி வரை விற்கும்',
     daysLeft: 'நாட்கள் உள்ளன', daysAgo: 'நாட்கள் தேதி முடிந்தது', units: 'அலகுகள்',
-    nothingExpiring: 'எதுவும் தேதி நெருங்கவில்லை.',
+    nothingExpiring: 'பதிவில் உள்ள {n} தொகுதிகளில் எதுவும் தேதி நெருங்கவில்லை.',
+    noBatchesYet: 'இன்னும் எந்தத் தொகுதியும் பதிவில் இல்லை, எனவே எதுவும் தேதி நெருங்க முடியாது — இது காலாவதி ஏதும் இல்லாத கடை அல்ல.',
     noBatches: 'இந்தக் கடை இன்னும் batch தேதிகளைப் பதிவு செய்யவில்லை. எனவே எதையும் சரிபார்க்க முடியாது. காலி பட்டியல் என்றால் எதுவும் காலாவதி ஆகவில்லை என்று பொருள் — அது இங்கு உண்மை அல்ல.',
     noRecalls: 'இந்தக் கடையில் திரும்பப் பெறுதல் எதுவும் தொடங்கப்படவில்லை.',
     stillOut: 'இன்னும் வெளியே உள்ளது', sold: 'விற்கப்பட்டது', canContact: 'தொடர்பு கொள்ளக்கூடிய வாடிக்கையாளர்கள்',
@@ -220,8 +222,11 @@ function renderExpiry() {
   noBatches.hidden = !untracked && !(undated > 0);
   noBatches.textContent = untracked ? t('noBatches') : undated > 0 ? t('noExpiryOnRecord').replace('{n}', String(undated)) : '';
 
+  // U0 (P-08): an empty list says how many batches it vouches for; none on record is said as such, never as "nothing
+  // is close to its date".
+  const known = (window.expiryData?.batches ?? []).length;
   el('expiry-list').replaceChildren(...(list.length === 0
-    ? [emptyLine(untracked ? t('noBatches') : t('nothingExpiring'))]
+    ? [emptyLine(untracked ? t('noBatches') : known === 0 ? t('noBatchesYet') : t('nothingExpiring').replace('{n}', String(known)))]
     : list.map((item) => {
       const row = document.createElement('div');
       row.className = `row ${item.status}`;

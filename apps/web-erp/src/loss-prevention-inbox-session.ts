@@ -109,6 +109,7 @@ export type CopyKey =
   | 'closeHeading' | 'caseLabel' | 'outcomeLabel' | 'noteLabel' | 'notePlaceholder' | 'closeBtn'
   | 'outcomeProven' | 'outcomeUnfounded' | 'outcomeInconclusive' | 'outcomeProcessFailure' | 'outcomeReferredToPolice'
   | 'closeRecorded' | 'closeRefused' | 'closeLostLink'
+  | 'refusedNoRight' | 'refusedUnknownOutcome' | 'refusedNeedsNote' | 'refusedByHeadOffice'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData'
   | 'raisedHeading' | 'raisedNone' | 'raisedLinked' | 'raisedHasCase' | 'raisedNoCase'
@@ -133,6 +134,11 @@ export const LP_INBOX_COPY: BilingualCopy<CopyKey> = {
     outcomeProcessFailure: 'A process failed (not a person)', outcomeReferredToPolice: 'Referred to the police',
     closeRecorded: 'Case closed.',
     closeRefused: 'Could not close — a "proven" outcome needs a second approver, evidence on file and a verified chain; every close needs an outcome and a note; or you do not have permission.',
+    // U0 · G10 (1 Nov 2026): the ONE real cause, nothing was changed, the next step — the catch-all above is kept for a refusal with no known cause.
+    refusedNoRight: 'Could not close it — you do not hold the right to close investigations. Nothing was changed. Ask a person who holds it.',
+    refusedUnknownOutcome: 'Could not close it — pick one of the outcomes. Nothing was changed.',
+    refusedNeedsNote: 'Could not close it — a note is needed. Nothing was changed. Say what was found and try again.',
+    refusedByHeadOffice: 'Head office refused it — a "proven" outcome needs a second approver, evidence on file and a verified chain. Nothing was changed. Check the evidence and the approver, then try again.',
     closeLostLink: 'No connection — not saved. Try again.',
     scrReady: 'Showing the open investigations', scrEmpty: 'No open investigations — nothing outstanding.',
     stateNotPermitted: 'You do not have permission to see the investigations.',
@@ -161,6 +167,10 @@ export const LP_INBOX_COPY: BilingualCopy<CopyKey> = {
     outcomeProcessFailure: 'ஒரு செயல்முறை தோல்வி (நபர் அல்ல)', outcomeReferredToPolice: 'காவல்துறைக்கு அனுப்பப்பட்டது',
     closeRecorded: 'வழக்கு மூடப்பட்டது.',
     closeRefused: 'மூட முடியவில்லை — "நிரூபிக்கப்பட்டது" முடிவுக்கு இரண்டாம் அனுமதியாளர், கோப்பில் ஆதாரம், சரிபார்க்கப்பட்ட சங்கிலி தேவை; ஒவ்வொரு மூடலுக்கும் ஒரு முடிவும் குறிப்பும் தேவை; அல்லது உங்களுக்கு அனுமதி இல்லை.',
+    refusedNoRight: 'மூட முடியவில்லை — விசாரணைகளை மூடும் உரிமை உங்களிடம் இல்லை. எதுவும் மாற்றப்படவில்லை. அந்த உரிமை உள்ள ஒருவரிடம் கேளுங்கள்.',
+    refusedUnknownOutcome: 'மூட முடியவில்லை — முடிவுகளில் ஒன்றைத் தேர்ந்தெடுங்கள். எதுவும் மாற்றப்படவில்லை.',
+    refusedNeedsNote: 'மூட முடியவில்லை — குறிப்பு தேவை. எதுவும் மாற்றப்படவில்லை. என்ன கண்டறியப்பட்டது என்று சொல்லி மீண்டும் முயற்சிக்கவும்.',
+    refusedByHeadOffice: 'தலைமை அலுவலகம் மறுத்தது — "நிரூபிக்கப்பட்டது" முடிவுக்கு இரண்டாம் அனுமதியாளர், கோப்பில் ஆதாரம், சரிபார்க்கப்பட்ட சங்கிலி தேவை. எதுவும் மாற்றப்படவில்லை. ஆதாரத்தையும் அனுமதியாளரையும் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
     closeLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     scrReady: 'திறந்த விசாரணைகளைக் காட்டுகிறது', scrEmpty: 'திறந்த விசாரணைகள் இல்லை — நிலுவையில் எதுவும் இல்லை.',
     stateNotPermitted: 'விசாரணைகளைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
@@ -302,6 +312,10 @@ export function createLpInboxSession(config: LpInboxConfig, ports: LpInboxPorts)
     };
   };
 
+  // U0 · G10: the cause of the last refusal, for the words the shell shows after it.
+  let lastRefusal: 'refusedNoRight' | 'refusedUnknownOutcome' | 'refusedNeedsNote' | 'refusedByHeadOffice' | null = null;
+  const refuse = (key: NonNullable<typeof lastRefusal>): CloseResult => { lastRefusal = key; return 'refused'; };
+
   return {
     text,
     outcomeOptions: (lang) => {
@@ -336,16 +350,21 @@ export function createLpInboxSession(config: LpInboxConfig, ports: LpInboxPorts)
     // Close a case. Refuse BEFORE any POST — no permission, an unknown outcome, or an empty note is a local
     // refusal, not a round trip. The server still applies the §28/evidence rules for a "proven" outcome and
     // records the close in the manager's own name; the screen never fabricates the second signature.
+    // U0 · G10: each local refusal remembers its ONE cause; the status after it names that cause, never a list of maybes.
     close: async (caseId, outcome, note) => {
-      if (!ports.mayManage() || !isOutcome(outcome) || note.trim() === '') return 'refused';
-      return ports.closePort().post({ caseId, outcome, note: note.trim() });
+      if (!ports.mayManage()) return refuse('refusedNoRight');
+      if (!isOutcome(outcome)) return refuse('refusedUnknownOutcome');
+      if (note.trim() === '') return refuse('refusedNeedsNote');
+      const result = await ports.closePort().post({ caseId, outcome, note: note.trim() });
+      lastRefusal = result === 'refused' ? 'refusedByHeadOffice' : null;
+      return result;
     },
 
     presentCloseResult: (lang, outcome) => {
       const t = translator(LP_INBOX_COPY, lang);
       if (outcome === 'closed') return presentStatus({ tone: 'ok', icon: '✓', label: t('closeRecorded'), needsAttention: false });
       if (outcome === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('closeLostLink'), needsAttention: true });
-      return presentStatus({ tone: 'error', icon: '✕', label: t('closeRefused'), needsAttention: true });
+      return presentStatus({ tone: 'error', icon: '✕', label: t(lastRefusal ?? 'closeRefused'), needsAttention: true });
     },
   };
 }

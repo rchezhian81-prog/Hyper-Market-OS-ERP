@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>SRE Devices</title>
+    <title>SRE Tills &amp; devices</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#192f27" />
     <!--
@@ -25,10 +25,10 @@
       h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
       .tiles { display:flex; gap:12px; flex-wrap:wrap; }
       .tile { background:var(--panel); border-radius:12px; padding:10px 14px; min-width:110px; border-left:6px solid var(--idle); }
-      .tile b { display:block; font-size:22px; font-variant-numeric:tabular-nums; } .tile span { color:var(--muted); font-size:13px; }
+      .tile b { display:block; font-size:22px; font-variant-numeric:tabular-nums; } .tile span { color:var(--muted); font-size:14px; }
       .tile.attention { border-left-color:var(--degraded); } .tile.bad { border-left-color:var(--error); } .tile.good { border-left-color:var(--ok); }
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
+      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); } .summary .count.unknown { color:var(--warn); font-weight:600; }
       .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
       .filter[aria-pressed='true'] { background:var(--ink); color:var(--bg); }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
@@ -44,14 +44,14 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       .pending { background:var(--info-surface); color:var(--on-info-surface); border-bottom:2px solid var(--info); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
       .pending[hidden] { display:none; }
-      .send { min-height:36px; padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:14px; font-weight:700; }
+      .send { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:14px; font-weight:700; }
       .send:disabled { opacity:.6; } .send[hidden] { display:none; }
       #deliver-msg { color:var(--muted); font-size:14px; }
       .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:2px; }
       .act { min-height: var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; font-weight:600; }
       .act:disabled { opacity:.5; }
       .act-block { background:var(--danger-surface); color:var(--on-danger); } .act-retire { background:var(--warn-surface); color:var(--on-warn-surface); } .act-reinstate { background:var(--ok-surface); color:var(--on-ok-surface); }
-      .act-note { color:var(--muted); font-size:13px; }
+      .act-note { color:var(--muted); font-size:14px; }
       .sheet h3 { margin:0; font-size:18px; } .sheet p { margin:0; color:var(--muted); font-size:14px; }
       .sheet input { min-height:44px; padding:0 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:16px; }
       .sheet .msg { color:var(--danger-text); min-height:1.2em; }
@@ -83,7 +83,7 @@
     </div>
 
     <header>
-      <h1 class="who" id="who">Devices <small id="whoami"></small></h1>
+      <h1 class="who" id="who">Tills &amp; devices <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 

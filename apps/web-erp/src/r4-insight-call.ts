@@ -2,6 +2,8 @@
 // same-origin, JSON, a fresh idempotency key on every write, and every answer folded into one Outcome the page shows.
 // No retries, no timers, nothing written on open.
 
+import { refusalWords, whatHappenedWords, langOfWords, type RefusalLang } from './refusal-words';
+
 export type Outcome<T, K extends string = string> =
   | { readonly result: 'ok'; readonly value: T }
   | { readonly result: 'refused'; readonly status: number; readonly code: string; readonly whatHappened: string }
@@ -34,9 +36,14 @@ export function makeCaller(input: { readonly fetch?: typeof globalThis.fetch; re
 
 export const newId = (prefix: string): string => `${prefix}-${rand().replace(/[^A-Za-z0-9]/g, '').slice(0, 12)}`;
 
-/** The words for an outcome that is not ok, from the page's own word table. */
-export function outcomeIn(words: (key: string) => string, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${words('refused')} ${out.whatHappened}`;
+/**
+ * The words for an outcome that is not ok, from the page's own word table. U0 · G10 (1 Nov 2026): a refusal with no
+ * sentence from head office (a bare "status 404", a code) is said in plain words for its cause, never as the raw code;
+ * with the reader's `lang` named, the refusal carries all three parts — what happened, nothing was changed, the next safe
+ * action (`refusal-words.ts`). A sentence head office wrote is kept word for word either way.
+ */
+export function outcomeIn(words: (key: string) => string, out: Outcome<unknown>, lang?: RefusalLang): string {
+  if (out.result === 'refused') return lang === undefined ? `${words('refused')} ${whatHappenedWords(langOfWords(words('refused')), out)}` : refusalWords(lang, out);
   if (out.result === 'invalid') return words(out.why);
   if (out.result === 'lost_link') return words('unreachable');
   return '';

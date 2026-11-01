@@ -128,7 +128,7 @@ describe.skipIf(!HAVE_BROWSER)('products nobody can sell, on the real box in a r
     expect(till.excludedProducts?.find((e) => e.productId === 'UNIT')?.why).toBe('unknown unit of measure "bundle" on the catalogue');
   });
 
-  it('a clean catalogue says every product can be sold; a box with no catalogue says it cannot say — and shows the sample stand-in, never "all clear"', async () => {
+  it('a clean catalogue says every product can be sold; a box with no catalogue says "not known" — never the sample stand-in, never "all clear" (U0 · P-08)', async () => {
     const clean = await box(packWith([PRODUCTS[0]!]));
     const cleanPage = await openOnBox(clean.base);
     expect((await cleanPage.textContent('#state-text')) ?? '').toContain('Every product in the catalogue can be sold');
@@ -137,7 +137,11 @@ describe.skipIf(!HAVE_BROWSER)('products nobody can sell, on the real box in a r
 
     const none = await box(packWith(undefined));
     const nonePage = await openOnBox(none.base);
-    expect(await nonePage.isVisible('#sample')).toBe(true);
+    // U0 (UI/UX gap audit, 1 Nov 2026): a real store computer that was given no catalogue says so in the warn tone; the
+    // announced sample is for a file opened off the box, never for a person on the box.
+    expect(await nonePage.isHidden('#sample')).toBe(true);
+    expect((await nonePage.textContent('#state-text')) ?? '').toContain('Not known — the store computer has not been given the catalogue yet');
+    expect(await nonePage.$$('#groups section.group')).toHaveLength(0);
     expect(await nonePage.evaluate(() => (globalThis as unknown as UnsellableWindow).unsellableSession === undefined)).toBe(true);
   });
 });

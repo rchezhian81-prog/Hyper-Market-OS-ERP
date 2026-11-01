@@ -63,7 +63,7 @@ describe('the count plans session', () => {
   it('shows head office\'s refusal in head office\'s words, says when head office could not be reached, and a nobody sends nothing', async () => {
     const refused = createCountPlansSession(MANAGER, fakeHttp({ result: 'refused', status: 422, code: 'self_approval', whatHappened: 'u-mgr counted P1 and cannot approve their own variance (§28).' }).http, IDS);
     const out = await refused.approve('cp-1', 'done');
-    expect(refused.say('en', out)).toEqual({ tone: 'err', words: 'Head office refused: u-mgr counted P1 and cannot approve their own variance (§28).' });
+    expect(refused.say('en', out)).toEqual({ tone: 'err', words: 'Head office refused: u-mgr counted P1 and cannot approve their own variance (§28). Nothing was changed. Check what you typed and try again.' }); // U0 · G10: the three parts
     expect(refused.say('ta', out).words).toMatch(/^தலைமை அலுவலகம் மறுத்தது: u-mgr counted P1/);
     const lost = createCountPlansSession(MANAGER, fakeHttp({ result: 'lost_link' }).http, IDS);
     expect(lost.say('en', await lost.open('cp-1')).words).toBe('Head office cannot be reached — nothing is known to have changed.');
@@ -140,7 +140,7 @@ describe('the count plans session', () => {
     const cashier = createCountPlansSession({ userId: 'u-till', permissions: ['pos.sale.sync'] }, fakeHttp().http, IDS);
     expect(await cashier.adjustments()).toEqual({ result: 'invalid', key: 'cannotReadAdj' });
     const refused = createCountPlansSession({ userId: 'u-floor', permissions: ['inventory.availability.read', 'inventory.adjustment.approve'] }, fakeHttp({ result: 'refused', status: 422, code: 'self_approval', whatHappened: 'u-floor raised ar-1 and cannot decide it (§28).' }).http, IDS);
-    expect(refused.say('en', await refused.decideAdjustment('ar-1', 'approved', 'fine')).words).toBe('Head office refused: u-floor raised ar-1 and cannot decide it (§28).');
+    expect(refused.say('en', await refused.decideAdjustment('ar-1', 'approved', 'fine')).words).toBe('Head office refused: u-floor raised ar-1 and cannot decide it (§28). Nothing was changed. Check what you typed and try again.');
   });
 
   it('OB-31 (Round 4b): a count is typed in the item\'s unit — "2.5" kg is 2500 g; a fraction of an item or a 4th kg decimal is refused', async () => {

@@ -126,6 +126,33 @@ describe('freshness is never hidden (P-08)', () => {
 });
 
 describe('Tamil and English (NFR-08)', () => {
+  // U0 (UI/UX gap audit, 1 Nov 2026, G6 · P-08): a brief with a figure it does not have must never read as a quiet,
+  // complete morning. "Nothing needs your attention" and "complete and correct" are claims; "not known" is the truth.
+  it('with a figure not available it says NOT KNOWN, never "nothing needs your attention" and never "complete and correct"', () => {
+    const partial: BriefFigures = { tradingDay: '2026-11-01', basketCount: 0, dataAgeMinutes: 5 };
+    const brief = buildScheduledBrief({ figures: partial, attention: [] });
+    const text = brief.lines.join(' ');
+    expect(text).toContain('Not known this morning: sales, margin, cash banked');
+    expect(text).toContain('the shop has not sent them, so this brief cannot say the day was quiet');
+    expect(text).not.toContain('Nothing needs your attention today.');
+    expect(text).not.toContain('complete and correct');
+    expect(text).toContain('The written summary was not available this morning.');
+  });
+
+  it('with every figure present and nothing to attend to, the quiet-morning words still appear', () => {
+    const text = buildScheduledBrief({ figures: FIGURES, attention: [] }).lines.join(' ');
+    expect(text).toContain('Nothing needs your attention today.');
+    expect(text).not.toContain('Not known this morning');
+  });
+
+  it('says the missing figures in Tamil too', () => {
+    const partial: BriefFigures = { tradingDay: '2026-11-01', netSalesMinor: 100, marginMinor: 10, marginBps: 1000, basketCount: 1, dataAgeMinutes: 5 };
+    const text = buildScheduledBrief({ figures: partial, attention: [], language: 'ta' }).lines.join(' ');
+    expect(text).toContain('இன்று காலை தெரியாதவை: வங்கியில் செலுத்திய பணம்');
+    expect(text).not.toContain('இன்று உங்கள் கவனம் தேவைப்படும் ஒன்றும் இல்லை.');
+    expect(text).not.toContain('முழுமையானவை');
+  });
+
   it('renders the whole brief in Tamil when the tenant chooses it', () => {
     const brief = buildScheduledBrief({ figures: FIGURES, attention: [], language: 'ta' });
     expect(brief.language).toBe('ta');

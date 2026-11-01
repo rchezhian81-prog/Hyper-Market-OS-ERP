@@ -123772,6 +123772,7 @@
         "required": [
           "overdue",
           "complianceRisks",
+          "scheduledCount",
           "asAt"
         ],
         "properties": {
@@ -123782,6 +123783,9 @@
             }
           },
           "complianceRisks": {
+            "type": "number"
+          },
+          "scheduledCount": {
             "type": "number"
           },
           "asAt": {

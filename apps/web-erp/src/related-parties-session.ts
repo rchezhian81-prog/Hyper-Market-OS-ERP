@@ -9,6 +9,7 @@
 // Every write is a person's explicit click, in their own name; head office re-checks every act.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -44,7 +45,7 @@ export const relatedPartiesWords = (lang: Lang, key: string): string =>
 
 export function relatedPartiesOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => relatedPartiesWords(lang, k);
-  if (out.result === 'refused') return `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out); // U0 · G10: never a raw code; nothing was changed; the next safe action
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

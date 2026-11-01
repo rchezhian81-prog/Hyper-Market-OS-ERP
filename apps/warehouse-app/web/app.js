@@ -1552,7 +1552,10 @@ window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 // ── Boot ────────────────────────────────────────────────────────────────────
 el('who').firstChild.textContent = (data && data.workerId) || '—';
 el('assignment').textContent = (data && data.assignmentId) || '';
-el('sample').hidden = real !== undefined;
+// U0 (P-08): the box injects `shopTimeZone` on every screen it serves — a bare shell with that global and no session is a
+// real store computer with nothing assigned (the list then says "no warehouse work yet"); the sample stays off the box.
+const servedByBox = window.shopTimeZone !== undefined;
+el('sample').hidden = real !== undefined || servedByBox;
 el('sample').textContent = t('sample');
 paintIconSlots();
 

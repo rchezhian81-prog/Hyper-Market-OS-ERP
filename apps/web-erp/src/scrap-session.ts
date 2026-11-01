@@ -105,7 +105,7 @@ export function gramsOf(kgText: string): number | null {
 export const kgWords = (grams: number): string => `${(grams / 1000).toLocaleString('en-IN', { maximumFractionDigits: 3 })} kg`;
 
 export const scrapOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => {
-  if (out.result !== 'ok') return outcomeIn((k) => scrapWords(lang, k), out);
+  if (out.result !== 'ok') return outcomeIn((k) => scrapWords(lang, k), out, lang); // U0 · G10: the three parts
   const v = (out.value ?? {}) as Record<string, unknown>;
   return scrapWords(lang, v['postedToFinance'] === true ? 'posted' : 'recorded');
 };

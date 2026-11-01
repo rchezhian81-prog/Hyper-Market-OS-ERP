@@ -30,6 +30,9 @@ const WORDS = {
     nothing: 'Nothing is waiting for a colleague.', bill: 'Bill', attendant: 'Opened by', notOpened: 'Not open', recordedNot: 'The basket\'s record has not reached the store computer yet.',
     noBundle: 'This lane is not ready: its program did not load. Please use a staffed till.',
     staleShell: 'No connection to the store computer. This is the lane as it was last served, at',
+    // U0 · G19: the link and the unsent count, from the store computer (§1 rule 4) — "not known" until it answers, never 0.
+    boxNotAsked: 'Store computer: not checked yet', boxUp: 'Store computer connected', boxDown: 'Store computer not answering — scanning goes on; payment waits for it',
+    unsent: 'unsent', unsentNotKnown: 'unsent: not known',
     kinds: { age_check: 'Age check', pack_date_check: 'Date on the pack', weighed_item: 'Weighed item', item_refused: 'Item refused', not_found: 'Not found', random_audit: 'Random check', high_value_produce_pattern: 'Loose produce', void_pattern: 'Items removed', payment: 'Payment' },
     decisions: { old_enough: 'ID seen — old enough', not_old_enough: 'Not old enough — not sold', date_good: 'Date is good', date_passed: 'Date passed — not sold', sent_to_scale: 'Taken to the scale for a label', not_sold: 'Not sold here', item_taken_back: 'Item taken back', checked: 'Checked', noted: 'Noted' },
   },
@@ -40,6 +43,8 @@ const WORDS = {
     nothing: 'ஊழியருக்காக எதுவும் காத்திருக்கவில்லை.', bill: 'பில்', attendant: 'திறந்தவர்', notOpened: 'திறக்கப்படவில்லை', recordedNot: 'இந்தக் கூடையின் பதிவு இன்னும் கடை கணினியை அடையவில்லை.',
     noBundle: 'இந்த வரிசை தயாராக இல்லை: அதன் நிரல் ஏற்றப்படவில்லை. ஊழியர் உள்ள கட்டண மையத்தைப் பயன்படுத்தவும்.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இது கடைசியாக வழங்கப்பட்ட வரிசை, நேரம்:',
+    boxNotAsked: 'கடை கணினி: இன்னும் சரிபார்க்கவில்லை', boxUp: 'கடை கணினி இணைப்பில் உள்ளது', boxDown: 'கடை கணினி பதிலளிக்கவில்லை — ஸ்கேன் தொடரும்; கட்டணம் காத்திருக்கும்',
+    unsent: 'அனுப்பப்படாதவை', unsentNotKnown: 'அனுப்பப்படாதவை: தெரியவில்லை',
     kinds: { age_check: 'வயது சரிபார்ப்பு', pack_date_check: 'பாக்கெட்டில் உள்ள தேதி', weighed_item: 'எடைபோடும் பொருள்', item_refused: 'விற்க முடியாத பொருள்', not_found: 'கிடைக்கவில்லை', random_audit: 'சீரற்ற சரிபார்ப்பு', high_value_produce_pattern: 'தளர்வான காய்கறி/பழம்', void_pattern: 'நீக்கப்பட்ட பொருட்கள்', payment: 'கட்டணம்' },
     decisions: { old_enough: 'அடையாளம் பார்த்தேன் — வயது சரி', not_old_enough: 'வயது போதாது — விற்கவில்லை', date_good: 'தேதி சரி', date_passed: 'தேதி கடந்தது — விற்கவில்லை', sent_to_scale: 'லேபிளுக்காக எடைக்கருவிக்கு எடுத்துச் சென்றேன்', not_sold: 'இங்கே விற்கவில்லை', item_taken_back: 'பொருள் திரும்பப் பெறப்பட்டது', checked: 'சரிபார்த்தேன்', noted: 'குறித்துக்கொண்டேன்' },
   },
@@ -56,8 +61,45 @@ function setWithIcon(node, icon, text) {
   node.replaceChildren(...(m === null ? [] : [m]), document.createTextNode(text));
 }
 
+// ── The store computer's link and the unsent count (U0 · G19 · §1 rule 4): asked of the lane socket every ten seconds, as
+// the till's badge is. `box` is what the store computer last said — not asked, not answering, or its own status.
+let box = { asked: false, reachable: false, status: null };
+function laneBase() {
+  if (typeof window.laneWriteBase === 'string' && window.laneWriteBase !== '') return window.laneWriteBase.replace(/\/+$/, '');
+  const port = new URLSearchParams(location.search).get('lane');
+  return `http://127.0.0.1:${port && /^\d+$/.test(port) ? port : '8090'}`;
+}
+function unsentKnown() {
+  const n = box.asked && box.reachable && box.status ? box.status.unsent : undefined;
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+function paintBox() {
+  const host = el('box');
+  const text = el('box-text');
+  if (!host || !text) return;
+  const unsent = unsentKnown();
+  const words = !box.asked ? t('boxNotAsked') : box.reachable ? t('boxUp') : t('boxDown');
+  text.textContent = `${words} · ${unsent === null ? t('unsentNotKnown') : `${unsent} ${t('unsent')}`}`;
+  host.className = box.asked && !box.reachable ? 'box down' : 'box';
+}
+async function refreshBox() {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const res = await fetch(`${laneBase()}/lane/sync-status`, { cache: 'no-store', signal: ctl.signal });
+    box = res.ok ? { asked: true, reachable: true, status: await res.json() } : { asked: true, reachable: false, status: null };
+  } catch {
+    box = { asked: true, reachable: false, status: null };
+  } finally {
+    clearTimeout(timer);
+  }
+  paintBox();
+}
+window.selfCheckoutBadge = { refresh: refreshBox, state: () => box };
+
 function render() {
   el('title').firstChild.textContent = t('title');
+  paintBox();
   el('colleague-words').textContent = t('colleague');
   el('total-words').textContent = t('total');
   el('pay-card-words').textContent = t('payCard');
@@ -219,6 +261,8 @@ paintStale();
 el('lang').addEventListener('click', paintStale);
 
 render();
+void refreshBox();
+setInterval(() => { void refreshBox(); }, 10_000);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

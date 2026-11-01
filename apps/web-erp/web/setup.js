@@ -497,8 +497,10 @@ function renderPrefixes() {
   const add = el('prefixes-new');
   add.hidden = !prefixes.canEdit;
   el('prefixes-new-title').textContent = pw('newTill');
-  el('pn-store').placeholder = pw('store');
-  el('pn-till').placeholder = pw('till');
+  // U0: the three fields carry a visible label in the reader's language (a placeholder is not a label, §4.1).
+  el('pn-store-label').textContent = pw('store');
+  el('pn-till-label').textContent = pw('till');
+  el('pn-prefix-label').textContent = pw('prefix');
   el('pn-prefix').placeholder = 'S2L1-';
   el('pn-save').textContent = pw('issue');
   // A2: the year a new prefix is for — every year, this year or next year.

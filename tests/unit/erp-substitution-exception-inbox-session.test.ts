@@ -131,3 +131,26 @@ describe('the acts — refused locally before any POST unless permitted and in t
     }
   });
 });
+
+describe('U0 · G10: a refusal names its one real cause, that nothing was changed, and the next step', () => {
+  it('no permission · not open · not held · no reason code · no words · head office refused — each its own sentence', async () => {
+    const noRight = harness({ mayWork: () => false }).session;
+    expect(await noRight.claim('ord-77:line-2:refund_due')).toBe('refused');
+    expect(noRight.presentActionResult('en', 'claim', 'refused').label).toBe('Could not claim it — you do not hold the right to work delivery exceptions. Nothing was changed. Ask a person who holds it.');
+    const h = harness().session;
+    expect(await h.claim('ord-78:line-1:policy_short_pick')).toBe('refused');
+    expect(h.presentActionResult('en', 'claim', 'refused').label).toBe('Could not claim it — it is already being worked by somebody. Nothing was changed. Refresh the list.');
+    expect(await h.claim('nope')).toBe('refused');
+    expect(h.presentActionResult('en', 'claim', 'refused').label).toBe('Could not claim it — it is not on the list any more. Nothing was changed. Refresh the list.');
+    expect(await h.release('ord-77:line-2:refund_due', 'x')).toBe('refused');
+    expect(h.presentActionResult('en', 'release', 'refused').label).toBe('Could not release it — you are not holding it. Nothing was changed. Claim it first, or refresh the list.');
+    expect(await h.resolve('ord-78:line-1:policy_short_pick', '', 'told the customer')).toBe('refused');
+    expect(h.presentActionResult('en', 'resolve', 'refused').label).toBe('Could not resolve it — a reason code is needed. Nothing was changed. Pick the reason code and try again.');
+    expect(await h.resolve('ord-78:line-1:policy_short_pick', 'CUSTOMER-INFORMED', '   ')).toBe('refused');
+    expect(h.presentActionResult('en', 'resolve', 'refused').label).toBe('Could not resolve it — the words are needed. Nothing was changed. Say what was done and try again.');
+    expect(h.presentActionResult('ta', 'resolve', 'refused').label).toMatch(/எதுவும் மாற்றப்படவில்லை/);
+    const refused = harness({ actionPort: () => ({ post: async () => 'refused' }) }).session;
+    expect(await refused.claim('ord-77:line-2:refund_due')).toBe('refused');
+    expect(refused.presentActionResult('en', 'claim', 'refused').label).toBe('Head office refused it — it may be resolved already, or this may not be your queue. Nothing was changed. Refresh the list and try again.');
+  });
+});

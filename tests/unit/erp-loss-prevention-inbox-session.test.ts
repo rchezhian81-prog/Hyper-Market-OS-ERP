@@ -167,3 +167,20 @@ describe('outcomes and result presentation are bilingual and glanceable', () => 
     }
   });
 });
+
+describe('U0 · G10: a close refusal names its one real cause, that nothing was changed, and the next step', () => {
+  it('no permission · unknown outcome · no note · head office refused — each its own sentence', async () => {
+    const noRight = session(worklist([caseView({ caseId: 'C-1' })]), { mayManage: () => false });
+    expect(await noRight.close('C-1', 'unfounded', 'a note')).toBe('refused');
+    expect(noRight.presentCloseResult('en', 'refused').label).toBe('Could not close it — you do not hold the right to close investigations. Nothing was changed. Ask a person who holds it.');
+    const s = session(worklist([caseView({ caseId: 'C-1' })]));
+    expect(await s.close('C-1', 'not-an-outcome', 'a note')).toBe('refused');
+    expect(s.presentCloseResult('en', 'refused').label).toBe('Could not close it — pick one of the outcomes. Nothing was changed.');
+    expect(await s.close('C-1', 'unfounded', '   ')).toBe('refused');
+    expect(s.presentCloseResult('en', 'refused').label).toBe('Could not close it — a note is needed. Nothing was changed. Say what was found and try again.');
+    expect(s.presentCloseResult('ta', 'refused').label).toMatch(/எதுவும் மாற்றப்படவில்லை/);
+    const refused = session(worklist([caseView({ caseId: 'C-1' })]), { closePort: () => ({ post: async () => 'refused' as CloseResult }) });
+    expect(await refused.close('C-1', 'proven', 'a note')).toBe('refused');
+    expect(refused.presentCloseResult('en', 'refused').label).toBe('Head office refused it — a "proven" outcome needs a second approver, evidence on file and a verified chain. Nothing was changed. Check the evidence and the approver, then try again.');
+  });
+});

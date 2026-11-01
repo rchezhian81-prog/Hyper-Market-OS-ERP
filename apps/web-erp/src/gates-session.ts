@@ -96,7 +96,7 @@ export const GATES_COPY = {
 } as const;
 export type GatesCopyKey = keyof typeof GATES_COPY.en;
 export const gatesWords = (lang: Lang, key: GatesCopyKey | string): string => (GATES_COPY[lang] as Record<string, string>)[key] ?? (GATES_COPY.en as Record<string, string>)[key] ?? key;
-export const gatesOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => gatesWords(lang, k), out);
+export const gatesOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => gatesWords(lang, k), out, lang); // U0 · G10
 
 /** The gates' own names in both languages (roadmap §22 names them in English). */
 export const GATE_NAMES: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({

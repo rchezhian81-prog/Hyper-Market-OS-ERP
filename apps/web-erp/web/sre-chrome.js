@@ -240,6 +240,32 @@
     setText(strip, t('storeCopy').replace('{at}', String(copy.shownAt ?? '')).replace('{age}', age));
   }
 
+  // ── The header line in the reader's language (U0 · G1 of the UI/UX gap audit, 1 Nov 2026 · §1 rule 6) ───────────
+  // Every page's header line (`h1.who`) was a text node written once in English: the page repaints its own `#title`
+  // on the toggle, the header line stayed. The menu already carries the page's name in both languages, so when the
+  // heading IS the menu's name (in either language) the chrome writes it in the reader's language — the same words the
+  // rail shows for this screen. A page with its own heading (Today's store workspace line, a page that translates its
+  // own h1) is left exactly as the page wrote it. The `#whoami` small and every other child stay where they are.
+  function paintHeading() {
+    const h1 = document.querySelector('header h1.who');
+    if (!h1) return;
+    const nav = navigation();
+    const place = nav ? currentPlace(nav) : null;
+    const label = place && place.item && typeof place.item.label === 'object' && place.item.label !== null ? place.item.label : null;
+    if (!label) return;
+    const en = String(label.en ?? '');
+    const ta = String(label.ta ?? '');
+    if (en === '') return;
+    const slot = h1.querySelector('#title-text') ?? [...h1.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim() !== '') ?? null;
+    if (!slot) return;
+    const current = slot.textContent.replace(/\s+/g, ' ').trim();
+    if (!(current === en || current === ta || h1.dataset.sreHeading === en)) return;
+    h1.dataset.sreHeading = en;
+    const want = word(label);
+    const text = slot.nodeType === 3 ? `${want}${/\s$/.test(slot.textContent) ? ' ' : ''}` : want;
+    if (slot.textContent !== text) slot.textContent = text;
+  }
+
   // ── The toggle says what you get ─────────────────────────────────────────────────────────────────
   function paintToggle() {
     const toggle = byId('lang');
@@ -1489,7 +1515,7 @@
   // a register that is still on the page is redrawn in the new language; one its page has since replaced is let go
   function repaintTables() { for (const table of [...liveTables]) { if (table.connected()) table.repaint(); else liveTables.delete(table); } }
 
-  function repaint() { paintToggle(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
+  function repaint() { paintToggle(); paintHeading(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   new MutationObserver(repaintTables).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });

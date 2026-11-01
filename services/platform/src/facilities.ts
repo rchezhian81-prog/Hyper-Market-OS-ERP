@@ -193,7 +193,9 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         const scope = narrowScope(ctx, isStr(asked) ? [asked] : undefined);
         const schedules = (await deps.schedules(ctx.tenantId)).filter((s) => scope === 'all' || scope.includes(s.branchId));
         const overdue = findOverdue({ schedules, tasks: await deps.tasks(ctx.tenantId), asAt });
-        return { status: 200, body: { overdue, complianceRisks: overdue.filter((o) => o.level === 'compliance_risk').length, asAt: deps.now() } };
+        // U0 (P-08): how many schedules the list was judged against, so a screen can tell "nothing overdue" from
+        // "nothing scheduled" — an empty list over no schedule at all is not a shop that is up to date.
+        return { status: 200, body: { overdue, complianceRisks: overdue.filter((o) => o.level === 'compliance_risk').length, scheduledCount: schedules.length, asAt: deps.now() } };
       },
     },
     {

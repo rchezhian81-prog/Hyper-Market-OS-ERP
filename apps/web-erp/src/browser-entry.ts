@@ -2266,8 +2266,12 @@ export async function fetchFacilitiesBoard(): Promise<FacilitiesData | null> {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
     });
     if (res.status >= 400) return null;
-    const body = (await res.json()) as { overdue?: unknown };
-    return { overdue: Array.isArray(body.overdue) ? (body.overdue as readonly OverdueTask[]) : [] };
+    const body = (await res.json()) as { overdue?: unknown; scheduledCount?: unknown };
+    return {
+      overdue: Array.isArray(body.overdue) ? (body.overdue as readonly OverdueTask[]) : [],
+      // U0 (P-08): absent from an older head office → the session reads "not known", never "all clear".
+      ...(typeof body.scheduledCount === 'number' ? { scheduledCount: body.scheduledCount } : {}),
+    };
   } catch {
     return null;
   }

@@ -15,10 +15,30 @@ const $ = (id) => document.getElementById(id);
 const statusEl = $('status');
 const rowsEl = $('rows');
 
-const setStatus = (text, kind = '') => {
-  statusEl.textContent = text;
-  statusEl.className = `status ${kind}`.trim();
+// U0 · G20 (UI/UX gap audit, 1 Nov 2026 · §1 rule 6): one language at a time, switched by the reader and remembered on
+// this device. The page's own words are in the HTML in both languages (`[lang]` spans, the other one hidden by the
+// stylesheet); a status this script writes carries both and shows the reader's. A sentence from the store computer
+// (`laneMessage`) is its own and is shown as it came.
+const LANG_KEY = 'sre-lang';
+const remembered = () => { try { return localStorage.getItem(LANG_KEY) === 'ta' ? 'ta' : 'en'; } catch { return 'en'; } };
+const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+let status = { en: '', ta: '', kind: '' };
+const paintStatus = () => {
+  statusEl.textContent = lang() === 'ta' ? (status.ta || status.en) : status.en;
+  statusEl.className = `status ${status.kind}`.trim();
 };
+/** `text` is `{ en, ta }`, or one sentence that is shown in either language (the store computer's own words). */
+const setStatus = (text, kind = '') => {
+  status = typeof text === 'string' ? { en: text, ta: text, kind } : { en: text.en, ta: text.ta, kind };
+  paintStatus();
+};
+document.documentElement.lang = remembered();
+$('lang').addEventListener('click', () => {
+  const next = lang() === 'ta' ? 'en' : 'ta';
+  document.documentElement.lang = next;
+  try { localStorage.setItem(LANG_KEY, next); } catch { /* a device that remembers nothing still switches */ }
+  paintStatus();
+});
 
 /** Where the box's write socket is: what the shell was told, a `?lane=` port, or the standard lane port. */
 function laneBase() {
@@ -95,7 +115,7 @@ $('record').addEventListener('click', async () => {
   const line = draftLine();
   const missing = incomplete(line);
   if (missing !== undefined) {
-    setStatus(`Fill in ${missing} first — nothing was recorded. / முதலில் ${missing} நிரப்புங்கள்.`, 'warn');
+    setStatus({ en: `Fill in ${missing} first — nothing was recorded.`, ta: `முதலில் ${missing} நிரப்புங்கள் — எதுவும் பதிவு செய்யப்படவில்லை.` }, 'warn');
     return;
   }
   inFlight = true;
@@ -112,13 +132,13 @@ $('record').addEventListener('click', async () => {
       lineSeqBySale.set(line.saleId, (lineSeqBySale.get(line.saleId) ?? 0) + 1);
       recorded.push({ ...line, state: 'saved' });
       $('lineId').value = '';
-      setStatus(`Saved ${line.tagId} on the store computer — it reaches head office when the connection is up; commission is worked out there from the contract. / கடைக் கணினியில் சேமிக்கப்பட்டது.`, 'good');
+      setStatus({ en: `Saved ${line.tagId} on the store computer — it reaches head office when the connection is up; commission is worked out there from the contract.`, ta: `${line.tagId} கடைக் கணினியில் சேமிக்கப்பட்டது — இணைப்பு இருக்கும்போது தலைமை அலுவலகத்தை அடையும்; கமிஷன் அங்கே ஒப்பந்தத்திலிருந்து கணக்கிடப்படும்.` }, 'good');
     } else {
       recorded.push({ ...line, state: 'refused' });
-      setStatus(out && out.laneMessage ? out.laneMessage : 'The store computer could not record the line. / பதிவு செய்ய முடியவில்லை.', 'err');
+      setStatus(out && out.laneMessage ? out.laneMessage : { en: 'The store computer could not record the line.', ta: 'கடைக் கணினி வரியைப் பதிவு செய்ய முடியவில்லை.' }, 'err');
     }
   } catch {
-    setStatus('No connection to the store computer — nothing was recorded. Keep the docket and try again. / கடைக் கணினியுடன் இணைப்பு இல்லை.', 'err');
+    setStatus({ en: 'No connection to the store computer — nothing was recorded. Keep the docket and try again.', ta: 'கடைக் கணினியுடன் இணைப்பு இல்லை — எதுவும் பதிவு செய்யப்படவில்லை. ஆவணத்தை வைத்திருந்து மீண்டும் முயற்சிக்கவும்.' }, 'err');
   } finally {
     inFlight = false;
     $('record').disabled = false;

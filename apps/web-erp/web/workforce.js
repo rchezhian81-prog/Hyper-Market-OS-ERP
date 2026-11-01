@@ -12,13 +12,13 @@ let lang = 'en';
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
 function sampleSession() {
   const CHROME = {
-    en: { title: 'Workforce', lead: 'Sample tasks. Connect the store computer to see the helper’s guidance for your own shop.', langName: 'தமிழ்',
+    en: { title: 'Staff guidance (assistant)', lead: 'Sample tasks. Connect the store computer to see the helper’s guidance for your own shop.', langName: 'தமிழ்',
       openHeading: 'Needs attention', dismissedHeading: 'Set aside', openCount: 'needing attention', dismissedCount: 'set aside',
       guidanceLabel: 'What to do', dismissedByLabel: 'Set aside by', reasonLabel: 'Reason', allClear: 'Nothing late — the day’s tasks are on track.',
       dismissBtn: 'Set aside', reopenBtn: 'Bring back', reasonPlaceholder: 'Why is this not being acted on now?',
       dismissRecorded: 'Set aside.', dismissRefused: 'Could not save — a short reason is needed.', dismissLostLink: 'No connection — not saved. Try again.',
       sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
-    ta: { title: 'பணியாளர்கள்', lead: 'மாதிரிப் பணிகள். உங்கள் சொந்தக் கடைக்கான வழிகாட்டுதலைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
+    ta: { title: 'பணியாளர் வழிகாட்டுதல் (உதவியாளர்)', lead: 'மாதிரிப் பணிகள். உங்கள் சொந்தக் கடைக்கான வழிகாட்டுதலைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       openHeading: 'கவனம் தேவை', dismissedHeading: 'ஒதுக்கப்பட்டவை', openCount: 'கவனம் தேவை', dismissedCount: 'ஒதுக்கப்பட்டவை',
       guidanceLabel: 'என்ன செய்ய வேண்டும்', dismissedByLabel: 'ஒதுக்கியவர்', reasonLabel: 'காரணம்', allClear: 'தாமதம் எதுவும் இல்லை — இன்றைய பணிகள் சரியாக நடக்கின்றன.',
       dismissBtn: 'ஒதுக்கிவை', reopenBtn: 'மீண்டும் கொண்டுவா', reasonPlaceholder: 'இது ஏன் இப்போது செயல்படுத்தப்படவில்லை?',

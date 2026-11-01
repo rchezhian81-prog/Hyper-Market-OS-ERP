@@ -357,8 +357,11 @@ export function permissionForScreen(screen: ScreenName): string | null {
  * accountant's `inventory.goodsreceipt.read` for the goods-receipt screen) — or null when no item opens it.
  */
 export function permissionsForScreen(screen: ScreenName): readonly string[] | null {
-  const item = ERP_NAVIGATION.find((i) => screenOfPath(i.path.split('?')[0] ?? i.path) === screen);
-  return item === undefined ? null : permissionsOpening(item);
+  // U0 (UI/UX gap audit, 1 Nov 2026): EVERY item that opens this screen — a screen with several menu doors (the Admin
+  // screen's tabs, the catalogue's Products / Pricing / Promotions) was gated on its first item's word alone, so the
+  // menu offered "Pricing" to a pricing-only person and "Audit log" to the accountant, and the box refused the link.
+  const items = ERP_NAVIGATION.filter((i) => screenOfPath(i.path.split('?')[0] ?? i.path) === screen);
+  return items.length === 0 ? null : [...new Set(items.flatMap((i) => permissionsOpening(i)))];
 }
 
 /** The person holds a word that opens this screen (or no menu item gates it). */

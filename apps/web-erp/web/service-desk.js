@@ -37,10 +37,10 @@ const WORDS = {
     resolveH: 'Resolve', resolutionL: 'How it was resolved', resolve: 'Resolve the case',
     rcH: 'Root cause', rcLede: 'Why it happened, once it is resolved — so it does not happen again.', rcCause: 'Cause', rcNote: 'What happened', rcPrevent: 'What will stop it (optional)', rcSave: 'Record the root cause',
     summaryH: 'Why cases happen', summaryLede: 'Resolved cases by root cause — and the resolved ones nobody has explained yet.',
-    noRootCause: 'Resolved with no root cause yet:', allExplained: 'Every resolved case has a root cause.', cases: 'case(s)', complaints: 'complaint(s)',
+    noRootCause: 'Resolved with no root cause yet:', allExplained: 'Every resolved case has a root cause.', noneResolved: 'No case has been resolved yet, so there is no root cause to record.', cases: 'case(s)', complaints: 'complaint(s)',
     done: 'Done.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', readOnly: 'You may read the cases; working them needs the service-desk role.',
-    none: 'No cases yet.', loading: 'Reading the cases from head office…',
+    none: 'No cases yet — head office holds no case for this shop.', loading: 'Reading the cases from head office…',
     product_quality: 'Product quality', stock_availability: 'Out of stock', pricing_or_billing: 'Price or bill', delivery: 'Delivery', staff_conduct: 'Staff conduct', store_process: 'Store process', system_or_app: 'System or app', customer_misunderstanding: 'Customer misunderstanding', other: 'Other',
   },
   ta: {
@@ -66,10 +66,10 @@ const WORDS = {
     resolveH: 'தீர்வு', resolutionL: 'எப்படித் தீர்க்கப்பட்டது', resolve: 'வழக்கைத் தீர்',
     rcH: 'மூல காரணம்', rcLede: 'தீர்ந்த பிறகு, ஏன் நடந்தது — மீண்டும் நடக்காமல் இருக்க.', rcCause: 'காரணம்', rcNote: 'என்ன நடந்தது', rcPrevent: 'எது தடுக்கும் (விருப்பம்)', rcSave: 'மூல காரணத்தைப் பதிவு செய்',
     summaryH: 'வழக்குகள் ஏன் நடக்கின்றன', summaryLede: 'மூல காரணப்படி தீர்ந்த வழக்குகள் — விளக்கப்படாதவையும்.',
-    noRootCause: 'மூல காரணம் இல்லாமல் தீர்ந்தவை:', allExplained: 'தீர்ந்த ஒவ்வொரு வழக்கிற்கும் மூல காரணம் உள்ளது.', cases: 'வழக்கு(கள்)', complaints: 'புகார்(கள்)',
+    noRootCause: 'மூல காரணம் இல்லாமல் தீர்ந்தவை:', allExplained: 'தீர்ந்த ஒவ்வொரு வழக்கிற்கும் மூல காரணம் உள்ளது.', noneResolved: 'இன்னும் எந்த வழக்கும் தீர்க்கப்படவில்லை, எனவே பதிவு செய்ய மூல காரணம் எதுவும் இல்லை.', cases: 'வழக்கு(கள்)', complaints: 'புகார்(கள்)',
     done: 'முடிந்தது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', readOnly: 'நீங்கள் வழக்குகளைப் படிக்கலாம்; அவற்றில் வேலை செய்ய சேவை மேசைப் பங்கு தேவை.',
-    none: 'இன்னும் வழக்குகள் இல்லை.', loading: 'தலைமை அலுவலகத்திலிருந்து வழக்குகளைப் படிக்கிறது…',
+    none: 'இன்னும் வழக்குகள் இல்லை — இந்தக் கடைக்கு தலைமை அலுவலகத்தில் வழக்கு எதுவும் இல்லை.', loading: 'தலைமை அலுவலகத்திலிருந்து வழக்குகளைப் படிக்கிறது…',
     product_quality: 'பொருளின் தரம்', stock_availability: 'இருப்பு இல்லை', pricing_or_billing: 'விலை அல்லது பில்', delivery: 'டெலிவரி', staff_conduct: 'ஊழியர் நடத்தை', store_process: 'கடை நடைமுறை', system_or_app: 'அமைப்பு அல்லது செயலி', customer_misunderstanding: 'வாடிக்கையாளர் தவறான புரிதல்', other: 'மற்றவை',
   },
 };
@@ -251,8 +251,11 @@ function renderSummary() {
     ul.append(li);
   }
   const missing = $('rc-missing');
-  missing.className = `status ${summary.resolvedWithoutRootCause.length === 0 ? 'good' : 'err'}`;
-  missing.textContent = summary.resolvedWithoutRootCause.length === 0 ? t('allExplained') : `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}`;
+  // U0 (P-08): "every resolved case has a root cause" is a claim about resolved cases — with none resolved it is not said.
+  const resolved = summary.byCause.reduce((n, row) => n + Number(row.cases ?? 0), 0) + summary.resolvedWithoutRootCause.length;
+  const unexplained = summary.resolvedWithoutRootCause.length > 0;
+  missing.className = `status ${unexplained ? 'err' : resolved === 0 ? 'muted' : 'good'}`;
+  missing.textContent = unexplained ? `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}` : resolved === 0 ? t('noneResolved') : t('allExplained');
 }
 
 async function pick(caseId) {

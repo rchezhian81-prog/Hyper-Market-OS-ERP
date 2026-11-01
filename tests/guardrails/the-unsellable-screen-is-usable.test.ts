@@ -55,8 +55,9 @@ describe('read-only, and honest about where it came from', () => {
     expect(HTML).toMatch(/<div id="groups" aria-label=/);
   });
 
-  it('shows the sample stand-in ONLY when the box gave it nothing, and says so', () => {
-    expect(VIEW).toMatch(/el\('sample'\)\.hidden = real !== undefined/);
+  it('shows the sample stand-in ONLY off the store computer; on the box with nothing it says "not known" (U0 · P-08)', () => {
+    expect(VIEW).toMatch(/el\('sample'\)\.hidden = real !== undefined \|\| servedByBox/);
+    expect(VIEW).toMatch(/const servedByBox = window\.shopTimeZone !== undefined/);
     expect(HTML).toMatch(/<p class="sample" id="sample" hidden>/);
   });
 });

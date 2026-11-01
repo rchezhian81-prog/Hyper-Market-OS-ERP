@@ -43,7 +43,7 @@
       .table-wrap { overflow-x: auto; max-width: 100%; }
       td, th { text-align: left; }
       tr[data-incident] { cursor: pointer; }
-      .tag { display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+      .tag { display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: var(--fs-sm); font-weight: 600; }
       .tag.sev1, .tag.missed { border-color: var(--danger-text); color: var(--danger-text); }
       .tag.passed { border-color: var(--good); color: var(--good); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -51,13 +51,13 @@
       .status { font-size: 14px; min-height: 20px; }
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
-      .muted { color: var(--muted); font-size: 13px; }
+      .muted { color: var(--muted); font-size: var(--fs-sm); }
       [hidden] { display: none !important; }
     </style>
   </head>
   <body>
     <header>
-      <h1 class="who" id="title">Incidents and recovery drills</h1>
+      <h1 class="who" id="title">Incidents &amp; recovery drills</h1>
       <span class="sync">
         <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
       </span>

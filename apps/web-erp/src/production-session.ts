@@ -102,7 +102,7 @@ export type CopyKey =
 
 export const PRODUCTION_COPY: BilingualCopy<CopyKey> = {
   en: {
-    title: 'Release for sale', langName: 'தமிழ்',
+    title: 'Production', langName: 'தமிழ்',
     lead: 'Finished batches still in quarantine, waiting for a quality check before they can be sold — worst first. Freshly made food is not for sale because it exists; it is for sale when someone has looked at it and released it. A failed check keeps the batch in quarantine and is recorded. You cannot release past a use-by date.',
     listHeading: 'To release', toReleaseCount: 'to release', allReleased: 'Nothing waiting — every finished batch has been released or held.',
     notKnown: 'This store computer has not been told the production runs yet, so it cannot say what is waiting to be released.',
@@ -122,7 +122,7 @@ export const PRODUCTION_COPY: BilingualCopy<CopyKey> = {
     boardAsOf: 'Head office\'s board as the store computer last heard it, at', boardNotKnown: 'The store computer has not been told the production board yet.',
   },
   ta: {
-    title: 'விற்பனைக்கு விடுவி', langName: 'English',
+    title: 'உற்பத்தி', langName: 'English',
     lead: 'தரச் சோதனைக்குப் பிறகே விற்கக்கூடிய, இன்னும் தனிமைப்படுத்தலில் உள்ள முடிக்கப்பட்ட தொகுதிகள் — மோசமானது முதலில். புதிதாகச் செய்யப்பட்ட உணவு இருப்பதால் விற்பனைக்கு அல்ல; யாராவது பார்த்து விடுவித்தபோதே விற்பனைக்கு. தோல்வியுற்ற சோதனை தொகுதியைத் தனிமைப்படுத்தலில் வைத்திருந்து பதிவு செய்யப்படும். காலாவதி தேதியைத் தாண்டி விடுவிக்க முடியாது.',
     listHeading: 'விடுவிக்க வேண்டியவை', toReleaseCount: 'விடுவிக்க', allReleased: 'காத்திருப்பது எதுவும் இல்லை — ஒவ்வொரு தொகுதியும் விடுவிக்கப்பட்டது அல்லது தடுத்து வைக்கப்பட்டது.',
     notKnown: 'உற்பத்தி இயக்கங்கள் இன்னும் கடைக் கணினிக்குச் சொல்லப்படவில்லை, எனவே விடுவிக்கக் காத்திருப்பது என்ன என்று சொல்ல முடியாது.',

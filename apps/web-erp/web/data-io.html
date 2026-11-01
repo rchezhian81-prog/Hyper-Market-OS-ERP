@@ -31,8 +31,8 @@
       p.lead { margin:0; color:var(--muted); font-size:15px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--bg); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-left:5px solid var(--line); }
-      li.row .what { display:grid; gap:2px; } li.row .what small { color:var(--muted); font-size:13px; }
-      .tag { background:var(--warn-surface); color:var(--on-warn-surface); border-radius:999px; padding:1px 8px; font-size:12px; margin-left:6px; }
+      li.row .what { display:grid; gap:2px; } li.row .what small { color:var(--muted); font-size: var(--fs-sm); }
+      .tag { background:var(--warn-surface); color:var(--on-warn-surface); border-radius:999px; padding:1px 8px; font-size: var(--fs-sm); margin-left:6px; }
       label { display:block; margin:8px 0 4px; font-size:14px; color:var(--muted); }
       select, input, textarea { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       textarea { min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; }
@@ -48,14 +48,14 @@
       button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       .preview { background:var(--bg); border-radius:12px; padding:12px 14px; font-size:14px; display:grid; gap:6px; }
       .preview.ready { border-left:5px solid var(--ok); } .preview.notready { border-left:5px solid var(--error); }
-      .preview .errline { color:var(--danger-text); font-size:13px; }
+      .preview .errline { color:var(--danger-text); font-size: var(--fs-sm); }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--bg); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.locked { margin:0; padding:14px; background:var(--bg); border-radius:12px; color:var(--muted); }
       .period { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px; margin-top:6px; }
       .period label { margin:0 0 2px; }
-      .preview .changeline { font-size:13px; }
+      .preview .changeline { font-size: var(--fs-sm); }
       li.row .undo { display:grid; gap:6px; width:100%; }
       li.row .undo .actions { margin-top:0; }
     </style>

@@ -82,7 +82,7 @@
       /* The two figures that must agree, side by side and large. */
       .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 6px; }
       .compare div { background: var(--panel-2); border-radius: 12px; padding: 10px 14px; }
-      .compare .label { color: var(--muted); font-size: 13px; display: block; }
+      .compare .label { color: var(--muted); font-size: var(--fs-sm); display: block; }
       .compare .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
       .compare .value.off { color: var(--danger-text); }
 
@@ -94,7 +94,7 @@
       .problem-row .where { color: var(--warn); font-weight: 700; }
 
       table { width: 100%; border-collapse: collapse; font-size: 15px; }
-      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 6px; }
+      th { text-align: left; color: var(--muted); font-size: var(--fs-sm); font-weight: 500; padding: 8px 6px; }
       td { padding: 8px 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
       td.amount, th.amount { text-align: right; }
       tr.blocked td { color: var(--warn); }
@@ -128,7 +128,7 @@
       .otb-status.good { color: var(--good); } .otb-status.err { color: var(--danger-text); }
       .otb-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0; }
       .otb-summary div { background: var(--panel); border-radius: 12px; padding: 10px 14px; }
-      .otb-summary .label { display: block; color: var(--muted); font-size: 13px; }
+      .otb-summary .label { display: block; color: var(--muted); font-size: var(--fs-sm); }
       .otb-summary .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
       tr.over td { color: var(--danger-text); }
       .escalation { background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; display: grid; gap: 6px; border-left: 6px solid var(--line); }

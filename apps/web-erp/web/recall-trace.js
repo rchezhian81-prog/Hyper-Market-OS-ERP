@@ -13,7 +13,7 @@ const PERMS = Array.isArray(DATA.permissions) ? DATA.permissions : null; // null
 
 const WORDS = {
   en: {
-    title: 'Recalls and trace', langName: 'தமிழ்',
+    title: 'Recalls & trace', langName: 'தமிழ்',
     lead: 'Start a recall and see what head office did at once: the tills stop selling it, the owners are alerted, open orders are listed. Trace a batch forward to the customers, or a bill or a customer back to the lots and suppliers. Call every customer the shop knows bought it.',
     tabRecalls: 'Recalls', tabTrace: 'Trace', tabCalls: 'Call list', tabMessages: 'SMS notices',
     recallsH: 'Start or open a recall', batchLabel: 'Batch (as printed)', reasonLabel: 'Why (the supplier\'s notice, the inspector\'s order)',

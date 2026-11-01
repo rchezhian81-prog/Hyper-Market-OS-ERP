@@ -82,7 +82,7 @@ export function bpsOf(percentText: string): number | null | undefined {
 const optionalPaise = (t: string): number | null | undefined => (t.trim() === '' ? undefined : paiseOf(t));
 
 export const packagingOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => {
-  if (out.result !== 'ok') return outcomeIn((k) => packagingWords(lang, k), out);
+  if (out.result !== 'ok') return outcomeIn((k) => packagingWords(lang, k), out, lang); // U0 · G10: the three parts
   const v = (out.value ?? {}) as Record<string, unknown>;
   return packagingWords(lang, typeof v['movementId'] === 'string' ? 'moved' : 'registered');
 };

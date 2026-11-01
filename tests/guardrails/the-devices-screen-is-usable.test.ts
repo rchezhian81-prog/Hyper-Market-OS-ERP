@@ -154,4 +154,24 @@ describe('the fleet view defers to the model and uses no browser dialogs', () =>
     expect(VIEW).toMatch(/status\.setAttribute\('aria-label'/);
     expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
   });
+
+  // U0 (UI/UX gap audit, 1 Nov 2026, G6 · P-08): on a shop with no device registered the page read "Every device is up
+  // to date and checking in." under "0 Devices". An empty register is not a healthy fleet; it says so, by name.
+  it('with no device registered it never says every device is up to date — it says none is registered and where one gets registered', () => {
+    // "all well" is reachable only after the "nothing registered" check.
+    expect(VIEW).toMatch(/view\.total === 0 \? t\('noneRegistered'\)\s*:\s*view\.attentionCount === 0 \? t\('allWell'\)/);
+    const s = createFleetSession({ userId: 'u-1' }, portsOf([]));
+    expect(s.text('en', 'noneRegistered')).toMatch(/no till or device is registered yet/i);
+    expect(s.text('en', 'noneRegistered')).toMatch(/install/i);
+    expect(s.text('ta', 'noneRegistered')).toMatch(/[\u0B80-\u0BFF]/);
+  });
+
+  it('is named what the menu calls it — "Tills & devices" — in both languages, and nothing a person must read is under 14px', () => {
+    const HTML = readFileSync('apps/web-erp/web/fleet.html', 'utf8');
+    const s = createFleetSession({ userId: 'u-1' }, portsOf([]));
+    expect(s.text('en', 'title')).toBe('Tills & devices');
+    expect(s.text('ta', 'title')).toBe('கல்லாக்களும் சாதனங்களும்');
+    expect(HTML).toMatch(/<h1 class="who" id="who">Tills &amp; devices/);
+    expect(HTML).not.toMatch(/font-size:\s*1[0-3]px/);
+  });
 });

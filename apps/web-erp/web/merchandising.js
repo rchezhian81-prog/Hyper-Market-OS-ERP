@@ -44,14 +44,15 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
-    title: 'Shelves and space',
+    title: 'Shelves & space',
     countTab: 'Count a shelf', refillTab: 'Refills', rangeTab: 'Range', spaceTab: 'Space',
     countLead: 'Count what is actually on the facing. You will not be shown what it should be — that is the point.',
     shelf: 'Shelf', itemCode: 'Item code', howMany: 'How many are on the shelf',
     saveCount: 'Save this count', countSaved: 'Count saved',
     stillToCount: 'Still to count',
     stillToCountLead: 'The ones nobody has ever counted come first — nothing can be said about those at all.',
-    neverCounted: 'never counted', minutesAgo: 'minutes ago', allCounted: 'Everything on the plan has been counted recently.',
+    neverCounted: 'never counted', minutesAgo: 'minutes ago', allCounted: 'Everything on the plan has been counted recently — all {n} facings.',
+    noPlanToCount: 'Nothing is on the list because this shop has no shelf plan yet — nothing has been counted, and nothing can be until the shelves are addressed and a plan is published.',
     refillLead: 'Shelves that need filling from the stockroom, in the order you walk them.',
     goFill: 'Go and fill these', everythingFound: 'Everything the check found',
     nothingToFill: 'Nothing needs filling from what has been counted.',
@@ -94,14 +95,15 @@ const WORDS = {
     askedToday: 'asked today',
   },
   ta: {
-    title: 'அலமாரிகளும் இடமும்',
+    title: 'அடுக்குகளும் இடமும்',
     countTab: 'அலமாரியை எண்ணு', refillTab: 'நிரப்புதல்', rangeTab: 'வரிசை', spaceTab: 'இடம்',
     countLead: 'அலமாரியில் உண்மையில் உள்ளதை எண்ணுங்கள். எவ்வளவு இருக்க வேண்டும் என்று காட்டப்படாது — அதுவே நோக்கம்.',
     shelf: 'அலமாரி', itemCode: 'பொருள் குறியீடு', howMany: 'அலமாரியில் எத்தனை உள்ளன',
     saveCount: 'இந்த எண்ணிக்கையைச் சேமி', countSaved: 'எண்ணிக்கை சேமிக்கப்பட்டது',
     stillToCount: 'இன்னும் எண்ண வேண்டியவை',
     stillToCountLead: 'யாரும் இதுவரை எண்ணாதவை முதலில் — அவற்றைப் பற்றி எதுவும் சொல்ல முடியாது.',
-    neverCounted: 'இதுவரை எண்ணப்படவில்லை', minutesAgo: 'நிமிடங்களுக்கு முன்', allCounted: 'திட்டத்தில் உள்ள அனைத்தும் சமீபத்தில் எண்ணப்பட்டுள்ளன.',
+    neverCounted: 'இதுவரை எண்ணப்படவில்லை', minutesAgo: 'நிமிடங்களுக்கு முன்', allCounted: 'திட்டத்தில் உள்ள அனைத்தும் சமீபத்தில் எண்ணப்பட்டுள்ளன — மொத்தம் {n} இடங்கள்.',
+    noPlanToCount: 'இந்தக் கடைக்கு இன்னும் அலமாரித் திட்டம் இல்லை, எனவே பட்டியலில் எதுவும் இல்லை — எதுவும் எண்ணப்படவில்லை; அலமாரிகளுக்கு முகவரி கொடுத்து திட்டம் வெளியிடும் வரை எண்ண முடியாது.',
     refillLead: 'கிடங்கிலிருந்து நிரப்ப வேண்டிய அலமாரிகள், நீங்கள் நடக்கும் வரிசையில்.',
     goFill: 'இவற்றை நிரப்புங்கள்', everythingFound: 'சரிபார்ப்பில் கண்டறியப்பட்ட அனைத்தும்',
     nothingToFill: 'எண்ணப்பட்டவற்றில் நிரப்ப வேண்டியது எதுவும் இல்லை.',
@@ -327,6 +329,20 @@ function renderSavedCounts() {
   el('saved-counts').replaceChildren(...saved.map((w) => savedRow(`${w.productId} · ${w.countedMinor}`, `${w.locationId} · ${w.countId}`, w)));
 }
 
+/**
+ * U0 (P-08): an empty "still to count" is good news only when there IS a plan. With no shelf map or no plan the list is
+ * empty because nothing can be counted, and it says so — never "everything has been counted". Kept outside renderCount
+ * so the count form itself still carries no figure about what a facing should hold (the blind count).
+ */
+function stillToCountEmptyLine() {
+  const check = session.check();
+  const noPlan = 'why' in check || (window.merchandisingGaps ?? []).some((g) => g === 'where_the_shelves_are' || g === 'what_should_be_on_each_shelf');
+  const none = document.createElement('p');
+  none.className = noPlan ? 'empty unknown' : 'empty';
+  none.textContent = noPlan ? t('noPlanToCount') : t('allCounted').replace('{n}', String(check.plannedFacings ?? 0));
+  return none;
+}
+
 function renderCount() {
   el('count-title').textContent = t('countTab');
   el('count-lead').textContent = t('countLead');
@@ -350,9 +366,7 @@ function renderCount() {
 
   const list = session.countingList();
   if (list.length === 0) {
-    const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('allCounted');
+    const none = stillToCountEmptyLine();
     el('tocount-list').replaceChildren(none);
     return;
   }

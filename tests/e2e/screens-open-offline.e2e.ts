@@ -586,7 +586,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await page.reload({ waitUntil: 'domcontentloaded' });
 
       await expectNetworkCut(page);
-      expect(await page.title()).toContain('Devices');
+      expect(await page.title()).toContain('Tills & devices');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
 

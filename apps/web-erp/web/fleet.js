@@ -20,18 +20,20 @@ let lang = 'en';
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
 function sampleSession() {
   const CHROME = {
-    en: { title: 'Devices', langName: 'தமிழ்',
+    en: { title: 'Tills & devices', langName: 'தமிழ்',
       lead: 'Sample fleet. Connect the store computer to see the shop’s own tills, scanners, scales and kiosks.',
       tileTotal: 'Devices', tileTrading: 'Trading', tileMustUpgrade: 'Must update', tileBlocked: 'Blocked', tileSilent: 'Gone quiet',
       attentionLead: 'need a look', allWell: 'Every device is up to date and checking in.',
+      noneRegistered: 'Not known — no till or device is registered yet, so nothing can be checked. A till is registered when it is installed on the store computer (owner guide: installing a till).',
       versionLabel: 'Version', lastSeenLabel: 'Last seen', branchLabel: 'Branch', neverSeen: 'never checked in',
       canManage: 'You can register, block or retire a device.',
       sampleData: 'Sample data — this is not your shop.',
       nobodyNamed: '' },
-    ta: { title: 'சாதனங்கள்', langName: 'English',
+    ta: { title: 'கல்லாக்களும் சாதனங்களும்', langName: 'English',
       lead: 'மாதிரி கடற்படை. கடையின் சொந்த இயந்திரங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       tileTotal: 'சாதனங்கள்', tileTrading: 'வர்த்தகம்', tileMustUpgrade: 'புதுப்பிக்க வேண்டும்', tileBlocked: 'தடுக்கப்பட்டது', tileSilent: 'அமைதி',
       attentionLead: 'கவனம் தேவை', allWell: 'ஒவ்வொரு சாதனமும் புதுப்பித்து தகவல் அனுப்புகிறது.',
+      noneRegistered: 'தெரியாது — எந்தக் கல்லாவும் சாதனமும் இன்னும் பதிவு செய்யப்படவில்லை, எனவே எதையும் சரிபார்க்க முடியாது. கல்லா கடைக் கணினியில் நிறுவப்படும்போது பதிவு செய்யப்படுகிறது (உரிமையாளர் வழிகாட்டி: கல்லா நிறுவுதல்).',
       versionLabel: 'பதிப்பு', lastSeenLabel: 'கடைசியாக பார்த்தது', branchLabel: 'கிளை', neverSeen: 'ஒருபோதும் தெரிவிக்கவில்லை',
       canManage: 'நீங்கள் ஒரு சாதனத்தை பதிவு செய்யலாம், தடுக்கலாம் அல்லது நீக்கலாம்.',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -211,10 +213,12 @@ function paint() {
     tileNode(s.silent, 'tileSilent', 'attention'),
   );
 
-  el('attention-count').textContent = view.attentionCount === 0
-    ? t('allWell')
+  // U0 (P-08): an empty register is NOT a healthy fleet — with nothing registered the line says "Not known" and why,
+  // in the warn tone; "every device is up to date" is said only of devices that exist.
+  el('attention-count').textContent = view.total === 0 ? t('noneRegistered')
+    : view.attentionCount === 0 ? t('allWell')
     : `${view.attentionCount} ${t('attentionLead')}`;
-  el('attention-count').className = view.attentionCount === 0 ? 'count' : 'count attention';
+  el('attention-count').className = view.total === 0 ? 'count unknown' : view.attentionCount === 0 ? 'count' : 'count attention';
 
   const manage = el('manage');
   manage.hidden = !view.mayManage;

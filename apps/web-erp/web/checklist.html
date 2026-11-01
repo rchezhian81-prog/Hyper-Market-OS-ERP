@@ -36,14 +36,14 @@
       .row .headline { font-weight:600; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .detail { font-size:13px; color:var(--muted); }
+      .row .detail { font-size: var(--fs-sm); color:var(--muted); }
       ul.items { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
       ul.items li { display:flex; align-items:center; gap:10px; font-size:15px; }
       ul.items label { display:flex; align-items:center; gap:10px; min-height:var(--tap); flex:1; }
       ul.items input { width:22px; height:22px; }
-      ul.items .blk { color:var(--danger-text); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+      ul.items .blk { color:var(--danger-text); font-weight:700; font-size: var(--fs-label); text-transform:uppercase; letter-spacing:.04em; }
       ul.items li.done { color:var(--muted); text-decoration:line-through; }
-      .signedby { font-size:13px; color:var(--muted); }
+      .signedby { font-size: var(--fs-sm); color:var(--muted); }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); justify-self:start; }
       button.act:focus-visible, .lang:focus-visible, ul.items input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }

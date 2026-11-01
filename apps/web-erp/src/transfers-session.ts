@@ -11,6 +11,7 @@
 // No cost, approver or stock figure is ever typed on this screen: cost is head office's (server side). DOM-free and tested.
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
+import { refusalWords } from './refusal-words';
 import { rupees } from './head-office-http';
 
 export type Lang = 'en' | 'ta';
@@ -167,7 +168,7 @@ export function createTransfersSession(viewer: TransferViewer | undefined, http:
       if (out.result === 'ok') return { tone: 'good', words: text(lang, good) };
       if (out.result === 'lost_link') return { tone: 'err', words: text(lang, 'unreachable') };
       if (out.result === 'invalid') return { tone: 'err', words: text(lang, out.key) };
-      return { tone: 'err', words: `${text(lang, 'refused')} ${out.whatHappened === '' ? out.code : out.whatHappened}` };
+      return { tone: 'err', words: refusalWords(lang, out) }; // U0 · G10: what happened · nothing was changed · the next safe action
     },
   };
 }

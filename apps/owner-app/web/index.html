@@ -45,7 +45,7 @@
         background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; white-space: nowrap;
       }
       .branches button[aria-current='page'] { background: var(--ink); color: var(--bg); }
-      .branches button .age { display: block; font-size: 11px; font-weight: 400; opacity: .75; }
+      .branches button .age { display: block; font-size: var(--fs-sm); font-weight: 400; opacity: .75; }
 
       /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
       .sample { background: var(--warn); color: var(--on-warn); padding: 10px 16px; font-weight: 600; font-size: 15px; margin: 0; }
@@ -61,7 +61,7 @@
 
       main { padding: 0 16px; }
       section { margin-top: 22px; }
-      h2 { font-size: 12px; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; margin: 0 0 8px; }
+      h2 { font-size: var(--fs-label); color: var(--muted); letter-spacing: .07em; text-transform: uppercase; margin: 0 0 8px; }
       .headline { font-size: 19px; line-height: 1.45; margin: 16px 0 0; }
 
       .attention { display: grid; gap: 10px; }
@@ -72,7 +72,7 @@
       }
       .card.urgent { border-left-color: var(--danger); }
       .card.approval { border-left-color: var(--info); }
-      .rank { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+      .rank { font-size: var(--fs-sm); color: var(--muted); display: block; margin-bottom: 4px; }
 
       /* Every figure is a button, because every figure drills to its source (M29-FR-02). */
       .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -80,21 +80,21 @@
         background: var(--panel); border-radius: 14px; padding: 12px 14px; border: 0;
         text-align: left; color: var(--ink); min-height: 76px;
       }
-      .kpi .label { font-size: 12px; color: var(--muted); }
+      .kpi .label { font-size: var(--fs-sm); color: var(--muted); }
       .kpi .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .kpi .more { font-size: 11px; color: var(--info); }
+      .kpi .more { font-size: var(--fs-sm); color: var(--info); }
 
       .rows { display: grid; gap: 10px; }
       .row {
         background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px;
       }
       .row .what { font-size: 16px; }
-      .row .meta { color: var(--muted); font-size: 13px; }
+      .row .meta { color: var(--muted); font-size: var(--fs-sm); }
       .row .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
       .row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .alert { width: 100%; text-align: left; background: transparent; color: var(--ink);
         padding: 12px 0; border: 0; border-top: 1px solid var(--line); font-size: 15px; min-height: var(--tap); }
-      .alert .drill { color: var(--info); font-size: 13px; display: block; margin-top: 2px; }
+      .alert .drill { color: var(--info); font-size: var(--fs-sm); display: block; margin-top: 2px; }
       .empty { color: var(--muted); font-size: 15px; }
 
       button {

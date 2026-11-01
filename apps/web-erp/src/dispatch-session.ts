@@ -128,7 +128,7 @@ export const flagWords = (lang: Lang, flags: readonly string[]): readonly string
   const w = dispatchWords(lang, `flag_${f}`);
   return w === `flag_${f}` ? f.replace(/_/g, ' ') : w;
 });
-export const dispatchOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => dispatchWords(lang, k), out);
+export const dispatchOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => dispatchWords(lang, k), out, lang); // U0 · G10
 
 /** Rupees with paise, Indian grouping — from whole paise. */
 export function rupees(minor: number): string {

@@ -64,7 +64,13 @@ export interface OverdueTask {
 /** The overdue board the shell last read. Empty means nothing overdue; absent means the box was never told. */
 export interface FacilitiesData {
   readonly overdue: readonly OverdueTask[];
+  /** U0 (P-08): how many schedules head office judged the list against. Absent: the list was never read (or an older
+   *  head office answered), so an empty list is "not known", not "nothing overdue". */
+  readonly scheduledCount?: number;
 }
+
+/** Why the overdue list is empty — the three empties lead to three different sentences (P-08). */
+export type FacilitiesEmptyReason = 'none_overdue' | 'no_schedule' | 'not_known';
 
 /** The outcome of a completion — recorded and accepted (done), recorded and WAITING for a second person's
  *  verification, refused by the server (permission / no evidence), or a lost link. */
@@ -122,7 +128,7 @@ export interface FacilitiesConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'listHeading' | 'overdueCount' | 'allDone' | 'notKnown' | 'complianceRiskCount'
+  | 'listHeading' | 'overdueCount' | 'allDone' | 'notKnown' | 'noSchedule' | 'complianceRiskCount'
   | 'categoryLabel' | 'dueLabel' | 'lateLabel' | 'escalatedToLabel'
   | 'catCleaning' | 'catPestControl' | 'catFireSafety' | 'catElectricalSafety' | 'catMaintenance' | 'catStatutory'
   | 'complianceWord' | 'escalatedWord' | 'overdueWord' | 'dueWord'
@@ -136,10 +142,11 @@ export type CopyKey =
 
 export const FACILITIES_COPY: BilingualCopy<CopyKey> = {
   en: {
-    title: 'Maintenance & compliance', langName: 'தமிழ்',
+    title: 'Facilities', langName: 'தமிழ்',
     lead: 'Cleaning, pest control, fire and electrical safety and statutory checks that are overdue — worst first. A tick is worth nothing at an inspection and a dated photograph is worth everything, so a check the regulator would care about is marked done only with the evidence it needs, and a safety check is verified by a second person under their own sign-in. Nothing ever going red is how nothing is ever wrong.',
-    listHeading: 'Overdue', overdueCount: 'overdue', allDone: 'Nothing overdue — every scheduled check is up to date.',
-    notKnown: 'This store computer has not been told the maintenance schedules yet, so it cannot say what is overdue.',
+    listHeading: 'Overdue', overdueCount: 'overdue', allDone: 'Nothing overdue — every one of the {n} scheduled checks is up to date.',
+    notKnown: 'Not known — the overdue list could not be read from head office, so this page cannot say what is overdue.',
+    noSchedule: 'No maintenance or food-safety schedule has been set up yet, so nothing can be due — this is not a shop that is up to date.',
     complianceRiskCount: 'a regulator would care about',
     categoryLabel: 'Kind', dueLabel: 'Was due', lateLabel: 'Late by', escalatedToLabel: 'Escalated to',
     catCleaning: 'Cleaning', catPestControl: 'Pest control', catFireSafety: 'Fire safety', catElectricalSafety: 'Electrical safety', catMaintenance: 'Maintenance', catStatutory: 'Statutory',
@@ -157,17 +164,18 @@ export const FACILITIES_COPY: BilingualCopy<CopyKey> = {
     verifyRecorded: 'Verified and recorded in your name.',
     verifyRefused: 'Not accepted — you cannot verify a check you did yourself, there is nothing to verify, or you do not have permission.',
     verifyLostLink: 'No connection — not saved. Try again.',
-    scrReady: 'Showing the overdue checks', scrEmpty: 'Nothing overdue — every scheduled check is up to date.',
+    scrReady: 'Showing the overdue checks', scrEmpty: 'Nothing overdue — every one of the {n} scheduled checks is up to date.',
     stateNotPermitted: 'You do not have permission to see maintenance and compliance.',
     noComplete: 'You can see the overdue checks, but marking one done needs the facilities-record permission.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
-    title: 'பராமரிப்பு & இணக்கம்', langName: 'English',
+    title: 'வசதிகள்', langName: 'English',
     lead: 'சுத்தம், பூச்சிக் கட்டுப்பாடு, தீ மற்றும் மின் பாதுகாப்பு, சட்டப்பூர்வச் சோதனைகள் தாமதமானவை — மோசமானது முதலில். ஒரு டிக் ஆய்வின்போது எந்த மதிப்பும் இல்லை, தேதியிட்ட புகைப்படமே முக்கியம்; எனவே ஒழுங்குமுறை அதிகாரி கவலைப்படும் சோதனை தேவையான ஆதாரத்துடன் மட்டுமே முடிந்ததாகக் குறிக்கப்படும்; பாதுகாப்புச் சோதனையை இரண்டாம் நபர் தம் சொந்த உள்நுழைவில் சரிபார்ப்பார். எதுவும் சிவப்பாகாமல் இருப்பதே எதுவும் தவறில்லை என்பதாகும்.',
-    listHeading: 'தாமதமானவை', overdueCount: 'தாமதம்', allDone: 'தாமதம் எதுவும் இல்லை — ஒவ்வொரு சோதனையும் புதுப்பித்த நிலையில்.',
-    notKnown: 'பராமரிப்பு அட்டவணைகள் இன்னும் கடைக் கணினிக்குச் சொல்லப்படவில்லை, எனவே எது தாமதம் என்று சொல்ல முடியாது.',
+    listHeading: 'தாமதமானவை', overdueCount: 'தாமதம்', allDone: 'தாமதம் எதுவும் இல்லை — திட்டமிடப்பட்ட {n} சோதனைகளும் புதுப்பித்த நிலையில்.',
+    notKnown: 'தெரியாது — தாமதப் பட்டியலைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை, எனவே எது தாமதம் என்று இந்தப் பக்கம் சொல்ல முடியாது.',
+    noSchedule: 'பராமரிப்பு அல்லது உணவுப் பாதுகாப்பு அட்டவணை இன்னும் அமைக்கப்படவில்லை, எனவே எதுவும் தாமதமாக முடியாது — இது புதுப்பித்த நிலையில் உள்ள கடை அல்ல.',
     complianceRiskCount: 'ஒழுங்குமுறை அதிகாரி கவலைப்படுவார்',
     categoryLabel: 'வகை', dueLabel: 'தேதி இருந்தது', lateLabel: 'தாமதம்', escalatedToLabel: 'மேலிடம் அறிவிக்கப்பட்டது',
     catCleaning: 'சுத்தம்', catPestControl: 'பூச்சிக் கட்டுப்பாடு', catFireSafety: 'தீ பாதுகாப்பு', catElectricalSafety: 'மின் பாதுகாப்பு', catMaintenance: 'பராமரிப்பு', catStatutory: 'சட்டப்பூர்வம்',
@@ -185,7 +193,7 @@ export const FACILITIES_COPY: BilingualCopy<CopyKey> = {
     verifyRecorded: 'சரிபார்க்கப்பட்டு உங்கள் பெயரில் பதிவு செய்யப்பட்டது.',
     verifyRefused: 'ஏற்கப்படவில்லை — நீங்களே செய்த சோதனையைச் சரிபார்க்க முடியாது, சரிபார்க்க எதுவும் இல்லை, அல்லது உங்களுக்கு அனுமதி இல்லை.',
     verifyLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
-    scrReady: 'தாமதமான சோதனைகளைக் காட்டுகிறது', scrEmpty: 'தாமதம் எதுவும் இல்லை — ஒவ்வொரு சோதனையும் புதுப்பித்த நிலையில்.',
+    scrReady: 'தாமதமான சோதனைகளைக் காட்டுகிறது', scrEmpty: 'தாமதம் எதுவும் இல்லை — திட்டமிடப்பட்ட {n} சோதனைகளும் புதுப்பித்த நிலையில்.',
     stateNotPermitted: 'பராமரிப்பு & இணக்கத்தைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     noComplete: 'தாமதமான சோதனைகளைப் பார்க்கலாம், ஆனால் ஒன்றை முடிந்ததெனக் குறிக்க facilities-record அனுமதி தேவை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
@@ -227,6 +235,8 @@ export interface PresentedTask {
 
 export interface FacilitiesView {
   readonly screenState: StatusPresentation;
+  /** U0 (P-08): why the list is empty, when it is — the page draws the matching sentence. Null when it is not empty. */
+  readonly emptyReason: FacilitiesEmptyReason | null;
   readonly tasks: readonly PresentedTask[];
   readonly overdueCount: number;
   /** How many are compliance risks — the headline a manager acts on first (P-03). */
@@ -254,7 +264,7 @@ export interface FacilitiesSession {
 }
 
 const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayComplete: boolean): FacilitiesView => ({
-  screenState, tasks: [], overdueCount: 0, complianceRiskCount: 0, nobodyNamed, mayComplete,
+  screenState, emptyReason: null, tasks: [], overdueCount: 0, complianceRiskCount: 0, nobodyNamed, mayComplete,
 });
 
 const CATEGORY_KEY: Readonly<Record<ScheduleCategory, CopyKey>> = Object.freeze({
@@ -329,9 +339,18 @@ export function createFacilitiesSession(config: FacilitiesConfig, ports: Facilit
         .slice()
         .sort((a, b) => LEVEL[a.level].rank - LEVEL[b.level].rank || b.daysOverdue - a.daysOverdue || a.taskId.localeCompare(b.taskId))
         .map((task) => present(lang, task));
-      const state = tasks.length === 0 ? 'empty' : 'ready';
+      // U0 (P-08): three different empties. Only an empty list judged against real schedules is good news; no
+      // schedule at all, or a list that was never read, is said in the warn tone and never as "up to date".
+      const emptyReason: FacilitiesEmptyReason | null = tasks.length > 0 ? null
+        : data.scheduledCount === undefined ? 'not_known'
+        : data.scheduledCount === 0 ? 'no_schedule'
+        : 'none_overdue';
+      const screenState = emptyReason === null ? presentScreenState({ state: 'ready', label: t('scrReady') })
+        : emptyReason === 'none_overdue' ? presentScreenState({ state: 'empty', label: t('scrEmpty').replace('{n}', String(data.scheduledCount)) })
+        : presentScreenState({ state: 'pending', label: t(emptyReason === 'no_schedule' ? 'noSchedule' : 'notKnown') });
       return {
-        screenState: presentScreenState({ state, label: t(state === 'empty' ? 'scrEmpty' : 'scrReady') }),
+        screenState,
+        emptyReason,
         tasks,
         overdueCount: tasks.length,
         complianceRiskCount: tasks.filter((task) => task.complianceLinked && task.status.tone === 'error').length,

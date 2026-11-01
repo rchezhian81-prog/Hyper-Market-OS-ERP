@@ -1127,7 +1127,10 @@ window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 
-el('sample').hidden = real !== undefined;
+// U0 (P-08): the box injects `shopTimeZone` on every screen it serves, payload or none — a bare shell with that global
+// and no work is a real store computer with nothing assigned, and says so; the sample stays for a file opened off the box.
+const servedByBox = window.shopTimeZone !== undefined;
+el('sample').hidden = real !== undefined || servedByBox;
 el('sample').textContent = t('sampleRoute');
 paintIconSlots();
 
@@ -1135,7 +1138,7 @@ const storageProblem = window.driverStorageProblem;
 el('storage').hidden = !storageProblem;
 if (storageProblem) el('storage').textContent = storageProblem;
 
-if (real === undefined && window.driverData !== undefined) {
+if (real === undefined && (window.driverData !== undefined || servedByBox)) {
   el('empty').hidden = false;
   el('empty').textContent = `${t('noRoute')} ${t('noRouteBody')}`;
 } else {

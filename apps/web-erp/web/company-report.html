@@ -27,7 +27,7 @@
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
       h2 { margin: 0; font-size: 17px; }
       p.lede { margin: 0; color: var(--muted); font-size: 14px; }
-      label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+      label { display: grid; gap: 6px; font-size: var(--fs-sm); font-weight: 600; }
       select {
         font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
         background: var(--bg); color: var(--ink); min-height: 44px;
@@ -41,9 +41,9 @@
       button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
       .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
       .kpi { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; }
-      .kpi .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+      .kpi .k { font-size: var(--fs-label); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
       .kpi .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; border: 1px solid var(--line); }
+      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 700; border: 1px solid var(--line); }
       .badge.fresh { color: var(--good); } .badge.stale { color: var(--warn); } .badge.missing { color: var(--danger-text); }
       .badge::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
       .flag { font-size: 14px; }
@@ -53,9 +53,9 @@
       th:first-child, td:first-child { text-align: left; }
       .status { font-size: 14px; min-height: 20px; }
       .status.good { color: var(--good); } .status.warn { color: var(--warn); } .status.err { color: var(--danger-text); }
-      pre { margin: 0; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; font-size: 12px; }
+      pre { margin: 0; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; font-size: var(--fs-sm); }
       a.download { color: var(--accent); font-weight: 600; }
-      .foot { color: var(--muted); font-size: 12px; }
+      .foot { color: var(--muted); font-size: var(--fs-sm); }
     </style>
   </head>
   <body>

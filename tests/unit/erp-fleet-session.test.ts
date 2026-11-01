@@ -82,7 +82,7 @@ describe('createFleetSession — the fleet at a glance, exceptions first', () =>
 
   it('speaks both languages — every copy key has English and Tamil', () => {
     expect(isBilingualComplete(FLEET_COPY)).toBe(true);
-    expect(createFleetSession({ userId: 'u-1' }, ports([device()])).text('ta', 'title')).toBe('சாதனங்கள்');
+    expect(createFleetSession({ userId: 'u-1' }, ports([device()])).text('ta', 'title')).toBe('கல்லாக்களும் சாதனங்களும்'); // U0: named what the menu calls it
     // every verdict maps to a label key that exists in both languages (guards a verdict added without copy)
     for (const verdict of FLEET_VERDICTS) {
       const v = createFleetSession({ userId: 'u-1' }, ports([device({ verdict, mayTrade: verdict === 'ok' })])).view('ta');

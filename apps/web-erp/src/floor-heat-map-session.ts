@@ -8,6 +8,7 @@
 // products named, never a colour; a product sold with no shelf place on the plan is listed under the map. Read-only.
 
 import type { ViewerIdentity } from './browser-entry';
+import { refusalWords } from './refusal-words';
 import type { Outcome } from './r4-insight-call';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { servedShopZone } from '../../../packages/calendar/src/shop-day';
@@ -64,7 +65,7 @@ export const heatMapWords = (lang: Lang, key: string): string =>
   (HEAT_MAP_COPY[lang] as Record<string, string>)[key] ?? (HEAT_MAP_COPY.en as Record<string, string>)[key] ?? key;
 
 export function heatMapOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return out.status === 404 && /floor plan/.test(out.whatHappened) ? heatMapWords(lang, 'noPlan') : `${heatMapWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return out.status === 404 && /floor plan/.test(out.whatHappened) ? heatMapWords(lang, 'noPlan') : refusalWords(lang, out); // U0 · G10
   if (out.result === 'invalid') return heatMapWords(lang, out.why);
   if (out.result === 'lost_link') return heatMapWords(lang, 'unreachable');
   return '';

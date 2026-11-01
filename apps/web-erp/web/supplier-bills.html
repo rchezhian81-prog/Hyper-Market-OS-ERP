@@ -36,20 +36,20 @@
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
       .summary div { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
-      .summary .label { display: block; color: var(--muted); font-size: 13px; }
+      .summary .label { display: block; color: var(--muted); font-size: var(--fs-sm); }
       .summary .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
       ul.register { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       li.bill { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; background: var(--bg); min-width: 0; }
       li.bill .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
       li.bill .what { font-weight: 700; overflow-wrap: anywhere; }
       li.bill .facts { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
-      .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--line); color: var(--ink); }
+      .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 600; background: var(--line); color: var(--ink); }
       .pill.waiting { background: var(--warn); color: var(--on-warn); }
       .pill.done { background: var(--ok); color: var(--on-accent); }
       .pill.blocked { background: var(--danger-surface); color: var(--on-danger); }
       .table-wrap { overflow-x: auto; }
       table { width: 100%; border-collapse: collapse; font-size: 14px; }
-      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 6px; }
+      th { text-align: left; color: var(--muted); font-size: var(--fs-sm); font-weight: 500; padding: 6px; }
       td { padding: 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; vertical-align: top; }
       td input { width: 100%; min-width: 90px; }
       td.amount, th.amount { text-align: right; }
@@ -60,7 +60,7 @@
       .verdict { border-left: 6px solid var(--line); background: var(--bg); border-radius: 12px; padding: 10px 14px; display: grid; gap: 4px; }
       .verdict.ready { border-left-color: var(--good); } .verdict.problem { border-left-color: var(--danger); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
-      .muted { color: var(--muted); font-size: 13px; }
+      .muted { color: var(--muted); font-size: var(--fs-sm); }
       [hidden] { display: none !important; }
     </style>
   </head>

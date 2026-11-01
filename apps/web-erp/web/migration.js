@@ -75,6 +75,7 @@ const WORDS = {
     ok: 'OK', read: 'Please read this',
     nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be signed, decided or rolled back — all three carry the name of whoever did them.',
     sampleData: 'Sample data — this is not your shop.',
+    notTold: 'Not known — the store computer has not been given the migration setup yet, so nothing here can be read, signed, decided or rolled back from this screen.',
     unsent: 'decision(s) made here and not yet sent to the store computer — they are saved and will be sent when the connection is back',
     // MG-10 day entry, witness figures and the first department's templates (cutover readiness, OB-239).
     witnessTitle: 'What the outside evidence says',
@@ -169,6 +170,7 @@ const WORDS = {
     ok: 'சரி', read: 'இதைப் படிக்கவும்',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைப் பெட்டிக்குத் தெரியவில்லை. கையெழுத்திடவோ, முடிவு செய்யவோ, திரும்பவோ முடியாது — மூன்றும் செய்தவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    notTold: 'தெரியாது — கடைக் கணினிக்கு இன்னும் இடமாற்ற அமைப்பு கொடுக்கப்படவில்லை, எனவே இந்தத் திரையிலிருந்து எதையும் படிக்கவோ, கையெழுத்திடவோ, முடிவு செய்யவோ, திரும்பவோ முடியாது.',
     unsent: 'முடிவு(கள்) இங்கே எடுக்கப்பட்டு இன்னும் கடைக் கணினிக்கு அனுப்பப்படவில்லை — அவை சேமிக்கப்பட்டுள்ளன, இணைப்பு திரும்பியதும் அனுப்பப்படும்',
     witnessTitle: 'வெளிச் சான்று என்ன சொல்கிறது',
     witnessLead: 'பன்னிரண்டு வகைப் பதிவுகள் ஒவ்வொன்றும் பழைய அமைப்புக்கு வெளியே உள்ள ஒன்றுடன் சரிபார்க்கப்படுகிறது — இருப்பு எண்ணிக்கை, வங்கி, வரி அறிக்கைகள், கணக்காளரின் கணக்குகள், விற்பனையாளர்கள், வாடிக்கையாளர்கள். கண்டுபிடிப்பு இல்லாத வகை "இல்லை" என்று காட்டப்படும், ஒருபோதும் "சரி" என்று அல்ல.',
@@ -1700,8 +1702,11 @@ function paintChrome() {
   labelled(el('day-sign'), 'badge-check', t('daySign'));
 
   const nobody = el('nobody');
-  nobody.hidden = window.migrationData?.userId !== undefined;
-  nobody.textContent = nobody.hidden ? '' : t('nobodyNamed');
+  // U0 (P-08): on a real store computer that was given no migration setup there is nothing to show — the page says so
+  // and draws none of the sample figures. (Why the box is not given it is a head-office question, left to U5.)
+  nobody.hidden = window.migrationData?.userId !== undefined && !notTold;
+  nobody.textContent = nobody.hidden ? '' : notTold ? t('notTold') : t('nobodyNamed');
+  for (const view of VIEWS) if (notTold) el(`view-${view}`).hidden = true;
 
   // What this page has decided and not yet managed to send. A screen that draws a signature it
   // could not record is the failure P-08 exists to refuse, so this is never hidden when it is > 0.
@@ -1730,9 +1735,11 @@ el('lang').addEventListener('click', () => {
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 
-el('sample').hidden = real !== undefined;
+const servedByBox = window.shopTimeZone !== undefined;
+const notTold = real === undefined && servedByBox;
+el('sample').hidden = real !== undefined || servedByBox;
 paintChrome();
-show('where');
+if (!notTold) show('where');
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

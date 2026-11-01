@@ -13,6 +13,7 @@
 // (`GET /v1/inventory/count-plans/:planId`) carries expected, variance and value. DOM-free and tested.
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
+import { refusalWords } from './refusal-words';
 import { rupees } from './head-office-http';
 import { quantityLabel, normaliseUom, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
@@ -346,7 +347,7 @@ export function createCountPlansSession(viewer: CountPlanViewer | undefined, htt
       if (out.result === 'ok') return { tone: 'good', words: text(lang, good) };
       if (out.result === 'lost_link') return { tone: 'err', words: text(lang, 'unreachable') };
       if (out.result === 'invalid') return { tone: 'err', words: text(lang, out.key) };
-      return { tone: 'err', words: `${text(lang, 'refused')} ${out.whatHappened === '' ? out.code : out.whatHappened}` };
+      return { tone: 'err', words: refusalWords(lang, out) }; // U0 · G10: what happened · nothing was changed · the next safe action
     },
   };
 }

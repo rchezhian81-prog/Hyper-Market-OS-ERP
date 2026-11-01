@@ -17,7 +17,7 @@ let lang = 'en';
 function sampleSession() {
   const CHROME = {
     en: {
-      title: 'Release for sale', langName: 'தமிழ்',
+      title: 'Production', langName: 'தமிழ்',
       lead: 'Sample batches. Connect the store computer to see the finished batches waiting for release in your own shop.',
       listHeading: 'To release', toReleaseCount: 'to release', allReleased: 'Nothing waiting — every finished batch has been released or held.',
       notKnown: 'This store computer has not been told the production runs yet.',
@@ -32,7 +32,7 @@ function sampleSession() {
       sampleData: 'Sample data — this is not your shop.',
     },
     ta: {
-      title: 'விற்பனைக்கு விடுவி', langName: 'English',
+      title: 'உற்பத்தி', langName: 'English',
       lead: 'மாதிரி தொகுதிகள். உங்கள் கடையில் விடுவிக்கக் காத்திருக்கும் தொகுதிகளைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       listHeading: 'விடுவிக்க வேண்டியவை', toReleaseCount: 'விடுவிக்க', allReleased: 'காத்திருப்பது எதுவும் இல்லை — ஒவ்வொரு தொகுதியும் விடுவிக்கப்பட்டது அல்லது தடுத்து வைக்கப்பட்டது.',
       notKnown: 'உற்பத்தி இயக்கங்கள் இன்னும் கடைக் கணினிக்குச் சொல்லப்படவில்லை.',
