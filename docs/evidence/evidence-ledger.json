@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2018,
+  "testFiles": 2020,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -348,10 +348,10 @@
       "id": "M04",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 10,
         "realDb": 3,
-        "browser": 4,
+        "browser": 5,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -362,6 +362,7 @@
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/erp-contract-expiry-session.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
+          "tests/unit/erp-merchandising-setup-session.test.ts",
           "tests/unit/merchandising-assortment.test.ts",
           "tests/unit/merchandising-shelf-count.test.ts",
           "tests/unit/merchandising-shelf.test.ts",
@@ -389,7 +390,8 @@
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
           "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
-          "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts"
+          "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts",
+          "tests/e2e/the-shelves-and-space-setup-tabs-reach-head-office.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
@@ -3035,7 +3037,7 @@
       "id": "D02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 9,
         "realDb": 3,
         "browser": 2,
@@ -3047,6 +3049,7 @@
         "unit": [
           "tests/unit/approval-requests.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
+          "tests/unit/erp-merchandising-setup-session.test.ts",
           "tests/unit/merchandising-space.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
         ],

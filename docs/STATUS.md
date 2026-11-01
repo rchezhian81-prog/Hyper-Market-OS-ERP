@@ -5,6 +5,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Round 4a, this session's part (1 November 2026): the Shelves & space setup; the product safety save
+- **Owner decided (OB-626):** the other session's Round 4a (#861) stays; this session's duplicate (#862) is cut down to what main lacked. The other session builds Rounds 4b–4d; this session starts no further round.
+- **Shelves & space:** record a display contract (M04-FR-04; Finance approves, or it is kept flagged as not approved, OB-631); Clusters & seasons (R8-8, OB-318: the clusters are the price zones; season plans); Shelf layout (head office sets a store's shelf map, planogram and floor plan, each published as a new version; screen-gap Round D closed). The store computer tells this page the signed-in person's own permissions; head office re-checks every act.
+- **OB-627 (in progress):** a separate, versioned safety save for a product's ingredients, allergens, nutrition, origin, storage and label fields, so a second editor can never silently overwrite the first.
+- **Owner decisions recorded:** OB-626 to OB-631, OB-633.
+- **Owner decision needed (OB-632):** a first-ever channel or customer price. The owner answered "not counted as a change" about this session's screen, but main's price rule (#861) already compares it with the shelf price (stricter). Keep main's stricter rule, or loosen it.
+- **Blocked:** nothing.
+
 ## OB-573 and OB-574 (1 November 2026): a demo weighing scale; a reason to stop a scale-label rule
 - **OB-573 "A":** the demo copy puts a pretend weighing scale (`DEMO-SCALE-1`, every field marked synthetic) on head office's scale register for the demo till, so the demo's loose rice rings from its scale label end to end. Demo tenant only.
 - **OB-574 "A":** stopping a scale-label rule needs a written reason. Head office refuses a stop without one (`withdrawal_reason_required`, nothing changed); the office screen asks for it before sending, in English and Tamil. Setting a rule may still say why.
