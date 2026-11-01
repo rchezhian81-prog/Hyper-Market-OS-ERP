@@ -448,8 +448,8 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals', 'scale'];
-const TABS = ['items', 'price', 'shelf', 'promo', 'rivals', 'scale'];
+const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals', 'scale', 'tax'];
+const TABS = ['items', 'price', 'shelf', 'promo', 'rivals', 'scale', 'tax'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
@@ -458,7 +458,7 @@ function show(name) {
   }
 }
 for (const name of TABS) {
-  el(`tab-${name}`).addEventListener('click', () => { show(name); if (name === 'rivals') void loadRivals(); if (name === 'scale') void loadScale(); });
+  el(`tab-${name}`).addEventListener('click', () => { show(name); if (name === 'rivals') void loadRivals(); if (name === 'scale') void loadScale(); if (name === 'tax') renderTax(); });
 }
 el('back-to-items').addEventListener('click', () => { show('items'); renderItems(); });
 
@@ -1556,6 +1556,118 @@ el('scale-save').addEventListener('click', () => busy('scale-save', async () => 
 }));
 // ── OB-570 — end
 
+// ── M03-FR-03 tax side — begin: GST and cess by HSN code ─────────────────────────────────────────────────────────
+//
+// A thin panel over head office's own routes, through the tested model (`tax-rates-session.ts`, attached as
+// `window.taxRatesSession` / `taxRatesKit`). It reads an HSN code's GST and cess schedules, records a first GST rate or a
+// cess, and — for a CHANGE of a GST rate head office already holds — shows head office's refusal in its words and offers to
+// ask a Finance approver (the accountant or the owner, on their own Approvals page) for exactly that change; once approved,
+// "Save the approved change" sends it naming the approval. No name is typed; nothing is approved here.
+const taxRates = window.taxRatesSession ?? null;
+const taxKit = window.taxRatesKit ?? null;
+const xw = (key, fill) => (taxKit === null ? key : taxKit.taxRateWords(lang)(key, fill));
+let taxRead = null;    // the last schedule read (an outcome)
+let taxMine = null;    // the person's own change requests for that HSN (an outcome)
+let taxHsn = '';       // the HSN the schedule was read for
+
+function taxSay(id, text, ok) { el(id).textContent = text; el(id).dataset.ok = ok ? 'yes' : 'no'; }
+function taxRow(text, data) {
+  const box = document.createElement('div'); box.className = 'row';
+  for (const [k, v] of Object.entries(data)) box.dataset[k] = v;
+  const what = document.createElement('div'); what.className = 'what';
+  const line = document.createElement('strong'); line.textContent = text;
+  what.append(line); box.append(what);
+  return box;
+}
+
+function renderTax() {
+  if (taxKit === null) { el('tax-form').hidden = true; return; }
+  for (const [id, k] of [['tax-title', 'h'], ['tax-lead', 'lede'], ['tax-hsn-label', 'hsn'], ['tax-show', 'show'], ['tax-gst-h', 'gstH'], ['tax-cess-h', 'cessH'],
+    ['tax-set-gst-h', 'setGstH'], ['tax-gst-from-label', 'from'], ['tax-gst-rate-label', 'ratePercent'], ['tax-gst-save', 'saveGst'], ['tax-ask-h', 'askH'],
+    ['tax-who-approves', 'whoApproves'], ['tax-reason-label', 'reason'], ['tax-ask-send', 'ask'], ['tax-mine-h', 'mineH'], ['tax-set-cess-h', 'setCessH'],
+    ['tax-cess-from-label', 'from'], ['tax-cess-adv-label', 'advalorem'], ['tax-cess-specific-label', 'specific'], ['tax-cess-block-label', 'perQuantity'],
+    ['tax-cess-save', 'saveCess'], ['tax-note', 'nextPack']]) el(id).textContent = xw(k);
+  el('tax-form').hidden = taxRates === null || !taxRates.may.set;
+  const gst = el('tax-gst-list'); const cess = el('tax-cess-list'); const mine = el('tax-mine');
+  gst.replaceChildren(); cess.replaceChildren(); mine.replaceChildren();
+  if (taxRates === null) { taxSay('tax-status', xw('notConnected'), false); el('tax-show').hidden = true; return; }
+  if (!taxRates.may.read) { taxSay('tax-status', xw('cannotRead'), false); el('tax-show').hidden = true; return; }
+  if (!taxRates.may.set) taxSay('tax-status', xw('readOnly'), true);
+  if (taxRead !== null) {
+    if (taxRead.kind !== 'done') {
+      taxSay('tax-list-status', taxRead.kind === 'unreachable' ? xw('unreadable') : taxKit.taxOutcomeWords(lang, taxRead, 'gst').text, false);
+    } else {
+      taxSay('tax-list-status', '', true);
+      const lead = (text) => { const p = document.createElement('p'); p.className = 'lead'; p.textContent = text; return p; };
+      if (taxRead.body.gst.length === 0) gst.append(lead(xw('noGst')));
+      for (const p of taxRead.body.gst) gst.append(taxRow(taxKit.gstLine(lang, p), { from: p.effectiveFrom }));
+      if (taxRead.body.cess.length === 0) cess.append(lead(xw('noCess')));
+      for (const p of taxRead.body.cess) cess.append(taxRow(taxKit.cessLine(lang, p), { from: p.effectiveFrom }));
+    }
+  }
+  if (taxMine !== null && taxRates.may.set) {
+    if (taxMine.kind !== 'done') {
+      const p = document.createElement('p'); p.className = 'lead';
+      p.textContent = taxMine.kind === 'unreachable' ? xw('unreadable') : taxKit.taxOutcomeWords(lang, taxMine, 'ask').text; mine.append(p);
+    } else if (taxMine.body.length === 0) {
+      const p = document.createElement('p'); p.className = 'lead'; p.textContent = xw('noMine'); mine.append(p);
+    } else {
+      for (const r of taxMine.body) {
+        const row = taxRow(taxKit.requestLine(lang, r), { request: r.requestId, status: r.status });
+        if (r.status === 'approved') {
+          const use = document.createElement('button'); use.type = 'button'; use.className = 'primary'; use.dataset.use = r.requestId; use.textContent = xw('useApproved');
+          use.addEventListener('click', async () => {
+            use.disabled = true;
+            const out = await taxRates.saveApprovedGst(r);
+            const said = taxKit.taxOutcomeWords(lang, out, 'gst');
+            taxSay('tax-gst-status', said.text, said.ok);
+            await loadTax(r.details.hsnCode);
+          });
+          row.append(use);
+        }
+        mine.append(row);
+      }
+    }
+  }
+}
+
+async function loadTax(hsn) {
+  if (taxRates === null || !taxRates.may.read) { renderTax(); return; }
+  taxHsn = String(hsn ?? '').trim();
+  if (taxHsn === '') { taxRead = { kind: 'invalid', detail: 'hsn' }; taxMine = null; renderTax(); return; }
+  taxRead = await taxRates.schedule(taxHsn);
+  taxMine = taxRates.may.set ? await taxRates.myRequests(taxHsn) : null;
+  renderTax();
+}
+
+el('tax-show').addEventListener('click', () => busy('tax-show', async () => { el('tax-ask').hidden = true; await loadTax(el('tax-hsn').value); }));
+el('tax-gst-save').addEventListener('click', () => busy('tax-gst-save', async () => {
+  const input = { hsnCode: el('tax-hsn').value, effectiveFrom: el('tax-gst-from').value, ratePercent: el('tax-gst-rate').value };
+  const out = await taxRates.setGst(input);
+  const said = taxKit.taxOutcomeWords(lang, out, 'gst');
+  taxSay('tax-gst-status', said.text, said.ok);
+  // A change of a rate on record needs a Finance approver: head office said so in its words; offer to ask for exactly it.
+  el('tax-ask').hidden = !(out.kind === 'refused' && out.code === taxKit.needsFinanceApproval);
+  await loadTax(input.hsnCode);
+}));
+el('tax-ask-send').addEventListener('click', () => busy('tax-ask-send', async () => {
+  const input = { hsnCode: el('tax-hsn').value, effectiveFrom: el('tax-gst-from').value, ratePercent: el('tax-gst-rate').value, reason: el('tax-reason').value };
+  const out = await taxRates.askGstChange(input);
+  const said = taxKit.taxOutcomeWords(lang, out, 'ask');
+  taxSay('tax-gst-status', said.text, said.ok);
+  if (said.ok) { el('tax-ask').hidden = true; el('tax-reason').value = ''; }
+  await loadTax(input.hsnCode);
+}));
+el('tax-cess-save').addEventListener('click', () => busy('tax-cess-save', async () => {
+  const input = { hsnCode: el('tax-hsn').value, effectiveFrom: el('tax-cess-from').value, advaloremPercent: el('tax-cess-adv').value,
+    specificRupees: el('tax-cess-specific').value, perQuantity: el('tax-cess-block').value };
+  const out = await taxRates.setCess(input);
+  const said = taxKit.taxOutcomeWords(lang, out, 'cess');
+  taxSay('tax-cess-status', said.text, said.ok);
+  await loadTax(input.hsnCode);
+}));
+// ── M03-FR-03 tax side — end
+
 async function loadRivals() {
   if (rivals === null || !rivals.may.read) { renderRivals(); return; }
   rivalsRead = await rivals.compare();
@@ -1586,6 +1698,7 @@ function paintChrome() {
   el('tab-promo').textContent = t('offer');
   if (rivalKit !== null) el('tab-rivals').textContent = rw('tab');
   if (scaleKit !== null) el('tab-scale').textContent = sw('tab');
+  if (taxKit !== null) el('tab-tax').textContent = xw('tab'); // M03-FR-03 tax side
   el('items-title').textContent = t('items');
   el('items-lead').textContent = t('itemsLead');
   el('item-search-label').textContent = t('findItem');
@@ -1625,6 +1738,7 @@ el('lang').addEventListener('click', () => {
   renderRivals();
   renderDrafts(); // R4 D-18
   renderScale(); // OB-570
+  renderTax(); // M03-FR-03 tax side
   if (!el('view-price').hidden) renderLimits(); // OB-512: the replace-an-MRP panel speaks the chosen language
 });
 
@@ -1644,6 +1758,7 @@ renderRivals();
 if (wantedTab === 'rivals') void loadRivals();
 renderScale();
 if (wantedTab === 'scale') void loadScale();
+renderTax(); // M03-FR-03 tax side
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //
