@@ -86,6 +86,7 @@ import {
 import { createCashierProductView, NAME_PRICE_BARCODE, type CashierProductView } from './catalogue-cashier-view';
 import { createMonthCloseSession, MONTH_CLOSE_PERMISSION, type MonthClosePorts, type MonthCloseSession } from './month-close-session';
 import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
+import { createScaleRulesSession, scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, SCALE_VALUE_KINDS, type ScaleRulesSession } from './scale-label-rules-session';
 import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
@@ -1351,6 +1352,8 @@ export interface ViewerIdentity {
 export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords });
 /** Round 12: the competitor-price panel's words and readings (tested in `competitor-price-session.ts`). */
 export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
+/** OB-570 "A": the scale-label rules panel's words and readings (tested in `scale-label-rules-session.ts`). */
+export const SCALE_RULES_KIT = Object.freeze({ scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, kinds: SCALE_VALUE_KINDS });
 
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -5299,6 +5302,8 @@ interface ManagerWindow {
   /** Round 12 (D06-FR-05): the competitor-price panel on the catalogue page, over head office's own routes. */
   competitorPriceSession?: CompetitorPriceSession;
   competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
+  scaleRulesSession?: ScaleRulesSession;
+  scaleRulesKit?: typeof SCALE_RULES_KIT;
   /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
   supplierBillsData?: ViewerIdentity;
   supplierBillsSession?: SupplierBillsSession;
@@ -7329,6 +7334,12 @@ if (browserWindow !== undefined) {
       ...(cat.storeId === undefined ? {} : { storeId: cat.storeId }), ...(cat.now === undefined ? {} : { now: cat.now }),
       products: (cat.products ?? []).map((p) => ({ productId: p.productId, name: p.name })),
     }, browserCompetitorHttp());
+  }
+  // OB-570 "A": the scale-label rules panel — the same rule as above: only where head office told the page who is looking.
+  // On the store computer the panel says the rules are kept at head office (it never shows a rule it could not read).
+  if (cat !== undefined) browserWindow.scaleRulesKit = SCALE_RULES_KIT;
+  if (cat !== undefined && Array.isArray(cat.permissions)) {
+    browserWindow.scaleRulesSession = createScaleRulesSession({ permissions: cat.permissions }, browserCompetitorHttp());
   }
   // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
   // no session (the page says so and offers nothing).
