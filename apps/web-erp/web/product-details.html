@@ -9,8 +9,9 @@
     <!--
       Product details (Round 4a · M03-FR-01/02/03/04 · WF-01 "tax/UOM/pack/content" step · re-audit G-1). A THIN CLIENT over
       head office's product master: one product's record — category, brand, manufacturer, variant parent, tax (HSN) class,
-      lifecycle, MRP from a date, the category's attributes, ingredients, allergens, origin, storage and the nutrition panel
-      (POST /v1/catalogue/products/:id/publish, a new version each time); its barcodes and pack hierarchy, with the case-to-unit
+      lifecycle, MRP from a date and the category's attributes (POST /v1/catalogue/products/:id/publish, a new version each
+      time); once published, its ingredients, allergens, origin, storage, label facts and nutrition panel on their own save
+      that names the version opened (POST /v1/catalogue/products/:id/safety · owner 2A: never overwrites a newer edit); its barcodes and pack hierarchy, with the case-to-unit
       conversion checked (…/barcodes/:code, …/pack, …/pack/convert); the bundle it is sold as (/v1/catalogue/bundles/:id); and
       the products that may stand in for it (…/substitutes). Every rule is head office's — a draft saves whatever is known and
       says what still blocks it; a tax-class change or an age-limited product waits for a second person, asked here and
@@ -138,6 +139,19 @@
           <legend id="nutrition-h">Nutrition (per 100 g or 100 ml)</legend>
           <p class="muted" id="nutrition-lead"></p>
           <div class="row" id="nutrition"></div>
+        </fieldset>
+        <!-- Owner 2A: the safety, label and nutrition facts of a published product save on their OWN route
+             (POST /v1/catalogue/products/:id/safety) with the version this page opened; someone else's newer save is never
+             overwritten — head office refuses and the page says so, with a Reload button. -->
+        <fieldset id="safety-save-box">
+          <legend id="safety-save-h">Save the safety, label and nutrition facts</legend>
+          <p class="muted" id="safety-save-lead"></p>
+          <div class="row">
+            <label for="s-why"><span id="l-s-why">Why (kept with the version)</span><input id="s-why" autocomplete="off" maxlength="200" /></label>
+            <button id="save-safety" class="primary" type="button">Save safety and label</button>
+            <button id="safety-reload" type="button" hidden>Reload</button>
+          </div>
+          <p class="status" id="safety-status" role="status" aria-live="polite"></p>
         </fieldset>
         <div class="row">
           <label for="r-why"><span id="l-r-why">Why (kept with the version)</span><input id="r-why" autocomplete="off" maxlength="200" /></label>

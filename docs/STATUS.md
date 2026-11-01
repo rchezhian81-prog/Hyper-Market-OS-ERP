@@ -5,6 +5,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-627 and the Round 4a duplicate (1 November 2026)
+- **Owner decided (OB-626):** two sessions built Round 4a twice. The other session's screens (#861, and #865 for shelves, planogram, floor plan, display space, store groups and seasons) stay; this session's duplicate (#862) keeps only what main lacked. The other session builds Rounds 4b–4d; this session starts no further round.
+- **OB-627 built:** a product's version is read with it, and a separate safety save (`POST /v1/catalogue/products/:id/safety`) saves ingredients, allergens, nutrition, origin, storage and label fields only from the version the editor opened; a stale save is refused by name (`409 product_changed_meanwhile`), nothing written, through the same publish rules and audited. The Product details page saves safety through it; its full Save no longer re-sends safety typed on the form.
+- **Owner decisions recorded:** OB-626 to OB-634 (OB-632: main's stricter first-price rule stays; OB-634: any newer product version refuses an open safety edit).
+- **Next:** nothing further from this session unless the owner asks; Rounds 4b–4d belong to the other session.
+- **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## OB-573 and OB-574 (1 November 2026): a demo weighing scale; a reason to stop a scale-label rule
 - **OB-573 "A":** the demo copy puts a pretend weighing scale (`DEMO-SCALE-1`, every field marked synthetic) on head office's scale register for the demo till, so the demo's loose rice rings from its scale label end to end. Demo tenant only.
 - **OB-574 "A":** stopping a scale-label rule needs a written reason. Head office refuses a stop without one (`withdrawal_reason_required`, nothing changed); the office screen asks for it before sending, in English and Tamil. Setting a rule may still say why.
