@@ -5,6 +5,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Combined fix list, Round 3 (31 October 2026): the demo copy set up; kg and litre follow-ups
+- **Demo copy (screen audit Round C):** suppliers in the master; till `lane-1` with bill prefix `D1L1-` and PINs each person types through the box's audited command; a warehouse supervisor; an online order with pick list and delivery route; business customers on (OB-559); the release builds and fronts the supplier portal, self-checkout, price kiosk, queue till and B2B portal; the dropped runbook setting restored with a guardrail; self-checkout says which page turns it on; handheld work asks each job's own permission; a demo-only reseed that refuses anything else and keeps the old data; the store-volume load runs nightly.
+- **Kg and litre (Round B follow-ups):** the indent forms and the picker handheld take kg and litres in their own unit; a price-only scale label on a weighed item and a weight label on a piece item are refused at the till.
+- **Found, not shipped:** head office never puts a weight-label rule in the signed pack, so the tills cannot read a scale's weight label. The owner's OB-570 (refuse a plain-barcode kg scan) and the "never key a weight" Qty refusal are held, so loose produce can still be rung; built (OB-570 on branch fix/r3-units) but not merged.
+- **Tests (joined branch, before the Qty hold):** full default suite on PostgreSQL 15,918 passed, 9 failed in two "never-received" files that pass alone; browser 801/801; guardrails 1,876/1,876. After the Qty hold: till unit/integration and guardrails 2,513 passed, 48 till browser files passed.
+- **Next:** the owner's choice on scale-label rules; Round 4 (setup screens, the §28 roles incl. Picker and Delivery (OB-571), each office page checking its own permission (OB-572)).
+- **Blocked:** nothing. **Owner decision needed:** scale-label rules first (A), switch the refusals on now (B), or keep today's behaviour (C).
+
 ## Combined fix list, Rounds 1 and 2 (31 October 2026): broken actions and pages head office never filled
 - **Round 1:** the wrong-numbers items came in through #852 (the other session's Round B). Added here: the accountant opens Supplier bills without a refusal (OB-547/548/617); a test proves a bill matched before OB-556 has its other charges taken back as its own entry.
 - **Round 2 (screen audit Round A):**

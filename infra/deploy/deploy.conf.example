@@ -10,8 +10,10 @@ SRE_RELEASE_BRANCH=main
 SRE_COMPOSE_PROJECT=sre-pilot
 SRE_COMPOSE_FILES="docker-compose.yml docker-compose.pilot.yml"
 SRE_ENV_FILE=.env.pilot
-# Which app shells to rebuild on each release (folder names under apps/).
-SRE_BUILD_SHELLS="pos owner-app web-erp picker-app delivery-app customer-app warehouse-app"
+# Which app shells to rebuild on each release (folder names under apps/). Round 3 (screen gap audit, 31 Oct 2026): the
+# supplier portal, the self-checkout lane, the price kiosk, the queue till and the business-customer portal too — each
+# shell's screen runs only on its built bundle, so a shell left out opens on its stand-in.
+SRE_BUILD_SHELLS="pos owner-app web-erp picker-app delivery-app customer-app warehouse-app supplier-app self-checkout price-kiosk queue-pos b2b-app"
 # Build-time flags. PILOT_DEMO_BANNER=1 bakes the "DEMO / PILOT — NOT PRODUCTION" banner into every shell;
 # leave it EMPTY only on a box that holds real data under a written GO. PILOT_DEMO_LANE_BASE=/store-lane makes the
 # hosted demo's till (served by the demo front) ring its sales on the DEMO store box through the signed-in front

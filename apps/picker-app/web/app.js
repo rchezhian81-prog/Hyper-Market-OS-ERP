@@ -91,7 +91,7 @@ const WORDS = {
     stepPickALine: 'Scan the bin you are at, or tap a line, to start', stepAllDone: 'Every line is resolved — pack the crate',
     waitingForScan: 'Waiting for a scan…', pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', substitute: 'Substitute', problem: 'Problem', packCrate: 'Pack the crate',
-    howMany: 'How many are you taking?', howManyGrams: 'How many grams?',
+    howMany: 'How many are you taking?', howMuchKg: 'How many kg are you taking? (1.5 = 1.5 kg)', howMuchL: 'How many litres are you taking? (0.75 = 0.75 L)',
     required: 'Asked for', picked: 'Picked', short: 'Short', substituted: 'Swapped',
     qualityFailed: 'Quality — rejected', pending: 'Not done yet',
     read: 'Please read this', tapLineFirst: 'Tap a line first.',
@@ -133,7 +133,7 @@ const WORDS = {
     stepPickALine: 'நீங்கள் இருக்கும் இடத்தை ஸ்கேன் செய்யவும், அல்லது தொடங்க ஒரு வரியைத் தொடவும்', stepAllDone: 'எல்லா வரிகளும் முடிந்தன — கிரேட்டை பேக் செய்யவும்',
     waitingForScan: 'ஸ்கேனுக்காகக் காத்திருக்கிறது…', pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', substitute: 'மாற்று', problem: 'பிரச்சனை', packCrate: 'கிரேட்டை பேக் செய்',
-    howMany: 'எத்தனை எடுக்கிறீர்கள்?', howManyGrams: 'எத்தனை கிராம்?',
+    howMany: 'எத்தனை எடுக்கிறீர்கள்?', howMuchKg: 'எத்தனை கிலோ எடுக்கிறீர்கள்? (1.5 = 1.5 கிலோ)', howMuchL: 'எத்தனை லிட்டர் எடுக்கிறீர்கள்? (0.75 = 0.75 லிட்டர்)',
     required: 'கேட்டது', picked: 'எடுக்கப்பட்டது', short: 'குறைவு', substituted: 'மாற்றப்பட்டது',
     qualityFailed: 'தரம் — நிராகரிக்கப்பட்டது', pending: 'இன்னும் முடியவில்லை',
     read: 'இதைப் படிக்கவும்', tapLineFirst: 'முதலில் ஒரு வரியைத் தொடவும்.',
@@ -259,7 +259,7 @@ const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).rep
 function sampleWave() {
   const lines = [
     { lineId: 'l1', orderRef: 'ORD-1', productId: '8901234567890', description: 'Rice 1kg', bin: 'A-01', requiredQty: 2, uom: 'ea', state: 'pending', pickedQty: 0, finalPrice: { minor: 0, currency: 'INR' } },
-    { lineId: 'l2', orderRef: 'ORD-1', productId: '8901234500007', description: 'Tomato', bin: 'B-04', requiredQty: 1500, uom: 'kg', state: 'pending', pickedQty: 0, finalPrice: { minor: 0, currency: 'INR' } },
+    { lineId: 'l2', orderRef: 'ORD-1', productId: '8901234500007', description: 'Tomato 1kg pack', bin: 'B-04', requiredQty: 1, uom: 'ea', state: 'pending', pickedQty: 0, finalPrice: { minor: 0, currency: 'INR' } },
   ];
   let bin = null;
   const find = (id) => lines.find((l) => l.lineId === id);
@@ -293,6 +293,11 @@ function sampleWave() {
   };
 }
 
+/** A line's quantity in its own unit, as the model words it; the sample wave (count lines only) shows the bare count. */
+const qtyText = (line, n) => (typeof session.quantityText === 'function' ? session.quantityText(line.lineId, n) : String(n));
+/** The sample wave's reading of a typed count: a whole number above nought, else nothing. */
+const wholeCount = (typed) => (/^\d+$/.test(typed) && Number(typed) > 0 ? Number(typed) : undefined);
+
 const real = window.pickSession;
 const session = real ?? sampleWave();
 const outbox = window.pickerOutbox ?? null;
@@ -316,8 +321,10 @@ el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; })
 
 let sheetResolve = null;
 
-function ask({ title, mode, hint = '', initial = '0', options = [] }) {
+function ask({ title, mode, hint = '', initial = '0', options = [], decimal = false }) {
   say(el('sheet-title'), title, mode === 'number' ? 'calculator' : 'list');
+  // OB-31: a kg / litre amount needs a decimal point; a count keeps its clear key in the same place.
+  el('key-clear-or-point').textContent = decimal ? '.' : 'C';
   el('entry-hint').textContent = hint;
   el('entry').textContent = initial;
   el('entry').hidden = mode !== 'number';
@@ -351,11 +358,14 @@ el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = key;
+  if (key === 'C') button.id = 'key-clear-or-point';
   button.addEventListener('click', () => {
     const current = el('entry').textContent;
-    el('entry').textContent = key === 'C' ? '0'
-      : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0')
-        : (current === '0' ? key : current + key);
+    const pressed = button.textContent; // the C slot reads "." while a kg / litre amount is asked
+    el('entry').textContent = pressed === 'C' ? '0'
+      : pressed === '.' ? (current.includes('.') ? current : current + '.')
+        : pressed === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0')
+          : (current === '0' ? pressed : current + pressed);
   });
   return button;
 }));
@@ -528,8 +538,8 @@ function render() {
     what.textContent = line.description;
     const qty = document.createElement('span');
     qty.className = 'qty';
-    // Weighed lines are held in grams by the model; the picker thinks in kilos.
-    const asQty = (n) => (line.uom === 'kg' ? `${(n / 1000).toFixed(3)} kg` : String(n));
+    // OB-31: kg and litre lines are held in grams / millilitres; the model words them in their own unit ("1.500 kg", "0.750 L").
+    const asQty = (n) => qtyText(line, n);
     // OB-205: the quantity asked for, big; the words around it read exactly as before ("Asked for 2 · Picked 1").
     const big = document.createElement('span');
     big.className = 'n';
@@ -586,17 +596,20 @@ async function startLine(line, binCode = null) {
 
   step = 'qty';
   render();
-  const grams = line.uom === 'kg';
+  // OB-31: asked and typed in the line's OWN unit — "1.5" kg, "0.75" L, "2" items — and turned into grams / millilitres by
+  // the model's shared reading, never here (a litre line used to show and take raw millilitres).
+  const decimal = typeof session.takesDecimal === 'function' && session.takesDecimal(line.lineId);
   const answer = await ask({
-    title: grams ? t('howManyGrams') : t('howMany'),
+    title: line.uom === 'kg' ? t('howMuchKg') : line.uom === 'L' ? t('howMuchL') : t('howMany'),
     mode: 'number',
-    hint: `${t('required')}: ${grams ? `${(line.requiredQty / 1000).toFixed(3)} kg` : line.requiredQty}`,
-    initial: String(line.requiredQty),
+    hint: `${t('required')}: ${qtyText(line, line.requiredQty)}`,
+    initial: typeof session.typedText === 'function' ? session.typedText(line.lineId, line.requiredQty) : String(line.requiredQty),
+    decimal,
   });
   step = 'idle';
   if (answer === null) { render(); return; }
-  const qty = Number(answer);
-  if (!Number.isInteger(qty) || qty <= 0) { render(); return; }
+  const qty = typeof session.quantityFromTyped === 'function' ? session.quantityFromTyped(line.lineId, answer) : wholeCount(answer);
+  if (qty === undefined) { render(); return; }
   if (qty > line.requiredQty) { tell(t('read'), t('tooMany')); render(); return; }
 
   try {

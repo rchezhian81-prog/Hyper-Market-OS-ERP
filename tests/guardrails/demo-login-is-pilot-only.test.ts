@@ -65,7 +65,7 @@ describe('the demo sign-in is pilot-only', () => {
     expect(serviceBlock(BASE, 'proxy')).toContain('SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-not-public}');
     expect(serviceBlock(PILOT, 'proxy')).toContain('SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-demo-gate}');
     // The staff shells themselves are behind the sign-in on the demo front (ADR-0018 §2), not merely their data.
-    expect(NGINX).toMatch(/location ~ \^\/\(supplier\)\/ \{\s*auth_request \/_auth\/verify;/); // OB-16: the other shells redirect into the store box (pilot-host guardrail)
+    expect(NGINX).toMatch(/location ~ \^\/\(supplier\|b2b\)\/ \{\s*auth_request \/_auth\/verify;/); // Round 3: + the B2B portal (OB-559). OB-16: the other shells redirect into the store box (pilot-host guardrail)
   });
 
   it('the identity bridge is injected only by the pilot front, with a whitelisted page path', () => {
@@ -73,7 +73,7 @@ describe('the demo sign-in is pilot-only', () => {
     const subs = NGINX.split('\n').filter((l) => /^\s*sub_filter\s'/.test(l));
     expect(subs).toEqual([`    sub_filter '<!--SCREEN-DATA-->' '<script src="/login/screen-data.js?page=$sre_bridge_page"></script>';`]);
     // Only plain shell paths reach the HTML attribute; anything else becomes "" (the bridge then says nothing).
-    expect(NGINX).toMatch(/map \$uri \$sre_bridge_page \{ ~\^\/\[a-z\]\+\/\(\?:\[a-z0-9-\]\+\\\.html\)\?\$ \$uri; default ""; \}/);
+    expect(NGINX).toMatch(/map \$uri \$sre_bridge_page \{ ~\^\/\[a-z\]\[a-z0-9\]\*\/\(\?:\[a-z0-9-\]\+\\\.html\)\?\$ \$uri; default ""; \}/); // Round 3: `/b2b/` has a digit
   });
 
   it('nothing in the product imports it', () => {
@@ -129,7 +129,10 @@ describe('the DEMO store box relay (ADR-0016) is pilot-only and gated', () => {
     expect(lane).toMatch(/auth_request \/_auth\/verify-sell;/);
     for (const block of [store, lane]) expect(block).toMatch(/proxy_pass http:\/\/\$sre_relay;/);
     // Nothing else in the front talks to the relay.
-    expect(NGINX.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("edge:8096"))).toHaveLength(4); // /store/, the status read, the till's sign-in mode, /store-lane/
+    // /store/, the status read, the till's sign-in mode, /store-lane/ — and (Round 3) the handheld door and the queue till's door.
+    expect(NGINX.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("edge:8096"))).toHaveLength(6);
+    expect(/location ~ \^\/store-handheld\/lane\/outbox\(\/status\)\?\$ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '').toMatch(/auth_request \/_auth\/verify;[\s\S]*proxy_set_header X-Sre-Door handheld;/);
+    expect(/location ~ \^\/\(queue-pos\|device\)\/ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '').toMatch(/auth_request \/_auth\/verify;\s*error_page 401 = @sre_sign_in;/);
     // The till's sign-in mode is a read any signed-in person may make; it is exactly that one path, never a prefix.
     expect(/location = \/store-lane\/lane\/operator \{([^}]*)\}/.exec(NGINX)?.[1] ?? '').toMatch(/auth_request \/_auth\/verify;/);
     expect(NGINX).toMatch(/location = \/_auth\/verify \{\s*internal;/);
@@ -153,7 +156,9 @@ describe('the DEMO store box pack + day-close redirect (ADR-0016)', () => {
 
   it('only the relay rewrites the lane address, and only to the signed-in same-origin path', () => {
     expect(RELAY).toMatch(/sub_filter 'window\.laneWriteBase = "http:\/\/127\.0\.0\.1:8095"' 'window\.laneWriteBase = "\/store-lane"';/);
-    expect(RELAY.match(/sub_filter '/g)).toHaveLength(1);
+    // Round 3: and the three handheld screens to their own door (SEC-1's rule) — the only other rewrite.
+    expect(RELAY).toMatch(/sub_filter 'window\.laneWriteBase = "http:\/\/127\.0\.0\.1:8095"' 'window\.laneWriteBase = "\/store-handheld"';/);
+    expect(RELAY.match(/sub_filter '/g)).toHaveLength(2);
     // The lane path it points at is gated for sellers only.
     expect(/location \/store-lane\/ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '').toMatch(/auth_request \/_auth\/verify-sell;/);
   });

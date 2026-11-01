@@ -29,7 +29,7 @@
 
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, multiplyByInteger, scaleMoney, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
-import { precisionOf, type Uom } from '../../../packages/contracts/src/quantity';
+import { precisionOf, minorPerUnitOf, quantityLabel, toDecimalString, typedQuantityMinor, type Uom } from '../../../packages/contracts/src/quantity';
 import { confirmSubstitution } from '../../../packages/fulfilment/src/delivery';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { NewWorkRefusedError } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
@@ -246,6 +246,33 @@ export class PickSession {
   /** The assigned work, as the handheld lists it. */
   work(): readonly PickLine[] {
     return this.lines.slice();
+  }
+
+  /**
+   * OB-31 rule 1 (Round B follow-up) — a quantity of this line as the picker reads it, in the line's OWN unit: 1500 of a kg
+   * line is "1.500 kg", 750 of a litre line "0.750 L" (it showed "750", raw millilitres), 2 items "2". Words only.
+   */
+  quantityText(lineId: string, quantityMinor: number): string {
+    return quantityLabel(quantityMinor, this.lineOrThrow(lineId).uom);
+  }
+
+  /** The same quantity as the number the picker types back in the line's unit ("1.500", "0.750", "2") — the pre-fill. */
+  typedText(lineId: string, quantityMinor: number): string {
+    return toDecimalString({ minor: quantityMinor, uom: this.lineOrThrow(lineId).uom });
+  }
+
+  /** Whether the picker types a decimal for this line (kg / L — to the gram or millilitre), so the keypad offers ".". */
+  takesDecimal(lineId: string): boolean {
+    return minorPerUnitOf(this.lineOrThrow(lineId).uom) > 1;
+  }
+
+  /**
+   * OB-31 rule 1 — what the picker TYPED, in the line's own unit ("0.75" L, "1.5" kg, "2" items), as the integer count of
+   * the unit's smallest step that `pick` takes (750 ml, 1500 g, 2), through the ONE shared reading (`typedQuantityMinor`).
+   * `undefined` for anything the unit does not hold exactly (half an item, a fourth decimal of a kg, nought, a word).
+   */
+  quantityFromTyped(lineId: string, typed: string): number | undefined {
+    return typedQuantityMinor(typed, this.lineOrThrow(lineId).uom);
   }
 
   progress(): WaveProgress {
@@ -532,7 +559,7 @@ export class PickSession {
         const withReason = reason === undefined ? {} : { reason };
         if (item.event.type === PICK_LINE_RESOLVED) {
           const p = item.event.payload as { lineId: string; orderRef: string; productId: string; state: LineState; pickedQty: number; uom: string; finalPriceMinor: number };
-          return [{ kind: 'line', id: p.lineId, what: `${p.productId} · ${p.orderRef}`, detail: `${p.state} · ${p.pickedQty} ${p.uom}`, ...common, ...withReason }];
+          return [{ kind: 'line', id: p.lineId, what: `${p.productId} · ${p.orderRef}`, detail: `${p.state} · ${minorPerUnitOf(p.uom) > 1 ? quantityLabel(p.pickedQty, p.uom) : `${p.pickedQty} ${p.uom}`}`, ...common, ...withReason }];
         }
         if (item.event.type === WAVE_PACKED) {
           const p = item.event.payload as { waveId: string; lineCount: number; totalValueMinor: number; currency: string };

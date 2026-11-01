@@ -21,7 +21,7 @@ export interface SplitPart {
   readonly machineRef?: string;
 }
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
-import { DeliveryNotAvailableError, MeasuredItemNeedsLabelError, type PosSession, type SyncBadge, type DeliverySlip } from './session';
+import { DeliveryNotAvailableError, MeasuredItemNeedsLabelError, ScaleLabelRefusedError, type PosSession, type SyncBadge, type DeliverySlip } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
 /** A basket line as the view renders it — display primitives only. */
@@ -228,11 +228,15 @@ export interface PosView {
   newSale(): void;
 }
 
+/** Units sold by weight or volume — a quantity that only a scale's (or measure's) label may say (OB-302 · OB-31). */
+const MEASURED: ReadonlySet<string> = new Set(['kg', 'g', 'L', 'ml']);
+
 /**
  * Wrap a `PosSession` in the display-primitive surface the view binds to. Every
  * call delegates to the tested model — this adapter only converts types. Pass the
  * lane's `CatalogueCache` to enable barcode scanning.
  */
+
 export function createPosView(
   session: PosSession,
   currency: CurrencyCode = 'INR',
@@ -312,7 +316,17 @@ export function createPosView(
       // as ONE millilitre. Refused by name instead — only a measured label says how much. Nothing is added. A kg / g product
       // is left to the lane's existing scale rule (scanned, then weighed on a lane whose scale stamp is current).
       const unit = normaliseUom(hit.product.baseUom) ?? hit.product.baseUom;
-      if ((unit === 'L' || unit === 'ml') && hit.barcodeKind !== 'weight_embedded' && hit.barcodeKind !== 'price_embedded') {
+      // OB-302 · B5 (Round B follow-up): a label carrying only a PRICE for a product sold by weight or volume says nothing
+      // about how much — it rang as ONE gram (a ₹765 pack of a kg item as ₹0.77) and told the ledger 1 g left the shelf.
+      // Refused by name; only a label carrying the weight is rung. Nor does a weight label ring a piece-counted item as
+      // that many pieces (850 g as 850 items). Nothing is added either way.
+      if (MEASURED.has(unit) && hit.barcodeKind === 'price_embedded') {
+        throw new ScaleLabelRefusedError(hit.product.productId, hit.product.name, unit, 'price_only_label_for_measured_item');
+      }
+      if (unit === 'ea' && hit.barcodeKind === 'weight_embedded') {
+        throw new ScaleLabelRefusedError(hit.product.productId, hit.product.name, unit, 'weight_label_for_counted_item');
+      }
+      if ((unit === 'L' || unit === 'ml') && hit.barcodeKind !== 'weight_embedded') {
         throw new MeasuredItemNeedsLabelError(hit.product.productId, hit.product.name, unit);
       }
       // A price-embedded barcode carries the line price for one unit; a batch under markdown is charged its markdown price

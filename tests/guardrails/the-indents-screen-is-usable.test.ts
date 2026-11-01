@@ -135,7 +135,7 @@ describe('the session refuses before the wire (§28), and the composition root d
     const outbox = openIndentsOutbox('S1', memory());
     const s = createIndentsSession(config('u-back'), ports(), outbox);
     expect(s.view('en').receivable).toEqual([]);
-    expect(s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantityMinor: '12' }] })).toEqual({ ok: false, refusal: 'issuer_cannot_receive' });
+    expect(s.receive({ indentId: 'ind-2', issueId: 'is-1', counted: [{ productId: 'RICE', batchId: null, quantity: '12' }] })).toEqual({ ok: false, refusal: 'issuer_cannot_receive' });
     expect(outbox.all()).toEqual([]);
   });
 
@@ -160,7 +160,7 @@ describe('the session refuses before the wire (§28), and the composition root d
   it('the queue is the shared durable device queue keyed per store, and both of its events are on the box\'s allow-list as the ERP surface', () => {
     const storage = memory();
     const outbox = openIndentsOutbox('S1', storage);
-    createIndentsSession(config('u-floor'), ports(), outbox).raise({ lines: [{ productId: 'RICE', quantityMinor: '1', uom: 'EA' }], reason: '', indentId: 'ind-k' });
+    createIndentsSession(config('u-floor'), ports(), outbox).raise({ lines: [{ productId: 'RICE', quantity: '1', uom: 'EA' }], reason: '', indentId: 'ind-k' });
     expect(storage.getItem('sre.indents.outbox.S1')).toContain('FloorIndentRequested');
     expect(RELAYABLE_DEVICE_EVENTS['FloorIndentRequested']?.surfaces).toEqual(['manager']);
     expect(RELAYABLE_DEVICE_EVENTS['FloorIndentReceived']?.surfaces).toEqual(['manager']);

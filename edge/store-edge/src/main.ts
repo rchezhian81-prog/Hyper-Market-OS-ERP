@@ -1878,6 +1878,8 @@ export async function startEdge(
         noteRefusedAct: (i) => officeGate.noteRefusedAct(i),
       },
     }),
+    // Round 3 (SEC-1's rule): on the hosted copy's handheld door, the named person is held to each job's own permission.
+    forwardedPermissionsOf: (userId) => permissionsOf(userId, pack),
     ...(tillOperators === null ? {} : {
       operators: {
         laneId: laneIdOfThisBox() ?? '',

@@ -110,8 +110,9 @@ describe('identity bridge — cannot drift from the screens', () => {
 
   for (const [path, page] of Object.entries(BRIDGED_PAGES)) {
     it(`${path}: carries the marker BEFORE its module bundle, and uses the global the screen reads`, () => {
-      const [, shell, file] = /^\/(erp|supplier)\/(.+)$/.exec(path)!;
-      const dir = shell === 'erp' ? 'web-erp' : 'supplier-app';
+      const [, shell, file] = /^\/(erp|supplier|b2b)\/(.+)$/.exec(path)!;
+      // Round 3 (OB-559): the business-customer portal is bridged like the supplier portal.
+      const dir = shell === 'erp' ? 'web-erp' : shell === 'b2b' ? 'b2b-app' : 'supplier-app';
       const html = readFileSync(`apps/${dir}/web/${file!}`, 'utf8');
       const marker = html.indexOf('<!--SCREEN-DATA-->');
       const bundle = html.indexOf(`${dir}.bundle.js`);
@@ -121,7 +122,7 @@ describe('identity bridge — cannot drift from the screens', () => {
         // The same global the store edge injects for this screen — so the bridge feeds what the page reads.
         expect(edgeGlobals.has(page.global)).toBe(true);
       } else {
-        expect(readFileSync('apps/supplier-app/src/browser-entry.ts', 'utf8')).toContain(page.global);
+        expect(readFileSync(`apps/${dir}/src/browser-entry.ts`, 'utf8')).toContain(page.global);
       }
     });
   }

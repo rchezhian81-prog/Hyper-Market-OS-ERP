@@ -105,9 +105,9 @@ describe.each(backings)('Batch 2 · the screens drive the real routes — on $na
     const offered = mgr.view('en').resolvable;
     expect(offered.map((r) => `${r.indentId}|${r.issue.issueId}`)).toEqual(['ind-s|is-1']);
     expect(offered[0]!.issue).toMatchObject({ issuedBy: 'u-back', receivedBy: 'u-floor2', shortfall: [{ productId: 'RICE', batchId: null, quantityMinor: 3, valueMinor: 15_000 }], resolvedBy: null });
-    expect(await mgr.resolve({ indentId: 'ind-s', issueId: 'is-1', reasonCode: 'miscount', note: 'one bag was behind the trolley bay', found: [{ productId: 'RICE', batchId: null, foundMinor: '1' }] })).toEqual({ outcome: 'resolved' });
+    expect(await mgr.resolve({ indentId: 'ind-s', issueId: 'is-1', reasonCode: 'miscount', note: 'one bag was behind the trolley bay', found: [{ productId: 'RICE', batchId: null, found: '1' }] })).toEqual({ outcome: 'resolved' });
     // The same click again is the same resolution (the server's word, not a second truth).
-    expect(await mgr.resolve({ indentId: 'ind-s', issueId: 'is-1', reasonCode: 'miscount', note: 'one bag was behind the trolley bay', found: [{ productId: 'RICE', batchId: null, foundMinor: '1' }] })).toEqual({ outcome: 'already_resolved' });
+    expect(await mgr.resolve({ indentId: 'ind-s', issueId: 'is-1', reasonCode: 'miscount', note: 'one bag was behind the trolley bay', found: [{ productId: 'RICE', batchId: null, found: '1' }] })).toEqual({ outcome: 'already_resolved' });
 
     // Before it was resolved the received-but-short indent stayed on the OPEN register (it needed a person — P-03 · P-08);
     // resolved, it needs nobody and leaves it; nothing is left to offer. Its record says by whom, and 2 lost at ₹50 = ₹100.

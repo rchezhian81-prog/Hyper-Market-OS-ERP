@@ -249,7 +249,7 @@ describe('where each piece of work is — the five shared device states, from th
       ['line', 'l1', 'saved_here'],
     ]);
     expect(before[2]).toMatchObject({ what: 'p1 · ORD-1', detail: 'picked · 2 ea' });
-    expect(before[1]).toMatchObject({ what: 'p2 · ORD-1', detail: 'quality_failed · 0 kg' });
+    expect(before[1]).toMatchObject({ what: 'p2 · ORD-1', detail: 'quality_failed · 0.000 kg' });
     expect(before[0]).toMatchObject({ what: 'wave-1', detail: '1 line · 20000 INR' });
     for (const kind of SENT_WORK_KINDS) expect(before.some((w) => w.kind === kind)).toBe(true);
 

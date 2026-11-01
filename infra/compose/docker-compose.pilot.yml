@@ -65,9 +65,16 @@ services:
       # Which till this box is (SP-4b · F09). Without it the served till refuses to take payment, as it should on a box
       # nobody has told; the hosted copy is one till.
       EDGE_LANE_ID: lane-1
+      # Round 3 (screen gap audit, 31 Oct 2026): the HANDHELD door (the device socket, ADR-0019) for the queue till and the
+      # handheld enrolment, on this container's LOOPBACK only (the default host) — reached solely by the demo relay below,
+      # behind the demo sign-in. Its lock (OB-422) is kept on its own volume, so a recreated container keeps the authority
+      # an enrolled handheld trusts (never inside edge-data: a backup must never carry a private key).
+      EDGE_DEVICE_PORT: '8097'
+      EDGE_DEVICE_TLS_DIR: /var/lib/sre-edge-device-tls
     volumes:
       # OB-38: the transitional fallback above — the file already on the server, read-only; no builder in the repo makes it.
       - ${DEMO_STORE_PACK_DIR:-/etc/sre-pilot/store-pack}:/etc/store-pack:ro
+      - edge-device-tls:/var/lib/sre-edge-device-tls
 
   # The DEMO FRONT, behind the proxy: every app shell, the demo identity bridge (H-11), the demo sign-in's cookie
   # turned into a bearer token for /v1 (H-01), and the demo store box's relay — all behind the demo sign-in
@@ -82,10 +89,12 @@ services:
       - migrate
       - api
       - demo-login
-    # OB-16: only the two shells this front still serves itself; every other address redirects into the store box.
+    # OB-16: only the shells this front still serves itself; every other address redirects into the store box.
     volumes: !override
       - ../../apps/customer-app/web:/usr/share/nginx/html/customer:ro
       - ../../apps/supplier-app/web:/usr/share/nginx/html/supplier:ro
+      # Round 3 (OB-559): the business-customer portal, served beside the supplier portal behind the demo sign-in.
+      - ../../apps/b2b-app/web:/usr/share/nginx/html/b2b:ro
       # Which sign-in the front door asks (OB-15-b): the pilot sign-in (default) or, with SRE_FRONT_CONF=nginx.identity.conf
       # in .env.pilot, the product's sign-in service and the identity server (run with COMPOSE_PROFILES=identity).
       # Switching back is the same one setting.
@@ -161,3 +170,7 @@ services:
       - no-new-privileges:true
     mem_limit: 64m
     cpus: 0.25
+
+# Round 3: the demo store box's handheld-door lock (OB-422) — its own volume, never inside edge-data (see the edge service).
+volumes:
+  edge-device-tls:

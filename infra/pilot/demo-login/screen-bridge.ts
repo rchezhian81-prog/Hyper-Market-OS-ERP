@@ -59,6 +59,9 @@ export const BRIDGED_PAGES: Readonly<Record<string, BridgedPage>> = Object.freez
   '/erp/ai.html': { global: 'aiData' },
   // Supplier portal — built to be injected by the cloud session; reads its own statement/submissions live.
   '/supplier/index.html': { global: 'supplierData' },
+  // Round 3 (OB-559): the business-customer portal — identity only; its account, bills, statement and documents are read
+  // live from /v1, each scoped to the caller's own customer on the server.
+  '/b2b/index.html': { global: 'b2bData' },
 });
 
 const GLOBAL_SHAPE = /^[A-Za-z][A-Za-z0-9]*$/;
