@@ -5,6 +5,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Round 4a (1 November 2026): product and price setup screens
+- **Products and prices, new tabs:** Product setup (categories with the owner's approval, the variant report, bundles, pack sizes with an inexact pack refused, approved substitutes, merging a duplicate with a second person's approval); Tax rates (GST and cess per HSN code from a date; a change of a rate on record needs a Finance approver, never the asker); Price lists (dated prices for a store, zone, channel or customer; zones; channel switches). The customer app shows the shop's suggested substitutes under a basket line it cannot supply; nothing is swapped without the customer.
+- **OB-291 gap closed:** the dated price-entry route now applies "more than 10% or ₹50 needs a second person", as the price-change route already did, so the new screen cannot get round it.
+- **Organisation:** a department owns its categories (asked, owner approves, saved with the approval); the department report for a day.
+- **Shelves and space:** record a display contract; clusters (the price zones, OB-318) and season plans; head office sets a store's shelf map, planogram and floor plan (Round D dead ends closed).
+- **M05-FR-04:** offer stacking and the abuse cap were already on screen since #851; nothing added.
+- **Tests:** full default suite on PostgreSQL 15,987 passed (13 failed in 5 files: two guardrails from a stale shell stamp and three integration files that pass alone and are untouched; all fixed or re-run green); browser 818/820 then the 2 product-setup tests green after restoring a section tag lost in the join (9/9 catalogue-page browser tests); guardrails 1,879/1,879; type check and lint clean.
+- **Not built (needs the owner):** editing a product's ingredients, allergens, nutrition, origin and storage after publish (the only route is the full publish, which has no version check: an editor on it would be last-write-wins).
+- **Next:** the owner's answers below; then Round 4b (buying and stock).
+- **Blocked:** nothing. **Owner decisions needed:** product content editor (new versioned route / version check on publish / defer); the accountant reading the tax schedule; picker and substitutes; substitutes in the customer shop list; a display contract without Finance approval; a first channel or customer price under OB-291; removing a store from a zone.
+
 ## OB-573 and OB-574 (1 November 2026): a demo weighing scale; a reason to stop a scale-label rule
 - **OB-573 "A":** the demo copy puts a pretend weighing scale (`DEMO-SCALE-1`, every field marked synthetic) on head office's scale register for the demo till, so the demo's loose rice rings from its scale label end to end. Demo tenant only.
 - **OB-574 "A":** stopping a scale-label rule needs a written reason. Head office refuses a stop without one (`withdrawal_reason_required`, nothing changed); the office screen asks for it before sending, in English and Tamil. Setting a rule may still say why.
