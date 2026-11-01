@@ -133,10 +133,10 @@ export function reportLines(lang: Lang, r: DepartmentReport): { readonly total: 
   };
 }
 
-export function orgDeptOutcomeWords(lang: Lang, o: Outcome<{ approvedBy?: string }>, saved: 'ask' | 'link' | 'read'): { readonly ok: boolean; readonly text: string } {
+export function orgDeptOutcomeWords<T>(lang: Lang, o: Outcome<T>, saved: 'ask' | 'link' | 'read'): { readonly ok: boolean; readonly text: string } {
   const w = orgDeptWords(lang);
   switch (o.kind) {
-    case 'done': return { ok: true, text: saved === 'ask' ? w('asked') : saved === 'link' ? w('saved', { by: o.body.approvedBy ?? '' }) : '' };
+    case 'done': return { ok: true, text: saved === 'ask' ? w('asked') : saved === 'link' ? w('saved', { by: (o.body as { approvedBy?: string } | null)?.approvedBy ?? '' }) : '' };
     case 'refused': return { ok: false, text: `${w('refused')} ${o.whatHappened}${o.nextSafeAction === '' ? '' : ` ${o.nextSafeAction}`}` };
     case 'not_allowed': return { ok: false, text: o.needs === ORG_DEPARTMENT_PERMISSIONS.report ? w('cannotReport') : w('notAllowed') };
     case 'invalid': return { ok: false, text: w(o.detail === 'reason' ? 'needReason' : o.detail === 'day' ? 'needDay' : 'needDepartment') };

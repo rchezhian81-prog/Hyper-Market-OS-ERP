@@ -1972,7 +1972,7 @@ el('rival-record').addEventListener('click', () => busy('rival-record', async ()
 
 const priceLists = window.priceListSession ?? null;
 const plKit = window.priceListKit ?? null;
-const pw = (key, fill) => (plKit === null ? key : plKit.priceListWords(lang)(key, fill));
+const plw = (key, fill) => (plKit === null ? key : plKit.priceListWords(lang)(key, fill));
 let plEntries = null;
 let plZones = null;
 let plChannel = null;
@@ -1987,8 +1987,8 @@ function plLine(text, attrs = {}) {
   for (const [k, v] of Object.entries(attrs)) p.dataset[k] = v;
   return p;
 }
-const plRead = (o) => (o.kind === 'unreachable' ? pw('unreadable') : plKit.priceListOutcomeWords(lang, o).text);
-const plNoun = (scope) => pw({ store: 'nStore', zone: 'nZone', channel: 'nChannel', customer: 'nCustomer' }[scope] ?? 'nStore');
+const plRead = (o) => (o.kind === 'unreachable' ? plw('unreadable') : plKit.priceListOutcomeWords(lang, o).text);
+const plNoun = (scope) => plw({ store: 'nStore', zone: 'nZone', channel: 'nChannel', customer: 'nCustomer' }[scope] ?? 'nStore');
 const plEntryInput = () => ({ productId: el('pl-product').value, scope: el('pl-scope').value, scopeRef: el('pl-ref').value, price: el('pl-price').value, from: el('pl-from').value, to: el('pl-to').value });
 
 function plRefs() {
@@ -2000,17 +2000,17 @@ function plRefs() {
 
 function renderPriceLists() {
   if (plKit === null) { el('pl-form').hidden = true; el('pl-zone-form').hidden = true; return; }
-  el('tab-pricelist').textContent = pw('tab');
+  el('tab-pricelist').textContent = plw('tab');
   for (const [id, k] of [['pl-title', 'h'], ['pl-lead', 'lede'], ['pl-entries-h', 'entriesH'], ['pl-product-label', 'product'], ['pl-show', 'show'],
     ['pl-in-force-h', 'inForceH'], ['pl-on-label', 'onDay'], ['pl-at-store-label', 'store'], ['pl-at-channel-label', 'channelOpt'], ['pl-at-customer-label', 'customerOpt'], ['pl-check', 'check'],
     ['pl-set-h', 'setH'], ['pl-scope-label', 'scope'], ['pl-ref-label', 'which'], ['pl-price-label', 'price'], ['pl-from-label', 'from'], ['pl-to-label', 'to'], ['pl-save', 'save'],
     ['pl-approval-lead', 'needsSecond'], ['pl-why-label', 'why'], ['pl-ask', 'ask'], ['pl-save-approved', 'saveApproved'],
     ['pl-zones-h', 'zonesH'], ['pl-zones-lead', 'zonesLede'], ['pl-zone-id-label', 'zoneId'], ['pl-zone-store-label', 'zoneStore'], ['pl-zone-save', 'putInZone'],
     ['pl-channel-h', 'channelH'], ['pl-channel-lead', 'channelLede'], ['pl-switch-reason-label', 'switchReason'],
-    ['pl-diff-h', 'diffH'], ['pl-diff-store-label', 'store'], ['pl-diff-show', 'diffShow']]) el(id).textContent = pw(k);
+    ['pl-diff-h', 'diffH'], ['pl-diff-store-label', 'store'], ['pl-diff-show', 'diffShow']]) el(id).textContent = plw(k);
   const scope = el('pl-scope');
   const chosen = scope.value || 'store';
-  scope.replaceChildren(...plKit.scopes.map((s) => { const o = document.createElement('option'); o.value = s; o.textContent = pw(`${s}_s`); return o; }));
+  scope.replaceChildren(...plKit.scopes.map((s) => { const o = document.createElement('option'); o.value = s; o.textContent = plw(`${s}_s`); return o; }));
   scope.value = chosen;
   const channel = el('pl-at-channel');
   const wanted = channel.value;
@@ -2021,15 +2021,15 @@ function renderPriceLists() {
   el('pl-zone-form').hidden = priceLists === null || !priceLists.may.zones;
   el('pl-switch-reason-field').hidden = priceLists === null || !(priceLists.may.set || priceLists.may.approve);
   for (const id of ['pl-entries', 'pl-zones', 'pl-switches', 'pl-pending', 'pl-diff']) el(id).replaceChildren();
-  if (priceLists === null) { plSay('pl-status', pw('notConnected'), false); return; }
-  if (!priceLists.may.read) { plSay('pl-status', pw('cannotRead'), false); return; }
-  plSay('pl-status', priceLists.may.set ? '' : pw('readOnly'), true);
+  if (priceLists === null) { plSay('pl-status', plw('notConnected'), false); return; }
+  if (!priceLists.may.read) { plSay('pl-status', plw('cannotRead'), false); return; }
+  plSay('pl-status', priceLists.may.set ? '' : plw('readOnly'), true);
   plRefs();
 
   if (plEntries !== null) {
     if (plEntries.kind !== 'done') plSay('pl-entries-status', plRead(plEntries), false);
     else {
-      plSay('pl-entries-status', plEntries.body.entries.length === 0 ? pw('noEntries') : '', true);
+      plSay('pl-entries-status', plEntries.body.entries.length === 0 ? plw('noEntries') : '', true);
       el('pl-entries').append(...plEntries.body.entries.map((e) => plLine(plKit.entryWords(lang, e), { entry: e.id })));
     }
   }
@@ -2039,8 +2039,8 @@ function renderPriceLists() {
     if (plZones.kind !== 'done') plSay('pl-zones-status', plRead(plZones), false);
     else {
       const zones = plKit.zonesOf(plZones.body.stores);
-      plSay('pl-zones-status', zones.length === 0 ? pw('noZones') : priceLists.may.zones ? '' : pw('zonesReadOnly'), true);
-      el('pl-zones').append(...zones.map((z) => plLine(pw('zoneLine', { zone: z.zoneId, stores: z.storeIds.join(', ') }), { zone: z.zoneId })));
+      plSay('pl-zones-status', zones.length === 0 ? plw('noZones') : priceLists.may.zones ? '' : plw('zonesReadOnly'), true);
+      el('pl-zones').append(...zones.map((z) => plLine(plw('zoneLine', { zone: z.zoneId, stores: z.storeIds.join(', ') }), { zone: z.zoneId })));
     }
   }
 
@@ -2048,23 +2048,23 @@ function renderPriceLists() {
     if (plChannel.kind !== 'done') plSay('pl-same', plRead(plChannel), false);
     else {
       const view = plChannel.body;
-      plSay('pl-same', view.samePriceEverywhere ? pw('samePrice') : pw('notSamePrice'), true);
+      plSay('pl-same', view.samePriceEverywhere ? plw('samePrice') : plw('notSamePrice'), true);
       for (const sw of view.switches) {
         const row = document.createElement('div');
         row.className = 'row';
         row.dataset.switch = sw.subject;
-        row.append(plLine(`${plKit.switchSubjectWords(lang, sw.subject)}: ${pw(sw.state === 'on' ? 'switchOn' : 'switchOff')}`));
+        row.append(plLine(`${plKit.switchSubjectWords(lang, sw.subject)}: ${plw(sw.state === 'on' ? 'switchOn' : 'switchOff')}`));
         if (priceLists.may.set) {
           const to = sw.state === 'on' ? 'off' : 'on';
           if (!(to === 'on' && view.pending.some((r) => r.subject === sw.subject))) {
             const b = document.createElement('button');
             b.type = 'button';
             b.dataset.ask = `${sw.subject}:${to}`;
-            b.textContent = pw(to === 'on' ? 'askOn' : 'turnOff');
+            b.textContent = plw(to === 'on' ? 'askOn' : 'turnOff');
             b.addEventListener('click', async () => {
               b.disabled = true;
               const out = await priceLists.askSwitch(sw.subject, to, el('pl-switch-reason').value);
-              const said = plKit.priceListOutcomeWords(lang, out, to === 'on' ? pw('askedOn') : pw('turnedOff'));
+              const said = plKit.priceListOutcomeWords(lang, out, to === 'on' ? plw('askedOn') : plw('turnedOff'));
               plSay('pl-switch-status', said.text, said.ok);
               if (out.kind === 'invalid') { b.disabled = false; el('pl-switch-reason').focus(); return; }
               if (said.ok) el('pl-switch-reason').value = '';
@@ -2075,23 +2075,23 @@ function renderPriceLists() {
         }
         el('pl-switches').append(row);
       }
-      if (view.pending.length === 0) el('pl-pending').append(plLine(pw('noPending')));
+      if (view.pending.length === 0) el('pl-pending').append(plLine(plw('noPending')));
       for (const r of view.pending) {
         const row = document.createElement('div');
         row.className = 'row';
         row.dataset.pending = r.requestId;
-        row.append(plLine(pw('pendingLine', { subject: plKit.switchSubjectWords(lang, r.subject), who: r.requestedBy, reason: r.reason })));
+        row.append(plLine(plw('pendingLine', { subject: plKit.switchSubjectWords(lang, r.subject), who: r.requestedBy, reason: r.reason })));
         // The person who asked never approves their own (§28) — head office refuses it too; the screen does not offer it.
-        if (r.requestedBy === priceLists.userId) row.append(plLine(pw('yours')));
+        if (r.requestedBy === priceLists.userId) row.append(plLine(plw('yours')));
         else if (priceLists.may.approve) {
           const b = document.createElement('button');
           b.type = 'button';
           b.dataset.approve = r.requestId;
-          b.textContent = pw('approve');
+          b.textContent = plw('approve');
           b.addEventListener('click', async () => {
             b.disabled = true;
             const out = await priceLists.approveSwitch(r.requestId, el('pl-switch-reason').value);
-            const said = plKit.priceListOutcomeWords(lang, out, pw('approved'));
+            const said = plKit.priceListOutcomeWords(lang, out, plw('approved'));
             plSay('pl-switch-status', said.text, said.ok);
             if (out.kind === 'invalid') { b.disabled = false; el('pl-switch-reason').focus(); return; }
             await loadPriceLists();
@@ -2107,10 +2107,10 @@ function renderPriceLists() {
     if (plDiff.kind !== 'done') plSay('pl-diff-status', plRead(plDiff), false);
     else {
       const r = plDiff.body;
-      plSay('pl-diff-status', r.differences.length === 0 ? pw('noDiff') : '', true);
+      plSay('pl-diff-status', r.differences.length === 0 ? plw('noDiff') : '', true);
       el('pl-diff').append(
-        ...r.differences.map((d) => plLine(pw('diffLine', { product: d.productId, channel: d.channel, channelPrice: plKit.rupees(d.channelPriceMinor), shelfPrice: d.shelfPriceMinor === null ? '—' : plKit.rupees(d.shelfPriceMinor) }))),
-        ...r.dormantEntries.map((d) => plLine(pw('dormantLine', { product: d.productId, scope: plNoun(d.scope), ref: d.scopeRef, price: plKit.rupees(d.priceMinor) }))),
+        ...r.differences.map((d) => plLine(plw('diffLine', { product: d.productId, channel: d.channel, channelPrice: plKit.rupees(d.channelPriceMinor), shelfPrice: d.shelfPriceMinor === null ? '—' : plKit.rupees(d.shelfPriceMinor) }))),
+        ...r.dormantEntries.map((d) => plLine(plw('dormantLine', { product: d.productId, scope: plNoun(d.scope), ref: d.scopeRef, price: plKit.rupees(d.priceMinor) }))),
       );
     }
   }
@@ -2136,7 +2136,7 @@ el('pl-check').addEventListener('click', () => busy('pl-check', async () => {
 }));
 el('pl-save').addEventListener('click', () => busy('pl-save', async () => {
   const out = await priceLists.setEntry(plEntryInput());
-  const said = plKit.priceListOutcomeWords(lang, out, out.kind === 'done' ? pw('saved', { price: plKit.rupees(out.body.priceMinor), scope: plNoun(out.body.scope), ref: out.body.scopeRef, from: out.body.effectiveFrom }) : '');
+  const said = plKit.priceListOutcomeWords(lang, out, out.kind === 'done' ? plw('saved', { price: plKit.rupees(out.body.priceMinor), scope: plNoun(out.body.scope), ref: out.body.scopeRef, from: out.body.effectiveFrom }) : '');
   plSay('pl-save-status', said.text, said.ok);
   // Below cost / floor, or more than the set size: the second person's way, never a shortcut.
   el('pl-approval').hidden = !plKit.needsSecondPerson(out);
@@ -2155,7 +2155,7 @@ el('pl-save-approved').addEventListener('click', () => busy('pl-save-approved', 
 el('pl-zone-save').addEventListener('click', () => busy('pl-zone-save', async () => {
   const zoneId = el('pl-zone-id').value.trim(); const storeId = el('pl-zone-store').value.trim();
   const out = await priceLists.putStoreInZone(zoneId, storeId);
-  const said = plKit.priceListOutcomeWords(lang, out, pw('zoneSaved', { store: storeId, zone: zoneId }));
+  const said = plKit.priceListOutcomeWords(lang, out, plw('zoneSaved', { store: storeId, zone: zoneId }));
   plSay('pl-zone-save-status', said.text, said.ok);
   await loadPriceLists();
 }));

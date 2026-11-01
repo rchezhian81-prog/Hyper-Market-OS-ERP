@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1998,
+  "testFiles": 2010,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -32,11 +32,11 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 30,
+        "unit": 31,
         "integration": 28,
         "realDb": 12,
-        "browser": 9,
-        "connected": 5,
+        "browser": 10,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -49,6 +49,7 @@
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-admin-session.test.ts",
           "tests/unit/erp-approvals-session.test.ts",
+          "tests/unit/erp-org-departments-session.test.ts",
           "tests/unit/number-series-store.test.ts",
           "tests/unit/numbering.test.ts",
           "tests/unit/org-branch-lifecycle.test.ts",
@@ -125,6 +126,7 @@
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
           "tests/e2e/the-manager-sees-when-the-box-zone-is-not-the-shops.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
+          "tests/e2e/the-organisation-page-links-a-department-to-its-categories-and-shows-its-report.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts"
         ],
@@ -133,7 +135,8 @@
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/r13a-the-office-pages-open-on-the-shops-day.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
-          "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts"
+          "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
+          "tests/e2e/the-organisation-page-links-a-department-to-its-categories-and-shows-its-report.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -145,7 +148,7 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 32,
+        "unit": 33,
         "integration": 29,
         "realDb": 13,
         "browser": 8,
@@ -168,6 +171,7 @@
           "tests/unit/erp-admin-session.test.ts",
           "tests/unit/erp-approvals-session.test.ts",
           "tests/unit/erp-manager-session.test.ts",
+          "tests/unit/erp-org-departments-session.test.ts",
           "tests/unit/identity-access-binding.test.ts",
           "tests/unit/identity-account.test.ts",
           "tests/unit/identity-lifecycle.test.ts",
@@ -259,11 +263,11 @@
       "id": "M03",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 21,
+        "unit": 24,
         "integration": 21,
         "realDb": 5,
-        "browser": 4,
-        "connected": 2,
+        "browser": 7,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -273,11 +277,14 @@
           "tests/unit/catalogue-preview.test.ts",
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/catalogue.test.ts",
+          "tests/unit/customer-app-reads-the-shops-substitutes.test.ts",
           "tests/unit/erp-catalogue-publish-command.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/erp-category-policy-session.test.ts",
           "tests/unit/erp-product-publish-review-session.test.ts",
+          "tests/unit/erp-product-setup-session.test.ts",
           "tests/unit/erp-scale-label-rules-session.test.ts",
+          "tests/unit/erp-tax-rates-session.test.ts",
           "tests/unit/erp-unsellable-session.test.ts",
           "tests/unit/import.test.ts",
           "tests/unit/p2-product-master-rules.test.ts",
@@ -323,13 +330,18 @@
         ],
         "browser": [
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
+          "tests/e2e/product-setup-on-the-catalogue-page.e2e.ts",
           "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/tax-rates-on-the-catalogue-page.e2e.ts",
+          "tests/e2e/the-customer-app-shows-the-shops-substitutes-for-a-missing-item.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts"
         ],
         "connected": [
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
-          "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts"
+          "tests/e2e/product-setup-on-the-catalogue-page.e2e.ts",
+          "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
+          "tests/e2e/tax-rates-on-the-catalogue-page.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -341,10 +353,10 @@
       "id": "M04",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 10,
         "realDb": 3,
-        "browser": 4,
+        "browser": 5,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -355,6 +367,7 @@
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/erp-contract-expiry-session.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
+          "tests/unit/erp-merchandising-setup-session.test.ts",
           "tests/unit/merchandising-assortment.test.ts",
           "tests/unit/merchandising-shelf-count.test.ts",
           "tests/unit/merchandising-shelf.test.ts",
@@ -382,7 +395,8 @@
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
           "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
-          "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts"
+          "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts",
+          "tests/e2e/the-shelves-and-space-setup-tabs-reach-head-office.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
@@ -398,11 +412,11 @@
       "id": "M05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 19,
+        "unit": 20,
         "integration": 21,
         "realDb": 7,
-        "browser": 7,
-        "connected": 1,
+        "browser": 8,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -414,6 +428,7 @@
           "tests/unit/erp-catalogue-boot.test.ts",
           "tests/unit/erp-catalogue-offer-definition.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/erp-price-lists-session.test.ts",
           "tests/unit/migration-load-command.test.ts",
           "tests/unit/p2-offers-are-deterministic-and-never-reach-tobacco.test.ts",
           "tests/unit/price-guard.test.ts",
@@ -465,12 +480,14 @@
           "tests/e2e/catalogue-price-change-delivery.e2e.ts",
           "tests/e2e/catalogue-promotion-launch-delivery.e2e.ts",
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
+          "tests/e2e/price-lists-zones-and-channels-on-the-catalogue-page.e2e.ts",
           "tests/e2e/pricing-promotions-menu-links.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-gives-the-launched-offer.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts"
+          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
+          "tests/e2e/price-lists-zones-and-channels-on-the-catalogue-page.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1684,7 +1701,7 @@
         "unit": 22,
         "integration": 21,
         "realDb": 10,
-        "browser": 5,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1754,6 +1771,7 @@
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/customer-privacy-centre.e2e.ts",
           "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
+          "tests/e2e/the-customer-app-shows-the-shops-substitutes-for-a-missing-item.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
         ],
         "connected": [
@@ -3006,7 +3024,7 @@
       "id": "D02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 9,
         "realDb": 3,
         "browser": 2,
@@ -3018,6 +3036,7 @@
         "unit": [
           "tests/unit/approval-requests.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
+          "tests/unit/erp-merchandising-setup-session.test.ts",
           "tests/unit/merchandising-space.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
         ],
@@ -3363,7 +3382,7 @@
         "unit": 9,
         "integration": 7,
         "realDb": 3,
-        "browser": 4,
+        "browser": 5,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3398,6 +3417,7 @@
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/the-customer-app-meets-wcag-aa.e2e.ts",
           "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
+          "tests/e2e/the-customer-app-shows-the-shops-substitutes-for-a-missing-item.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
         ],
         "connected": [
@@ -3901,10 +3921,10 @@
       "id": "A04",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 7,
         "realDb": 5,
-        "browser": 3,
+        "browser": 4,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3914,6 +3934,7 @@
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
           "tests/unit/ai-governance-rules.test.ts",
+          "tests/unit/customer-app-reads-the-shops-substitutes.test.ts",
           "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/fulfilment.test.ts",
@@ -3940,7 +3961,8 @@
         "browser": [
           "tests/e2e/picker-substitution-delivery.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
-          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts"
+          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
+          "tests/e2e/the-customer-app-shows-the-shops-substitutes-for-a-missing-item.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
