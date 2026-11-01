@@ -191,12 +191,12 @@ const COUNT_REFUSAL_WORDS = {
 /** Why the shelves cannot be checked at all — one entry per `NoPlanReason`. */
 const NO_PLAN_WORDS = {
   this_store_has_no_shelf_map: {
-    en: 'Nobody has addressed this shop’s shelves yet, so there is nothing to check against.',
-    ta: 'இந்தக் கடையின் அலமாரிகளுக்கு இன்னும் முகவரி கொடுக்கப்படவில்லை. எனவே ஒப்பிட எதுவும் இல்லை.',
+    en: 'Nobody has addressed this shop’s shelves yet, so there is nothing to check against. Head office publishes the shelf map on the Shelf layout tab.',
+    ta: 'இந்தக் கடையின் அலமாரிகளுக்கு இன்னும் முகவரி கொடுக்கப்படவில்லை. எனவே ஒப்பிட எதுவும் இல்லை. தலைமை அலுவலகம் அலமாரி அமைப்பு தாவலில் அலமாரி வரைபடத்தை வெளியிடுகிறது.',
   },
   this_store_has_never_published_a_planogram: {
-    en: 'This shop has never published a shelf plan, so there is nothing to compare the shelves with.',
-    ta: 'இந்தக் கடை இதுவரை அலமாரித் திட்டம் ஒன்றை வெளியிடவில்லை. எனவே அலமாரிகளை எதனுடனும் ஒப்பிட முடியாது.',
+    en: 'This shop has never published a shelf plan, so there is nothing to compare the shelves with. Head office publishes the planogram on the Shelf layout tab.',
+    ta: 'இந்தக் கடை இதுவரை அலமாரித் திட்டம் ஒன்றை வெளியிடவில்லை. எனவே அலமாரிகளை எதனுடனும் ஒப்பிட முடியாது. தலைமை அலுவலகம் அலமாரி அமைப்பு தாவலில் திட்ட வரைபடத்தை வெளியிடுகிறது.',
   },
 };
 
@@ -291,7 +291,8 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['count', 'refill', 'range', 'space'];
+// Round 4a: 'clusters' and 'layout' are the head-office setup tabs (merchandising-setup.js paints them).
+const VIEWS = ['count', 'refill', 'range', 'space', 'clusters', 'layout'];
 function show(name) {
   for (const view of VIEWS) {
     el(`view-${view}`).hidden = view !== name;

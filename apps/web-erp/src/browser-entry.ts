@@ -78,6 +78,10 @@ import {
   createMerchandisingSession,
   type MerchandisingPorts, type MerchandisingSession, type MerchandisingDevice, type RefillIndentPort,
 } from './merchandising-session';
+import {
+  createMerchSetupSession, merchSetupWords, merchSetupOutcomeWords, askWords as merchAskWords, shelfRowsOf, planRowsOf, areaRowsOf,
+  CLUSTER_DROP_REASONS, SHELF_ZONES, type MerchSetupSession,
+} from './merchandising-setup-session'; // Round 4a: the Shelves and space page's head-office setup tabs
 import { createUnsellableSession, type UnsellableSession, type UnsellableData } from './unsellable-session';
 import {
   createFinanceCloseSession, browserFinanceCloseHttp, closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords,
@@ -1356,6 +1360,8 @@ export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sa
 /** Round 12: the competitor-price panel's words and readings (tested in `competitor-price-session.ts`). */
 export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
 /** OB-570 "A": the scale-label rules panel's words and readings (tested in `scale-label-rules-session.ts`). */
+/** Round 4a: the Shelves and space setup tabs' words and readings (tested in `merchandising-setup-session.ts`). */
+export const MERCH_SETUP_KIT = Object.freeze({ words: merchSetupWords, outcomeWords: merchSetupOutcomeWords, askWords: merchAskWords, shelfRowsOf, planRowsOf, areaRowsOf, reasons: CLUSTER_DROP_REASONS, zones: SHELF_ZONES });
 export const SCALE_RULES_KIT = Object.freeze({ scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, kinds: SCALE_VALUE_KINDS });
 /** M03-FR-03 tax side: the Tax rates panel's words and readings (tested in `tax-rates-session.ts`). */
 export const TAX_RATES_KIT = Object.freeze({ taxRateWords, gstLine, cessLine, requestLine, taxOutcomeWords, needsFinanceApproval: NEEDS_FINANCE_APPROVAL });
@@ -5225,6 +5231,9 @@ interface ManagerWindow {
   merchandisingOutbox?: SyncOutbox;
   merchandisingRelay?: ManagerRelay;
   merchandisingStorageProblem?: string;
+  /** Round 4a (M04-FR-04 · R8-8 · Round D): the page's head-office setup tabs — display contracts, clusters and seasons, the
+   *  shelf map, the planogram and the floor plan — over head office's own routes as the signed-in person. */
+  merchSetup?: { readonly session: MerchSetupSession; readonly kit: typeof MERCH_SETUP_KIT; readonly storeId: string; readonly today: string };
   /** SP-8c-ii: the "Products nobody can sell" screen — read-only, the list the till payload is built from. */
   unsellableData?: UnsellableData;
   unsellableSession?: UnsellableSession;
@@ -6690,6 +6699,14 @@ if (browserWindow !== undefined) {
       if (merchandisingRelay !== undefined) browserWindow.merchandisingRelay = merchandisingRelay;
       if (indentsStorageProblem !== undefined) browserWindow.merchandisingStorageProblem = indentsStorageProblem;
     }
+  }
+  // Round 4a (M04-FR-04 · R8-8 · Round D): the head-office setup tabs on the same page — a thin client over head office's own
+  // routes as the signed-in person (who is looking, from the page's payload; head office re-checks every act).
+  if (merchandisingData !== undefined) {
+    browserWindow.merchSetup = {
+      session: createMerchSetupSession(viewerIdentity(merchandisingData), browserFinanceCloseHttp()), kit: MERCH_SETUP_KIT,
+      storeId: merchandisingData.storeId ?? '', today: merchandisingData.today ?? '',
+    };
   }
   // The "Products nobody can sell" screen (SP-8c-ii · P-08): read-only, from the list the box builds the till's catalogue with.
   const unsellable = bootUnsellable(browserWindow.unsellableData);
