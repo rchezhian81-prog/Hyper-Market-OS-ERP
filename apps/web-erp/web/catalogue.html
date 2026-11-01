@@ -173,6 +173,7 @@
       <button id="tab-rivals" type="button">Competitor prices</button>
       <button id="tab-scale" type="button">Scale label rules</button>
       <button id="tab-tax" type="button">Tax rates</button>
+      <button id="tab-setup" type="button">Product setup</button>
     </nav>
 
     <main>
@@ -660,6 +661,148 @@
           <p class="lead" id="tax-cess-status" role="status" aria-live="polite"></p>
         </div>
         <p class="lead" id="tax-note">A rate reaches the tills with the next signed price update.</p>
+      <!-- G-1 · M03-FR-01/02/04 · WF-01: Product setup — categories and the variant report, a bundle, pack sizes, approved
+           substitutes and merging a duplicate, over head office's own routes, through the tested model
+           apps/web-erp/src/product-setup-session.ts. A new category from a manager waits for the owner's approval; a merge
+           is proposed by one person and decided by another. Head office judges every rule and its refusal is shown. -->
+      <section id="view-setup" hidden>
+        <h2 id="setup-title">Product setup</h2>
+        <p class="lead" id="setup-lead">The parts of the product list kept at head office.</p>
+        <p class="lead" id="setup-status" role="status" aria-live="polite"></p>
+        <datalist id="setup-products"></datalist>
+
+        <h3 id="cat-title">Categories</h3>
+        <p class="lead" id="cat-lead"></p>
+        <div id="cat-list"></div>
+        <p class="lead" id="cat-list-status" role="status" aria-live="polite"></p>
+        <div id="cat-form" hidden>
+          <div class="two">
+            <div class="field">
+            <label for="cat-id" id="cat-id-label">Category code</label>
+            <input id="cat-id" type="text" autocomplete="off" maxlength="200" />
+            </div>
+            <div class="field">
+            <label for="cat-name" id="cat-name-label">Name</label>
+            <input id="cat-name" type="text" autocomplete="off" maxlength="200" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="cat-parent" id="cat-parent-label">Sits under</label>
+            <input id="cat-parent" type="text" autocomplete="off" maxlength="200" />
+          </div>
+          <fieldset class="field" id="cat-regulated">
+            <legend id="cat-regulated-label">Rules that apply to everything in it</legend>
+            <div id="cat-regulated-boxes"></div>
+          </fieldset>
+          <div class="field">
+            <label for="cat-attributes" id="cat-attributes-label">Details each item in it carries</label>
+            <textarea id="cat-attributes" maxlength="2000"></textarea>
+          </div>
+          <button id="cat-save" class="primary wide" type="button">Save this category at head office</button>
+          <div class="field">
+            <label for="cat-reason" id="cat-reason-label">Why this category is needed</label>
+            <input id="cat-reason" type="text" autocomplete="off" maxlength="200" />
+          </div>
+          <button id="cat-ask" class="wide" type="button">Ask the owner to approve this category</button>
+          <p class="lead" id="cat-save-status" role="status" aria-live="polite"></p>
+          <h4 id="cat-mine-title" hidden>Categories I asked for</h4>
+          <div id="cat-mine"></div>
+        </div>
+
+        <h3 id="rep-title">Variant report</h3>
+          <div class="field">
+            <label for="rep-category" id="rep-category-label">Category</label>
+            <input id="rep-category" type="text" autocomplete="off" maxlength="200" />
+          </div>
+        <button id="rep-show" type="button">Show the report</button>
+        <p class="lead" id="rep-status" role="status" aria-live="polite"></p>
+        <div id="rep-out"></div>
+
+        <h3 id="bun-title">Bundle</h3>
+        <p class="lead" id="bun-lead"></p>
+          <div class="field">
+            <label for="bun-product" id="bun-product-label">Bundle item code</label>
+            <input id="bun-product" type="text" autocomplete="off" maxlength="200" list="setup-products" />
+          </div>
+        <button id="bun-read" type="button">Show this bundle</button>
+        <div id="bun-out"></div>
+        <div id="bun-form" hidden>
+            <div class="field">
+              <label for="bun-components" id="bun-components-label">Parts</label>
+              <textarea id="bun-components" maxlength="2000"></textarea>
+            </div>
+            <div class="field">
+            <label for="bun-reason" id="bun-reason-label">Why</label>
+            <input id="bun-reason" type="text" autocomplete="off" maxlength="200" />
+            </div>
+          <button id="bun-save" class="primary wide" type="button">Save this bundle at head office</button>
+        </div>
+        <p class="lead" id="bun-status" role="status" aria-live="polite"></p>
+
+        <h3 id="pack-title">Pack sizes</h3>
+        <p class="lead" id="pack-lead"></p>
+          <div class="field">
+            <label for="pack-product" id="pack-product-label">Item code</label>
+            <input id="pack-product" type="text" autocomplete="off" maxlength="200" list="setup-products" />
+          </div>
+        <button id="pack-read" type="button">Show the pack sizes</button>
+        <div id="pack-out"></div>
+        <div id="pack-form" hidden>
+          <div class="field">
+            <label for="pack-base" id="pack-base-label">Smallest unit</label>
+            <input id="pack-base" type="text" autocomplete="off" maxlength="200" />
+          </div>
+          <div class="field">
+            <label for="pack-levels" id="pack-levels-label">Sizes</label>
+            <textarea id="pack-levels" maxlength="2000"></textarea>
+          </div>
+          <button id="pack-save" class="primary wide" type="button">Save these pack sizes at head office</button>
+        </div>
+        <p class="lead" id="pack-status" role="status" aria-live="polite"></p>
+
+        <h3 id="sub-title">Approved substitutes</h3>
+        <p class="lead" id="sub-lead"></p>
+          <div class="field">
+            <label for="sub-product" id="sub-product-label">Item code</label>
+            <input id="sub-product" type="text" autocomplete="off" maxlength="200" list="setup-products" />
+          </div>
+        <button id="sub-read" type="button">Show the substitutes</button>
+        <div id="sub-out"></div>
+        <div id="sub-form" hidden>
+          <div class="field">
+            <label for="sub-list" id="sub-list-label">Substitutes in order</label>
+            <textarea id="sub-list" maxlength="2000"></textarea>
+          </div>
+          <div class="field">
+            <label for="sub-reason" id="sub-reason-label">Why</label>
+            <input id="sub-reason" type="text" autocomplete="off" maxlength="200" />
+          </div>
+          <button id="sub-save" class="primary wide" type="button">Save the substitutes at head office</button>
+        </div>
+        <p class="lead" id="sub-status" role="status" aria-live="polite"></p>
+
+        <h3 id="mrg-title">Merge a duplicate</h3>
+        <p class="lead" id="mrg-lead"></p>
+        <div id="mrg-list"></div>
+        <p class="lead" id="mrg-list-status" role="status" aria-live="polite"></p>
+        <div id="mrg-form" hidden>
+          <div class="two">
+            <div class="field">
+            <label for="mrg-keep" id="mrg-keep-label">Item code to keep</label>
+            <input id="mrg-keep" type="text" autocomplete="off" maxlength="200" list="setup-products" />
+            </div>
+            <div class="field">
+            <label for="mrg-supersede" id="mrg-supersede-label">Duplicate item code</label>
+            <input id="mrg-supersede" type="text" autocomplete="off" maxlength="200" list="setup-products" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="mrg-reason" id="mrg-reason-label">Why they are the same product</label>
+            <input id="mrg-reason" type="text" autocomplete="off" maxlength="200" />
+          </div>
+          <button id="mrg-propose" class="primary wide" type="button">Propose this merge</button>
+        </div>
+        <p class="lead" id="mrg-status" role="status" aria-live="polite"></p>
       </section>
     </main>
 

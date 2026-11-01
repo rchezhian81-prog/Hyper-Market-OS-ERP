@@ -448,8 +448,8 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals', 'scale', 'tax'];
-const TABS = ['items', 'price', 'shelf', 'promo', 'rivals', 'scale', 'tax'];
+const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals', 'scale', 'tax', 'setup'];
+const TABS = ['items', 'price', 'shelf', 'promo', 'rivals', 'scale', 'tax', 'setup'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
@@ -458,7 +458,7 @@ function show(name) {
   }
 }
 for (const name of TABS) {
-  el(`tab-${name}`).addEventListener('click', () => { show(name); if (name === 'rivals') void loadRivals(); if (name === 'scale') void loadScale(); if (name === 'tax') renderTax(); });
+  el(`tab-${name}`).addEventListener('click', () => { show(name); if (name === 'rivals') void loadRivals(); if (name === 'scale') void loadScale(); if (name === 'tax') renderTax(); if (name === 'setup') void loadSetup(); });
 }
 el('back-to-items').addEventListener('click', () => { show('items'); renderItems(); });
 
@@ -1667,6 +1667,281 @@ el('tax-cess-save').addEventListener('click', () => busy('tax-cess-save', async 
   await loadTax(input.hsnCode);
 }));
 // ── M03-FR-03 tax side — end
+// ── G-1 · M03-FR-01/02/04 — begin: Product setup ─────────────────────────────────────────────────────────────
+//
+// A thin tab over head office's own routes, through the tested model (`product-setup-session.ts`, attached as
+// `window.productSetupSession` / `productSetupKit`): categories and the variant report, a bundle, pack sizes, approved
+// substitutes and merging a duplicate. Each action is shown only to a viewer holding the permission its route checks. A
+// manager's new category waits for the owner's approval (asked here, decided on the Approvals page); a merge is proposed by
+// one person and decided by another — the proposer is never offered Approve. Head office's refusal is shown in its own
+// words; when head office cannot be reached the tab says nothing was saved (P-08).
+
+const setup = window.productSetupSession ?? null;
+const setupKit = window.productSetupKit ?? null;
+const pw = (key, fill) => (setupKit === null ? key : setupKit.productSetupWords(lang)(key, fill));
+let catRead = null;
+let askedRead = null;
+let mergeRead = null;
+const setupShown = { rep: null, bun: null, pack: null, sub: null };
+
+function setupSay(id, text, ok) { el(id).textContent = text; el(id).dataset.ok = ok ? 'yes' : 'no'; }
+function setupLine(text, attrs = {}) {
+  const p = document.createElement('p');
+  p.className = 'row';
+  p.textContent = text;
+  for (const [k, v] of Object.entries(attrs)) p.dataset[k] = v;
+  return p;
+}
+function readFailWords(out) { return out.kind === 'unreachable' ? pw('unreadable') : setupKit.setupOutcomeWords(lang, out, 'catSaved').text; }
+const fieldOf = (id) => el(id).closest('.field');
+
+function renderSetupLabels() {
+  for (const [id, k] of [
+    ['setup-title', 'h'], ['setup-lead', 'lede'], ['cat-title', 'catH'], ['cat-lead', 'catLede'], ['cat-id-label', 'catId'], ['cat-name-label', 'catName'],
+    ['cat-parent-label', 'catParent'], ['cat-regulated-label', 'catRegulated'], ['cat-attributes-label', 'catAttributes'], ['cat-save', 'catSave'],
+    ['cat-reason-label', 'catAskReason'], ['cat-ask', 'catAsk'], ['cat-mine-title', 'catMine'],
+    ['rep-title', 'repH'], ['rep-category-label', 'repCategory'], ['rep-show', 'repShow'],
+    ['bun-title', 'bunH'], ['bun-lead', 'bunLede'], ['bun-product-label', 'bunProduct'], ['bun-read', 'bunRead'], ['bun-components-label', 'bunComponents'], ['bun-reason-label', 'bunReason'], ['bun-save', 'bunSave'],
+    ['pack-title', 'packH'], ['pack-lead', 'packLede'], ['pack-product-label', 'packProduct'], ['pack-read', 'packRead'], ['pack-base-label', 'packBase'], ['pack-levels-label', 'packLevels'], ['pack-save', 'packSave'],
+    ['sub-title', 'subH'], ['sub-lead', 'subLede'], ['sub-product-label', 'subProduct'], ['sub-read', 'subRead'], ['sub-list-label', 'subList'], ['sub-reason-label', 'subReason'], ['sub-save', 'subSave'],
+    ['mrg-title', 'mrgH'], ['mrg-lead', 'mrgLede'], ['mrg-keep-label', 'mrgKeep'], ['mrg-supersede-label', 'mrgSupersede'], ['mrg-reason-label', 'mrgReason'], ['mrg-propose', 'mrgPropose'],
+  ]) el(id).textContent = pw(k);
+  const boxes = el('cat-regulated-boxes');
+  const ticked = new Set([...boxes.querySelectorAll('input:checked')].map((b) => b.value));
+  boxes.replaceChildren(...setupKit.regulatedKinds.map((k) => {
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox'; box.value = k; box.checked = ticked.has(k); box.dataset.regulated = k;
+    label.append(box, ` ${pw(k)}`);
+    return label;
+  }));
+}
+
+function renderCategories() {
+  const list = el('cat-list');
+  list.replaceChildren();
+  if (catRead === null) return;
+  if (catRead.kind !== 'done') { setupSay('cat-list-status', readFailWords(catRead), false); return; }
+  setupSay('cat-list-status', '', true);
+  if (catRead.body.categories.length === 0) { list.append(setupLine(pw('catNone'))); return; }
+  for (const c of catRead.body.categories) {
+    const row = setupLine(`${pw('catLine', { id: c.categoryId, name: c.name, parent: c.parentId ?? '—' })} · ${pw('catBy', { version: c.version, by: c.definedBy, approver: c.approvedBy })}`, { category: c.categoryId });
+    list.append(row);
+  }
+}
+
+function renderAsked() {
+  const box = el('cat-mine');
+  box.replaceChildren();
+  const show = setup !== null && setup.may.categoryPropose && !setup.may.categoryApprove;
+  el('cat-mine-title').hidden = !show || askedRead === null || askedRead.kind !== 'done' || askedRead.body.length === 0;
+  if (!show || askedRead === null) return;
+  if (askedRead.kind !== 'done') { box.append(setupLine(readFailWords(askedRead))); return; }
+  for (const a of askedRead.body) {
+    const row = setupLine(`${a.details.categoryId} — ${a.details.name}: ${setupKit.askedStatusWords(lang, a.status)}${a.decisionReason ? ` (${a.decisionReason})` : ''}`, { asked: a.details.categoryId });
+    if (a.status === 'approved') {
+      const use = document.createElement('button');
+      use.type = 'button';
+      use.dataset.useApproval = a.details.categoryId;
+      use.textContent = pw('catUseApproval');
+      use.addEventListener('click', async () => {
+        use.disabled = true;
+        const out = await setup.saveApprovedCategory(a);
+        const said = setupKit.setupOutcomeWords(lang, out, out.kind === 'done' && out.body.changed === false ? 'catUnchanged' : 'catSaved');
+        setupSay('cat-save-status', said.text, said.ok);
+        await loadCategories();
+      });
+      row.append(' ', use);
+    }
+    box.append(row);
+  }
+}
+
+function renderMerges() {
+  const list = el('mrg-list');
+  list.replaceChildren();
+  if (mergeRead === null) return;
+  if (mergeRead.kind !== 'done') { setupSay('mrg-list-status', readFailWords(mergeRead), false); return; }
+  setupSay('mrg-list-status', '', true);
+  if (mergeRead.body.merges.length === 0) { list.append(setupLine(pw('mrgNone'))); return; }
+  for (const m of mergeRead.body.merges) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.dataset.merge = m.request.mergeId;
+    row.dataset.supersede = m.request.supersedeProductId;
+    const what = document.createElement('span');
+    what.textContent = setupKit.describeMerge(lang, m);
+    row.append(what);
+    if (m.status === 'pending' && setup.may.mergeApprove) {
+      const own = setup.userId !== undefined && m.request.requestedBy === setup.userId;
+      if (own) {
+        const note = document.createElement('small');
+        note.textContent = ` ${pw('mrgOwn')}`;
+        row.append(note);
+      } else {
+        const approve = document.createElement('button');
+        approve.type = 'button'; approve.className = 'primary'; approve.dataset.approveMerge = m.request.mergeId; approve.textContent = pw('mrgApprove');
+        approve.addEventListener('click', () => decideMerge(m, 'approved', approve));
+        row.append(approve);
+      }
+      const reject = document.createElement('button');
+      reject.type = 'button'; reject.className = 'danger'; reject.dataset.rejectMerge = m.request.mergeId; reject.textContent = pw('mrgReject');
+      reject.addEventListener('click', () => decideMerge(m, 'rejected', reject));
+      row.append(reject);
+    }
+    list.append(row);
+  }
+}
+
+async function decideMerge(m, decision, button) {
+  button.disabled = true;
+  const out = await setup.decideMerge(m, decision);
+  const said = setupKit.setupOutcomeWords(lang, out, decision === 'approved' ? 'mrgApproved' : 'mrgRejected');
+  setupSay('mrg-status', said.text, said.ok);
+  await loadMerges();
+}
+
+function renderReport() {
+  const out = el('rep-out');
+  out.replaceChildren();
+  const r = setupShown.rep;
+  if (r === null) return;
+  if (r.kind !== 'done') { setupSay('rep-status', readFailWords(r), false); return; }
+  setupSay('rep-status', pw('repTotals', { families: r.body.familyCount, products: r.body.productCount }), true);
+  if (r.body.productCount === 0) { out.append(setupLine(pw('repEmpty'))); return; }
+  for (const f of r.body.families) {
+    const variants = f.variants.length === 0 ? pw('repNoVariants') : f.variants.map((v) => `${v.name} (${Object.entries(v.attributes ?? {}).map(([k, val]) => `${k} ${val}`).join(', ')})`).join('; ');
+    out.append(setupLine(`${pw('repFamily', { name: f.name, brand: f.brand ?? '—', maker: f.manufacturer ?? '—' })}: ${variants}`, { family: f.productId }));
+  }
+  for (const m of r.body.byManufacturer) out.append(setupLine(pw('repMaker', { maker: m.manufacturer, families: m.families, products: m.products }), { maker: m.manufacturer }));
+}
+
+function renderShown(key, outId, statusId) {
+  const out = el(outId);
+  out.replaceChildren();
+  const r = setupShown[key];
+  if (r === null) return;
+  if (r.kind === 'refused' && r.status === 404) {
+    out.append(setupLine(pw(key === 'bun' ? 'bunNone' : key === 'pack' ? 'packNone' : 'subNotSet')));
+    return;
+  }
+  if (r.kind !== 'done') { setupSay(statusId, readFailWords(r), false); return; }
+  if (key === 'bun') {
+    out.append(setupLine(pw('bunLine', { version: r.body.bundle.version, parts: r.body.bundle.components.map((c) => `${c.productId} × ${c.quantityMinor}`).join(', ') })));
+  } else if (key === 'pack') {
+    for (const l of r.body.pack.levels) out.append(setupLine(pw('packLine', { level: l.level, count: l.containsMinor })));
+  } else if (!r.body.set || r.body.list === null) {
+    out.append(setupLine(pw('subNotSet')));
+  } else {
+    out.append(setupLine(pw('subLine', { version: r.body.list.version, list: r.body.list.substitutes.length === 0 ? pw('subNone') : r.body.list.substitutes.join(', ') })));
+  }
+}
+
+function renderSetup() {
+  if (setupKit === null) { el('view-setup').querySelectorAll('[id$="-form"]').forEach((f) => { f.hidden = true; }); return; }
+  renderSetupLabels();
+  const products = window.catalogueData?.products ?? [];
+  el('setup-products').replaceChildren(...products.map((p) => { const o = document.createElement('option'); o.value = p.productId; o.textContent = p.name ?? p.productId; return o; }));
+  for (const f of ['cat-form', 'bun-form', 'pack-form', 'sub-form', 'mrg-form']) el(f).hidden = true;
+  if (setup === null) { setupSay('setup-status', pw('notConnected'), false); return; }
+  if (!setup.may.read) { setupSay('setup-status', pw('cannotRead'), false); return; }
+  el('cat-form').hidden = !setup.may.categoryPropose;
+  // The owner's own save IS the approval; a manager asks first and saves with the owner's approval.
+  el('cat-save').hidden = !setup.may.categoryApprove;
+  el('cat-ask').hidden = setup.may.categoryApprove;
+  fieldOf('cat-reason').hidden = setup.may.categoryApprove;
+  for (const f of ['bun-form', 'pack-form', 'sub-form']) el(f).hidden = !setup.may.publish;
+  el('mrg-form').hidden = !setup.may.mergePropose;
+  setupSay('setup-status', setup.may.categoryPropose && !setup.may.categoryApprove ? pw('catProposeOnly') : !setup.may.publish ? pw('readOnly') : '', true);
+  renderCategories();
+  renderAsked();
+  renderReport();
+  renderShown('bun', 'bun-out', 'bun-status');
+  renderShown('pack', 'pack-out', 'pack-status');
+  renderShown('sub', 'sub-out', 'sub-status');
+  renderMerges();
+}
+
+async function loadCategories() {
+  catRead = await setup.categories();
+  if (setup.may.categoryPropose && !setup.may.categoryApprove) askedRead = await setup.askedCategories();
+  renderSetup();
+}
+async function loadMerges() { mergeRead = await setup.merges(); renderSetup(); }
+async function loadSetup() {
+  if (setup === null || !setup.may.read) { renderSetup(); return; }
+  await loadCategories();
+  await loadMerges();
+}
+
+const categoryInput = () => ({
+  categoryId: el('cat-id').value, name: el('cat-name').value, parentId: el('cat-parent').value,
+  regulated: [...el('cat-regulated-boxes').querySelectorAll('input:checked')].map((b) => b.value), attributes: el('cat-attributes').value,
+});
+el('cat-save').addEventListener('click', () => busy('cat-save', async () => {
+  const out = await setup.defineCategory(categoryInput());
+  const said = setupKit.setupOutcomeWords(lang, out, out.kind === 'done' && out.body.changed === false ? 'catUnchanged' : 'catSaved');
+  setupSay('cat-save-status', said.text, said.ok);
+  await loadCategories();
+}));
+el('cat-ask').addEventListener('click', () => busy('cat-ask', async () => {
+  const out = await setup.askCategory(categoryInput(), el('cat-reason').value);
+  const said = setupKit.setupOutcomeWords(lang, out, 'catAsked');
+  setupSay('cat-save-status', said.text, said.ok);
+  if (said.ok) el('cat-reason').value = '';
+  await loadCategories();
+}));
+el('rep-show').addEventListener('click', () => busy('rep-show', async () => {
+  setupShown.rep = await setup.variantReport(el('rep-category').value);
+  renderSetup();
+}));
+el('bun-read').addEventListener('click', () => busy('bun-read', async () => {
+  setupSay('bun-status', '', true);
+  setupShown.bun = await setup.bundle(el('bun-product').value);
+  renderSetup();
+}));
+el('bun-save').addEventListener('click', () => busy('bun-save', async () => {
+  const out = await setup.defineBundle(el('bun-product').value, el('bun-components').value, el('bun-reason').value);
+  const said = setupKit.setupOutcomeWords(lang, out, out.kind === 'done' && out.body.unchanged === true ? 'bunUnchanged' : 'bunSaved');
+  setupSay('bun-status', said.text, said.ok);
+  if (said.ok) setupShown.bun = await setup.bundle(el('bun-product').value);
+  renderSetup();
+}));
+el('pack-read').addEventListener('click', () => busy('pack-read', async () => {
+  setupSay('pack-status', '', true);
+  setupShown.pack = await setup.pack(el('pack-product').value);
+  renderSetup();
+}));
+el('pack-save').addEventListener('click', () => busy('pack-save', async () => {
+  const out = await setup.definePack(el('pack-product').value, el('pack-base').value, el('pack-levels').value);
+  const said = setupKit.setupOutcomeWords(lang, out, 'packSaved');
+  setupSay('pack-status', said.text, said.ok);
+  if (said.ok) setupShown.pack = await setup.pack(el('pack-product').value);
+  renderSetup();
+}));
+el('sub-read').addEventListener('click', () => busy('sub-read', async () => {
+  setupSay('sub-status', '', true);
+  setupShown.sub = await setup.substitutes(el('sub-product').value);
+  renderSetup();
+}));
+el('sub-save').addEventListener('click', () => busy('sub-save', async () => {
+  const out = await setup.setSubstitutes(el('sub-product').value, el('sub-list').value, el('sub-reason').value);
+  const cleared = out.kind === 'done' && out.body.list?.substitutes?.length === 0;
+  const said = setupKit.setupOutcomeWords(lang, out, out.kind === 'done' && out.body.unchanged === true ? 'subUnchanged' : cleared ? 'subCleared' : 'subSaved');
+  const warned = out.kind === 'done' && (out.body.warnings ?? []).length > 0 ? ` ${pw('warning')} ${out.body.warnings.map((x) => x.detail ?? '').join('; ')}` : '';
+  setupSay('sub-status', said.text + warned, said.ok);
+  if (said.ok) setupShown.sub = await setup.substitutes(el('sub-product').value);
+  renderSetup();
+}));
+el('mrg-propose').addEventListener('click', () => busy('mrg-propose', async () => {
+  const out = await setup.proposeMerge({ keepProductId: el('mrg-keep').value, supersedeProductId: el('mrg-supersede').value, reason: el('mrg-reason').value });
+  const said = setupKit.setupOutcomeWords(lang, out, 'mrgProposed');
+  setupSay('mrg-status', said.text, said.ok);
+  if (said.ok) el('mrg-reason').value = '';
+  await loadMerges();
+}));
+// ── G-1 — end
+
 
 async function loadRivals() {
   if (rivals === null || !rivals.may.read) { renderRivals(); return; }
@@ -1699,6 +1974,7 @@ function paintChrome() {
   if (rivalKit !== null) el('tab-rivals').textContent = rw('tab');
   if (scaleKit !== null) el('tab-scale').textContent = sw('tab');
   if (taxKit !== null) el('tab-tax').textContent = xw('tab'); // M03-FR-03 tax side
+  if (setupKit !== null) el('tab-setup').textContent = pw('tab');
   el('items-title').textContent = t('items');
   el('items-lead').textContent = t('itemsLead');
   el('item-search-label').textContent = t('findItem');
@@ -1739,6 +2015,7 @@ el('lang').addEventListener('click', () => {
   renderDrafts(); // R4 D-18
   renderScale(); // OB-570
   renderTax(); // M03-FR-03 tax side
+  renderSetup(); // G-1
   if (!el('view-price').hidden) renderLimits(); // OB-512: the replace-an-MRP panel speaks the chosen language
 });
 
@@ -1759,6 +2036,8 @@ if (wantedTab === 'rivals') void loadRivals();
 renderScale();
 if (wantedTab === 'scale') void loadScale();
 renderTax(); // M03-FR-03 tax side
+renderSetup();
+if (wantedTab === 'setup') void loadSetup();
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //

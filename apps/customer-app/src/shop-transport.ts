@@ -71,8 +71,9 @@ export interface ShopTransport {
   mine?(request: ShopMineRequest): Promise<ShopAnswer>;
   /** OB-77: read one of MY orders back from the shop (`GET /v1/storefront/orders/:orderId`) — its state and the driver's delivery status. */
   readOrder?(request: { readonly orderId: string; readonly token: string }): Promise<ShopAnswer>;
-  /** R4 Lane 2 (B23 · M20-FR-04 · D01-FR-06): a READ of the online store as the signed-in customer (`GET /v1/storefront/…`). */
-  storefront?(request: { readonly token: string; readonly path: 'listing' | 'ratings' | `products/${string}/image` }): Promise<ShopAnswer>;
+  /** R4 Lane 2 (B23 · M20-FR-04 · D01-FR-06): a READ of the online store as the signed-in customer (`GET /v1/storefront/…`).
+   *  G-1 (M03-FR-04): also the shop's approved substitutes for a product (`products/:id/substitutes`). */
+  storefront?(request: { readonly token: string; readonly path: 'listing' | 'ratings' | `products/${string}/image` | `products/${string}/substitutes` }): Promise<ShopAnswer>;
   /** OB-288 wave 3 (WF-13 · M20 · M21 · D08 · A04 · A05): the customer's own commerce calls under `/v1/` — see `ShopCommercePath`. */
   commerce?(request: ShopCommerceRequest): Promise<ShopAnswer>;
 }
