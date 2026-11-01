@@ -22,6 +22,7 @@ import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './ma
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 import { dutiesGrantRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
 import { ownerAndCommitteeRefusal, OWNER_ON_COMMITTEE_REFUSAL_CODE, COMMITTEE_ROLE_ID } from './committee-membership';
+import { awaitingApprovalRefusal, type RoleAwaitingOwnerApproval } from './roles-awaiting-approval';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -155,6 +156,16 @@ export interface IdentityDeps {
    */
   readonly registeredStores?: (tenantId: string) => Promise<ReadonlySet<string>>;
   readonly roles: (tenantId: string) => Promise<readonly Role[]> | readonly Role[];
+  /**
+   * OB-615: roles written down from the roadmap but not live — shown with the catalogue so the owner can read their
+   * permissions, and refused by name to every grant until the owner's approval moves them into the catalogue.
+   */
+  readonly rolesAwaitingOwnerApproval?: readonly RoleAwaitingOwnerApproval[];
+  /**
+   * Round 4c (the Users & roles page): every role grant live now, from the ledger (grants minus what was taken back) —
+   * who holds which role, where. Optional on a bare stub: then the read says it is not known (503), never "nobody".
+   */
+  readonly currentGrants?: (tenantId: string) => Promise<readonly RoleAssignment[]> | readonly RoleAssignment[];
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   readonly recordGrant: (tenantId: string, a: RoleAssignment, g: GrantRequest) => Promise<void> | void;
   /** Every grant request the tenant has seen, with its state (Wave 2b · PA-03). */
@@ -220,7 +231,8 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
     {
       api: 'API-01', method: 'GET', path: '/v1/identity/roles',
       permission: 'identity.role.read',
-      handler: async (ctx) => ({ status: 200, body: { roles: await deps.roles(ctx.tenantId) } }),
+      // OB-615: the roles waiting for the owner's approval come back beside the live ones, never mixed into them.
+      handler: async (ctx) => ({ status: 200, body: { roles: await deps.roles(ctx.tenantId), awaitingOwnerApproval: deps.rolesAwaitingOwnerApproval ?? [] } }),
     },
     {
       api: 'API-01', method: 'GET', path: '/v1/org/branches',
@@ -251,6 +263,9 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
           });
         }
         const grantId = b['grantId'] as string; const userId = b['userId'] as string; const roleId = b['roleId'] as string;
+        // OB-615: a role the owner has not approved yet is given to nobody — refused by name before anything else.
+        const waiting = awaitingApprovalRefusal(roleId, deps.rolesAwaitingOwnerApproval);
+        if (waiting !== undefined) throw waiting;
         const roles = await deps.roles(ctx.tenantId);
         if (!roles.some((r) => r.id === roleId)) {
           throw apiError(422, { code: 'unknown_role', whatHappened: `There is no role "${roleId}" in this product's catalogue.`, wasItSaved: 'not_saved', nextSafeAction: 'Name a role from GET /v1/identity/roles. Nothing was requested.' });
@@ -416,6 +431,23 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         if (pending.state !== 'pending') return { status: 200, body: { grantId, state: pending.state, alreadyDecided: true } };
         await deps.recordGrantRejection(ctx.tenantId, { grantId, rejectedBy: ctx.userId, reason: b['reason'] as string, at: deps.now() });
         return { status: 200, body: { grantId, state: 'rejected', rejectedBy: ctx.userId } };
+      },
+    },
+    {
+      // Round 4c: who holds which role, where — the live grants from the ledger, for the Users & roles page (giving and taking
+      // back a role). Read only; no money limit or review flag (those are the access review's, `identity.access.review`).
+      // Gated on the MAKER's word (`identity.role.request` — the owner, the store manager): the person who asks for a role
+      // or a take-back must see who holds what and which roles there are; nothing else that `identity.role.read` opens.
+      api: 'API-01', method: 'GET', path: '/v1/identity/grants',
+      permission: 'identity.role.request',
+      handler: async (ctx) => {
+        if (deps.currentGrants === undefined) {
+          throw apiError(503, { code: 'grants_not_known', whatHappened: 'This deployment has no grant ledger wired, so who holds which role is not known here.', wasItSaved: 'not_saved', nextSafeAction: 'Wire the identity ledger (production always does).' });
+        }
+        const grants = [...await deps.currentGrants(ctx.tenantId)]
+          .map((g) => ({ userId: g.userId, roleId: g.roleId, branchScope: g.branchScope }))
+          .sort((a, b) => a.userId.localeCompare(b.userId) || a.roleId.localeCompare(b.roleId));
+        return { status: 200, body: { asAt: deps.now(), grants, count: grants.length, roles: await deps.roles(ctx.tenantId), awaitingOwnerApproval: deps.rolesAwaitingOwnerApproval ?? [] } };
       },
     },
     {

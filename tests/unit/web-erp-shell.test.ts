@@ -81,7 +81,7 @@ describe('role-scoped navigation', () => {
 
   it('lands each user on their first permitted page', () => {
     expect(landingPath(access, { userId: 'cash-1', branchId: 'b1' })).toBe('/manager/');
-    expect(landingPath(access, { userId: 'admin-1', branchId: null })).toBe('/admin/?tab=people');
+    expect(landingPath(access, { userId: 'admin-1', branchId: null })).toBe('/users'); // Round 4c: Users & roles is its own page
   });
 
   it('every navigation item declares the permission it needs', () => {

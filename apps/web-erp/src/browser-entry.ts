@@ -118,6 +118,8 @@ import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring';
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
 import { wireFindings } from './findings-browser-wiring'; // OB-609
+import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
+import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7488,4 +7490,6 @@ if (browserWindow !== undefined) {
   wireCertificates(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // OB-609: Bill findings and attendance flags.
   wireFindings(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wireUsers(browserWindow as unknown as Record<string, unknown>, viewerIdentity, HEAD_OFFICE_PEOPLE); // Round 4c
+  wireRound4c(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4c
 }

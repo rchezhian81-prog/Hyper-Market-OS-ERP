@@ -46739,6 +46739,48 @@
       }
     },
     "/v1/identity/grants": {
+      "get": {
+        "operationId": "getIdentityGrants",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.role.request",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIdentityGrantsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.role.request\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
       "post": {
         "operationId": "postIdentityGrants",
         "tags": [
@@ -116488,6 +116530,9 @@
                 "requestedAt"
               ],
               "properties": {
+                "decidedByTheAccountant": {
+                  "type": "string"
+                },
                 "decider": {
                   "anyOf": [
                     {
@@ -116617,6 +116662,10 @@
                 },
                 "requestedAt": {
                   "type": "string"
+                },
+                "raisedByTheOwner": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "additionalProperties": true
@@ -116641,6 +116690,9 @@
                 "requestedAt"
               ],
               "properties": {
+                "decidedByTheAccountant": {
+                  "type": "string"
+                },
                 "decider": {
                   "anyOf": [
                     {
@@ -116770,6 +116822,10 @@
                 },
                 "requestedAt": {
                   "type": "string"
+                },
+                "raisedByTheOwner": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "additionalProperties": true
@@ -133705,6 +133761,73 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/index.ts"
       },
+      "GetIdentityGrantsReply": {
+        "type": "object",
+        "required": [
+          "asAt",
+          "grants",
+          "count",
+          "roles",
+          "awaitingOwnerApproval"
+        ],
+        "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "userId",
+                "roleId",
+                "branchScope"
+              ],
+              "properties": {
+                "userId": {
+                  "type": "string"
+                },
+                "roleId": {
+                  "type": "string"
+                },
+                "branchScope": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "const": "all"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            }
+          },
+          "awaitingOwnerApproval": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleAwaitingOwnerApproval"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/index.ts"
+      },
       "GetIdentityMeReply": {
         "type": "object",
         "required": [
@@ -133945,13 +134068,20 @@
       "GetIdentityRolesReply": {
         "type": "object",
         "required": [
-          "roles"
+          "roles",
+          "awaitingOwnerApproval"
         ],
         "properties": {
           "roles": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Role"
+            }
+          },
+          "awaitingOwnerApproval": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleAwaitingOwnerApproval"
             }
           }
         },
@@ -139028,8 +139158,8 @@
                   "required": [
                     "exceptionId",
                     "day",
-                    "limit",
                     "kind",
+                    "limit",
                     "cashierId",
                     "observed",
                     "severity",
@@ -139056,9 +139186,6 @@
                     "day": {
                       "type": "string"
                     },
-                    "limit": {
-                      "type": "number"
-                    },
                     "kind": {
                       "type": "string",
                       "enum": [
@@ -139068,6 +139195,9 @@
                         "refund",
                         "void"
                       ]
+                    },
+                    "limit": {
+                      "type": "number"
                     },
                     "cashierId": {
                       "type": "string"
@@ -163228,6 +163358,9 @@
               "requestedAt"
             ],
             "properties": {
+              "decidedByTheAccountant": {
+                "type": "string"
+              },
               "decider": {
                 "$ref": "#/components/schemas/DeciderView"
               },
@@ -163273,6 +163406,10 @@
               },
               "requestedAt": {
                 "type": "string"
+              },
+              "raisedByTheOwner": {
+                "type": "boolean",
+                "const": true
               }
             },
             "additionalProperties": true
@@ -163293,6 +163430,9 @@
               "requestedAt"
             ],
             "properties": {
+              "decidedByTheAccountant": {
+                "type": "string"
+              },
               "status": {
                 "type": "string"
               },
@@ -163335,6 +163475,10 @@
               },
               "requestedAt": {
                 "type": "string"
+              },
+              "raisedByTheOwner": {
+                "type": "boolean",
+                "const": true
               }
             },
             "additionalProperties": true
@@ -278448,9 +278592,9 @@
             "type": "object",
             "required": [
               "approvedBy",
+              "kind",
               "storeId",
               "tradingDay",
-              "kind",
               "attemptId",
               "laneId",
               "billRef",
@@ -278465,18 +278609,18 @@
               "approvedBy": {
                 "type": "string"
               },
-              "storeId": {
-                "type": "string"
-              },
-              "tradingDay": {
-                "type": "string"
-              },
               "kind": {
                 "type": "string",
                 "enum": [
                   "card",
                   "upi"
                 ]
+              },
+              "storeId": {
+                "type": "string"
+              },
+              "tradingDay": {
+                "type": "string"
               },
               "attemptId": {
                 "type": "string"
@@ -278516,9 +278660,9 @@
             "type": "object",
             "required": [
               "approvedBy",
+              "kind",
               "storeId",
               "tradingDay",
-              "kind",
               "attemptId",
               "laneId",
               "billRef",
@@ -278533,18 +278677,18 @@
               "approvedBy": {
                 "type": "string"
               },
-              "storeId": {
-                "type": "string"
-              },
-              "tradingDay": {
-                "type": "string"
-              },
               "kind": {
                 "type": "string",
                 "enum": [
                   "card",
                   "upi"
                 ]
+              },
+              "storeId": {
+                "type": "string"
+              },
+              "tradingDay": {
+                "type": "string"
               },
               "attemptId": {
                 "type": "string"
@@ -295385,6 +295529,84 @@
         },
         "additionalProperties": true
       },
+      "RoleAwaitingOwnerApproval": {
+        "type": "object",
+        "required": [
+          "roadmap",
+          "limitedBy",
+          "words",
+          "withheld",
+          "questions",
+          "id",
+          "name",
+          "permissions"
+        ],
+        "properties": {
+          "roadmap": {
+            "type": "object",
+            "required": [
+              "scope",
+              "may",
+              "mustNot"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string"
+              },
+              "may": {
+                "type": "string"
+              },
+              "mustNot": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "limitedBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "categories",
+                "locations",
+                "money limit",
+                "suppliers"
+              ]
+            }
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitingPermission"
+            }
+          },
+          "withheld": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitingPermission"
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
       "RoleReading": {
         "type": "object",
         "required": [
@@ -308954,6 +309176,22 @@
             ]
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "WaitingPermission": {
+        "type": "object",
+        "required": [
+          "permission",
+          "why"
+        ],
+        "properties": {
+          "permission": {
+            "type": "string"
+          },
+          "why": {
             "type": "string"
           }
         },

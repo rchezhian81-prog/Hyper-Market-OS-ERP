@@ -28,6 +28,7 @@ async function shop(store = new InMemoryEventStore()): Promise<{ h: ApiHarness; 
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   await h.provisionRole(A, 'u-cash', 'cashier');
+  await h.provisionRole(A, 'u-acct', 'accountant');
   return { h, store };
 }
 const setRule = async (h: ApiHarness, points: number) =>
@@ -74,7 +75,7 @@ describe('PF-09-a: a sale earns loyalty points per the owner\'s rule, and a retu
     expect(codeOf(await enrol(h, { mobile: '12345', consent: true, verifiedHow: 'seen_on_phone' }, 'e-bad'))).toBe('not_a_mobile_number');
     expect(codeOf(await enrol(h, { mobile: MOBILE, verifiedHow: 'seen_on_phone' }, 'e-noconsent'))).toBe('consent_required');
     expect(codeOf(await enrol(h, { mobile: MOBILE, consent: true }, 'e-unchecked'))).toBe('number_not_checked');
-    expect((await enrol(h, { mobile: MOBILE, consent: true, verifiedHow: 'seen_on_phone' }, 'e-cashier', 'u-cash')).status).toBe(403);
+    expect((await enrol(h, { mobile: MOBILE, consent: true, verifiedHow: 'seen_on_phone' }, 'e-accountant', 'u-acct')).status).toBe(403); // OB-560 (Round 4c): the cashier now enrols; a role without the word is refused
 
     const joined = await enrol(h, { mobile: '+91 98400-12345', consent: true, verifiedHow: 'seen_on_phone' });
     expect(joined.status).toBe(201);

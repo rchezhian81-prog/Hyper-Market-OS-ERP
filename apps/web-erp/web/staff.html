@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Staff list and shifts</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Staff list and shifts (Round 4c · M25-FR-01 · hard rule #2). A THIN CLIENT over head office's durable roster store: the
+      staff list (GET /v1/hr/workforce/roster), add or change a person and mark a leaver (POST /v1/hr/workforce/employees/:id),
+      and create a shift with the roles it needs (POST /v1/hr/workforce/shifts/:id). Rota, Staff certificates, Appointment
+      letters and the Staff schedule read this list. Its session is apps/web-erp/src/staff-session.ts. No prompt/confirm/alert.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--ok); overflow-wrap: anywhere; }
+      ul.rows > li.left { border-left-color: var(--idle); }
+      .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Staff list and shifts</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Staff list and shifts</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="list" hidden aria-labelledby="list-h">
+        <h3 id="list-h"></h3>
+        <p class="meta" id="list-lead"></p>
+        <p class="status" id="list-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="staff-rows"></ul>
+      </section>
+      <section id="add" hidden aria-labelledby="add-h">
+        <h3 id="add-h"></h3>
+        <p class="meta" id="add-lead"></p>
+        <form class="row-form" id="add-form">
+          <label for="a-id"><span id="a-id-l"></span><input id="a-id" autocomplete="off" /></label>
+          <label for="a-name"><span id="a-name-l"></span><input id="a-name" autocomplete="off" maxlength="80" /></label>
+          <label for="a-store"><span id="a-store-l"></span><input id="a-store" autocomplete="off" /></label>
+          <label for="a-roles"><span id="a-roles-l"></span><input id="a-roles" autocomplete="off" /></label>
+          <button id="a-save" type="submit"><span id="a-save-text"></span></button>
+        </form>
+        <p class="status" id="add-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="shifts" hidden aria-labelledby="shifts-h">
+        <h3 id="shifts-h"></h3>
+        <p class="meta" id="shifts-lead"></p>
+        <ul class="rows" id="shift-rows"></ul>
+        <h4 id="new-shift-h"></h4>
+        <p class="meta" id="new-shift-lead"></p>
+        <form class="row-form" id="shift-form" hidden>
+          <label for="s-store"><span id="s-store-l"></span><input id="s-store" autocomplete="off" /></label>
+          <label for="s-starts"><span id="s-starts-l"></span><input id="s-starts" type="datetime-local" /></label>
+          <label for="s-ends"><span id="s-ends-l"></span><input id="s-ends" type="datetime-local" /></label>
+          <label for="s-needs"><span id="s-needs-l"></span><input id="s-needs" autocomplete="off" /></label>
+          <button id="s-create" type="submit" class="quiet"><span id="s-create-text"></span></button>
+        </form>
+        <p class="status" id="shift-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./staff.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

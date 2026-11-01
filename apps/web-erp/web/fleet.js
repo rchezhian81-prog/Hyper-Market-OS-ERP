@@ -87,6 +87,12 @@ const ACTION_WORDS = {
     sampleChange: 'This is sample data — connect the store computer to change a real device.',
     send: 'Send now', sending: 'Sending…',
     sent: 'sent', stillWaiting: 'still waiting', couldNotSend: 'could not be sent — a person should check',
+    // Round 4c: register a till or device (the register form).
+    registerH: 'Register a till or device',
+    registerLead: 'A till nobody registered is a till nobody is accountable for. The change waits here until you press "Send now"; head office records who registered it.',
+    regId: 'Device id (for a till, its lane id)', regKind: 'Kind', regLabel: 'Name people will see', regStore: 'Store', regVersion: 'App version (optional)', regBtn: 'Register it',
+    regQueued: 'Waiting to send — press "Send now".', refMissingDetails: 'Give the device id, its kind, a name and the store.',
+    kind_pos_lane: 'Till', kind_handheld: 'Handheld', kind_scale: 'Weighing scale', kind_printer: 'Printer', kind_kiosk: 'Kiosk', kind_mobile: 'Phone',
   },
   ta: {
     reasonPrompt: 'ஒரு சிறு காரணம் தரவும் — இது இந்த மாற்றத்துடன் வைக்கப்படும்.', reasonPlaceholder: 'எ.கா. திரை உடைந்தது',
@@ -99,12 +105,17 @@ const ACTION_WORDS = {
     sampleChange: 'இது மாதிரித் தகவல் — உண்மையான சாதனத்தை மாற்ற கடை கணினியை இணைக்கவும்.',
     send: 'இப்போது அனுப்பு', sending: 'அனுப்புகிறது…',
     sent: 'அனுப்பப்பட்டது', stillWaiting: 'இன்னும் காத்திருக்கிறது', couldNotSend: 'அனுப்ப முடியவில்லை — ஒருவர் சரிபார்க்க வேண்டும்',
+    registerH: 'ஒரு கல்லா அல்லது சாதனத்தைப் பதிவு செய்',
+    registerLead: 'யாரும் பதிவு செய்யாத கல்லாவுக்கு யாரும் பொறுப்பல்ல. "இப்போது அனுப்பு" அழுத்தும் வரை மாற்றம் இங்கே காத்திருக்கும்; யார் பதிவு செய்தார் என்பதைத் தலைமை அலுவலகம் பதிவு செய்யும்.',
+    regId: 'சாதன அடையாளம் (கல்லாவுக்கு அதன் வரிசை அடையாளம்)', regKind: 'வகை', regLabel: 'மக்கள் பார்க்கும் பெயர்', regStore: 'கடை', regVersion: 'செயலிப் பதிப்பு (விருப்பம்)', regBtn: 'பதிவு செய்',
+    regQueued: 'அனுப்பக் காத்திருக்கிறது — "இப்போது அனுப்பு" அழுத்துங்கள்.', refMissingDetails: 'சாதன அடையாளம், வகை, ஒரு பெயர், கடை ஆகியவற்றைத் தாருங்கள்.',
+    kind_pos_lane: 'கல்லா', kind_handheld: 'கைக்கருவி', kind_scale: 'எடைத் தராசு', kind_printer: 'அச்சுப்பொறி', kind_kiosk: 'கியோஸ்க்', kind_mobile: 'கைபேசி',
   },
 };
 const aw = (key) => ACTION_WORDS[lang]?.[key] ?? ACTION_WORDS.en[key] ?? key;
 const REFUSAL = {
   missing_reason: 'refMissingReason', already_queued: 'refAlreadyQueued',
-  not_permitted: 'refNotPermitted', no_outbox: 'refNoOutbox',
+  not_permitted: 'refNotPermitted', no_outbox: 'refNoOutbox', missing_details: 'refMissingDetails',
 };
 
 /** The action a manager is being asked to confirm, or null when the sheet is closed. */
@@ -228,6 +239,13 @@ function paint() {
   el('send').textContent = aw('send');
   el('pending').hidden = waiting === 0 && el('deliver-msg').textContent === '';
 
+  // Round 4c: the register form — for a person who may change the fleet, on a real (not sample) session.
+  el('register').hidden = !(view.mayManage && typeof session.requestDeviceChange === 'function' && real !== undefined);
+  for (const [id, key] of [['register-h', 'registerH'], ['register-lead', 'registerLead'], ['reg-id-l', 'regId'], ['reg-kind-l', 'regKind'], ['reg-label-l', 'regLabel'], ['reg-store-l', 'regStore'], ['reg-version-l', 'regVersion'], ['reg-btn', 'regBtn']]) el(id).textContent = aw(key);
+  const kindSel = el('reg-kind'); const kindWas = kindSel.value;
+  kindSel.replaceChildren(...['pos_lane', 'handheld', 'scale', 'printer', 'kiosk', 'mobile'].map((k) => { const o = document.createElement('option'); o.value = k; o.textContent = aw(`kind_${k}`); return o; }));
+  if (kindWas !== '') kindSel.value = kindWas;
+
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
   nobody.textContent = view.nobodyNamed ? t('nobodyNamed') : '';
@@ -289,6 +307,18 @@ function paintVx() {
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; if (pendingAction !== null) closeSheet(); paint(); paintVx(); });
 el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; paint(); });
 el('sheet-confirm').addEventListener('click', confirmSheet);
+// Round 4c: register a till or device — queued in the outbox like every fleet change, sent on "Send now".
+el('register-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (typeof session.requestDeviceChange !== 'function') { el('reg-status').textContent = aw('sampleChange'); return; }
+  const version = el('reg-version').value.trim();
+  const result = session.requestDeviceChange({
+    deviceId: el('reg-id').value.trim(), change: 'register', at: new Date().toISOString(),
+    register: { branchId: el('reg-store').value.trim(), kind: el('reg-kind').value, label: el('reg-label').value.trim(), ...(version === '' ? {} : { appVersion: version }) },
+  });
+  el('reg-status').textContent = result.ok ? aw('regQueued') : aw(REFUSAL[result.reason] ?? 'refDefault');
+  if (result.ok) paint();
+});
 el('sheet-cancel').addEventListener('click', closeSheet);
 
 // The EXPLICIT delivery action (P-05 — a person sends; nothing auto-delivers). The session drains the outbox
