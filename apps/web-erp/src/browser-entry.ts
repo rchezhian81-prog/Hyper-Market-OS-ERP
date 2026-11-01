@@ -87,6 +87,7 @@ import { createCashierProductView, NAME_PRICE_BARCODE, type CashierProductView }
 import { createMonthCloseSession, MONTH_CLOSE_PERMISSION, type MonthClosePorts, type MonthCloseSession } from './month-close-session';
 import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
 import { createScaleRulesSession, scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, SCALE_VALUE_KINDS, type ScaleRulesSession } from './scale-label-rules-session';
+import { createProductSetupSession, productSetupWords, setupOutcomeWords, describeMerge, askedStatusWords, CATEGORY_REGULATED_KINDS, type ProductSetupSession } from './product-setup-session';
 import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
@@ -1354,6 +1355,8 @@ export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sa
 export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
 /** OB-570 "A": the scale-label rules panel's words and readings (tested in `scale-label-rules-session.ts`). */
 export const SCALE_RULES_KIT = Object.freeze({ scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, kinds: SCALE_VALUE_KINDS });
+/** G-1 (M03-FR-01/02/04): the Product setup tab's words and readings (tested in `product-setup-session.ts`). */
+export const PRODUCT_SETUP_KIT = Object.freeze({ productSetupWords, setupOutcomeWords, describeMerge, askedStatusWords, regulatedKinds: CATEGORY_REGULATED_KINDS });
 
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -5304,6 +5307,8 @@ interface ManagerWindow {
   competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
   scaleRulesSession?: ScaleRulesSession;
   scaleRulesKit?: typeof SCALE_RULES_KIT;
+  productSetupSession?: ProductSetupSession;
+  productSetupKit?: typeof PRODUCT_SETUP_KIT;
   /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
   supplierBillsData?: ViewerIdentity;
   supplierBillsSession?: SupplierBillsSession;
@@ -7340,6 +7345,11 @@ if (browserWindow !== undefined) {
   if (cat !== undefined) browserWindow.scaleRulesKit = SCALE_RULES_KIT;
   if (cat !== undefined && Array.isArray(cat.permissions)) {
     browserWindow.scaleRulesSession = createScaleRulesSession({ permissions: cat.permissions }, browserCompetitorHttp());
+  }
+  // G-1 (M03-FR-01/02/04): the Product setup tab — the same rule: only where head office told the page who is looking.
+  if (cat !== undefined) browserWindow.productSetupKit = PRODUCT_SETUP_KIT;
+  if (cat !== undefined && Array.isArray(cat.permissions)) {
+    browserWindow.productSetupSession = createProductSetupSession({ ...(cat.userId === undefined ? {} : { userId: cat.userId }), permissions: cat.permissions }, browserCompetitorHttp());
   }
   // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
   // no session (the page says so and offers nothing).
