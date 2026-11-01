@@ -918,6 +918,15 @@ describe('the box tells each screen about ONE trading day', () => {
     const sold = merchandisingPayload(input())!['soldProductIds'] as string[];
     expect(sold).toEqual(['p1']);
   });
+
+  it('Round 4a: tells the page the named person\'s permissions from the role register when the policy names none — so its head-office setup tabs offer only what that person may do', () => {
+    const named = fullPack({ merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler', userId: 'u-report' }) });
+    expect(merchandisingPayload(input({ pack: named }))!['permissions']).toEqual(['reporting.operations.export', 'reporting.sales.export']);
+    // A policy that names its own permissions keeps them; nobody named → no permissions at all (never a stand-in's).
+    const own = fullPack({ merchandisingPolicy: known({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'shelf-filler', userId: 'u-report', permissions: ['merchandising.range.read'] }) });
+    expect(merchandisingPayload(input({ pack: own }))!['permissions']).toEqual(['merchandising.range.read']);
+    expect(merchandisingPayload(input({ pack: fullPack({ indentsPolicy: notKnown('not pulled') }) }))!['permissions']).toBeUndefined();
+  });
 });
 
 describe('the manager\'s payload carries who runs the screen, where and which day — from the pack, never defaulted (Stage G slice 5c)', () => {

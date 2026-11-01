@@ -283,6 +283,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'certificates.js': 'apps/web-erp/src/certificates-session.ts',
     // OB-609: the Bill findings and attendance flags page's words are in its tested session model.
     'findings.js': 'apps/web-erp/src/findings-session.ts',
+    // Round 4a: the Shelves and space page's head-office setup tabs — their words are in the tested session model.
+    'merchandising-setup.js': 'apps/web-erp/src/merchandising-setup-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {
