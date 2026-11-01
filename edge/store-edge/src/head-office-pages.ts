@@ -52,6 +52,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'findings',
   // Round 4a (M03-FR-01..04 · M05-FR-01 · WF-01): the product-master and price-list pages.
   'product-details', 'product-categories', 'product-merges', 'tax-rates', 'price-lists', 'offer-results',
+  // Round 4c (people and administration): Users & roles, Audit log, Staff list and shifts, Settings and their history.
+  'users', 'audit-log', 'staff', 'settings', 'posh-committee', 'branches', 'do-not-contact', 'cert-in',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -129,6 +131,14 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'tax-rates': 'taxRatesData',
   'price-lists': 'priceListsData',
   'offer-results': 'offerResultsData',
+  users: 'usersData',
+  'audit-log': 'auditLogData',
+  staff: 'staffData',
+  settings: 'settingsData',
+  'posh-committee': 'poshCommitteeData',
+  branches: 'branchesData',
+  'do-not-contact': 'doNotContactData',
+  'cert-in': 'certInData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
@@ -172,6 +182,9 @@ export function findingsPagePayload(input: PackBranchSource): Record<string, unk
 export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
   ...Object.fromEntries(HEAD_OFFICE_PAGE_SCREENS.map((s) => [s, headOfficePagePayload])),
   findings: findingsPagePayload,
+  // Round 4c: the Staff list fills its store boxes with the box's own store (head office still keeps each write to the
+  // stores the person holds).
+  staff: findingsPagePayload,
 }) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */

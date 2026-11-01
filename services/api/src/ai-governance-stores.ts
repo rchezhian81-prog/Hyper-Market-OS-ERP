@@ -55,7 +55,12 @@ export function aiGovernanceStore(input: { readonly store: EventStore; readonly 
       return foldKillSwitches(await all<KillSwitch>(store, tenantId, s.kill, 'AIKillSwitchActivated'), await all<KillSwitchLift>(store, tenantId, s.kill, 'AIKillSwitchLifted'));
     },
     // §30.2 AIKillSwitchActivated — one fact per switch, keyed on its id (a re-sent pull collapses).
-    recordKillSwitch: (tenantId, ks) => append(store, tenantId, streams().kill, 'AIKillSwitchActivated', ks.switchId, ks.activatedAt, ks),
+    // Round 4c: built here with its own literal type and payload (the same id and key `append` gives), so the published event
+    // contract derives the switch's real payload — it is the one §30.2 AI event partners read by name.
+    recordKillSwitch: async (tenantId, ks) => {
+      const d = digest(`${tenantId}-AIKillSwitchActivated-${ks.switchId}`);
+      await store.append(tenantId, streams().kill, makeEvent({ id: `AIKillSwitchActivated-${d}`, type: 'AIKillSwitchActivated', occurredAt: ks.activatedAt, idempotencyKey: `AIKillSwitchActivated-${tenantId}-${d}`, source: 'api/ai', payload: ks }));
+    },
     recordKillSwitchLift: (tenantId, lift) => append(store, tenantId, streams().kill, 'AIKillSwitchLifted', lift.switchId, lift.liftedAt, lift),
     agentLimits: (tenantId) => all<AgentLimit>(store, tenantId, streams().limits, 'AiAgentLimitSet'),
     recordAgentLimit: (tenantId, l) => append(store, tenantId, streams().limits, 'AiAgentLimitSet', `${l.agentId}-${l.setAt}-${l.ceilingMinor}-${l.callsPerHour ?? ''}`, l.setAt, l),

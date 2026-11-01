@@ -168,6 +168,20 @@ export function authorityRulesRoutes(deps: AuthorityRulesDeps): readonly Route[]
       kind: RULE_CHANGE_KIND, subjectRef: `rule:${rule}`, details: actionDetails(ctx.body, { rule }), valueMinor: null,
       maker: ctx.userId, usedBy: `approval-rule:${rule}:${basedOn + 1}`, now: deps.now(),
     });
+    if (rule === 'limits') {
+      // OB-613 · §28: the person who approved never approves a change to the limits of a role they hold — the accountant,
+      // approving a change the owner asked for, never approves one to the accountant's own limits.
+      const deciderRoles = new Set(await deps.rolesOf(ctx.tenantId, approval.decision.decidedBy));
+      const theirs = rolesTouched(current.value as AuthorityLimits, value as AuthorityLimits).filter((r) => deciderRoles.has(r));
+      if (theirs.length > 0) {
+        throw apiError(422, {
+          code: 'approver_cannot_approve_own_limits',
+          whatHappened: `${approval.decision.decidedBy} approved this, and holds the ${theirs.join(', ')} role${theirs.length === 1 ? '' : 's'} whose limits it touches — nobody approves a change to their own approval limits (§28).`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Ask again and have it approved by someone who does not hold that role. Nothing was changed; the approval was not used.',
+        });
+      }
+    }
     await approval.spend();
     const at = deps.now();
     const words = `${reason} — approved by ${approval.decision.decidedBy}`;

@@ -358,20 +358,35 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Rota — the manager's rostering screen (M25-FR-01). Gated on the roster read (`workforce.roster.read`);
   // assigning a shift needs `workforce.roster.manage`, which the route enforces.
   { id: 'rostering', label: 'Rota', labelTa: 'பணி முறை', path: '/rostering/', requires: 'workforce.roster.read', group: 'People' },
+  // Round 4c (M25-FR-01): the Staff list and shifts — add a person or change one, mark a leaver (kept, never deleted), and
+  // create the shifts the Rota is built on. Gated on the roster read; the writes need `workforce.roster.manage` (the route
+  // enforces it). Rota, Staff certificates, Appointment letters and the Staff schedule read this list. A head-office page.
+  { id: 'staff', label: 'Staff list and shifts', labelTa: 'பணியாளர் பட்டியலும் ஷிப்டுகளும்', path: '/staff', requires: 'workforce.roster.read', group: 'People' },
   // Checklists — the day's opening, closing and hygiene checks (M25-FR-02). Gated on `workforce.checklist.read`.
   // Round 8 · OB-522 (M25-FR-03 · OB-502): staff certificates — record, verify and renew each person's certificates (food
   // handling; FoSTaC counts as the same). Gated on the certificate read (`workforce.roster.read`); recording and verifying need
   // `workforce.roster.manage`, which head office's route enforces. A head-office page, served by the store computer (OB-380).
   { id: 'certificates', label: 'Staff certificates', labelTa: 'பணியாளர் சான்றிதழ்கள்', path: '/certificates', requires: 'workforce.roster.read', group: 'People' },
   { id: 'checklist', label: 'Checklists', labelTa: 'சரிபார்ப்புப் பட்டியல்கள்', path: '/checklist/', requires: 'workforce.checklist.read', group: 'People' },
-  { id: 'users', label: 'Users & roles', labelTa: 'பயனர்களும் பங்குகளும்', path: '/admin/?tab=people', requires: 'identity.role.read', group: 'Administration' },
+  // Round 4c (M02-FR-01/02/04 · §28 · OB-615): Users & roles — who holds which role, give one and take one back (two people:
+  // one asks, the owner approves), limit a role to departments, suppliers, categories or locations, the four roles waiting
+  // for the owner, and the platform administrator's sign-ins (`platform.person.read`, OB-15-c). A head-office page served by
+  // the store computer (OB-380). Each section shows only for its own word; head office re-checks every one.
+  { id: 'users', label: 'Users & roles', labelTa: 'பயனர்களும் பங்குகளும்', path: '/users', requires: 'identity.role.read', alsoOpenedWith: ['identity.role.request', 'platform.person.read'], group: 'Administration' },
   // Round 10 (M01-FR-01 · M02-FR-03): the organisation hierarchy and approval delegation — thin clients over head office's
   // own routes. Head-office pages, served by the store computer since OB-380 (identity only; every figure is a live read).
   { id: 'organisation', label: 'Organisation', labelTa: 'அமைப்பு', path: '/organisation', requires: 'org.branch.read', group: 'Administration' },
+  // Round 4c (M01-FR-04): open, close for now, reopen or close a branch for good — head office measures the branch and
+  // names every blocker; every change but a reopen needs the owner's approval. Gated on the readiness read
+  // (`branch.transition.evaluate`); the change needs `branch.transition.execute`. A head-office page (OB-380).
+  { id: 'branches', label: 'Open and close branches', labelTa: 'கிளைகளைத் திறத்தலும் மூடுதலும்', path: '/branches', requires: 'branch.transition.evaluate', group: 'Administration' },
   { id: 'delegation', label: 'Delegation', labelTa: 'அதிகாரப் பகிர்வு', path: '/delegation', requires: 'approvals.delegation.read', group: 'Administration' },
   // Round 12 (M35-FR-02/04 · WF-20): incidents with a named owner per follow-up, the post-mortem and the close, and the
   // recovery-drill register — a head-office page over its own routes (served by the store computer since OB-380).
   { id: 'incidents', label: 'Incidents & recovery drills', labelTa: 'சம்பவங்களும் மீட்பு ஒத்திகைகளும்', path: '/incidents', requires: 'platform.health.read', group: 'Systems' },
+  // Round 4c (M35-FR-04): the CERT-In six-hour clock (classify an incident, record the report — the owner's) and the
+  // capacity report and plan. Gated on the health read; each write's route checks its own word. A head-office page.
+  { id: 'cert-in', label: 'CERT-In reports and capacity', labelTa: 'CERT-In அறிக்கைகளும் திறனும்', path: '/cert-in', requires: 'platform.health.read', group: 'Systems' },
   // Round 26 (OB-99 · OB-97 · OB-98): which store computer each till's bill numbers belong to, what needs a person, and the
   // owner-approved "store computer replaced" act — a head-office page over its own routes (served by the store computer since OB-380).
   { id: 'store-computers', label: 'Store computers', labelTa: 'கடை கணினிகள்', path: '/store-computers', requires: 'platform.health.read', group: 'Systems' },
@@ -413,6 +428,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // tie the app, and the owner's tiers and points expiry — a head-office page over its own routes (since OB-380 the store
   // computer serves it). Gated on the member read (`loyalty.points.read`); each write's route checks its own word.
   { id: 'loyalty-desk', label: 'Loyalty', labelTa: 'லாயல்டி', path: '/loyalty', requires: 'loyalty.points.read', group: 'Customers' },
+  // Round 4c (M31-FR-04): the do-not-contact list — a customer who says "never contact me" is recorded at the desk (channel,
+  // who asked, why) and lifted the same way, append-only. Gated on the list read (`notification.send.check`); the writes need
+  // `notification.suppression.manage`. A head-office page (OB-380).
+  { id: 'do-not-contact', label: 'Do not contact', labelTa: 'தொடர்பு கொள்ள வேண்டாம்', path: '/do-not-contact', requires: 'notification.send.check', group: 'Customers' },
   // OB-288 wave 3 (M21-FR-01 · M21-FR-02): plan, approve, send and follow a campaign, and switch the journeys on or off — a
   // head-office page (served by the store computer since OB-380). Gated on the campaign read (`customer.campaign.read`); each
   // write's route checks its own word (template manage, campaign send).
@@ -450,10 +469,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // permission the register route checks (`platform.setup.read`), so the menu never offers a screen the server
   // would refuse; the writes need `platform.setup.write` and the screen withholds them without it.
   { id: 'document-templates', label: 'Document templates', labelTa: 'ஆவண வார்ப்புருக்கள்', path: '/document-templates', requires: 'platform.setup.read', group: 'Administration' },
-  // OB-401 (owner, 27 Oct 2026): "Settings" opens Store setup, where the shop's settings are kept. Gated as that page is.
-  // (`?tab=settings` names no section; it only lets the rail mark this item, not Store setup, when it was the one used.)
-  { id: 'settings', label: 'Settings', labelTa: 'அமைப்புகள்', path: '/setup?tab=settings', requires: 'platform.setup.read', group: 'Administration' },
-  { id: 'audit', label: 'Audit log', labelTa: 'தணிக்கைப் பதிவு', path: '/admin/?tab=records', requires: 'audit.retention.read', group: 'Administration' },
+  // OB-401 (owner, 27 Oct 2026) pointed "Settings" at Store setup so no item was a dead end. Round 4c (screen audit
+  // 31 Oct 2026, "Settings duplicates Store setup" · M01-FR-03): Settings is now its own page — every setting's history and
+  // going back to an earlier value (a new version; a high-impact one only with the owner's approval). Store setup keeps
+  // answering the setup questions. Gated as Store setup is (`platform.setup.read`); going back needs `platform.setup.write`.
+  { id: 'settings', label: 'Settings', labelTa: 'அமைப்புகள்', path: '/settings', requires: 'platform.setup.read', group: 'Administration' },
+  // Round 4c (M34-FR-01/02): the Audit log reads head office's stored domain trail — search, check the chain, rebuild one
+  // thing from the evidence. Read only. Gated on the trail read (`audit.retention.read`). A head-office page (OB-380).
+  { id: 'audit', label: 'Audit log', labelTa: 'தணிக்கைப் பதிவு', path: '/audit-log', requires: 'audit.retention.read', group: 'Administration' },
   // Operations — the A06 incident inbox (a stuck sync queue, a growing dead-letter pile, an unwell
   // connection, each with its runbook). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A06 · API-13).
@@ -547,6 +570,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // and recording the filing. Gated on the filing permission the route checks (`posh.report.file`, the owner's). A
   // head-office page (served by the store computer since OB-380). The complaints register itself stays the committee's (OB-157).
   { id: 'posh-report', label: 'Committee annual report', labelTa: 'குழு ஆண்டு அறிக்கை', path: '/posh-report', requires: 'posh.report.file', group: 'People' },
+  // Round 4c (C20 · OB-157): the Internal Committee's OWN page — make the year's report from its register and read it back
+  // (counts only). Gated on the committee's word (`posh.report.generate`), so only the committee's role sees it; the owner
+  // records the filing on his page above. A head-office page (OB-380).
+  { id: 'posh-committee', label: 'Committee: make the annual report', labelTa: 'குழு: ஆண்டு அறிக்கை தயாரி', path: '/posh-committee', requires: 'posh.report.generate', group: 'People' },
   // R3 lane 2 · A17 · OB-145 "A": the accountant's GSTR-2B review — upload the month's file, see every line matched with
   // the books and the exceptions, accept / reject / keep pending each line. Gated on the read the review route checks
   // (`finance.itc.read`). A head-office page (served by the store computer since OB-380).

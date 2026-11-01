@@ -641,3 +641,8 @@ body.sre-shell .sre-drawer { animation: sre-drawer-in var(--dur-slow) var(--ease
 body.sre-shell .sre-page { min-width: 0; }
 body.sre-shell main { min-width: 0; max-width: 100%; }
 body.sre-shell main :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* Round 4c · Sign out (behind the hosted front): a full-size target like every other control (44 × 44, WCAG 2.5.8). */
+.sre-sign-out { min-height: 44px; min-width: 44px; padding: 0 14px; font: inherit; font-size: 14px; cursor: pointer;
+  border: 1px solid var(--line, currentColor); border-radius: 8px; background: transparent; color: inherit; }
+.sre-sign-out:focus-visible { outline: 3px solid var(--focus, currentColor); outline-offset: 2px; }

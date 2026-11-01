@@ -25,7 +25,28 @@ const REGENERATE = 'UPDATE_API_CONTRACTS=1 pnpm exec vitest run tests/guardrails
  * hidden (P-08): when code first builds one, its payload is derived and it must leave this list; a new event no code
  * builds must be added here on purpose.
  */
-const NOT_PUBLISHED_YET = ['ReconciliationExceptionResolved', 'RefundCompleted', 'RefundFailed', 'TenderAuthorized', 'TenderSettled', 'TenderUncertain'];
+// Round 4c (re-audit O-1): the rest of §30.2 joined the contract by the roadmap's names; those no code builds under that
+// exact name yet are listed here (the fact is kept today under another event type on its own stream).
+const NOT_PUBLISHED_YET = [
+  'AIRecommendationCreated', 'BackupFailed', 'BackupVerified', 'BatchQuarantined', 'BatchRecalled', 'ConsentGranted', 'ConsentWithdrawn',
+  'GoodsRejected', 'InventoryCounted', 'InventoryReleased', 'InventoryReserved', 'LoyaltyEarned', 'LoyaltyRedeemed', 'LoyaltyReversed',
+  'OrderAllocated', 'OrderCancelled', 'OrderDelivered', 'OrderPicked', 'OrderReturned', 'PriceActivated', 'PriceRolledBack', 'ProductApproved',
+  'PurchaseOrderApproved', 'ReconciliationExceptionResolved', 'RefundCompleted', 'RefundFailed', 'SecurityIncidentRaised',
+  'SupplierInvoiceException', 'SupplierInvoiceMatched', 'SyncDelayed', 'SyncRecovered', 'TenderAuthorized', 'TenderSettled', 'TenderUncertain',
+];
+
+/** Round 4c (re-audit O-1): every roadmap §30.2 core business event, by the roadmap's own names (each slash group spelled out). */
+const ROADMAP_30_2 = [
+  'ProductApproved', 'ProductPublished', 'PriceActivated', 'PriceRolledBack', 'PromotionActivated', 'PromotionStopped',
+  'PurchaseOrderApproved', 'GoodsReceived', 'GoodsRejected', 'SupplierInvoiceMatched', 'SupplierInvoiceException',
+  'InventoryMoved', 'InventoryReserved', 'InventoryReleased', 'InventoryAdjusted', 'InventoryCounted', 'BatchQuarantined', 'BatchRecalled',
+  'SaleCommitted', 'TenderAuthorized', 'TenderUncertain', 'TenderSettled', 'ReturnAccepted', 'RefundCompleted', 'RefundFailed',
+  'OrderPlaced', 'OrderAllocated', 'OrderPicked', 'OrderPacked', 'OrderDispatched', 'OrderDelivered', 'OrderCancelled', 'OrderReturned',
+  'ConsentGranted', 'ConsentWithdrawn', 'LoyaltyEarned', 'LoyaltyRedeemed', 'LoyaltyReversed',
+  'PeriodClosed', 'PeriodReopened', 'ReconciliationExceptionRaised', 'ReconciliationExceptionResolved',
+  'SyncDelayed', 'SyncRecovered', 'BackupVerified', 'BackupFailed', 'SecurityIncidentRaised',
+  'AIRecommendationCreated', 'AIRecommendationApproved', 'AIRecommendationRejected', 'AIToolCallBlocked', 'AIKillSwitchActivated',
+];
 
 const routes = servedRoutes();
 const bodies = derivedContract(routes);
@@ -144,6 +165,8 @@ describe('the OpenAPI document is the router (M32-FR-01)', () => {
 describe('the AsyncAPI document is the event contract (M32-FR-01 · §30.2)', () => {
   it('has a channel for every §30.2 event and a signed-webhook channel for every event published to partners', () => {
     for (const t of KNOWN_EVENT_TYPES) expect(asyncapi.channels[`events.${t}`], t).toBeDefined();
+    // Round 4c (re-audit O-1): the whole §30.2 list is in the contract, not only the events Store-Core first named.
+    for (const t of ROADMAP_30_2) expect(asyncapi.channels[`events.${t}`], `§30.2 ${t}`).toBeDefined();
     for (const t of Object.keys(PUBLISHED_TO_PARTNERS)) expect(asyncapi.channels[`webhooks.${t}`], t).toBeDefined();
     expect(Object.keys(asyncapi.channels).length).toBe(KNOWN_EVENT_TYPES.length + Object.keys(PUBLISHED_TO_PARTNERS).length);
     for (const r of new Set(refsOf(asyncapi))) expect(resolve(asyncapi, r), r).toBeDefined();

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Do not contact</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Do not contact (Round 4c · M31-FR-04). A THIN CLIENT over head office's suppression register: the list and its history
+      (GET /v1/notifications/suppressions), add a customer (POST /v1/notifications/suppressions/:customerId) and lift one
+      (POST …/:customerId/lift) — append-only, the earlier entry kept. Its session is apps/web-erp/src/do-not-contact-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--degraded); overflow-wrap: anywhere; }
+      ul.history > li { border-left-color: var(--idle); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Do not contact</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Do not contact</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="add" hidden aria-labelledby="add-h">
+        <h3 id="add-h"></h3>
+        <form class="row-form" id="add-form">
+          <label for="a-customer"><span id="a-customer-l"></span><input id="a-customer" autocomplete="off" /></label>
+          <label for="a-channel"><span id="a-channel-l"></span><select id="a-channel"></select></label>
+          <label for="a-source"><span id="a-source-l"></span><select id="a-source"></select></label>
+          <label for="a-reason"><span id="a-reason-l"></span><input id="a-reason" autocomplete="off" maxlength="500" /></label>
+          <button id="a-add" type="submit"><span id="a-add-text"></span></button>
+        </form>
+        <p class="status" id="add-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="list" hidden aria-labelledby="list-h">
+        <h3 id="list-h"></h3>
+        <p class="status" id="list-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="rows"></ul>
+        <h4 id="history-h"></h4>
+        <ul class="rows history" id="history"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./do-not-contact.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

@@ -3282,6 +3282,8 @@ export function approvalRequestsAdapter(input: { readonly store: EventStore; rea
   return {
     now: input.now,
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    // OB-613: whether the asker is the owner, and whether a decider is the accountant — the live grants, now.
+    rolesOfUser: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
     recordRequest: async (tenantId, request) => {
       await input.store.append(tenantId, APPROVAL_REQUESTS, makeEvent({
         id: `approval-request-${request.requestId}`, type: 'ApprovalRequested', occurredAt: request.requestedAt,

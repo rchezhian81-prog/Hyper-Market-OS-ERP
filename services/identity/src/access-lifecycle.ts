@@ -31,6 +31,7 @@ import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-
 import { dutiesSetRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
 import { ownerAndCommitteeRefusal, OWNER_ON_COMMITTEE_REFUSAL_CODE } from './committee-membership';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
+import { awaitingApprovalRefusal, type RoleAwaitingOwnerApproval } from './roles-awaiting-approval';
 import {
   applyLifecycle, SelfServiceAccessError,
   type LifecycleEvent, type AccessGrant, type LifecycleRequest, type LifecycleApproval, type OwnedItem, type LifecycleResult,
@@ -141,6 +142,8 @@ export interface AccessLifecycleDeps {
   /** Head office's maker-checker engine (ADR-0024): the approver approved this change in their own session. Optional
    *  on a bare stub (then every approval is unknown, and nothing changes); the running system provides it. */
   readonly approvals?: ApprovalPort;
+  /** OB-615: roles the owner has not approved yet — never a joiner's or a mover's target. */
+  readonly rolesAwaitingOwnerApproval?: readonly RoleAwaitingOwnerApproval[];
 }
 
 /** The route's answer: the engine's decision plus what was actually done about it. */
@@ -189,6 +192,11 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
         const userId = b['userId'] as string;
         // Who asks is the signed-in caller — a body naming anyone else is refused by name (audit PA-03).
         requireActorIsCaller(ctx, b, 'requestedBy');
+        // OB-615: a role the owner has not approved yet is nobody's target — refused by name, as at the grant route.
+        for (const g of grants) {
+          const waiting = awaitingApprovalRefusal(g.roleId, deps.rolesAwaitingOwnerApproval);
+          if (waiting !== undefined) throw waiting;
+        }
         // OB-54: a store computer's grant names its one store, through a lifecycle change as through the grant route.
         for (const g of grants) {
           const unbound = storeComputerGrantRefusal(g.roleId, g.branchScope);

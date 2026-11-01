@@ -11,6 +11,7 @@
 
 import type { Role } from '../../../packages/rbac/src/rbac';
 import { PLATFORM_ADMIN_ROLE_ID } from '../../identity/src/separation-of-duties';
+import type { RoleAwaitingOwnerApproval, WaitingPermission } from '../../identity/src/roles-awaiting-approval';
 
 /**
  * Which role carries the owner's authority.
@@ -239,6 +240,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
       'org.structure.approve', 'platform.config.approve', 'identity.access.review',
       // ── OB-288 lane 1 · P1 — end
+      // ── Round 4c · OB-613 — begin: held ONLY so the owner may grant the accountant role (no-escalation rule). He never
+      // approves with them: they count only for a request HE raised, and only from a holder of the accountant role.
+      'org.structure.ownerrequest.approve', 'store.computer.replace.ownerrequest.approve', 'approvals.rules.ownerrequest.approve',
+      // ── Round 4c · OB-613 — end
       // ── OB-288 P4 (multi-tenant SaaS and rollout) — begin
       // M36-FR-01 · OB-321: read the shop's usage meter (for information). M36-FR-03: APPROVE the shop's account closure the IT
       // administrator asked for (never his own). C8 · OB-324: export the consent record and import a consent manager's.
@@ -737,6 +742,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'loyalty.coupon.redeem', 'loyalty.coupon.read',
+      // ── Round 4c · OB-560 (owner, 31 Oct 2026, option A) — begin: the cashier enrols a customer at the till's counter (the
+      // Loyalty page: the customer's own consent, their number checked on their own phone). Enrolling grants no points,
+      // no price and no money; leaving the programme stays the customer's own choice, recorded by the same word.
+      'loyalty.member.enrol',
+      // ── Round 4c · OB-560 — end
       // M19-FR-01 / Item 2: the service desk works the customer-service exception queue (a short-picked line —
       // the customer got less than they ordered). Which queues a role staffs is decided in
       // services/orders/src/exception-ownership.ts; this only opens the door, and never to reassign or sweep.
@@ -876,6 +886,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // OWNER himself makes. Only that kind: anyone else's below-floor quotation still needs the owner (`price.change.approve`).
       'pos.quotation.belowfloor.ownerquote.approve',
       // ── R11-A · OB-602 — end
+      // ── Round 4c · OB-613 (owner, 31 Oct 2026) — begin: the accountant is the second approver when the OWNER himself asks
+      // to change the business structure, move a till's bill numbers to a replacement store computer, or change an
+      // approval rule (never a change to the accountant's own limits). Only those owner-raised requests: anyone else's
+      // still needs the owner.
+      'org.structure.ownerrequest.approve', 'store.computer.replace.ownerrequest.approve', 'approvals.rules.ownerrequest.approve',
+      // ── Round 4c · OB-613 — end
     ],
   },
   {
@@ -1100,3 +1116,111 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
 ];
+
+// ── Round 4c · OB-615 (owner, 31 Oct 2026, in writing) — begin ───────────────────────────────────────────────────────
+// The four roadmap §28 roles for buying and stock, defined with exactly the roadmap's scope, MAY and MUST NOT, and NOT
+// LIVE: the owner sees each role's permissions on the Users & roles page and approves them in writing before anybody may
+// hold one. Until then the grant routes refuse them by name (services/identity/src/roles-awaiting-approval.ts). Going
+// live is a reviewed code change: the approved role moves from this list into ROLE_CATALOGUE above.
+//
+// Every word here is one a route already checks; nothing new is invented. The words every member of staff holds for
+// themselves (their own sign-in, their own payslip and rota) are the first two of each role.
+
+const selfService: readonly WaitingPermission[] = [
+  { permission: 'identity.self.read', why: 'Sign in and see what they themselves may do.' },
+  { permission: 'payroll.ess.self', why: 'See their own payslip and their own rota — the same as every member of staff.' },
+];
+
+const waitingRole = (r: Omit<RoleAwaitingOwnerApproval, 'permissions'>): RoleAwaitingOwnerApproval =>
+  Object.freeze({ ...r, permissions: Object.freeze(r.words.map((w) => w.permission)) });
+
+export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[] = Object.freeze([
+  waitingRole({
+    id: 'purchase_user', name: 'Purchase user',
+    roadmap: { scope: 'Assigned suppliers/categories', may: 'Requisition/RFQ/PO draft', mustNot: 'Cannot receive, match and pay same transaction' },
+    limitedBy: ['suppliers', 'categories'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores, to say which store an order is for.' },
+      { permission: 'catalogue.pack.read', why: 'See the products, to put them on a requisition or a draft order.' },
+      { permission: 'supplier.view', why: 'See the supplier list, to choose who to ask.' },
+      { permission: 'purchase.commitment.read', why: 'See the requisitions, the quotes side by side, and the orders already placed (read only).' },
+      { permission: 'purchase.order.propose', why: 'Raise a requisition, record a supplier\'s quote (RFQ) and draft a purchase order — every draft still needs a Purchase approver.' },
+    ],
+    withheld: [
+      { permission: 'purchase.order.approve', why: 'Approving an order is the Purchase approver\'s.' },
+      { permission: 'purchase.order.receive', why: 'MUST NOT receive the same order — receiving is the Receiver/QC\'s.' },
+      { permission: 'purchase.invoice.capture', why: 'MUST NOT match the same order — entering a supplier bill is kept apart.' },
+      { permission: 'purchase.invoice.match', why: 'MUST NOT match the same order — matching a bill is Finance\'s.' },
+      { permission: 'purchase.supplier.pay', why: 'MUST NOT pay the same order — paying a supplier is Finance\'s.' },
+    ],
+    questions: ['M06-FR-01 also names the purchase user as the person who ASKS for a new supplier (purchase.supplier.manage). §28 does not list it. Add it, or leave it with the store manager?'],
+  }),
+  waitingRole({
+    id: 'purchase_approver', name: 'Purchase approver',
+    roadmap: { scope: 'Configured limits', may: 'PO/contract/rate approval', mustNot: 'Cannot approve own supplier/bank creation' },
+    limitedBy: ['money limit'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores an order is for.' },
+      { permission: 'catalogue.pack.read', why: 'See the products on an order before approving it.' },
+      { permission: 'supplier.view', why: 'See the supplier an order or contract is with.' },
+      { permission: 'purchase.commitment.read', why: 'See the orders, quotes, contracts and what is already committed (read only).' },
+      { permission: 'purchase.order.approve', why: 'Approve, issue or cancel a purchase order (and a standing order) — up to the money limit the owner sets for this role on the Approval rules page; until he sets one it is "not set" and approves no money.' },
+      { permission: 'purchase.supplier.approve', why: 'Approve a supplier contract and its rates, a new supplier and a change of where a supplier is paid — never one they created or asked for themselves (head office refuses that by name).' },
+    ],
+    withheld: [
+      { permission: 'purchase.order.propose', why: 'Drafting the order is the Purchase user\'s: one person drafts, another approves.' },
+      { permission: 'purchase.supplier.manage', why: 'MUST NOT approve their own supplier creation — so they do not create suppliers.' },
+      { permission: 'purchase.supplier.bank', why: 'MUST NOT approve their own bank change — so they do not enter bank details.' },
+      { permission: 'purchase.supplier.pay', why: 'Paying is Finance\'s, not the approver\'s.' },
+    ],
+    questions: ['purchase.supplier.approve is also the word that approves supplier rebate schemes and claims, a supplier\'s display funding and a supplier\'s promotion funding (today the accountant and the owner). §28 says "PO/contract/rate approval". Keep the word (the approver also approves those), or leave it out (orders only; contracts stay with the accountant and the owner)?'],
+  }),
+  waitingRole({
+    id: 'receiver_qc', name: 'Receiver / QC',
+    roadmap: { scope: 'Assigned locations', may: 'Receive/count/QC/quarantine', mustNot: 'Cannot change PO price or approve supplier payment' },
+    limitedBy: ['locations'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores and their receiving places.' },
+      { permission: 'catalogue.pack.read', why: 'See the products arriving.' },
+      { permission: 'supplier.view', why: 'See who the delivery is from.' },
+      { permission: 'purchase.commitment.read', why: 'See the order a delivery is against and the deliveries still due (read only — no price is changed here).' },
+      { permission: 'purchase.order.receive', why: 'Record the goods received against a purchase order.' },
+      { permission: 'inventory.dsd.checkin', why: 'Check in a direct delivery at the door (no cash is paid).' },
+      { permission: 'inventory.goodsreceipt.read', why: 'Open the goods-receipt list.' },
+      { permission: 'inventory.availability.read', why: 'See stock and the count sheets.' },
+      { permission: 'inventory.movement.append', why: 'Enter a count on a count sheet. (The same word records stock moves; a difference above the limit still waits for a second person.)' },
+      { permission: 'quality.hold.manage', why: 'Put a batch in quarantine and record the quality samples taken from it.' },
+      { permission: 'quality.coldchain.assess', why: 'Check the cold chain of a chilled or frozen delivery.' },
+      { permission: 'quality.lottrace.read', why: 'Trace which batches came in on which delivery.' },
+    ],
+    withheld: [
+      { permission: 'purchase.order.propose', why: 'MUST NOT change an order\'s price — amending an order is the Purchase user\'s.' },
+      { permission: 'purchase.order.approve', why: 'MUST NOT change an order\'s price — approving an order is the Purchase approver\'s.' },
+      { permission: 'purchase.supplier.pay', why: 'MUST NOT approve a supplier payment.' },
+      { permission: 'purchase.invoice.match', why: 'Matching the bill to what was received is Finance\'s — never the person who received it.' },
+      { permission: 'inventory.adjustment.approve', why: 'A count difference is approved by another person, never the counter.' },
+    ],
+    questions: ['§28 says "quarantine". Releasing a batch FROM quarantine for sale (quality.hold.release) is not said. Add it to the Receiver/QC, or leave release with the store manager?'],
+  }),
+  waitingRole({
+    id: 'warehouse_user', name: 'Warehouse user',
+    roadmap: { scope: 'Assigned locations', may: 'Put-away/pick/transfer/count', mustNot: 'Cannot self-approve material variances' },
+    limitedBy: ['locations'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores and their warehouse places.' },
+      { permission: 'catalogue.pack.read', why: 'See the products being moved.' },
+      { permission: 'inventory.availability.read', why: 'See the bins, the put-away suggestions, the transfers and the count sheets.' },
+      { permission: 'inventory.movement.append', why: 'Put away, pick, send and receive a transfer between stores, and enter a count — on the warehouse handheld or the office page.' },
+    ],
+    withheld: [
+      { permission: 'inventory.adjustment.approve', why: 'MUST NOT self-approve a material variance: a count difference or a transfer shortfall is approved by another person.' },
+      { permission: 'inventory.count.plan', why: 'Planning a count and naming the cause of a difference is the store manager\'s.' },
+    ],
+    questions: [],
+  }),
+]);
+// ── Round 4c · OB-615 — end
