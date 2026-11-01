@@ -8,7 +8,8 @@ import { SyncOutbox } from '../../packages/sync/src/index';
 // the plain barcode as ONE base unit (1 ml, or 1 g for a kg product). OB-302 settles the rule: a weight is never keyed,
 // the item is weighed on a verified scale and the scale's label is scanned (the self-checkout lane already refuses it).
 // So the till refuses a measured product read from a code that carries no amount, by name, in English and Tamil, and
-// adds nothing. A scale label (weight inside the code) still rings exactly; a packed item sold `ea` scans as one.
+// adds nothing. OB-570 (owner, 31 Oct 2026): a kg / g product is refused the same way. A scale label (weight inside the
+// code) still rings exactly; a packed item sold `ea` scans as one.
 // Synthetic data only.
 
 const AT = '2026-10-31T06:00:00Z';
@@ -57,11 +58,19 @@ describe('a measured item scanned by its plain barcode is not rung as one gram o
     expect(view.payableMinor()).toBe(0);
   });
 
-  it('a kg product on a lane with a current scale stamp is NOT refused by this rule: it keeps the lane scale path (scan, then weigh)', () => {
+  it('OB-570: a kg product on a lane with a current scale stamp is refused the same way (it rang 0.001 kg), with the scale-label words', () => {
     const view = lane();
-    let thrown: unknown;
-    try { view.scanBarcode('8900000000123'); } catch (e) { thrown = e; }
-    expect(thrown).not.toBeInstanceOf(MeasuredItemNeedsLabelError);
+    const e = refused(() => view.scanBarcode('8900000000123'));
+    expect(e.reason).toBe('measured_item_plain_barcode');
+    expect(e.laneMessage).toContain('Ponni rice (loose) is sold by weight (kg)');
+    expect(e.laneMessage).toContain("scan the scale's label");
+    expect(e.laneMessage).toContain('A weight is never typed in');
+    expect(e.laneMessageTa).toContain('தராசின் லேபிளை ஸ்கேன் செய்யவும்');
+    expect(view.basket()).toHaveLength(0);
+    expect(view.payableMinor()).toBe(0);
+    // Its scale label still rings: 2 | 000123 | 01500 | C → 1.500 kg at ₹68/kg = ₹102.00.
+    expect(view.scanBarcode('2000123015003').qty).toBe(1500);
+    expect(view.payableMinor()).toBe(102_00);
   });
 
   it("the scale's label (weight inside the code) still rings exactly; a 1 L pouch sold by the piece scans as one", () => {
