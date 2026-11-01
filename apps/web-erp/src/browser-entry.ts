@@ -94,6 +94,7 @@ import { createScaleRulesSession, scaleRuleWords, describeScaleRule, scaleRuleOu
 import { createTaxRatesSession, taxRateWords, gstLine, cessLine, requestLine, taxOutcomeWords, NEEDS_FINANCE_APPROVAL, type TaxRatesSession } from './tax-rates-session';
 import { createOrgDepartmentsSession, orgDeptWords, requestLine as departmentRequestLine, reportLines as departmentReportLines, orgDeptOutcomeWords, type OrgDepartmentsSession } from './org-departments-session';
 import { createProductSetupSession, productSetupWords, setupOutcomeWords, describeMerge, askedStatusWords, CATEGORY_REGULATED_KINDS, type ProductSetupSession } from './product-setup-session';
+import { createPriceListSession, figuresFromPageData, priceListWords, priceListOutcomeWords, needsSecondPerson, entryWords, inForceWords, zonesOf, switchSubjectWords, rupeesOf as priceListRupees, paiseOf as priceListPaise, PRICE_SCOPES, PRICE_CHANNELS, type PriceListSession } from './price-lists-session'; // M05-FR-01
 import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
@@ -1369,6 +1370,8 @@ export const TAX_RATES_KIT = Object.freeze({ taxRateWords, gstLine, cessLine, re
 export const ORG_DEPARTMENTS_KIT = Object.freeze({ orgDeptWords, requestLine: departmentRequestLine, reportLines: departmentReportLines, orgDeptOutcomeWords });
 /** G-1 (M03-FR-01/02/04): the Product setup tab's words and readings (tested in `product-setup-session.ts`). */
 export const PRODUCT_SETUP_KIT = Object.freeze({ productSetupWords, setupOutcomeWords, describeMerge, askedStatusWords, regulatedKinds: CATEGORY_REGULATED_KINDS });
+/** M05-FR-01: the Price lists panel's words and readings (tested in `price-lists-session.ts`). */
+export const PRICE_LISTS_KIT = Object.freeze({ priceListWords, priceListOutcomeWords, needsSecondPerson, entryWords, inForceWords, zonesOf, switchSubjectWords, rupees: priceListRupees, paiseOf: priceListPaise, scopes: PRICE_SCOPES, channels: PRICE_CHANNELS });
 
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -5328,6 +5331,9 @@ interface ManagerWindow {
   orgDepartmentsKit?: typeof ORG_DEPARTMENTS_KIT;
   productSetupSession?: ProductSetupSession;
   productSetupKit?: typeof PRODUCT_SETUP_KIT;
+  /** M05-FR-01: the Price lists panel on the catalogue page, over head office's own price-list, zone and channel routes. */
+  priceListSession?: PriceListSession;
+  priceListKit?: typeof PRICE_LISTS_KIT;
   /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
   supplierBillsData?: ViewerIdentity;
   supplierBillsSession?: SupplierBillsSession;
@@ -7383,10 +7389,20 @@ if (browserWindow !== undefined) {
   if (cat !== undefined) browserWindow.taxRatesKit = TAX_RATES_KIT;
   if (cat !== undefined && Array.isArray(cat.permissions)) {
     browserWindow.taxRatesSession = createTaxRatesSession({ permissions: cat.permissions }, browserCompetitorHttp());
+  }
   // G-1 (M03-FR-01/02/04): the Product setup tab — the same rule: only where head office told the page who is looking.
   if (cat !== undefined) browserWindow.productSetupKit = PRODUCT_SETUP_KIT;
   if (cat !== undefined && Array.isArray(cat.permissions)) {
     browserWindow.productSetupSession = createProductSetupSession({ ...(cat.userId === undefined ? {} : { userId: cat.userId }), permissions: cat.permissions }, browserCompetitorHttp());
+  }
+  // M05-FR-01: the Price lists panel — the same rule: only where head office told the page who is looking. The MRP, cost and
+  // floor an entry is judged by are the page's own (the ones "Change a price" sends); a second person goes through the
+  // same approval engine (kind price_list_entry).
+  if (cat !== undefined) browserWindow.priceListKit = PRICE_LISTS_KIT;
+  if (cat !== undefined && Array.isArray(cat.permissions)) {
+    browserWindow.priceListSession = createPriceListSession({
+      permissions: cat.permissions, ...(cat.userId === undefined ? {} : { userId: cat.userId }), ...(cat.storeId === undefined ? {} : { storeId: cat.storeId }),
+    }, browserCompetitorHttp(), figuresFromPageData(cat), CATALOGUE_APPROVALS);
   }
   // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
   // no session (the page says so and offers nothing).

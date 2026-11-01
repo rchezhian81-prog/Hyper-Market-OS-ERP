@@ -94,7 +94,7 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     makerPermission: 'price.change.propose', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
   },
   price_list_entry: {
-    kind: 'price_list_entry', label: 'Add a price-list entry below cost or below the margin floor',
+    kind: 'price_list_entry', label: 'Add a price-list entry by more than the set size, or below cost or the margin floor',
     makerPermission: 'price.change.propose', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
   },
   promotion_launch: {
