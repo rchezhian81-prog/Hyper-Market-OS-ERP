@@ -15,7 +15,7 @@
 // products into the signed catalogue pack (`buildSnapshot`) so they reach the lanes is the deliberate
 // next slice — it rewires the working pack-build and is kept separate on purpose.
 
-import type { Route } from '../../kernel/src/index';
+import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
@@ -95,7 +95,15 @@ export interface ProductMasterDeps {
    * Append a published product master (latest-per-id). Idempotent on the caller's key. With `skuVersion` (from `skuHolder`),
    * the append lands only while the SKU's write guard is still at that version — otherwise `ConcurrencyConflictError`.
    */
-  readonly publish: (tenantId: string, record: ProductRecord, key: string, skuVersion?: number) => Promise<void> | void;
+  readonly publish: (tenantId: string, record: ProductRecord, key: string, skuVersion?: number, alsoGuard?: { readonly key: string; readonly expectedVersion: number }) => Promise<void> | void;
+  /**
+   * Owner 2A (1 Nov 2026, in writing): the product's version — how many versions of it head office has published (1 after
+   * the first publish; 0 for a product never published). Read beside the record, never stored in it. Absent (a bare
+   * composition): reads carry no version and the safety save is refused (it cannot tell whether it is overwriting).
+   */
+  readonly productVersion?: (tenantId: string, productId: string) => Promise<number> | number;
+  /** Owner 2A: the version of the safety save's write guard (`product-safety:<productId>`), read before the version. */
+  readonly safetyGuardVersion?: (tenantId: string, productId: string) => Promise<number> | number;
   /**
    * GT-05 store volume: which OTHER product holds `sku` now, read by key — not the whole master — with the version of the
    * SKU's write guard, read first. Absent (a bare fake): the route scans `products`.
@@ -123,6 +131,368 @@ const LIFECYCLES: readonly ProductLifecycle[] = ['draft', 'new', 'active', 'clea
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const strOrNull = (v: unknown): string | null => (v === null ? null : typeof v === 'string' ? v : '');
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * E1b · M03-FR-03 → M12-FR-04 (P-08): a minimum age the till cannot read is not a restriction — refused HERE, on the publish
+ * and on the safety save alike.
+ */
+function refuseUnreadableMinimumAge(safety: unknown): void {
+  // A minimum age the till cannot read is not a restriction. Refuse it HERE rather than publish a product that
+  // VALIDATES as age-restricted yet reaches the lane unflagged (E1b · M03-FR-03 → M12-FR-04, P-08): the pack
+  // carries `safety.minimumAge` as `regulatedFlags.minimumAge`, and only a positive whole number of years travels.
+  const minimumAge = isObj(safety) ? safety['minimumAge'] : undefined;
+  if (minimumAge !== undefined && !(typeof minimumAge === 'number' && Number.isInteger(minimumAge) && minimumAge > 0)) {
+    throw apiError(400, {
+      code: 'not_readable_as_a_product',
+      whatHappened: `The minimum age to buy this product must be a whole number of years (for example 18 or 21); it arrived as ${JSON.stringify(minimumAge)}, and a till cannot prompt on an age it cannot read.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Send safety.minimumAge as a whole number of years, or leave it out for a product that is not age-restricted. Nothing was saved.',
+    });
+  }
+}
+
+/** What a product save asks head office to judge and keep (the full publish and the owner-2A safety save). */
+interface ProductSave {
+  readonly productId: string;
+  /** The record as asked: the publish body read into a record, or head office's record with only its safety replaced. */
+  readonly read: ProductRecord;
+  /** Head office's record now (undefined: never published). */
+  readonly current: ProductRecord | undefined;
+  /** categories[], mrpReplacement, approvalId, approvedBy — whichever the route reads. */
+  readonly body: Record<string, unknown>;
+  /** The version's idempotency key on the product stream. */
+  readonly key: string;
+  /**
+   * Called before each write attempt (owner 2A safety save): re-checks the version, throws a 409 by name when it moved,
+   * and returns the write guard the append must hold. Absent on the full publish.
+   */
+  readonly beforeWrite?: () => Promise<{ readonly key: string; readonly expectedVersion: number }>;
+}
+
+/**
+ * The ONE set of rules every product save runs (API-02 · M03-FR-01/03): carry-forwards, head office's categories, liquor
+ * and medicine refused, B2/OB-512 MRP, OB-347 tax class, variants, the tested compliance gate (allergens, OB-307
+ * nutrition), B16 tobacco warning, OB-503 second person, GT-05 SKU uniqueness, the audit — then the write. Shared by the
+ * full publish and the owner-2A safety save so a rule can never be on one door and missing from the other.
+ */
+// No declared return type: the reply's literal type is what the OpenAPI document derives the publish's 201 schema from.
+async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: ProductSave) {
+  const { productId, read, current } = c;
+  const b = c.body;
+  // D01-FR-06 (round 8): the app content is authored on its own route; a publish of the record keeps what is there.
+  // B16 (OB-140 "A"): the tobacco-warning confirmations are authored on their own route by a named person and are
+  // carried forward here — never taken from the body, so a publish cannot type a confirmation in.
+  const carried: ProductRecord = current?.tobaccoWarning === undefined ? read : { ...read, tobaccoWarning: current.tobaccoWarning };
+  const record: ProductRecord = current?.appContent === undefined ? carried : { ...carried, appContent: current.appContent };
+  // The categories are head office's OWN list (SF-06-b · OB-24 "A") — never the sender's. An expected category that
+  // differs from the list is refused; a missing one is defined only by someone who may define categories, and said.
+  const { categories, defined } = await settlePublishCategories(deps.categoryRegister, ctx, b['categories']);
+  // B17 (TASMAC · OWNER_DECISIONS D3): liquor is NOT SOLD — refused by name before anything else is judged, so nobody
+  // fixes a field on a product that can never be published. Flag, category or HSN; never the product's name.
+  const category = categories.find((c) => c.categoryId === record.primaryCategoryId);
+  const liquor = liquorReason({ declaredLiquor: record.safety?.liquor === true, categoryKinds: category?.regulated ?? [], hsn: record.taxClass });
+  if (liquor !== undefined) {
+    throw apiError(422, {
+      code: 'liquor_not_sold',
+      whatHappened: `${LIQUOR_NOT_SOLD} "${record.name}" cannot be published: ${liquor}.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Do not list it. If it is a non-alcoholic drink, correct its HSN (non-alcoholic beer is 2202) and take the liquor mark off. Nothing was saved.',
+    });
+  }
+  // B18 (OB-310: "sell no medicines; category stays blocked"): a medicine is refused the same way — mark, a `drug`
+  // (pharmacy/prescription) category or HSN 3003/3004; never the product's name.
+  const medicine = medicineReason({ declaredMedicine: record.safety?.medicine === true, categoryKinds: category?.regulated ?? [], hsn: record.taxClass });
+  if (medicine !== undefined) {
+    throw apiError(422, {
+      code: 'medicine_not_sold',
+      whatHappened: `${MEDICINE_NOT_SOLD} "${record.name}" cannot be published: ${medicine}.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Do not list it. If it is not a medicine (a balm, a cosmetic, a bandage), correct its HSN and category and take the medicine mark off. Nothing was saved.',
+    });
+  }
+  // B2 (roadmap v2.1, Legal Metrology): a pack carries ONE MRP at a time. The MRP history is effective-dated and never
+  // overwritten (hard rule #2), so the MRPs head office already holds for this product are judged TOGETHER with the
+  // ones sent: a second, different MRP taking effect on a date that already has one is refused at commit, by name —
+  // whether the screen sent both, or sent only the new one. A later-dated MRP is a normal price move and passes.
+  // OB-512 (owner, 28 Oct 2026): an MRP head office holds that is NOT YET IN FORCE (its date is after the shop's today) may be
+  // REPLACED — the body names it (`mrpReplacement: { effectiveFrom, reason }`) and a second person approved exactly this
+  // record through the maker-checker engine (kind `mrp_replacement`). Both versions stay on record (`mrpReplacements`,
+  // and the product's earlier version on its stream). An MRP already in force, or any clash not approved this way, is
+  // still refused by name below (B2).
+  const today = shopDateIn(deps.now?.() ?? new Date().toISOString()); // R1c: the shop's date
+  const held = current?.mrpHistory ?? [];
+  const sent = record.mrpHistory ?? [];
+  const asked = readMrpReplacement(b['mrpReplacement']);
+  if (asked === 'invalid') {
+    throw apiError(400, {
+      code: 'not_readable_as_an_mrp_replacement',
+      whatHappened: 'Replacing an MRP needs mrpReplacement: { effectiveFrom: YYYY-MM-DD (the date of the MRP on record being replaced), reason (at least 10 characters) }.',
+      wasItSaved: 'not_saved', nextSafeAction: 'Send the date and the reason, with the approvalId of the second person\'s approval. Nothing was saved.',
+    });
+  }
+  // OB-347: a draft never published, or a first class on a product that had none, is not a tax-class change and needs no
+  // approval (judged with the approval further down).
+  const fromClass = typeof current?.taxClass === 'string' && current.taxClass.trim() !== '' ? current.taxClass.trim() : undefined;
+  const toClass = typeof record.taxClass === 'string' ? record.taxClass.trim() : '';
+  const classChange = current !== undefined && current.lifecycle !== 'draft' && fromClass !== undefined && fromClass !== toClass
+    ? { from: fromClass, to: toClass } : undefined;
+  // OB-503: one publish names ONE approval (`approvalId`). A publish that would newly put an age-restricted or regulated
+  // product on the tills AND change its tax class or replace an MRP needs two different second-person checks — said
+  // plainly here, so the person does them one after the other instead of meeting a puzzling approval refusal.
+  const likelyGained = regulationGained(current, { ...record, lifecycle: record.lifecycle === 'draft' ? 'new' : record.lifecycle });
+  if (likelyGained.length > 0 && (classChange !== undefined || asked !== undefined)) {
+    throw apiError(422, {
+      code: 'one_second_person_check_per_publish',
+      whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(likelyGained)} AND ${classChange !== undefined ? 'a new tax class' : 'a replaced MRP'} in the same publish. Each needs its own second person's approval, and one publish carries one approval.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: `Publish the ${classChange !== undefined ? 'tax class change' : 'MRP replacement'} first (with its own approval), then publish the age-restricted or regulated details with a second person's approval. Nothing was saved.`,
+    });
+  }
+  let mrpApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
+  let replacement: MrpReplacement | undefined;
+  if (asked !== undefined) {
+    const was = held.find((h) => h.effectiveFrom === asked.effectiveFrom);
+    const now = sent.find((s) => s.effectiveFrom === asked.effectiveFrom);
+    if (was === undefined || now === undefined || Number(now.value?.minor) === Number(was.value?.minor)) {
+      throw apiError(422, {
+        code: 'no_mrp_to_replace',
+        whatHappened: `There is no MRP on record for ${asked.effectiveFrom} that this publish changes — an MRP replacement names the date of an MRP head office holds and sends the new MRP for that same date.`,
+        wasItSaved: 'not_saved', nextSafeAction: 'Check the date of the MRP being replaced and send the new MRP for it. Nothing was saved.',
+      });
+    }
+    if (asked.effectiveFrom <= today) {
+      throw apiError(422, {
+        code: 'mrp_already_in_force',
+        whatHappened: `The MRP of ${rupeesOf(Number(was.value.minor))} for "${record.name}" took effect on ${asked.effectiveFrom} — it is already in force (today is ${today}), so it cannot be replaced; only an MRP not yet in force can (OB-512).`,
+        wasItSaved: 'not_saved', nextSafeAction: 'Give the new MRP its own later date (a normal price move). Nothing was saved.',
+      });
+    }
+    mrpApproval = await approvalNamedIn(deps.approvals, {
+      tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+      kind: 'mrp_replacement', subjectRef: `product:${productId}:mrp:${asked.effectiveFrom}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
+      maker: ctx.userId, usedBy: `mrp-replacement:${productId}:${asked.effectiveFrom}`, now: deps.now?.() ?? new Date().toISOString(),
+    });
+    if (mrpApproval === undefined) {
+      throw apiError(422, {
+        code: 'mrp_replacement_needs_approval',
+        whatHappened: `Replacing the MRP of ${rupeesOf(Number(was.value.minor))} for ${asked.effectiveFrom} with ${rupeesOf(Number(now.value.minor))} needs a second person's approval of exactly this record (OB-512).`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind mrp_replacement, subjectRef product:${productId}:mrp:${asked.effectiveFrom}, with exactly this product record and reason); once a second person who approves catalogue changes (the accountant or the owner) approves it, send it again with the approvalId. Nothing was changed.`,
+      });
+    }
+    replacement = {
+      effectiveFrom: asked.effectiveFrom, replaced: was.value, replacedBy: now.value, reason: asked.reason,
+      requestedBy: ctx.userId, approvedBy: mrpApproval.decision.decidedBy, approvalId: mrpApproval.decision.requestId, at: deps.now?.() ?? new Date().toISOString(),
+    };
+  }
+  const dual = dualMrpConflict([...held.filter((h) => h.effectiveFrom !== replacement?.effectiveFrom), ...sent]);
+  if (dual !== undefined) {
+    const notYet = dual.conflict !== undefined && dual.conflict.effectiveFrom > today && held.some((h) => h.effectiveFrom === dual.conflict!.effectiveFrom);
+    throw apiError(422, {
+      code: 'dual_mrp_rejected',
+      whatHappened: `"${record.name}" cannot be published: ${dualMrpMessage(dual)}.${notYet ? ` The MRP on record for ${dual.conflict!.effectiveFrom} is not yet in force, so it may be REPLACED with a reason and a second person's approval (OB-512).` : ''}`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: notYet
+        ? `Keep the MRP on record, give the new one a later date — or replace it: ask for approval (kind mrp_replacement, subjectRef product:${productId}:mrp:${dual.conflict!.effectiveFrom}) and publish again with mrpReplacement { effectiveFrom: "${dual.conflict!.effectiveFrom}", reason } and the approvalId. Nothing was saved.`
+        : 'Keep the MRP already on record for that date, or give the new MRP the date it really takes effect from (a later date), and publish again. Nothing was saved.',
+    });
+  }
+  // OB-512 · B2 (an MRP is never overwritten): head office's HELD history is the truth. A publish may only ADD MRPs with new
+  // dates; an MRP on record that the publish leaves out, or sends with another figure, is refused by name — otherwise
+  // dropping an MRP in one publish and sending a different one for its date in the next would change it with no reason,
+  // no approval and no record. The only way to change one is the approved replacement above (not yet in force).
+  const notKept = mrpNotKept(held, sent, replacement?.effectiveFrom);
+  if (notKept !== undefined) {
+    const { entry, sentInstead } = notKept;
+    const date = String(entry?.effectiveFrom ?? '');
+    const notYetInForce = date > today;
+    throw apiError(409, {
+      code: 'mrp_on_record_not_kept',
+      whatHappened: `"${record.name}" cannot be published: head office holds an MRP of ${rupeesOf(Number(entry?.value?.minor))} taking effect on ${date}, and this publish ${sentInstead === undefined ? 'leaves it out' : `sends ${rupeesOf(Number(sentInstead.value?.minor))} for that date instead`}. An MRP on record is never removed or changed by a publish (B2) — a publish may only add an MRP with a new date.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: notYetInForce
+        ? `Send the MRPs exactly as head office holds them (read them with GET /v1/catalogue/products/${productId}). The MRP for ${date} is not yet in force, so it may be REPLACED with a reason and a second person's approval: ask for approval (kind mrp_replacement, subjectRef product:${productId}:mrp:${date}) and publish again with mrpReplacement { effectiveFrom: "${date}", reason } and the approvalId. Nothing was saved.`
+        : `Send the MRPs exactly as head office holds them (read them with GET /v1/catalogue/products/${productId}). The MRP for ${date} is already in force (today is ${today}) and stays on record; to move the price, add a new MRP with its own later date. Nothing was saved.`,
+    });
+  }
+  // OB-512: every replacement ever made is carried forward from head office's record (append-only), never from a body.
+  const replacements = [...(current?.mrpReplacements ?? []), ...(replacement === undefined ? [] : [replacement])];
+  const toPublish: ProductRecord = replacements.length === 0 ? record : { ...record, mrpReplacements: replacements };
+  // OB-347 (owner, 24 Oct 2026, in writing): a PUBLISHED product's tax (HSN) class changes only with a Finance approver's
+  // approval of exactly this record — the accountant or the owner, never the person asking (kind `hsn_class_change`).
+  let hsnApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
+  if (classChange !== undefined) {
+    hsnApproval = deps.approvals === undefined ? undefined : await approvalNamedIn(deps.approvals, {
+      tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+      kind: 'hsn_class_change', subjectRef: `product:${productId}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
+      maker: ctx.userId, usedBy: `hsn-class:${productId}:${classChange.from}->${classChange.to}`, now: (deps.now?.() ?? new Date().toISOString()),
+    });
+    if (hsnApproval === undefined) {
+      throw apiError(422, {
+        code: 'tax_class_change_needs_finance_approval',
+        whatHappened: `"${record.name}" is published under tax class ${classChange.from}; moving it to ${classChange.to === '' ? 'no tax class' : classChange.to} changes the GST every till charges on it, so a Finance approver (the accountant or the owner) approves it first — never the person asking (OB-347).`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind hsn_class_change, subjectRef product:${productId}, with exactly this product record); once a Finance approver approves it, send it again with the approvalId. Nothing was changed.`,
+      });
+    }
+  }
+  // M03-FR-01 (OB-288 P2): a variant names a one-level parent head office holds and differs from its siblings.
+  if ((record.parentProductId ?? '').trim() !== '') {
+    const variant = checkVariant(record, await deps.products(ctx.tenantId));
+    if (!variant.ok) {
+      throw apiError(422, {
+        code: variant.refusal!, whatHappened: `The product cannot be published as it stands: ${variant.detail}.`, wasItSaved: 'not_saved',
+        nextSafeAction: 'Correct parentProductId (or the attributes that make this variant different) and publish again. Nothing was saved.',
+      });
+    }
+  }
+  // The per-product compliance gate — the SAME tested rule the screen ran, re-run here because a
+  // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax
+  // class, MRP/UOM, and a regulated item's safety content (allergen/country-of-origin/min-age).
+  let published: ProductRecord;
+  let activationRefused: ReturnType<typeof warningStanding> | undefined;
+  try {
+    published = publishProduct(toPublish, categories); // draft → 'new' on first publish
+  } catch (err) {
+    if (err instanceof NotPublishableError) {
+      throw apiError(422, {
+        code: 'product_not_publishable',
+        // The blocking reasons in plain English — the person fixing it is not a programmer.
+        whatHappened: `The product cannot be published: ${err.issues.map((i) => i.message).join('; ')}.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Fix the blocking fields named above and publish again — nothing was saved and the catalogue is unchanged.',
+      });
+    }
+    if (err instanceof CategoryNotFoundError) {
+      throw apiError(422, {
+        code: 'unknown_category',
+        whatHappened: `The product's category "${err.categoryId}" is not among the categories supplied — a product sits in exactly one place in the hierarchy.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Include the product’s category in categories[], or correct primaryCategoryId.',
+      });
+    }
+    throw err;
+  }
+  // B16 (COTPA s.7 · OB-140 "A"): a tobacco product is ACTIVATED only with a named person's confirmation that its packs
+  // carry the health-warning picture in force today. Without one, a product sent as a draft is kept as a draft (not on
+  // sale, never in the pack); one sent to be sold now is refused. There is no override.
+  if (isTobacco(published) && SELLING.includes(published.lifecycle)) {
+    const standing = warningStanding(published.tobaccoWarning, shopDateIn(deps.now?.() ?? new Date().toISOString())); // R1c: in force in the shop today
+    if (!standing.sellable) {
+      if (read.lifecycle !== 'draft') {
+        throw apiError(422, {
+          code: 'tobacco_warning_not_confirmed',
+          whatHappened: `This tobacco product cannot be put on sale: ${standing.detail}.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Save it as a draft, have the person who checked the packs confirm the warning picture (POST /v1/catalogue/products/:productId/tobacco-warning-confirmation), then publish it again. Nothing was saved.',
+        });
+      }
+      published = { ...published, lifecycle: 'draft' };
+      activationRefused = standing;
+    }
+  }
+  // OB-503 (owner, in writing: "only risky new products need a second person before reaching the tills"): a product that
+  // reaches the tills from this publish carrying an age limit or a regulated marker head office has not already put
+  // there — a new age-restricted/regulated product, or one newly made so — needs a second person's approval of exactly
+  // this record through the maker-checker engine (kind `regulated_product_publish`; the checker approves catalogue
+  // changes, `catalogue.tax.approve`: the accountant or the owner — never the maker), on top of the publisher's fresh
+  // second-factor sign-in at pack publish (ADR-0013 point 4). An ordinary product is published by one person.
+  const gained = regulationGained(current, published);
+  let regulatedApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
+  if (gained.length > 0) {
+    regulatedApproval = await approvalNamedIn(deps.approvals, {
+      tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+      kind: 'regulated_product_publish', subjectRef: `product:${productId}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
+      maker: ctx.userId, usedBy: `regulated-product:${productId}:${gained.join(',')}`, now: deps.now?.() ?? new Date().toISOString(),
+    });
+    if (regulatedApproval === undefined) {
+      throw apiError(422, {
+        code: 'regulated_product_needs_second_person',
+        whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(gained)}. An age-restricted or tobacco product needs a second person to approve it before it goes on sale — never the person publishing it (OB-503).`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind regulated_product_publish, subjectRef product:${productId}, with exactly this product record); once a second person who approves catalogue changes (the accountant or the owner) approves it, send it again with the approvalId. Nothing was saved.`,
+      });
+    }
+  }
+  // The one re-check a single device CANNOT do (ADR-0013 control 9): SKU uniqueness across the WHOLE
+  // tenant. Each device validates the product it holds, but two devices authoring offline each believe
+  // their SKU is free — only here, where every product master lives, can a collision be seen. A SKU
+  // already held by a DIFFERENT product is refused; re-publishing the SAME product (same id) under its
+  // own SKU is not a clash. (Barcodes are enforced one-code-one-item on the barcode route.)
+  // GT-05: the SKU's holder is read by key (not the whole master), with its guard's version; a publish that loses the
+  // guard to a simultaneous one re-reads and is judged again — two products can never both take one SKU.
+  for (let attempt = 0; ; attempt += 1) {
+    const held = deps.skuHolder === undefined ? undefined : await deps.skuHolder(ctx.tenantId, published.sku, published.productId);
+    const clash = held === undefined
+      ? (await deps.products(ctx.tenantId)).find((p) => p.sku === published.sku && p.productId !== published.productId)?.productId
+      : held.holder;
+    if (clash !== undefined) {
+      throw apiError(409, {
+        code: 'sku_already_in_use',
+        whatHappened: `The SKU "${published.sku}" already belongs to product "${clash}" — one SKU names exactly one product, so this publish would make a barcode or shelf label ambiguous.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Give this product its own SKU, or correct the id if this is the same product under a different code — nothing was saved and the catalogue is unchanged.',
+      });
+    }
+    try {
+      // Owner 2A: a safety save re-checks the version it was opened at and names its own write guard, on EVERY attempt and
+      // BEFORE any approval is spent — refused 409 by name when someone else saved the product meanwhile.
+      const guard = await c.beforeWrite?.();
+      // OB-347: the Finance approval is spent once, after every rule passed and before the record is written.
+      if (attempt === 0) await hsnApproval?.spend();
+      if (attempt === 0) await mrpApproval?.spend(); // OB-512: spent once, after every rule passed, before the write
+      if (attempt === 0) await regulatedApproval?.spend(); // OB-503: spent once, after every rule passed, before the write
+      await deps.publish(ctx.tenantId, published, c.key, held?.version, guard);
+    } catch (err) {
+      if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
+      if (err instanceof ConcurrencyConflictError) {
+        throw apiError(409, { code: 'sku_changed_meanwhile', whatHappened: `The SKU "${published.sku}" kept changing while this product was being saved.`, wasItSaved: 'not_saved', nextSafeAction: 'Read the product master and publish again. Nothing was saved.' });
+      }
+      throw err;
+    }
+    if (replacement !== undefined) {
+      await deps.recordAudit?.(ctx.tenantId, {
+        actorId: ctx.userId, action: 'catalogue.product.mrp.replace', objectType: 'product', objectId: productId,
+        at: replacement.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+        before: { effectiveFrom: replacement.effectiveFrom, mrpMinor: String(replacement.replaced.minor) },
+        after: { effectiveFrom: replacement.effectiveFrom, mrpMinor: String(replacement.replacedBy.minor), approvedBy: replacement.approvedBy },
+        reason: replacement.reason, approvalId: replacement.approvalId, correlationId: `mrp-replacement:${productId}:${replacement.effectiveFrom}`,
+      });
+    }
+    if (regulatedApproval !== undefined) {
+      await deps.recordAudit?.(ctx.tenantId, {
+        actorId: ctx.userId, action: 'catalogue.product.regulated.publish', objectType: 'product', objectId: productId,
+        at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+        before: { regulated: '' }, after: { regulated: gained.join(','), approvedBy: regulatedApproval.decision.decidedBy },
+        approvalId: regulatedApproval.decision.requestId, correlationId: `regulated-product:${productId}:${gained.join(',')}`,
+      });
+    }
+    if (classChange !== undefined && hsnApproval !== undefined) {
+      await deps.recordAudit?.(ctx.tenantId, {
+        actorId: ctx.userId, action: 'catalogue.product.tax_class.change', objectType: 'product', objectId: productId,
+        at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+        before: { taxClass: classChange.from }, after: { taxClass: classChange.to, approvedBy: hsnApproval.decision.decidedBy },
+        approvalId: hsnApproval.decision.requestId, correlationId: `hsn-class:${productId}:${classChange.from}->${classChange.to}`,
+      });
+    }
+    return {
+      status: 201 as const,
+      body: {
+        product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}),
+        ...(classChange === undefined || hsnApproval === undefined ? {} : { taxClassChange: { from: classChange.from, to: classChange.to, approvedBy: hsnApproval.decision.decidedBy } }),
+        ...(replacement === undefined ? {} : { mrpReplacement: replacement }), // OB-512
+        ...(regulatedApproval === undefined ? {} : { regulatedApproval: { regulated: gained, approvedBy: regulatedApproval.decision.decidedBy, approvalId: regulatedApproval.decision.requestId } }), // OB-503
+        // B16: said, never silent — the product is saved as a draft and is NOT on sale until its warning is confirmed.
+        ...(activationRefused === undefined || activationRefused.sellable ? {} : {
+          activation: {
+            refused: true, because: 'tobacco_warning_not_confirmed', standing: activationRefused.reason, detail: activationRefused.detail,
+            nextSafeAction: 'A named person confirms the packs carry the warning picture in force, then publish it again to put it on sale.',
+          },
+        }),
+      },
+    };
+  }
+}
 
 /** Build a ProductRecord from the request body — coerce the shape, and let the ENGINE judge completeness
  * (an empty name/SKU/category/HSN becomes a blocks_publish issue, not a 400 here). */
@@ -171,331 +541,77 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             nextSafeAction: 'Send { product: {...} } with the product id in the URL (categories[] optional: the categories you expect head office to hold).',
           });
         }
-        // A minimum age the till cannot read is not a restriction. Refuse it HERE rather than publish a product that
-        // VALIDATES as age-restricted yet reaches the lane unflagged (E1b · M03-FR-03 → M12-FR-04, P-08): the pack
-        // carries `safety.minimumAge` as `regulatedFlags.minimumAge`, and only a positive whole number of years travels.
-        const safety = b['product']['safety'];
-        const minimumAge = isObj(safety) ? safety['minimumAge'] : undefined;
-        if (minimumAge !== undefined && !(typeof minimumAge === 'number' && Number.isInteger(minimumAge) && minimumAge > 0)) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_product',
-            whatHappened: `The minimum age to buy this product must be a whole number of years (for example 18 or 21); it arrived as ${JSON.stringify(minimumAge)}, and a till cannot prompt on an age it cannot read.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send safety.minimumAge as a whole number of years, or leave it out for a product that is not age-restricted. Nothing was saved.',
-          });
-        }
+        refuseUnreadableMinimumAge(b['product']['safety']);
         const read = readProduct(productId, ctx.tenantId, b['product']);
-        // D01-FR-06 (round 8): the app content is authored on its own route; a publish of the record keeps what is there.
         const current = await deps.product(ctx.tenantId, productId);
-        // B16 (OB-140 "A"): the tobacco-warning confirmations are authored on their own route by a named person and are
-        // carried forward here — never taken from the body, so a publish cannot type a confirmation in.
-        const carried: ProductRecord = current?.tobaccoWarning === undefined ? read : { ...read, tobaccoWarning: current.tobaccoWarning };
-        const record: ProductRecord = current?.appContent === undefined ? carried : { ...carried, appContent: current.appContent };
-        // The categories are head office's OWN list (SF-06-b · OB-24 "A") — never the sender's. An expected category that
-        // differs from the list is refused; a missing one is defined only by someone who may define categories, and said.
-        const { categories, defined } = await settlePublishCategories(deps.categoryRegister, ctx, b['categories']);
-        // B17 (TASMAC · OWNER_DECISIONS D3): liquor is NOT SOLD — refused by name before anything else is judged, so nobody
-        // fixes a field on a product that can never be published. Flag, category or HSN; never the product's name.
-        const category = categories.find((c) => c.categoryId === record.primaryCategoryId);
-        const liquor = liquorReason({ declaredLiquor: record.safety?.liquor === true, categoryKinds: category?.regulated ?? [], hsn: record.taxClass });
-        if (liquor !== undefined) {
-          throw apiError(422, {
-            code: 'liquor_not_sold',
-            whatHappened: `${LIQUOR_NOT_SOLD} "${record.name}" cannot be published: ${liquor}.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Do not list it. If it is a non-alcoholic drink, correct its HSN (non-alcoholic beer is 2202) and take the liquor mark off. Nothing was saved.',
-          });
+        return judgeAndSave(deps, ctx, { productId, read, current, body: b, key: ctx.idempotencyKey ?? productId });
+      },
+    },
+    {
+      // Owner decision 2A (1 Nov 2026, in writing · M03-FR-03 · hard rule 10): a published product's safety and label facts —
+      // ingredients, allergens, nutrition, country of origin, storage conditions, net quantity, packer, consumer care and the
+      // other `safety` fields the publish reads — are changed through THIS save, never a full re-publish that could silently
+      // overwrite someone else's change. The body names the version the person opened (`expectedVersion`, from
+      // GET /v1/catalogue/products/:productId); a different version now held → 409 product_changed_meanwhile, nothing
+      // written. Otherwise the new record is head office's record with ONLY `safety` replaced (the object sent is the whole
+      // safety content: a field left out is cleared), judged by exactly the publish's rules (`judgeAndSave`). A reason is
+      // required and kept on the audit trail. Concurrent safety saves on one product are serialised by the write guard
+      // `product-safety:<productId>`, and the version is re-checked inside it. The remaining window: a FULL publish racing
+      // within the same millisecond does not hold this guard, so it can still land between the re-check and the append.
+      api: 'API-02', method: 'POST', path: '/v1/catalogue/products/:productId/safety',
+      permission: 'catalogue.pack.publish', idempotent: true,
+      handler: async (ctx) => {
+        const productId = (ctx.params['productId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const expectedVersion = b['expectedVersion'];
+        const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+        const problems: string[] = [];
+        if (productId === '') problems.push('the product id is missing from the address');
+        if (!(typeof expectedVersion === 'number' && Number.isInteger(expectedVersion) && expectedVersion > 0)) problems.push('expectedVersion must be the version of the product you opened (a whole number, 1 or more)');
+        if (!isObj(b['safety'])) problems.push('safety must be the product\'s safety and label facts, as one object');
+        if (reason === '') problems.push('a reason is needed — the next person reads why the safety facts changed');
+        if (problems.length > 0) {
+          throw apiError(400, { code: 'not_readable_as_a_safety_save', whatHappened: `The safety facts were not saved: ${problems.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct it and send again. Nothing was changed.' });
         }
-        // B18 (OB-310: "sell no medicines; category stays blocked"): a medicine is refused the same way — mark, a `drug`
-        // (pharmacy/prescription) category or HSN 3003/3004; never the product's name.
-        const medicine = medicineReason({ declaredMedicine: record.safety?.medicine === true, categoryKinds: category?.regulated ?? [], hsn: record.taxClass });
-        if (medicine !== undefined) {
-          throw apiError(422, {
-            code: 'medicine_not_sold',
-            whatHappened: `${MEDICINE_NOT_SOLD} "${record.name}" cannot be published: ${medicine}.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Do not list it. If it is not a medicine (a balm, a cosmetic, a bandage), correct its HSN and category and take the medicine mark off. Nothing was saved.',
-          });
+        const expected = expectedVersion as number;
+        refuseUnreadableMinimumAge(b['safety']);
+        const versionOf = deps.productVersion;
+        const guardOf = deps.safetyGuardVersion;
+        if (versionOf === undefined || guardOf === undefined) {
+          throw apiError(503, { code: 'safety_save_unavailable', whatHappened: 'Head office cannot tell which version of this product it holds here, so it cannot make sure nobody else\'s change is overwritten.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was saved.' });
         }
-        // B2 (roadmap v2.1, Legal Metrology): a pack carries ONE MRP at a time. The MRP history is effective-dated and never
-        // overwritten (hard rule #2), so the MRPs head office already holds for this product are judged TOGETHER with the
-        // ones sent: a second, different MRP taking effect on a date that already has one is refused at commit, by name —
-        // whether the screen sent both, or sent only the new one. A later-dated MRP is a normal price move and passes.
-        // OB-512 (owner, 28 Oct 2026): an MRP head office holds that is NOT YET IN FORCE (its date is after the shop's today) may be
-        // REPLACED — the body names it (`mrpReplacement: { effectiveFrom, reason }`) and a second person approved exactly this
-        // record through the maker-checker engine (kind `mrp_replacement`). Both versions stay on record (`mrpReplacements`,
-        // and the product's earlier version on its stream). An MRP already in force, or any clash not approved this way, is
-        // still refused by name below (B2).
-        const today = shopDateIn(deps.now?.() ?? new Date().toISOString()); // R1c: the shop's date
-        const held = current?.mrpHistory ?? [];
-        const sent = record.mrpHistory ?? [];
-        const asked = readMrpReplacement(b['mrpReplacement']);
-        if (asked === 'invalid') {
-          throw apiError(400, {
-            code: 'not_readable_as_an_mrp_replacement',
-            whatHappened: 'Replacing an MRP needs mrpReplacement: { effectiveFrom: YYYY-MM-DD (the date of the MRP on record being replaced), reason (at least 10 characters) }.',
-            wasItSaved: 'not_saved', nextSafeAction: 'Send the date and the reason, with the approvalId of the second person\'s approval. Nothing was saved.',
-          });
-        }
-        // OB-347: a draft never published, or a first class on a product that had none, is not a tax-class change and needs no
-        // approval (judged with the approval further down).
-        const fromClass = typeof current?.taxClass === 'string' && current.taxClass.trim() !== '' ? current.taxClass.trim() : undefined;
-        const toClass = typeof record.taxClass === 'string' ? record.taxClass.trim() : '';
-        const classChange = current !== undefined && current.lifecycle !== 'draft' && fromClass !== undefined && fromClass !== toClass
-          ? { from: fromClass, to: toClass } : undefined;
-        // OB-503: one publish names ONE approval (`approvalId`). A publish that would newly put an age-restricted or regulated
-        // product on the tills AND change its tax class or replace an MRP needs two different second-person checks — said
-        // plainly here, so the person does them one after the other instead of meeting a puzzling approval refusal.
-        const likelyGained = regulationGained(current, { ...record, lifecycle: record.lifecycle === 'draft' ? 'new' : record.lifecycle });
-        if (likelyGained.length > 0 && (classChange !== undefined || asked !== undefined)) {
-          throw apiError(422, {
-            code: 'one_second_person_check_per_publish',
-            whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(likelyGained)} AND ${classChange !== undefined ? 'a new tax class' : 'a replaced MRP'} in the same publish. Each needs its own second person's approval, and one publish carries one approval.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: `Publish the ${classChange !== undefined ? 'tax class change' : 'MRP replacement'} first (with its own approval), then publish the age-restricted or regulated details with a second person's approval. Nothing was saved.`,
-          });
-        }
-        let mrpApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
-        let replacement: MrpReplacement | undefined;
-        if (asked !== undefined) {
-          const was = held.find((h) => h.effectiveFrom === asked.effectiveFrom);
-          const now = sent.find((s) => s.effectiveFrom === asked.effectiveFrom);
-          if (was === undefined || now === undefined || Number(now.value?.minor) === Number(was.value?.minor)) {
-            throw apiError(422, {
-              code: 'no_mrp_to_replace',
-              whatHappened: `There is no MRP on record for ${asked.effectiveFrom} that this publish changes — an MRP replacement names the date of an MRP head office holds and sends the new MRP for that same date.`,
-              wasItSaved: 'not_saved', nextSafeAction: 'Check the date of the MRP being replaced and send the new MRP for it. Nothing was saved.',
-            });
-          }
-          if (asked.effectiveFrom <= today) {
-            throw apiError(422, {
-              code: 'mrp_already_in_force',
-              whatHappened: `The MRP of ${rupeesOf(Number(was.value.minor))} for "${record.name}" took effect on ${asked.effectiveFrom} — it is already in force (today is ${today}), so it cannot be replaced; only an MRP not yet in force can (OB-512).`,
-              wasItSaved: 'not_saved', nextSafeAction: 'Give the new MRP its own later date (a normal price move). Nothing was saved.',
-            });
-          }
-          mrpApproval = await approvalNamedIn(deps.approvals, {
-            tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
-            kind: 'mrp_replacement', subjectRef: `product:${productId}:mrp:${asked.effectiveFrom}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
-            maker: ctx.userId, usedBy: `mrp-replacement:${productId}:${asked.effectiveFrom}`, now: deps.now?.() ?? new Date().toISOString(),
-          });
-          if (mrpApproval === undefined) {
-            throw apiError(422, {
-              code: 'mrp_replacement_needs_approval',
-              whatHappened: `Replacing the MRP of ${rupeesOf(Number(was.value.minor))} for ${asked.effectiveFrom} with ${rupeesOf(Number(now.value.minor))} needs a second person's approval of exactly this record (OB-512).`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind mrp_replacement, subjectRef product:${productId}:mrp:${asked.effectiveFrom}, with exactly this product record and reason); once a second person who approves catalogue changes (the accountant or the owner) approves it, send it again with the approvalId. Nothing was changed.`,
-            });
-          }
-          replacement = {
-            effectiveFrom: asked.effectiveFrom, replaced: was.value, replacedBy: now.value, reason: asked.reason,
-            requestedBy: ctx.userId, approvedBy: mrpApproval.decision.decidedBy, approvalId: mrpApproval.decision.requestId, at: deps.now?.() ?? new Date().toISOString(),
-          };
-        }
-        const dual = dualMrpConflict([...held.filter((h) => h.effectiveFrom !== replacement?.effectiveFrom), ...sent]);
-        if (dual !== undefined) {
-          const notYet = dual.conflict !== undefined && dual.conflict.effectiveFrom > today && held.some((h) => h.effectiveFrom === dual.conflict!.effectiveFrom);
-          throw apiError(422, {
-            code: 'dual_mrp_rejected',
-            whatHappened: `"${record.name}" cannot be published: ${dualMrpMessage(dual)}.${notYet ? ` The MRP on record for ${dual.conflict!.effectiveFrom} is not yet in force, so it may be REPLACED with a reason and a second person's approval (OB-512).` : ''}`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: notYet
-              ? `Keep the MRP on record, give the new one a later date — or replace it: ask for approval (kind mrp_replacement, subjectRef product:${productId}:mrp:${dual.conflict!.effectiveFrom}) and publish again with mrpReplacement { effectiveFrom: "${dual.conflict!.effectiveFrom}", reason } and the approvalId. Nothing was saved.`
-              : 'Keep the MRP already on record for that date, or give the new MRP the date it really takes effect from (a later date), and publish again. Nothing was saved.',
-          });
-        }
-        // OB-512 · B2 (an MRP is never overwritten): head office's HELD history is the truth. A publish may only ADD MRPs with new
-        // dates; an MRP on record that the publish leaves out, or sends with another figure, is refused by name — otherwise
-        // dropping an MRP in one publish and sending a different one for its date in the next would change it with no reason,
-        // no approval and no record. The only way to change one is the approved replacement above (not yet in force).
-        const notKept = mrpNotKept(held, sent, replacement?.effectiveFrom);
-        if (notKept !== undefined) {
-          const { entry, sentInstead } = notKept;
-          const date = String(entry?.effectiveFrom ?? '');
-          const notYetInForce = date > today;
-          throw apiError(409, {
-            code: 'mrp_on_record_not_kept',
-            whatHappened: `"${record.name}" cannot be published: head office holds an MRP of ${rupeesOf(Number(entry?.value?.minor))} taking effect on ${date}, and this publish ${sentInstead === undefined ? 'leaves it out' : `sends ${rupeesOf(Number(sentInstead.value?.minor))} for that date instead`}. An MRP on record is never removed or changed by a publish (B2) — a publish may only add an MRP with a new date.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: notYetInForce
-              ? `Send the MRPs exactly as head office holds them (read them with GET /v1/catalogue/products/${productId}). The MRP for ${date} is not yet in force, so it may be REPLACED with a reason and a second person's approval: ask for approval (kind mrp_replacement, subjectRef product:${productId}:mrp:${date}) and publish again with mrpReplacement { effectiveFrom: "${date}", reason } and the approvalId. Nothing was saved.`
-              : `Send the MRPs exactly as head office holds them (read them with GET /v1/catalogue/products/${productId}). The MRP for ${date} is already in force (today is ${today}) and stays on record; to move the price, add a new MRP with its own later date. Nothing was saved.`,
-          });
-        }
-        // OB-512: every replacement ever made is carried forward from head office's record (append-only), never from a body.
-        const replacements = [...(current?.mrpReplacements ?? []), ...(replacement === undefined ? [] : [replacement])];
-        const toPublish: ProductRecord = replacements.length === 0 ? record : { ...record, mrpReplacements: replacements };
-        // OB-347 (owner, 24 Oct 2026, in writing): a PUBLISHED product's tax (HSN) class changes only with a Finance approver's
-        // approval of exactly this record — the accountant or the owner, never the person asking (kind `hsn_class_change`).
-        let hsnApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
-        if (classChange !== undefined) {
-          hsnApproval = deps.approvals === undefined ? undefined : await approvalNamedIn(deps.approvals, {
-            tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
-            kind: 'hsn_class_change', subjectRef: `product:${productId}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
-            maker: ctx.userId, usedBy: `hsn-class:${productId}:${classChange.from}->${classChange.to}`, now: (deps.now?.() ?? new Date().toISOString()),
-          });
-          if (hsnApproval === undefined) {
-            throw apiError(422, {
-              code: 'tax_class_change_needs_finance_approval',
-              whatHappened: `"${record.name}" is published under tax class ${classChange.from}; moving it to ${classChange.to === '' ? 'no tax class' : classChange.to} changes the GST every till charges on it, so a Finance approver (the accountant or the owner) approves it first — never the person asking (OB-347).`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind hsn_class_change, subjectRef product:${productId}, with exactly this product record); once a Finance approver approves it, send it again with the approvalId. Nothing was changed.`,
-            });
-          }
-        }
-        // M03-FR-01 (OB-288 P2): a variant names a one-level parent head office holds and differs from its siblings.
-        if ((record.parentProductId ?? '').trim() !== '') {
-          const variant = checkVariant(record, await deps.products(ctx.tenantId));
-          if (!variant.ok) {
-            throw apiError(422, {
-              code: variant.refusal!, whatHappened: `The product cannot be published as it stands: ${variant.detail}.`, wasItSaved: 'not_saved',
-              nextSafeAction: 'Correct parentProductId (or the attributes that make this variant different) and publish again. Nothing was saved.',
-            });
-          }
-        }
-        // The per-product compliance gate — the SAME tested rule the screen ran, re-run here because a
-        // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax
-        // class, MRP/UOM, and a regulated item's safety content (allergen/country-of-origin/min-age).
-        let published: ProductRecord;
-        let activationRefused: ReturnType<typeof warningStanding> | undefined;
-        try {
-          published = publishProduct(toPublish, categories); // draft → 'new' on first publish
-        } catch (err) {
-          if (err instanceof NotPublishableError) {
-            throw apiError(422, {
-              code: 'product_not_publishable',
-              // The blocking reasons in plain English — the person fixing it is not a programmer.
-              whatHappened: `The product cannot be published: ${err.issues.map((i) => i.message).join('; ')}.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Fix the blocking fields named above and publish again — nothing was saved and the catalogue is unchanged.',
-            });
-          }
-          if (err instanceof CategoryNotFoundError) {
-            throw apiError(422, {
-              code: 'unknown_category',
-              whatHappened: `The product's category "${err.categoryId}" is not among the categories supplied — a product sits in exactly one place in the hierarchy.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Include the product’s category in categories[], or correct primaryCategoryId.',
-            });
-          }
-          throw err;
-        }
-        // B16 (COTPA s.7 · OB-140 "A"): a tobacco product is ACTIVATED only with a named person's confirmation that its packs
-        // carry the health-warning picture in force today. Without one, a product sent as a draft is kept as a draft (not on
-        // sale, never in the pack); one sent to be sold now is refused. There is no override.
-        if (isTobacco(published) && SELLING.includes(published.lifecycle)) {
-          const standing = warningStanding(published.tobaccoWarning, shopDateIn(deps.now?.() ?? new Date().toISOString())); // R1c: in force in the shop today
-          if (!standing.sellable) {
-            if (read.lifecycle !== 'draft') {
-              throw apiError(422, {
-                code: 'tobacco_warning_not_confirmed',
-                whatHappened: `This tobacco product cannot be put on sale: ${standing.detail}.`,
-                wasItSaved: 'not_saved',
-                nextSafeAction: 'Save it as a draft, have the person who checked the packs confirm the warning picture (POST /v1/catalogue/products/:productId/tobacco-warning-confirmation), then publish it again. Nothing was saved.',
-              });
-            }
-            published = { ...published, lifecycle: 'draft' };
-            activationRefused = standing;
-          }
-        }
-        // OB-503 (owner, in writing: "only risky new products need a second person before reaching the tills"): a product that
-        // reaches the tills from this publish carrying an age limit or a regulated marker head office has not already put
-        // there — a new age-restricted/regulated product, or one newly made so — needs a second person's approval of exactly
-        // this record through the maker-checker engine (kind `regulated_product_publish`; the checker approves catalogue
-        // changes, `catalogue.tax.approve`: the accountant or the owner — never the maker), on top of the publisher's fresh
-        // second-factor sign-in at pack publish (ADR-0013 point 4). An ordinary product is published by one person.
-        const gained = regulationGained(current, published);
-        let regulatedApproval: Awaited<ReturnType<typeof approvalNamedIn>>;
-        if (gained.length > 0) {
-          regulatedApproval = await approvalNamedIn(deps.approvals, {
-            tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
-            kind: 'regulated_product_publish', subjectRef: `product:${productId}`, details: actionDetails(ctx.body, { productId }), valueMinor: null,
-            maker: ctx.userId, usedBy: `regulated-product:${productId}:${gained.join(',')}`, now: deps.now?.() ?? new Date().toISOString(),
-          });
-          if (regulatedApproval === undefined) {
-            throw apiError(422, {
-              code: 'regulated_product_needs_second_person',
-              whatHappened: `"${record.name}" would reach the tills with ${regulatedWords(gained)}. An age-restricted or tobacco product needs a second person to approve it before it goes on sale — never the person publishing it (OB-503).`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind regulated_product_publish, subjectRef product:${productId}, with exactly this product record); once a second person who approves catalogue changes (the accountant or the owner) approves it, send it again with the approvalId. Nothing was saved.`,
-            });
-          }
-        }
-        // The one re-check a single device CANNOT do (ADR-0013 control 9): SKU uniqueness across the WHOLE
-        // tenant. Each device validates the product it holds, but two devices authoring offline each believe
-        // their SKU is free — only here, where every product master lives, can a collision be seen. A SKU
-        // already held by a DIFFERENT product is refused; re-publishing the SAME product (same id) under its
-        // own SKU is not a clash. (Barcodes are enforced one-code-one-item on the barcode route.)
-        // GT-05: the SKU's holder is read by key (not the whole master), with its guard's version; a publish that loses the
-        // guard to a simultaneous one re-reads and is judged again — two products can never both take one SKU.
-        for (let attempt = 0; ; attempt += 1) {
-          const held = deps.skuHolder === undefined ? undefined : await deps.skuHolder(ctx.tenantId, published.sku, published.productId);
-          const clash = held === undefined
-            ? (await deps.products(ctx.tenantId)).find((p) => p.sku === published.sku && p.productId !== published.productId)?.productId
-            : held.holder;
-          if (clash !== undefined) {
-            throw apiError(409, {
-              code: 'sku_already_in_use',
-              whatHappened: `The SKU "${published.sku}" already belongs to product "${clash}" — one SKU names exactly one product, so this publish would make a barcode or shelf label ambiguous.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Give this product its own SKU, or correct the id if this is the same product under a different code — nothing was saved and the catalogue is unchanged.',
-            });
-          }
-          try {
-            // OB-347: the Finance approval is spent once, after every rule passed and before the record is written.
-            if (attempt === 0) await hsnApproval?.spend();
-            if (attempt === 0) await mrpApproval?.spend(); // OB-512: spent once, after every rule passed, before the write
-            if (attempt === 0) await regulatedApproval?.spend(); // OB-503: spent once, after every rule passed, before the write
-            await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId, held?.version);
-          } catch (err) {
-            if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
-            if (err instanceof ConcurrencyConflictError) {
-              throw apiError(409, { code: 'sku_changed_meanwhile', whatHappened: `The SKU "${published.sku}" kept changing while this product was being saved.`, wasItSaved: 'not_saved', nextSafeAction: 'Read the product master and publish again. Nothing was saved.' });
-            }
-            throw err;
-          }
-          if (replacement !== undefined) {
-            await deps.recordAudit?.(ctx.tenantId, {
-              actorId: ctx.userId, action: 'catalogue.product.mrp.replace', objectType: 'product', objectId: productId,
-              at: replacement.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-              before: { effectiveFrom: replacement.effectiveFrom, mrpMinor: String(replacement.replaced.minor) },
-              after: { effectiveFrom: replacement.effectiveFrom, mrpMinor: String(replacement.replacedBy.minor), approvedBy: replacement.approvedBy },
-              reason: replacement.reason, approvalId: replacement.approvalId, correlationId: `mrp-replacement:${productId}:${replacement.effectiveFrom}`,
-            });
-          }
-          if (regulatedApproval !== undefined) {
-            await deps.recordAudit?.(ctx.tenantId, {
-              actorId: ctx.userId, action: 'catalogue.product.regulated.publish', objectType: 'product', objectId: productId,
-              at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-              before: { regulated: '' }, after: { regulated: gained.join(','), approvedBy: regulatedApproval.decision.decidedBy },
-              approvalId: regulatedApproval.decision.requestId, correlationId: `regulated-product:${productId}:${gained.join(',')}`,
-            });
-          }
-          if (classChange !== undefined && hsnApproval !== undefined) {
-            await deps.recordAudit?.(ctx.tenantId, {
-              actorId: ctx.userId, action: 'catalogue.product.tax_class.change', objectType: 'product', objectId: productId,
-              at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-              before: { taxClass: classChange.from }, after: { taxClass: classChange.to, approvedBy: hsnApproval.decision.decidedBy },
-              approvalId: hsnApproval.decision.requestId, correlationId: `hsn-class:${productId}:${classChange.from}->${classChange.to}`,
-            });
-          }
-          return {
-            status: 201,
-            body: {
-              product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}),
-              ...(classChange === undefined || hsnApproval === undefined ? {} : { taxClassChange: { from: classChange.from, to: classChange.to, approvedBy: hsnApproval.decision.decidedBy } }),
-              ...(replacement === undefined ? {} : { mrpReplacement: replacement }), // OB-512
-              ...(regulatedApproval === undefined ? {} : { regulatedApproval: { regulated: gained, approvedBy: regulatedApproval.decision.decidedBy, approvalId: regulatedApproval.decision.requestId } }), // OB-503
-              // B16: said, never silent — the product is saved as a draft and is NOT on sale until its warning is confirmed.
-              ...(activationRefused === undefined || activationRefused.sellable ? {} : {
-                activation: {
-                  refused: true, because: 'tobacco_warning_not_confirmed', standing: activationRefused.reason, detail: activationRefused.detail,
-                  nextSafeAction: 'A named person confirms the packs carry the warning picture in force, then publish it again to put it on sale.',
-                },
-              }),
-            },
-          };
-        }
+        const changed = (held: number) => apiError(409, {
+          code: 'product_changed_meanwhile',
+          whatHappened: `Someone else saved this product since you opened it (you opened version ${expected}; head office now holds version ${held}). Nothing of yours was saved.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Reload the product and make your change again.',
+        });
+        const seen = Number(await versionOf(ctx.tenantId, productId)); // the version FIRST, then the record (see the read below)
+        const current = await deps.product(ctx.tenantId, productId);
+        if (current === undefined) throw notFound(`product ${productId}`);
+        if (seen !== expected) throw changed(seen);
+        const read: ProductRecord = { ...current, safety: b['safety'] as ProductRecord['safety'] };
+        const saved = await judgeAndSave(deps, ctx, {
+          productId, read, current,
+          // Head office's own categories; no MRP replacement on a safety save. A second person's approval (OB-503) may be named.
+          body: { ...(b['approvalId'] === undefined ? {} : { approvalId: b['approvalId'] }), ...(b['approvedBy'] === undefined ? {} : { approvedBy: b['approvedBy'] }) },
+          key: `safety-${ctx.idempotencyKey ?? `${productId}-v${expected}`}`,
+          beforeWrite: async () => {
+            // The guard's version is read BEFORE the product's version: if the append then holds the guard, no other safety
+            // save landed after this re-check. (A full publish does not hold this guard — the same-millisecond window above.)
+            const guardVersion = Number(await guardOf(ctx.tenantId, productId));
+            const now = Number(await versionOf(ctx.tenantId, productId));
+            if (now !== expected) throw changed(now);
+            return { key: `product-safety:${productId}`, expectedVersion: guardVersion };
+          },
+        });
+        const version = Number(await versionOf(ctx.tenantId, productId));
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'catalogue.product.safety.save', objectType: 'product', objectId: productId,
+          at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: { version: String(expected) }, after: { version: String(version) }, reason, correlationId: `product-safety:${productId}:v${expected}`,
+        });
+        return { status: saved.status, body: { ...saved.body, version, reason } };
       },
     },
     {
@@ -552,9 +668,12 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
       permission: 'catalogue.pack.read',
       handler: async (ctx) => {
         const productId = ctx.params['productId'] ?? '';
+        // Owner 2A: the version is read BEFORE the record, so a save landing between the two reads can only make the version
+        // look older than the record (a needless "changed meanwhile" later), never newer (which would let a stale screen save).
+        const version = deps.productVersion === undefined ? undefined : Number(await deps.productVersion(ctx.tenantId, productId));
         const product = await deps.product(ctx.tenantId, productId);
         if (product === undefined) throw notFound(`product ${productId}`);
-        return { status: 200, body: { product } };
+        return { status: 200, body: { product, ...(version === undefined ? {} : { version }) } };
       },
     },
     {
