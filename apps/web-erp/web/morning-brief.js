@@ -11,6 +11,26 @@ const may = session?.may ?? { named: false, read: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 let brief = null;
+let answeredAt = null;
+// UI-3: the brief's source line and its cards (window.sreOffice) — the page's own words for them, in both languages.
+const UI3 = {
+  en: { covers: 'Trading day {day} · head office answered at {time}', notTold: 'not told', prepared: 'Prepared', sent: 'Sent to the phone', lines: 'Lines in the brief', yes: 'Yes', no: 'No', fromFigures: 'from the governed figures, no AI', notPrepared: 'head office has not prepared it' },
+  ta: { covers: 'வணிக நாள் {day} · தலைமை அலுவலகம் பதிலளித்த நேரம் {time}', notTold: 'சொல்லப்படவில்லை', prepared: 'தயாரானது', sent: 'ஃபோனுக்கு அனுப்பப்பட்டது', lines: 'சுருக்கத்தில் உள்ள வரிகள்', yes: 'ஆம்', no: 'இல்லை', fromFigures: 'நிர்வகிக்கப்பட்ட எண்களிலிருந்து, AI இல்லை', notPrepared: 'தலைமை அலுவலகம் இதைத் தயாரிக்கவில்லை' },
+};
+const u3 = (k) => UI3[lang][k] ?? UI3.en[k];
+function paintUi3() {
+  if (brief === null) return;
+  const time = answeredAt === null ? u3('notTold') : window.sreShopDay?.dateTimeOf(answeredAt) ?? answeredAt;
+  $('brief-covers').textContent = u3('covers').split('{day}').join(brief.tradingDay ?? u3('notTold')).split('{time}').join(time);
+  const o = window.sreOffice;
+  if (!o) return;
+  o.cards($('brief-cards'), [
+    { label: u3('prepared'), value: brief.prepared ? u3('yes') : u3('no'), note: brief.prepared ? u3('fromFigures') : u3('notPrepared'), tone: brief.prepared ? 'ok' : 'pending', icon: 'file-text' },
+    // A brief head office did not prepare has no lines to count — "Not known", never 0.
+    { label: u3('lines'), value: brief.lines === undefined ? null : brief.lines.length, icon: 'list' },
+  ]);
+}
+document.addEventListener('sre:chrome', () => { paintUi3(); });
 
 function say(id, out) { $(id).className = 'status err'; $(id).textContent = api.outcomeWords(lang, out); }
 
@@ -26,12 +46,13 @@ function paint() {
   $('sent-v').textContent = brief.sent ? t('sent') : t('notSent');
   $('sent-detail').textContent = brief.sending === 'switched_off' ? t('switchedOff') : brief.detail;
   $('sent-detail').dataset.sending = brief.sending;
+  paintUi3();
   $('lines').replaceChildren(...(brief.lines ?? []).map((l) => { const li = document.createElement('li'); li.className = 'row'; li.textContent = l; return li; }));
 }
 
 async function show() {
   const out = await session.today();
-  if (out.result === 'ok') { brief = out.value; $('page-status').className = 'status'; $('page-status').textContent = ''; } else { brief = null; say('page-status', out); }
+  if (out.result === 'ok') { brief = out.value; answeredAt = new Date().toISOString(); $('page-status').className = 'status'; $('page-status').textContent = ''; } else { brief = null; say('page-status', out); }
   paint();
 }
 

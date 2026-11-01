@@ -72,6 +72,9 @@ export interface WasteBreakdown {
   readonly unclassified: { readonly events: number; readonly reasonsSeen: readonly string[] };
 }
 export interface WasteReport { readonly from: string; readonly to: string; readonly writeOffs: WasteBreakdown; readonly wasteRecords: WasteBreakdown }
+/** OB-641: one shop day of the window — write-offs and waste records side by side, never added together. */
+export interface WasteDay { readonly day: string; readonly writeOffs: { readonly events: number; readonly valueMinor: number }; readonly wasteRecords: { readonly events: number; readonly valueMinor: number } }
+export interface WasteTrend { readonly from: string; readonly to: string; readonly days: readonly WasteDay[]; readonly asAt?: string }
 
 // ── the words ───────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -272,6 +275,8 @@ export interface StoreOpsSession {
   myTasks(): Promise<Outcome<{ readonly tasks: readonly StoreTask[] }>>;
   completeTask(task: StoreTask, form: { readonly evidenceRef: string; readonly stepsDone: readonly string[]; readonly note: string }): Promise<Outcome<{ readonly lateByMinutes: number }>>;
   wasteAnalytics(from: string, to: string): Promise<Outcome<WasteReport>>;
+  /** OB-641: the same window by the shop's day (`GET /v1/waste/analytics/by-day`, `waste.view`). A read. */
+  wasteTrend(from: string, to: string): Promise<Outcome<WasteTrend>>;
 }
 
 const blank = (s: string | undefined): boolean => s === undefined || s.trim() === '';
@@ -402,6 +407,12 @@ export function createStoreOpsSession(input: {
       if (!may.readWaste) return cannot;
       if (!isDay(from) || !isDay(to) || from > to) return { result: 'invalid', why: 'badDate' };
       return call('GET', `/v1/waste/analytics?from=${enc(from)}&to=${enc(to)}`);
+    },
+    wasteTrend: async (from, to) => {
+      if (!named) return nobody;
+      if (!may.readWaste) return cannot;
+      if (!isDay(from) || !isDay(to) || from > to) return { result: 'invalid', why: 'badDate' };
+      return call('GET', `/v1/waste/analytics/by-day?from=${enc(from)}&to=${enc(to)}`);
     },
   };
 }

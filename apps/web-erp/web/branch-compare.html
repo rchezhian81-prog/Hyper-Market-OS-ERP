@@ -77,14 +77,19 @@
       <section id="result" hidden aria-labelledby="result-h">
         <h3 id="result-h"></h3>
         <p class="meta" id="r-scope"></p>
+        <!-- UI-3: what this ranking covers and when head office answered; then the ranking as a chart (window.sreCharts). -->
+        <p class="meta" id="r-covers"></p>
+        <div id="r-chart"></div>
         <p id="r-check"></p>
         <ul class="rows" id="r-honesty"></ul>
-        <div class="table-wrap"><table id="r-table"><thead><tr><th>#</th><th id="th-name"></th><th class="num" id="th-value"></th><th class="num" id="th-share"></th><th class="num" id="th-count"></th><th></th></tr></thead><tbody id="r-rows"></tbody></table></div>
+        <!-- UI-3: the ranking's figures as the shared summary cards, and its rows as the shared register (window.sreOffice). -->
+        <div id="r-cards"></div>
+        <div class="table-wrap" id="r-register"><table id="r-table"><thead><tr><th>#</th><th id="th-name"></th><th class="num" id="th-value"></th><th class="num" id="th-share"></th><th class="num" id="th-count"></th><th></th></tr></thead><tbody id="r-rows"></tbody></table></div>
         <p class="meta" id="r-total"></p>
       </section>
       <section id="txns" hidden aria-labelledby="txns-h">
         <h3 id="txns-h"></h3>
-        <div class="table-wrap"><table><thead><tr><th id="tx-when"></th><th id="tx-branch"></th><th id="tx-what"></th><th class="num" id="tx-amount"></th></tr></thead><tbody id="tx-rows"></tbody></table></div>
+        <div class="table-wrap" id="tx-register"><table><thead><tr><th id="tx-when"></th><th id="tx-branch"></th><th id="tx-what"></th><th class="num" id="tx-amount"></th></tr></thead><tbody id="tx-rows"></tbody></table></div>
         <button id="tx-close" class="quiet" type="button"><span id="tx-close-text"></span></button>
       </section>
     </main>

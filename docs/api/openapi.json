@@ -114134,6 +114134,50 @@
         }
       }
     },
+    "/v1/waste/analytics/by-day": {
+      "get": {
+        "operationId": "getWasteAnalyticsByDay",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "waste.view",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWasteAnalyticsByDayReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"waste.view\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/waste/compare": {
       "get": {
         "operationId": "getWasteCompare",
@@ -162161,6 +162205,86 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/warehouse-transfers.ts"
+      },
+      "GetWasteAnalyticsByDayReply": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "scope",
+          "days",
+          "note",
+          "asAt"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/BranchScope"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "day",
+                "writeOffs",
+                "wasteRecords"
+              ],
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "writeOffs": {
+                  "type": "object",
+                  "required": [
+                    "events",
+                    "valueMinor"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "number"
+                    },
+                    "valueMinor": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "wasteRecords": {
+                  "type": "object",
+                  "required": [
+                    "events",
+                    "valueMinor"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "number"
+                    },
+                    "valueMinor": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "note": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/waste-analytics.ts"
       },
       "GetWasteAnalyticsReply": {
         "type": "object",

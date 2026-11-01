@@ -300,6 +300,31 @@ handhelds and the queue till at 360px, the kiosks at their own screens, English 
 control at the screen's own target (56px on the till, the handhelds and the self-checkout lane, 64px on the price kiosk;
 never under 44px), the §5.1 audit clean.
 
+### 4.4 Charts (UI-3, 1 November 2026) — implemented
+The owner said (1 Nov 2026) the owner app and the reports were hard to read. Where a figure over time or a comparison is
+the point, a page may draw it as a simple chart — and only through the one chart code, so every chart reads the same way.
+
+| Rule | How |
+| --- | --- |
+| **One drawing, no library, no network (P-01)** | `packages/ui/src/charts.ts` draws inline SVG. Each app's own bundle puts it on the page as `window.sreCharts` (`attachCharts`), and every service worker already precaches the bundle, so a chart opens with the line down like the figures beside it. No screen loads a chart library or any script from the internet. |
+| **Call** | `sreCharts.draw(host, { id, kind, title, covers, labelHeading, valueHeading, rows, empty }, lang)`. `kind: 'bars'` is a comparison (one row each, in the order the page gives — largest first for a ranking); `kind: 'columns'` is a figure over time, in time order. Each row: `{ key, label, value, text, mark }`. Words are a string or `{ en, ta }`. |
+| **Honest** | Bars are measured from zero against the largest magnitude; no trimmed axis, no 3-D. A value the page was not given (`null`) is drawn as **"Not known"** with no bar — never a bar of nought — and the chart says how many rows have no figure. A value below zero is drawn as a dashed outline and keeps its minus sign in the words. The chart never formats a figure: the page passes `text` (₹ and paise as it already writes them), so a chart and the page cannot disagree. An empty chart says nothing was read — it is never an all-clear (P-08). |
+| **Says its source** | `covers` is required: the dates, the store or branches, and when the figures were read (at the shop's clock, OB-607). A guardrail fails a page that draws a chart without it. |
+| **Colour is never the only signal** | One series, so colour carries no meaning. A bar chart prints every figure beside its bar; a column chart labels the tallest column and any marked one ("today") in words, and the rest are in the table. |
+| **A table behind every chart** | The picture is `aria-hidden`; the same rows, from the same model, are a real `<table>` with a caption that a screen reader reads. One button ("Show the figures as a table" / "Show the chart", `aria-pressed`) shows the table in place of the picture. |
+| **Light and dark** | Only foundation tokens: `--accent` bars on a `--panel-2` track, `--muted` words, `--warn` for "Not known", `--error` outline for a value below zero (`.sre-chart-*` in `sre-foundation.css`). Pairs proved AA in both sets in `tests/unit/ui-charts.test.ts`. |
+| **Phone** | Bar rows stack label / figure over a full-width bar under 520px; a column chart labels every column up to 12 and every k-th beyond (24 hours fit a 360px phone). No sideways scroll. |
+
+**Where they are used first (UI-3):** the owner app (today by the shop's hour, the last trading days the store computer
+holds, how today was paid), Reports (sales by hour, today against the last days, sales by cashier, how people paid,
+what is selling by department — drawn from each report's own rows), Compare side by side (head office's ranking), the
+Company report (branches side by side), Waste analytics (write-offs and waste records by the shop's day, from head
+office's `GET /v1/waste/analytics/by-day`, OB-641). Compare side by side, the Company report, Waste analytics, Bill
+findings, Owner alerts and Bought together also use the §4.1 cards, registers and states, each with a source line
+(what it covers, when head office answered). A register's parts never widen a phone page (`.sre-datatable > *`). **Proof:** `tests/unit/ui-charts.test.ts`,
+`tests/guardrails/every-chart-is-drawn-by-the-one-chart-code.test.ts`,
+`tests/e2e/ui3-the-owner-app-and-reports-read-at-a-glance.e2e.ts` (360px and 1280px, light and dark, English and Tamil).
+
 ## 5. Accessibility (NFR-07)
 - Target **WCAG 2.2 AA** for customer/web surfaces; keyboard, touch and high-contrast paths for staff surfaces.
 - Contrast ≥ 4.5:1 for text; focus indicators visible; no action requires fine motor precision.

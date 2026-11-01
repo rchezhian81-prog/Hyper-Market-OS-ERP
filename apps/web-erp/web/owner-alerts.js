@@ -17,6 +17,15 @@ function button(words, iconName, cls) { const b = document.createElement('button
 function field(labelWords, cls) { const l = document.createElement('label'); l.append(text('span', labelWords)); const i = document.createElement('input'); i.autocomplete = 'off'; i.className = cls; l.append(i); return l; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 let thresholds = null; let today = null; let schedules = null; let floor = null;
+let todayAt = null; // when head office answered today's list (OB-607: shown at the shop's clock)
+// UI-3: the source line and the shared office parts (window.sreOffice, from the chrome — painted again on `sre:chrome`).
+const UI3 = {
+  en: { covers: 'This store · trading day {day} · read at {time}', alertsToday: 'Alerts today', notSetKinds: 'Limits not set', notKnownKinds: 'Not known (no count)', notSetNote: 'an alert with no limit can never fire' },
+  ta: { covers: 'இந்தக் கடை · வணிக நாள் {day} · படித்த நேரம் {time}', alertsToday: 'இன்றைய எச்சரிக்கைகள்', notSetKinds: 'அமைக்கப்படாத வரம்புகள்', notKnownKinds: 'தெரியவில்லை (எண்ணிக்கை இல்லை)', notSetNote: 'வரம்பு இல்லாத எச்சரிக்கை ஒருபோதும் எழாது' },
+};
+const u3 = (k) => UI3[lang][k] ?? UI3.en[k];
+const office = () => window.sreOffice ?? null;
+document.addEventListener('sre:chrome', () => { paintToday(); });
 const fillIn = (words, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), words);
 
 // OB-375 · OB-378: the kiosk hours and the watch numbers in force — the owner's written decision until he enters another.
@@ -67,15 +76,29 @@ function paintThresholds() {
 
 function paintToday() {
   const ul = $('d-rows'); ul.replaceChildren(); const al = $('d-alerts'); al.replaceChildren();
+  $('d-covers').textContent = ''; $('d-cards').replaceChildren();
   if (today === null) return;
   $('today-h').textContent = `${t('todayH')} — ${today.tradingDay}`;
+  $('d-covers').textContent = u3('covers').split('{day}').join(today.tradingDay).split('{time}').join(todayAt === null ? '' : window.sreShopDay?.dateTimeOf(todayAt) ?? todayAt);
+  const notSet = today.kinds.filter((k) => k.threshold === 'not_set').length;
+  const notKnown = today.kinds.filter((k) => k.threshold !== 'not_set' && k.events === null).length;
+  office()?.cards($('d-cards'), [
+    { label: u3('alertsToday'), value: today.alerts.length, note: $('d-covers').textContent, tone: today.alerts.length > 0 ? 'error' : undefined, icon: 'triangle-alert' },
+    { label: u3('notSetKinds'), value: notSet, note: u3('notSetNote'), tone: notSet > 0 ? 'pending' : undefined, icon: 'circle-help' },
+    { label: u3('notKnownKinds'), value: notKnown, tone: notKnown > 0 ? 'pending' : undefined, icon: 'circle-help' },
+  ]);
   for (const k of today.kinds) {
     const li = document.createElement('li'); li.dataset.kind = k.kind;
     li.append(text('strong', t(k.kind)));
     li.append(text('span', k.threshold === 'not_set' ? t('notSet') : k.events === null ? `${t('recorded')}: ${t('notKnown')}` : `${t('recorded')}: ${k.events} · ${k.alerts} ${t('alerts')}`, k.threshold === 'not_set' ? 'notset' : 'meta'));
     ul.append(li);
   }
-  if (today.alerts.length === 0) al.append(text('li', t('noAlerts')));
+  if (today.alerts.length === 0) {
+    // No alert is not an all-clear when a limit is not set: the shared "nothing yet" state says what the list covers (P-08).
+    const o = office();
+    if (o === null) al.append(text('li', t('noAlerts')));
+    else { const li = document.createElement('li'); o.state(li, 'empty', { title: t('noAlerts'), detail: notSet > 0 ? `${$('d-covers').textContent} · ${notSet} ${u3('notSetKinds').toLowerCase()} — ${u3('notSetNote')}` : $('d-covers').textContent }); al.append(li); }
+  }
   for (const a of today.alerts) {
     const li = document.createElement('li'); li.dataset.alert = a.inboxId;
     li.append(text('strong', `⚠ ${a.headline}`));
@@ -114,7 +137,7 @@ function paint() {
 }
 
 async function loadThresholds() { const o = await session.readThresholds(); if (o.result === 'ok') thresholds = o.value; else say('t-status', o); paintThresholds(); }
-async function loadToday() { const o = await session.readToday(); if (o.result === 'ok') today = o.value; else say('d-status', o); paintToday(); }
+async function loadToday() { const o = await session.readToday(); if (o.result === 'ok') { today = o.value; todayAt = new Date().toISOString(); } else say('d-status', o); paintToday(); }
 async function loadSchedules() { const o = await session.readSchedules(); if (o.result === 'ok') schedules = o.value; else say('s-status', o); paintSchedules(); }
 async function reload() { await loadThresholds(); await loadToday(); }
 

@@ -41,6 +41,7 @@ const WORDS = {
     reconciles: 'Reconciles: the total equals the sum of the branches shown.',
     notReconciles: 'Does NOT reconcile — a branch is missing, so the total is not the whole company.',
     notAllowed: 'You are not allowed to export this report.', exported: 'Exported', branchRows: 'branch row(s).',
+    covers: '{company} · month {period} · {view} · head office answered at {time}', chartTitle: 'Branches side by side — gross',
   },
   ta: {
     title: 'நிறுவன அறிக்கை', lede: 'முழு நிறுவனத்திற்கும் ஒரே எண் — அது எவ்வளவு புதியது என்ற உண்மையுடன்.',
@@ -66,6 +67,7 @@ const WORDS = {
     reconciles: 'சரிக்கட்டுகிறது: மொத்தம் காட்டப்பட்ட கிளைகளின் கூட்டுத்தொகைக்குச் சமம்.',
     notReconciles: 'சரிக்கட்டவில்லை — ஒரு கிளை விடுபட்டுள்ளது, எனவே மொத்தம் முழு நிறுவனமல்ல.',
     notAllowed: 'இந்த அறிக்கையை ஏற்றுமதி செய்ய உங்களுக்கு அனுமதி இல்லை.', exported: 'ஏற்றப்பட்டது', branchRows: 'கிளை வரிசை(கள்).',
+    covers: '{company} · மாதம் {period} · {view} · தலைமை அலுவலகம் பதிலளித்த நேரம் {time}', chartTitle: 'கிளைகள் அருகருகே — மொத்தம்',
   },
 };
 let lang = 'en';
@@ -144,7 +146,7 @@ function paintWords() {
   set('scope-label', 'viewAs'); set('company-label', 'company');
   paintScopes();
   set('tot-h', 'total'); set('drill-h', 'byBranch'); set('drill-lede', 'drillLede');
-  set('th-branch', 'branch'); set('th-gross', 'gross'); set('th-net', 'net'); set('th-refreshed', 'lastRefreshed');
+  for (const [id, key] of [['th-branch', 'branch'], ['th-gross', 'gross'], ['th-net', 'net'], ['th-refreshed', 'lastRefreshed']]) { if ($(id)) set(id, key); }
   set('exp-h', 'export'); set('exp-lede', 'exportLede'); set('export', 'exportCsv'); set('download', 'download'); set('foot', 'foot');
   $('preview').setAttribute('aria-label', t('csvPreview'));
   // OB-391: on the store computer the page is told only who is looking (window.companyReportData); it says so.
@@ -157,8 +159,28 @@ function paintWords() {
 let last = null; // the last report, so a language change repaints without asking head office again
 let exportOutcome = null;
 
+// UI-3: the shared office parts (window.sreOffice, from the chrome — painted again on `sre:chrome`).
+const office = () => window.sreOffice ?? null;
+
 function renderKpis(measures) {
   const box = $('kpis');
+  const o = office();
+  const keysOf = Object.keys(measures);
+  if (o !== null && keysOf.length > 0) {
+    // The shared summary cards: each figure exactly as head office answered it, its source line as the note. A measure
+    // the roll-up does not carry is not shown at all (never ₹0.00). The cards keep the tiles' names (`.kpi .v[data-measure]`).
+    o.cards(box, keysOf.map((key) => ({
+      label: LABEL_KEYS[key] ? t(LABEL_KEYS[key]) : key,
+      value: MONEY_KEYS.has(key) ? rupees(measures[key]) : String(measures[key]),
+      note: coversLine(), icon: MONEY_KEYS.has(key) ? 'indian-rupee' : 'list',
+    })));
+    box.querySelectorAll('.sre-summary-card').forEach((card, i) => {
+      card.classList.add('kpi');
+      const v = card.querySelector('.sre-summary-value');
+      if (v) { v.classList.add('v'); v.dataset['measure'] = keysOf[i]; }
+    });
+    return;
+  }
   box.textContent = '';
   const keys = Object.keys(measures);
   if (keys.length === 0) {
@@ -191,6 +213,22 @@ function renderFreshness(freshness) {
 }
 
 function renderContributors(contributors) {
+  const o = office();
+  if (o !== null) {
+    // The shared register: search, sort, the branch rows head office answered — worst first, as it ordered them.
+    o.table($('rows-register'), {
+      id: 'company-rows', label: t('byBranch'), bodyId: 'rows', pageSize: 50, rowData: (c) => ({ branch: c.branchId }), rows: [...contributors],
+      empty: { title: t('noBranch'), detail: coversLine() },
+      columns: [
+        { key: 'branch', label: t('branch'), sort: 'text', value: (c) => `${branchName(c.branchId)} (${c.branchId})` },
+        // A measure the branch's numbers do not carry is a dash, never ₹0.00 — a zero is a number somebody acts on.
+        { key: 'gross', label: t('gross'), sort: 'number', align: 'end', value: (c) => (typeof c.measures.grossMinor === 'number' ? c.measures.grossMinor : '—'), render: (c) => (typeof c.measures.grossMinor === 'number' ? rupees(c.measures.grossMinor) : '—') },
+        { key: 'net', label: t('net'), sort: 'number', align: 'end', value: (c) => (typeof c.measures.netMinor === 'number' ? c.measures.netMinor : '—'), render: (c) => (typeof c.measures.netMinor === 'number' ? rupees(c.measures.netMinor) : '—') },
+        { key: 'refreshed', label: t('lastRefreshed'), sort: 'text', value: (c) => (c.lastRefreshAt ? window.sreShopDay?.dateTimeOf(c.lastRefreshAt) ?? '' : t('neverSynced')) },
+      ],
+    });
+    return;
+  }
   const rows = $('rows');
   rows.textContent = '';
   for (const c of contributors) {
@@ -212,7 +250,31 @@ function renderContributors(contributors) {
   }
 }
 
+// UI-3: what the total covers and when head office answered (OB-607: at the shop's clock), and the branches as a chart.
+let answeredAt = null;
+function coversLine() {
+  const view = scopeEl.value === 'all' ? t('wholeCompany') : `${branchName(scopeEl.value)} — ${t('branchOnly')}`;
+  const time = answeredAt === null ? '' : window.sreShopDay?.dateTimeOf(answeredAt) ?? answeredAt;
+  return `${t('covers')}`.split('{company}').join(NODE === null ? '' : branchName(NODE)).split('{period}').join(PERIOD).split('{view}').join(view).split('{time}').join(time);
+}
+function renderBranchChart(contributors) {
+  const host = $('branch-chart');
+  host.replaceChildren();
+  if (window.sreCharts === undefined || contributors.length === 0) return;
+  window.sreCharts.draw(host, {
+    id: 'branches', kind: 'bars', title: t('chartTitle'), covers: coversLine(), labelHeading: t('branch'), valueHeading: t('gross'),
+    // A branch whose numbers carry no gross is "Not known" on the chart — never a bar of nought (the table says "—").
+    rows: contributors.map((c) => ({
+      key: c.branchId, label: branchName(c.branchId),
+      value: typeof c.measures.grossMinor === 'number' ? c.measures.grossMinor : null,
+      ...(typeof c.measures.grossMinor === 'number' ? { text: rupees(c.measures.grossMinor) } : {}),
+    })),
+  }, lang);
+}
+
 function renderReport() {
+  $('covers').textContent = '';
+  $('branch-chart').replaceChildren();
   if (last === null) return;
   if (last === 'unreachable' || last === 'no_company' || last === 'org_refused') {
     // Head office could not be reached, has no company, or would not name its branches for this sign-in. Said, rather
@@ -221,13 +283,17 @@ function renderReport() {
     missing.className = 'flag err';
     missing.textContent = t(last === 'unreachable' ? 'unreachable' : last === 'no_company' ? 'noCompany' : 'orgRefused');
     renderKpis({});
-    $('rows').textContent = '';
+    if ($('rows')) $('rows').textContent = '';
+    // Said in the register's place too, as the shared state — never a blank list that reads as "nothing to report".
+    office()?.state($('rows-register'), last === 'unreachable' ? 'offline' : last === 'org_refused' ? 'denied' : 'empty', { title: t(last === 'unreachable' ? 'unreachable' : last === 'no_company' ? 'noCompany' : 'orgRefused') });
     return;
   }
   const report = last;
   renderFreshness(report.freshness);
   renderKpis(report.measures || {});
   renderContributors(report.contributors || []);
+  $('covers').textContent = coversLine();
+  renderBranchChart(report.contributors || []);
 
   const missing = $('missing');
   // Round A (P-08): no branch expected is said as itself — never "every expected branch has reported".
@@ -280,6 +346,7 @@ async function load() {
   if (NODE === null) { renderReport(); return; }
   try {
     last = await getJson(`/v1/consolidation?${query().toString()}`);
+    answeredAt = new Date().toISOString();
   } catch {
     last = 'unreachable';
   }
@@ -326,6 +393,7 @@ $('export').addEventListener('click', async () => {
 });
 
 familyEl.addEventListener('change', () => { void load(); });
+document.addEventListener('sre:chrome', () => { renderReport(); });
 scopeEl.addEventListener('change', () => { void load(); });
 companyEl.addEventListener('change', () => { NODE = companyEl.value; scopeEl.value = 'all'; paintScopes(); void load(); });
 

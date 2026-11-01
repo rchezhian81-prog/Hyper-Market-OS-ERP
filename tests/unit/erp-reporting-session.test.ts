@@ -243,9 +243,12 @@ describe('the reports this shop can actually run', () => {
   });
 
   it('breaks the day into hours, cashiers and tenders', () => {
+    // OB-639: the hour on the SHOP's clock (Asia/Kolkata, +05:30) — 09:15 UTC is 14:45 in the shop and 18:40 UTC is 00:10
+    // the next morning, which a 02:00 cut-off keeps on the same trading day, so it comes AFTER 14:00. (It was 09:00/18:00, UTC.)
     const hours = session().run('sales_by_hour');
     if (!hours.ok) return;
-    expect(hours.result.figures.map((f) => f.name)).toEqual(['09:00', '18:00']);
+    expect(hours.result.figures.map((f) => f.name)).toEqual(['14:00', '00:00']);
+    expect(hours.rows.map((r) => r['key'])).toEqual(['14:00', '00:00']);
 
     const cashiers = session().run('sales_by_cashier');
     if (!cashiers.ok) return;
@@ -576,5 +579,25 @@ describe('the catalogue stands on its own', () => {
       : e.availability.blockedBy === 'the_shop_does_not_record_it' ? 1 : 2;
     const ranks = catalogue.map(rank);
     expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
+  });
+});
+
+describe('OB-639: "Sales by hour" is on the shop\'s clock, never UTC', () => {
+  it('groups a 12:17 UTC sale under 17:00 in a Chennai shop, and follows the zone the store computer served', () => {
+    const at = (saleId: string, committedAt: string) => sale({ saleId, committedAt });
+    const ports = { sales: () => [at('A', '2026-08-06T12:17:00.000Z'), at('B', '2026-08-06T11:40:00.000Z'), at('C', '2026-08-06T03:40:00.000Z')] };
+    const india = session(ports).run('sales_by_hour');
+    expect(india.ok && india.rows.map((r) => [r['key'], r['bills']])).toEqual([['09:00', '1'], ['17:00', '2']]);
+    expect(india.ok && india.result.figures.map((f) => f.name)).toEqual(['09:00', '17:00']);
+    const dubai = session(ports, { timeZone: 'Asia/Dubai' }).run('sales_by_hour');
+    expect(dubai.ok && dubai.result.figures.map((f) => f.name)).toEqual(['07:00', '15:00', '16:00']);
+    // an unknown zone is the shop default, never UTC
+    const unknown = session(ports, { timeZone: 'Not/AZone' }).run('sales_by_hour');
+    expect(unknown.ok && unknown.result.figures.map((f) => f.name)).toEqual(['09:00', '17:00']);
+  });
+
+  it('puts a bill whose time cannot be read in no hour — and says so — rather than an invented one', () => {
+    const outcome = session({ sales: () => [sale({ saleId: 'A', committedAt: 'garbled' })] }).run('sales_by_hour');
+    expect(outcome.ok && outcome.result.figures.map((f) => f.name)).toEqual(['time not known']);
   });
 });

@@ -25,7 +25,7 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-warehouse-shell-a526630d1aef';
+const CACHE = 'sre-warehouse-shell-a0e6bfd40ebb';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];

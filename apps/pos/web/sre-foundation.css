@@ -580,6 +580,9 @@ a.sre-summary-card:hover { background: var(--hover); box-shadow: var(--shadow-sm
 /* The register (data table): a tool row (search, filters, the column choice), the table, then "Showing 1–10 of 24" and
    the pager. Every control is at least the tap height; the table scrolls inside its own box, never the page. */
 .sre-datatable { display: grid; gap: var(--space-3); min-width: 0; }
+/* UI-3: the register's parts are grid items — without this the table's own width widened the page on a phone instead of
+   scrolling inside its box. */
+.sre-datatable > * { min-width: 0; }
 .sre-datatable-tools { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
 .sre-datatable-search { position: relative; display: inline-flex; align-items: center; flex: 1 1 240px; max-width: 420px; color: var(--muted); }
 .sre-datatable-search > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
@@ -684,3 +687,41 @@ body.sre-shell main :focus-visible { outline: 3px solid var(--focus); outline-of
 .sre-kiosk-name { font-size: clamp(26px, 3.4vw, 40px); font-weight: 700; line-height: var(--leading-tight); overflow-wrap: anywhere; }
 .sre-kiosk-note { font-size: var(--fs-lg); color: var(--ink-2); }
 .sre-kiosk-card[data-tone="warn"] .sre-kiosk-note { color: var(--on-warn-surface); }
+
+/* Charts (UI-3, design system §4.4): drawn by packages/ui/src/charts.ts into each app's own bundle — inline SVG, no
+   library, no network. One series, so colour means nothing: every bar has its figure in words beside it or in the table
+   behind the chart. Every colour is a token, so the dark set follows. A gap is "Not known" in the warning ink, never 0. */
+.sre-chart { margin: 0; display: grid; gap: var(--space-3); min-width: 0; }
+.sre-chart-caption { display: grid; gap: 2px; }
+.sre-chart-title { font-size: var(--fs-md); font-weight: 700; color: var(--ink); }
+.sre-chart-covers { font-size: 14px; color: var(--muted); }
+.sre-chart-drawing { min-width: 0; }
+.sre-chart-drawing[hidden] { display: none; }
+.sre-chart-row { display: grid; grid-template-columns: minmax(0, 11rem) minmax(48px, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); padding: 6px 0; border-top: 1px solid var(--line-soft); }
+.sre-chart-row:first-child { border-top: 0; }
+.sre-chart-label { font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
+.sre-chart-value { font-size: 15px; font-weight: 700; color: var(--ink); font-variant-numeric: var(--numbers); text-align: right; white-space: nowrap; }
+.sre-chart-unknown .sre-chart-value, .sre-chart-table td.sre-unknown { color: var(--warn); font-weight: 600; }
+.sre-chart-track { display: block; width: 100%; height: 18px; background: var(--panel-2); border-radius: 4px; }
+.sre-chart-bar { fill: var(--accent); }
+.sre-chart-negative { fill: none; stroke: var(--error); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
+.sre-chart-marked .sre-chart-label, .sre-chart-marked .sre-chart-top { font-weight: 700; color: var(--ink); }
+@media (max-width: 520px) {
+  .sre-chart-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .sre-chart-row > .sre-chart-track { grid-column: 1 / -1; grid-row: 2; }
+}
+.sre-chart-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; align-items: end; min-height: 180px; border-bottom: 1px solid var(--line-strong); }
+.sre-chart-col { display: grid; grid-template-rows: auto 140px auto; align-items: end; justify-items: center; min-width: 0; }
+.sre-chart-stem { display: block; width: 100%; max-width: 40px; height: 140px; }
+.sre-chart-top { font-size: 14px; color: var(--muted); white-space: nowrap; min-height: 20px; }
+.sre-chart-tick { font-size: 14px; color: var(--muted); white-space: nowrap; min-height: 20px; padding-top: 4px; }
+.sre-chart-unknown .sre-chart-top { color: var(--warn); font-weight: 700; }
+.sre-chart-gap, .sre-chart-empty { margin: 0; font-size: 14px; color: var(--warn); }
+/* While the table is for screen readers only, it is clipped inside its 1px box — never a sideways scroll on a phone. */
+.sre-chart-table-wrap.sr-only { overflow: hidden; }
+.sre-chart-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.sre-chart-table caption { text-align: left; font-size: 14px; color: var(--muted); padding-bottom: 4px; }
+.sre-chart-table th, .sre-chart-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); font-weight: 400; }
+.sre-chart-table thead th { font-weight: 600; color: var(--muted); }
+.sre-chart-table .sre-end { text-align: right; font-variant-numeric: var(--numbers); }
+.sre-chart-toggle { justify-self: start; font-size: 15px; color: var(--accent); }

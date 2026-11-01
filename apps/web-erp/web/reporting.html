@@ -104,6 +104,10 @@
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+      /* UI-3: the report's source line and its chart (window.sreCharts, design system §4.3). */
+      .report-covers { margin: 0; font-size: 15px; color: var(--muted); }
+      .report-chart:empty { display: none; }
+      .report-chart { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
     </style>
   </head>
   <body>
@@ -157,7 +161,10 @@
       <section id="view-report" hidden>
         <h2 id="report-title">—</h2>
         <p class="lead" id="report-answers">—</p>
+        <!-- UI-3: what this report covers (store, trading day) and when its figures were read; then its chart, if it is one. -->
+        <p class="report-covers" id="report-covers"></p>
         <div id="report-figures"></div>
+        <div class="report-chart" id="report-chart"></div>
 
         <h3 id="rows-title">The rows behind these figures</h3>
         <div id="report-rows"></div>

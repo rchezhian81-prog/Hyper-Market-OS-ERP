@@ -69,7 +69,7 @@ import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
-import { packCalendarDate, packTimeZone, packTradingDay } from './shop-zone';
+import { packCalendarDate, packTimeZone, packTradingDay, packWallClock } from './shop-zone';
 import { toCloudReturn } from './cloud-return';
 import { refundLegs, type DayBookReturn } from '../../../packages/finance/src/day-book';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
@@ -927,15 +927,53 @@ export function receivingChecklistFor(input: ScreenInput): Record<string, unknow
  * missing cost price is exactly the person reading it.
  */
 /** Round 4: today's bills that `costTheDay` could not cost — their count, takings and tender mix (each payment by its own kind). */
-function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): { bills: number; takenMinor: number; tenderMix: Record<string, number> } {
-  const out = { bills: 0, takenMinor: 0, tenderMix: {} as Record<string, number> };
+function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): { bills: number; takenMinor: number; tenderMix: Record<string, number>; lines: { id: string; amountMinor: number; tender: string }[] } {
+  const out = { bills: 0, takenMinor: 0, tenderMix: {} as Record<string, number>, lines: [] as { id: string; amountMinor: number; tender: string }[] };
   for (const sale of sales) {
     if (costed.has(sale.id)) continue;
     out.bills += 1;
     out.takenMinor += sale.total ?? 0;
+    // OB-640: each such bill by itself, so the owner's "Taken today" drill lists every bill behind the figure.
+    out.lines.push({ id: sale.id, amountMinor: sale.total ?? 0, tender: tenderPartsOf(sale)[0]?.kind ?? 'unknown' });
     for (const part of tenderPartsOf(sale)) out.tenderMix[part.kind] = (out.tenderMix[part.kind] ?? 0) + part.amountMinor;
   }
   return out;
+}
+
+/**
+ * UI-3: today's bills by the hour they were rung, at the SHOP's clock (the pack's zone — never UTC, never this machine's),
+ * for the owner's hourly chart. The money is each bill's own total — the same figure the takings add up — before refunds:
+ * a refund is taken off the day, not off an hour, and the phone says so beside the chart. Only hours with a bill appear;
+ * a bill with no recorded time is not placed in any hour (it is still in the day's takings).
+ */
+export function takingsByHourOf(pack: Parameters<typeof packWallClock>[0], sales: readonly LoggedSale[]): { hour: string; bills: number; takenMinor: number }[] {
+  const byHour = new Map<string, { bills: number; takenMinor: number; first: number }>();
+  for (const sale of sales) {
+    const at = sale.committedAt === undefined ? Number.NaN : Date.parse(sale.committedAt);
+    if (Number.isNaN(at)) continue;
+    const hour = packWallClock(pack, sale.committedAt!).slice(11, 13);
+    const held = byHour.get(hour) ?? { bills: 0, takenMinor: 0, first: at };
+    byHour.set(hour, { bills: held.bills + 1, takenMinor: held.takenMinor + (sale.total ?? 0), first: Math.min(held.first, at) });
+  }
+  // In the order the day ran (a trading day past midnight puts 00:00 after 23:00), not in the order of the digits.
+  return [...byHour.entries()].sort((a, b) => a[1].first - b[1].first).map(([hour, v]) => ({ hour, bills: v.bills, takenMinor: v.takenMinor }));
+}
+
+/**
+ * UI-3: the last seven trading days this box holds (today included), oldest first, each day's bills and their totals —
+ * the reporting page's own day rule (`tradingDaysHeld`, each sale's own trading day), before refunds. Only days the box
+ * holds: a day it does not hold is absent, never a day of nought.
+ */
+export function recentDaysOf(sales: readonly LoggedSale[], days = 7): { tradingDay: string; bills: number; takenMinor: number }[] {
+  const held = tradingDaysHeld(sales).slice(0, days);
+  const per = new Map<string, { bills: number; takenMinor: number }>(held.map((d) => [d, { bills: 0, takenMinor: 0 }]));
+  for (const sale of sales) {
+    const day = sale.tradingDay === undefined ? undefined : per.get(sale.tradingDay);
+    if (day === undefined) continue;
+    day.bills += 1;
+    day.takenMinor += sale.total ?? 0;
+  }
+  return [...held].reverse().map((tradingDay) => ({ tradingDay, ...per.get(tradingDay)! }));
 }
 
 /**
@@ -945,8 +983,8 @@ function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): 
  * back), so the owner's "Today" and the day book cannot disagree. Dated by the shop's own trading day of when it was
  * taken (the pack's cut-off), the rule the till's card day uses.
  */
-export function refundsOn(input: ScreenInput): { count: number; refundedMinor: number; tenderMix: Record<string, number> } {
-  const out = { count: 0, refundedMinor: 0, tenderMix: {} as Record<string, number> };
+export function refundsOn(input: ScreenInput): { count: number; refundedMinor: number; tenderMix: Record<string, number>; lines: { id: string; amountMinor: number; tender: string }[] } {
+  const out = { count: 0, refundedMinor: 0, tenderMix: {} as Record<string, number>, lines: [] as { id: string; amountMinor: number; tender: string }[] };
   // No returns log told, or no calendar to date them by: nothing is taken off (and nothing is made up).
   if (!input.pack.policies.known || input.returns === undefined) return out;
   for (const record of input.returns) {
@@ -964,6 +1002,8 @@ export function refundsOn(input: ScreenInput): { count: number; refundedMinor: n
     for (const leg of refundLegs(asBooked)) {
       out.refundedMinor += leg.amountMinor;
       out.tenderMix[leg.kind] = (out.tenderMix[leg.kind] ?? 0) + leg.amountMinor;
+      // OB-640: each refund leg by itself, so the owner's "Taken today" drill can take it off, line by line.
+      out.lines.push({ id: ret.returnId, amountMinor: leg.amountMinor, tender: leg.kind });
     }
   }
   return out;
@@ -1004,6 +1044,9 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
       uncosted: uncostedOf(today.sales, new Set(day.facts.map((f) => f.saleId))),
       // Round B: today's refunds, by the day book's own rule — the owner's takings are counted net of them.
       refunds: refundsOn(input),
+      // UI-3: the owner's trend charts — today by the shop's hour, and the last days this box holds (before refunds).
+      takingsByHour: takingsByHourOf(input.pack, today.sales),
+      recentDays: recentDaysOf(input.sales),
       exceptions,
       // Out of every day's figures, so it is named where the owner will see it rather than
       // becoming an unexplained difference against the till roll.

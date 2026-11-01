@@ -21,81 +21,99 @@
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 48px; }
+      /* UI-3 (1 Nov 2026): read at a glance on a 360px phone — the day's figures in big type, what needs a decision next,
+         then the trend. Nothing scrolls sideways; every control is at least 48px; every colour a token, so the dark set
+         follows; the freshness line and the "no signal" strip are never out of sight (P-08). */
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 16px/1.5 var(--font);
-        padding-bottom: 40px;
+        padding-bottom: 40px; overflow-x: hidden;
       }
-      header { padding: 14px 16px; background: var(--panel); position: sticky; top: 0; z-index: 10; }
-      .title { font-size: 13px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+      header { padding: 10px 16px 12px; background: var(--panel); position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line); }
+      .title { font-size: 14px; color: var(--muted); font-weight: 600; letter-spacing: .03em; }
       .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .lang { background: transparent; border: 0; color: var(--muted); font-size: 14px; min-height: 40px; }
+      .lang { background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; min-height: var(--tap); min-width: var(--tap); padding: 0 12px; border-radius: 12px; }
       /* Freshness is persistent and prominent — never implied (P-08), never colour alone. */
-      .freshness { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 14px; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); flex: none; }
+      .freshness { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 15px; flex-wrap: wrap; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--good); flex: none; }
       .dot.stale { background: var(--warn); }
       .dot.missing { background: var(--danger); }
-      #fresh-text.stale { color: var(--warn); font-weight: 600; }
-      #fresh-text.missing { color: var(--danger-text); font-weight: 600; }
+      #fresh-text.stale { color: var(--warn); font-weight: 700; }
+      #fresh-text.missing { color: var(--danger-text); font-weight: 700; }
+      .asof { color: var(--muted); font-size: 14px; }
 
       /* Branch switcher — one tap per branch, because the second store is a row not a rewrite. */
       .branches { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; }
+      .branches[hidden] { display: none; }
       .branches button {
         min-height: var(--tap); padding: 0 14px; border: 0; border-radius: 10px;
         background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; white-space: nowrap;
       }
       .branches button[aria-current='page'] { background: var(--ink); color: var(--bg); }
-      .branches button .age { display: block; font-size: 11px; font-weight: 400; opacity: .75; }
+      .branches button .age { display: block; font-size: 14px; font-weight: 400; }
 
       /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
       .sample { background: var(--warn); color: var(--on-warn); padding: 10px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
-      /* Served from this device's cache because the store box could not be reached. It says WHEN,
-         because a page from this morning shown as this minute's is the fault this product exists
-         to refuse (P-08). */
+      /* Served from this device's cache because the store box could not be reached. It says WHEN (P-08). */
       .stale { background: var(--info-surface); color: var(--on-info-surface); padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
       .stale[hidden] { display: none; }
+      /* This phone has no signal right now — said in words, with what that means for the figures (P-01 · P-08). */
+      .offline { background: var(--warn-surface); color: var(--on-warn-surface); padding: 10px 16px; font-size: 15px; font-weight: 600; margin: 0; }
+      .offline[hidden] { display: none; }
       /* Something the phone could not save. Never swallowed (P-08). */
       .queue-problem { background: var(--danger-surface); color: var(--on-danger); padding: 10px 16px; font-size: 15px; margin: 0; }
       .queue-problem[hidden] { display: none; }
 
-      main { padding: 0 16px; }
-      section { margin-top: 22px; }
-      h2 { font-size: 12px; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; margin: 0 0 8px; }
-      .headline { font-size: 19px; line-height: 1.45; margin: 16px 0 0; }
+      main { padding: 0 16px; max-width: 640px; margin: 0 auto; box-sizing: border-box; }
+      section { margin-top: 24px; min-width: 0; }
+      h2 { font-size: 15px; color: var(--ink); font-weight: 700; margin: 0 0 10px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+      h2 .count { font-size: 14px; color: var(--muted); font-weight: 600; }
+      .headline { font-size: 17px; line-height: 1.5; margin: 14px 0 0; color: var(--ink); }
+
+      /* The day's figures: the takings first and largest, then three more. Every figure is a button, because every
+         figure drills to its source (M29-FR-02). A missing figure says "Not known", never a nought. */
+      .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .kpi {
+        background: var(--panel); border-radius: 14px; padding: 12px 14px; border: 1px solid var(--line);
+        text-align: left; color: var(--ink); min-height: 96px; min-width: 0; display: grid; gap: 2px; align-content: start;
+      }
+      .kpi.lead { grid-column: 1 / -1; border-left: 5px solid var(--accent); }
+      .kpi .label { font-size: 14px; color: var(--muted); font-weight: 600; }
+      .kpi .value { font-size: 26px; line-height: 1.15; font-weight: 800; font-variant-numeric: var(--numbers); overflow-wrap: anywhere; }
+      .kpi.lead .value { font-size: 38px; }
+      .kpi .value.unknown { font-size: 20px; color: var(--warn); }
+      .kpi .why { font-size: 14px; color: var(--muted); font-weight: 400; }
+      .kpi .more { font-size: 14px; color: var(--accent); font-weight: 600; }
+      @media (max-width: 380px) { .kpi.basket { grid-column: 1 / -1; } }
 
       .attention { display: grid; gap: 10px; }
       .card {
         background: var(--panel); border-radius: 14px; padding: 14px 16px;
-        border-left: 5px solid var(--warn); min-height: var(--tap); width: 100%;
+        border-left: 6px solid var(--warn); min-height: var(--tap); width: 100%;
         text-align: left; color: var(--ink); font-size: 16px; border-top: 0; border-right: 0; border-bottom: 0;
       }
       .card.urgent { border-left-color: var(--danger); }
       .card.approval { border-left-color: var(--info); }
-      .rank { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
-
-      /* Every figure is a button, because every figure drills to its source (M29-FR-02). */
-      .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .kpi {
-        background: var(--panel); border-radius: 14px; padding: 12px 14px; border: 0;
-        text-align: left; color: var(--ink); min-height: 76px;
-      }
-      .kpi .label { font-size: 12px; color: var(--muted); }
-      .kpi .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .kpi .more { font-size: 11px; color: var(--info); }
+      .rank { font-size: 14px; color: var(--muted); display: block; margin-bottom: 4px; font-weight: 600; }
 
       .rows { display: grid; gap: 10px; }
       .row {
-        background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px;
+        background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px; border: 1px solid var(--line); min-width: 0;
       }
-      .row .what { font-size: 16px; }
-      .row .meta { color: var(--muted); font-size: 13px; }
-      .row .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .row .what { font-size: 16px; overflow-wrap: anywhere; }
+      .row .meta { color: var(--muted); font-size: 14px; }
+      .row .value { font-size: 24px; font-weight: 800; font-variant-numeric: var(--numbers); }
       .row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .alert { width: 100%; text-align: left; background: transparent; color: var(--ink);
-        padding: 12px 0; border: 0; border-top: 1px solid var(--line); font-size: 15px; min-height: var(--tap); }
-      .alert .drill { color: var(--info); font-size: 13px; display: block; margin-top: 2px; }
-      .empty { color: var(--muted); font-size: 15px; }
+        padding: 12px 0; border: 0; border-top: 1px solid var(--line); font-size: 16px; min-height: var(--tap); }
+      .alert .drill { color: var(--accent); font-size: 14px; display: block; margin-top: 2px; }
+      .empty { color: var(--muted); font-size: 15px; margin: 0; }
+      .empty.unknown { color: var(--warn); font-weight: 600; }
+
+      /* The trend: drawn by the one chart code (window.sreCharts, design system §4.4), each in a panel. */
+      .trends { display: grid; gap: 12px; }
+      .trend { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
 
       button {
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
@@ -118,7 +136,7 @@
       }
       .sheet[hidden] { display: none; }
       .sheet-inner {
-        width: min(560px, 100%); background: var(--panel); padding: 20px;
+        width: min(560px, 100%); background: var(--panel); padding: 20px; box-sizing: border-box;
         border-radius: 20px 20px 0 0; display: grid; gap: 12px; max-height: 88dvh; overflow-y: auto;
       }
       .sheet h3 { margin: 0; font-size: 19px; }
@@ -157,6 +175,7 @@
       <div class="freshness">
         <span class="dot" id="fresh-dot" data-sre-status></span>
         <span id="fresh-text">—</span>
+        <span class="asof" id="asof"></span>
       </div>
       <div class="branches" id="branches"></div>
     </header>
@@ -167,10 +186,13 @@
     -->
     <p class="sample" id="sample" hidden role="status">Sample figures — this is not your shop.</p>
     <p class="stale" id="stale" hidden role="status"></p>
+    <!-- UI-3: this phone has no signal right now (navigator.onLine) — the figures are what it last received (P-01 · P-08). -->
+    <p class="offline" id="offline" hidden role="status"></p>
     <!-- A decision the phone could not save. Said, never swallowed. -->
     <p class="queue-problem" id="queue-problem" hidden role="alert"></p>
 
     <main>
+      <!-- UI-3: the order a glance needs — the day's figures, what needs a decision, then the trend. -->
       <p class="headline" id="headline">—</p>
 
       <!-- Decisions that went out of date while they waited (§31.1). Above everything. -->
@@ -179,24 +201,33 @@
         <div class="rows" id="recheck"></div>
       </section>
 
-      <section>
-        <h2 id="attention-title">Needs your attention</h2>
-        <div class="attention" id="attention"></div>
-      </section>
-
-      <section>
+      <section aria-labelledby="kpis-title">
         <h2 id="kpis-title">Today's numbers</h2>
         <div class="kpis" id="kpis"></div>
       </section>
 
-      <section>
-        <h2 id="approvals-title">Waiting for you</h2>
+      <section aria-labelledby="attention-title">
+        <h2><span id="attention-title">Needs your attention</span> <span class="count" id="attention-count"></span></h2>
+        <div class="attention" id="attention"></div>
+      </section>
+
+      <section aria-labelledby="approvals-title">
+        <h2><span id="approvals-title">Waiting for you</span> <span class="count" id="approvals-count"></span></h2>
         <div class="rows" id="approvals"></div>
       </section>
 
-      <section>
-        <h2 id="alerts-title">Alerts</h2>
+      <section aria-labelledby="alerts-title">
+        <h2><span id="alerts-title">Alerts</span> <span class="count" id="alerts-count"></span></h2>
         <div id="alerts"></div>
+      </section>
+
+      <section aria-labelledby="trends-title">
+        <h2 id="trends-title">How the day is going</h2>
+        <div class="trends">
+          <div class="trend" id="chart-hour"></div>
+          <div class="trend" id="chart-days"></div>
+          <div class="trend" id="chart-tender"></div>
+        </div>
       </section>
 
       <section id="queued-section" hidden>

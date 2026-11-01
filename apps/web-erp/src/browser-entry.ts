@@ -52,6 +52,7 @@ import {
   type RegisterItem,
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
+import { attachCharts } from '../../../packages/ui/src/charts'; // UI-3: the one chart drawing
 import { readLiveCounts, todayLiveFigures } from './today-live-counts'; // screen gap audit Round A: Today's head-office counts
 import {
   createBuyingSession,
@@ -6595,6 +6596,8 @@ export function bootReporting(data: ReportingData | undefined): ReportingSession
       // The SHOP's day, worked out by the box against its own cutoff. Slicing on the calendar date
       // here would move a sale rung at half past midnight into the wrong day.
       tradingDay: data.tradingDay ?? '',
+      // OB-639: the shop's zone as the store computer served it — "Sales by hour" is on the shop's clock.
+      timeZone: servedShopZone(),
     },
     reportingPortsFromData(data),
   );
@@ -6607,6 +6610,8 @@ if (browserWindow !== undefined) {
   browserWindow.sreShopDay = shopDay();
   // OB-31: one way to word a held quantity on the office pages (the till's `quantityLabel` for kg / L).
   browserWindow.sreQuantity = Object.freeze({ label: officeQuantityLabel });
+  // UI-3: the one chart drawing (inline SVG, no library, no network) as `window.sreCharts` — design system §4.3.
+  attachCharts(browserWindow);
   // The day close (M14-FR-04) reaches the store computer when the box injected its lane address;
   // without it the manager screen falls back to a local preview close that only touches this browser.
   // The manager's DURABLE device queue (SP-2a · F11): opened here so the session writes into it and the relay

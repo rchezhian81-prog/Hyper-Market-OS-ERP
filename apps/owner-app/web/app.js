@@ -43,7 +43,7 @@ const WORDS = {
     noAlerts: 'No alerts today.', nothingWaiting: 'Nothing is waiting for you.',
     live: 'Live · synced', notLive: 'NOT LIVE — last synced', neverSynced: 'No data has ever reached this phone',
     justNow: 'just now', minutesAgo: 'min ago', hoursAgo: 'hours ago',
-    sales: 'Sales', margin: 'Margin', bills: 'Bills', averageBasket: 'Average basket',
+    sales: 'Taken today', margin: 'Margin', bills: 'Bills', averageBasket: 'Average basket',
     marginNotKnown: 'Not known', tapToSee: 'Tap to see every sale', approve: 'Approve', reject: 'Reject', cancel: 'Cancel',
     close: 'Close', ok: 'OK', total: 'Total', askedBy: 'asked for by', noValue: 'no value',
     whyApprove: 'Why are you approving this?', whyReject: 'Why are you rejecting this?',
@@ -60,6 +60,24 @@ const WORDS = {
     changedSince: 'This changed after you decided it', withdrawnSince: 'This is no longer waiting for anybody',
     youSaid: 'You said', itNowSays: 'It now says', discard: 'Remove it from my list',
     branchNotThere: 'That shop is not on this phone.',
+    // UI-3 (1 Nov 2026): the glance layout, the "no signal" strip, the "not known" figures and the trend charts.
+    asAt: 'as at', offline: 'No signal on this phone. Every figure here is what it last received — see the time above.',
+    notKnownNoData: 'Not known — no figures from this shop have reached this phone yet.',
+    noBillsYet: 'no bills yet today', noCostToday: 'no cost on today\'s bills',
+    leftOut: 'bills with no cost are left out', refundLine: 'refund', noCostLine: 'no cost',
+    unlisted: 'more counted in this figure that the store computer did not list — the lines above do not add up to it.',
+    nothingReached: 'nothing has reached this phone', howTheDayGoes: 'How the day is going',
+    hourTitle: 'Bills by the hour, today', hourHeading: 'Hour', takenHeading: 'Taken',
+    hourCovers: 'Today at {branch}, by the shop clock · money on the bills, before refunds · read at {time}',
+    hourEmpty: 'No bill has been rung today yet, so there is nothing to draw.',
+    daysTitle: 'The last days on the store computer', dayHeading: 'Day', todayMark: 'today',
+    daysCovers: '{branch} · each trading day the store computer holds (up to 7) · before refunds · read at {time}',
+    daysEmpty: 'The store computer holds no trading day yet, so there is nothing to draw.',
+    tenderTitle: 'How today was paid', tenderHeading: 'Paid by',
+    tenderCovers: 'Today at {branch} · after refunds, the same as "Taken today" · read at {time}',
+    tenderEmpty: 'Nothing has been paid today yet, so there is nothing to draw.',
+    notSent: 'The store computer did not send this figure, so it is not drawn. Nothing is assumed.',
+    chartsMissing: 'The chart part of this app is not on this phone, so the trend is not drawn. The figures above are unaffected.',
   },
   ta: {
     staleShell: 'இணைப்பு இல்லை. இந்த எண்கள் இந்த ஃபோனுக்குக் கடைசியாகக் கொடுக்கப்பட்டவை:',
@@ -69,7 +87,7 @@ const WORDS = {
     noAlerts: 'இன்று எச்சரிக்கை எதுவும் இல்லை.', nothingWaiting: 'உங்களுக்காக எதுவும் காத்திருக்கவில்லை.',
     live: 'நேரலை · ஒத்திசைவு', notLive: 'நேரலை அல்ல — கடைசி ஒத்திசைவு', neverSynced: 'இந்த ஃபோனுக்கு இதுவரை எந்தத் தகவலும் வரவில்லை',
     justNow: 'இப்போதுதான்', minutesAgo: 'நிமிடங்களுக்கு முன்', hoursAgo: 'மணி நேரத்திற்கு முன்',
-    sales: 'விற்பனை', margin: 'லாபம்', bills: 'பில்கள்', averageBasket: 'சராசரி கூடை',
+    sales: 'இன்று வசூல்', margin: 'லாபம்', bills: 'பில்கள்', averageBasket: 'சராசரி கூடை',
     marginNotKnown: 'தெரியவில்லை', tapToSee: 'ஒவ்வொரு விற்பனையையும் பார்க்கத் தட்டவும்', approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து',
     close: 'மூடு', ok: 'சரி', total: 'மொத்தம்', askedBy: 'கேட்டவர்', noValue: 'மதிப்பு இல்லை',
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
@@ -86,6 +104,23 @@ const WORDS = {
     changedSince: 'நீங்கள் முடிவு செய்த பிறகு இது மாறிவிட்டது', withdrawnSince: 'இது இனி யாருக்கும் காத்திருக்கவில்லை',
     youSaid: 'நீங்கள் சொன்னது', itNowSays: 'இப்போது உள்ளது', discard: 'என் பட்டியலிலிருந்து நீக்கு',
     branchNotThere: 'அந்தக் கடை இந்த ஃபோனில் இல்லை.',
+    asAt: 'இந்த நேரத்தில்', offline: 'இந்த ஃபோனில் சிக்னல் இல்லை. இங்குள்ள ஒவ்வொரு எண்ணும் கடைசியாகக் கிடைத்தது — மேலே உள்ள நேரத்தைப் பாருங்கள்.',
+    notKnownNoData: 'தெரியவில்லை — இந்தக் கடையின் எந்த எண்ணும் இன்னும் இந்த ஃபோனுக்கு வரவில்லை.',
+    noBillsYet: 'இன்று இன்னும் பில் இல்லை', noCostToday: 'இன்றைய பில்களுக்குச் செலவு இல்லை',
+    leftOut: 'செலவு இல்லாத பில்கள் சேர்க்கப்படவில்லை', refundLine: 'திருப்பித் தந்தது', noCostLine: 'செலவு இல்லை',
+    unlisted: 'இந்த எண்ணில் சேர்ந்தவை, ஆனால் கடை கணினி பட்டியலிடாதவை — மேலே உள்ள வரிகள் இதற்குக் கூடாது.',
+    nothingReached: 'இந்த ஃபோனுக்கு எதுவும் வரவில்லை', howTheDayGoes: 'இன்றைய நாள் எப்படிப் போகிறது',
+    hourTitle: 'இன்று மணி வாரியாகப் பில்கள்', hourHeading: 'மணி', takenHeading: 'வசூல்',
+    hourCovers: 'இன்று {branch}, கடை நேரப்படி · பில்களின் தொகை, திருப்பித் தந்ததற்கு முன் · படித்த நேரம் {time}',
+    hourEmpty: 'இன்று இன்னும் எந்தப் பில்லும் போடப்படவில்லை, எனவே வரைய எதுவும் இல்லை.',
+    daysTitle: 'கடை கணினியில் உள்ள கடைசி நாட்கள்', dayHeading: 'நாள்', todayMark: 'இன்று',
+    daysCovers: '{branch} · கடை கணினியில் உள்ள ஒவ்வொரு வணிக நாளும் (7 வரை) · திருப்பித் தந்ததற்கு முன் · படித்த நேரம் {time}',
+    daysEmpty: 'கடை கணினியில் இன்னும் எந்த வணிக நாளும் இல்லை, எனவே வரைய எதுவும் இல்லை.',
+    tenderTitle: 'இன்று எப்படிப் பணம் வந்தது', tenderHeading: 'செலுத்திய முறை',
+    tenderCovers: 'இன்று {branch} · திருப்பித் தந்த பிறகு, "இன்று வசூல்" போலவே · படித்த நேரம் {time}',
+    tenderEmpty: 'இன்று இன்னும் எந்தப் பணமும் வரவில்லை, எனவே வரைய எதுவும் இல்லை.',
+    notSent: 'கடை கணினி இந்த எண்ணை அனுப்பவில்லை, எனவே வரையப்படவில்லை. எதுவும் ஊகிக்கப்படவில்லை.',
+    chartsMissing: 'இந்த ஆப்பின் வரைபடப் பகுதி இந்த ஃபோனில் இல்லை, எனவே போக்கு வரையப்படவில்லை. மேலே உள்ள எண்கள் பாதிக்கப்படவில்லை.',
   },
 };
 let lang = 'en';
@@ -135,11 +170,18 @@ const SUBJECT_WORDS = {
 /** The four figures on the brief, and which model KPI each reads. */
 // Round 4 (P-08): sales and bills are EVERY bill's (`takings`) — a bill the store computer cannot cost still took money;
 // the margin says "not known" when no bill today could be costed.
+// UI-3: each tile gives its figure AND, where one is missing, why — `null` is drawn as "Not known", never as a nought (P-08).
+// No figure is worked out here: each is the model's own, only chosen between and written in rupees.
 const KPI_TILES = [
-  { kpi: 'grossSales', label: 'sales', from: (k, tk) => inr(tk ? tk.takenMinor : k.grossSalesMinor) },
-  { kpi: 'margin', label: 'margin', from: (k, tk) => (tk && tk.marginUnknownBills > 0 && k.basketCount === 0 ? t('marginNotKnown') : inr(k.marginMinor)) },
-  { kpi: 'baskets', label: 'bills', from: (k, tk) => String(tk ? tk.bills : k.basketCount) },
-  { kpi: 'averageBasket', label: 'averageBasket', from: (k) => inr(k.avgBasketMinor) },
+  { kpi: 'grossSales', label: 'sales', cls: 'lead', from: (k, tk) => ({ value: inr(tk ? tk.takenMinor : k.grossSalesMinor) }) },
+  { kpi: 'margin', label: 'margin', cls: '', from: (k, tk) => (tk && tk.marginUnknownBills > 0 && k.basketCount === 0
+    ? { value: null, why: t('noCostToday') }
+    : { value: inr(k.marginMinor), why: tk && tk.marginUnknownBills > 0 ? `${tk.marginUnknownBills} ${t('leftOut')}` : '' }) },
+  { kpi: 'baskets', label: 'bills', cls: '', from: (k, tk) => ({ value: String(tk ? tk.bills : k.basketCount) }) },
+  // OB-640 (owner, 1 Nov 2026): the takings ÷ EVERY bill, as the model works it out; an average of no bills is not known.
+  { kpi: 'averageBasket', label: 'averageBasket', cls: 'basket', from: (k, tk) => (tk === undefined
+    ? (k.basketCount === 0 ? { value: null, why: t('noBillsYet') } : { value: inr(k.avgBasketMinor) })
+    : tk.averageBasketMinor === null ? { value: null, why: t('noBillsYet') } : { value: inr(tk.averageBasketMinor) }) },
 ];
 
 const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).replace(/_/g, ' '));
@@ -181,6 +223,7 @@ function sampleSession() {
       approvals: approvals.filter((a) => !decided.has(a.id)),
     }),
     drill: (kpi) => ({ kpi, lines: sales, totalMinor: gross, countIsTheAnswer: kpi === 'baskets' }),
+    trends: () => ({ byHour: null, recentDays: null }),
     decide: ({ requestId, acknowledgeStale }) => {
       if (acknowledgeStale !== true) return { ok: false, refusal: 'stale_data_not_acknowledged' };
       decided.add(requestId);
@@ -236,6 +279,72 @@ function renderFreshness(freshness) {
   text.textContent = freshness.state === 'missing'
     ? t('neverSynced')
     : `${freshness.state === 'stale' ? t('notLive') : t('live')} ${ageInWords(freshness.ageSeconds)}`;
+  // UI-3 (P-08): the moment the figures are from, at the shop's clock — "2 hours ago" alone is unreadable an hour later.
+  const when = freshness.lastSyncedAt ? shopWhen(freshness.lastSyncedAt) : '';
+  el('asof').textContent = when === '' ? '' : `· ${t('asAt')} ${when}`;
+}
+
+// ── No signal on this phone (UI-3 · P-01 · P-08) ────────────────────────────
+// The phone itself says whether it has a network. Without one, nothing here can be newer than the time in the header,
+// and the strip says so in words — the dot alone is colour.
+function paintOffline() {
+  const strip = el('offline');
+  strip.hidden = navigator.onLine !== false;
+  strip.textContent = t('offline');
+}
+window.addEventListener('online', paintOffline);
+window.addEventListener('offline', paintOffline);
+
+// ── The trend (UI-3): three simple charts from the one chart code, each saying what it covers and when it was read ──
+
+const TENDER_WORDS = {
+  cash: { en: 'Cash', ta: 'ரொக்கம்' }, card: { en: 'Card', ta: 'அட்டை' }, upi: { en: 'UPI', ta: 'UPI' },
+  store_credit: { en: 'Store credit', ta: 'கடைக் கடன்' }, exchange_credit: { en: 'Exchange credit', ta: 'மாற்றுக் கடன்' },
+  loyalty_points: { en: 'Loyalty points', ta: 'விசுவாசப் புள்ளிகள்' }, paid_on_old_erp: { en: 'Paid on the old system', ta: 'பழைய அமைப்பில் செலுத்தியது' },
+  split: { en: 'Split', ta: 'பிரித்தது' }, tender_difference: { en: 'Not matched to a payment', ta: 'பணத்துடன் பொருந்தாதது' },
+};
+const fillIn = (text, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), text);
+
+function chartOrSay(host, spec, notSent) {
+  host.replaceChildren();
+  if (notSent || window.sreCharts === undefined) {
+    const p = document.createElement('p');
+    p.className = 'empty unknown';
+    const head = document.createElement('strong');
+    head.textContent = spec.title;
+    p.append(head, document.createElement('br'), document.createTextNode(notSent ? t('notSent') : t('chartsMissing')));
+    host.append(p);
+    return;
+  }
+  window.sreCharts.draw(host, spec, lang);
+}
+
+function renderTrends(brief) {
+  const trends = typeof session.trends === 'function' ? session.trends() : { byHour: null, recentDays: null };
+  const branch = session.branches().find((b) => b.branchId === session.currentBranchId())?.name ?? '';
+  const time = brief.freshness.lastSyncedAt ? shopWhen(brief.freshness.lastSyncedAt) : t('neverSynced');
+  const covers = (key) => fillIn(t(key), { branch, time });
+  const missing = brief.freshness.state === 'missing';
+  const today = brief.freshness.lastSyncedAt ? window.sreShopDay?.dateOf(brief.freshness.lastSyncedAt) ?? '' : '';
+  chartOrSay(el('chart-hour'), {
+    id: 'hour', kind: 'columns', title: t('hourTitle'), covers: covers('hourCovers'), labelHeading: t('hourHeading'), valueHeading: t('takenHeading'),
+    empty: t('hourEmpty'),
+    rows: (trends.byHour ?? []).map((h) => ({ key: h.hour, label: `${h.hour}:00`, value: h.takenMinor, text: `${inr(h.takenMinor)} · ${h.bills} ${t('bills').toLowerCase()}` })),
+  }, missing || trends.byHour === null);
+  chartOrSay(el('chart-days'), {
+    id: 'days', kind: 'columns', title: t('daysTitle'), covers: covers('daysCovers'), labelHeading: t('dayHeading'), valueHeading: t('takenHeading'),
+    empty: t('daysEmpty'),
+    rows: (trends.recentDays ?? []).map((d) => ({
+      key: d.tradingDay, label: `${d.tradingDay.slice(8, 10)}/${d.tradingDay.slice(5, 7)}`, value: d.takenMinor,
+      text: `${inr(d.takenMinor)} · ${d.bills} ${t('bills').toLowerCase()}`, ...(d.tradingDay === today ? { mark: t('todayMark') } : {}),
+    })),
+  }, missing || trends.recentDays === null);
+  const mix = Object.entries(brief.takings?.tenderMix ?? {}).sort((a, b) => b[1] - a[1]);
+  chartOrSay(el('chart-tender'), {
+    id: 'tender', kind: 'bars', title: t('tenderTitle'), covers: covers('tenderCovers'), labelHeading: t('tenderHeading'), valueHeading: t('takenHeading'),
+    empty: t('tenderEmpty'),
+    rows: mix.map(([kind, minor]) => ({ key: kind, label: words(TENDER_WORDS, kind), value: minor, text: minor < 0 ? `−${inr(-minor)}` : inr(minor) })),
+  }, missing || brief.takings === undefined);
 }
 
 // ── Rendering ───────────────────────────────────────────────────────────────
@@ -264,12 +373,20 @@ function renderBranches() {
   }));
 }
 
-function renderAttention(items) {
+/** UI-3: an empty list on a phone that has never been told anything is "not known" — never "nothing needs you" (P-08). */
+function emptyLine(words, freshness) {
+  const none = document.createElement('p');
+  none.className = freshness.state === 'missing' ? 'empty unknown' : 'empty';
+  none.textContent = freshness.state === 'missing' ? t('notKnownNoData') : words;
+  return none;
+}
+const countOf = (list, freshness) => (freshness.state === 'missing' ? '' : `(${list.length})`);
+
+function renderAttention(items, freshness) {
   const host = el('attention');
+  el('attention-count').textContent = countOf(items, freshness);
   if (items.length === 0) {
-    const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('nothingToDecide');
+    const none = emptyLine(t('nothingToDecide'), freshness);
     host.replaceChildren(none);
     return;
   }
@@ -298,12 +415,16 @@ function renderAttention(items) {
   }));
 }
 
-function renderKpis(kpis, takings) {
+function renderKpis(kpis, takings, freshness) {
   el('kpis').replaceChildren(...KPI_TILES.map((tile) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'kpi';
-    for (const [cls, text] of [['label', t(tile.label)], ['value', tile.from(kpis, takings)], ['more', t('tapToSee')]]) {
+    button.className = `kpi ${tile.cls}`.trim();
+    button.dataset.kpi = tile.kpi;
+    // Nothing has ever reached this phone from the shop: every figure is not known, never a row of noughts (P-08).
+    const shown = freshness.state === 'missing' ? { value: null, why: t('nothingReached') } : tile.from(kpis, takings);
+    for (const [cls, text] of [['label', t(tile.label)], [shown.value === null ? 'value unknown' : 'value', shown.value ?? t('marginNotKnown')], ['why', shown.why ?? ''], ['more', t('tapToSee')]]) {
+      if (cls === 'why' && text === '') continue;
       const part = document.createElement('div');
       part.className = cls;
       part.textContent = text;
@@ -315,12 +436,11 @@ function renderKpis(kpis, takings) {
   }));
 }
 
-function renderAlerts(alerts) {
+function renderAlerts(alerts, freshness) {
   const host = el('alerts');
+  el('alerts-count').textContent = countOf(alerts, freshness);
   if (alerts.length === 0) {
-    const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('noAlerts');
+    const none = emptyLine(t('noAlerts'), freshness);
     host.replaceChildren(none);
     return;
   }
@@ -357,12 +477,11 @@ function showAlert(alert) {
   el('drill').hidden = false;
 }
 
-function renderApprovals(approvals) {
+function renderApprovals(approvals, freshness) {
   const host = el('approvals');
+  el('approvals-count').textContent = countOf(approvals, freshness);
   if (approvals.length === 0) {
-    const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('nothingWaiting');
+    const none = emptyLine(t('nothingWaiting'), freshness);
     host.replaceChildren(none);
     return;
   }
@@ -515,14 +634,17 @@ function openDrill(kpi, label) {
   el('drill-title').textContent = label;
   el('drill-total-label').textContent = drill.countIsTheAnswer ? t('bills') : t('total');
   el('drill-total').textContent = drill.countIsTheAnswer ? String(drill.lines.length) : inr(drill.totalMinor);
-  el('drill-note').textContent = drill.countIsTheAnswer ? t('countIsAnswer') : t('drillNote');
+  el('drill-note').textContent = (drill.countIsTheAnswer ? t('countIsAnswer') : t('drillNote'))
+    + (drill.unlisted > 0 ? ` ${drill.unlisted} ${t('unlisted')}` : '');
   el('drill-lines').replaceChildren(...drill.lines.map((line) => {
     const row = document.createElement('div');
     row.className = 'drill-line';
     const id = document.createElement('span');
-    id.textContent = `${line.saleId} · ${line.tender}`;
+    // OB-640: a bill with no cost and a refund are named as such — a refund takes its amount off the total.
+    const what = line.kind === 'refund' ? ` · ${t('refundLine')}` : line.kind === 'uncosted_bill' ? ` · ${t('noCostLine')}` : '';
+    id.textContent = `${line.saleId} · ${line.tender}${what}`;
     const amount = document.createElement('span');
-    amount.textContent = inr(line.contributesMinor);
+    amount.textContent = line.contributesMinor < 0 ? `−${inr(-line.contributesMinor)}` : inr(line.contributesMinor);
     row.append(id, amount);
     return row;
   }));
@@ -540,7 +662,9 @@ function paintChrome() {
   el('alerts-title').textContent = t('alerts');
   el('recheck-title').textContent = t('lookAgain');
   el('queued-title').textContent = t('decidedNotSent');
+  el('trends-title').textContent = t('howTheDayGoes');
   el('sample').textContent = t('sampleData');
+  paintOffline();
 }
 
 function render() {
@@ -549,10 +673,11 @@ function render() {
   renderFreshness(brief.freshness);
   renderBranches();
   renderRecheck();
-  renderAttention(brief.attention);
-  renderKpis(brief.kpis, brief.takings);
-  renderApprovals(brief.approvals);
-  renderAlerts(brief.alerts);
+  renderKpis(brief.kpis, brief.takings, brief.freshness);
+  renderAttention(brief.attention, brief.freshness);
+  renderApprovals(brief.approvals, brief.freshness);
+  renderAlerts(brief.alerts, brief.freshness);
+  renderTrends(brief);
   renderQueued();
 }
 
