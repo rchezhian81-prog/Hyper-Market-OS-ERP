@@ -53,6 +53,10 @@ const WORDS = {
     exported: 'File written', exportedNote: 'rows, with the column list beside them.',
     ok: 'OK', read: 'Please read this',
     sampleData: 'Sample data — this is not your shop.',
+    // W1: the summary cards, the report finder and the rows register
+    cardReady: 'Reports you can run', cardBlocked: 'Cannot be run yet', cardBacklog: 'Facts to start recording', cardNote: 'from what this shop records',
+    findReport: 'Find a report', noReportMatches: 'No report matches those words.', rowsLabel: 'The rows behind this report',
+    notFed: 'This page has not been told what this shop records, so it does not know which reports can run. Nothing is shown as ready or as clear.',
   },
   ta: {
     title: 'அறிக்கைகள்',
@@ -76,6 +80,9 @@ const WORDS = {
     exported: 'கோப்பு எழுதப்பட்டது', exportedNote: 'வரிகள், நெடுவரிசைப் பட்டியலுடன்.',
     ok: 'சரி', read: 'இதைப் படிக்கவும்',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    cardReady: 'இயக்கக்கூடிய அறிக்கைகள்', cardBlocked: 'இன்னும் இயக்க முடியாதவை', cardBacklog: 'பதிவு செய்யத் தொடங்க வேண்டியவை', cardNote: 'இந்தக் கடை பதிவு செய்வதிலிருந்து',
+    findReport: 'ஒரு அறிக்கையைத் தேடு', noReportMatches: 'அந்தச் சொற்களுக்குப் பொருந்தும் அறிக்கை இல்லை.', rowsLabel: 'இந்த அறிக்கைக்குப் பின்னால் உள்ள வரிகள்',
+    notFed: 'இந்தக் கடை என்ன பதிவு செய்கிறது என்று இந்தப் பக்கத்திற்குச் சொல்லப்படவில்லை, எனவே எந்த அறிக்கைகள் இயங்கும் என்று தெரியாது. எதுவும் தயார் என்றோ சரி என்றோ காட்டப்படவில்லை.',
   },
 };
 let lang = 'en';
@@ -168,6 +175,14 @@ function renderCatalogue() {
   const all = session.catalogue();
   const ready = all.filter((e) => e.availability.available);
   const blocked = all.filter((e) => !e.availability.available);
+  // W1 (P-08): a page the store computer did not feed knows nothing — it says so in every list and every card, and never
+  // "every report can be run" or "nothing else needs recording" (that would be an all-clear it was never given).
+  const fed = real !== undefined;
+  paintCards(fed ? ready.length : null, fed ? blocked.length : null, fed ? session.backlog().length : null);
+  if (!fed) {
+    for (const id of ['reports-list', 'blocked-list', 'backlog-list']) el(id).replaceChildren(emptyLine(t('notFed')));
+    return;
+  }
 
   el('reports-list').replaceChildren(...(ready.length === 0
     ? [emptyLine(t('noReports'))]
@@ -206,6 +221,35 @@ function emptyLine(text) {
   p.textContent = text;
   return p;
 }
+
+// ── W1: the shared summary cards and the report finder (window.sreOffice, from the chrome) ───────────────────────
+const office = () => window.sreOffice ?? null;
+let cardCounts = [null, null, null];
+function paintCards(ready, blocked, backlog) {
+  cardCounts = [ready, blocked, backlog];
+  const o = office();
+  if (!o) return;
+  o.cards(el('report-cards'), [
+    { label: t('cardReady'), value: ready, note: t('cardNote'), tone: ready === null ? undefined : 'ok', icon: 'chart-column' },
+    { label: t('cardBlocked'), value: blocked, note: t('cardNote'), tone: blocked ? 'pending' : undefined, icon: 'circle-help' },
+    { label: t('cardBacklog'), value: backlog, note: t('cardNote'), icon: 'list-plus' },
+  ]);
+}
+document.addEventListener('sre:chrome', () => { paintCards(...cardCounts); if (openReportId !== null) { const o = session.run(openReportId); if (o.ok) renderReport(o); } });
+/** The report finder: every word typed must be in a report's name or what it answers; the list says when none match. */
+function findReports() {
+  const words = el('find-report').value.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+  let shown = 0;
+  for (const row of el('reports-list').querySelectorAll('.row')) {
+    const hit = words.every((w) => row.textContent.toLowerCase().includes(w));
+    row.hidden = !hit;
+    if (hit) shown += 1;
+  }
+  const none = el('find-none');
+  none.hidden = words.length === 0 || shown > 0;
+  none.textContent = t('noReportMatches');
+}
+el('find-report').addEventListener('input', findReports);
 
 function reportRow(entry, ready) {
   const row = document.createElement('div');
@@ -258,6 +302,19 @@ function renderReport(outcome) {
 
   if (outcome.rows.length === 0) {
     el('report-rows').replaceChildren(emptyLine(t('noRows')));
+    return;
+  }
+  // W1: the rows as the shared register — search, sort (numbers as numbers), pages of 25, a column choice. Every key
+  // any row carries is a column (see below); the register adds nothing and drops nothing.
+  const o = office();
+  if (o) {
+    const keys = [];
+    for (const row of outcome.rows) for (const key of Object.keys(row)) if (!keys.includes(key)) keys.push(key);
+    const numeric = (k) => outcome.rows.every((r) => r[k] === undefined || r[k] === null || r[k] === '' || Number.isFinite(Number(r[k])));
+    o.table(el('report-rows'), {
+      id: 'report', label: t('rowsLabel'), pageSize: 25, rows: outcome.rows,
+      columns: keys.map((k) => ({ key: k, label: k, sort: numeric(k) ? 'number' : 'text', align: numeric(k) ? 'end' : undefined, value: (r) => (r[k] === undefined ? '' : r[k]) })),
+    });
     return;
   }
   const table = document.createElement('table');
@@ -344,6 +401,8 @@ function paintChrome() {
   el('tab-backlog').textContent = t('whatNext');
   el('reports-title').textContent = t('reports');
   el('reports-lead').textContent = t('reportsLead');
+  el('find-report-label').textContent = t('findReport');
+  el('find-report').placeholder = t('findReport');
   el('blocked-title').textContent = t('cannotRun');
   el('blocked-lead').textContent = t('blockedLead');
   el('backlog-title').textContent = t('whatNext');
@@ -351,6 +410,7 @@ function paintChrome() {
   el('sample').textContent = t('sampleData');
   renderFreshness();
   renderCatalogue();
+  findReports();
   if (openReportId !== null) {
     const outcome = session.run(openReportId);
     if (outcome.ok) renderReport(outcome);

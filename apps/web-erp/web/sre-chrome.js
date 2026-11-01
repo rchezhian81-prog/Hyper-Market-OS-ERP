@@ -40,6 +40,8 @@
       noRoles: 'This store computer has no role register, so no screens can be offered.',
       inList: '{n} in the list',
       workspaceWord: 'Workspace', branchWorkspace: 'Branch workspace', findScreen: 'Find a screen', noScreenMatches: 'No screen matches',
+      findScreenHint: 'Find a screen — type a word like cash, GST or expiry', matchesOne: '1 screen matches', matchesMany: '{n} screens match',
+      pinned: 'Pinned', recent: 'Recently opened', pinPage: 'Pin this page', unpinPage: 'Unpin this page',
       storeAlarm: 'The store computer needs you',
       storeCopy: 'These figures are the store computer\'s copy of head office\'s records, as head office last sent it at {at} ({age}). Anything changed at head office since then is not shown yet.',
       storeCopyNone: 'Head office has not sent this store computer its records yet, so this page shows only what the store computer itself knows.',
@@ -58,6 +60,8 @@
       noRoles: 'இந்தக் கடை கணினியில் பங்கு பதிவேடு இல்லை, எனவே திரைகள் வழங்க முடியாது.',
       inList: 'பட்டியலில் {n}',
       workspaceWord: 'பணியிடம்', branchWorkspace: 'கிளைப் பணியிடம்', findScreen: 'ஒரு திரையைத் தேடு', noScreenMatches: 'பொருந்தும் திரை இல்லை',
+      findScreenHint: 'திரையைத் தேடு — பணம், ஜிஎஸ்டி, காலாவதி போன்ற சொல்லைத் தட்டச்சு செய்க', matchesOne: '1 திரை பொருந்துகிறது', matchesMany: '{n} திரைகள் பொருந்துகின்றன',
+      pinned: 'மேலே வைத்தவை', recent: 'சமீபத்தில் திறந்தவை', pinPage: 'இந்தப் பக்கத்தை மேலே வை', unpinPage: 'மேலிருந்து எடு',
       storeAlarm: 'கடை கணினிக்கு உங்கள் கவனம் தேவை',
       storeCopy: 'இந்த எண்கள் தலைமை அலுவலகப் பதிவுகளின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {at} அன்று அனுப்பியது ({age}). அதன் பிறகு தலைமை அலுவலகத்தில் மாறியவை இன்னும் காட்டப்படவில்லை.',
       storeCopyNone: 'தலைமை அலுவலகம் தன் பதிவுகளை இந்தக் கடைக் கணினிக்கு இன்னும் அனுப்பவில்லை, எனவே இந்தப் பக்கம் கடைக் கணினிக்குத் தெரிந்ததை மட்டுமே காட்டுகிறது.',
@@ -406,35 +410,133 @@
     const scroller = document.createElement('div');
     scroller.className = 'groups';
     panel.append(scroller);
-    for (const group of groups) {
+    noteVisit(nav);
+    // W1: what this person keeps at the top (pinned) and what they opened last (recent) — this browser's own memory,
+    // only ever screens the rail already offers them (a pin to a screen they lost is simply not drawn).
+    const offered = new Map(groups.flatMap((g) => (g.items ?? []).map((item) => [item.id, item])));
+    const pins = remembered('pins').filter((id) => offered.has(id));
+    const here = currentPlace(nav)?.item.id ?? null;
+    const recent = remembered('recent').filter((id) => offered.has(id) && id !== here && !pins.includes(id)).slice(0, 5);
+    if (pins.length > 0) scroller.append(quickSection('pinned', t('pinned'), pins.map((id) => offered.get(id))));
+    if (recent.length > 0) scroller.append(quickSection('recent', t('recent'), recent.map((id) => offered.get(id))));
+    const total = groups.reduce((n, g) => n + (g.items ?? []).length, 0);
+    const opened = rememberedObject('open');
+    for (const [index, group] of groups.entries()) {
+      const key = typeof group.key === 'string' ? group.key : `g${index}`;
       const section = document.createElement('div');
       section.className = 'group-section';
+      section.dataset.key = key;
       const title = document.createElement('p');
       title.className = 'group';
+      const list = document.createElement('ul');
+      list.id = `sre-group-${index}`;
       // OB-201: on the rail each SCREEN carries its shape, so the workspace heading is words alone — one icon per row,
       // never two stacked. The workspace's own shape (GROUP_ICONS) is still the Today page's workspace tiles'.
-      title.append(document.createTextNode(word(group.group)));
-      const list = document.createElement('ul');
+      // W1: a short list stands open; a long one opens only the person's daily work, the workspace they are in and the
+      // ones they opened themselves — every heading is a button that shows or hides its screens, so a long list is a
+      // dozen plain headings instead of a hundred links.
+      const isHere = (group.items ?? []).some((item) => isCurrent(item));
+      const open = total <= 24 || key === 'Daily' || isHere || opened[key] === true;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'group-toggle';
+      toggle.setAttribute('aria-controls', list.id);
+      toggle.append(document.createTextNode(word(group.group)));
+      toggle.addEventListener('click', () => {
+        const nowOpen = toggle.getAttribute('aria-expanded') !== 'true';
+        const all = rememberedObject('open');
+        all[key] = nowOpen;
+        remember('open', all);
+        setOpen(section, nowOpen);
+        filterMenu(byId('sre-find')?.value ?? '');
+      });
+      title.append(toggle);
       for (const item of group.items ?? []) {
         const li = document.createElement('li');
-        const link = document.createElement('a');
-        link.href = item.path;
-        // the screen's shape from the one set, then its name (OB-201); the name alone is the link's text
-        const shape = itemIcon(item);
-        if (shape) link.append(shape);
-        link.append(document.createTextNode(word(item.label)));
-        if (isCurrent(item)) link.setAttribute('aria-current', 'page');
-        li.append(link);
+        li.dataset.find = findText(item, group);
+        li.append(railLink(item, true));
         list.append(li);
       }
       section.append(title, list);
+      setOpen(section, open);
       scroller.append(section);
     }
     panel.append(personCard(nav));
     filterMenu(byId('sre-find')?.value ?? '');
     layout();
-    const current = scroller.querySelector('a[aria-current="page"]');
+    const current = scroller.querySelector('.group-section a[aria-current="page"]');
     if (current && typeof current.scrollIntoView === 'function') current.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ── W1: the rail's own parts ─────────────────────────────────────────────────────────────────────────────────
+  /** A rail link: the screen's shape from the one set, then its name (OB-201); the name alone is the link's text. */
+  function railLink(item, main) {
+    const link = document.createElement('a');
+    link.href = item.path;
+    const shape = itemIcon(item);
+    if (shape) link.append(shape);
+    link.append(document.createTextNode(word(item.label)));
+    if (main && isCurrent(item)) link.setAttribute('aria-current', 'page');
+    if (!main) link.className = 'sre-quick-link';
+    return link;
+  }
+  function quickSection(key, heading, items) {
+    const section = document.createElement('div');
+    section.className = 'group-section sre-quick';
+    section.dataset.key = key;
+    const title = document.createElement('p');
+    title.className = 'group sre-quick-title';
+    title.textContent = heading;
+    const list = document.createElement('ul');
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.dataset.find = findText(item, null);
+      li.append(railLink(item, false));
+      list.append(li);
+    }
+    section.append(title, list);
+    return section;
+  }
+  function setOpen(section, open) {
+    const toggle = section.querySelector('.group-toggle');
+    const list = section.querySelector('ul');
+    if (toggle) toggle.setAttribute('aria-expanded', String(open));
+    section.dataset.open = String(open);
+    if (list) list.hidden = !open;
+  }
+  /** Everything a person might type to find a screen: its name and plain words in both languages, its workspace's name. */
+  function findText(item, group) {
+    const both = (pair) => (pair && typeof pair === 'object' ? `${pair.en ?? ''} ${pair.ta ?? ''}` : String(pair ?? ''));
+    return `${both(item.label)} ${both(item.words)} ${group ? both(group.group) : ''}`.toLowerCase();
+  }
+
+  // This browser's memory of the rail (pins, recent, open workspaces) — per person, a convenience only: it may be empty
+  // or refused (a private window), and the rail is whole without it. Never a fact anybody else relies on.
+  const storeKey = (what) => `sre.rail.${what}.${String(navigation()?.userId ?? 'nobody')}`;
+  function remembered(what) {
+    try { const v = JSON.parse(window.localStorage.getItem(storeKey(what)) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; }
+  }
+  function rememberedObject(what) {
+    try { const v = JSON.parse(window.localStorage.getItem(storeKey(what)) ?? '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch { return {}; }
+  }
+  function remember(what, value) {
+    try { window.localStorage.setItem(storeKey(what), JSON.stringify(value)); } catch { /* the rail works without it */ }
+  }
+  let visited = false;
+  function noteVisit(nav) {
+    if (visited) return;
+    const place = currentPlace(nav);
+    if (!place) return;
+    visited = true;
+    remember('recent', [place.item.id, ...remembered('recent').filter((id) => id !== place.item.id)].slice(0, 8));
+  }
+  function togglePin() {
+    const place = currentPlace(navigation());
+    if (!place) return;
+    const pins = remembered('pins');
+    remember('pins', pins.includes(place.item.id) ? pins.filter((id) => id !== place.item.id) : [...pins, place.item.id]);
+    paintMenu();
+    paintTopline();
   }
 
 
@@ -445,22 +547,26 @@
   // does not know draws nothing and the word stands alone. tests/guardrails/every-icon-comes-from-the-one-set.test.ts
   // proves every name here is in the set and every item in apps/web-erp/src/navigation.ts has one.
   const GROUP_ICONS = Object.freeze({
-    'Today': 'layout-dashboard',
-    'Products & pricing': 'tag',
-    'Purchase': 'shopping-cart',
-    'Receiving & QC': 'package-check',
-    'Inventory & backstore': 'warehouse',
-    'Shop floor': 'store',
+    'Your daily work': 'calendar-check',
+    'Today & approvals': 'layout-dashboard',
+    'Products & prices': 'tag',
+    'Buying from suppliers': 'shopping-cart',
+    'Goods coming in': 'package-check',
+    'Stock & counts': 'warehouse',
+    'Waste, expiry & returns': 'trash',
+    'Shelves & shop floor': 'store',
+    'Customers & service': 'users',
     'Sales & service': 'receipt',
-    'Orders & delivery': 'truck',
-    'Cash & finance': 'wallet',
-    'Customers & loyalty': 'users',
+    'Online orders & delivery': 'truck',
     'Fresh food & café': 'chef-hat',
-    'People & tasks': 'clipboard-list',
-    'Store operations': 'sliders',
-    'Reports': 'chart-column',
-    'Administration': 'shield-check',
-    'Devices': 'monitor-smartphone',
+    'Cash, accounts & GST': 'wallet',
+    'Staff, rota & tasks': 'clipboard-list',
+    'My work & pay': 'user-round',
+    'Checks & investigations': 'shield-alert',
+    'Reports & figures': 'chart-column',
+    'Setup, people & access': 'shield-check',
+    'Tills, devices & connections': 'monitor',
+    'Open a device screen': 'monitor-smartphone',
   });
   const ITEM_ICONS = Object.freeze({
     'dashboard': 'layout-dashboard',
@@ -665,24 +771,37 @@
     const panel = byId('sre-menu');
     if (!panel) return;
     const q = String(query ?? '').trim().toLowerCase();
-    let any = false;
+    // W1: every word typed must be found — in the screen's name, its plain words ("cash", "salary", "expiry") or its
+    // workspace's name, in either language. Searching looks in every workspace, open or not; clearing the field
+    // puts the workspaces back as the person left them. Pinned and recent stand aside while searching (no doubles).
+    const words = q.split(/\s+/).filter((w) => w !== '');
+    let count = 0;
     for (const section of panel.querySelectorAll('.group-section')) {
-      // a workspace's name counts too: "cash" finds every screen under Cash & finance
-      const groupHit = q !== '' && (section.querySelector('.group')?.textContent ?? '').toLowerCase().includes(q);
+      const quick = section.classList.contains('sre-quick');
+      const list = section.querySelector('ul');
+      if (q === '') {
+        for (const li of section.querySelectorAll('li')) li.hidden = false;
+        section.hidden = false;
+        if (list && !quick) list.hidden = section.dataset.open === 'false';
+        continue;
+      }
       let hit = false;
       for (const li of section.querySelectorAll('li')) {
-        const match = q === '' || groupHit || li.textContent.toLowerCase().includes(q);
+        const hay = li.dataset.find ?? li.textContent.toLowerCase();
+        const match = !quick && words.every((w) => hay.includes(w));
         li.hidden = !match;
-        hit = hit || match;
+        if (match) { hit = true; count += 1; }
       }
       section.hidden = !hit;
-      any = any || hit;
+      if (list && hit) list.hidden = false;
     }
     let none = byId('sre-find-none');
-    if (q !== '' && !any) {
+    if (q !== '' && count === 0) {
       if (!none) { none = document.createElement('p'); none.id = 'sre-find-none'; none.className = 'who-can'; (panel.querySelector('.groups') ?? panel).append(none); }
       setText(none, t('noScreenMatches'));
     } else if (none) none.remove();
+    const said = byId('sre-find-count');
+    if (said) setText(said, q === '' || count === 0 ? '' : count === 1 ? t('matchesOne') : t('matchesMany').replace('{n}', String(count)));
     if (q !== '' && !desk.matches && byId('sre-menu')?.hidden) toggleMenu(true);
   }
   function paintTopline() {
@@ -704,7 +823,7 @@
       find.autocomplete = 'off';
       find.addEventListener('input', () => filterMenu(find.value));
       find.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { const first = byId('sre-menu')?.querySelector('li:not([hidden]) a'); if (first) { e.preventDefault(); first.click(); } }
+        if (e.key === 'Enter') { const first = byId('sre-menu')?.querySelector('.group-section:not([hidden]) ul:not([hidden]) li:not([hidden]) a'); if (first) { e.preventDefault(); first.click(); } }
         if (e.key === 'Escape') { find.value = ''; filterMenu(''); }
       });
       // the magnifier sits inside the field (OB-201); the field keeps its own name and its own hidden state
@@ -714,7 +833,19 @@
       const lens = icon(CHROME_ICONS.find, 18);
       if (lens) findWrap.append(lens);
       findWrap.append(find);
-      line.append(crumbs, findWrap);
+      // W1: how many screens the words found, said once for a screen reader as well as seen
+      const count = document.createElement('span');
+      count.id = 'sre-find-count';
+      count.className = 'sre-find-count';
+      count.setAttribute('role', 'status');
+      count.setAttribute('aria-live', 'polite');
+      // W1: keep this page at the top of the rail (this browser remembers it for this person)
+      const pin = document.createElement('button');
+      pin.type = 'button';
+      pin.id = 'sre-pin';
+      pin.className = 'sre-btn sre-btn-quiet sre-pin';
+      pin.addEventListener('click', () => togglePin());
+      line.append(crumbs, pin, findWrap, count);
       header.prepend(line);
     }
     const place = nav ? currentPlace(nav) : null;
@@ -725,7 +856,20 @@
       if (leaf !== parts[parts.length - 1]) parts.push(leaf);
     }
     setText(byId('sre-crumbs'), parts.join(' › '));
+    const pin = byId('sre-pin');
+    pin.hidden = place === null;
+    if (place) {
+      const pinned = remembered('pins').includes(place.item.id);
+      const words = pinned ? t('unpinPage') : t('pinPage');
+      if (pin.dataset.words !== words) {
+        pin.dataset.words = words;
+        const mark = icon(pinned ? 'check' : 'list-plus', 18);
+        pin.replaceChildren(...(mark ? [mark] : []), document.createTextNode(words));
+      }
+      pin.setAttribute('aria-pressed', String(pinned));
+    }
     const find = byId('sre-find');
+    find.title = t('findScreenHint');
     find.setAttribute('aria-label', t('findScreen'));
     find.placeholder = t('findScreen');
     find.hidden = !nav || (nav.groups ?? []).length === 0;
@@ -850,9 +994,503 @@
   let anatomyQueued = false;
   const scheduleAnatomy = () => { if (anatomyQueued) return; anatomyQueued = true; requestAnimationFrame(() => { anatomyQueued = false; paintAnatomy(); }); };
 
+  // ── The office page components (W1 · P-07 · P-08 · design system §4.1) ───────────────────────────────────────────
+  // One register, one set of states, one summary card, one chip and one form field for every office page, so a page
+  // hands over its REAL rows and its words and gets search, filters, sort, paging, a column choice and a record drawer
+  // — the same everywhere, in English and Tamil. A page reaches them as `window.sreOffice` (after the chrome loads; a
+  // page that paints first listens for `sre:chrome`). Nothing here makes up a figure: a value the page does not have is
+  // drawn as "Not known", and an empty list says "nothing yet" — never "all clear" (P-08).
+  const OFFICE_WORDS = {
+    en: {
+      search: 'Search this list', filterAll: 'All', columns: 'Columns', columnsShown: 'Columns to show', open: 'Open', close: 'Close',
+      showing: 'Showing {from}–{to} of {n}', showingNone: 'Showing 0 of {n}', previous: 'Previous page', next: 'Next page', page: 'Page {p} of {q}',
+      sortBy: 'Sort by {c}', clear: 'Clear search and filters',
+      loading: 'Reading the records…', loadingDetail: 'This takes a moment. Nothing is shown until it is read.',
+      empty: 'Nothing here yet', emptyDetail: 'No records have been found for this list. An empty list does not mean everything is fine — it means there is nothing to show yet.',
+      noMatch: 'No rows match', noMatchDetail: 'Nothing in this list matches the search or filter. The list itself still has {n} row(s).',
+      error: 'Could not read this list', errorDetail: 'Nothing was changed. Try again; if it keeps happening, tell the manager.',
+      offline: 'Head office cannot be reached', offlineDetail: 'This list could not be read, so nothing here is current. Nothing was changed.',
+      denied: 'Your role cannot open this', deniedDetail: 'Ask the owner or the manager if you need it.',
+      notKnown: 'Not known', required: 'required', fillIn: 'Fill in "{f}".', fixFields: 'Some answers need fixing before this can be sent:', tryAgain: 'Try again',
+    },
+    ta: {
+      search: 'இந்தப் பட்டியலில் தேடு', filterAll: 'அனைத்தும்', columns: 'நெடுவரிசைகள்', columnsShown: 'காட்ட வேண்டிய நெடுவரிசைகள்', open: 'திற', close: 'மூடு',
+      showing: '{n} இல் {from}–{to} காட்டப்படுகிறது', showingNone: '{n} இல் 0 காட்டப்படுகிறது', previous: 'முந்தைய பக்கம்', next: 'அடுத்த பக்கம்', page: 'பக்கம் {p} / {q}',
+      sortBy: '{c} படி வரிசைப்படுத்து', clear: 'தேடலையும் வடிகட்டியையும் அழி',
+      loading: 'பதிவுகளைப் படிக்கிறது…', loadingDetail: 'சிறிது நேரம் ஆகும். படிக்கும் வரை எதுவும் காட்டப்படாது.',
+      empty: 'இன்னும் எதுவும் இல்லை', emptyDetail: 'இந்தப் பட்டியலுக்கு எந்தப் பதிவும் கிடைக்கவில்லை. காலியான பட்டியல் எல்லாம் சரி என்று பொருளல்ல — காட்ட இன்னும் எதுவும் இல்லை என்று பொருள்.',
+      noMatch: 'பொருந்தும் வரிசை இல்லை', noMatchDetail: 'தேடலுக்கோ வடிகட்டிக்கோ இந்தப் பட்டியலில் எதுவும் பொருந்தவில்லை. பட்டியலில் இன்னும் {n} வரிசை(கள்) உள்ளன.',
+      error: 'இந்தப் பட்டியலைப் படிக்க முடியவில்லை', errorDetail: 'எதுவும் மாற்றப்படவில்லை. மீண்டும் முயலவும்; தொடர்ந்தால் மேலாளரிடம் சொல்லவும்.',
+      offline: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை', offlineDetail: 'இந்தப் பட்டியலைப் படிக்க முடியவில்லை, எனவே இங்கு எதுவும் தற்போதையது அல்ல. எதுவும் மாற்றப்படவில்லை.',
+      denied: 'உங்கள் பங்கால் இதைத் திறக்க முடியாது', deniedDetail: 'தேவையெனில் உரிமையாளர் அல்லது மேலாளரிடம் கேளுங்கள்.',
+      notKnown: 'தெரியவில்லை', required: 'கட்டாயம்', fillIn: '"{f}" நிரப்பவும்.', fixFields: 'அனுப்பும் முன் சில பதில்களைச் சரிசெய்ய வேண்டும்:', tryAgain: 'மீண்டும் முயல்',
+    },
+  };
+  const ow = (key) => OFFICE_WORDS[lang()][key] ?? OFFICE_WORDS.en[key];
+  const fill = (text, values) => Object.entries(values).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), text);
+  /** A page's words: a plain string, or `{ en, ta }` drawn in the reader's language. */
+  const said = (pair) => word(pair);
+  const STATE_ICONS = Object.freeze({ loading: 'clock', empty: 'list', noMatch: 'search-x', error: 'circle-alert', offline: 'triangle-alert', denied: 'lock', unknown: 'circle-help' });
+
+  /** A plain-language state in place of content: loading · empty ("nothing yet") · no match · error · offline · denied. */
+  function officeState(host, kind, opts = {}) {
+    const box = document.createElement('div');
+    box.className = 'sre-empty sre-state';
+    box.dataset.state = kind;
+    box.setAttribute('role', kind === 'error' || kind === 'offline' ? 'alert' : 'status');
+    const mark = icon(STATE_ICONS[kind] ?? 'circle-help', 32);
+    if (mark) box.append(mark);
+    const title = document.createElement('strong');
+    title.textContent = opts.title !== undefined ? said(opts.title) : ow(kind === 'noMatch' ? 'noMatch' : kind);
+    const detail = document.createElement('span');
+    detail.className = 'sre-state-detail';
+    detail.textContent = opts.detail !== undefined ? said(opts.detail) : fill(ow(`${kind}Detail`) ?? '', opts.values ?? {});
+    box.append(title, detail);
+    if (typeof opts.action === 'function') {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sre-btn';
+      b.textContent = opts.actionLabel !== undefined ? said(opts.actionLabel) : ow('tryAgain');
+      b.addEventListener('click', opts.action);
+      box.append(b);
+    }
+    if (host) host.replaceChildren(box);
+    return box;
+  }
+
+  /** A status chip: the tone's shape and its words (never colour alone). */
+  function officeChip(tone, label) {
+    const words = said(label);
+    if (window.sreIcon && typeof window.sreIcon.chip === 'function') return window.sreIcon.chip({ tone, label: words });
+    const span = document.createElement('span'); span.className = 'sre-chip'; span.dataset.tone = tone; span.textContent = words; return span;
+  }
+
+  /**
+   * Summary cards: `{ label, value, note?, tone?, href?, icon? }` each. `value` null or undefined is "Not known" — never 0.
+   * A number is drawn as the page gave it (a page formats money itself, from its own figures).
+   */
+  function officeCards(host, cards) {
+    const list = document.createElement('div');
+    list.className = 'sre-summary';
+    for (const c of cards) {
+      const card = document.createElement(c.href ? 'a' : 'div');
+      card.className = 'sre-summary-card';
+      if (c.href) card.href = c.href;
+      if (c.tone) card.dataset.tone = c.tone;
+      const head = document.createElement('span');
+      head.className = 'sre-summary-label';
+      const mark = c.icon ? icon(c.icon, 18) : null;
+      if (mark) head.append(mark);
+      head.append(document.createTextNode(said(c.label)));
+      const value = document.createElement('b');
+      value.className = 'sre-summary-value';
+      const known = c.value !== null && c.value !== undefined && c.value !== '';
+      value.textContent = known ? String(c.value) : ow('notKnown');
+      if (!known) value.classList.add('sre-unknown');
+      card.append(head, value);
+      if (c.note !== undefined && said(c.note) !== '') {
+        const note = document.createElement('span');
+        note.className = 'sre-summary-note';
+        note.textContent = said(c.note);
+        card.append(note);
+      }
+      list.append(card);
+    }
+    if (host) host.replaceChildren(list);
+    return list;
+  }
+
+  /**
+   * A form field: a visible label (the field's name), a required mark said in words for a screen reader, a hint, and a
+   * message slot the checker fills in plain language. Returns the `<div class="sre-field">`; the control is its `input`.
+   */
+  function officeField({ id, label, type = 'text', required = false, hint, options, value, inputmode, autocomplete = 'off' }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sre-field';
+    const lab = document.createElement('label');
+    lab.htmlFor = id;
+    lab.className = 'sre-field-label';
+    lab.append(document.createTextNode(said(label)));
+    if (required) {
+      const mark = document.createElement('span');
+      mark.className = 'sre-req';
+      mark.textContent = ` (${ow('required')})`;
+      lab.append(mark);
+    }
+    let control;
+    if (type === 'select') {
+      control = document.createElement('select');
+      control.className = 'sre-select';
+      for (const o of options ?? []) { const opt = document.createElement('option'); opt.value = o.value; opt.textContent = said(o.label); control.append(opt); }
+    } else if (type === 'textarea') {
+      control = document.createElement('textarea');
+      control.className = 'sre-input';
+      control.rows = 3;
+    } else {
+      control = document.createElement('input');
+      control.type = type;
+      control.className = 'sre-input';
+      control.autocomplete = autocomplete;
+      if (inputmode) control.inputMode = inputmode;
+    }
+    control.id = id;
+    if (value !== undefined) control.value = value;
+    if (required) { control.required = true; control.setAttribute('aria-required', 'true'); }
+    const describedBy = [];
+    if (hint !== undefined) {
+      const h = document.createElement('span');
+      h.className = 'sre-field-hint';
+      h.id = `${id}-hint`;
+      h.textContent = said(hint);
+      describedBy.push(h.id);
+      wrap.append(lab, h);
+    } else wrap.append(lab);
+    const msg = document.createElement('span');
+    msg.className = 'sre-field-msg';
+    msg.id = `${id}-msg`;
+    msg.hidden = true;
+    describedBy.push(msg.id);
+    control.setAttribute('aria-describedby', describedBy.join(' '));
+    wrap.append(control, msg);
+    return wrap;
+  }
+
+  /**
+   * Check a form's fields before anything is sent: every required field filled in, every field's own browser rule kept.
+   * Each wrong field says what to do beside it, the first one takes the focus, and the answer is true only when all are
+   * right. A page sends nothing on false.
+   */
+  function officeCheck(form) {
+    const bad = [];
+    for (const field of form.querySelectorAll('.sre-field')) {
+      const control = field.querySelector('input, select, textarea');
+      const msg = field.querySelector('.sre-field-msg');
+      if (!control || !msg) continue;
+      const name = (field.querySelector('.sre-field-label')?.firstChild?.textContent ?? '').trim();
+      let problem = '';
+      if (control.required && String(control.value ?? '').trim() === '') problem = fill(ow('fillIn'), { f: name });
+      else if (typeof control.checkValidity === 'function' && !control.checkValidity()) problem = control.validationMessage || fill(ow('fillIn'), { f: name });
+      msg.hidden = problem === '';
+      msg.textContent = problem;
+      if (problem === '') control.removeAttribute('aria-invalid'); else { control.setAttribute('aria-invalid', 'true'); bad.push(control); }
+    }
+    if (bad.length > 0) bad[0].focus();
+    return bad.length === 0;
+  }
+
+  // ── The record drawer: one record, opened from a register row; Escape or Close shuts it and the focus goes back ──
+  let drawerReturn = null;
+  function officeDrawer({ title, body }) {
+    let aside = byId('sre-drawer');
+    if (!aside) {
+      aside = document.createElement('aside');
+      aside.id = 'sre-drawer';
+      aside.className = 'sre-drawer';
+      aside.setAttribute('role', 'dialog');
+      aside.setAttribute('aria-modal', 'true');
+      aside.setAttribute('aria-labelledby', 'sre-drawer-title');
+      aside.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+      document.body.append(aside);
+    }
+    drawerReturn = document.activeElement;
+    const head = document.createElement('div');
+    head.className = 'sre-drawer-head';
+    const h = document.createElement('h2');
+    h.id = 'sre-drawer-title';
+    h.textContent = said(title);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'sre-btn';
+    close.id = 'sre-drawer-close';
+    const x = icon('x', 18);
+    if (x) close.append(x);
+    close.append(document.createTextNode(ow('close')));
+    close.addEventListener('click', () => closeDrawer());
+    head.append(h, close);
+    const inner = document.createElement('div');
+    inner.className = 'sre-drawer-body';
+    if (body) inner.append(body);
+    aside.replaceChildren(head, inner);
+    aside.hidden = false;
+    close.focus();
+    return aside;
+  }
+  function closeDrawer() {
+    const aside = byId('sre-drawer');
+    if (!aside || aside.hidden) return;
+    aside.hidden = true;
+    if (drawerReturn && typeof drawerReturn.focus === 'function' && document.contains(drawerReturn)) drawerReturn.focus();
+    drawerReturn = null;
+  }
+  /** A record's facts as a definition list, for the drawer: `[[label, value], …]`; a missing value is "Not known". */
+  function officeFacts(pairs) {
+    const dl = document.createElement('dl');
+    dl.className = 'sre-facts';
+    for (const [label, value] of pairs) {
+      const row = document.createElement('div');
+      const dt = document.createElement('dt'); dt.textContent = said(label);
+      const dd = document.createElement('dd');
+      if (value instanceof Node) dd.append(value);
+      else if (value === null || value === undefined || value === '') { dd.textContent = ow('notKnown'); dd.className = 'sre-unknown'; } else dd.textContent = String(value);
+      row.append(dt, dd);
+      dl.append(row);
+    }
+    return dl;
+  }
+
+  // ── The register (data table) ────────────────────────────────────────────────────────────────────────────────
+  // opts: { id, label, columns: [{ key, label, value?(row), render?(row) → Node|string, sort?: 'text'|'number',
+  //         filter?: true, hidden?: true, align?: 'end' }], rows: [] | null, pageSize = 10, rowKey?(row),
+  //         bodyId?: the tbody's id, rowData?(row) → { name: value } written on each row's dataset,
+  //         drawer?: { title(row), body(row) → Node }, empty?: { title, detail } }
+  // `rows: null` is "not read yet" (loading); `[]` is "nothing yet". `setState('error' | 'offline' | 'denied', opts)`
+  // replaces the rows with that state. The search matches every shown column's words; filters are drawn from the
+  // values the rows actually have; the column choice is this browser's own memory for this register.
+  const liveTables = new Set();
+  function officeTable(host, opts) {
+    const id = opts.id;
+    const state = { rows: opts.rows === undefined ? null : opts.rows, query: '', filters: {}, sort: null, dir: 1, page: 0, kind: null, kindOpts: {} };
+    const pageSize = opts.pageSize ?? 10;
+    const valueOf = (col, row) => (typeof col.value === 'function' ? col.value(row) : row[col.key]);
+    const textOf = (col, row) => { const v = valueOf(col, row); return v === null || v === undefined ? '' : said(v); };
+    const hiddenKey = `sre.table.${id}.hidden`;
+    const hidden = new Set((() => { try { const v = JSON.parse(window.localStorage.getItem(hiddenKey) ?? 'null'); return Array.isArray(v) ? v : opts.columns.filter((c) => c.hidden).map((c) => c.key); } catch { return opts.columns.filter((c) => c.hidden).map((c) => c.key); } })());
+    const shown = () => opts.columns.filter((c) => !hidden.has(c.key));
+
+    const root = document.createElement('div');
+    root.className = 'sre-datatable';
+    root.id = `${id}-table`;
+    host.replaceChildren(root);
+
+    function visibleRows() {
+      const rows = state.rows ?? [];
+      const words = state.query.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+      let out = rows.filter((row) => {
+        for (const [key, want] of Object.entries(state.filters)) {
+          if (want === '') continue;
+          const col = opts.columns.find((c) => c.key === key);
+          if (col && textOf(col, row) !== want) return false;
+        }
+        if (words.length === 0) return true;
+        const hay = shown().map((c) => textOf(c, row)).join(' ').toLowerCase();
+        return words.every((w) => hay.includes(w));
+      });
+      if (state.sort !== null) {
+        const col = opts.columns.find((c) => c.key === state.sort);
+        if (col) {
+          const num = col.sort === 'number';
+          out = [...out].sort((a, b) => {
+            const x = valueOf(col, a); const y = valueOf(col, b);
+            if (x === null || x === undefined) return 1;
+            if (y === null || y === undefined) return -1;
+            return (num ? Number(x) - Number(y) : said(x).localeCompare(said(y), lang() === 'ta' ? 'ta' : 'en', { numeric: true })) * state.dir;
+          });
+        }
+      }
+      return out;
+    }
+
+    function toolbar() {
+      const bar = document.createElement('div');
+      bar.className = 'sre-datatable-tools';
+      const searchLabel = document.createElement('label');
+      searchLabel.className = 'sre-datatable-search';
+      const lens = icon('search', 18);
+      if (lens) searchLabel.append(lens);
+      const search = document.createElement('input');
+      search.type = 'search';
+      search.id = `${id}-search`;
+      search.className = 'sre-input';
+      search.value = state.query;
+      search.placeholder = ow('search');
+      search.setAttribute('aria-label', `${ow('search')} — ${said(opts.label)}`);
+      search.addEventListener('input', () => { state.query = search.value; state.page = 0; paintBody(); });
+      searchLabel.append(search);
+      bar.append(searchLabel);
+      for (const col of opts.columns.filter((c) => c.filter)) {
+        const values = [...new Set((state.rows ?? []).map((r) => textOf(col, r)).filter((v) => v !== ''))].sort((a, b) => a.localeCompare(b));
+        const wrap = document.createElement('label');
+        wrap.className = 'sre-datatable-filter';
+        const span = document.createElement('span');
+        span.textContent = said(col.label);
+        const select = document.createElement('select');
+        select.className = 'sre-select';
+        select.id = `${id}-filter-${col.key}`;
+        const all = document.createElement('option'); all.value = ''; all.textContent = ow('filterAll'); select.append(all);
+        for (const v of values) { const o = document.createElement('option'); o.value = v; o.textContent = v; select.append(o); }
+        select.value = values.includes(state.filters[col.key] ?? '') ? state.filters[col.key] : '';
+        select.addEventListener('change', () => { state.filters[col.key] = select.value; state.page = 0; paintBody(); });
+        wrap.append(span, select);
+        bar.append(wrap);
+      }
+      // the column choice: a disclosure with one tick box per column (at least one stays shown)
+      const choose = document.createElement('details');
+      choose.className = 'sre-datatable-columns';
+      const sum = document.createElement('summary');
+      sum.className = 'sre-btn';
+      const cols = icon('layout-grid', 18);
+      if (cols) sum.append(cols);
+      sum.append(document.createTextNode(ow('columns')));
+      const box = document.createElement('fieldset');
+      const legend = document.createElement('legend'); legend.textContent = ow('columnsShown'); box.append(legend);
+      for (const col of opts.columns) {
+        const l = document.createElement('label');
+        l.className = 'sre-check';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.id = `${id}-col-${col.key}`;
+        cb.checked = !hidden.has(col.key);
+        cb.addEventListener('change', () => {
+          if (!cb.checked && shown().length <= 1) { cb.checked = true; return; }
+          if (cb.checked) hidden.delete(col.key); else hidden.add(col.key);
+          try { window.localStorage.setItem(hiddenKey, JSON.stringify([...hidden])); } catch { /* a convenience only */ }
+          paintBody();
+        });
+        l.append(cb, document.createTextNode(` ${said(col.label)}`));
+        box.append(l);
+      }
+      choose.append(sum, box);
+      bar.append(choose);
+      return bar;
+    }
+
+    function paintBody() {
+      let body = root.querySelector(':scope > .sre-datatable-body');
+      if (!body) { body = document.createElement('div'); body.className = 'sre-datatable-body'; root.append(body); }
+      if (state.kind !== null) { officeState(body, state.kind, state.kindOpts); return; }
+      if (state.rows === null) { officeState(body, 'loading'); return; }
+      if (state.rows.length === 0) { officeState(body, 'empty', opts.empty ?? {}); return; }
+      const rows = visibleRows();
+      if (rows.length === 0) {
+        officeState(body, 'noMatch', { values: { n: state.rows.length }, action: () => { state.query = ''; state.filters = {}; state.page = 0; paint(); }, actionLabel: ow('clear') });
+        return;
+      }
+      const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+      state.page = Math.min(state.page, pages - 1);
+      const from = state.page * pageSize;
+      const slice = rows.slice(from, from + pageSize);
+      const scroll = document.createElement('div');
+      scroll.className = 'sre-scroll-x';
+      const table = document.createElement('table');
+      table.className = 'sre-register';
+      table.id = `${id}-grid`;
+      const caption = document.createElement('caption');
+      caption.className = 'sr-only';
+      caption.textContent = said(opts.label);
+      const thead = document.createElement('thead');
+      const hr = document.createElement('tr');
+      for (const col of shown()) {
+        const th = document.createElement('th');
+        th.scope = 'col';
+        if (col.align === 'end') th.className = 'sre-end';
+        if (col.sort) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'sre-sort';
+          b.dataset.col = col.key;
+          b.textContent = said(col.label);
+          b.title = fill(ow('sortBy'), { c: said(col.label) });
+          th.setAttribute('aria-sort', state.sort === col.key ? (state.dir === 1 ? 'ascending' : 'descending') : 'none');
+          b.addEventListener('click', () => {
+            if (state.sort === col.key) state.dir = -state.dir; else { state.sort = col.key; state.dir = 1; }
+            state.page = 0; paintBody();
+            root.querySelector(`.sre-sort[data-col="${col.key}"]`)?.focus();
+          });
+          th.append(b);
+        } else th.textContent = said(col.label);
+        hr.append(th);
+      }
+      if (opts.drawer) { const th = document.createElement('th'); th.scope = 'col'; th.className = 'sre-end'; const s = document.createElement('span'); s.className = 'sr-only'; s.textContent = ow('open'); th.append(s); hr.append(th); }
+      thead.append(hr);
+      const tbody = document.createElement('tbody');
+      if (opts.bodyId) tbody.id = opts.bodyId;
+      for (const row of slice) {
+        const tr = document.createElement('tr');
+        if (opts.rowKey) tr.dataset.key = String(opts.rowKey(row));
+        if (typeof opts.rowData === 'function') for (const [k, v] of Object.entries(opts.rowData(row))) tr.dataset[k] = String(v);
+        for (const col of shown()) {
+          const td = document.createElement('td');
+          if (col.align === 'end') td.className = 'sre-end';
+          const v = typeof col.render === 'function' ? col.render(row) : valueOf(col, row);
+          if (v instanceof Node) td.append(v);
+          else if (v === null || v === undefined || v === '') { td.textContent = ow('notKnown'); td.classList.add('sre-unknown'); } else td.textContent = said(v);
+          tr.append(td);
+        }
+        if (opts.drawer) {
+          const td = document.createElement('td');
+          td.className = 'sre-end';
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'sre-btn sre-row-open';
+          b.textContent = ow('open');
+          b.setAttribute('aria-label', `${ow('open')} ${textOf(shown()[0], row)}`);
+          b.addEventListener('click', () => officeDrawer({ title: opts.drawer.title(row), body: opts.drawer.body(row) }));
+          td.append(b);
+          tr.append(td);
+        }
+        tbody.append(tr);
+      }
+      table.append(caption, thead, tbody);
+      scroll.append(table);
+      const foot = document.createElement('div');
+      foot.className = 'sre-datatable-foot';
+      const count = document.createElement('p');
+      count.className = 'sre-datatable-count';
+      count.id = `${id}-count`;
+      count.setAttribute('role', 'status');
+      count.textContent = fill(ow('showing'), { from: from + 1, to: from + slice.length, n: rows.length });
+      const nav = document.createElement('div');
+      nav.className = 'sre-pager';
+      const prev = document.createElement('button');
+      prev.type = 'button'; prev.className = 'sre-btn'; prev.id = `${id}-prev`; prev.textContent = ow('previous'); prev.disabled = state.page === 0;
+      prev.addEventListener('click', () => { state.page -= 1; paintBody(); byId(`${id}-prev`)?.focus(); });
+      const where = document.createElement('span'); where.className = 'sre-pager-where'; where.textContent = fill(ow('page'), { p: state.page + 1, q: pages });
+      const next = document.createElement('button');
+      next.type = 'button'; next.className = 'sre-btn'; next.id = `${id}-next`; next.textContent = ow('next'); next.disabled = state.page >= pages - 1;
+      next.addEventListener('click', () => { state.page += 1; paintBody(); byId(`${id}-next`)?.focus(); });
+      nav.append(prev, where, next);
+      foot.append(count, nav);
+      body.replaceChildren(scroll, foot);
+    }
+
+    function paint() {
+      const focused = document.activeElement && root.contains(document.activeElement) ? document.activeElement.id : null;
+      root.replaceChildren(toolbar());
+      paintBody();
+      if (focused) byId(focused)?.focus();
+    }
+    const controller = {
+      setRows(rows) { state.rows = rows; state.kind = null; paint(); },
+      setState(kind, kindOpts = {}) { state.kind = kind; state.kindOpts = kindOpts; paint(); },
+      rows: () => state.rows,
+      shownRows: () => visibleRows(),
+      repaint: paint,
+      connected: () => root.isConnected,
+    };
+    liveTables.add(controller);
+    paint();
+    return controller;
+  }
+
+  /** The state for an answer that is not ok: no link → offline; refused for the role → denied; anything else → error. */
+  function officeStateOf(out) {
+    if (!out || out.result === 'lost_link') return 'offline';
+    if (out.result === 'refused' && (out.status === 401 || out.status === 403)) return 'denied';
+    return 'error';
+  }
+
+  window.sreOffice = Object.freeze({
+    table: officeTable, state: officeState, cards: officeCards, chip: officeChip, field: officeField, check: officeCheck,
+    drawer: officeDrawer, closeDrawer, facts: officeFacts, stateOf: officeStateOf, words: (key) => ow(key),
+  });
+
+  // a register that is still on the page is redrawn in the new language; one its page has since replaced is let go
+  function repaintTables() { for (const table of [...liveTables]) { if (table.connected()) table.repaint(); else liveTables.delete(table); } }
+
   function repaint() { paintToggle(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+  new MutationObserver(repaintTables).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();
   // the page paints its rows, switches its sections and rewrites its labels in its own time — follow it
   const mainEl = document.querySelector('main');

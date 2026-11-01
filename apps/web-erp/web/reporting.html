@@ -62,6 +62,8 @@
         display: flex; align-items: center; justify-content: space-between; gap: 12px;
       }
       .row .what { display: grid; gap: 2px; }
+      /* W1 (2.5.8): the Run button never squeezes under the 44px target beside a long report name */
+      .row > button { flex: none; min-width: 88px; }
       .row .what small { color: var(--muted); font-size: 14px; }
       .row.ready { border-left: 5px solid var(--good); }
       /* A report nobody can run yet. Listed, never hidden. */
@@ -70,6 +72,9 @@
       /* Waiting on US, not on the shop — a different colour so the two are never read as one job. */
       .row.ours { border-left: 5px solid var(--info); }
       .row.ours .what small { color: var(--info); }
+      .row[hidden], p.empty[hidden] { display: none; }
+      #report-cards, .find-report { margin: 0 0 12px; }
+      .find-report { max-width: 420px; }
 
       /* One figure. The value is large; the as-at sits under it, always. */
       .figure {
@@ -122,6 +127,13 @@
       <section id="view-reports">
         <h2 id="reports-title">Reports</h2>
         <p class="lead" id="reports-lead">Everything this shop can report on today. Every number says when it was true.</p>
+        <!-- W1: the catalogue at a glance (shared summary cards), then a finder over the reports this shop can run. -->
+        <div id="report-cards"></div>
+        <div class="sre-field find-report">
+          <label class="sre-field-label" for="find-report" id="find-report-label">Find a report</label>
+          <input class="sre-input" id="find-report" type="search" autocomplete="off" />
+        </div>
+        <p class="empty" id="find-none" hidden role="status"></p>
         <div id="reports-list"></div>
       </section>
 

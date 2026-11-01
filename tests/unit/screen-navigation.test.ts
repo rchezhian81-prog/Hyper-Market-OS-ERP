@@ -3,7 +3,7 @@ import {
   asSignedInPerson, assignmentsFrom, boxServedItems, branchOf, navigationPayload, peopleFrom, permissionsOf, personOf, rolesFrom, viewerOf,
 } from '../../edge/store-edge/src/screen-navigation';
 import { known, notKnown, type StorePack } from '../../edge/store-edge/src/store-pack';
-import type { NavItem } from '../../apps/web-erp/src/navigation';
+import { NAV_SEARCH_WORDS, type NavItem } from '../../apps/web-erp/src/navigation';
 
 /**
  * **The menu the store computer draws is worked out from the role register, per viewer, default-deny (Stage G slice
@@ -78,15 +78,30 @@ describe('the menu offers exactly what the person may open on this box', () => {
   it('the manager sees Today and Stock counts, in both languages, with the served screen marked current', () => {
     const out = navigationPayload({ screen: 'counts', pack: FULL, payload: { userId: 'u-mgr' }, screenOf, catalogue: CATALOGUE });
     expect(out.why).toBeNull();
+    // W1: each group carries its language-free key, and a screen with plain search words carries them (NAV_SEARCH_WORDS).
     expect(out.groups).toEqual([
-      { group: { en: 'Today', ta: 'இன்று' }, items: [{ id: 'today', label: { en: 'Today', ta: 'இன்று' }, path: '/manager/', current: false }] },
-      { group: { en: 'Inventory & backstore', ta: 'சரக்கும் பின்கடையும்' }, items: [{ id: 'counts', label: { en: 'Stock counts', ta: 'சரக்கு எண்ணிக்கை' }, path: '/counts/', current: true }] },
+      { key: 'Today', group: { en: 'Today & approvals', ta: 'இன்றும் அனுமதிகளும்' }, items: [{ id: 'today', label: { en: 'Today', ta: 'இன்று' }, path: '/manager/', current: false }] },
+      { key: 'Inventory', group: { en: 'Stock & counts', ta: 'சரக்கும் எண்ணிக்கையும்' }, items: [{ id: 'counts', label: { en: 'Stock counts', ta: 'சரக்கு எண்ணிக்கை' }, path: '/counts/', current: true, words: NAV_SEARCH_WORDS['counts'] }] },
     ]);
+  });
+
+  it('W1: a person whose ROLE has daily jobs gets them first, once — still only what their permissions open', () => {
+    // The product role id `store_manager` has daily jobs (DAILY_WORK); 'counts' is not one of them, 'dashboard' is —
+    // but this catalogue names the dashboard 'today', so nothing of the manager's daily list is here except by id.
+    const catalogue = [...CATALOGUE.slice(0, 1).map((i) => ({ ...i, id: 'dashboard' })), ...CATALOGUE.slice(1)];
+    const roles = [{ id: 'store_manager', name: 'Store manager', permissions: ['erp.dashboard.view', 'count.view'] }];
+    const pack = packWith({ roles: known(roles), roleAssignments: known([{ userId: 'u-mgr', roleId: 'store_manager', branchScope: ['b1'] }]), policies: POLICIES });
+    const out = navigationPayload({ screen: 'counts', pack, payload: { userId: 'u-mgr' }, screenOf, catalogue });
+    expect(out.groups.map((g) => [g.key, g.items.map((i) => i.id)])).toEqual([['Daily', ['dashboard']], ['Inventory', ['counts']]]);
+    expect(out.groups[0]!.group).toEqual({ en: 'Your daily work', ta: 'உங்கள் தினசரி வேலை' });
+    // the same role in another branch: nothing at all — the daily list never widens what may be opened
+    const elsewhere = packWith({ roles: known(roles), roleAssignments: known([{ userId: 'u-mgr', roleId: 'store_manager', branchScope: ['b2'] }]), policies: POLICIES });
+    expect(navigationPayload({ screen: 'counts', pack: elsewhere, payload: { userId: 'u-mgr' }, screenOf, catalogue }).groups).toEqual([]);
   });
 
   it('the admin, with company-wide scope, sees only their own section — never the manager\'s', () => {
     const out = navigationPayload({ screen: 'admin', pack: FULL, payload: { userId: 'u-admin' }, screenOf, catalogue: CATALOGUE });
-    expect(out.groups.map((g) => g.group.en)).toEqual(['Administration']);
+    expect(out.groups.map((g) => g.group.en)).toEqual(['Setup, people & access']);
     expect(out.groups[0]!.items.map((i) => [i.id, i.current])).toEqual([['people', true]]);
   });
 

@@ -43,26 +43,143 @@ export interface NavItem {
   readonly served?: 'box' | 'unserved' | 'unbuilt';
 }
 
-/** The group headings in both languages, keyed by the `group` an item declares. */
+/**
+ * The group headings in both languages, keyed by the `group` an item declares — in the order the rail shows them.
+ *
+ * W1 (owner, 1 Nov 2026: "things are hard to find — a long confusing menu, unclear names"; P-07): the workspaces are
+ * TASKS a store person recognises, not modules — "Goods coming in", "Waste, expiry & returns", "My work & pay" — and the
+ * keys stay what they were, so every screen id, path and permission is unchanged and a page another builder adds under
+ * an old key still lands in the workspace that does that job. `Daily` is not a catalogue group: it is drawn first, per
+ * person, from `DAILY_WORK` (their role's everyday jobs), and those items are not repeated below it.
+ */
 export const NAV_GROUP_LABELS: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({
-  // The owner's fifteen workspaces (OB-13 reference, OB-16 "one application", 5 Oct 2026), in the order the rail shows them,
-  // then the device apps the store computer serves. A group appears only when the person may open something in it.
-  Today: { en: 'Today', ta: 'இன்று' },
-  Products: { en: 'Products & pricing', ta: 'பொருட்களும் விலையும்' },
-  Purchase: { en: 'Purchase', ta: 'கொள்முதல்' },
-  Receiving: { en: 'Receiving & QC', ta: 'பெறுதலும் தரச்சோதனையும்' },
-  Inventory: { en: 'Inventory & backstore', ta: 'சரக்கும் பின்கடையும்' },
-  Floor: { en: 'Shop floor', ta: 'கடைத் தளம்' },
+  Daily: { en: 'Your daily work', ta: 'உங்கள் தினசரி வேலை' },
+  Today: { en: 'Today & approvals', ta: 'இன்றும் அனுமதிகளும்' },
+  Products: { en: 'Products & prices', ta: 'பொருட்களும் விலைகளும்' },
+  Purchase: { en: 'Buying from suppliers', ta: 'விநியோகஸ்தர்களிடம் வாங்குதல்' },
+  Receiving: { en: 'Goods coming in', ta: 'வரும் சரக்கு' },
+  Inventory: { en: 'Stock & counts', ta: 'சரக்கும் எண்ணிக்கையும்' },
+  Waste: { en: 'Waste, expiry & returns', ta: 'வீணாதல், காலாவதி, திருப்பம்' },
+  Floor: { en: 'Shelves & shop floor', ta: 'அலமாரிகளும் கடைத் தளமும்' },
+  Customers: { en: 'Customers & service', ta: 'வாடிக்கையாளர்களும் சேவையும்' },
   Sales: { en: 'Sales & service', ta: 'விற்பனையும் சேவையும்' },
-  Orders: { en: 'Orders & delivery', ta: 'ஆர்டர்களும் டெலிவரியும்' },
-  Finance: { en: 'Cash & finance', ta: 'பணமும் நிதியும்' },
-  Customers: { en: 'Customers & loyalty', ta: 'வாடிக்கையாளர்களும் விசுவாசமும்' },
+  Orders: { en: 'Online orders & delivery', ta: 'ஆன்லைன் ஆர்டர்களும் டெலிவரியும்' },
   Production: { en: 'Fresh food & café', ta: 'புதிய உணவும் கஃபேவும்' },
-  People: { en: 'People & tasks', ta: 'பணியாளர்களும் பணிகளும்' },
-  Operations: { en: 'Store operations', ta: 'கடை செயல்பாடுகள்' },
-  Reports: { en: 'Reports', ta: 'அறிக்கைகள்' },
-  Administration: { en: 'Administration', ta: 'நிர்வாகம்' },
-  Devices: { en: 'Devices', ta: 'சாதனங்கள்' },
+  Finance: { en: 'Cash, accounts & GST', ta: 'பணம், கணக்குகள், ஜிஎஸ்டி' },
+  People: { en: 'Staff, rota & tasks', ta: 'பணியாளர்கள், பணி அட்டவணை, பணிகள்' },
+  Mine: { en: 'My work & pay', ta: 'என் வேலையும் சம்பளமும்' },
+  Operations: { en: 'Checks & investigations', ta: 'சோதனைகளும் விசாரணைகளும்' },
+  Reports: { en: 'Reports & figures', ta: 'அறிக்கைகளும் எண்களும்' },
+  Administration: { en: 'Setup, people & access', ta: 'அமைப்பு, நபர்கள், அணுகல்' },
+  Systems: { en: 'Tills, devices & connections', ta: 'கல்லாக்கள், சாதனங்கள், இணைப்புகள்' },
+  Devices: { en: 'Open a device screen', ta: 'சாதனத் திரையைத் திற' },
+});
+
+/** The key of the per-person "daily work" group drawn first on the rail. */
+export const DAILY_GROUP = 'Daily';
+
+/**
+ * A role's everyday jobs, in the order they are done (W1 · P-07 "the simplest interface each role needs"). Keyed by the
+ * product's own role ids (services/api/src/roles.ts — the roles are the product's configuration, not tenant data). Each
+ * id is still gated item by item on its own permission: a job listed here that the person may not open is simply not
+ * shown, so this table can never widen what anybody sees. A person with several roles gets each role's jobs, once, in
+ * this table's order. A role not listed gets no daily group — the workspaces alone, as before.
+ */
+export const DAILY_WORK: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  owner: ['dashboard', 'approval-requests', 'morning-brief', 'company-report', 'owner-alerts', 'finance-close'],
+  store_manager: ['dashboard', 'approval-requests', 'cash-office', 'goods-receipt', 'stock-health', 'expiry', 'store-tasks'],
+  accountant: ['day-book', 'finance-close', 'supplier-bills', 'gst-returns', 'itc-review', 'approval-requests'],
+  chartered_accountant: ['gst-returns'],
+  cashier: ['till', 'my-tasks', 'approval-requests', 'my-payslip', 'help'],
+  platform_admin: ['store-computers', 'integration-health', 'fleet', 'incidents'],
+  security_reviewer: ['risk-acceptance'],
+});
+
+/**
+ * Within a workspace, the screens a person reaches for most come first (W1). Ids named here lead, in this order; every
+ * other item of the group follows in the catalogue's declaration order. Only order — nothing is added or hidden.
+ */
+export const NAV_ITEM_ORDER: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  Today: ['dashboard', 'approval-requests'],
+  Products: ['products', 'pricing', 'promotions', 'shelf-tags', 'price-integrity'],
+  Purchase: ['buying', 'supplier-bills', 'suppliers', 'requisitions'],
+  Receiving: ['goods-receipt', 'dock-diary'],
+  Inventory: ['stock-health', 'counts', 'indents', 'transfers'],
+  Waste: ['expiry', 'write-off-capture', 'waste'],
+  Customers: ['customers', 'service', 'service-desk', 'loyalty-desk'],
+  Finance: ['cash-office', 'day-book', 'finance-close', 'finance', 'gst-returns', 'itc-review', 'gst-reconciliation', 'tally-files'],
+  People: ['store-tasks', 'rostering', 'schedule', 'checklist'],
+  Mine: ['my-tasks', 'my-payslip', 'ess', 'help'],
+  Reports: ['reporting', 'morning-brief', 'company-report'],
+  Administration: ['users', 'store-setup', 'approval-rules', 'access-review'],
+  Devices: ['till'],
+});
+
+/**
+ * Plain words a store person might type to find a screen, beyond its name and its workspace's (W1: "search finds a page
+ * by a plain word"). Both languages; matched case-free as a part of a word. Only words for what the screen IS for.
+ */
+export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({
+  'dashboard': { en: 'home start figures sales today exceptions day close', ta: 'முகப்பு விற்பனை' },
+  'approval-requests': { en: 'approve reject decide sign off waiting requests', ta: 'ஒப்புதல் நிராகரி' },
+  'products': { en: 'items catalogue barcode sku', ta: 'பொருள் பார்கோடு' },
+  'pricing': { en: 'price change mrp rate', ta: 'விலை மாற்றம்' },
+  'promotions': { en: 'offer discount deal sale', ta: 'தள்ளுபடி சலுகை' },
+  'shelf-tags': { en: 'label print price tag ticket', ta: 'விலைச் சீட்டு அச்சு' },
+  'price-integrity': { en: 'wrong price shelf till mismatch', ta: 'தவறான விலை' },
+  'buying': { en: 'purchase order po supplier invoice', ta: 'கொள்முதல் ஆணை' },
+  'supplier-bills': { en: 'invoice bill purchase match', ta: 'பில் விலைப்பட்டியல்' },
+  'requisitions': { en: 'quotation rfq compare quotes', ta: 'விலைப்புள்ளி' },
+  'goods-receipt': { en: 'grn receive delivery inward unload', ta: 'சரக்கு வரவு' },
+  'dock-diary': { en: 'delivery booking lorry truck unloading slot', ta: 'லாரி முன்பதிவு' },
+  'stock-health': { en: 'stock out low stock availability inventory', ta: 'இருப்பு' },
+  'counts': { en: 'stock take count audit physical', ta: 'சரக்கு எண்ணுதல்' },
+  'indents': { en: 'refill shelf request indent replenish', ta: 'நிரப்புதல் கோரிக்கை' },
+  'transfers': { en: 'move stock branch warehouse', ta: 'இடமாற்றம்' },
+  'waste': { en: 'damage spoil write off', ta: 'சேதம் வீண்' },
+  'write-off-capture': { en: 'damage spoil broken waste', ta: 'சேதம்' },
+  'expiry': { en: 'expired date near expiry markdown recall batch', ta: 'காலாவதி' },
+  'recall-trace': { en: 'recall batch lot trace', ta: 'திரும்பப் பெறுதல்' },
+  'customers': { en: 'members segment duplicate merge', ta: 'வாடிக்கையாளர்' },
+  'loyalty-desk': { en: 'points rewards member', ta: 'புள்ளிகள்' },
+  'service': { en: 'return refund exchange bill', ta: 'திருப்பம் பணத்திருப்பம்' },
+  'service-desk': { en: 'complaint case question', ta: 'புகார்' },
+  'stored-value': { en: 'gift card voucher credit note', ta: 'பரிசு அட்டை' },
+  'cash-office': { en: 'cash drawer till over short shortage excess variance', ta: 'பணம் கல்லா குறைவு' },
+  'day-reopen': { en: 'unlock day close reopen', ta: 'நாள் திற' },
+  'day-book': { en: 'accounts journal ledger daily', ta: 'கணக்கு நாள் புத்தகம்' },
+  'finance-close': { en: 'month end close period profit loss p&l budget assets depreciation', ta: 'மாத இறுதி லாபம்' },
+  'reconciliation': { en: 'card upi bank payments match settlement', ta: 'அட்டை யுபிஐ வங்கி' },
+  'finance': { en: 'accounts money totals tally', ta: 'கணக்குகள்' },
+  'tally-files': { en: 'tally export accounts', ta: 'டேலி' },
+  'gst-returns': { en: 'gst gstr tax return filing', ta: 'ஜிஎஸ்டி வரி' },
+  'gst-reconciliation': { en: 'gst e-invoice irn e-way bill', ta: 'ஜிஎஸ்டி மின் விலைப்பட்டியல்' },
+  'itc-review': { en: 'gst input tax credit 2b', ta: 'ஜிஎஸ்டி உள்ளீட்டு வரி' },
+  'payroll': { en: 'salary wages pf esi pay', ta: 'சம்பளம்' },
+  'my-payslip': { en: 'salary pay slip wages', ta: 'சம்பளச் சீட்டு' },
+  'ess': { en: 'leave attendance my details', ta: 'விடுப்பு வருகை' },
+  'my-tasks': { en: 'jobs to do work', ta: 'என் வேலைகள்' },
+  'store-tasks': { en: 'jobs assign work to do', ta: 'வேலைகள்' },
+  'rostering': { en: 'shift rota duty roster staff hours', ta: 'பணி நேரம் ஷிப்ட்' },
+  'schedule': { en: 'shift duty roster hours', ta: 'ஷிப்ட்' },
+  'checklist': { en: 'opening closing check list', ta: 'சரிபார்ப்பு பட்டியல்' },
+  'help': { en: 'how to procedure sop guide', ta: 'உதவி வழிமுறை' },
+  'reporting': { en: 'sales report figures export', ta: 'விற்பனை அறிக்கை' },
+  'company-report': { en: 'all branches profit sales', ta: 'நிறுவன அறிக்கை' },
+  'morning-brief': { en: 'summary yesterday owner brief', ta: 'காலைச் சுருக்கம்' },
+  'users': { en: 'staff login role permission user', ta: 'பயனர் பங்கு' },
+  'audit': { en: 'audit trail history log who did', ta: 'தணிக்கை' },
+  'fleet': { en: 'till device printer scanner', ta: 'கல்லா சாதனம்' },
+  'scales': { en: 'weighing scale weight', ta: 'எடை தராசு' },
+  'till': { en: 'billing pos checkout sell', ta: 'பில்லிங் விற்பனை' },
+  'food-safety': { en: 'temperature fridge freezer hygiene', ta: 'வெப்பநிலை குளிர்சாதனம்' },
+  'facilities': { en: 'maintenance repair electricity generator ac', ta: 'பராமரிப்பு பழுது' },
+  'loss-prevention': { en: 'theft fraud investigation case', ta: 'திருட்டு மோசடி' },
+  'dispatch': { en: 'delivery driver van route', ta: 'டெலிவரி' },
+  'online-store': { en: 'website app online orders', ta: 'ஆன்லைன்' },
+  'store-setup': { en: 'settings configure shop setup', ta: 'அமைப்புகள்' },
+  'data-io': { en: 'import export excel csv upload download', ta: 'இறக்குமதி ஏற்றுமதி' },
+  'suppliers': { en: 'vendor supplier distributor', ta: 'விநியோகஸ்தர்' },
 });
 
 /**
@@ -135,7 +252,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // the read the diary route checks (`inventory.availability.read`); booking needs `inventory.movement.append` (the route's).
   { id: 'dock-diary', label: 'Dock diary', labelTa: 'டாக் நாட்குறிப்பு', path: '/dock-diary', requires: 'inventory.availability.read', group: 'Receiving' },
 
-  { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Floor' },
+  { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Inventory' },
   { id: 'counts', label: 'Stock counts', labelTa: 'சரக்கு எண்ணிக்கை', path: '/counts', requires: 'count.view', group: 'Inventory' },
   // Round 12 (WF-08 · D05-FR-05 · M09-FR-04): plan, freeze, count, recount, cause, approve or cancel a stock count — a thin
   // client over head office's count-plan routes, gated on the planning permission the plan routes check. Head-office page.
@@ -143,16 +260,16 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // photo with a shelf check, kept on the shop's own server; image recognition switched off. Gated on the read the bay route
   // checks (`planogram.compliance.read`). A head-office page (served by the store computer since OB-380).
   // OB-288 P2 (M04-FR-04 · OB-308): the shop floor seen from above, each shelf area coloured by sales or margin per sq ft.
-  { id: 'floor-heat-map', label: 'Floor heat map', labelTa: 'தள வெப்ப வரைபடம்', path: '/floor-heat-map', requires: 'merchandising.space.read', group: 'Inventory' },
-  { id: 'planogram-compliance', label: 'Shelf compliance by bay', labelTa: 'அலமாரி இணக்கம் — பகுதி வாரியாக', path: '/planogram-compliance', requires: 'planogram.compliance.read', group: 'Inventory' },
+  { id: 'floor-heat-map', label: 'Floor heat map', labelTa: 'தள வெப்ப வரைபடம்', path: '/floor-heat-map', requires: 'merchandising.space.read', group: 'Floor' },
+  { id: 'planogram-compliance', label: 'Shelf compliance by bay', labelTa: 'அலமாரி இணக்கம் — பகுதி வாரியாக', path: '/planogram-compliance', requires: 'planogram.compliance.read', group: 'Floor' },
   { id: 'count-plans', label: 'Count plans', labelTa: 'எண்ணிக்கைத் திட்டங்கள்', path: '/count-plans', requires: 'inventory.count.plan', group: 'Inventory' },
   // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.
   { id: 'transfers', label: 'Transfers', labelTa: 'இடமாற்றங்கள்', path: '/transfers', requires: 'inventory.availability.read', group: 'Inventory' },
-  { id: 'waste', label: 'Waste & write-off', labelTa: 'வீணானவை மற்றும் தள்ளுபடி', path: '/waste', requires: 'waste.view', group: 'Inventory' },
+  { id: 'waste', label: 'Waste & write-off', labelTa: 'வீணானவை மற்றும் தள்ளுபடி', path: '/waste', requires: 'waste.view', group: 'Waste' },
   // Round 6 · M28-FR-02: scrap and recycling — every disposal with its weight, money and evidence, flagged (never refused) when
   // the evidence or the books are missing. Gated on the review the scrap routes check (`scrap.review.read`); recording needs
   // `scrap.sale.record`. A head-office page, served by the store computer (OB-380).
-  { id: 'scrap', label: 'Scrap and recycling', labelTa: 'கழிவுப் பொருள் மற்றும் மறுசுழற்சி', path: '/scrap', requires: 'scrap.review.read', group: 'Inventory' },
+  { id: 'scrap', label: 'Scrap and recycling', labelTa: 'கழிவுப் பொருள் மற்றும் மறுசுழற்சி', path: '/scrap', requires: 'scrap.review.read', group: 'Waste' },
   // Round 6 · M28-FR-03: packaging and crates — the item master, movements and each item's position (still out, never came
   // back, negative shown negative). Gated on the position read (`inventory.availability.read`); writes need
   // `inventory.movement.append`. A head-office page, served by the store computer (OB-380).
@@ -160,24 +277,24 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Record a write-off from the shop floor — the WRITE sibling of the read-only /waste review. Gated on the
   // SAME authority the governed write-off route checks (`inventory.movement.append`), so the menu never offers
   // it to someone the server would refuse; §28/evidence/threshold all stay server-side (M28-FR-01).
-  { id: 'write-off-capture', label: 'Record a write-off', labelTa: 'தள்ளுபடியைப் பதிவு செய்', path: '/write-off-capture', requires: 'inventory.movement.append', group: 'Inventory' },
+  { id: 'write-off-capture', label: 'Record a write-off', labelTa: 'தள்ளுபடியைப் பதிவு செய்', path: '/write-off-capture', requires: 'inventory.movement.append', group: 'Waste' },
   { id: 'stock-health', label: 'Stock health', labelTa: 'சரக்கு நிலை', path: '/stock-health', requires: 'inventory.availability.read', group: 'Inventory' },
   // Products nobody can sell (SP-8c-ii · P-08): what the till refuses or was never given, and why — the list the box builds the
   // till's catalogue from, shown to the person who can fix it. Read-only, so gated on the same availability read as stock health.
   // WF-11 · M13-FR-02: returned goods held off the shelf, each waiting for a person's decision (restock / write off /
   // back to the supplier / repair). Gated on the authority the decision route checks (`quality.hold.manage`).
-  { id: 'held-returns', label: 'Returned goods to decide', labelTa: 'முடிவு தேவைப்படும் திரும்பிய பொருட்கள்', path: '/held-returns', requires: 'quality.hold.manage', group: 'Inventory' },
-  { id: 'unsellable', label: 'Products nobody can sell', labelTa: 'யாரும் விற்க முடியாத பொருட்கள்', path: '/unsellable', requires: 'inventory.availability.read', group: 'Inventory' },
+  { id: 'held-returns', label: 'Returned goods to decide', labelTa: 'முடிவு தேவைப்படும் திரும்பிய பொருட்கள்', path: '/held-returns', requires: 'quality.hold.manage', group: 'Waste' },
+  { id: 'unsellable', label: 'Products nobody can sell', labelTa: 'யாரும் விற்க முடியாத பொருட்கள்', path: '/unsellable', requires: 'inventory.availability.read', group: 'Waste' },
   // Shelves and space — counts on the shelf, refills, the range, the planogram (M04). Gated on the range read
   // (`merchandising.range.read`) the assortment route checks.
   { id: 'merchandising', label: 'Shelves & space', labelTa: 'அடுக்குகளும் இடமும்', path: '/merchandising/', requires: 'merchandising.range.read', group: 'Floor' },
   // Expiry and recalls (M10) — gated on the recall read (`quality.recall.read`); starting or closing a recall needs
   // `quality.recall.initiate`, which the route enforces.
-  { id: 'expiry', label: 'Expiry & recalls', labelTa: 'காலாவதி மற்றும் திரும்பப்பெறல்', path: '/expiry/', requires: 'quality.recall.read', group: 'Inventory' },
+  { id: 'expiry', label: 'Expiry & recalls', labelTa: 'காலாவதி மற்றும் திரும்பப்பெறல்', path: '/expiry/', requires: 'quality.recall.read', group: 'Waste' },
   // Lane 2 · P1 (P-07 · M10-FR-03/04 · OB-297/328/329): start or open a recall, trace forward and backward, the recall's call
   // list and the owner's SMS switch. A head-office page — it reads live traces from head office's API, so the store
   // computer does not serve it. Gated on the trace read (`quality.lottrace.read`); each action's route checks its own word.
-  { id: 'recall-trace', label: 'Recalls & trace', labelTa: 'திரும்பப்பெறலும் தடமறிதலும்', path: '/recall-trace', requires: 'quality.lottrace.read', group: 'Inventory' },
+  { id: 'recall-trace', label: 'Recalls & trace', labelTa: 'திரும்பப்பெறலும் தடமறிதலும்', path: '/recall-trace', requires: 'quality.lottrace.read', group: 'Waste' },
   // Production runs and QC release (M11) — gated on `production.read`; release needs `production.release`.
   { id: 'production', label: 'Production', labelTa: 'உற்பத்தி', path: '/production/', requires: 'production.read', group: 'Production' },
   // Warehouse oversight — occupancy, stock, §28 approvals, transfers, tasks (M09). Gated on the availability read
@@ -222,9 +339,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'payroll', label: 'Payroll', labelTa: 'ஊதியப் பட்டியல்', path: '/payroll', requires: 'payroll.statutory.read', group: 'People' },
   // Employee self-service — own payslip only. Gated on `payroll.ess.self`, which ordinary staff MAY hold for
   // themselves (it is own-record only; the engine refuses any other employee), so it is a separate item.
-  { id: 'my-payslip', label: 'My payslip', labelTa: 'என் சம்பளச் சீட்டு', path: '/my-payslip', requires: 'payroll.ess.self', group: 'People' },
+  { id: 'my-payslip', label: 'My payslip', labelTa: 'என் சம்பளச் சீட்டு', path: '/my-payslip', requires: 'payroll.ess.self', group: 'Mine' },
   // Employee self-service — my rota + my payslip on one screen. Same own-record grant `payroll.ess.self`.
-  { id: 'ess', label: 'My self-service', labelTa: 'என் சுய சேவை', path: '/ess', requires: 'payroll.ess.self', group: 'People' },
+  { id: 'ess', label: 'My self-service', labelTa: 'என் சுய சேவை', path: '/ess', requires: 'payroll.ess.self', group: 'Mine' },
 
   // Rota — the manager's rostering screen (M25-FR-01). Gated on the roster read (`workforce.roster.read`);
   // assigning a shift needs `workforce.roster.manage`, which the route enforces.
@@ -242,10 +359,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'delegation', label: 'Delegation', labelTa: 'அதிகாரப் பகிர்வு', path: '/delegation', requires: 'approvals.delegation.read', group: 'Administration' },
   // Round 12 (M35-FR-02/04 · WF-20): incidents with a named owner per follow-up, the post-mortem and the close, and the
   // recovery-drill register — a head-office page over its own routes (served by the store computer since OB-380).
-  { id: 'incidents', label: 'Incidents & recovery drills', labelTa: 'சம்பவங்களும் மீட்பு ஒத்திகைகளும்', path: '/incidents', requires: 'platform.health.read', group: 'Administration' },
+  { id: 'incidents', label: 'Incidents & recovery drills', labelTa: 'சம்பவங்களும் மீட்பு ஒத்திகைகளும்', path: '/incidents', requires: 'platform.health.read', group: 'Systems' },
   // Round 26 (OB-99 · OB-97 · OB-98): which store computer each till's bill numbers belong to, what needs a person, and the
   // owner-approved "store computer replaced" act — a head-office page over its own routes (served by the store computer since OB-380).
-  { id: 'store-computers', label: 'Store computers', labelTa: 'கடை கணினிகள்', path: '/store-computers', requires: 'platform.health.read', group: 'Administration' },
+  { id: 'store-computers', label: 'Store computers', labelTa: 'கடை கணினிகள்', path: '/store-computers', requires: 'platform.health.read', group: 'Systems' },
   // ── OB-288 P4 — begin
   // R8-9 · OB-316 · M36-FR-01 · OB-321 · C8 · C9 · OB-324: trial switches per branch and per till lane, the usage meter
   // (information only), the CA's customer-data watch and the consent record — a head-office page over its own routes.
@@ -256,24 +373,24 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // ── OB-288 P4 — end
   // OB-154 "A" (B6 · B7 · L2): the weighing-scale register — every scale's Legal Metrology stamp, certificate and tills, and
   // adding or updating one (a later stamp date with a second person's approval) — a head-office page over its own routes.
-  { id: 'scales', label: 'Weighing scales', labelTa: 'எடைத் தராசுகள்', path: '/scales', requires: 'facilities.asset.read', group: 'Administration' },
+  { id: 'scales', label: 'Weighing scales', labelTa: 'எடைத் தராசுகள்', path: '/scales', requires: 'facilities.asset.read', group: 'Systems' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
   { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Administration' },
   // Tills and devices — the fleet screen (M33): health, registration, status. Gated on `platform.health.read`;
   // registering or changing a device needs `platform.device.manage`, which the routes enforce.
-  { id: 'fleet', label: 'Tills & devices', labelTa: 'கல்லாக்களும் சாதனங்களும்', path: '/fleet/', requires: 'platform.health.read', group: 'Administration' },
+  { id: 'fleet', label: 'Tills & devices', labelTa: 'கல்லாக்களும் சாதனங்களும்', path: '/fleet/', requires: 'platform.health.read', group: 'Systems' },
   // Connections — integration health (M32): each connector's state, dead letters, last contact. Gated on the SAME
   // permission its route checks (`platform.health.read`).
-  { id: 'integration-health', label: 'Connections', labelTa: 'இணைப்புகள்', path: '/integration-health/', requires: 'platform.health.read', group: 'Administration' },
+  { id: 'integration-health', label: 'Connections', labelTa: 'இணைப்புகள்', path: '/integration-health/', requires: 'platform.health.read', group: 'Systems' },
   // Facilities — overdue maintenance and compliance tasks (M26). Gated on `facilities.overdue.read`.
-  { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Operations' },
+  { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Floor' },
   // OB-154 (owner, 16 Oct 2026, "Add screens before pilot"): the store-operations pages — head-office pages over their own
   // routes (served by the store computer since OB-380), each gated on the SAME permission its read route checks.
-  { id: 'food-safety', label: 'Food-safety checks', labelTa: 'உணவுப் பாதுகாப்புச் சோதனைகள்', path: '/food-safety', requires: 'facilities.overdue.read', group: 'Operations' },
+  { id: 'food-safety', label: 'Food-safety checks', labelTa: 'உணவுப் பாதுகாப்புச் சோதனைகள்', path: '/food-safety', requires: 'facilities.overdue.read', group: 'Floor' },
   { id: 'price-integrity', label: 'Price mismatches', labelTa: 'விலை முரண்பாடுகள்', path: '/price-integrity', requires: 'price.integrity.audit', group: 'Products' },
   { id: 'store-tasks', label: 'Store tasks', labelTa: 'கடைப் பணிகள்', path: '/store-tasks', requires: 'workforce.task.read', group: 'People' },
-  { id: 'my-tasks', label: 'My tasks', labelTa: 'என் பணிகள்', path: '/my-tasks', requires: 'workforce.task.complete.own', group: 'People' },
+  { id: 'my-tasks', label: 'My tasks', labelTa: 'என் பணிகள்', path: '/my-tasks', requires: 'workforce.task.complete.own', group: 'Mine' },
   { id: 'waste-analytics', label: 'Waste analytics', labelTa: 'வீண் பகுப்பாய்வு', path: '/waste-analytics', requires: 'waste.view', group: 'Reports' },
   // R3 D-9 (OB-142 "A"): the Staff schedule — staff needed per hour from the sales, a draft roster within the Shops Act
   // limits that a manager commits, and actual attendance against it. A head-office page over its own routes.
@@ -328,7 +445,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Operations — the A06 incident inbox (a stuck sync queue, a growing dead-letter pile, an unwell
   // connection, each with its runbook). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A06 · API-13).
-  { id: 'operations', label: 'Operations', labelTa: 'செயல்பாடுகள்', path: '/operations', requires: 'ai.proposal.read', group: 'Operations' },
+  { id: 'operations', label: 'Operations', labelTa: 'செயல்பாடுகள்', path: '/operations', requires: 'ai.proposal.read', group: 'Today' },
   // Loss prevention — the M15 investigations inbox (a till short, a run of voids, a suspicious refund, each an
   // open case with the money at stake). Gated on the SAME permission the worklist route checks (`lp.case.read`),
   // so the menu never offers a screen the server would refuse (M15-FR-04).
@@ -342,7 +459,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // against the pack's own roles per family.
   { id: 'reporting', label: 'Reports', labelTa: 'அறிக்கைகள்', path: '/reporting/', requires: 'reporting.report.read', group: 'Reports' },
   // Service desk — returns taken and cases worked (M13 / M21). Gated on the case read (`service.case.read`).
-  { id: 'service', label: 'Service desk', labelTa: 'சேவை மேசை', path: '/service/', requires: 'service.case.read', group: 'Sales' },
+  { id: 'service', label: 'Service desk', labelTa: 'சேவை மேசை', path: '/service/', requires: 'service.case.read', group: 'Customers' },
   // ── OB-288 commercial desks (M22 · M24 · M27) — begin
   // M22-FR-01/02/04: the B2B selling desk — contracts, quotation → order → proforma → challan → tax invoice, credit and money
   // owed — a head-office page behind the shop's `b2b` switch (OB-280: business bills stay on the old system for real
@@ -350,8 +467,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Round 7 · OB-506 (M12-FR-02): retail quotations — make, list, follow up and void; the cashier rings one up at the till by
   // its number. Gated on the list read (`pos.quotation.read`); making and voiding need `pos.quotation.write`. A head-office
   // page, served by the store computer (OB-380).
-  { id: 'quotations', label: 'Quotations', labelTa: 'விலைப்புள்ளிகள்', path: '/quotations', requires: 'pos.quotation.read', group: 'Sales' },
-  { id: 'b2b', label: 'Business customers', labelTa: 'வணிக வாடிக்கையாளர்கள்', path: '/b2b', requires: 'b2b.document.read', group: 'Sales' },
+  { id: 'quotations', label: 'Quotations', labelTa: 'விலைப்புள்ளிகள்', path: '/quotations', requires: 'pos.quotation.read', group: 'Customers' },
+  { id: 'b2b', label: 'Business customers', labelTa: 'வணிக வாடிக்கையாளர்கள்', path: '/b2b', requires: 'b2b.document.read', group: 'Customers' },
   // ── OB-288 commercial desks — end
   // Store credit and vouchers — liability, velocity, double spends (M17). Gated on the SAME permission its three
   // read routes check (`lp.case.read`): it is loss-prevention oversight of stored value.
@@ -363,7 +480,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Round 8 — the assistant's drafts (A09 · A07): campaign words waiting for a second person's approval, and the anomaly
   // summaries for the security officer. Gated on the assistant's proposal read (`ai.proposal.read`); approving a
   // template and asking for a summary are re-checked by the cloud on their own permissions.
-  { id: 'ai-drafts', label: 'Assistant drafts', labelTa: 'உதவியாளர் வரைவுகள்', path: '/ai-drafts', requires: 'ai.proposal.read', group: 'Operations' },
+  { id: 'ai-drafts', label: 'Assistant drafts', labelTa: 'உதவியாளர் வரைவுகள்', path: '/ai-drafts', requires: 'ai.proposal.read', group: 'Today' },
   { id: 'substitution-exceptions', label: 'Delivery exceptions', labelTa: 'டெலிவரி விதிவிலக்குகள்', path: '/substitution-exceptions', requires: 'order.read', group: 'Orders' },
   // OB-288 fulfilment & delivery (M19-FR-01/03 · WF-14/15): the dispatch office — waves from confirmed orders, the day's
   // routes handed to drivers, every door's captured proof and the cash. Head office's page, served by the store computer since OB-380.
@@ -376,8 +493,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
   // was paid). Gated on the SAME permission the exceptions route checks (`lp.case.read`), so the menu never offers
   // a screen the server would refuse (P-03 control-by-exception, P-08 no silent failure).
-  { id: 'return-governance', label: 'Refund exceptions', labelTa: 'பணத்திருப்ப விதிவிலக்குகள்', path: '/return-governance', requires: 'lp.case.read', group: 'Sales' },
-  { id: 'cash-office', label: 'Over / short sign-off', labelTa: 'கூடுதல் / குறைவு ஒப்புதல்', path: '/cash-office', requires: 'till.shift.read', group: 'Finance' },
+  { id: 'return-governance', label: 'Refund exceptions', labelTa: 'பணத்திருப்ப விதிவிலக்குகள்', path: '/return-governance', requires: 'lp.case.read', group: 'Customers' },
+  { id: 'cash-office', label: 'Cash over / short', labelTa: 'பணம் கூடுதல் / குறைவு', path: '/cash-office', requires: 'till.shift.read', group: 'Finance' },
   { id: 'risk-acceptance', label: 'Risk acceptance', labelTa: 'இடர் ஏற்பு', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Operations' },
   // OB-288 gates lane (QG-12): every quality gate's GO / HOLD / REWORK for a release, decided by the owner with evidence.
   { id: 'gates', label: 'Quality gates', labelTa: 'தர வாயில்கள்', path: '/gates', requires: 'compliance.gate.read', group: 'Operations' },
@@ -399,7 +516,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'workforce', label: 'Workforce', labelTa: 'பணியாளர்கள்', path: '/workforce', requires: 'ai.proposal.read', group: 'People' },
   // ── OB-288 LP/workforce package — begin
   // M25-FR-04 · D11-FR-06: the role help centre and emergency procedures — the box serves it (it works with the line down).
-  { id: 'help', label: 'Help and procedures', labelTa: 'உதவி மற்றும் நடைமுறைகள்', path: '/help', requires: 'workforce.help.read', group: 'People' },
+  { id: 'help', label: 'Help and procedures', labelTa: 'உதவி மற்றும் நடைமுறைகள்', path: '/help', requires: 'workforce.help.read', group: 'Mine' },
   // QG-09 · M25-FR-01/03 · D11-FR-04 · OB-317 · OB-320: training, competency, curriculum, champions and the adoption gate.
   { id: 'adoption', label: 'Training and adoption', labelTa: 'பயிற்சி மற்றும் ஏற்பு', path: '/adoption', requires: 'workforce.roster.read', group: 'People' },
   // C17 · OB-323: appointment letters made from the staff record, with the signed copy kept.
@@ -469,6 +586,12 @@ export interface NavigationContext {
   readonly userId: string;
   /** The branch the user is working in; null = a company-wide view. */
   readonly branchId: string | null;
+  /**
+   * W1: the product role ids this person holds here, when the caller knows them (the store computer does, from its role
+   * register). They choose only the "daily work" group (`DAILY_WORK`) — never what may be opened, which stays the
+   * permission check alone. Absent: no daily group.
+   */
+  readonly roleIds?: readonly string[];
 }
 
 /**
@@ -482,8 +605,17 @@ export function navigationFor(
 ): NavGroup[] {
   const permitted = catalogue.filter((item) => mayOpenItem(access, context, item));
 
+  // W1: the person's daily jobs first — each still one they may open — and not repeated in their workspace below.
+  const dailyIds: string[] = [];
+  for (const [roleId, jobs] of Object.entries(DAILY_WORK)) {
+    if (!(context.roleIds ?? []).includes(roleId)) continue;
+    for (const id of jobs) if (!dailyIds.includes(id) && permitted.some((i) => i.id === id)) dailyIds.push(id);
+  }
+  const daily = dailyIds.map((id) => permitted.find((i) => i.id === id)!);
+
   const groups: NavGroup[] = [];
   for (const item of permitted) {
+    if (dailyIds.includes(item.id)) continue;
     const existing = groups.find((g) => g.group === item.group);
     if (existing === undefined) {
       groups.push({ group: item.group, items: [item] });
@@ -491,11 +623,18 @@ export function navigationFor(
       (existing.items as NavItem[]).push(item);
     }
   }
-  // The rail's order is the order of NAV_GROUP_LABELS (the owner's workspaces, OB-16), never the order items happen
+  // Within a workspace the most-used screens lead (NAV_ITEM_ORDER); the rest keep their declared order.
+  for (const g of groups) {
+    const lead = NAV_ITEM_ORDER[g.group] ?? [];
+    const rank = (id: string): number => { const i = lead.indexOf(id); return i === -1 ? lead.length : i; };
+    (g.items as NavItem[]).sort((x, y) => rank(x.id) - rank(y.id) || g.items.indexOf(x) - g.items.indexOf(y));
+  }
+  // The rail's order is the order of NAV_GROUP_LABELS (the task-based workspaces), never the order items happen
   // to be declared in; a group the labels do not know comes last, in declaration order.
   const order = Object.keys(NAV_GROUP_LABELS);
   const rank = (g: string): number => { const i = order.indexOf(g); return i === -1 ? order.length : i; };
-  return groups.map((g, i) => ({ g, i })).sort((a, b) => rank(a.g.group) - rank(b.g.group) || a.i - b.i).map(({ g }) => g);
+  const sorted = groups.map((g, i) => ({ g, i })).sort((a, b) => rank(a.g.group) - rank(b.g.group) || a.i - b.i).map(({ g }) => g);
+  return daily.length > 0 ? [{ group: DAILY_GROUP, items: daily }, ...sorted] : sorted;
 }
 
 /** True if the user may open this path — the same check the server must apply. */
