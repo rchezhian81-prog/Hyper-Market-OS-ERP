@@ -19,7 +19,7 @@ import { apiError } from '../../kernel/src/index';
 import {
   buildCatalogueSnapshot, type MasterProduct, type BuildSnapshotResult,
 } from '../../../packages/catalogue/src/snapshot-builder';
-import type { CatalogueBarcode, ProductStatus } from '../../../packages/catalogue/src/catalogue';
+import type { CatalogueBarcode, EmbeddedBarcodeRule, ProductStatus } from '../../../packages/catalogue/src/catalogue';
 import { mrpOn, isTobacco, warningStanding, type ProductRecord, type BarcodeAssignment } from '../../../packages/product/src/index';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -72,6 +72,12 @@ export interface CataloguePreviewDeps {
    * rides it, signed, so the till explodes a bundle sale into its components offline. Absent → no bundles carried.
    */
   readonly bundles?: (tenantId: string) => Promise<readonly BundleDefinition[]> | readonly BundleDefinition[];
+  /**
+   * OB-570 "A" (M03-FR-02): the scale-label rules in force (`scale-label-rules.ts`) — how a till reads the item code and the
+   * weight (or price, or use-by date) off a scale's label. They ride the pack, signed (`--embedded`), so a weight label rings
+   * up offline. Absent or none → the pack carries no rules, exactly as before.
+   */
+  readonly embeddedRules?: (tenantId: string) => Promise<readonly EmbeddedBarcodeRule[]> | readonly EmbeddedBarcodeRule[];
   readonly now: () => string;
 }
 
@@ -222,9 +228,9 @@ export async function assembleCatalogueSnapshot(
 
   // Barcodes: the register, mapped to the snapshot shape (the engine drops any whose product is excluded).
   // The register records SYMBOLOGY (gtin/ean/upc/internal/case/embedded); the catalogue `kind` is how the
-  // LANE reads the code, where a plain product code is 'standard'. Embedded weight/price barcodes are driven
-  // by per-tenant `EmbeddedBarcodeRule` (a separate pack input not yet sourced on the cloud), so every
-  // register code is carried here as 'standard' for now.
+  // LANE reads the code, where a plain product code is 'standard'. Embedded weight/price barcodes are read by
+  // the per-tenant scale-label rules (`deps.embeddedRules`, OB-570), never by a register entry, so every
+  // register code is carried here as 'standard'.
   const barcodes: CatalogueBarcode[] = (await deps.barcodes(opts.tenantId)).map((b) => ({
     code: b.code, productId: b.productId, kind: 'standard' as const,
   }));
@@ -281,7 +287,11 @@ export async function assembleCatalogueSnapshot(
   }
   const bundles = [...latestBundles.values()].sort((a, b) => (a.bundleProductId < b.bundleProductId ? -1 : 1));
   const withBundles = bundles.length === 0 ? withOffers : { ...withOffers, snapshot: { ...withOffers.snapshot, bundles } };
-  return notSold.length === 0 ? withBundles : { ...withBundles, notSold };
+  // OB-570 "A": the scale-label rules in force, in prefix order (the order is signed, so it must not depend on who read them).
+  const rules = [...(deps.embeddedRules === undefined ? [] : await deps.embeddedRules(opts.tenantId))]
+    .sort((a, b) => (a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0));
+  const withRules = rules.length === 0 ? withBundles : { ...withBundles, snapshot: { ...withBundles.snapshot, embeddedRules: rules } };
+  return notSold.length === 0 ? withRules : { ...withRules, notSold };
 }
 
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {

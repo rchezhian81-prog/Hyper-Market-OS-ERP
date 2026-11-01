@@ -350,6 +350,18 @@ export async function applyPilotCatalogue(
     );
   }
 
+  // 7. OB-570 "A": the scale-label rules — set through head office's own route (an ambiguous or malformed rule is refused
+  //    there exactly as for a person). A re-run of the same rule answers "unchanged"; a changed rule is its next version.
+  for (const rule of catalogue.scaleLabelRules) {
+    const { prefix, reason, ...positions } = rule;
+    await post(
+      `scale-label rule ${prefix}`,
+      `/v1/catalogue/scale-label-rules/${encodeURIComponent(prefix)}`,
+      { ...positions, reason },
+      `seed-scale-label-rule-${prefix}-${digestOf(positions)}`,
+    );
+  }
+
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
 }
 

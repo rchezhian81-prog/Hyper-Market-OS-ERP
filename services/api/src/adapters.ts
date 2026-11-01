@@ -51,6 +51,7 @@ import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview
 import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
 import type { BundleDefinition } from '../../../packages/product/src/bundles'; // OB-288 till side (OB-306)
 import { cessRateStore, frozenCessOf } from './till-bill-stores'; // Till bill and GST (A7)
+import { scaleLabelRuleStore } from './scale-label-rule-store'; // OB-570 "A": scale-label rules ride the pack
 import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy } from '../../../packages/product/src/index';
@@ -2540,6 +2541,7 @@ export function cataloguePreviewAdapter(input: {
     expiredBatches: saleBlocksAdapter(input).expiredBatches, // M10-FR-01 follow-up: expired batches refused on a batch-bearing code
     cessSchedule: cessRateStore(input).schedule, // Till bill and GST (A7): the cess in force rides the pack
     bundles: (t) => allOf<BundleDefinition>(input.store, t, streamName(STREAM.catalogue, 'bundles'), 'BundleDefined'), // OB-306: bundles ride the signed pack to the tills
+    embeddedRules: scaleLabelRuleStore(input).inForce, // OB-570 "A": the scale-label rules in force ride the signed pack
     ...(input.pricing === undefined ? {} : { pricing: input.pricing }),
     now: input.now,
   };

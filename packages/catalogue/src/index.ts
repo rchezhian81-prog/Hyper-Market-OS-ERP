@@ -5,3 +5,4 @@
 
 export * from './catalogue';
 export * from './snapshot-builder';
+export * from './scale-label-rules';

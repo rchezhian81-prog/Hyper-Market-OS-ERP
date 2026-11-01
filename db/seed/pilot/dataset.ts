@@ -305,11 +305,26 @@ export interface SeedProduct {
   readonly price: SeedPrice;
 }
 
+/**
+ * OB-570 "A" (M03-FR-02): a scale-label rule — how a till reads the item code and the weight off a weighing scale's
+ * 13-digit label. Positions count from 0; the 13th digit is the check digit. Set through head office's own route.
+ */
+export interface SeedScaleLabelRule {
+  readonly prefix: string;
+  readonly itemStart: number;
+  readonly itemLength: number;
+  readonly valueStart: number;
+  readonly valueLength: number;
+  readonly valueKind: 'weight' | 'price' | 'expiry';
+  readonly reason: string;
+}
+
 export interface PilotCatalogue {
   readonly tenantId: string;
   readonly taxRates: readonly SeedTaxRate[];
   readonly categories: readonly SeedCategory[];
   readonly products: readonly SeedProduct[];
+  readonly scaleLabelRules: readonly SeedScaleLabelRule[];
 }
 
 const INR = 'INR';
@@ -373,6 +388,20 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
       barcode: { code: '8900000000142', kind: 'ean' },
       price: { priceMinor: 12000, mrpMinor: 13500, costMinor: 9000, currency: INR, marginFloorBps: 0 },
     },
+    {
+      productId: 'prod-rice-loose', sku: '100201', name: 'Demo Loose Ponni Rice (demo)',
+      // OB-570 "A": LOOSE rice sold by weight (`kg`, priced per kg). It has no barcode of its own: the till rings it only from
+      // a weighing scale's label, read by the scale-label rule below — its SKU, 100201, is the item code the scale prints.
+      baseUom: 'kg', primaryCategoryId: 'cat-food', taxClass: '10063020', lifecycle: 'active',
+      brand: 'DemoBrand',
+      safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store in a cool, dry place' },
+      price: { priceMinor: 6000, mrpMinor: 6500, costMinor: 4500, currency: INR, marginFloorBps: 0 },
+    },
+  ],
+  // OB-570 "A": the demo's one scale-label rule — labels starting 2: item code in digits 2–7, weight in grams in digits
+  // 8–12, the check digit 13th. A label 2 100201 00850 c rings 0.850 kg of the loose rice.
+  scaleLabelRules: [
+    { prefix: '2', itemStart: 1, itemLength: 6, valueStart: 7, valueLength: 5, valueKind: 'weight', reason: 'the demo store\'s weighing scales print weight labels (synthetic)' },
   ],
 };
 
