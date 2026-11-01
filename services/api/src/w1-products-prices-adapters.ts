@@ -255,7 +255,7 @@ function priceBasis(base: Base) {
     }
     return [...new Set(await stores.storesToPrice!(tenantId))].sort();
   };
-  return async (tenantId: string, productId: string, scope: PriceScope, scopeRef: string, onDay: string, batchId?: string): Promise<PriceBasis> => {
+  return async (tenantId: string, productId: string, scope: PriceScope, scopeRef: string, onDay: string, batchId?: string, atInstant?: string): Promise<PriceBasis> => {
     const [product, entries, reach, costs, thresholds] = await Promise.all([
       products.product(tenantId, productId), list.entries(tenantId, productId), reachOf(tenantId, scope, scopeRef),
       averageBuyingCosts({ store, now, ...(base.calendar === undefined ? {} : { calendar: base.calendar }) }, tenantId),
@@ -264,7 +264,9 @@ function priceBasis(base: Base) {
     const mrp = (product?.mrpHistory ?? []).filter((m) => dayOf(m.effectiveFrom) <= onDay).sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)).at(-1);
     const knownCosts = reach.map((s) => ({ s, c: costs.costOf(productId, s) }));
     const floors = await Promise.all(reach.map(async (s) => ({ s, f: (await rules.rules(tenantId, s))?.marginFloorBps })));
-    const at = `${onDay}T12:00:00.000Z`;
+    // What this scope charges at the moment in question: for a new entry, the instant it would start (so a
+    // price that took effect earlier the same day counts); for a read of today, now; for a read of another day, that day's end.
+    const at = atInstant ?? (dayOf(now()) === onDay ? now() : `${onDay}T23:59:59.999Z`);
     const same = entries.filter((e) => e.scope === scope && e.scopeRef === scopeRef && (e.batchId ?? null) === (batchId ?? null));
     const ctxFor = (s: string) => ({ productId, at, storeId: scope === 'store' ? scopeRef : s, ...(scope === 'zone' ? { zoneId: scopeRef } : {}), ...(scope === 'channel' ? { channel: scopeRef } : {}), ...(scope === 'customer' ? { customerId: scopeRef } : {}), ...(batchId === undefined ? {} : { batchId }) });
     const current = resolvePrice(same, ctxFor(reach[0] ?? scopeRef));
@@ -323,7 +325,7 @@ function priceListGuard(surface: Route[], base: Base): void {
     const onDay = dayOf(b['effectiveFrom']);
     if (onDay < await shopToday(calendarDeps, ctx.tenantId)) return inner(ctx);
     const batchId = isStr(b['batchId']) ? b['batchId'].trim() : undefined;
-    const basis = await basisOf(ctx.tenantId, productId, b['scope'], b['scopeRef'].trim(), onDay, batchId);
+    const basis = await basisOf(ctx.tenantId, productId, b['scope'], b['scopeRef'].trim(), onDay, batchId, new Date(Date.parse(b['effectiveFrom'])).toISOString());
     const currency = b['currency'] as CurrencyCode;
     const priceMinor = b['priceMinor'];
     const mrpMinor = basis.mrpMinor === null ? b['mrpMinor'] : Math.min(b['mrpMinor'], basis.mrpMinor);
