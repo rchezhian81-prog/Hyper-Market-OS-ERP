@@ -168,6 +168,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'concession_deposit_forfeit', label: 'Forfeit a concessionaire\'s deposit',
     makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage', validForMinutes: 24 * 60,
   },
+  // Round 4d (M27-FR-03): the shop's invoice to a concessionaire for a period — made by one person, approved by ANOTHER
+  // already authorised over concession contracts (the same authority as the contract itself; no new role policy).
+  concession_invoice: {
+    kind: 'concession_invoice', label: 'Issue a concession invoice and settle the period',
+    makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage', validForMinutes: 24 * 60,
+  },
   // Stock, orders and purchasing (2b-vi-b-3). Each checker is the authority the route already named — now verified as an
   // approval that person GAVE, never a name in the body. A material write-off and an upward stock correction are
   // checked by ANOTHER person who handles stock (M28-FR-01 "Manager/Owner"; the same authority the write-off already

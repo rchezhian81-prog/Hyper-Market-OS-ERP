@@ -59,7 +59,9 @@ function paintOffice() {
   el('office-parts').hidden = read === null;
   if (read === null) return;
   const alerts = [...read.health.critical, ...read.health.other];
-  el('o-alerts').replaceChildren(...(alerts.length === 0 ? [li(`✓ ${w('noAlerts')}`, 'ok')] : alerts.map((a) => li(`${a.criticality === 'critical' ? '✕' : '⚠'} ${a.name} — ${w(a.kind)}${a.daysRemaining !== undefined ? ` · ${a.daysRemaining} ${w('daysLeft')}` : ''}${a.daysOverdue !== undefined ? ` · ${a.daysOverdue} ${w('daysOver')}` : ''}`, a.criticality === 'critical' ? 'error' : 'degraded', { asset: a.assetId, kind: a.kind }))));
+  // Round 4d (M26-FR-01): a spare part below the level wanted is a warning beside the asset alerts
+  const lowSpares = (office.lowSpareLines?.(lang(), read) ?? []).map((s) => li(`⚠ ${s.words}`, 'degraded', { spare: s.sparePartId }));
+  el('o-alerts').replaceChildren(...lowSpares, ...(alerts.length === 0 && lowSpares.length === 0 ? [li(`✓ ${w('noAlerts')}`, 'ok')] : alerts.map((a) => li(`${a.criticality === 'critical' ? '✕' : '⚠'} ${a.name} — ${w(a.kind)}${a.daysRemaining !== undefined ? ` · ${a.daysRemaining} ${w('daysLeft')}` : ''}${a.daysOverdue !== undefined ? ` · ${a.daysOverdue} ${w('daysOver')}` : ''}`, a.criticality === 'critical' ? 'error' : 'degraded', { asset: a.assetId, kind: a.kind }))));
   el('o-assets').replaceChildren(...(read.assets.length === 0 ? [li(w('none'), 'idle')] : read.assets.map((a) => li(`${a.name} (${a.assetId}) · ${w(a.criticality)} · ${w('warranty')} ${a.warrantyUntil ?? w('notRecorded')} · ${w('amc')} ${a.amcUntil ?? w('notRecorded')} · ${w('lastService')} ${a.lastServicedOn ?? w('never')}`, 'idle', { asset: a.assetId }))));
   el('o-equipment').replaceChildren(...(read.equipment.length === 0 ? [li(w('none'), 'idle')] : read.equipment.map((e) => {
     const st = e.assessment.state;

@@ -105,6 +105,17 @@
       </section>
       <p class="note" id="no-run" hidden></p>
 
+      <!-- Round 4d (M11-FR-03): repack a batch on hand into a new batch that keeps the source's expiry (production-repack.js). -->
+      <section class="form" id="repack" hidden aria-labelledby="repack-h">
+        <h3 id="repack-h"></h3>
+        <p class="note" id="repack-lead"></p>
+        <form id="repack-form" class="grid" novalidate>
+          <div id="repack-fields" style="display: contents"></div>
+          <button id="repack-go" class="act" type="submit"><span id="repack-go-text"></span></button>
+        </form>
+        <p class="status" id="repack-status" role="status" aria-live="polite"></p>
+      </section>
+
       <section class="form" id="labeller" hidden aria-label="Print the label">
         <h3 id="label-heading"></h3>
         <p class="note" id="label-none" hidden></p>
@@ -169,6 +180,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./production.js" type="module"></script>
+    <script src="./production-repack.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

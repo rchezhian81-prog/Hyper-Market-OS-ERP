@@ -111,9 +111,31 @@
         <p class="status" id="m-status" role="status" aria-live="polite"></p>
         <div class="figs" id="m-figs"></div>
       </section>
+
+      <!-- Round 4d (M27-FR-03): the invoice to the concessionaire for the period chosen above, made by one person and approved
+           by another, and the settlement in the books (concession-invoices.js). -->
+      <section id="invoices" hidden aria-labelledby="ci-h">
+        <h3 id="ci-h"></h3>
+        <p class="muted" id="ci-lead"></p>
+        <p class="status" id="ci-gst"></p>
+        <form id="ci-gst-form" class="row-form" hidden novalidate>
+          <div id="ci-gst-fields" style="display: contents"></div>
+          <button id="ci-save-gst" type="submit" class="quiet"><span id="ci-save-gst-text"></span></button>
+        </form>
+        <div class="actions">
+          <button id="ci-preview" type="button" class="quiet"><span id="ci-preview-text"></span></button>
+          <button id="ci-ask" type="button" hidden><span id="ci-ask-text"></span></button>
+          <button id="ci-issue" type="button" class="quiet" hidden><span id="ci-issue-text"></span></button>
+        </div>
+        <p class="status" id="ci-status" role="status" aria-live="polite"></p>
+        <div id="ci-figs"></div>
+        <h4 id="ci-list-h"></h4>
+        <div id="ci-list"></div>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./concessions.js" type="module"></script>
+    <script src="./concession-invoices.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

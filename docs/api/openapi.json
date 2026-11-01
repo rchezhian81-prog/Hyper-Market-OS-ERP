@@ -15562,6 +15562,222 @@
         }
       }
     },
+    "/v1/concession/contracts/{contractId}/invoice-preview": {
+      "get": {
+        "operationId": "getConcessionContractsByContractIdInvoicePreview",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.charge.read",
+        "x-entitlement": "dept.concession",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConcessionContractsByContractIdInvoicePreviewReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.charge.read\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/concession/contracts/{contractId}/invoices": {
+      "get": {
+        "operationId": "getConcessionContractsByContractIdInvoices",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.charge.read",
+        "x-entitlement": "dept.concession",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConcessionContractsByContractIdInvoicesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.charge.read\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/concession/contracts/{contractId}/invoices/{invoiceId}": {
+      "post": {
+        "operationId": "postConcessionContractsByContractIdInvoicesByInvoiceId",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.contract.manage",
+        "x-entitlement": "dept.concession",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostConcessionContractsByContractIdInvoicesByInvoiceIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostConcessionContractsByContractIdInvoicesByInvoiceIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostConcessionContractsByContractIdInvoicesByInvoiceIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.contract.manage\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/concession/contracts/{contractId}/may-trade": {
       "get": {
         "operationId": "getConcessionContractsByContractIdMayTrade",
@@ -16245,6 +16461,121 @@
           },
           "403": {
             "description": "Not \"concession.contract.manage\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/concession/gst-treatment": {
+      "get": {
+        "operationId": "getConcessionGstTreatment",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.charge.read",
+        "x-entitlement": "dept.concession",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConcessionGstTreatmentReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.charge.read\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putConcessionGstTreatment",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "finance.posting.configure",
+        "x-entitlement": "dept.concession",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutConcessionGstTreatmentRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutConcessionGstTreatmentReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"finance.posting.configure\", or the plan lacks \"dept.concession\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -24496,6 +24827,50 @@
         }
       }
     },
+    "/v1/facilities/schedules": {
+      "get": {
+        "operationId": "getFacilitiesSchedules",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "facilities.overdue.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFacilitiesSchedulesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"facilities.overdue.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/facilities/schedules/{scheduleId}": {
       "post": {
         "operationId": "postFacilitiesSchedulesByScheduleId",
@@ -24652,6 +25027,226 @@
           },
           "403": {
             "description": "Not \"facilities.task.record\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/facilities/spares": {
+      "get": {
+        "operationId": "getFacilitiesSpares",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "facilities.asset.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFacilitiesSparesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"facilities.asset.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/facilities/spares/{sparePartId}": {
+      "post": {
+        "operationId": "postFacilitiesSparesBySparePartId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "facilities.asset.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "sparePartId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFacilitiesSparesBySparePartIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFacilitiesSparesBySparePartIdReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"facilities.asset.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/facilities/spares/{sparePartId}/movements/{movementId}": {
+      "post": {
+        "operationId": "postFacilitiesSparesBySparePartIdMovementsByMovementId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "facilities.asset.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "sparePartId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "movementId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFacilitiesSparesBySparePartIdMovementsByMovementIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFacilitiesSparesBySparePartIdMovementsByMovementIdReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"facilities.asset.manage\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -91301,6 +91896,90 @@
         }
       }
     },
+    "/v1/production/repacks/{repackId}": {
+      "post": {
+        "operationId": "postProductionRepacksByRepackId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "production.plan.commit",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "repackId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostProductionRepacksByRepackIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostProductionRepacksByRepackIdReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"production.plan.commit\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/production/runs": {
       "get": {
         "operationId": "getProductionRuns",
@@ -104470,7 +105149,7 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -121442,6 +122121,181 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/concession.ts"
       },
+      "GetConcessionContractsByContractIdInvoicePreviewReply": {
+        "type": "object",
+        "required": [
+          "reconciles",
+          "differenceMinor",
+          "gstTreatmentVersion",
+          "supply",
+          "asAt",
+          "lines",
+          "taxableMinor",
+          "cgstMinor",
+          "sgstMinor",
+          "igstMinor",
+          "invoiceTotalMinor",
+          "collectedForThemMinor",
+          "netPayableToThemMinor",
+          "depositHeldMinor",
+          "contractId",
+          "from",
+          "to"
+        ],
+        "properties": {
+          "reconciles": {
+            "type": "boolean"
+          },
+          "differenceMinor": {
+            "type": "number"
+          },
+          "gstTreatmentVersion": {
+            "type": "number"
+          },
+          "supply": {
+            "type": "string",
+            "enum": [
+              "inter_state",
+              "intra_state"
+            ]
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConcessionInvoiceLine"
+            }
+          },
+          "taxableMinor": {
+            "type": "number"
+          },
+          "cgstMinor": {
+            "type": "number"
+          },
+          "sgstMinor": {
+            "type": "number"
+          },
+          "igstMinor": {
+            "type": "number"
+          },
+          "invoiceTotalMinor": {
+            "type": "number"
+          },
+          "collectedForThemMinor": {
+            "type": "number"
+          },
+          "netPayableToThemMinor": {
+            "type": "number"
+          },
+          "depositHeldMinor": {
+            "type": "number"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
+      },
+      "GetConcessionContractsByContractIdInvoicesReply": {
+        "type": "object",
+        "required": [
+          "contractId",
+          "invoices",
+          "reconcile",
+          "allAgree",
+          "gstTreatment",
+          "asAt"
+        ],
+        "properties": {
+          "contractId": {
+            "type": "string"
+          },
+          "invoices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConcessionInvoice"
+            }
+          },
+          "reconcile": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "invoiceId",
+                "number",
+                "journal",
+                "period",
+                "agrees",
+                "detail"
+              ],
+              "properties": {
+                "invoiceId": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string"
+                },
+                "journal": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "period": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "agrees": {
+                  "type": "boolean"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "allAgree": {
+            "type": "boolean"
+          },
+          "gstTreatment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConcessionGstTreatment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
+      },
       "GetConcessionContractsByContractIdMayTradeReply": {
         "type": "object",
         "required": [
@@ -121639,6 +122493,31 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/concession-desk.ts"
+      },
+      "GetConcessionGstTreatmentReply": {
+        "type": "object",
+        "required": [
+          "gstTreatment",
+          "decidedBy"
+        ],
+        "properties": {
+          "gstTreatment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConcessionGstTreatment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decidedBy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
       },
       "GetConcessionTradingBreachesReply": {
         "type": "object",
@@ -123779,6 +124658,7 @@
           "assets",
           "health",
           "equipment",
+          "spares",
           "downtime",
           "energy",
           "incidents",
@@ -123953,6 +124833,77 @@
               },
               "additionalProperties": true
             }
+          },
+          "spares": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "kept",
+                  "low"
+                ],
+                "properties": {
+                  "kept": {
+                    "type": "boolean"
+                  },
+                  "low": {
+                    "type": "array",
+                    "items": {
+                      "not": {}
+                    }
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kept",
+                  "parts",
+                  "low"
+                ],
+                "properties": {
+                  "kept": {
+                    "type": "boolean"
+                  },
+                  "parts": {
+                    "type": "number"
+                  },
+                  "low": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "sparePartId",
+                        "name",
+                        "onHand",
+                        "minimumLevel",
+                        "unit"
+                      ],
+                      "properties": {
+                        "sparePartId": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "onHand": {
+                          "type": "number"
+                        },
+                        "minimumLevel": {
+                          "type": "number"
+                        },
+                        "unit": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
           },
           "downtime": {
             "type": "array",
@@ -124176,6 +125127,185 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/platform/src/scale-register.ts"
+      },
+      "GetFacilitiesSchedulesReply": {
+        "type": "object",
+        "required": [
+          "schedules",
+          "asAt"
+        ],
+        "properties": {
+          "schedules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "tasksRaised",
+                "lastDueOn",
+                "open",
+                "scheduleId",
+                "tenantId",
+                "branchId",
+                "title",
+                "category",
+                "frequency",
+                "assignedRole",
+                "evidenceRequired",
+                "verificationRequired",
+                "escalatesTo",
+                "active"
+              ],
+              "properties": {
+                "tasksRaised": {
+                  "type": "number"
+                },
+                "lastDueOn": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "open": {
+                  "type": "number"
+                },
+                "scheduleId": {
+                  "type": "string"
+                },
+                "tenantId": {
+                  "type": "string"
+                },
+                "branchId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "cleaning",
+                    "electrical_safety",
+                    "fire_safety",
+                    "maintenance",
+                    "pest_control",
+                    "statutory"
+                  ]
+                },
+                "frequency": {
+                  "type": "string",
+                  "enum": [
+                    "annual",
+                    "daily",
+                    "half_yearly",
+                    "monthly",
+                    "quarterly",
+                    "weekly"
+                  ]
+                },
+                "assignedRole": {
+                  "type": "string"
+                },
+                "evidenceRequired": {
+                  "type": "boolean"
+                },
+                "verificationRequired": {
+                  "type": "boolean"
+                },
+                "escalatesTo": {
+                  "type": "string"
+                },
+                "escalateAfterDays": {
+                  "type": "number"
+                },
+                "assetId": {
+                  "type": "string"
+                },
+                "active": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/facilities.ts"
+      },
+      "GetFacilitiesSparesReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "branchId",
+              "kept",
+              "spares",
+              "low",
+              "asAt"
+            ],
+            "properties": {
+              "branchId": {
+                "type": "string"
+              },
+              "kept": {
+                "type": "boolean"
+              },
+              "spares": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SpareView"
+                }
+              },
+              "low": {
+                "type": "number"
+              },
+              "asAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "branchId",
+              "kept",
+              "spares",
+              "low",
+              "asAt"
+            ],
+            "properties": {
+              "branchId": {
+                "type": "string"
+              },
+              "kept": {
+                "type": "boolean"
+              },
+              "spares": {
+                "type": "array",
+                "items": {
+                  "not": {}
+                }
+              },
+              "low": {
+                "type": "number"
+              },
+              "asAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/facilities-assets.ts"
       },
       "GetFinanceAccountClassesReply": {
         "type": "object",
@@ -127796,11 +128926,21 @@
       "GetFinancePostingMapReply": {
         "type": "object",
         "required": [
+          "asAt",
           "map",
           "suggested",
-          "asAt"
+          "toMap"
         ],
         "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostingMapVersionSummary"
+            }
+          },
           "map": {
             "anyOf": [
               {
@@ -127814,8 +128954,50 @@
           "suggested": {
             "$ref": "#/components/schemas/PostingMap"
           },
-          "asAt": {
-            "type": "string"
+          "toMap": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "components"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "components": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "legs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "side",
+                      "component"
+                    ],
+                    "properties": {
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "credit",
+                          "debit"
+                        ]
+                      },
+                      "component": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
           }
         },
         "additionalProperties": true,
@@ -128867,9 +130049,16 @@
       "GetFinanceTallyLedgerNamesReply": {
         "type": "object",
         "required": [
-          "ledgerNames"
+          "ledgerNames",
+          "families"
         ],
         "properties": {
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LedgerNamesVersionSummary"
+            }
+          },
           "ledgerNames": {
             "anyOf": [
               {
@@ -128879,6 +130068,54 @@
                 "type": "null"
               }
             ]
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "family",
+                "words"
+              ],
+              "properties": {
+                "family": {
+                  "type": "string",
+                  "enum": [
+                    "bank",
+                    "cash",
+                    "fixed_assets",
+                    "general",
+                    "gst",
+                    "loyalty",
+                    "opening",
+                    "payables",
+                    "receivables",
+                    "returns",
+                    "sales",
+                    "stock",
+                    "stored_value",
+                    "supplier_income"
+                  ]
+                },
+                "words": {
+                  "type": "object",
+                  "required": [
+                    "en",
+                    "ta"
+                  ],
+                  "properties": {
+                    "en": {
+                      "type": "string"
+                    },
+                    "ta": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
           }
         },
         "additionalProperties": true,
@@ -171312,6 +172549,81 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/concession.ts"
       },
+      "PostConcessionContractsByContractIdInvoicesByInvoiceIdReply200": {
+        "type": "object",
+        "required": [
+          "invoice",
+          "alreadyIssued"
+        ],
+        "properties": {
+          "invoice": {
+            "$ref": "#/components/schemas/ConcessionInvoice"
+          },
+          "alreadyIssued": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
+      },
+      "PostConcessionContractsByContractIdInvoicesByInvoiceIdReply201": {
+        "type": "object",
+        "required": [
+          "invoice",
+          "entryId",
+          "period",
+          "alreadyIssued"
+        ],
+        "properties": {
+          "invoice": {
+            "$ref": "#/components/schemas/ConcessionInvoice"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "alreadyIssued": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
+      },
+      "PostConcessionContractsByContractIdInvoicesByInvoiceIdRequest": {
+        "type": "object",
+        "required": [
+          "bankedForThemMinor",
+          "from",
+          "to"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "bankedForThemMinor": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "meteredUtilitiesMinor": {
+            "type": "integer"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
+      },
       "PostConcessionContractsByContractIdReply": {
         "type": "object",
         "required": [
@@ -176813,7 +178125,8 @@
           "serviceId",
           "assetId",
           "kind",
-          "performedOn"
+          "performedOn",
+          "sparesUsed"
         ],
         "properties": {
           "serviceId": {
@@ -176832,6 +178145,25 @@
           },
           "performedOn": {
             "type": "string"
+          },
+          "sparesUsed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "sparePartId",
+                "qty"
+              ],
+              "properties": {
+                "sparePartId": {
+                  "type": "string"
+                },
+                "qty": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
           }
         },
         "additionalProperties": true,
@@ -176865,6 +178197,25 @@
           },
           "performedOn": {
             "type": "string"
+          },
+          "sparesUsed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "qty",
+                "sparePartId"
+              ],
+              "properties": {
+                "qty": {
+                  "type": "integer"
+                },
+                "sparePartId": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
           }
         },
         "additionalProperties": true,
@@ -177966,6 +179317,106 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/platform/src/facilities.ts"
+      },
+      "PostFacilitiesSparesBySparePartIdMovementsByMovementIdReply": {
+        "type": "object",
+        "required": [
+          "movement",
+          "onHand"
+        ],
+        "properties": {
+          "movement": {
+            "$ref": "#/components/schemas/SpareMovement"
+          },
+          "onHand": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/facilities-assets.ts"
+      },
+      "PostFacilitiesSparesBySparePartIdMovementsByMovementIdRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "on",
+          "qty"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "correction",
+              "received"
+            ]
+          },
+          "on": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/facilities-assets.ts"
+      },
+      "PostFacilitiesSparesBySparePartIdReply": {
+        "type": "object",
+        "required": [
+          "sparePart",
+          "onHand"
+        ],
+        "properties": {
+          "sparePart": {
+            "$ref": "#/components/schemas/SparePart"
+          },
+          "onHand": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/facilities-assets.ts"
+      },
+      "PostFacilitiesSparesBySparePartIdRequest": {
+        "type": "object",
+        "required": [
+          "branchId",
+          "compatibleAssetIds",
+          "minimumLevel",
+          "name"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "compatibleAssetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "minimumLevel": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/facilities-assets.ts"
       },
       "PostFacilitiesTasksByTaskIdCompleteReply200": {
         "type": "object",
@@ -184691,6 +186142,10 @@
           "names"
         ],
         "properties": {
+          "basedOn": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
           "companyName": {
             "type": "string"
           },
@@ -184707,6 +186162,9 @@
                 }
               }
             ]
+          },
+          "note": {
+            "type": "string"
           },
           "voucherTypes": {
             "anyOf": [
@@ -228633,6 +230091,94 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/production.ts"
       },
+      "PostProductionRepacksByRepackIdReply": {
+        "type": "object",
+        "required": [
+          "repackId",
+          "runId",
+          "sourceBatchId",
+          "newBatchId",
+          "productId",
+          "quantityMinor",
+          "uom",
+          "expiresAt",
+          "valued",
+          "awaitingRelease"
+        ],
+        "properties": {
+          "repackId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "sourceBatchId": {
+            "type": "string"
+          },
+          "newBatchId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "valued": {
+            "type": "boolean"
+          },
+          "awaitingRelease": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/production.ts"
+      },
+      "PostProductionRepacksByRepackIdRequest": {
+        "type": "object",
+        "required": [
+          "departmentId",
+          "locationId",
+          "newBatchId",
+          "productId",
+          "quantityMinor",
+          "sourceBatchId",
+          "uom"
+        ],
+        "properties": {
+          "departmentId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "newBatchId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "integer"
+          },
+          "sourceBatchId": {
+            "type": "string"
+          },
+          "uom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/production.ts"
+      },
       "PostProductionRunsByRunIdLabelReply": {
         "type": "object",
         "required": [
@@ -238930,12 +240476,163 @@
         "x-derived-from": "services/pos/src/self-checkout.ts"
       },
       "PostServiceCampaignsByCampaignIdAttributionReply": {
-        "$ref": "#/components/schemas/AttributionResult",
+        "type": "object",
+        "required": [
+          "attributionWindowHours",
+          "notSent",
+          "workedOutFrom",
+          "asAt",
+          "attributedMarginMinor",
+          "marginNotKnownOrders",
+          "firstSentAt",
+          "attributedOrders",
+          "campaignId",
+          "sent",
+          "converted",
+          "conversionBps",
+          "attributedRevenueMinor",
+          "controlConversionBps",
+          "upliftBps",
+          "detail"
+        ],
+        "properties": {
+          "attributionWindowHours": {
+            "type": "number"
+          },
+          "notSent": {
+            "type": "object",
+            "required": [
+              "waiting",
+              "withheld",
+              "deadLettered",
+              "failedReported"
+            ],
+            "properties": {
+              "waiting": {
+                "type": "number"
+              },
+              "withheld": {
+                "type": "number"
+              },
+              "deadLettered": {
+                "type": "number"
+              },
+              "failedReported": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "workedOutFrom": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "attributedMarginMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "marginNotKnownOrders": {
+            "type": "number"
+          },
+          "firstSentAt": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "attributedOrders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "orderId",
+                "customerRef",
+                "at",
+                "netMinor",
+                "channel"
+              ],
+              "properties": {
+                "orderId": {
+                  "type": "string"
+                },
+                "customerRef": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "netMinor": {
+                  "type": "number"
+                },
+                "channel": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "sent": {
+            "type": "number"
+          },
+          "converted": {
+            "type": "number"
+          },
+          "conversionBps": {
+            "type": "number"
+          },
+          "attributedRevenueMinor": {
+            "type": "number"
+          },
+          "controlConversionBps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "const": "no_control_group"
+              }
+            ]
+          },
+          "upliftBps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "const": "not_meaningful"
+              }
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
         "x-body-schema": "derived",
-        "x-derived-from": "services/customer/src/campaigns.ts"
+        "x-derived-from": "services/customer/src/campaign-send.ts"
       },
       "PostServiceCampaignsByCampaignIdAttributionRequest": {
         "type": "object",
+        "required": [
+          "attributionWindowHours"
+        ],
         "properties": {
           "attributionWindowHours": {
             "type": "number"
@@ -238945,47 +240642,11 @@
             "items": {
               "type": "string"
             }
-          },
-          "orders": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "at",
-                "customerRef",
-                "marginMinor",
-                "netMinor"
-              ],
-              "properties": {
-                "at": {
-                  "type": "string"
-                },
-                "customerRef": {
-                  "type": "string"
-                },
-                "marginMinor": {
-                  "type": "integer"
-                },
-                "netMinor": {
-                  "type": "integer"
-                }
-              },
-              "additionalProperties": true
-            }
-          },
-          "sentAt": {
-            "type": "string"
-          },
-          "sentTo": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         },
         "additionalProperties": true,
         "x-body-schema": "derived",
-        "x-derived-from": "services/customer/src/campaigns.ts"
+        "x-derived-from": "services/customer/src/campaign-send.ts"
       },
       "PostServiceCampaignsByCampaignIdMessagesByMessageIdStatusReply200": {
         "type": "object",
@@ -246839,6 +248500,53 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/risk.ts"
       },
+      "PutConcessionGstTreatmentReply": {
+        "type": "object",
+        "required": [
+          "gstTreatment"
+        ],
+        "properties": {
+          "gstTreatment": {
+            "$ref": "#/components/schemas/ConcessionGstTreatment"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
+      },
+      "PutConcessionGstTreatmentRequest": {
+        "type": "object",
+        "required": [
+          "rentBps",
+          "revenueShareBps",
+          "supply",
+          "utilitiesBps"
+        ],
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "rentBps": {
+            "type": "integer"
+          },
+          "revenueShareBps": {
+            "type": "integer"
+          },
+          "supply": {
+            "type": "string",
+            "enum": [
+              "inter_state",
+              "intra_state"
+            ]
+          },
+          "utilitiesBps": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-invoices.ts"
+      },
       "PutFinanceAccountClassesReply": {
         "type": "object",
         "required": [
@@ -247265,6 +248973,13 @@
           "rules"
         ],
         "properties": {
+          "basedOn": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "note": {
+            "type": "string"
+          },
           "rules": {
             "type": "array",
             "items": {
@@ -253755,66 +255470,6 @@
             "items": {
               "type": "string"
             }
-          }
-        },
-        "additionalProperties": true
-      },
-      "AttributionResult": {
-        "type": "object",
-        "required": [
-          "campaignId",
-          "sent",
-          "converted",
-          "conversionBps",
-          "attributedRevenueMinor",
-          "attributedMarginMinor",
-          "controlConversionBps",
-          "upliftBps",
-          "detail"
-        ],
-        "properties": {
-          "campaignId": {
-            "type": "string"
-          },
-          "sent": {
-            "type": "number"
-          },
-          "converted": {
-            "type": "number"
-          },
-          "conversionBps": {
-            "type": "number"
-          },
-          "attributedRevenueMinor": {
-            "type": "number"
-          },
-          "attributedMarginMinor": {
-            "type": "number"
-          },
-          "controlConversionBps": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "const": "no_control_group"
-              }
-            ]
-          },
-          "upliftBps": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "const": "not_meaningful"
-              }
-            ]
-          },
-          "detail": {
-            "type": "string"
           }
         },
         "additionalProperties": true
@@ -260963,6 +262618,201 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ConcessionGstTreatment": {
+        "type": "object",
+        "required": [
+          "rentBps",
+          "revenueShareBps",
+          "utilitiesBps",
+          "supply",
+          "version",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "rentBps": {
+            "type": "number"
+          },
+          "revenueShareBps": {
+            "type": "number"
+          },
+          "utilitiesBps": {
+            "type": "number"
+          },
+          "supply": {
+            "type": "string",
+            "enum": [
+              "inter_state",
+              "intra_state"
+            ]
+          },
+          "version": {
+            "type": "number"
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ConcessionInvoice": {
+        "type": "object",
+        "required": [
+          "invoiceId",
+          "number",
+          "financialYear",
+          "contractId",
+          "concessionaireId",
+          "branchId",
+          "from",
+          "to",
+          "issuedOn",
+          "madeBy",
+          "approvedBy",
+          "gstTreatmentVersion",
+          "supply",
+          "entryId",
+          "issuedAt",
+          "lines",
+          "taxableMinor",
+          "cgstMinor",
+          "sgstMinor",
+          "igstMinor",
+          "invoiceTotalMinor",
+          "collectedForThemMinor",
+          "netPayableToThemMinor",
+          "depositHeldMinor"
+        ],
+        "properties": {
+          "invoiceId": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "financialYear": {
+            "type": "string"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "concessionaireId": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "issuedOn": {
+            "type": "string"
+          },
+          "madeBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "gstTreatmentVersion": {
+            "type": "number"
+          },
+          "supply": {
+            "type": "string",
+            "enum": [
+              "inter_state",
+              "intra_state"
+            ]
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConcessionInvoiceLine"
+            }
+          },
+          "taxableMinor": {
+            "type": "number"
+          },
+          "cgstMinor": {
+            "type": "number"
+          },
+          "sgstMinor": {
+            "type": "number"
+          },
+          "igstMinor": {
+            "type": "number"
+          },
+          "invoiceTotalMinor": {
+            "type": "number"
+          },
+          "collectedForThemMinor": {
+            "type": "number"
+          },
+          "netPayableToThemMinor": {
+            "type": "number"
+          },
+          "depositHeldMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ConcessionInvoiceLine": {
+        "type": "object",
+        "required": [
+          "kind",
+          "taxableMinor",
+          "rateBps",
+          "cgstMinor",
+          "sgstMinor",
+          "igstMinor",
+          "totalMinor"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rent",
+              "revenue_share",
+              "utilities"
+            ]
+          },
+          "taxableMinor": {
+            "type": "number"
+          },
+          "rateBps": {
+            "type": "number"
+          },
+          "cgstMinor": {
+            "type": "number"
+          },
+          "sgstMinor": {
+            "type": "number"
+          },
+          "igstMinor": {
+            "type": "number"
+          },
+          "totalMinor": {
+            "type": "number"
           }
         },
         "additionalProperties": true
@@ -279687,6 +281537,58 @@
         },
         "additionalProperties": true
       },
+      "LedgerNamesVersionSummary": {
+        "type": "object",
+        "required": [
+          "version",
+          "setBy",
+          "setAt",
+          "companyName",
+          "accounts",
+          "added",
+          "renamed",
+          "dropped"
+        ],
+        "properties": {
+          "version": {
+            "type": "number"
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "companyName": {
+            "type": "string"
+          },
+          "accounts": {
+            "type": "number"
+          },
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "renamed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dropped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
       "LegacyAttachmentMeta": {
         "type": "object",
         "required": [
@@ -288687,6 +290589,54 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PostingRule"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "PostingMapVersionSummary": {
+        "type": "object",
+        "required": [
+          "version",
+          "definedBy",
+          "definedAt",
+          "rules",
+          "added",
+          "changed",
+          "dropped"
+        ],
+        "properties": {
+          "version": {
+            "type": "number"
+          },
+          "definedBy": {
+            "type": "string"
+          },
+          "definedAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "number"
+          },
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "changed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dropped": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         },
@@ -300854,6 +302804,165 @@
           }
         ]
       },
+      "SpareMovement": {
+        "type": "object",
+        "required": [
+          "movementId",
+          "sparePartId",
+          "kind",
+          "qty",
+          "on",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "movementId": {
+            "type": "string"
+          },
+          "sparePartId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "correction",
+              "received",
+              "used"
+            ]
+          },
+          "qty": {
+            "type": "number"
+          },
+          "on": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "assetId": {
+            "type": "string"
+          },
+          "serviceId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SparePart": {
+        "type": "object",
+        "required": [
+          "sparePartId",
+          "branchId",
+          "name",
+          "compatibleAssetIds",
+          "minimumLevel",
+          "unit",
+          "active",
+          "definedBy",
+          "definedAt"
+        ],
+        "properties": {
+          "sparePartId": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "compatibleAssetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "minimumLevel": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "definedBy": {
+            "type": "string"
+          },
+          "definedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SpareView": {
+        "type": "object",
+        "required": [
+          "onHand",
+          "low",
+          "movements",
+          "sparePartId",
+          "branchId",
+          "name",
+          "compatibleAssetIds",
+          "minimumLevel",
+          "unit",
+          "active",
+          "definedBy",
+          "definedAt"
+        ],
+        "properties": {
+          "onHand": {
+            "type": "number"
+          },
+          "low": {
+            "type": "boolean"
+          },
+          "movements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpareMovement"
+            }
+          },
+          "sparePartId": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "compatibleAssetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "minimumLevel": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "definedBy": {
+            "type": "string"
+          },
+          "definedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "StaffAccount": {
         "type": "object",
         "required": [
@@ -302882,6 +304991,9 @@
             "type": "string"
           },
           "definedAt": {
+            "type": "string"
+          },
+          "note": {
             "type": "string"
           },
           "rules": {
@@ -306176,6 +308288,9 @@
             "type": "string"
           },
           "setAt": {
+            "type": "string"
+          },
+          "note": {
             "type": "string"
           }
         },

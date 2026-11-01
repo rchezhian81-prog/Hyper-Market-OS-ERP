@@ -120,6 +120,7 @@ import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-
 import { wireFindings } from './findings-browser-wiring'; // OB-609
 import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
 import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
+import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -5405,7 +5406,7 @@ interface ManagerWindow {
   orderRefunds?: { readonly session: OrderRefundsSession; readonly words: typeof orderRefundsWords; readonly outcomeWords: typeof orderRefundsOutcomeWords; readonly rupees: typeof orderRefundsRupees; readonly bases: typeof REFUND_BASES };
   loyaltyDeskData?: ViewerIdentity;
   campaignsData?: ViewerIdentity;
-  campaigns?: { readonly session: CampaignsSession; readonly words: typeof campaignsWords; readonly outcomeWords: typeof campaignsOutcomeWords; readonly approved: typeof approvedTemplates; readonly segments: typeof CAMPAIGN_SEGMENTS; readonly channels: typeof CAMPAIGN_CHANNELS };
+  campaigns?: { readonly session: CampaignsSession; readonly words: typeof campaignsWords; readonly outcomeWords: typeof campaignsOutcomeWords; readonly approved: typeof approvedTemplates; readonly segments: typeof CAMPAIGN_SEGMENTS; readonly channels: typeof CAMPAIGN_CHANNELS; readonly rupees: typeof loyaltyRupees };
   loyaltyDesk?: { readonly session: LoyaltyDeskSession; readonly words: typeof loyaltyDeskWords; readonly outcomeWords: typeof loyaltyDeskOutcomeWords; readonly rupees: typeof loyaltyRupees; readonly multiplierWords: typeof loyaltyMultiplierWords };
   // OB-288 P5 (OB-293): the Tally files page.
   tallyFilesData?: ViewerIdentity;
@@ -7432,7 +7433,7 @@ if (browserWindow !== undefined) {
   browserWindow.orderRefunds = { session: createOrderRefundsSession({ viewer: browserWindow.orderRefundsData }), words: orderRefundsWords, outcomeWords: orderRefundsOutcomeWords, rupees: orderRefundsRupees, bases: REFUND_BASES };
   // OB-288 wave 3 (M21-FR-01 · M21-FR-02): the Campaigns page — nothing read on open; every read and write is a person's click.
   browserWindow.campaignsData = viewerIdentity(browserWindow.campaignsData);
-  browserWindow.campaigns = { session: createCampaignsSession({ viewer: browserWindow.campaignsData }), words: campaignsWords, outcomeWords: campaignsOutcomeWords, approved: approvedTemplates, segments: CAMPAIGN_SEGMENTS, channels: CAMPAIGN_CHANNELS };
+  browserWindow.campaigns = { session: createCampaignsSession({ viewer: browserWindow.campaignsData }), words: campaignsWords, outcomeWords: campaignsOutcomeWords, approved: approvedTemplates, segments: CAMPAIGN_SEGMENTS, channels: CAMPAIGN_CHANNELS, rupees: loyaltyRupees /* Round 4d: the attribution figures */ };
   browserWindow.loyaltyDeskData = viewerIdentity(browserWindow.loyaltyDeskData);
   browserWindow.loyaltyDesk = { session: createLoyaltyDeskSession({ viewer: browserWindow.loyaltyDeskData }), words: loyaltyDeskWords, outcomeWords: loyaltyDeskOutcomeWords, rupees: loyaltyRupees, multiplierWords: loyaltyMultiplierWords };
   browserWindow.tallyFilesData = viewerIdentity(browserWindow.tallyFilesData);
@@ -7499,4 +7500,5 @@ if (browserWindow !== undefined) {
   wireFindings(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   wireUsers(browserWindow as unknown as Record<string, unknown>, viewerIdentity, HEAD_OFFICE_PEOPLE); // Round 4c
   wireRound4c(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4c
+  wireRound4d(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4d
 }

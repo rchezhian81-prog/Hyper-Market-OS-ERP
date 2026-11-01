@@ -109,7 +109,7 @@ export type CopyKey =
   | 'reasonLabel' | 'reasonPlaceholder' | 'approveBtn' | 'rejectBtn'
   | 'kindDataImport' | 'kindDataImportRollback' | 'kindCategoryDefine' | 'kindSupplierBank'
   | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor' | 'kindQuotationFloorNotKnown' | 'kindQuotationFloorNotKnownOwnerQuoted' | 'kindQuotationBelowFloorOwnerQuoted'
-  | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
+  | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit' | 'kindConcessionInvoice'
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
@@ -155,7 +155,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindQuotationFloorNotKnownOwnerQuoted: 'The owner quotes a customer a price on a product whose lowest price is not known (accountant approves)', // R10-A · OB-542
     kindQuotationBelowFloorOwnerQuoted: 'The owner quotes a customer below the margin floor (accountant approves)', // R11-A · OB-602
     kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
-    kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit',
+    kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit', kindConcessionInvoice: 'Issue a concession invoice and settle the period',
     kindStockWriteOff: 'Write off stock (a material loss)', kindStockAdjustmentUp: 'Correct stock upward',
     kindOrderRefund: 'Refund an online order', kindServiceCompensation: 'Give a customer compensation above the desk\'s own limit',
     kindSupplierInvoiceCheck: 'Check a supplier bill', kindSupplierPayment: 'Pay a supplier',
@@ -241,7 +241,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindQuotationFloorNotKnownOwnerQuoted: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு உரிமையாளரே வாடிக்கையாளருக்குச் சொன்ன விலை (கணக்காளர் அனுமதிப்பார்)', // R10-A · OB-542
     kindQuotationBelowFloorOwnerQuoted: 'லாப வரம்புக்குக் கீழே உரிமையாளரே வாடிக்கையாளருக்குச் சொன்ன விலை (கணக்காளர் அனுமதிப்பார்)', // R11-A · OB-602
     kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
-    kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்',
+    kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்', kindConcessionInvoice: 'சலுகை விலைப்பட்டியலை வெளியிட்டு காலத்தைத் தீர்த்தல்',
     kindStockWriteOff: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)', kindStockAdjustmentUp: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்',
     kindOrderRefund: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்', kindServiceCompensation: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்',
     kindSupplierInvoiceCheck: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்', kindSupplierPayment: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்',
@@ -331,6 +331,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   period_reopen: 'kindPeriodReopen',
   concession_contract: 'kindConcessionContract',
   concession_deposit_forfeit: 'kindConcessionDepositForfeit',
+  concession_invoice: 'kindConcessionInvoice', // Round 4d · M27-FR-03
   stock_write_off: 'kindStockWriteOff',
   stock_adjustment_up: 'kindStockAdjustmentUp',
   order_refund: 'kindOrderRefund',

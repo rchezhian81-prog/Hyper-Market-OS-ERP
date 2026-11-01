@@ -15,7 +15,7 @@
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  buildDayBook, postDayBook, validatePostingMap, dayBookLedgerLines, DEFAULT_RETAIL_POSTING_MAP,
+  buildDayBook, postDayBook, validatePostingMap, dayBookLedgerLines, DEFAULT_RETAIL_POSTING_MAP, POSTING_KINDS_TO_MAP,
   type DayBookSale, type DayBookReturn, type DayBookException, type DayBookSourceKind, type PostingMap, type DayBookLoyalty,
 } from '../../../packages/finance/src/index';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
@@ -25,6 +25,37 @@ export interface StoredPostingMap extends PostingMap {
   readonly version: number;
   readonly definedBy: string;
   readonly definedAt: string;
+  /** Round 4d: what the accountant said the change was for (optional; the audit trail holds who and when either way). */
+  readonly note?: string;
+}
+
+/** One version of the mapping as the setup screen lists it: who, when, why, and which kinds it added, changed or dropped. */
+export interface PostingMapVersionSummary {
+  readonly version: number;
+  readonly definedBy: string;
+  readonly definedAt: string;
+  readonly note?: string;
+  readonly rules: number;
+  readonly added: readonly string[];
+  readonly changed: readonly string[];
+  readonly dropped: readonly string[];
+}
+
+/** Every version, newest first, each compared with the one before it (a kind's legs are compared exactly). */
+export function postingMapHistory(versions: readonly StoredPostingMap[]): readonly PostingMapVersionSummary[] {
+  const ordered = [...versions].sort((a, b) => a.version - b.version);
+  const legsOf = (m: StoredPostingMap | undefined): ReadonlyMap<string, string> =>
+    new Map((m?.rules ?? []).map((r) => [r.kind, JSON.stringify(r.legs.map((l) => [l.account, l.side, l.component]))]));
+  return ordered.map((v, i) => {
+    const before = legsOf(ordered[i - 1]);
+    const now = legsOf(v);
+    return {
+      version: v.version, definedBy: v.definedBy, definedAt: v.definedAt, ...(v.note === undefined ? {} : { note: v.note }), rules: v.rules.length,
+      added: [...now.keys()].filter((k) => !before.has(k)),
+      changed: [...now.keys()].filter((k) => before.has(k) && before.get(k) !== now.get(k)),
+      dropped: [...before.keys()].filter((k) => !now.has(k)),
+    };
+  }).reverse();
 }
 
 /** A day-book voucher: a finance journal that also says which day, which kind and which receipts it is made of. */
@@ -63,6 +94,8 @@ export interface DayBookExceptionRecord extends DayBookException {
 export interface DayBookDeps extends Pick<FinanceDeps, 'periodStates' | 'nextOpenPeriod' | 'appendJournal' | 'now'> {
   readonly postingMap: (tenantId: string) => Promise<StoredPostingMap | undefined> | StoredPostingMap | undefined;
   readonly definePostingMap: (tenantId: string, map: StoredPostingMap) => Promise<void> | void;
+  /** Round 4d: every version ever defined (append-only), for the setup screen's history. Absent: no history is offered. */
+  readonly postingMapVersions?: (tenantId: string) => Promise<readonly StoredPostingMap[]>;
   /** The synced sales whose `tradingDay` is the day (the trading day, not the clock day). */
   readonly salesOn: (tenantId: string, tradingDay: string) => Promise<readonly DayBookSale[]> | readonly DayBookSale[];
   /** The returns processed on the day. */
@@ -166,15 +199,32 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
     {
       api: 'API-09', method: 'GET', path: '/v1/finance/posting-map',
       permission: 'finance.period.read',
-      handler: async (ctx) => ({
-        status: 200,
-        body: { map: (await deps.postingMap(ctx.tenantId)) ?? null, suggested: DEFAULT_RETAIL_POSTING_MAP, asAt: deps.now() },
-      }),
+      handler: async (ctx) => {
+        const [map, versions] = await Promise.all([deps.postingMap(ctx.tenantId), deps.postingMapVersions?.(ctx.tenantId)]);
+        return {
+          status: 200,
+          body: {
+            map: map ?? null, suggested: DEFAULT_RETAIL_POSTING_MAP,
+            // Round 4d: the kinds other engines post that the suggestion leaves to the accountant (no account guessed), and
+            // every version ever defined — who, when, why and which kinds it changed (append-only; the latest is in force).
+            toMap: POSTING_KINDS_TO_MAP,
+            ...(versions === undefined ? {} : { history: postingMapHistory(versions) }),
+            asAt: deps.now(),
+          },
+        };
+      },
     },
     {
       api: 'API-09', method: 'PUT', path: '/v1/finance/posting-map',
       permission: 'finance.posting.configure', idempotent: true,
       handler: async (ctx) => {
+        const body = (ctx.body ?? {}) as { basedOn?: unknown; note?: unknown };
+        if (body.note !== undefined && (typeof body.note !== 'string' || body.note.length > 500)) {
+          throw apiError(400, {
+            code: 'posting_map_note_unreadable', whatHappened: 'The note on a mapping change, when sent, is text of at most 500 characters.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Shorten the note, or leave it out. The mapping in force is unchanged.',
+          });
+        }
         const checked = validatePostingMap(ctx.body);
         if (!checked.ok) {
           throw apiError(422, {
@@ -185,8 +235,20 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
           });
         }
         const current = await deps.postingMap(ctx.tenantId);
+        // Round 4d · hard rule 10: a screen says which version it edited (`basedOn`, 0 for "none yet"); when somebody saved
+        // another version since, the change is refused by name — never a silent last-write-wins over their rules.
+        if (body.basedOn !== undefined && body.basedOn !== (current?.version ?? 0)) {
+          throw apiError(409, {
+            code: 'posting_map_changed_since',
+            whatHappened: `The mapping was changed by ${current?.definedBy ?? 'somebody'} (version ${current?.version ?? 0}) after you opened version ${String(body.basedOn)}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Read the mapping again, look at what changed, and make your change on the newer version. Nothing was changed.',
+          });
+        }
+        const note = typeof body.note === 'string' && body.note.trim() !== '' ? body.note.trim() : undefined;
         const stored: StoredPostingMap = {
           rules: checked.map.rules, version: (current?.version ?? 0) + 1, definedBy: ctx.userId, definedAt: deps.now(),
+          ...(note === undefined ? {} : { note }),
         };
         await deps.definePostingMap(ctx.tenantId, stored);
         return { status: 200, body: { version: stored.version, rules: stored.rules.length, kinds: stored.rules.map((r) => r.kind) } };

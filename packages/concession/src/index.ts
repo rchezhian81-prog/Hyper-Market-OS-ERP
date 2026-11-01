@@ -20,3 +20,5 @@ export * from './concession';
 export * from './concession-tagging';
 export * from './trading-feed';
 export * from './expiry-alerts';
+// Round 4d (M27-FR-03): the shop's invoice to a concessionaire for a period, and the settlement journal's figures.
+export * from './invoice';

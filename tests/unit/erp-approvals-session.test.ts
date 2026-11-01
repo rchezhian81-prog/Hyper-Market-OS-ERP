@@ -154,6 +154,7 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       period_reopen: { en: 'Reopen a signed accounting month', ta: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்' },
       concession_contract: { en: 'Approve a concession contract', ta: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்' },
       concession_deposit_forfeit: { en: 'Forfeit a concessionaire\'s deposit', ta: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்' },
+      concession_invoice: { en: 'Issue a concession invoice and settle the period', ta: 'சலுகை விலைப்பட்டியலை வெளியிட்டு காலத்தைத் தீர்த்தல்' }, // Round 4d · M27-FR-03
       // Stock, orders and purchasing (2b-vi-b-3).
       stock_write_off: { en: 'Write off stock (a material loss)', ta: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)' },
       stock_adjustment_up: { en: 'Correct stock upward', ta: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்' },

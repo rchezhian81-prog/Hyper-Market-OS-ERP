@@ -18,8 +18,8 @@
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError, assertBranchInScope, ApiError } from '../../kernel/src/index';
 import {
-  assessAssets, summariseDowntime, reportEnergy, assessEquipment,
-  type Asset, type ServiceLog, type DowntimeEvent, type EnergyReading, type EquipmentReading,
+  assessAssets, summariseDowntime, reportEnergy, assessEquipment, sparesView,
+  type Asset, type ServiceLog, type DowntimeEvent, type EnergyReading, type EquipmentReading, type SparePart, type SpareMovement,
 } from '../../../packages/facilities/src/index';
 import type { SafetyIncident } from '../../../packages/facilities/src/schedules';
 import type { EquipmentRangeReg, EquipmentContents } from './facilities-monitoring';
@@ -40,6 +40,9 @@ export interface FacilitiesOfficeDeps {
   /** The head-office reading route's own handler — the relayed reading goes through exactly it. */
   readonly recordReadingAs: (ctx: RequestContext) => Promise<HandlerResult>;
   readonly now: () => string;
+  /** Round 4d (M26-FR-01): the spare-parts register, for the low-spare warning. Absent: no spares are kept (said so). */
+  readonly spareParts?: (tenantId: string) => Promise<readonly SparePart[]>;
+  readonly spareMovements?: (tenantId: string) => Promise<readonly SpareMovement[]>;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -79,6 +82,9 @@ export function facilitiesOfficeRoutes(deps: FacilitiesOfficeDeps): readonly Rou
           return { assetId: r.assetId, name: r.name, onBackup: r.onBackup, range: r.range, lastReading: last, assessment: a };
         }).sort((x, y) => x.assetId.localeCompare(y.assetId));
         const from = new Date(Date.parse(day) - 29 * DAY_MS).toISOString().slice(0, 10);
+        // Round 4d (M26-FR-01): the spares below the level the shop wants — a warning, never a silent zero.
+        const spares = deps.spareParts === undefined || deps.spareMovements === undefined ? null
+          : sparesView(await deps.spareParts(ctx.tenantId), await deps.spareMovements(ctx.tenantId), branchId);
         return {
           status: 200,
           body: {
@@ -86,6 +92,10 @@ export function facilitiesOfficeRoutes(deps: FacilitiesOfficeDeps): readonly Rou
             assets: register,
             health: assessAssets({ branchId, assets, services, asAt: day }),
             equipment,
+            spares: spares === null ? { kept: false, low: [] } : {
+              kept: true, parts: spares.length,
+              low: spares.filter((p) => p.low).map((p) => ({ sparePartId: p.sparePartId, name: p.name, onHand: p.onHand, minimumLevel: p.minimumLevel, unit: p.unit })),
+            },
             downtime: summariseDowntime({ assets: mine, events: downtime.filter((d) => mine.some((a) => a.assetId === d.assetId)), asAt: at }),
             energy: reportEnergy({ branchId, readings: energy, from, to: day }),
             incidents: incidents.filter((i) => i.branchId === branchId)

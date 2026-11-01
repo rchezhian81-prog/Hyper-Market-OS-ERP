@@ -65,29 +65,14 @@ describe('campaign journeys + honest attribution (M21-FR-02)', () => {
     expect(body.candidates.find((c) => c.customerRef === 'c-big')?.eligible).toBe(true);
   });
 
-  it('attributes only post-send in-window orders by recipients, and reports the control beside it', async () => {
+  // Round 4d (M21-FR-02 "attribution derived"): the measurement itself is proven from the campaign's own sends and the shop's
+  // own bills in tests/integration/r4d-campaign-attribution-is-worked-out-from-sends-and-bills.test.ts; here, a body that
+  // TYPES who was sent to, when, or the orders is refused by name.
+  it('refuses a typed sentTo, sentAt or orders — attribution is worked out, never typed', async () => {
     const h = await seeded();
-    const sentAt = '2026-08-20T10:00:00.000Z';
-    const orders = [
-      { customerRef: 'c1', at: '2026-08-20T11:00:00.000Z', netMinor: 50000, marginMinor: 10000 }, // in window, recipient
-      { customerRef: 'c2', at: '2026-08-20T09:00:00.000Z', netMinor: 30000, marginMinor: 6000 },   // BEFORE the send
-      { customerRef: 'x1', at: '2026-08-20T12:00:00.000Z', netMinor: 20000, marginMinor: 4000 },   // a control member converts
-    ];
-    // No control group → activity, not uplift.
-    const noCtrl = await attribution(h, 'u-mgr', 'camp-a', { sentTo: ['c1', 'c2', 'c3'], sentAt, attributionWindowHours: 24, orders }, 'a1');
-    expect(noCtrl.status).toBe(200);
-    expect(noCtrl.body).toMatchObject({
-      sent: 3, converted: 1, conversionBps: 3333, attributedRevenueMinor: 50000, attributedMarginMinor: 10000,
-      controlConversionBps: 'no_control_group', upliftBps: 'not_meaningful',
-    });
-    expect((noCtrl.body as { detail: string }).detail).toContain('activity');
-
-    // With a control group, uplift is measured against it.
-    const withCtrl = await attribution(h, 'u-mgr', 'camp-a', { sentTo: ['c1', 'c2'], sentAt, attributionWindowHours: 24, orders, controlGroup: ['x1', 'x2'] }, 'a2');
-    const w = withCtrl.body as { conversionBps: number; controlConversionBps: number; upliftBps: number };
-    expect(w.conversionBps).toBe(5000);      // c1 of {c1,c2}
-    expect(w.controlConversionBps).toBe(5000); // x1 of {x1,x2}
-    expect(w.upliftBps).toBe(0);              // did not beat doing nothing
+    const typed = await attribution(h, 'u-mgr', 'camp-a', { sentTo: ['c1'], sentAt: '2026-08-20T10:00:00.000Z', attributionWindowHours: 24, orders: [] }, 'a1');
+    expect(typed.status).toBe(400);
+    expect(codeOf(typed)).toBe('attribution_is_worked_out');
   });
 
   it('is gated to campaign staff and rejects an unreadable request', async () => {
@@ -95,6 +80,6 @@ describe('campaign journeys + honest attribution (M21-FR-02)', () => {
     expect((await journeys(h, 'u-cash', 'abandoned_cart', { triggers: [] }, 'jx')).status).toBe(403);
     expect((await attribution(h, 'u-cash', 'camp-x', { sentTo: ['c1'], sentAt: '2026-08-20T10:00:00.000Z', attributionWindowHours: 24, orders: [] }, 'ax')).status).toBe(403);
     expect(codeOf(await journeys(h, 'u-mgr', 'not_a_kind', { triggers: [] }, 'jbad'))).toBe('not_readable_as_a_journey');
-    expect(codeOf(await attribution(h, 'u-mgr', 'camp-y', { sentTo: ['c1'], sentAt: '2026-08-20T10:00:00.000Z', attributionWindowHours: 0, orders: [] }, 'abad'))).toBe('not_readable_as_an_attribution');
+    expect(codeOf(await attribution(h, 'u-mgr', 'camp-y', { attributionWindowHours: 0 }, 'abad'))).toBe('not_readable_as_an_attribution');
   });
 });

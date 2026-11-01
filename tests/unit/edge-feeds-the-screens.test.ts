@@ -195,6 +195,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   categoryPolicyPolicy: known({ userId: 'u-cat', permissions: ['catalogue.pack.read'] }),
   gstReturnsQueue: known([{ period: '062026', state: 'filed', arn: 'ARN-062026' }]),
   gstReturnsPolicy: known({ userId: 'u-finance', permissions: ['finance.gstr.read'] }),
+  reorderSettings: notKnown('this pack predates OB-630'),
   wasteWriteOffs: known([{ id: 'wo-1', productId: 'RICE-5', lossType: 'damage', qtyRemoved: 4, uom: 'ea', valueMinor: 240_000, currency: 'INR', requiredApproval: true, evidenceRef: 'photo-1' }]),
   wastePolicy: known({ userId: 'u-mgr', permissions: ['waste.view'] }),
   writeOffCapturePolicy: known({ userId: 'u-floor', permissions: ['inventory.movement.append'], materialThresholdMinor: 50_000 }),

@@ -190,11 +190,37 @@ $('find-audience').addEventListener('click', () => { void findAudience(); });
 $('plan').addEventListener('click', () => { void planIt(); });
 $('send').addEventListener('click', () => { void send(); });
 $('show-status').addEventListener('click', () => { void showStatus(); });
+// ── Round 4d (M21-FR-02): what the campaign brought in — head office's worked-out figures, as the shared summary cards ──
+let results = null;
+const pct = (bps) => `${(bps / 100).toFixed(2)}%`;
+function paintResults() {
+  for (const [id, k] of [['results-h', 'resultsH'], ['results-lead', 'resultsLead'], ['l-results-id', 'campaignK'], ['l-results-window', 'windowK'], ['l-results-control', 'controlK'], ['show-results-text', 'showResults']]) $(id).textContent = t(k);
+  const o = window.sreOffice ?? null;
+  if (o === null) return;
+  if (results === null) { $('results-cards').replaceChildren(); return; }
+  const r = results; const words = (k) => ({ en: api.words('en', k), ta: api.words('ta', k) });
+  const cards = o.cards($('results-cards'), [
+    { label: words('resSent'), value: r.sent, note: `${t('resNotSent')}: ${r.notSent.waiting + r.notSent.withheld + r.notSent.deadLettered + r.notSent.failedReported} (${t('resFailed')}: ${r.notSent.failedReported})` },
+    { label: words('resConverted'), value: r.converted, note: `${t('resConversion')} ${pct(r.conversionBps)}` },
+    { label: words('resRevenue'), value: api.rupees(r.attributedRevenueMinor) },
+    { label: words('resMargin'), value: r.attributedMarginMinor === null ? null : api.rupees(r.attributedMarginMinor), note: r.attributedMarginMinor === null ? words('resMarginNotKnown') : undefined },
+    { label: words('resControl'), value: r.controlConversionBps === 'no_control_group' ? null : pct(r.controlConversionBps), note: r.controlConversionBps === 'no_control_group' ? words('resNoControl') : `${r.upliftBps === 'not_meaningful' ? '' : (r.upliftBps / 100).toFixed(2)} ${t('resUplift')}`, tone: r.controlConversionBps === 'no_control_group' ? 'pending' : undefined },
+  ]);
+  cards.dataset.campaign = r.campaignId;
+}
+async function showResults() {
+  $('results-say').className = 'status'; $('results-say').textContent = '';
+  const out = await session.attribution($('results-id').value, $('results-window').value, $('results-control').value);
+  if (out.result !== 'ok') { results = null; bad('results-say', out); paintResults(); return; }
+  results = out.value; paintResults();
+}
+$('show-results').addEventListener('click', () => { void showResults(); });
+document.addEventListener('sre:chrome', () => paintResults());
 $('show-journeys').addEventListener('click', () => { void showJourneys(); });
 $('run-journeys').addEventListener('click', () => { void runJourneys(); });
 $('template').addEventListener('change', () => { audience = null; plan = null; paintAudience(); paintPlan(); });
 $('segment').addEventListener('change', () => { audience = null; plan = null; paintAudience(); paintPlan(); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintResults(); });
 paint();
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = `⚠ ${t('cannotRead')}`; }
 

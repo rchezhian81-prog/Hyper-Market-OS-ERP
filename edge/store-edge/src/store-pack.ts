@@ -1352,6 +1352,9 @@ export interface StorePack {
    * would read as "no losses today" (P-08).
    */
   readonly wasteWriteOffs: Register<readonly unknown[]>;
+  /** OB-630: this store's reorder settings as head office last sent them ({ storeId, products, asAt }) — the Buying page's
+   *  Reorder tab shows this copy, said as a copy, when head office cannot be reached. Absent: the box was never told. */
+  readonly reorderSettings: Register<unknown>;
   /** Who is on the waste review screen and what they may do there. */
   readonly wastePolicy: Register<PackWastePolicy>;
   /** Who is on the shop-floor write-off CAPTURE screen, what they hold, and the material-loss threshold (M28-FR-01). */
@@ -1610,6 +1613,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     gstReturnsQueue: notKnown(why),
     gstReturnsPolicy: notKnown(why),
     wasteWriteOffs: notKnown(why),
+    reorderSettings: notKnown(why),
     wastePolicy: notKnown(why),
     writeOffCapturePolicy: notKnown(why),
     countsQueue: notKnown(why),
@@ -1761,6 +1765,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     gstReturnsQueue: section<readonly unknown[]>('gstReturnsQueue'),
     gstReturnsPolicy: section<PackGstReturnsPolicy>('gstReturnsPolicy'),
     wasteWriteOffs: section<readonly unknown[]>('wasteWriteOffs'),
+    reorderSettings: section<unknown>('reorderSettings'),
     wastePolicy: section<PackWastePolicy>('wastePolicy'),
     writeOffCapturePolicy: section<PackWriteOffCapturePolicy>('writeOffCapturePolicy'),
     countsQueue: section<readonly unknown[]>('countsQueue'),

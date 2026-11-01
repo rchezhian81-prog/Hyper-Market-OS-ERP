@@ -391,6 +391,8 @@ export function facilitiesOfficeAdapter(input: Base, surface: readonly Route[]):
     assets: async (t) => assets.assets(t), services: async (t) => assets.services(t), downtime: async (t) => assets.downtime(t), energyReadings: async (t) => assets.energyReadings(t),
     ranges: async (t) => monitoring.ranges(t), readings: async (t) => monitoring.readings(t), contents: async (t) => monitoring.contents(t),
     incidents: async (t) => facilities.incidents(t),
+    // Round 4d (M26-FR-01): the spare-parts register behind the low-spare warning.
+    ...(assets.spareParts === undefined || assets.spareMovements === undefined ? {} : { spareParts: assets.spareParts, spareMovements: assets.spareMovements }),
     permissionsOf: (t, u) => permissionsHeldBy(store, t, u),
     recordReadingAs: handlerOf(surface, 'POST', '/v1/facilities/equipment/:assetId/readings/:readingId'),
   };
