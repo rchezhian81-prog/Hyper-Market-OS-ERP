@@ -21,6 +21,7 @@ import { startRealCloud, type RealCloud } from '../support/real-store';
 import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 import { startTheJourneyMidMorning } from '../support/trading-day-clock';
 import { deviceBase as boxDoor, trustTheBoxes } from '../support/box-tls';
+import { ean13CheckDigit } from '../../packages/production/src/scale-label';
 
 /**
  * **THE FINAL INTEGRATED STORE ACCEPTANCE — one synthetic store, one journey, twelve steps, every one through a served
@@ -91,6 +92,9 @@ const TOMATO = { productId: 'p-tomato', barcode: '2100001000004', sku: 'TOM-LOOS
 
 /** Grams × price per kg ÷ 1000, rounded once — the OB-31 rule, written out so the expectation is independent. */
 const perKg = (grams: number, perKgMinor: number): number => Math.round((grams * perKgMinor) / 1000);
+/** The deli scale's six-digit item code for loose tomatoes, and the weight label it prints for a given number of grams. */
+const TOMATO_SCALE_CODE = '100001';
+const tomatoLabel = (grams: number): string => { const twelve = `2${TOMATO_SCALE_CODE}${String(grams).padStart(5, '0')}`; return twelve + ean13CheckDigit(twelve); };
 
 // ── the journey's own numbers ─────────────────────────────────────────────────────────────────────────────────────────
 const ORDER = { rice: 20, tomatoGrams: 10_000 };
@@ -269,6 +273,10 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
       }, `price-${p.productId}`), `price ${p.productId}`);
       await ok(call('POST', `/v1/catalogue/products/${p.productId}/barcodes/${p.barcode}`, OWNER, { kind: p.uom === 'kg' ? 'internal' : 'ean' }, `barcode-${p.productId}`), `barcode ${p.productId}`);
     }
+    // OB-570 "A" · M03-FR-02: loose tomatoes are rung from the scale's weight label. Head office gives the scale's six-digit
+    // item code and publishes the label rule (labels starting 2: item code in digits 2–7, grams in 8–12) in the signed pack.
+    await ok(call('POST', `/v1/catalogue/products/${TOMATO.productId}/barcodes/${TOMATO_SCALE_CODE}`, OWNER, { kind: 'internal' }, 'barcode-tomato-scale'), 'tomato scale code');
+    await ok(call('POST', '/v1/catalogue/scale-label-rules/2', OWNER, { itemStart: 1, itemLength: 6, valueStart: 7, valueLength: 5, valueKind: 'weight' }, 'scale-rule'), 'scale label rule');
     for (const [key, value] of [['loyalty.points_per_100_inr', 1], ['loyalty.point_value_paise', 100], ['loyalty.till_spend_cap_paise', 50_000]] as const) {
       // OB-336: the till's spend cap is high-impact — the owner approves the administrator's answer.
       await ok(key === 'loyalty.till_spend_cap_paise' ? ownerApprovedSettingOn(cloud, key, { value }, OWNER) : call('PUT', `/v1/platform/setup/${key}`, OWNER, { value }, `set-${key}`), key);
@@ -490,8 +498,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     till.setLoyaltyMobile(MOBILE);
     expect(await till.loyaltyWallet()).toMatchObject({ ok: true, points: S1_POINTS, pointsValueMinor: S1_POINTS * 100 });
     till.scanBarcode(RICE.barcode);
-    const tomLine = till.scanBarcode(TOMATO.barcode);
-    till.setQuantity(tomLine.lineId, S2_LINES.tomatoGrams);
+    till.scanBarcode(tomatoLabel(S2_LINES.tomatoGrams)); // OB-570: the scale's weight label, never a plain barcode + keyed grams
     expect(till.payableMinor()).toBe(S2_TOTAL);
     const card = await till.startCardPayment('card', S2_CARD);
     expect(card).toMatchObject({ ok: true });

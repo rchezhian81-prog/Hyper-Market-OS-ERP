@@ -120,6 +120,18 @@ jobs:
       - name: Install the backup job's encryption tool (age)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq age
 
+      # The backup and restore suites run pg_dump / pg_restore from the runner against the postgres:16 service. The
+      # runner image's own client moved past 16 (its pg_dump writes `SET transaction_timeout`, which a 16 server refuses on
+      # restore), so every restore test failed from 1 Nov 2026. Pin the client to the server's major version, as the store's
+      # own backup does (it runs pg_dump inside the same postgres:16 image).
+      - name: Use the PostgreSQL 16 client tools (the same major version as the database)
+        run: |
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+          /usr/lib/postgresql/16/bin/pg_dump --version
+
       - name: Migrate, then prove the migrations are idempotent
         env:
           DATABASE_URL: postgres://sre@localhost:5432/sre_core

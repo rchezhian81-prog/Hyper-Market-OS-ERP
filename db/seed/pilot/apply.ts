@@ -13,7 +13,7 @@
 
 import { createHash } from 'node:crypto';
 import type { PilotFoundation, PilotCatalogue, PilotTradingPartners, PilotTransactions } from './dataset';
-import { PILOT_DEMO_BRANCH, PILOT_DEMO_TILL } from './dataset';
+import { PILOT_DEMO_BRANCH, PILOT_DEMO_TILL, PILOT_DEMO_SCALE } from './dataset';
 import { assessShiftClose } from '../../../packages/till/src/assess-shift';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 
@@ -242,6 +242,15 @@ export async function applyPilotFoundation(
   await post(`bill-number prefix ${till.prefix} for till ${till.tillId}`, `/v1/stores/${store}/tills/${encodeURIComponent(till.tillId)}/receipt-prefix`,
     { prefix: till.prefix, reason: 'the demo till\'s own bill numbers (synthetic demo)' }, `seed-till-prefix-${setup.storeId}-${till.tillId}-${till.prefix}`);
 
+  // 10. OB-573 "A": the demo till's PRETEND weighing scale on head office's scale register (the owner holds
+  //     `facilities.asset.manage`), so the demo's loose rice rings from its scale label. Synthetic, demo lane only; a re-run
+  //     restates the same scale and records nothing new.
+  const scale = PILOT_DEMO_SCALE;
+  await post(`demo weighing scale ${scale.assetId} for ${scale.laneIds.join(', ')}`, `/v1/facilities/scales/${encodeURIComponent(scale.assetId)}`,
+    { storeId: setup.storeId, laneIds: scale.laneIds, approvalNo: scale.approvalNo, capacityGrams: scale.capacityGrams,
+      lastStampedOn: scale.lastStampedOn, reverificationDueOn: scale.reverificationDueOn, certificateRef: scale.certificateRef },
+    `seed-demo-scale-${setup.storeId}-${scale.assetId}-${digestOf(scale)}`);
+
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
 }
 
@@ -347,6 +356,18 @@ export async function applyPilotCatalogue(
         currency: product.price.currency, marginFloorBps: product.price.marginFloorBps, effectiveFrom: today,
       },
       `seed-pricelist-${product.productId}-${PILOT_DEMO_BRANCH}-${today}`,
+    );
+  }
+
+  // 7. OB-570 "A": the scale-label rules — set through head office's own route (an ambiguous or malformed rule is refused
+  //    there exactly as for a person). A re-run of the same rule answers "unchanged"; a changed rule is its next version.
+  for (const rule of catalogue.scaleLabelRules) {
+    const { prefix, reason, ...positions } = rule;
+    await post(
+      `scale-label rule ${prefix}`,
+      `/v1/catalogue/scale-label-rules/${encodeURIComponent(prefix)}`,
+      { ...positions, reason },
+      `seed-scale-label-rule-${prefix}-${digestOf(positions)}`,
     );
   }
 

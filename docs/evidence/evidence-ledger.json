@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1996,
+  "testFiles": 2001,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -259,16 +259,17 @@
       "id": "M03",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 18,
-        "integration": 18,
-        "realDb": 2,
-        "browser": 3,
-        "connected": 1,
+        "unit": 21,
+        "integration": 21,
+        "realDb": 5,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/a-scale-label-rule-reads-one-way-only.test.ts",
           "tests/unit/catalogue-preview.test.ts",
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/catalogue.test.ts",
@@ -276,6 +277,7 @@
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/erp-category-policy-session.test.ts",
           "tests/unit/erp-product-publish-review-session.test.ts",
+          "tests/unit/erp-scale-label-rules-session.test.ts",
           "tests/unit/erp-unsellable-session.test.ts",
           "tests/unit/import.test.ts",
           "tests/unit/p2-product-master-rules.test.ts",
@@ -286,7 +288,8 @@
           "tests/unit/round-a-an-empty-page-never-says-all-clear.test.ts",
           "tests/unit/screen-router.test.ts",
           "tests/unit/service-catalogue.test.ts",
-          "tests/unit/service-pos.test.ts"
+          "tests/unit/service-pos.test.ts",
+          "tests/unit/two-scale-label-rule-changes-at-once-never-both-land.test.ts"
         ],
         "integration": [
           "tests/integration/a-counter-label-carries-its-marks-sizes-and-unit-price.test.ts",
@@ -298,6 +301,7 @@
           "tests/integration/catalogue-pack-publish.test.ts",
           "tests/integration/catalogue-product-duplicates.test.ts",
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
+          "tests/integration/head-office-scale-label-rules-ride-the-signed-pack.test.ts",
           "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/pack-hierarchy.test.ts",
@@ -305,20 +309,27 @@
           "tests/integration/product-master.test.ts",
           "tests/integration/product-merge.test.ts",
           "tests/integration/step-up-payroll-and-publish.test.ts",
+          "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/tax-class-rates.test.ts",
+          "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/head-office-scale-label-rules-ride-the-signed-pack.test.ts",
           "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
-          "tests/integration/pack-chain-case-to-base.test.ts"
+          "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/store-acceptance-journey.test.ts",
+          "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts"
         ],
         "browser": [
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
+          "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/product-publish-on-the-production-api.e2e.ts"
+          "tests/e2e/product-publish-on-the-production-api.e2e.ts",
+          "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts"
         ],
         "device": [],
         "uat": []
