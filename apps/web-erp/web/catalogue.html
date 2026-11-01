@@ -172,6 +172,7 @@
       <button id="tab-promo" type="button">Offer</button>
       <button id="tab-rivals" type="button">Competitor prices</button>
       <button id="tab-scale" type="button">Scale label rules</button>
+      <button id="tab-tax" type="button">Tax rates</button>
     </nav>
 
     <main>
@@ -588,6 +589,77 @@
           <p class="lead" id="scale-save-status" role="status" aria-live="polite"></p>
         </div>
         <p class="lead" id="scale-note">A change reaches the tills with the next price update.</p>
+      </section>
+
+      <!-- M03-FR-03 (tax side) · A6 · A7: the GST rate and the compensation cess per HSN code, each from a date — over head
+           office's own routes (/v1/catalogue/tax-classes/:hsnCode/rates|cess*), through the tested model
+           apps/web-erp/src/tax-rates-session.ts. A CHANGE of a GST rate already on record is asked on head office's
+           approval engine (kind tax_rate_change) and approved by a Finance approver on their Approvals page — never here,
+           never by the person asking, never a typed name. -->
+      <section id="view-tax" hidden>
+        <h2 id="tax-title">GST and cess by HSN code</h2>
+        <p class="lead" id="tax-lead">The GST rate and the compensation cess an HSN code carries, each from a date.</p>
+        <p class="lead" id="tax-status" role="status" aria-live="polite"></p>
+        <div class="field">
+          <label for="tax-hsn" id="tax-hsn-label">HSN code</label>
+          <input id="tax-hsn" type="text" inputmode="numeric" autocomplete="off" maxlength="8" />
+        </div>
+        <button id="tax-show" class="wide" type="button">Show the schedule</button>
+        <p class="lead" id="tax-list-status" role="status" aria-live="polite"></p>
+        <h3 id="tax-gst-h">GST rates on record</h3>
+        <div id="tax-gst-list"></div>
+        <h3 id="tax-cess-h">Compensation cess on record</h3>
+        <div id="tax-cess-list"></div>
+        <div id="tax-form" hidden>
+          <h3 id="tax-set-gst-h">Record a GST rate</h3>
+          <div class="two">
+            <div class="field">
+              <label for="tax-gst-from" id="tax-gst-from-label">From (date)</label>
+              <input id="tax-gst-from" type="date" />
+            </div>
+            <div class="field">
+              <label for="tax-gst-rate" id="tax-gst-rate-label">GST rate (%)</label>
+              <input id="tax-gst-rate" type="text" inputmode="decimal" autocomplete="off" maxlength="6" />
+            </div>
+          </div>
+          <button id="tax-gst-save" class="primary wide" type="button">Save this rate at head office</button>
+          <p class="lead" id="tax-gst-status" role="status" aria-live="polite"></p>
+          <div id="tax-ask" hidden>
+            <h3 id="tax-ask-h">Changing a rate already on record</h3>
+            <p class="lead" id="tax-who-approves">The accountant or the owner approves it — never you.</p>
+            <div class="field">
+              <label for="tax-reason" id="tax-reason-label">Why the rate changes (the approver reads this)</label>
+              <input id="tax-reason" type="text" autocomplete="off" maxlength="300" />
+            </div>
+            <button id="tax-ask-send" class="wide" type="button">Ask Finance to approve this change</button>
+          </div>
+          <h3 id="tax-mine-h">Your rate-change requests for this HSN code</h3>
+          <div id="tax-mine"></div>
+          <h3 id="tax-set-cess-h">Record a compensation cess</h3>
+          <div class="two">
+            <div class="field">
+              <label for="tax-cess-from" id="tax-cess-from-label">From (date)</label>
+              <input id="tax-cess-from" type="date" />
+            </div>
+            <div class="field">
+              <label for="tax-cess-adv" id="tax-cess-adv-label">Cess on the value (%)</label>
+              <input id="tax-cess-adv" type="text" inputmode="decimal" autocomplete="off" maxlength="6" />
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="tax-cess-specific" id="tax-cess-specific-label">Fixed cess (₹ per block, 0 for none)</label>
+              <input id="tax-cess-specific" type="text" inputmode="decimal" autocomplete="off" maxlength="12" />
+            </div>
+            <div class="field">
+              <label for="tax-cess-block" id="tax-cess-block-label">Block size</label>
+              <input id="tax-cess-block" type="text" inputmode="numeric" autocomplete="off" maxlength="6" />
+            </div>
+          </div>
+          <button id="tax-cess-save" class="primary wide" type="button">Save this cess at head office</button>
+          <p class="lead" id="tax-cess-status" role="status" aria-live="polite"></p>
+        </div>
+        <p class="lead" id="tax-note">A rate reaches the tills with the next signed price update.</p>
       </section>
     </main>
 

@@ -87,6 +87,8 @@ import { createCashierProductView, NAME_PRICE_BARCODE, type CashierProductView }
 import { createMonthCloseSession, MONTH_CLOSE_PERMISSION, type MonthClosePorts, type MonthCloseSession } from './month-close-session';
 import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
 import { createScaleRulesSession, scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, SCALE_VALUE_KINDS, type ScaleRulesSession } from './scale-label-rules-session';
+import { createTaxRatesSession, taxRateWords, gstLine, cessLine, requestLine, taxOutcomeWords, NEEDS_FINANCE_APPROVAL, type TaxRatesSession } from './tax-rates-session';
+import { createOrgDepartmentsSession, orgDeptWords, requestLine as departmentRequestLine, reportLines as departmentReportLines, orgDeptOutcomeWords, type OrgDepartmentsSession } from './org-departments-session';
 import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
@@ -1354,6 +1356,10 @@ export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sa
 export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
 /** OB-570 "A": the scale-label rules panel's words and readings (tested in `scale-label-rules-session.ts`). */
 export const SCALE_RULES_KIT = Object.freeze({ scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, kinds: SCALE_VALUE_KINDS });
+/** M03-FR-03 tax side: the Tax rates panel's words and readings (tested in `tax-rates-session.ts`). */
+export const TAX_RATES_KIT = Object.freeze({ taxRateWords, gstLine, cessLine, requestLine, taxOutcomeWords, needsFinanceApproval: NEEDS_FINANCE_APPROVAL });
+/** M01-FR-01: the Organisation page's Departments part — words and readings (tested in `org-departments-session.ts`). */
+export const ORG_DEPARTMENTS_KIT = Object.freeze({ orgDeptWords, requestLine: departmentRequestLine, reportLines: departmentReportLines, orgDeptOutcomeWords });
 
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -5304,6 +5310,10 @@ interface ManagerWindow {
   competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
   scaleRulesSession?: ScaleRulesSession;
   scaleRulesKit?: typeof SCALE_RULES_KIT;
+  taxRatesSession?: TaxRatesSession;
+  taxRatesKit?: typeof TAX_RATES_KIT;
+  orgDepartmentsSession?: OrgDepartmentsSession;
+  orgDepartmentsKit?: typeof ORG_DEPARTMENTS_KIT;
   /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
   supplierBillsData?: ViewerIdentity;
   supplierBillsSession?: SupplierBillsSession;
@@ -7309,6 +7319,12 @@ if (browserWindow !== undefined) {
   browserWindow.serviceDeskData = viewerIdentity(browserWindow.serviceDeskData);
   browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
   browserWindow.organisationData = viewerIdentity(browserWindow.organisationData);
+  // M01-FR-01: the Departments part of the Organisation page — a thin client over head office's department routes, only for
+  // someone named (nobody named → no session; the page offers nothing).
+  if (browserWindow.organisationData !== undefined) {
+    browserWindow.orgDepartmentsKit = ORG_DEPARTMENTS_KIT;
+    browserWindow.orgDepartmentsSession = createOrgDepartmentsSession({ permissions: browserWindow.organisationData.permissions }, browserCompetitorHttp());
+  }
   browserWindow.delegationData = viewerIdentity(browserWindow.delegationData);
   // Round 12: the Month-end page — identity only plus this month as the box's calendar says; every figure is a live read.
   const rawClose = browserWindow.financeCloseData as unknown;
@@ -7340,6 +7356,11 @@ if (browserWindow !== undefined) {
   if (cat !== undefined) browserWindow.scaleRulesKit = SCALE_RULES_KIT;
   if (cat !== undefined && Array.isArray(cat.permissions)) {
     browserWindow.scaleRulesSession = createScaleRulesSession({ permissions: cat.permissions }, browserCompetitorHttp());
+  }
+  // M03-FR-03 tax side: the Tax rates panel — the same rule: only where head office told the page who is looking.
+  if (cat !== undefined) browserWindow.taxRatesKit = TAX_RATES_KIT;
+  if (cat !== undefined && Array.isArray(cat.permissions)) {
+    browserWindow.taxRatesSession = createTaxRatesSession({ permissions: cat.permissions }, browserCompetitorHttp());
   }
   // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
   // no session (the page says so and offers nothing).
