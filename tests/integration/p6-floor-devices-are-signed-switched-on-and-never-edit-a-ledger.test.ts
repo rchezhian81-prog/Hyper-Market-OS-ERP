@@ -4,6 +4,7 @@ import { useRestartableBackings } from '../support/p3-backings';
 import { storeRules } from '../support/store-rules';
 import { deviceBatchMessage } from '../../packages/integration/src/floor-devices';
 import { nameSecurityReviewer, switchFloorDeviceOn } from '../support/floor-device-switch';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * **R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV events (D14-FR-05 · OB-217 · OB-316)** — through the real API, on the
@@ -151,9 +152,9 @@ describe.each(backings)('floor devices: registered, signed, switched on, never a
     const chiller = await ok(call('GET', '/v1/facilities/equipment/COLD-1', 'u-owner', undefined, { asOf: new Date().toISOString() }), 'chiller');
     expect(JSON.stringify(chiller)).toMatch(/42/);
 
-    const links = await ok(call('GET', '/v1/devices/cctv/links', 'u-owner', undefined, { branchId: 'B1', day: at(4).slice(0, 10) }), 'links') as { links: { eventId: string; exceptions: { ref: string }[]; cctvReference: Record<string, string> }[] };
+    const links = await ok(call('GET', '/v1/devices/cctv/links', 'u-owner', undefined, { branchId: 'B1', day: shopDateIn(at(4)) }), 'links') as { links: { eventId: string; exceptions: { ref: string }[]; cctvReference: Record<string, string> }[] };
     expect(links.links).toEqual([expect.objectContaining({ eventId: 'c1', exceptions: [expect.objectContaining({ ref: 'till-activity:act-1' })], cctvReference: expect.objectContaining({ cameraId: 'CAM-1' }) })]);
-    expect((await call('GET', '/v1/devices/cctv/links', 'u-cash', undefined, { branchId: 'B1', day: at(4).slice(0, 10) })).status).toBe(403);
+    expect((await call('GET', '/v1/devices/cctv/links', 'u-cash', undefined, { branchId: 'B1', day: shopDateIn(at(4)) })).status).toBe(403);
 
     // The list says each device's switch, when it was last heard, and that it is a stand-in; nothing is hidden.
     const fleet = await ok(call('GET', '/v1/devices/floor', 'u-owner', undefined, { branchId: 'B1' }), 'fleet') as { devices: { deviceId: string; switchOn: boolean; lastHeardAt: string | null; hardware: string }[] };

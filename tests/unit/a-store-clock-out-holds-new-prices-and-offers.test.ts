@@ -90,7 +90,7 @@ describe('OB-403 — what the hold holds, named, in words', () => {
 
   it('offers due by the box\'s clock after the cut-off and prices dated after the cut-off\'s day are held; running ones stay', () => {
     // The box's own clock says it is the next morning: a price dated the 28th would be "today's" by it.
-    const r = activationHoldReport({ hold, pack, now: iso(NOW + 86_400_000), tradingDay: '2026-10-28', promotions, priceEntries });
+    const r = activationHoldReport({ hold, pack, now: iso(NOW + 86_400_000), promotions, priceEntries });
     expect(r).toMatchObject({ held: true, cutoffAt: iso(NOW), priceDay: '2026-10-27' });
     expect(r.heldPromotions).toEqual([{ id: 'due-now', startsAt: iso(NOW + 60_000) }]); // next week's is not due yet; the running one stays
     expect(r.heldPrices).toEqual([{ id: 'pe-tomorrow', productId: 'p1', effectiveFrom: '2026-10-28' }]);
@@ -104,12 +104,12 @@ describe('OB-403 — what the hold holds, named, in words', () => {
   });
 
   it('nothing is held when the clock is trusted — and the screens use the box\'s own day', () => {
-    const r = activationHoldReport({ hold: { held: false }, pack, now: iso(NOW), tradingDay: '2026-10-27', promotions, priceEntries });
+    const r = activationHoldReport({ hold: { held: false }, pack, now: iso(NOW), promotions, priceEntries });
     expect(r).toMatchObject({ held: false, cutoffAt: null, priceDay: null, heldPromotions: [], heldPrices: [] });
   });
 
   it('the till is told the cut-off; the Products and prices screen decides today\'s price by the cut-off\'s day', () => {
-    const r = activationHoldReport({ hold, pack, now: iso(NOW + 86_400_000), tradingDay: '2026-10-28', promotions, priceEntries });
+    const r = activationHoldReport({ hold, pack, now: iso(NOW + 86_400_000), promotions, priceEntries });
     const registers = {
       policies: { known: true, value: { storeId: 'S1', branchId: 'S1', branchName: 'Main', tradingDayCutoff: '00:00', timeZone: 'Asia/Kolkata', staleAfterSeconds: 300, countApprovalThresholdMinor: 0, handoverToleranceMinor: 0 } },
       pricingPolicy: { known: true, value: { userId: 'u-pricing', approvers: ['u-owner'], marginFloorBps: 0 } },
@@ -122,20 +122,20 @@ describe('OB-403 — what the hold holds, named, in words', () => {
     const cat = cataloguePayload(input)!;
     expect(cat['today']).toBe('2026-10-27');
     expect(cat['activationHold']).toMatchObject({ held: true, heldPrices: [{ id: 'pe-tomorrow' }] });
-    const free = cataloguePayload({ ...input, activationHold: activationHoldReport({ hold: { held: false }, pack, now: iso(NOW), tradingDay: '2026-10-28' }) } as ScreenInput)!;
+    const free = cataloguePayload({ ...input, activationHold: activationHoldReport({ hold: { held: false }, pack, now: iso(NOW) }) } as ScreenInput)!;
     expect(free['today']).toBe('2026-10-28');
     expect(free['activationHold']).toBeUndefined();
   });
 
   it('the manager\'s clock strip says the hold in words beside a shape, English and Tamil; nothing when not held', () => {
-    const r = activationHoldReport({ hold, pack, now: iso(NOW + 86_400_000), tradingDay: '2026-10-28', promotions, priceEntries });
+    const r = activationHoldReport({ hold, pack, now: iso(NOW + 86_400_000), promotions, priceEntries });
     const check = { verdict: 'flag_bills', offsetSeconds: -360, lastCheckedAt: iso(NOW), needsAttention: true, staffMessage: 'en', staffMessageTa: 'ta' };
     const v = boxClockView('en', check, [], null, r);
     expect(v).toMatchObject({ show: true, tone: 'error' });
     expect(v.holdWords).toContain('Price change held: store clock is 6 min out');
     expect(boxClockView('ta', check, [], null, r).holdWords).toMatch(/[஀-௿]/);
     const inStep = { ...check, verdict: 'in_step', needsAttention: false };
-    expect(boxClockView('en', inStep, [], null, activationHoldReport({ hold: { held: false }, pack, now: iso(NOW), tradingDay: '2026-10-27' }))).toMatchObject({ show: false, holdWords: '' });
+    expect(boxClockView('en', inStep, [], null, activationHoldReport({ hold: { held: false }, pack, now: iso(NOW) }))).toMatchObject({ show: false, holdWords: '' });
   });
 });
 

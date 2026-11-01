@@ -10,14 +10,14 @@
 //   • OFFERS — a signed offer whose start is after the cut-off is not applied by the till (the till is told the cut-off and
 //     leaves such offers out of its pricing; nothing is removed from the signed pack, so when the hold lifts they apply at
 //     once — re-evaluated, nothing lost);
-//   • PRICES — the Products and prices screen decides "today's price" from the effective-dated entries by the shop's day; while
+//   • PRICES — the Products and prices screen decides "today's price" from the effective-dated entries by the shop's date; while
 //     held, that day stays the day of the cut-off, so an entry dated later does not become today's price;
 //   • THE BILL-NUMBER YEAR — the receipt series keeps the year it last numbered in (receipt-numbers.ts, `seriesClock`).
 // Each held change is listed by name and said in words (P-08). Pure and DOM-free; read from the fsync'd clock log through
 // the guard, so it is the same after a cold restart and needs no internet.
 
 import type { ActivationHold } from './clock-guard';
-import { packTradingDay, type PackCalendarSource } from './shop-zone';
+import { packCalendarDate, type PackCalendarSource } from './shop-zone';
 
 /** What the box is holding now, and why, as every screen, the till and the health report read it. */
 export interface ActivationHoldReport {
@@ -28,14 +28,21 @@ export interface ActivationHoldReport {
   readonly cutoffAt: string | null;
   /** Head office's clock minus this box's when it was found out, in whole seconds; null when nothing is held. */
   readonly offsetSeconds: number | null;
-  /** The shop's day "today's price" is decided by while held (the cut-off's day); null when nothing is held. */
+  /** The shop's date "today's price" is decided by while held (the cut-off's date on the shop's calendar); null when nothing is held. */
   readonly priceDay: string | null;
   /** Offers whose start has come by this box's clock but is after the cut-off — signed, held, not applied. */
   readonly heldPromotions: readonly { readonly id: string; readonly startsAt: string }[];
-  /** Price entries dated after the price day and on or before the box's own day — recorded, held, not today's price yet. */
+  /** Price entries dated after the price day and on or before the box's own date — recorded, held, not today's price yet. */
   readonly heldPrices: readonly { readonly id: string; readonly productId: string; readonly effectiveFrom: string }[];
   readonly staffMessage: string;
   readonly staffMessageTa: string;
+}
+
+/** The shop's date an entry takes effect: a plain date as written; an instant on the shop's calendar (never its UTC date). */
+function effectiveDateOf(pack: PackCalendarSource, effectiveFrom: string): string {
+  const v = effectiveFrom.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v))) return v.slice(0, 10);
+  return packCalendarDate(pack, v);
 }
 
 const minutes = (seconds: number): number => Math.max(1, Math.round(Math.abs(seconds) / 60));
@@ -49,13 +56,15 @@ export function offerHeld(startsAt: string, cutoffAt: string | null): boolean {
 
 /**
  * The hold, with what it holds: the offers whose start has come by the box's clock (`now`) after the cut-off, and the price
- * entries dated after the cut-off's day up to the box's own day (`tradingDay`).
+ * entries dated after the cut-off's date up to the box's own date. Both are the shop's CALENDAR date (its zone's midnight,
+ * no trading-day cut-off): a price "from 2 Nov" is in force from the shop's midnight (R1c, `effectiveInstant`), and head
+ * office refuses a price dated before the shop's calendar today — so between midnight and a later cut-off (02:00) the
+ * trading day would still say yesterday, and the screen showed "No price set" for the price the till was charging.
  */
 export function activationHoldReport(input: {
   readonly hold: ActivationHold;
   readonly pack: PackCalendarSource;
   readonly now: string;
-  readonly tradingDay: string;
   readonly promotions?: readonly { readonly id: string; readonly startsAt: string; readonly status?: string }[];
   readonly priceEntries?: readonly { readonly id: string; readonly productId: string; readonly effectiveFrom: string; readonly status?: string }[];
 }): ActivationHoldReport {
@@ -73,11 +82,12 @@ export function activationHoldReport(input: {
     .filter((p) => offerHeld(p.startsAt, h.cutoffAt) && !(Date.parse(p.startsAt) > now))
     .map((p) => ({ id: p.id, startsAt: p.startsAt }))
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.id.localeCompare(b.id));
-  const cutDay = packTradingDay(input.pack, h.cutoffAt);
-  const priceDay = cutDay < input.tradingDay ? cutDay : input.tradingDay;
+  const today = packCalendarDate(input.pack, input.now);
+  const cutDay = packCalendarDate(input.pack, h.cutoffAt);
+  const priceDay = cutDay < today ? cutDay : today;
   const heldPrices = (input.priceEntries ?? [])
     .filter((e) => e.status === undefined || e.status === 'active')
-    .filter((e) => { const d = e.effectiveFrom.slice(0, 10); return d > priceDay && d <= input.tradingDay; })
+    .filter((e) => { const d = effectiveDateOf(input.pack, e.effectiveFrom); return d > priceDay && d <= today; })
     .map((e) => ({ id: e.id, productId: e.productId, effectiveFrom: e.effectiveFrom }))
     .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.id.localeCompare(b.id));
   const m = minutes(h.offsetSeconds);

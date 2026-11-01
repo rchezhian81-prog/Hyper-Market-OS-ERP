@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll, vi } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
+import { pinTheEveningClock } from '../support/evening-clock';
+
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop, when the UTC date is
+// still the shop's yesterday — so this file proves the shop's date every time it runs, not only when CI runs after 18:30 UTC.
+pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
 
 // The effective-dated, scoped price list (M05-FR-01, API-02) end to end through the real API. "One price
 // truth" resolved by precedence customer > channel > zone > store; a future price does NOT activate early;

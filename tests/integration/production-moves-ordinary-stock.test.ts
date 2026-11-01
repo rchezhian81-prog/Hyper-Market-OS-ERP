@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +9,14 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { certifyFoodHandler } from '../support/food-handler';
+import { DEFAULT_SHOP_CALENDAR, shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { tradingDayIn } from '../../packages/calendar/src/trading-day';
+import { pinTheEveningClock } from '../support/evening-clock';
+
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop, when the UTC date is
+// still the shop's yesterday — so this file proves the shop's date every time it runs, not only when CI runs after 18:30 UTC.
+pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
 
 /**
  * **FUL-01 — production moves ORDINARY stock (audit HIGH · M11-FR-01/02/03 · M08-FR-01/02/04 · hard rule #2).**
@@ -138,14 +146,15 @@ describe.each(backings)('FUL-01 — production moves ordinary stock — on $name
     expect(await k.onHand('CAKE')).toBe(2);
     const runs = (await k.call('GET', '/v1/production/runs', 'u-owner')).body as { runs: { runId: string; outputBatchId: string; expiresAt: string }[] };
     const made = runs.runs.find((r) => r.runId === 'run-L')!;
-    expect(lines).toContain(made.expiresAt.slice(0, 10)); // the use-by the label carries is the run's own
+    // The use-by the label carries is the run's own, on the SHOP's calendar (the label prints the shop's date, never the UTC one).
+    expect(lines).toContain(shopDateIn(made.expiresAt));
 
     // The till sells one labelled cake: the sale names the label's batch and price; the box sends it to head office.
     const committedAt = new Date(Date.now() + 1_000).toISOString();
     const sale = await k.call('POST', '/v1/sales', 'u-owner', {
-      saleId: 'S-cake', receiptNumber: 'R-cake', laneId: 'lane-1', cashierId: 'u-owner', locationId: KITCHEN, tradingDay: committedAt.slice(0, 10), committedAt,
+      saleId: 'S-cake', receiptNumber: 'R-cake', laneId: 'lane-1', cashierId: 'u-owner', locationId: KITCHEN, tradingDay: tradingDayIn(committedAt, DEFAULT_SHOP_CALENDAR), committedAt,
       totalMinor: 12_000, currency: 'INR', packVersion: 1,
-      lines: [{ productId: 'CAKE', quantityMinor: 1, uom: 'ea', unitPriceMinor: 12_000, lineTotalMinor: 12_000, batchId: made.outputBatchId, batchExpiry: made.expiresAt.slice(0, 10) }],
+      lines: [{ productId: 'CAKE', quantityMinor: 1, uom: 'ea', unitPriceMinor: 12_000, lineTotalMinor: 12_000, batchId: made.outputBatchId, batchExpiry: shopDateIn(made.expiresAt) }],
       tenders: [{ kind: 'cash', amountMinor: 12_000 }],
     }, 'sale-cake');
     expect(sale.status, JSON.stringify(sale.body)).toBe(202);

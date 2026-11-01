@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 2049. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 2051. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 97 · Integration (in-process) 104 · Real PostgreSQL 102 · Browser (stub cloud) 91 · Browser (connected) 72 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 42 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 39 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -27,11 +27,11 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 | ID | Label | Unit | Integration (in-process) | Real PostgreSQL | Browser (stub cloud) | Browser (connected) | Device | Staff UAT | Label holds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| M01 | E2E_VERIFIED | 30 | 28 | 12 | 12 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M01 | E2E_VERIFIED | 31 | 29 | 12 | 12 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M02 | E2E_VERIFIED | 32 | 29 | 13 | 9 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M03 | INTEGRATION_TESTED | 21 | 22 | 6 | 7 | 3 | · | · | ✓ an integration test cites it |
 | M04 | E2E_VERIFIED | 9 | 11 | 4 | 7 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M05 | E2E_VERIFIED | 19 | 22 | 8 | 8 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M05 | E2E_VERIFIED | 20 | 23 | 8 | 8 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M06 | E2E_VERIFIED | 21 | 24 | 14 | 10 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M07 | E2E_VERIFIED | 13 | 31 | 12 | 7 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M08 | E2E_VERIFIED | 15 | 39 | 13 | 5 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { join } from 'node:path';
 import { backingsFor, headOffice, linkBoxTo, startBox, storePack, type Box } from '../support/till-bill-world';
@@ -6,6 +6,13 @@ import { signInAtLane, operatorHeader } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { deviceBatchMessage } from '../../packages/integration/src/floor-devices';
 import { nameSecurityReviewer, switchFloorDeviceOn } from '../support/floor-device-switch';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { pinTheEveningClock } from '../support/evening-clock';
+
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop, when the UTC date is
+// still the shop's yesterday — so this file proves the shop's date every time it runs, not only when CI runs after 18:30 UTC.
+pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
 
 /**
  * **R8-3 · R8-7 (M15) — a paid self-checkout basket's evidence goes from the lane to the store computer's disk, survives
@@ -98,7 +105,7 @@ describe.each(backings)('a self-checkout basket reaches loss prevention and the 
       const events = [{ eventId: 'c1', type: 'cctv.event', at: new Date().toISOString(), from: new Date(Date.parse(basketAt) - 60_000).toISOString(), to: new Date(Date.parse(basketAt) + 1_000).toISOString(), eventKind: 'lane_activity' }];
       const signature = sign(null, Buffer.from(deviceBatchMessage('cam-1', events)), privateKey).toString('base64');
       expect((await ho.call('POST', '/v1/devices/floor/cam-1/events', 'u-gw', { events, signature }, undefined, 'B1')).status).toBe(200);
-      const links = await ho.ok('GET', '/v1/devices/cctv/links', 'u-owner', undefined, { branchId: 'B1', day: basketAt.slice(0, 10) }) as { links: { exceptions: { ref: string; detail: string }[] }[] };
+      const links = await ho.ok('GET', '/v1/devices/cctv/links', 'u-owner', undefined, { branchId: 'B1', day: shopDateIn(basketAt) }) as { links: { exceptions: { ref: string; detail: string }[] }[] };
       expect(links.links[0]!.exceptions).toEqual([expect.objectContaining({ ref: 'self-checkout:SCO-S-1', detail: expect.stringContaining('age check') })]);
     } finally {
       link.restore();
