@@ -96,6 +96,31 @@
           <div class="table-wrap"><table id="ppv-lines"><thead></thead><tbody></tbody></table></div>
         </div>
       </section>
+      <!-- M06-FR-03 (Round 4b): supplier contracts — the review (expiring, ended, unapproved, worst first) and recording a contract
+           with its agreed lead time: asked for, approved by a different person in their own session, then recorded naming that
+           approval. The lead time is what the scorecard's "on time" is measured against. Session: apps/web-erp/src/supplier-terms-session.ts. -->
+      <section aria-labelledby="contracts-h" id="contracts-section" hidden>
+        <h3 id="contracts-h">Contracts to look at</h3>
+        <div class="ppv-actions"><button id="contracts-show" type="button"><span id="contracts-show-text">Show the contracts</span></button></div>
+        <p class="status" id="contracts-status" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table id="contracts"><tbody></tbody></table></div>
+        <div id="contract-form" hidden>
+          <h4 id="contract-h">Record a supplier contract</h4>
+          <p class="muted" id="contract-lead"></p>
+          <div class="form-row">
+            <label for="k-id"><span id="k-id-l"></span><input id="k-id" autocomplete="off" /></label>
+            <label for="k-supplier"><span id="k-supplier-l"></span><input id="k-supplier" autocomplete="off" /></label>
+            <label for="k-starts"><span id="k-starts-l"></span><input id="k-starts" type="date" /></label>
+            <label for="k-ends"><span id="k-ends-l"></span><input id="k-ends" type="date" /></label>
+            <label for="k-lead"><span id="k-lead-l"></span><input id="k-lead" inputmode="numeric" autocomplete="off" /></label>
+          </div>
+          <div class="ppv-actions">
+            <button id="k-ask" type="button"><span id="k-ask-text"></span></button>
+            <button id="k-record" type="button"><span id="k-record-text"></span></button>
+          </div>
+          <p class="status" id="k-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./supplier-scorecard.js" type="module"></script>

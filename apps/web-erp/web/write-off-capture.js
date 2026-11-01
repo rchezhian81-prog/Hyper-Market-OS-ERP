@@ -120,13 +120,17 @@ function valueMinor() {
   return Number.isFinite(rupeesTyped) ? Math.round(rupeesTyped * 100) : NaN;
 }
 
+/** OB-31 (Round 4b): the quantity typed in the item's own unit ("2.5" kg is 2500 g, never 2) — NaN when it does not read, so
+ *  the session's own check refuses it. The one shared reading lives in the bundle (window.sreTypedQuantity). */
+const qtyNow = () => (window.sreTypedQuantity ? window.sreTypedQuantity.minor(el('wo-qty').value, el('wo-uom').value) : Number.NaN);
+
 /** The loss exactly as the form holds it now — what is asked about, and what is recorded. */
 function draftNow() {
   return {
     writeOffId,
     productId: el('wo-product').value,
     locationId: el('wo-location').value,
-    qty: Math.trunc(Number(el('wo-qty').value)),
+    qty: qtyNow(),
     uom: el('wo-uom').value,
     lossType: selectedLossType,
     valueMinor: valueMinor(),
@@ -174,7 +178,7 @@ let valueLookup = 0;
 let lastValue = null;
 async function lookUpValue() {
   const mine = ++valueLookup;
-  const outcome = await session.valueLoss({ productId: el('wo-product').value, locationId: el('wo-location').value, qty: Math.trunc(Number(el('wo-qty').value)) });
+  const outcome = await session.valueLoss({ productId: el('wo-product').value, locationId: el('wo-location').value, qty: qtyNow(), uom: el('wo-uom').value });
   if (mine !== valueLookup) return; // a newer question is already on its way
   lastValue = outcome;
   const box = el('wo-value');
@@ -201,7 +205,7 @@ function paintMaterialHint() {
   const hint = el('material-hint');
   const v = valueMinor();
   const typed = Number.isFinite(v) && v > 0;
-  const big = typed && session.needsApproval({ writeOffId, valueMinor: v, productId: el('wo-product').value, locationId: el('wo-location').value, qty: Math.trunc(Number(el('wo-qty').value)) });
+  const big = typed && session.needsApproval({ writeOffId, valueMinor: v, productId: el('wo-product').value, locationId: el('wo-location').value, qty: qtyNow() });
   el('approval-step').hidden = !big;
   paintNextStep(big);
   if (!typed) { hint.hidden = true; return; }
@@ -299,7 +303,7 @@ function carryOn(draft) {
   writeOffId = draft.writeOffId;
   el('wo-product').value = draft.productId;
   el('wo-location').value = draft.locationId;
-  el('wo-qty').value = String(draft.qty);
+  el('wo-qty').value = window.sreTypedQuantity ? window.sreTypedQuantity.typed(draft.qty, draft.uom) : String(draft.qty);
   el('wo-uom').value = draft.uom;
   el('wo-value').value = (draft.valueMinor / 100).toFixed(2);
   el('wo-evidence').value = draft.evidenceRef ?? '';
@@ -402,7 +406,7 @@ el('record').addEventListener('click', () => {
 });
 
 el('wo-value').addEventListener('input', () => paintMaterialHint());
-for (const id of ['wo-product', 'wo-location', 'wo-qty']) el(id).addEventListener('change', () => { void lookUpValue(); });
+for (const id of ['wo-product', 'wo-location', 'wo-qty', 'wo-uom']) el(id).addEventListener('change', () => { void lookUpValue(); });
 
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';

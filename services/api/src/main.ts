@@ -140,6 +140,7 @@ import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { floorIndentRoutes } from '../../inventory/src/floor-indents';
 import { syncedFloorIndentRoutes } from '../../inventory/src/floor-indents-synced';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
+import { replenishmentParameterRoutes } from '../../inventory/src/replenishment-parameters';
 import { salesHistoryRoutes } from '../../inventory/src/sales-history';
 import { countsRoutes, decideCount } from '../../inventory/src/counts';
 import { syncedCountsRoutes } from '../../inventory/src/counts-synced';
@@ -216,6 +217,7 @@ import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
 import { receiptPrefixRoutes } from '../../platform/src/receipt-prefixes';
+import { replenishmentParametersAdapter } from './adapters'; // M09-FR-02 (Round 4b)
 import { receiptPrefixAdapter } from './adapters';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { boxHealthRoutes, boxHistorySealKey } from '../../platform/src/box-health';
@@ -633,6 +635,12 @@ export function buildSurface(deps: {
     unitValueMinor: empty(undefined), countPolicy: empty(undefined), binExpected: empty(undefined), now,
   } : { ...countsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze };
   // WF-08 (round 8): stock-count plans — plan/freeze, blind count, recount, cause, one approval — on the same count register.
+  // FUL-11: a proposal for ONE store, on head office's on-hand / on-order / in-transit / sold for it — never typed figures.
+  const replenishment = calendared(replenishmentRoutes)(store === undefined ? { now } : {
+    now, ...replenishmentFactsAdapter({ store, now, calendar: shopCalendar, branchOf: locationBranchesOf(store, now) }),
+    rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
+    masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
+  });
   const countPlanDeps = store === undefined ? undefined
     : { ...countPlansAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   // WF-08 / OB-59 (round 10): the count freeze EVERY head-office adjustment / write-off path asks — the open plan that
@@ -1139,12 +1147,13 @@ export function buildSurface(deps: {
     ...calendared(floorIndentRoutes)(floorIndentDeps),
     // SP-8b: the floor's indent and its independent receipt RELAYED from the served Indents screen through the box.
     ...syncedFloorIndentRoutes(floorIndentDeps),
-    // FUL-11: a proposal for ONE store, on head office's on-hand / on-order / in-transit / sold for it — never typed figures.
-    ...calendared(replenishmentRoutes)(store === undefined ? { now } : {
-      now, ...replenishmentFactsAdapter({ store, now, calendar: shopCalendar, branchOf: locationBranchesOf(store, now) }),
-      rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
-      masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
-    }),
+    ...replenishment,
+    // M09-FR-02 (Round 4b): the planning parameters stored per product and store (versioned, audited), and the proposal
+    // worked out on them by the same route above — never on typed parameters.
+    ...(store === undefined ? [] : replenishmentParameterRoutes({
+      ...replenishmentParametersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now),
+      propose: async (ctx, storeId, items) => replenishment.find((r) => r.method === 'POST' && r.path === '/v1/replenishment/propose')!.handler({ ...ctx, body: { items }, query: { storeId } }),
+    })),
     ...calendared(salesHistoryRoutes)(store === undefined ? { soldLines: empty([]), now } : { ...salesHistoryAdapter({ store, now }), demandCalendar: demandCalendarFor({ store, now })! /* R4 Lane 3 · D-24 */ }),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.

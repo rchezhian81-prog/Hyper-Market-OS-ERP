@@ -24,7 +24,8 @@ import type { RealCloud } from '../support/real-store';
  *     override (who, why, by how much) and the category now over budget are on the panel;
  *   • after a RESTART of the API all of it reads back from head office; Tamil labels; no page errors.
  *
- * Purchase-order AMENDMENTS do not appear on this page (no screen amends an order), so there is no amendment refusal to show.
+ * Purchase-order amendments and cancellations are on the Open orders tab, proven by
+ * tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts.
  *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */

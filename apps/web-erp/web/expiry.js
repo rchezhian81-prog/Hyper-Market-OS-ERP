@@ -199,7 +199,7 @@ el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; })
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['expiry', 'recall'];
+const VIEWS = ['expiry', 'recall', 'expired'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
@@ -451,6 +451,45 @@ function openCloseForm(view, row) {
 
 // ── Language and chrome ─────────────────────────────────────────────────────
 
+// ── Taken off sale (M10-FR-01, Round 4b) ────────────────────────────────────
+//
+// Head office's expired register, read live through its own tested model (window.expiredRegister,
+// apps/web-erp/src/expired-register-session.ts). A read only; throwing stock away is a write-off on its own page.
+
+const xr = window.expiredRegister ?? null;
+const xt = (k) => (xr === null ? k : xr.words(lang, k));
+let expired = null;
+function renderExpired() {
+  const list = el('expired-list');
+  list.replaceChildren();
+  if (expired === null) return;
+  if (expired.batches.length === 0) { const p = document.createElement('p'); p.className = 'lead'; p.textContent = xt('none'); list.append(p); return; }
+  const head = document.createElement('p'); head.className = 'lead'; head.textContent = `${expired.toBinCount} ${xt('countToBin')}`; list.append(head);
+  for (const r of expired.batches) {
+    const v = xr.rowView(lang, r);
+    const card = document.createElement('div');
+    card.className = 'expired-row'; card.dataset.key = v.key; card.dataset.toBin = String(v.toBin);
+    for (const [cls, words] of [['what', v.heading], ['figures', v.figures], [v.toBin ? 'state warn' : 'state', v.state], ['writeoffs', v.writeOffs]]) {
+      if (words === '') continue;
+      const n = document.createElement('div'); n.className = cls; n.textContent = words; card.append(n);
+    }
+    list.append(card);
+  }
+}
+async function readExpired() {
+  if (xr === null) return;
+  const out = await xr.session.read(el('expired-place').value);
+  if (out.result === 'ok') { expired = out.value; el('expired-status').textContent = ''; }
+  else { expired = null; el('expired-status').textContent = xr.outcomeWords(lang, out); }
+  renderExpired();
+}
+function paintExpired() {
+  for (const [id, k] of [['tab-expired', 'tab'], ['expired-title', 'title'], ['expired-lead', 'lead'], ['expired-place-l', 'place'], ['expired-read', 'show']]) el(id).textContent = xt(k);
+  if (xr !== null && !xr.session.may.read) el('expired-status').textContent = xt(xr.session.may.named ? 'cannotRead' : 'nobody');
+  renderExpired();
+}
+el('expired-read').addEventListener('click', () => { void readExpired(); });
+
 function paintChrome() {
   el('who').firstChild.textContent = `${t('title')} `;
   el('whoami').textContent = window.expiryData?.userId ?? '';
@@ -474,6 +513,7 @@ function paintChrome() {
 
   renderExpiry();
   renderRecalls();
+  paintExpired();
 }
 
 el('lang').addEventListener('click', () => {

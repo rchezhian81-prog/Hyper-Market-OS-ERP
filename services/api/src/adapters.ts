@@ -19,6 +19,7 @@
 //   • **Streams are per tenant and per domain.** `tenantId` is the argument to every call, not a
 //     column somebody remembers to filter on (OB-01).
 
+import type { ReplenishmentParameterDeps, StoredParameters } from '../../inventory/src/replenishment-parameters';
 import { returnedValue as returnedValueOf } from '../../../packages/finance/src/day-book';
 import { latestStoreReports, nothingUnsentAtFor } from './report-producers';
 import { createHash, randomUUID } from 'node:crypto';
@@ -7886,12 +7887,16 @@ export function supplierScorecardAdapter(input: {
     },
 
     recordContract: async (tenantId, contract) => {
+      // Keyed on the id + its term + lead time + approver: re-recording the same terms collapses, a renegotiation is new.
+      const key = `supplier-contract-${tenantId}-${contract.contractId}-${contract.startsOn}-${contract.endsOn}-${contract.agreedLeadTimeDays}-${contract.approvedBy ?? 'unapproved'}`;
       await input.store.append(tenantId, SUPPLIER_CONTRACTS_STREAM, makeEvent({
-        id: `supplier-contract-${contract.contractId}-${contract.startsOn}-${contract.endsOn}`,
+        // M06-FR-03 (Round 4b): each VERSION has its own id, derived from its key — as the concession contract's (2b-vi-b-2).
+        // Before, the id named only the term, so approving a contract first recorded unapproved (the normal two-person path
+        // from the Supplier scorecard page) collided with the first version and was refused instead of landing.
+        id: `supplier-contract-${contract.contractId}-${createHash('sha256').update(key).digest('hex').slice(0, 16)}`,
         type: 'SupplierContractRecorded',
         occurredAt: input.now(),
-        // Keyed on the id + its term + lead time: re-recording the same terms collapses, a renegotiation is new.
-        idempotencyKey: `supplier-contract-${tenantId}-${contract.contractId}-${contract.startsOn}-${contract.endsOn}-${contract.agreedLeadTimeDays}-${contract.approvedBy ?? 'unapproved'}`,
+        idempotencyKey: key,
         source: 'api/purchase',
         payload: contract,
       }));
@@ -7934,12 +7939,15 @@ export function rebatesAdapter(input: {
     },
 
     recordScheme: async (tenantId, scheme) => {
+      // Keyed on the id + its terms + approver: re-recording the same scheme collapses, a renegotiation is new.
+      const key = `rebate-scheme-${tenantId}-${scheme.schemeId}-${scheme.basis}-${scheme.rateBp}-${scheme.thresholdMinor ?? 0}-${scheme.startsOn}-${scheme.endsOn}-${scheme.approvedBy ?? 'unapproved'}`;
       await input.store.append(tenantId, REBATE_SCHEMES_STREAM, makeEvent({
-        id: `rebate-scheme-${scheme.schemeId}-${scheme.startsOn}-${scheme.endsOn}-${scheme.rateBp}`,
+        // M06-FR-03 (Round 4b): the version's id derived from its key, so a scheme recorded unapproved and then approved (or
+        // re-based) lands as a new version instead of colliding with the first.
+        id: `rebate-scheme-${scheme.schemeId}-${createHash('sha256').update(key).digest('hex').slice(0, 16)}`,
         type: 'RebateSchemeRecorded',
         occurredAt: input.now(),
-        // Keyed on the id + its terms: re-recording the same scheme collapses, a renegotiation is new.
-        idempotencyKey: `rebate-scheme-${tenantId}-${scheme.schemeId}-${scheme.basis}-${scheme.rateBp}-${scheme.thresholdMinor ?? 0}-${scheme.startsOn}-${scheme.endsOn}-${scheme.approvedBy ?? 'unapproved'}`,
+        idempotencyKey: key,
         source: 'api/purchase',
         payload: scheme,
       }));
@@ -14451,6 +14459,23 @@ export function onlineBufferAdapter(input: { readonly store: EventStore; readonl
       const out = new Map<string, number>();
       for (const r of await orders.outstanding(tenantId, locationId)) out.set(r.productId, (out.get(r.productId) ?? 0) + r.quantityMinor);
       return out;
+    },
+  };
+}
+
+// M09-FR-02 (Round 4b): the stored replenishment parameters, one event per version (append-only — hard rule #2).
+const REPLENISHMENT_PARAMETERS_STREAM = streamName(STREAM.inventory, 'replenishment-parameters');
+export function replenishmentParametersAdapter(input: { readonly store: EventStore; readonly now: () => string }): Pick<ReplenishmentParameterDeps, 'versions' | 'recordVersion' | 'now'> {
+  return {
+    now: input.now,
+    versions: (tenantId) => allOf<StoredParameters>(input.store, tenantId, REPLENISHMENT_PARAMETERS_STREAM, 'ReplenishmentParametersSet'),
+    recordVersion: async (tenantId, v) => {
+      const key = `${v.storeId}|${v.productId}|${v.version}`;
+      const digest = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, REPLENISHMENT_PARAMETERS_STREAM, makeEvent({
+        id: `replenishment-parameters-${digest}`, type: 'ReplenishmentParametersSet', occurredAt: v.setAt,
+        idempotencyKey: `replenishment-parameters-${tenantId}-${digest}`, source: 'api/inventory', payload: v as unknown as Record<string, unknown>,
+      }));
     },
   };
 }

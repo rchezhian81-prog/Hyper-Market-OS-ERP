@@ -110,6 +110,22 @@
       </section>
       <p class="nothing" id="nothing-held" hidden></p>
 
+      <!-- M17-FR-02 · OB-303 (Round 4b): customers' repeat orders — the days not placed first, each in the shop's own words —
+           and "place the ones due now" (once per plan and day). Session: apps/web-erp/src/repeat-orders-session.ts. -->
+      <section id="repeat" hidden aria-labelledby="repeat-h">
+        <h3 id="repeat-h">Repeat orders</h3>
+        <p class="lead" id="repeat-lead"></p>
+        <div class="buttons">
+          <button id="repeat-show" class="act quiet" type="button">Show the repeat orders</button>
+          <button id="repeat-run" class="act" type="button" hidden>Place the ones due now</button>
+        </div>
+        <p id="repeat-status" role="status" aria-live="polite"></p>
+        <h3 id="repeat-np-h" hidden></h3>
+        <ul class="rows" id="repeat-not-placed"></ul>
+        <h3 id="repeat-plans-h" hidden></h3>
+        <ul class="rows" id="repeat-plans"></ul>
+      </section>
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
     </main>

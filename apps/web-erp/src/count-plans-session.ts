@@ -14,6 +14,7 @@
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
 import { rupees } from './head-office-http';
+import { quantityLabel, normaliseUom, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
@@ -60,6 +61,16 @@ export interface PlanView {
 }
 export interface SheetView { readonly planId: string; readonly locationId: string; readonly state: string; readonly lines: readonly { readonly productId: string; readonly toDo: 'count' | 'recount' | 'done'; readonly recountOf: string | null }[] }
 
+/** M08-FR-03: a stock correction a handheld asked for, as head office keeps it (`GET /v1/inventory/adjustment-requests`). */
+export interface AdjustmentRequestRow {
+  readonly requestId: string; readonly productId: string; readonly locationId: string; readonly binId: string | null;
+  /** Signed: positive = found more, negative = missing / damaged. */
+  readonly deltaMinor: number; readonly uom: string; readonly reasonCode: string; readonly note: string | null;
+  readonly valueMinor: number; readonly requestedBy: string; readonly at: string; readonly storeId: string | null; readonly source: string;
+  readonly governanceFlags: readonly string[]; readonly status: 'pending' | 'posted' | 'rejected';
+  readonly decidedBy: string | null; readonly decidedAt: string | null; readonly decisionReason: string | null; readonly movementId: string | null;
+}
+
 export type Refused = { readonly result: 'refused'; readonly status: number; readonly code: string; readonly whatHappened: string };
 export type Outcome<T> = ({ readonly result: 'ok' } & T) | Refused | { readonly result: 'lost_link' } | { readonly result: 'invalid'; readonly key: string };
 
@@ -93,10 +104,18 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     plannedBy: 'planned by', approvedBy: 'approved by', cancelledBy: 'cancelled by',
     saved: 'Done — head office recorded it.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing is known to have changed.',
     needPlace: 'Write the place first.', needProducts: 'Name at least one product.', needThreshold: 'Write the recount threshold in rupees (0 or more).', needKinds: 'Tick at least one kind, or choose "Freeze nothing".',
-    needQty: 'Write the counted quantity as a whole number.', needReason: 'Write a reason first.', needCause: 'Choose a cause and write a note.',
+    needQty: 'Write the counted quantity in the item\'s unit (whole items; kg and litres up to 3 decimals).', needReason: 'Write a reason first.', needCause: 'Choose a cause and write a note.',
     colPlan: 'Plan', colPlace: 'Place', colProducts: 'Products', colState: 'Where it stands', colFreeze: 'Frozen while counting', view: 'Look at it', freezeLegend: 'What is frozen while counting', close: 'Close',
     countedOf: 'counted', of: 'of', recountNeeded: 'need a recount', causeNeeded: 'need a cause', recountOfCount: 'recount of',
     cannotRead: 'Your role cannot read count plans.', nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', reading: 'Reading from head office…',
+    adjH: 'Stock corrections asked for from the handhelds', adjLede: 'A worker at the racking asked for each of these with a reason. Nothing has moved yet: a different person approves (head office posts one correction) or rejects it. The person who asked can never decide it.',
+    adjShow: 'Show the corrections waiting', adjEmpty: 'No correction is waiting.', adjPending: 'waiting', adjAll: 'Show decided ones too',
+    adjMore: 'Found more', adjLess: 'Missing or damaged', adjAskedBy: 'asked by', adjAt: 'at', adjBin: 'bin', adjValue: 'Value at cost', adjValueUnknown: 'Not known — head office has no cost for this product',
+    adjApprove: 'Approve and post', adjReject: 'Reject', adjReason: 'Reason for your decision', adjYours: 'You asked for this one — a different person decides it.', adjCannotDecide: 'Your role cannot approve stock corrections.',
+    adjPosted: 'Approved — correction posted', adjRejected: 'Rejected — nothing moved', adjWaiting: 'Waiting for a decision', adjDecidedBy: 'decided by',
+    adjApprovedNow: 'Approved. Head office posted the correction once.', adjRejectedNow: 'Rejected. Nothing moved.', adjAlready: 'Already decided — nothing changed.',
+    flag_requester_unknown: 'The person who asked holds no role here', flag_requester_lacks_authority: 'The person who asked may not move stock', flag_value_unknown: 'No cost known — the value is not known',
+    cannotReadAdj: 'Your role cannot read the stock corrections.',
   },
   ta: {
     title: 'எண்ணிக்கைத் திட்டங்கள்', lede: 'ஓர் இடத்துக்குச் சரக்கு எண்ணிக்கையைத் திட்டமிடுங்கள், எண்ணும்போது நகரக்கூடாதவற்றை உறைய வையுங்கள், பார்க்காமல் எண்ணுங்கள், மீண்டும் எண்ணுங்கள், ஒவ்வொரு வேறுபாட்டுக்கும் காரணம் கொடுங்கள், வேறொருவர் ஒப்புதல் தரட்டும். திருத்தங்களைத் தலைமை அலுவலகம் பதிவு செய்யும்.',
@@ -120,10 +139,18 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     plannedBy: 'திட்டமிட்டவர்', approvedBy: 'ஒப்புதல் தந்தவர்', cancelledBy: 'ரத்து செய்தவர்',
     saved: 'முடிந்தது — தலைமை அலுவலகம் பதிவு செய்தது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாறியதாகத் தெரியவில்லை.',
     needPlace: 'முதலில் இடத்தை எழுதுங்கள்.', needProducts: 'குறைந்தது ஒரு பொருளைக் குறிப்பிடுங்கள்.', needThreshold: 'மீண்டும் எண்ணும் வரம்பை ரூபாயில் எழுதுங்கள் (0 அல்லது அதற்கு மேல்).', needKinds: 'குறைந்தது ஒரு வகையைத் தேர்ந்தெடுங்கள், அல்லது "எதையும் உறைய வைக்காதே" என்பதைத் தேர்ந்தெடுங்கள்.',
-    needQty: 'எண்ணிய அளவை முழு எண்ணாக எழுதுங்கள்.', needReason: 'முதலில் ஒரு காரணத்தை எழுதுங்கள்.', needCause: 'ஒரு காரணத்தைத் தேர்ந்தெடுத்து ஒரு குறிப்பை எழுதுங்கள்.',
+    needQty: 'எண்ணிய அளவைப் பொருளின் அலகில் எழுதுங்கள் (முழுப் பொருட்கள்; கிலோ, லிட்டருக்கு 3 தசம இடங்கள் வரை).', needReason: 'முதலில் ஒரு காரணத்தை எழுதுங்கள்.', needCause: 'ஒரு காரணத்தைத் தேர்ந்தெடுத்து ஒரு குறிப்பை எழுதுங்கள்.',
     colPlan: 'திட்டம்', colPlace: 'இடம்', colProducts: 'பொருட்கள்', colState: 'நிலை', colFreeze: 'எண்ணும்போது உறைந்தவை', view: 'பார்', freezeLegend: 'எண்ணும்போது எது உறைகிறது', close: 'மூடு',
     countedOf: 'எண்ணப்பட்டவை', of: 'இல்', recountNeeded: 'மீண்டும் எண்ண வேண்டியவை', causeNeeded: 'காரணம் தேவைப்படுபவை', recountOfCount: 'இதன் மறு எண்ணிக்கை',
     cannotRead: 'உங்கள் பங்கால் எண்ணிக்கைத் திட்டங்களைப் படிக்க முடியாது.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
+    adjH: 'கைக்கருவிகளிலிருந்து கேட்கப்பட்ட சரக்குத் திருத்தங்கள்', adjLede: 'அடுக்கில் நின்ற ஒரு பணியாளர் ஒவ்வொன்றையும் காரணத்துடன் கேட்டார். இன்னும் எதுவும் நகரவில்லை: வேறொருவர் ஒப்புதல் தருவார் (தலைமை அலுவலகம் ஒரு திருத்தத்தைப் பதிவு செய்யும்) அல்லது நிராகரிப்பார். கேட்டவர் ஒருபோதும் முடிவு செய்ய முடியாது.',
+    adjShow: 'காத்திருக்கும் திருத்தங்களைக் காட்டு', adjEmpty: 'எந்தத் திருத்தமும் காத்திருக்கவில்லை.', adjPending: 'காத்திருப்பவை', adjAll: 'முடிவானவற்றையும் காட்டு',
+    adjMore: 'கூடுதலாகக் கண்டது', adjLess: 'காணவில்லை அல்லது சேதம்', adjAskedBy: 'கேட்டவர்', adjAt: 'இடம்', adjBin: 'பெட்டி', adjValue: 'அடக்க விலையில் மதிப்பு', adjValueUnknown: 'தெரியவில்லை — இந்தப் பொருளுக்குத் தலைமை அலுவலகத்திடம் அடக்க விலை இல்லை',
+    adjApprove: 'ஒப்புதல் தந்து பதிவு செய்', adjReject: 'நிராகரி', adjReason: 'உங்கள் முடிவுக்கான காரணம்', adjYours: 'இதை நீங்களே கேட்டீர்கள் — வேறொருவர் முடிவு செய்வார்.', adjCannotDecide: 'உங்கள் பங்கால் சரக்குத் திருத்தங்களுக்கு ஒப்புதல் தர முடியாது.',
+    adjPosted: 'ஒப்புதல் — திருத்தம் பதிவானது', adjRejected: 'நிராகரிக்கப்பட்டது — எதுவும் நகரவில்லை', adjWaiting: 'முடிவுக்காகக் காத்திருக்கிறது', adjDecidedBy: 'முடிவு செய்தவர்',
+    adjApprovedNow: 'ஒப்புதல் தரப்பட்டது. தலைமை அலுவலகம் திருத்தத்தை ஒருமுறை பதிவு செய்தது.', adjRejectedNow: 'நிராகரிக்கப்பட்டது. எதுவும் நகரவில்லை.', adjAlready: 'ஏற்கனவே முடிவானது — எதுவும் மாறவில்லை.',
+    flag_requester_unknown: 'கேட்டவருக்கு இங்கே எந்தப் பங்கும் இல்லை', flag_requester_lacks_authority: 'கேட்டவர் சரக்கை நகர்த்த அனுமதி இல்லாதவர்', flag_value_unknown: 'அடக்க விலை தெரியவில்லை — மதிப்பு தெரியவில்லை',
+    cannotReadAdj: 'உங்கள் பங்கால் சரக்குத் திருத்தங்களைப் படிக்க முடியாது.',
   },
 });
 
@@ -162,6 +189,28 @@ export function lineView(lang: Lang, line: PlanLineRecord) {
 
 export const breachView = (lang: Lang, b: FreezeBreachRecord) => ({ ...b, kindWord: text(lang, b.kind) });
 export const heldView = (lang: Lang, h: HeldWriteOffRecord) => ({ ...h, value: rupees(h.valueMinor), stateWord: text(lang, h.state) });
+
+/**
+ * M08-FR-03: one handheld correction as the approver reads it — the quantity in its own unit (2.500 kg, never 2500), which
+ * way it moves, the value at head office's cost or "not known", the warnings head office put on it, and whether THIS viewer
+ * may decide it (never the person who asked — §28; head office refuses that too).
+ */
+export function adjustmentView(lang: Lang, r: AdjustmentRequestRow, viewerId: string | null, mayDecide: boolean) {
+  const valueUnknown = r.governanceFlags.includes('value_unknown');
+  const yours = viewerId !== null && r.requestedBy === viewerId;
+  return {
+    requestId: r.requestId, status: r.status,
+    tone: r.status === 'pending' ? 'degraded' : r.status === 'posted' ? 'ok' : 'idle',
+    heading: `${r.productId} — ${r.deltaMinor > 0 ? text(lang, 'adjMore') : text(lang, 'adjLess')} ${quantityLabel(Math.abs(r.deltaMinor), r.uom)} · ${text(lang, r.reasonCode)}`,
+    where: `${text(lang, 'adjAt')} ${r.locationId}${r.binId === null || r.binId === '' ? '' : ` · ${text(lang, 'adjBin')} ${r.binId}`} · ${text(lang, 'adjAskedBy')} ${r.requestedBy} · ${r.at}`,
+    value: `${text(lang, 'adjValue')}: ${valueUnknown ? text(lang, 'adjValueUnknown') : rupees(r.valueMinor)}`,
+    note: r.note,
+    flags: r.governanceFlags.filter((f) => f !== 'value_unknown').map((f) => text(lang, `flag_${f}`)),
+    stateWord: r.status === 'pending' ? text(lang, 'adjWaiting') : `${text(lang, r.status === 'posted' ? 'adjPosted' : 'adjRejected')} · ${text(lang, 'adjDecidedBy')} ${r.decidedBy ?? ''}${r.decisionReason === null ? '' : ` — ${r.decisionReason}`}`,
+    yours,
+    canDecide: r.status === 'pending' && mayDecide && !yours,
+  };
+}
 
 const enc = encodeURIComponent;
 const isPlanView = (b: unknown): b is PlanView => b !== null && typeof b === 'object' && Array.isArray((b as PlanView).lines) && typeof (b as PlanView).plan === 'object';
@@ -209,6 +258,9 @@ export function createCountPlansSession(viewer: CountPlanViewer | undefined, htt
     plan: perms.has('inventory.count.plan'),
     count: perms.has('inventory.movement.append'),
     approve: perms.has('inventory.adjustment.approve'),
+    /** M08-FR-03: read the handheld corrections (head office's `inventory.availability.read`) and decide them. */
+    readAdjustments: perms.has('inventory.availability.read'),
+    decideAdjustments: perms.has('inventory.adjustment.approve'),
   };
   const post = async (path: string, body: unknown): Promise<Outcome<{ readonly body: unknown }>> => {
     if (nobody) return { result: 'invalid', key: 'nobody' };
@@ -218,6 +270,23 @@ export function createCountPlansSession(viewer: CountPlanViewer | undefined, htt
   return {
     nobody, userId: viewer?.userId ?? null, may,
     text, freezeWords, lineView, breachView, heldView, rupees,
+    adjustmentView: (lang: Lang, r: AdjustmentRequestRow) => adjustmentView(lang, r, viewer?.userId ?? null, may.decideAdjustments),
+    /** M08-FR-03: the corrections the handhelds asked for — waiting ones only, or every one (waiting first, newest first). */
+    async adjustments(all = false): Promise<Outcome<{ readonly requests: readonly AdjustmentRequestRow[]; readonly pending: number }>> {
+      if (nobody) return { result: 'invalid', key: 'nobody' };
+      if (!may.readAdjustments) return { result: 'invalid', key: 'cannotReadAdj' };
+      const a = await http.get(`/v1/inventory/adjustment-requests${all ? '' : '?status=pending'}`);
+      if (a.result !== 'ok') return refusedOrLost(a);
+      const b = a.body as { requests?: unknown; pending?: unknown };
+      return { result: 'ok', requests: Array.isArray(b.requests) ? (b.requests as AdjustmentRequestRow[]) : [], pending: typeof b.pending === 'number' ? b.pending : 0 };
+    },
+    /** M08-FR-03: approve (head office posts the one compensating movement) or reject, with the reason a person reads later. */
+    async decideAdjustment(requestId: string, decision: 'approved' | 'rejected', reason: string): Promise<Outcome<{ readonly body: unknown }>> {
+      if (nobody) return { result: 'invalid', key: 'nobody' };
+      if (!may.decideAdjustments) return { result: 'invalid', key: 'adjCannotDecide' };
+      if (reason.trim() === '') return { result: 'invalid', key: 'needReason' };
+      return post(`/v1/inventory/adjustment-requests/${enc(requestId)}/decide`, { decision, reason: reason.trim() });
+    },
     async list(): Promise<Outcome<{ readonly plans: readonly CountPlanRecord[] }>> {
       if (nobody) return { result: 'invalid', key: 'nobody' };
       const a = await http.get('/v1/inventory/count-plans');
@@ -249,10 +318,14 @@ export function createCountPlansSession(viewer: CountPlanViewer | undefined, htt
     open: (planId: string) => post(`/v1/inventory/count-plans/${enc(planId)}/open`, {}),
     async count(planId: string, input: { readonly productId: string; readonly locationId: string; readonly uom: string; readonly countedText: string; readonly recountOf: string | null }): Promise<Outcome<{ readonly body: unknown }>> {
       const s = input.countedText.trim();
-      if (!/^\d+$/.test(s)) return { result: 'invalid', key: 'needQty' };
+      const uom = input.uom.trim() === '' ? 'EA' : input.uom.trim();
+      // OB-31 (Round 4b): counted in the item's own unit — "2.5" kg is 2500 g — through the one shared reading; a unit this
+      // system does not know (a pack level) keeps the whole-number count head office converts.
+      const counted = normaliseUom(uom) === undefined ? (/^\d+$/.test(s) ? Number(s) : undefined) : typedQuantityMinor(s, uom, { allowZero: true });
+      if (counted === undefined) return { result: 'invalid', key: 'needQty' };
       const countId = ids.count(planId, input.productId);
       return post(`/v1/inventory/count-plans/${enc(planId)}/counts/${enc(countId)}`, {
-        productId: input.productId, locationId: input.locationId, uom: input.uom.trim() === '' ? 'EA' : input.uom.trim(), countedMinor: Number(s),
+        productId: input.productId, locationId: input.locationId, uom, countedMinor: counted,
         ...(input.recountOf === null ? {} : { recountOf: input.recountOf }),
       });
     },
