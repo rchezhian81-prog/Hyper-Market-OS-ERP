@@ -31,6 +31,7 @@
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import type { LossType } from '../../../packages/waste/src/waste';
+import { quantityLabel } from '../../../packages/contracts/src/quantity';
 import { WASTE_REASON_CODES, WASTE_REASON_WORDS, isWasteReason, type WasteReason } from '../../../packages/waste/src/reasons';
 import {
   presentRequestStatus, shopTime,
@@ -150,7 +151,7 @@ export interface WriteOffCapturePorts {
 }
 
 /** SF-05 — the loss head office is asked to value. */
-export interface LossToValue { readonly productId: string; readonly locationId: string; readonly qty: number }
+export interface LossToValue { readonly productId: string; readonly locationId: string; readonly qty: number; /** OB-31: the unit the quantity is in, so it reads "2.500 kg". */ readonly uom?: string }
 
 /** SF-05 — head office's answer: its own value of the loss (and whether that is a big loss), or that it holds no cost. */
 export type LossValueRead =
@@ -160,7 +161,7 @@ export type LossValueRead =
 
 /** SF-05 — what the screen does with head office's value. */
 export type LossValueOutcome =
-  | { readonly kind: 'valued'; readonly qty: number; readonly unitCostMinor: number; readonly valueMinor: number; readonly material: boolean }
+  | { readonly kind: 'valued'; readonly qty: number; readonly uom?: string; readonly unitCostMinor: number; readonly valueMinor: number; readonly material: boolean }
   | { readonly kind: 'cost_unknown' }
   | { readonly kind: 'incomplete' } | { readonly kind: 'not_connected' } | { readonly kind: 'lost_link' }
   | { readonly kind: 'refused'; readonly whatHappened: string };
@@ -634,7 +635,7 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
       const t = translator(WRITE_OFF_CAPTURE_COPY, lang);
       const lossWord = t(LOSS_LABEL[body.lossType]);
       const summary = fill(t('summaryLoss'), {
-        qty: body.uom === 'ea' ? String(body.qty) : `${body.qty} ${body.uom}`,
+        qty: quantityLabel(body.qty, body.uom), // OB-31: "2.500 kg", never 2500 kg
         product: body.productId,
         loss: lang === 'en' ? lossWord.toLowerCase() : lossWord,
         value: formatRupees(body.valueMinor),
@@ -698,14 +699,14 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
       if (!read.known) { costUnknown.add(at); return { kind: 'cost_unknown' }; }
       costUnknown.delete(at);
       if (read.material) bigByValue.add(`${at}\u001f${q.qty}`);
-      return { kind: 'valued', qty: q.qty, unitCostMinor: read.unitCostMinor, valueMinor: read.valueMinor, material: read.material };
+      return { kind: 'valued', qty: q.qty, ...(q.uom === undefined ? {} : { uom: q.uom }), unitCostMinor: read.unitCostMinor, valueMinor: read.valueMinor, material: read.material };
     },
     presentValue: (lang, o) => {
       const t = translator(WRITE_OFF_CAPTURE_COPY, lang);
       switch (o.kind) {
         case 'valued':
           return presentStatus({ tone: 'ok', icon: '₹', needsAttention: false,
-            label: fill(t('valueFromStock'), { qty: String(o.qty), unit: formatRupees(o.unitCostMinor), value: formatRupees(o.valueMinor) }) });
+            label: fill(t('valueFromStock'), { qty: quantityLabel(o.qty, o.uom ?? ''), unit: formatRupees(o.unitCostMinor), value: formatRupees(o.valueMinor) }) });
         case 'cost_unknown': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('valueCostUnknown'), needsAttention: true });
         case 'lost_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('valueLostLink'), needsAttention: true });
         case 'refused': return presentStatus({ tone: 'error', icon: '✕', label: fill(t('valueRefused'), { words: o.whatHappened.trim() }), needsAttention: true });

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1636 | 948 | 948 | 178 | 436 |
+| 13 | 1639 | 950 | 950 | 178 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -503,7 +503,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/quality/recalls/:batchId/withdrawal` | `quality.recall.initiate` | core | yes |
 | GET | `/v1/quality/sale-blocks` | `quality.recall.read` | core | — |
 | POST | `/v1/replenishment/order-proposal` | `inventory.availability.read` | core | yes |
+| GET | `/v1/replenishment/parameters` | `inventory.availability.read` | core | — |
+| POST | `/v1/replenishment/parameters/:storeId/:productId` | `purchase.order.propose` | core | yes |
 | POST | `/v1/replenishment/propose` | `inventory.availability.read` | core | yes |
+| POST | `/v1/replenishment/stored-proposal` | `inventory.availability.read` | core | yes |
 | POST | `/v1/store/scan-and-go/:code/recall` | `storefront.scango.recall` | `customer_app` | yes |
 | POST | `/v1/warehouse/allocation/propose` | `inventory.availability.read` | core | yes |
 | GET | `/v1/warehouse/bins/:binId` | `inventory.availability.read` | core | — |

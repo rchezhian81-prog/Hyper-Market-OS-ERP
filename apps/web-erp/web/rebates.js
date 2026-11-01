@@ -108,7 +108,7 @@ function paint() {
   for (const [id, key] of [['register-h', 'registerH'], ['r-show-text', 'show'], ['raise-h', 'raiseH'], ['c-scheme-l', 'schemeId'], ['c-amount-l', 'amountRs'], ['c-note-l', 'note'], ['c-raise-text', 'raise'],
     ['receipt-h', 'receiptH'], ['m-scheme-l', 'schemeId'], ['m-amount-l', 'amount'], ['m-on-l', 'receivedOn'], ['m-ref-l', 'reference'], ['m-claim-l', 'forClaim'], ['m-record-text', 'recordReceipt'],
     ['period-h', 'periodH'], ['p-days-l', 'days'], ['p-why-l', 'why'], ['p-set-text', 'setPeriod'], ['p-clear-text', 'clearPeriod'], ['doc-print-text', 'printNow']]) $(id).textContent = t(key);
-  paintRegister(); paintDocument();
+  paintRegister(); paintDocument(); paintSchemeForm();
 }
 async function showRegister() {
   const out = await session.register();
@@ -137,6 +137,24 @@ async function onClaimClick(e) {
     : await session.withdraw(c.claimId, li.querySelector('input.withdraw-why').value);
   if (out.result === 'ok' && act !== 'ask') { await showRegister(); const again = $('claim-rows').querySelector(`li[data-claim="${CSS.escape(c.claimId)}"] .claim-status`); if (again !== null) again.textContent = api.outcomeWords(lang, out); return; }
   status.textContent = api.outcomeWords(lang, out);
+}
+
+// M06-FR-03 (Round 4b): the scheme form — its own tested session (window.supplierTerms).
+const terms = window.supplierTerms ?? null;
+const tt = (k) => (terms === null ? k : terms.words(lang, k));
+function paintSchemeForm() {
+  for (const [id, key] of [['scheme-h', 'schemeH'], ['scheme-lead', 'schemeLead'], ['s-id-l', 'schemeId'], ['s-supplier-l', 'supplier'], ['s-basis-l', 'basis'], ['s-b-pv', 'b_purchase_value'], ['s-b-vu', 'b_volume_units'], ['s-b-gb', 'b_growth_over_baseline'],
+    ['s-rate-l', 'ratePct'], ['s-threshold-l', 'thresholdRs'], ['s-starts-l', 'startsOn'], ['s-ends-l', 'endsOn'], ['s-ask-text', 'ask'], ['s-record-text', 'record']]) $(id).textContent = tt(key);
+}
+const schemeForm = () => ({ schemeId: $('s-id').value, supplierId: $('s-supplier').value, basis: $('s-basis').value, ratePct: $('s-rate').value, thresholdRupees: $('s-threshold').value, startsOn: $('s-starts').value, endsOn: $('s-ends').value });
+if (terms !== null && terms.session.may.manage) {
+  $('scheme').hidden = false;
+  $('s-ask').addEventListener('click', async () => { $('s-status').textContent = terms.outcomeWords(lang, await terms.session.askScheme(schemeForm())); });
+  $('s-record').addEventListener('click', async () => {
+    const out = await terms.session.recordScheme(schemeForm());
+    $('s-status').textContent = terms.outcomeWords(lang, out);
+    if (out.result === 'ok' && may.read) await showRegister();
+  });
 }
 
 for (const [id, name] of [['r-show', 'search'], ['c-raise', 'list-plus'], ['m-record', 'banknote'], ['p-set', 'check'], ['doc-print', 'file-text']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }

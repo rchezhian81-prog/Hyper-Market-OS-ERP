@@ -100592,6 +100592,152 @@
         }
       }
     },
+    "/v1/replenishment/parameters": {
+      "get": {
+        "operationId": "getReplenishmentParameters",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetReplenishmentParametersReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/replenishment/parameters/{storeId}/{productId}": {
+      "post": {
+        "operationId": "postReplenishmentParametersByStoreIdByProductId",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.order.propose",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "storeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostReplenishmentParametersByStoreIdByProductIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostReplenishmentParametersByStoreIdByProductIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostReplenishmentParametersByStoreIdByProductIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.order.propose\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/replenishment/propose": {
       "post": {
         "operationId": "postReplenishmentPropose",
@@ -100636,6 +100782,81 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostReplenishmentProposeReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/replenishment/stored-proposal": {
+      "post": {
+        "operationId": "postReplenishmentStoredProposal",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "This route reads no body; anything sent is ignored.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "x-request-body": "none",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostReplenishmentStoredProposalReply"
                 }
               }
             }
@@ -155057,6 +155278,51 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/storefront-subscriptions.ts"
+      },
+      "GetReplenishmentParametersReply": {
+        "type": "object",
+        "required": [
+          "storeId",
+          "products",
+          "count",
+          "asAt"
+        ],
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "current",
+                "history"
+              ],
+              "properties": {
+                "current": {
+                  "$ref": "#/components/schemas/StoredParameters"
+                },
+                "history": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StoredParameters"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/replenishment-parameters.ts"
       },
       "GetReportingBasketAffinityReply": {
         "type": "object",
@@ -234713,6 +234979,81 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/sales-history.ts"
       },
+      "PostReplenishmentParametersByStoreIdByProductIdReply200": {
+        "type": "object",
+        "required": [
+          "parameters",
+          "unchanged"
+        ],
+        "properties": {
+          "parameters": {
+            "$ref": "#/components/schemas/StoredParameters"
+          },
+          "unchanged": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/replenishment-parameters.ts"
+      },
+      "PostReplenishmentParametersByStoreIdByProductIdReply201": {
+        "type": "object",
+        "required": [
+          "parameters",
+          "supersedes",
+          "unchanged"
+        ],
+        "properties": {
+          "parameters": {
+            "$ref": "#/components/schemas/StoredParameters"
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StoredParameters"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unchanged": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/replenishment-parameters.ts"
+      },
+      "PostReplenishmentParametersByStoreIdByProductIdRequest": {
+        "type": "object",
+        "required": [
+          "maxLevel",
+          "reason"
+        ],
+        "properties": {
+          "leadTimeDays": {
+            "type": "number"
+          },
+          "maxLevel": {
+            "type": "integer"
+          },
+          "orderMultiple": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reorderPoint": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/replenishment-parameters.ts"
+      },
       "PostReplenishmentProposeReply": {
         "type": "object",
         "required": [
@@ -234891,6 +235232,96 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/replenishment.ts"
+      },
+      "PostReplenishmentStoredProposalReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "items",
+              "versions",
+              "parametersNotSet"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "x-untyped": "unknown"
+                  }
+                }
+              },
+              "versions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "productId",
+                    "version"
+                  ],
+                  "properties": {
+                    "productId": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "parametersNotSet": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "storeId",
+              "proposals",
+              "count",
+              "items",
+              "parametersNotSet",
+              "detail",
+              "asAt"
+            ],
+            "properties": {
+              "storeId": {
+                "type": "string"
+              },
+              "proposals": {
+                "type": "array",
+                "items": {
+                  "not": {}
+                }
+              },
+              "count": {
+                "type": "number"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "not": {}
+                }
+              },
+              "parametersNotSet": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "asAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/replenishment-parameters.ts"
       },
       "PostReportingBriefReply": {
         "$ref": "#/components/schemas/ScheduledBrief",
@@ -301391,6 +301822,60 @@
           },
           "immaterialMinor": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "StoredParameters": {
+        "type": "object",
+        "required": [
+          "storeId",
+          "productId",
+          "version",
+          "maxLevel",
+          "reason",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "maxLevel": {
+            "type": "number"
+          },
+          "reorderPoint": {
+            "type": "number"
+          },
+          "safetyStock": {
+            "type": "number"
+          },
+          "leadTimeDays": {
+            "type": "number"
+          },
+          "minOrderQty": {
+            "type": "number"
+          },
+          "orderMultiple": {
+            "type": "number"
+          },
+          "avgDailyDemand": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true

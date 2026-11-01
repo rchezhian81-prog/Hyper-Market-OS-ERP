@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2003,
+  "testFiles": 2018,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -492,11 +492,11 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 19,
+        "unit": 21,
         "integration": 24,
         "realDb": 14,
-        "browser": 8,
-        "connected": 4,
+        "browser": 10,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -514,11 +514,13 @@
           "tests/unit/erp-manager-session.test.ts",
           "tests/unit/erp-suppliers-session.test.ts",
           "tests/unit/goods-receipt-order-fold.test.ts",
+          "tests/unit/open-orders-session.test.ts",
           "tests/unit/purchasing.test.ts",
           "tests/unit/requisitions-session.test.ts",
           "tests/unit/rfq.test.ts",
           "tests/unit/round-a-today-counts-head-offices-approvals-and-orders.test.ts",
           "tests/unit/supplier-performance.test.ts",
+          "tests/unit/supplier-terms-session.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts"
         ],
@@ -566,7 +568,9 @@
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/supplier-contracts-and-rebate-schemes-are-recorded-on-their-pages.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts",
           "tests/e2e/suppliers-on-the-production-api.e2e.ts",
           "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
@@ -575,6 +579,7 @@
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/suppliers-on-the-production-api.e2e.ts",
           "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
@@ -683,17 +688,18 @@
       "id": "M08",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 14,
+        "unit": 15,
         "integration": 39,
         "realDb": 13,
-        "browser": 4,
-        "connected": 1,
+        "browser": 5,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/concession-store-valuation.test.ts",
+          "tests/unit/count-plans-session.test.ts",
           "tests/unit/edge-cloud-return.test.ts",
           "tests/unit/erp-indents-session.test.ts",
           "tests/unit/erp-inventory-health-session.test.ts",
@@ -765,12 +771,14 @@
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [
+          "tests/e2e/handheld-stock-corrections-are-decided-on-the-count-plans-page.e2e.ts",
           "tests/e2e/indents-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/stock-health-delivery.e2e.ts",
           "tests/e2e/transfers-on-the-production-api.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/handheld-stock-corrections-are-decided-on-the-count-plans-page.e2e.ts",
           "tests/e2e/transfers-on-the-production-api.e2e.ts"
         ],
         "device": [],
@@ -783,11 +791,11 @@
       "id": "M09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 15,
-        "integration": 31,
-        "realDb": 12,
-        "browser": 9,
-        "connected": 2,
+        "unit": 16,
+        "integration": 32,
+        "realDb": 13,
+        "browser": 10,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -801,6 +809,7 @@
           "tests/unit/erp-manager-session.test.ts",
           "tests/unit/floor-indents-engine.test.ts",
           "tests/unit/inventory-postings.test.ts",
+          "tests/unit/replenishment-session.test.ts",
           "tests/unit/replenishment.test.ts",
           "tests/unit/transfers-session.test.ts",
           "tests/unit/warehouse-handheld-count-and-adjust.test.ts",
@@ -825,6 +834,7 @@
           "tests/integration/floor-indents.test.ts",
           "tests/integration/floor-restocking-asks-an-explicit-transfer-freeze.test.ts",
           "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/replenishment-parameters-are-stored-per-store-and-drive-the-proposal.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/sales-history.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
@@ -851,6 +861,7 @@
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/floor-restocking-asks-an-explicit-transfer-freeze.test.ts",
+          "tests/integration/replenishment-parameters-are-stored-per-store-and-drive-the-proposal.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
@@ -859,6 +870,7 @@
         "browser": [
           "tests/e2e/count-plans-on-the-production-api.e2e.ts",
           "tests/e2e/indents-delivery.e2e.ts",
+          "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/transfers-on-the-production-api.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
@@ -869,6 +881,7 @@
         ],
         "connected": [
           "tests/e2e/count-plans-on-the-production-api.e2e.ts",
+          "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
           "tests/e2e/transfers-on-the-production-api.e2e.ts"
         ],
         "device": [],
@@ -881,10 +894,10 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 29,
+        "unit": 30,
         "integration": 34,
         "realDb": 11,
-        "browser": 8,
+        "browser": 9,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -899,6 +912,7 @@
           "tests/unit/erp-expiry-session.test.ts",
           "tests/unit/erp-food-safety-queue.test.ts",
           "tests/unit/erp-unsellable-session.test.ts",
+          "tests/unit/expired-register-session.test.ts",
           "tests/unit/fefo-assign-batches.test.ts",
           "tests/unit/fefo-attribute-sales.test.ts",
           "tests/unit/fefo-near-expiry.test.ts",
@@ -976,6 +990,7 @@
           "tests/e2e/expiry-recall-delivery.e2e.ts",
           "tests/e2e/food-safety-checks-are-saved-with-the-line-down.e2e.ts",
           "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
+          "tests/e2e/the-expiry-page-shows-what-was-taken-off-sale.e2e.ts",
           "tests/e2e/the-recall-trace-page-is-served-from-the-store-box.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
@@ -1479,10 +1494,10 @@
       "id": "M17",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 19,
         "realDb": 6,
-        "browser": 5,
+        "browser": 6,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -1498,6 +1513,7 @@
           "tests/unit/loyalty-wallet.test.ts",
           "tests/unit/loyalty.test.ts",
           "tests/unit/repeat-orders-engine.test.ts",
+          "tests/unit/repeat-orders-session.test.ts",
           "tests/unit/till-side-the-tier-multiplier-rides-the-wallet-feed.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
@@ -1531,6 +1547,7 @@
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [
+          "tests/e2e/repeat-orders-show-on-the-delivery-exceptions-page.e2e.ts",
           "tests/e2e/return-governance-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/stored-value-oversight-delivery.e2e.ts",
@@ -3483,10 +3500,10 @@
       "id": "D10",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
+        "unit": 3,
         "integration": 13,
         "realDb": 8,
-        "browser": 2,
+        "browser": 3,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3494,6 +3511,7 @@
       "files": {
         "unit": [
           "tests/unit/finance-close-session.test.ts",
+          "tests/unit/supplier-advances-session.test.ts",
           "tests/unit/trial-balance-and-centres.test.ts"
         ],
         "integration": [
@@ -3523,7 +3541,8 @@
         ],
         "browser": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
-          "tests/e2e/finance-month-close-delivery.e2e.ts"
+          "tests/e2e/finance-month-close-delivery.e2e.ts",
+          "tests/e2e/supplier-advances-are-paid-used-and-undone-on-the-supplier-bills-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts"
@@ -3815,7 +3834,7 @@
       "id": "A02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 7,
+        "unit": 8,
         "integration": 10,
         "realDb": 5,
         "browser": 0,
@@ -3831,6 +3850,7 @@
           "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/replenishment-session.test.ts",
           "tests/unit/service-governance.test.ts"
         ],
         "integration": [
@@ -4357,16 +4377,17 @@
       "id": "WF-03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
-        "integration": 13,
-        "realDb": 7,
-        "browser": 3,
-        "connected": 2,
+        "unit": 3,
+        "integration": 14,
+        "realDb": 8,
+        "browser": 4,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/replenishment-session.test.ts",
           "tests/unit/requisitions-session.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
         ],
@@ -4377,6 +4398,7 @@
           "tests/integration/demand-forecast.test.ts",
           "tests/integration/order-proposal.test.ts",
           "tests/integration/purchase-orders.test.ts",
+          "tests/integration/replenishment-parameters-are-stored-per-store-and-drive-the-proposal.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/rfq.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -4388,6 +4410,7 @@
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/an-amendment-is-judged-on-the-order-as-it-stands.test.ts",
+          "tests/integration/replenishment-parameters-are-stored-per-store-and-drive-the-proposal.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
@@ -4397,10 +4420,12 @@
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "device": [],
@@ -5057,7 +5082,7 @@
         "unit": 1,
         "integration": 16,
         "realDb": 11,
-        "browser": 4,
+        "browser": 5,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -5101,6 +5126,7 @@
           "tests/e2e/day-book-post-delivery.e2e.ts",
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/finance-month-close-delivery.e2e.ts",
+          "tests/e2e/supplier-advances-are-paid-used-and-undone-on-the-supplier-bills-page.e2e.ts",
           "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts"
         ],
         "connected": [

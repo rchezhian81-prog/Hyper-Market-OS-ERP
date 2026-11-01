@@ -136,6 +136,19 @@
       .escalation .what { font-weight: 600; overflow-wrap: anywhere; }
       .escalation .why { font-size: 15px; overflow-wrap: anywhere; }
       .escalation .field { margin-bottom: 4px; }
+      /* M06-FR-04 (Round 4b): the open orders tab. */
+      .field select { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 12px; padding: 10px 14px; min-height: var(--tap); width: 100%; }
+      .open-order { background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; display: grid; gap: 8px; }
+      .open-order .what { font-weight: 700; }
+      .open-order table input { width: 100%; min-height: var(--tap); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font: inherit; background: var(--bg); color: var(--ink); box-sizing: border-box; }
+      .open-order details { border-top: 1px solid var(--line); padding-top: 8px; }
+      .open-order summary { cursor: pointer; font-weight: 600; min-height: var(--tap); display: flex; align-items: center; }
+      .open-order .table-wrap { overflow-x: auto; }
+      .group-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+      .exception { color: var(--danger-text); }
+      .table-wrap { overflow-x: auto; }
+      #reorder-proposal input[type='checkbox'] { width: 22px; height: 22px; }
+      #reorder-proposal input.qty { width: 100%; min-height: var(--tap); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font: inherit; background: var(--bg); color: var(--ink); box-sizing: border-box; }
       .version { font-size: 15px; padding: 6px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
       .version.superseded { color: var(--muted); text-decoration: line-through; }
     </style>
@@ -165,6 +178,8 @@
       <button id="tab-match" type="button">Check against the order</button>
       <button id="tab-po" type="button">Raise an order</button>
       <button id="tab-budget" type="button">Budget (open to buy)</button>
+      <button id="tab-orders" type="button">Open orders</button>
+      <button id="tab-reorder" type="button">Reorder</button>
     </nav>
 
     <main>
@@ -306,6 +321,89 @@
 
         <h3 id="history-title">Budget figures set for this month</h3>
         <div id="budget-history"></div>
+      </section>
+
+      <!--
+        M06-FR-04 · OB-289 (Round 4b): what is still on order — head office's open-commitment report by buying scope, supplier
+        and store, every quantity in the item's own unit — and, for a person who approves orders, changing (amendment) or
+        cancelling part of an issued order with a reason. Head office keeps every earlier version (hard rule #2).
+      -->
+      <!--
+        M09-FR-02 · WF-03 (Round 4b): the reorder settings stored per item at a store (versioned, who set them and why), head
+        office's proposal worked out on them (advisory only — it orders nothing), and a requisition raised from the lines the
+        buyer ticks, or from an assistant's purchase draft. Every quantity in the item's own unit.
+      -->
+      <section id="view-reorder" hidden>
+        <h2 id="reorder-title">Reorder</h2>
+        <p class="lead" id="reorder-lead"></p>
+        <div class="field"><label for="reorder-store" id="reorder-store-label">Store</label><input id="reorder-store" type="text" autocomplete="off" /></div>
+        <button id="reorder-read" class="wide" type="button">Show the settings and the proposal</button>
+        <p class="otb-status" id="reorder-status" role="status" aria-live="polite"></p>
+        <h3 id="reorder-proposal-h">What head office proposes to reorder</h3>
+        <p class="lead" id="reorder-advisory"></p>
+        <div class="table-wrap"><table id="reorder-proposal"></table></div>
+        <div id="reorder-exceptions"></div>
+        <div id="reorder-raise-box" hidden>
+          <button id="reorder-raise" class="primary wide" type="button">Raise a requisition from the ticked lines</button>
+          <p class="otb-status" id="reorder-raise-status" role="status" aria-live="polite"></p>
+        </div>
+        <h3 id="reorder-params-h">Reorder settings</h3>
+        <div class="table-wrap"><table id="reorder-params"></table></div>
+        <div id="reorder-set" hidden>
+          <h3 id="reorder-set-h">Set an item's reorder settings</h3>
+          <div class="otb-row">
+            <div class="field"><label for="rp-productId" id="rp-productId-l"></label><input id="rp-productId" type="text" autocomplete="off" /></div>
+            <div class="field"><label for="rp-maxLevel" id="rp-maxLevel-l"></label><input id="rp-maxLevel" type="text" inputmode="decimal" autocomplete="off" /></div>
+            <div class="field"><label for="rp-reorderPoint" id="rp-reorderPoint-l"></label><input id="rp-reorderPoint" type="text" inputmode="decimal" autocomplete="off" /></div>
+            <div class="field"><label for="rp-safetyStock" id="rp-safetyStock-l"></label><input id="rp-safetyStock" type="text" inputmode="decimal" autocomplete="off" /></div>
+            <div class="field"><label for="rp-leadTimeDays" id="rp-leadTimeDays-l"></label><input id="rp-leadTimeDays" type="text" inputmode="numeric" autocomplete="off" /></div>
+            <div class="field"><label for="rp-minOrderQty" id="rp-minOrderQty-l"></label><input id="rp-minOrderQty" type="text" inputmode="decimal" autocomplete="off" /></div>
+            <div class="field"><label for="rp-orderMultiple" id="rp-orderMultiple-l"></label><input id="rp-orderMultiple" type="text" inputmode="decimal" autocomplete="off" /></div>
+            <div class="field"><label for="rp-avgDailyDemand" id="rp-avgDailyDemand-l"></label><input id="rp-avgDailyDemand" type="text" inputmode="decimal" autocomplete="off" /></div>
+          </div>
+          <div class="field"><label for="rp-reason" id="rp-reason-l"></label><input id="rp-reason" type="text" autocomplete="off" /></div>
+          <button id="rp-save" class="primary wide" type="button">Save the settings</button>
+          <p class="otb-status" id="rp-status" role="status" aria-live="polite"></p>
+          <h3 id="draft-h">Raise a requisition from an assistant's purchase draft</h3>
+          <div class="otb-row">
+            <div class="field"><label for="dr-id" id="dr-id-l"></label><input id="dr-id" type="text" autocomplete="off" /></div>
+            <div class="field"><label for="dr-product" id="dr-product-l"></label><input id="dr-product" type="text" autocomplete="off" /></div>
+            <div class="field"><label for="dr-qty" id="dr-qty-l"></label><input id="dr-qty" type="text" inputmode="decimal" autocomplete="off" /></div>
+          </div>
+          <button id="dr-raise" class="wide" type="button">Raise from this draft</button>
+          <p class="otb-status" id="dr-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section id="view-orders" hidden>
+        <h2 id="orders-title">Open orders</h2>
+        <p class="lead" id="orders-lead"></p>
+        <div class="otb-row">
+          <div class="field"><label for="orders-scope" id="orders-scope-label">Buying scope</label>
+            <select id="orders-scope">
+              <option value="" id="orders-scope-all">All scopes</option>
+              <option value="central_via_warehouse" id="orders-scope-cw"></option>
+              <option value="central_direct_to_store" id="orders-scope-cd"></option>
+              <option value="local" id="orders-scope-local"></option>
+              <option value="scope_not_recorded" id="orders-scope-nr"></option>
+            </select>
+          </div>
+          <div class="field"><label for="orders-supplier" id="orders-supplier-label">Supplier</label><input id="orders-supplier" type="text" autocomplete="off" /></div>
+          <div class="field"><label for="orders-store" id="orders-store-label">Store</label><input id="orders-store" type="text" autocomplete="off" /></div>
+        </div>
+        <button id="orders-read" class="wide" type="button">Show what is on order</button>
+        <p class="otb-status" id="orders-status" role="status" aria-live="polite"></p>
+        <div class="otb-summary" id="orders-summary"></div>
+        <h3 id="orders-scope-h">By buying scope</h3>
+        <div id="orders-by-scope"></div>
+        <h3 id="orders-supplier-h">By supplier</h3>
+        <div id="orders-by-supplier"></div>
+        <h3 id="orders-store-h">By store</h3>
+        <div id="orders-by-store"></div>
+        <h3 id="orders-exceptions-h">Exceptions</h3>
+        <div id="orders-exceptions"></div>
+        <h3 id="orders-list-h">Issued orders with something still to come</h3>
+        <div id="orders-list"></div>
       </section>
     </main>
 

@@ -113,6 +113,7 @@ import {
   createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
 } from './payroll-session';
 import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
+import { wireBuyingAndStockScreens } from './buying-stock-browser-wiring'; // Round 4b: buying and stock
 import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring'; // M28-FR-02 · M28-FR-03 · M29-FR-02
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
@@ -7477,6 +7478,8 @@ if (browserWindow !== undefined) {
   }
   // QG-02 lane 1 R4: the Dock diary, Standing orders, Supplier offer funding and Feature switches pages.
   wireR4Screens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // Round 4b: the Buying page's Open orders tab (M06-FR-04) and the buying-and-stock sections.
+  wireBuyingAndStockScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 6: Scrap and recycling, Packaging and crates, Compare side by side.
   wireSalvageAndCompareScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 7 (R7-C): Shelf tags (OB-505) and Quotations (OB-506).

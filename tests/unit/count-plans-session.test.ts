@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createCountPlansSession, planBody, freezeWords, lineView, COUNT_PLAN_WORD_KEYS, text, paiseOf } from '../../apps/web-erp/src/count-plans-session';
+import { createCountPlansSession, planBody, freezeWords, lineView, adjustmentView, COUNT_PLAN_WORD_KEYS, text, paiseOf, type AdjustmentRequestRow } from '../../apps/web-erp/src/count-plans-session';
 import { headOfficeHttp, type HeadOfficeHttp, type HttpAnswer } from '../../apps/web-erp/src/head-office-http';
 
 /**
@@ -74,7 +74,7 @@ describe('the count plans session', () => {
     expect(await nobody.open('cp-1')).toEqual({ result: 'invalid', key: 'nobody' });
     expect(sent).toEqual([]);
     const cashier = createCountPlansSession({ userId: 'u-till', permissions: ['pos.sale.sync'] }, http, IDS);
-    expect(cashier.may).toEqual({ read: false, plan: false, count: false, approve: false });
+    expect(cashier.may).toEqual({ read: false, plan: false, count: false, approve: false, readAdjustments: false, decideAdjustments: false });
   });
 
   it('reads a line as the manager needs it — the standing count, the reasons a recount is needed, the cause', () => {
@@ -100,5 +100,56 @@ describe('the count plans session', () => {
     expect(calls[0]!.init).toMatchObject({ method: 'POST', body: '{"a":1}', headers: { 'idempotency-key': 'key-1' } });
     const down = headOfficeHttp(async () => { throw new Error('offline'); });
     expect(await down.get('/v1/x')).toEqual({ result: 'lost_link' });
+  });
+
+  // M08-FR-03 · §28: the handheld corrections, decided by a person who did not ask for them.
+  const REQ: AdjustmentRequestRow = {
+    requestId: 'ar-1', productId: 'RICE', locationId: 'br-1', binId: 'A-01', deltaMinor: -2_500, uom: 'kg', reasonCode: 'damaged', note: null,
+    valueMinor: 15_000, requestedBy: 'u-floor', at: '2026-11-01T10:00:00Z', storeId: 'br-1', source: 'warehouse-handheld',
+    governanceFlags: [], status: 'pending', decidedBy: null, decidedAt: null, decisionReason: null, movementId: null,
+  };
+  it('M08-FR-03: a handheld correction reads in its own unit, with its value or "not known", and is never offered to the person who asked', () => {
+    const v = adjustmentView('en', REQ, 'u-mgr', true);
+    expect(v.heading).toBe('RICE — Missing or damaged 2.500 kg · Damaged');
+    expect(v.value).toBe('Value at cost: ₹150.00');
+    expect(v.canDecide).toBe(true);
+    expect(adjustmentView('en', REQ, 'u-floor', true)).toMatchObject({ yours: true, canDecide: false });
+    expect(adjustmentView('en', REQ, 'u-mgr', false).canDecide).toBe(false);
+    expect(adjustmentView('en', { ...REQ, status: 'posted', decidedBy: 'u-mgr', decisionReason: 'torn' }, 'u-mgr', true)).toMatchObject({ canDecide: false, stateWord: 'Approved — correction posted · decided by u-mgr — torn' });
+    const unknown = adjustmentView('en', { ...REQ, deltaMinor: 2, uom: 'EA', valueMinor: 0, governanceFlags: ['value_unknown', 'requester_lacks_authority'] }, 'u-mgr', true);
+    expect(unknown.heading).toBe('RICE — Found more 2 · Damaged');
+    expect(unknown.value).toBe('Value at cost: Not known — head office has no cost for this product');
+    expect(unknown.flags).toEqual(['The person who asked may not move stock']);
+    expect(adjustmentView('ta', REQ, 'u-mgr', true).heading).toContain('2.500 kg');
+  });
+
+  it('M08-FR-03: lists the waiting corrections, decides one with a reason, and refuses before any POST without one or without the authority', async () => {
+    const { http, sent } = fakeHttp({ result: 'ok', status: 200, body: { requests: [REQ], pending: 1 } });
+    const s = createCountPlansSession({ userId: 'u-mgr', permissions: ['inventory.availability.read', 'inventory.adjustment.approve'] }, http, IDS);
+    expect(await s.adjustments()).toEqual({ result: 'ok', requests: [REQ], pending: 1 });
+    await s.adjustments(true);
+    expect(await s.decideAdjustment('ar-1', 'approved', '  ')).toEqual({ result: 'invalid', key: 'needReason' });
+    await s.decideAdjustment('ar 1', 'rejected', ' already on a transfer ');
+    expect(sent).toEqual([
+      { method: 'GET', path: '/v1/inventory/adjustment-requests?status=pending' },
+      { method: 'GET', path: '/v1/inventory/adjustment-requests' },
+      { method: 'POST', path: '/v1/inventory/adjustment-requests/ar%201/decide', body: { decision: 'rejected', reason: 'already on a transfer' } },
+    ]);
+    const reader = createCountPlansSession({ userId: 'u-clerk', permissions: ['inventory.availability.read'] }, fakeHttp().http, IDS);
+    expect(await reader.decideAdjustment('ar-1', 'approved', 'ok')).toEqual({ result: 'invalid', key: 'adjCannotDecide' });
+    const cashier = createCountPlansSession({ userId: 'u-till', permissions: ['pos.sale.sync'] }, fakeHttp().http, IDS);
+    expect(await cashier.adjustments()).toEqual({ result: 'invalid', key: 'cannotReadAdj' });
+    const refused = createCountPlansSession({ userId: 'u-floor', permissions: ['inventory.availability.read', 'inventory.adjustment.approve'] }, fakeHttp({ result: 'refused', status: 422, code: 'self_approval', whatHappened: 'u-floor raised ar-1 and cannot decide it (§28).' }).http, IDS);
+    expect(refused.say('en', await refused.decideAdjustment('ar-1', 'approved', 'fine')).words).toBe('Head office refused: u-floor raised ar-1 and cannot decide it (§28).');
+  });
+
+  it('OB-31 (Round 4b): a count is typed in the item\'s unit — "2.5" kg is 2500 g; a fraction of an item or a 4th kg decimal is refused', async () => {
+    const { http, sent } = fakeHttp({ result: 'ok', status: 201, body: {} });
+    const s = createCountPlansSession(MANAGER, http, IDS);
+    await s.count('cp-1', { productId: 'RICE', locationId: 'br-1', uom: 'kg', countedText: '2.5', recountOf: null });
+    await s.count('cp-1', { productId: 'RICE', locationId: 'br-1', uom: 'kg', countedText: '0', recountOf: null });
+    expect(await s.count('cp-1', { productId: 'RICE', locationId: 'br-1', uom: 'kg', countedText: '2.5005', recountOf: null })).toEqual({ result: 'invalid', key: 'needQty' });
+    expect(await s.count('cp-1', { productId: 'TIN', locationId: 'br-1', uom: 'EA', countedText: '1.5', recountOf: null })).toEqual({ result: 'invalid', key: 'needQty' });
+    expect(sent.map((x) => (x.body as { countedMinor: number }).countedMinor)).toEqual([2_500, 0]);
   });
 });

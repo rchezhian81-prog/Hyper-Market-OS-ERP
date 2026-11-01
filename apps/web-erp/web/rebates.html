@@ -37,7 +37,7 @@
       #doc { border: 2px solid var(--ink); }
       .draft { font-weight: 700; }
       [hidden] { display: none !important; }
-      @media print { header, #page-intro, #register, #raise, #receipt, #period, .no-print { display: none !important; } #doc { border: 0; } }
+      @media print { header, #page-intro, #register, #scheme, #raise, #receipt, #period, .no-print { display: none !important; } #doc { border: 0; } }
     </style>
   </head>
   <body>
@@ -69,6 +69,26 @@
         <p class="draft" id="doc-draft" hidden></p>
         <div id="doc-body"></div>
         <button id="doc-print" class="no-print" type="button"><span id="doc-print-text"></span></button>
+      </section>
+      <!-- M06-FR-03 (Round 4b): define a rebate scheme — asked for, approved by a different person (Finance) in their own
+           session, then recorded naming that approval. Its session is apps/web-erp/src/supplier-terms-session.ts. -->
+      <section id="scheme" hidden aria-labelledby="scheme-h">
+        <h3 id="scheme-h"></h3>
+        <p class="meta" id="scheme-lead"></p>
+        <div class="row-form">
+          <label for="s-id"><span id="s-id-l"></span><input id="s-id" autocomplete="off" /></label>
+          <label for="s-supplier"><span id="s-supplier-l"></span><input id="s-supplier" autocomplete="off" /></label>
+          <label for="s-basis"><span id="s-basis-l"></span><select id="s-basis"><option value="purchase_value" id="s-b-pv"></option><option value="volume_units" id="s-b-vu"></option><option value="growth_over_baseline" id="s-b-gb"></option></select></label>
+          <label for="s-rate"><span id="s-rate-l"></span><input id="s-rate" inputmode="decimal" autocomplete="off" /></label>
+          <label for="s-threshold"><span id="s-threshold-l"></span><input id="s-threshold" inputmode="decimal" autocomplete="off" /></label>
+          <label for="s-starts"><span id="s-starts-l"></span><input id="s-starts" type="date" /></label>
+          <label for="s-ends"><span id="s-ends-l"></span><input id="s-ends" type="date" /></label>
+        </div>
+        <div class="acts">
+          <button id="s-ask" type="button"><span id="s-ask-text"></span></button>
+          <button id="s-record" class="quiet" type="button"><span id="s-record-text"></span></button>
+        </div>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
       </section>
       <section id="raise" hidden aria-labelledby="raise-h">
         <h3 id="raise-h"></h3>
