@@ -5,13 +5,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-573 and OB-574 (1 November 2026): a demo weighing scale; a reason to stop a scale-label rule
+- **OB-573 "A":** the demo copy puts a pretend weighing scale (`DEMO-SCALE-1`, every field marked synthetic) on head office's scale register for the demo till, so the demo's loose rice rings from its scale label end to end. Demo tenant only.
+- **OB-574 "A":** stopping a scale-label rule needs a written reason. Head office refuses a stop without one (`withdrawal_reason_required`, nothing changed); the office screen asks for it before sending, in English and Tamil. Setting a rule may still say why.
+- **Tests:** both new checks seen failing before the change; every test that loads the demo seed or the scale rules: 22 files, 206 passed; their browser files 30/30; guardrails 1,878/1,878; type check and lint clean.
+- **Next:** Round 4 (setup screens; the §28 roles incl. Picker and Delivery (OB-571); each office page checks its own permission (OB-572)).
+- **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## OB-570 "A" (1 November 2026): head office sets the scale-label rules; the till rings loose produce only from its label
 - **Head office (M03-FR-02):** a "Scale label rules" tab on Products and prices. The Product user (`catalogue.pack.publish`) sets how a scale's label reads (for example "labels starting with 2: item code in digits 2–7, weight in grams in digits 8–12") and can withdraw one; each change is a new audited event, never an overwrite; a pattern that could read a label two ways is refused by name. The active rules ride the signed store pack, so the till reads labels with the cable out.
 - **Till (both lanes):** a kg/g item scanned by its plain barcode is refused by name (OB-570), and a weight typed on the Qty pad for a weighed line is refused; the weight comes only from the scale label. The two store run-through tests now ring loose tomatoes from a real scale label.
 - **Demo copy:** loose rice by the kg (`prod-rice-loose`, scale code `100201`, ₹60/kg) and the "starts with 2" rule, seeded through the real routes.
 - **Tests:** new tests seen failing before each fix; guardrails 1,878/1,878; type check and lint clean; the store run-throughs ring a real scale label. Full default suite on PostgreSQL: 15,916 passed; the 9 files that failed in that run used code being changed mid-run and pass on re-run (63 tests), except one older date-trap test fixed here (it expected a dd/mm date to be refused as out of range, which fails from the 1st to the 12th of every month). Browser suite 803/803.
 - **Next:** Round 4 (setup screens; the §28 roles incl. Picker and Delivery (OB-571); each office page checks its own permission (OB-572)).
-- **Blocked:** nothing. **Owner decision needed:** whether the demo till gets a demo weighing scale registered to its lane (without one, the till's existing scale check refuses the demo's loose rice).
+- **Blocked:** nothing. **Owner decision:** demo scale answered 1 Nov 2026 (OB-573, A).
 
 ## Combined fix list, Round 3 (31 October 2026): the demo copy set up; kg and litre follow-ups
 - **Demo copy (screen audit Round C):** suppliers in the master; till `lane-1` with bill prefix `D1L1-` and PINs each person types through the box's audited command; a warehouse supervisor; an online order with pick list and delivery route; business customers on (OB-559); the release builds and fronts the supplier portal, self-checkout, price kiosk, queue till and B2B portal; the dropped runbook setting restored with a guardrail; self-checkout says which page turns it on; handheld work asks each job's own permission; a demo-only reseed that refuses anything else and keeps the old data; the store-volume load runs nightly.

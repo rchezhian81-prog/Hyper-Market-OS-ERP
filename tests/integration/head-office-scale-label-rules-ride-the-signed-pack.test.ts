@@ -164,11 +164,18 @@ describe.each(backings)('OB-570 "A": head office\'s scale-label rules ride the s
     const { call, publish } = await shop(h);
     expect((await call('POST', '/v1/catalogue/scale-label-rules/2', RULE)).status).toBe(201);
     expect((await publish()).snapshot.embeddedRules).toHaveLength(1);
+    // OB-574: stopping a rule without a reason is refused by name, and the rule stays in force.
+    for (const body of [{}, { reason: '   ' }]) {
+      const unsaid = await call('POST', '/v1/catalogue/scale-label-rules/2/withdrawal', body);
+      expect(unsaid.status, JSON.stringify(unsaid.body)).toBe(400);
+      expect(codeOf(unsaid)).toBe('withdrawal_reason_required');
+    }
+    expect(((await call('GET', '/v1/catalogue/scale-label-rules')).body as { count: number }).count).toBe(1);
     const gone = await call('POST', '/v1/catalogue/scale-label-rules/2/withdrawal', { reason: 'the deli scale was replaced' });
     expect(gone.status, JSON.stringify(gone.body)).toBe(201);
     expect((gone.body as { rule: { version: number; state: string } }).rule).toMatchObject({ version: 2, state: 'withdrawn' });
     // Withdrawing what is not in force is said, never a fake success.
-    expect((await call('POST', '/v1/catalogue/scale-label-rules/2/withdrawal', {})).status).toBe(404);
+    expect((await call('POST', '/v1/catalogue/scale-label-rules/2/withdrawal', { reason: 'again' })).status).toBe(404);
     expect(((await call('GET', '/v1/catalogue/scale-label-rules')).body as { count: number }).count).toBe(0);
     const pack = await publish();
     expect(pack.snapshot.embeddedRules).toBeUndefined();

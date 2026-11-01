@@ -100,6 +100,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('scale labe
       await says(t.page, '#tab-scale', /^எடை லேபிள் விதிகள்/); // the shared chrome adds the section's first sentence beneath
       await says(t.page, '#scale-list [data-prefix="2"]', /2 இல் தொடங்கும் லேபிள்கள்/);
       await t.page.click('#lang');
+      // OB-574: Stop with no reason asks for one and sends nothing; with a reason it stops the rule.
+      await t.page.click('#scale-list [data-withdraw="2"]');
+      await says(t.page, '#scale-save-status', /^Write why this rule stops/);
+      expect(t.writes).toEqual([]);
+      await t.page.fill('#scale-reason', 'the deli scale was replaced');
       await t.page.click('#scale-list [data-withdraw="2"]');
       await says(t.page, '#scale-save-status', /^Stopped at head office\./);
       await says(t.page, '#scale-list', /No scale label rule is set/);

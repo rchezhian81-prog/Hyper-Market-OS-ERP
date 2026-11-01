@@ -230,6 +230,23 @@ export const PILOT_DEMO_TILL = Object.freeze({
 }) satisfies { readonly tillId: string; readonly label: string; readonly prefix: string };
 
 /**
+ * OB-573 (owner, 1 Nov 2026, "A"): a PRETEND weighing scale for the demo till, so the demo's loose rice can be rung from its
+ * scale label end to end (the till refuses weight from a lane with no scale on the Legal Metrology register — B6). Put on
+ * head office's scale register (`POST /v1/facilities/scales/:assetId`, `facilities.asset.manage`) for the demo lane only.
+ * Every field says it is synthetic: the approval and certificate numbers are no real Legal Metrology document, and no real
+ * scale stands behind it. A real store registers its own stamped scale; this one lives only in the demo tenant (hard rule #7).
+ */
+export const PILOT_DEMO_SCALE = Object.freeze({
+  assetId: 'DEMO-SCALE-1',
+  laneIds: Object.freeze([PILOT_DEMO_TILL.tillId]) as readonly string[],
+  approvalNo: 'DEMO-LM-APPROVAL (synthetic, not a real approval)',
+  capacityGrams: 30_000,
+  lastStampedOn: '2026-10-01',
+  reverificationDueOn: '2027-09-30',
+  certificateRef: 'DEMO-LM-CERT-1 (synthetic, not a real certificate)',
+});
+
+/**
  * The demo people who need a till PIN on the demo box (each types their own; nothing is kept here but who): the cashier
  * (sells), the store manager (closes the day; approves a refund at the till), the owner and the accountant (approve a
  * reopen or a carried-forward payment with their own PIN). The hosted front signs a seller in from their password; the PIN

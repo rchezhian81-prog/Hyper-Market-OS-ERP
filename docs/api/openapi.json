@@ -11201,7 +11201,7 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -167930,6 +167930,9 @@
       },
       "PostCatalogueScaleLabelRulesByPrefixWithdrawalRequest": {
         "type": "object",
+        "required": [
+          "reason"
+        ],
         "properties": {
           "reason": {
             "type": "string"

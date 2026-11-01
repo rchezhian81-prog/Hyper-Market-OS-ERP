@@ -6,7 +6,8 @@
 //
 //   GET  /v1/catalogue/scale-label-rules                    the rules in force, with who set each and when
 //   POST /v1/catalogue/scale-label-rules/:prefix            { itemStart, itemLength, valueStart, valueLength, valueKind, reason? }
-//   POST /v1/catalogue/scale-label-rules/:prefix/withdrawal { reason? } — the prefix's rule stops; a new event, never a delete
+//   POST /v1/catalogue/scale-label-rules/:prefix/withdrawal { reason } — the prefix's rule stops (a reason is required,
+//                                                           OB-574); a new event, never a delete
 //
 // Append-only (hard rule #2): setting a prefix that already has a rule is its next version; a re-send of the same rule is no
 // new version. Positions are 0-based (what the till reads). Setting and withdrawing are `catalogue.pack.publish` — the
@@ -121,6 +122,16 @@ export function scaleLabelRuleRoutes(deps: ScaleLabelRuleDeps): readonly Route[]
       handler: async (ctx) => {
         const prefix = (ctx.params['prefix'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
+        // OB-574 (owner, 1 Nov 2026, "A"): stopping a rule always says why — so there is a written reason for taking a way
+        // of reading labels away from every till. (Setting one may say why; it need not.)
+        if (reasonOf(b).reason === undefined) {
+          throw apiError(400, {
+            code: 'withdrawal_reason_required',
+            whatHappened: `The scale-label rule for prefix "${prefix}" was not stopped: stopping a rule needs a reason, and none was given.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { reason } saying why the tills should stop reading these labels. Nothing was changed.',
+          });
+        }
         const version = await deps.registerVersion(ctx.tenantId);
         const history = await deps.history(ctx.tenantId);
         const standing = activeScaleRuleEvents(history).find((e) => e.prefix === prefix);

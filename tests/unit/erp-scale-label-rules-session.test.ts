@@ -54,9 +54,15 @@ describe('the Scale label rules panel (OB-570 "A")', () => {
     const out = await s.set({ prefix: '2', itemFrom: '2', itemTo: '7', valueFrom: '8', valueTo: '12', valueKind: 'weight', reason: ' deli scale ' });
     expect(http.calls).toEqual([{ method: 'POST', path: '/v1/catalogue/scale-label-rules/2', body: { itemStart: 1, itemLength: 6, valueStart: 7, valueLength: 5, valueKind: 'weight', reason: 'deli scale' } }]);
     expect(scaleRuleOutcomeWords('en', out)).toEqual({ ok: true, text: 'Saved at head office. The tills read labels this way after the next price update.' });
-    // Stopping one is its own route — a new event, never a delete.
-    await s.withdraw('2', '');
-    expect(http.calls[1]).toEqual({ method: 'POST', path: '/v1/catalogue/scale-label-rules/2/withdrawal', body: {} });
+    // OB-574: stopping one needs a reason — without one nothing is sent, and the person is told to write why.
+    const unsaid = await s.withdraw('2', '  ');
+    expect(unsaid).toEqual({ kind: 'invalid', detail: 'reason' });
+    expect(scaleRuleOutcomeWords('en', unsaid).text).toBe('Write why this rule stops in the “Why” box, then press Stop again. Nothing was changed.');
+    expect(scaleRuleOutcomeWords('ta', unsaid).text).toMatch(/^இந்த விதி ஏன் நிறுத்தப்படுகிறது/);
+    expect(http.calls).toHaveLength(1);
+    // Stopping one is its own route — a new event, never a delete — and carries the reason.
+    await s.withdraw('2', ' the deli scale was replaced ');
+    expect(http.calls[1]).toEqual({ method: 'POST', path: '/v1/catalogue/scale-label-rules/2/withdrawal', body: { reason: 'the deli scale was replaced' } });
   });
 
   it('head office\'s refusal is shown in its own words; an unreachable head office is said, never a success', async () => {
