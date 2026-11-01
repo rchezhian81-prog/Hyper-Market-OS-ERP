@@ -8,6 +8,8 @@ import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
 import { streamName, STREAM } from '../../services/api/src/adapters';
 import { applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions } from '../../db/seed/pilot/apply';
+import { publishPilotPack } from '../../db/seed/pilot/hosted';
+import type { SignedPack } from '../../services/catalogue/src/pack';
 import {
   PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_SUPPLIER_LOGIN,
   PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_WAREHOUSE, PILOT_DEMO_GSTIN, SEED_MARKER,
@@ -179,6 +181,21 @@ describe('pilot seed — catalogue (Phase 4b)', () => {
     const res = await h.request({ method: 'GET', path: '/v1/catalogue/products/prod-biscuit/pack', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
     expect(res.status).toBe(200);
     expect((res.body as { pack: { levels: unknown[] } }).pack.levels).toHaveLength(2);
+  });
+
+  it('OB-570 "A": the scale-label rule is set through head office\'s route, and the demo store\'s signed pack carries it', async () => {
+    const { h } = await seed();
+    const rules = await h.request({ method: 'GET', path: '/v1/catalogue/scale-label-rules', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect((rules.body as { rules: { prefix: string; by: string }[] }).rules.map((r) => [r.prefix, r.by])).toEqual([['2', OWNER]]);
+    // A re-run of the seed sets nothing new: the same rule answers "unchanged".
+    expect((await applyPilotCatalogue(h, PILOT_CATALOGUE, OWNER)).ok).toBe(true);
+    const published = await publishPilotPack(h, OWNER, PILOT_DEMO_BRANCH, '2026-11-01');
+    expect([200, 201], JSON.stringify(published.body)).toContain(published.status);
+    const pack = await h.request({ method: 'GET', path: '/v1/catalogue/pack', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    const snapshot = (pack.body as SignedPack).snapshot;
+    expect(snapshot.embeddedRules).toEqual([{ prefix: '2', itemStart: 1, itemLength: 6, valueStart: 7, valueLength: 5, valueKind: 'weight' }]);
+    // …and the loose rice the rule reads (item code 100201) is in that pack, priced per kg.
+    expect(snapshot.products.find((p) => p.sku === '100201')).toMatchObject({ productId: 'prod-rice-loose', baseUom: 'kg', unitPriceMinor: 6000 });
   });
 });
 

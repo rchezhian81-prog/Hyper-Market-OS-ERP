@@ -171,6 +171,7 @@
       <button id="tab-shelf" type="button">Shelves</button>
       <button id="tab-promo" type="button">Offer</button>
       <button id="tab-rivals" type="button">Competitor prices</button>
+      <button id="tab-scale" type="button">Scale label rules</button>
     </nav>
 
     <main>
@@ -536,6 +537,57 @@
         </div>
         <!-- R4 Lane 4 · D-18 — end -->
         <p class="lead" id="rivals-note">This comparison changes no price.</p>
+      </section>
+
+      <!-- OB-570 "A" · M03-FR-02: the scale-label (variable-weight barcode) rules — over head office's own routes
+           (/v1/catalogue/scale-label-rules*), through the tested model apps/web-erp/src/scale-label-rules-session.ts. They
+           reach the tills in the next signed price update; head office judges every rule and an ambiguous one is refused. -->
+      <section id="view-scale" hidden>
+        <h2 id="scale-title">Scale label rules</h2>
+        <p class="lead" id="scale-lead">How the tills read a weighing scale's label.</p>
+        <p class="lead" id="scale-status" role="status" aria-live="polite"></p>
+        <h3 id="scale-in-force">Rules in force</h3>
+        <div id="scale-list"></div>
+        <p class="lead" id="scale-list-status" role="status" aria-live="polite"></p>
+        <div id="scale-form" hidden>
+          <div class="two">
+            <div class="field">
+              <label for="scale-prefix" id="scale-prefix-label">Labels start with</label>
+              <input id="scale-prefix" type="text" inputmode="numeric" autocomplete="off" maxlength="11" />
+            </div>
+            <div class="field">
+              <label for="scale-kind" id="scale-kind-label">The value is</label>
+              <select id="scale-kind"></select>
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="scale-item-from" id="scale-item-from-label">Item code from digit</label>
+              <input id="scale-item-from" type="text" inputmode="numeric" autocomplete="off" maxlength="2" />
+            </div>
+            <div class="field">
+              <label for="scale-item-to" id="scale-item-to-label">to digit</label>
+              <input id="scale-item-to" type="text" inputmode="numeric" autocomplete="off" maxlength="2" />
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="scale-value-from" id="scale-value-from-label">Value from digit</label>
+              <input id="scale-value-from" type="text" inputmode="numeric" autocomplete="off" maxlength="2" />
+            </div>
+            <div class="field">
+              <label for="scale-value-to" id="scale-value-to-label">to digit</label>
+              <input id="scale-value-to" type="text" inputmode="numeric" autocomplete="off" maxlength="2" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="scale-reason" id="scale-reason-label">Why (optional)</label>
+            <input id="scale-reason" type="text" autocomplete="off" maxlength="200" />
+          </div>
+          <button id="scale-save" class="primary wide" type="button">Save this rule at head office</button>
+          <p class="lead" id="scale-save-status" role="status" aria-live="polite"></p>
+        </div>
+        <p class="lead" id="scale-note">A change reaches the tills with the next price update.</p>
       </section>
     </main>
 

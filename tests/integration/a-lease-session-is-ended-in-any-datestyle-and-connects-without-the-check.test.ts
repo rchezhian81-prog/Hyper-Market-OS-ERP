@@ -41,14 +41,18 @@ describe.skipIf(DATABASE_URL === undefined)('round 39 · M35-FR-03 · OB-106 · 
     const c = new Client({ connectionString: appUrl, options: NOT_ISO.trim() });
     await c.connect();
     try {
-      const { rows: [r] } = await c.query<{ s: string; pid: number }>('SELECT pid, backend_start::text AS s FROM pg_stat_activity WHERE pid = pg_backend_pid()');
+      const { rows: [r] } = await c.query<{ s: string; pid: number; ms: string }>('SELECT pid, backend_start::text AS s, (extract(epoch FROM backend_start) * 1000)::bigint::text AS ms FROM pg_stat_activity WHERE pid = pg_backend_pid()');
       expect(r!.s).toMatch(/^\d\d\/\d\d\/\d{4} .* IST$/);
       // Round 37's comparison, made in the request pool's session: refused ("out of range" in an ISO / MDY session), or —
       // here, DMY — read with "IST" as ISRAEL time, so the very same session no longer matches (it would answer already_gone).
       const same = await app.query<{ same: boolean }>('SELECT backend_start = $2::timestamptz AS same FROM pg_stat_activity WHERE pid = $1', [r!.pid, r!.s])
         .then((x) => x.rows[0]!.same, () => 'refused' as const);
       expect(same).not.toBe(true);
-      await expect(platform.query('SELECT $1::timestamptz AS t', [r!.s])).rejects.toThrow(/out of range/);
+      // An ISO / MDY session reads "dd/mm" as "mm/dd": refused as out of range when the day is past 12, otherwise read as a
+      // DIFFERENT date (1 Nov → 11 Jan). Either way the text never comes back as the session's own start time.
+      const misread = await platform.query<{ t: Date }>('SELECT $1::timestamptz AS t', [r!.s]).then((x) => x.rows[0]!.t, (e: Error) => e);
+      if (misread instanceof Error) expect(misread.message).toMatch(/out of range/);
+      else expect(Math.abs(misread.getTime() - Number(r!.ms))).toBeGreaterThan(60_000);
     } finally { await c.end(); }
   });
 

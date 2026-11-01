@@ -13,6 +13,7 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
+import { ean13CheckDigit } from '../../packages/production/src/scale-label';
 
 /**
  * **OB-39 "B" (owner, 11 Oct 2026) — the margin is costed at head office's AVERAGE BUYING COST per product and store, on the
@@ -50,6 +51,9 @@ const RICE_IN = [{ qty: 10, cost: 40_000, at: BACK }, { qty: 30, cost: 44_000, a
 const TOM_IN = [{ qty: 10_000, cost: 2_500, at: BACK }, { qty: 5_000, cost: 3_100, at: STORE }];
 /** Grams × price per kg ÷ 1000, rounded once — the OB-31 rule, written out so the expectation is independent. */
 const perKg = (grams: number, perKgMinor: number): number => Math.round((grams * perKgMinor) / 1000);
+/** The deli scale's six-digit item code for loose tomatoes, and the weight label it prints for a given number of grams. */
+const TOMATO_SCALE_CODE = '100001';
+const tomatoLabel = (grams: number): string => { const twelve = `2${TOMATO_SCALE_CODE}${String(grams).padStart(5, '0')}`; return twelve + ean13CheckDigit(twelve); };
 // The averages, worked by hand: rice (10×400 + 30×440) ÷ 40 = ₹430; tomato (₹250 + ₹155) ÷ 15 kg = ₹27/kg.
 const RICE_AVG = 43_000;
 const TOM_AVG = 2_700;
@@ -102,6 +106,10 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
       }, `price-${p.productId}`), `price ${p.productId}`);
       await ok(call('POST', `/v1/catalogue/products/${p.productId}/barcodes/${p.barcode}`, OWNER, { kind: p.uom === 'kg' ? 'internal' : 'ean' }, `barcode-${p.productId}`), `barcode ${p.productId}`);
     }
+    // OB-570 "A" · M03-FR-02: loose tomatoes are rung from the scale's weight label. Head office gives the scale's six-digit
+    // item code and publishes the label rule (labels starting 2: item code in digits 2–7, grams in 8–12) in the signed pack.
+    await ok(call('POST', `/v1/catalogue/products/${TOMATO.productId}/barcodes/${TOMATO_SCALE_CODE}`, OWNER, { kind: 'internal' }, 'barcode-tomato-scale'), 'tomato scale code');
+    await ok(call('POST', '/v1/catalogue/scale-label-rules/2', OWNER, { itemStart: 1, itemLength: 6, valueStart: 7, valueLength: 5, valueKind: 'weight' }, 'scale-rule'), 'scale label rule');
     // The receipts at cost — at the back store and on the floor (both the store's places); salt arrives uncosted.
     const receive = async (id: string, productId: string, locationId: string, qty: number, uom: string, cost?: number): Promise<void> => {
       await ok(call('POST', '/v1/inventory/movements', OWNER, {
@@ -144,8 +152,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     const T0 = Date.now();
     const tradingDay = tradingDateOf(new Date(T0).toISOString(), makeTradingDayRule('00:00'));
     till.scanBarcode(RICE.barcode);
-    const tom = till.scanBarcode(TOMATO.barcode);
-    till.setQuantity(tom.lineId, 1_200);
+    till.scanBarcode(tomatoLabel(1_200)); // OB-570: the scale's weight label, never a plain barcode + keyed grams
     const billA = RICE.price + perKg(1_200, TOMATO.price);
     expect(till.payableMinor()).toBe(billA);
     const ra = await till.nextReceipt();

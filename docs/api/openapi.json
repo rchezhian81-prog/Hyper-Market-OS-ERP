@@ -11028,6 +11028,228 @@
         }
       }
     },
+    "/v1/catalogue/scale-label-rules": {
+      "get": {
+        "operationId": "getCatalogueScaleLabelRules",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCatalogueScaleLabelRulesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/catalogue/scale-label-rules/{prefix}": {
+      "post": {
+        "operationId": "postCatalogueScaleLabelRulesByPrefix",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.publish",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCatalogueScaleLabelRulesByPrefixRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueScaleLabelRulesByPrefixReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueScaleLabelRulesByPrefixReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.publish\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/catalogue/scale-label-rules/{prefix}/withdrawal": {
+      "post": {
+        "operationId": "postCatalogueScaleLabelRulesByPrefixWithdrawal",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.publish",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCatalogueScaleLabelRulesByPrefixWithdrawalRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueScaleLabelRulesByPrefixWithdrawalReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.publish\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/search-misses": {
       "post": {
         "operationId": "postCatalogueSearchMisses",
@@ -119222,6 +119444,31 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/variant-report.ts"
       },
+      "GetCatalogueScaleLabelRulesReply": {
+        "type": "object",
+        "required": [
+          "rules",
+          "count",
+          "asAt"
+        ],
+        "properties": {
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScaleLabelRuleEvent"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/scale-label-rules.ts"
+      },
       "GetCatalogueTaxClassesByHsnCodeCessReply": {
         "type": "object",
         "required": [
@@ -167617,6 +167864,80 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/product-duplicates.ts"
+      },
+      "PostCatalogueScaleLabelRulesByPrefixReply200": {
+        "type": "object",
+        "required": [
+          "rule",
+          "unchanged"
+        ],
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/ScaleLabelRuleEvent"
+          },
+          "unchanged": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/scale-label-rules.ts"
+      },
+      "PostCatalogueScaleLabelRulesByPrefixReply201": {
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/ScaleLabelRuleEvent"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/scale-label-rules.ts"
+      },
+      "PostCatalogueScaleLabelRulesByPrefixRequest": {
+        "type": "object",
+        "required": [
+          "valueKind"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "valueKind": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/scale-label-rules.ts"
+      },
+      "PostCatalogueScaleLabelRulesByPrefixWithdrawalReply": {
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/ScaleLabelRuleEvent"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/scale-label-rules.ts"
+      },
+      "PostCatalogueScaleLabelRulesByPrefixWithdrawalRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/scale-label-rules.ts"
       },
       "PostCatalogueSearchMissesReply": {
         "type": "object",
@@ -295924,6 +296245,45 @@
             ]
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ScaleLabelRuleEvent": {
+        "type": "object",
+        "required": [
+          "prefix",
+          "version",
+          "state",
+          "rule",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "withdrawn"
+            ]
+          },
+          "rule": {
+            "$ref": "#/components/schemas/EmbeddedBarcodeRule"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
             "type": "string"
           }
         },

@@ -448,8 +448,8 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals'];
-const TABS = ['items', 'price', 'shelf', 'promo', 'rivals'];
+const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals', 'scale'];
+const TABS = ['items', 'price', 'shelf', 'promo', 'rivals', 'scale'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
@@ -458,7 +458,7 @@ function show(name) {
   }
 }
 for (const name of TABS) {
-  el(`tab-${name}`).addEventListener('click', () => { show(name); if (name === 'rivals') void loadRivals(); });
+  el(`tab-${name}`).addEventListener('click', () => { show(name); if (name === 'rivals') void loadRivals(); if (name === 'scale') void loadScale(); });
 }
 el('back-to-items').addEventListener('click', () => { show('items'); renderItems(); });
 
@@ -1467,6 +1467,94 @@ function renderDrafts() {
 }
 // ── R4 Lane 4 · D-18 — end
 
+// ── OB-570 "A" · M03-FR-02 — begin: scale label rules ───────────────────────────────────────────────────────
+//
+// A thin panel over head office's own routes, through the tested model (`scale-label-rules-session.ts`, attached as
+// `window.scaleRulesSession` / `scaleRulesKit`). It lists the rules in force in plain words, adds one, stops one. Every rule
+// is head office's; its refusal is shown in its own words. When head office cannot be reached the panel shows no rule at all
+// and says so (P-08) — never a list it did not read, never a success it did not get.
+
+const scaleRules = window.scaleRulesSession ?? null;
+const scaleKit = window.scaleRulesKit ?? null;
+const sw = (key, fill) => (scaleKit === null ? key : scaleKit.scaleRuleWords(lang)(key, fill));
+let scaleRead = null;
+
+function scaleSay(id, text, ok) { el(id).textContent = text; el(id).dataset.ok = ok ? 'yes' : 'no'; }
+
+function renderScale() {
+  if (scaleKit === null) { el('scale-form').hidden = true; return; }
+  el('scale-title').textContent = sw('h');
+  el('scale-lead').textContent = sw('lede');
+  el('scale-in-force').textContent = sw('inForce');
+  el('scale-note').textContent = sw('nextPack');
+  for (const [id, k] of [['scale-prefix-label', 'prefix'], ['scale-kind-label', 'valueKind'], ['scale-item-from-label', 'itemFrom'], ['scale-item-to-label', 'itemTo'],
+    ['scale-value-from-label', 'valueFrom'], ['scale-value-to-label', 'valueTo'], ['scale-reason-label', 'reason'], ['scale-save', 'add']]) el(id).textContent = sw(k);
+  const kind = el('scale-kind');
+  const chosen = kind.value;
+  kind.replaceChildren(...scaleKit.kinds.map((k) => { const o = document.createElement('option'); o.value = k; o.textContent = sw(k); return o; }));
+  if (chosen !== '') kind.value = chosen;
+  el('scale-form').hidden = scaleRules === null || !scaleRules.may.set;
+  const list = el('scale-list');
+  list.replaceChildren();
+  if (scaleRules === null) { scaleSay('scale-status', sw('notConnected'), false); return; }
+  if (!scaleRules.may.read) { scaleSay('scale-status', sw('cannotRead'), false); return; }
+  if (!scaleRules.may.set) scaleSay('scale-status', sw('readOnly'), true);
+  if (scaleRead === null) return;
+  if (scaleRead.kind !== 'done') {
+    scaleSay('scale-list-status', scaleRead.kind === 'unreachable' ? sw('unreadable') : scaleKit.scaleRuleOutcomeWords(lang, scaleRead).text, false);
+    return;
+  }
+  scaleSay('scale-list-status', '', true);
+  if (scaleRead.body.rules.length === 0) { const p = document.createElement('p'); p.className = 'lead'; p.textContent = sw('none'); list.append(p); return; }
+  for (const record of scaleRead.body.rules) {
+    const box = document.createElement('div');
+    box.className = 'row';
+    box.dataset.prefix = record.prefix;
+    const what = document.createElement('div');
+    what.className = 'what';
+    const line = document.createElement('strong');
+    line.textContent = scaleKit.describeScaleRule(lang, record.rule);
+    const who = document.createElement('small');
+    who.textContent = scaleKit.setByWords(lang, record); // the SHOP's day it was set, never the UTC date
+    what.append(line, who);
+    box.append(what);
+    if (scaleRules.may.set) {
+      const stop = document.createElement('button');
+      stop.type = 'button';
+      stop.className = 'danger';
+      stop.dataset.withdraw = record.prefix;
+      stop.textContent = sw('withdraw');
+      stop.addEventListener('click', async () => {
+        stop.disabled = true;
+        const out = await scaleRules.withdraw(record.prefix, el('scale-reason').value);
+        const said = scaleKit.scaleRuleOutcomeWords(lang, out);
+        scaleSay('scale-save-status', said.text, said.ok);
+        await loadScale();
+      });
+      box.append(stop);
+    }
+    list.append(box);
+  }
+}
+
+async function loadScale() {
+  if (scaleRules === null || !scaleRules.may.read) { renderScale(); return; }
+  scaleRead = await scaleRules.list();
+  renderScale();
+}
+
+el('scale-save').addEventListener('click', () => busy('scale-save', async () => {
+  const out = await scaleRules.set({
+    prefix: el('scale-prefix').value, itemFrom: el('scale-item-from').value, itemTo: el('scale-item-to').value,
+    valueFrom: el('scale-value-from').value, valueTo: el('scale-value-to').value, valueKind: el('scale-kind').value, reason: el('scale-reason').value,
+  });
+  const said = scaleKit.scaleRuleOutcomeWords(lang, out);
+  scaleSay('scale-save-status', said.text, said.ok);
+  if (said.ok) el('scale-reason').value = '';
+  await loadScale();
+}));
+// ── OB-570 — end
+
 async function loadRivals() {
   if (rivals === null || !rivals.may.read) { renderRivals(); return; }
   rivalsRead = await rivals.compare();
@@ -1496,6 +1584,7 @@ function paintChrome() {
   el('tab-shelf').textContent = t('shelves');
   el('tab-promo').textContent = t('offer');
   if (rivalKit !== null) el('tab-rivals').textContent = rw('tab');
+  if (scaleKit !== null) el('tab-scale').textContent = sw('tab');
   el('items-title').textContent = t('items');
   el('items-lead').textContent = t('itemsLead');
   el('item-search-label').textContent = t('findItem');
@@ -1534,6 +1623,7 @@ el('lang').addEventListener('click', () => {
   if (lastSimulation !== null) renderSimulation(lastSimulation);
   renderRivals();
   renderDrafts(); // R4 D-18
+  renderScale(); // OB-570
   if (!el('view-price').hidden) renderLimits(); // OB-512: the replace-an-MRP panel speaks the chosen language
 });
 
@@ -1551,6 +1641,8 @@ const wantedTab = new URLSearchParams(window.location.search).get('tab');
 show(TABS.includes(wantedTab) ? wantedTab : 'items');
 renderRivals();
 if (wantedTab === 'rivals') void loadRivals();
+renderScale();
+if (wantedTab === 'scale') void loadScale();
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //

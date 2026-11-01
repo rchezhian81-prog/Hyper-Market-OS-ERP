@@ -21,7 +21,7 @@ export interface SplitPart {
   readonly machineRef?: string;
 }
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
-import { DeliveryNotAvailableError, MeasuredItemNeedsLabelError, ScaleLabelRefusedError, type PosSession, type SyncBadge, type DeliverySlip } from './session';
+import { DeliveryNotAvailableError, MeasuredItemNeedsLabelError, ScaleLabelRefusedError, MeasuredLineQuantityRefusedError, type PosSession, type SyncBadge, type DeliverySlip } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
 /** A basket line as the view renders it — display primitives only. */
@@ -114,6 +114,12 @@ export interface PosView {
    */
   productName(productId: string): string | undefined;
   setQuantity(lineId: string, qty: number): void;
+  /**
+   * OB-302 "never key a weight": a quantity the CASHIER typed on the Qty keypad. A count line takes it exactly as
+   * `setQuantity`; a line sold by weight or volume (kg, g, L, ml) is refused with `MeasuredLineQuantityRefusedError` and
+   * keeps the quantity its scale label gave it.
+   */
+  keyQuantity(lineId: string, qty: number): void;
   voidLine(lineId: string, reason: string): void;
   basket(): ViewLine[];
   payableMinor(): number;
@@ -312,9 +318,8 @@ export function createPosView(
       // D-20: today at THIS lane, so a 2D code's use-by date is judged offline with no clock in the catalogue (B8).
       const today = batch?.asOf ?? session.laneToday();
       const hit = catalogue.scan(code, { ...batch, ...(today === undefined ? {} : { asOf: today }) });
-      // OB-302 (Round B): an L / ml product read from a code that carries no amount (its plain barcode, a 2D code) would ring
-      // as ONE millilitre. Refused by name instead — only a measured label says how much. Nothing is added. A kg / g product
-      // is left to the lane's existing scale rule (scanned, then weighed on a lane whose scale stamp is current).
+      // OB-302 (Round B) · OB-570: a measured product (kg, g, L, ml) read from a code that carries no amount would ring as ONE
+      // gram or millilitre. Refused by name below — only a scale / measured label says how much.
       const unit = normaliseUom(hit.product.baseUom) ?? hit.product.baseUom;
       // OB-302 · B5 (Round B follow-up): a label carrying only a PRICE for a product sold by weight or volume says nothing
       // about how much — it rang as ONE gram (a ₹765 pack of a kg item as ₹0.77) and told the ledger 1 g left the shelf.
@@ -326,7 +331,10 @@ export function createPosView(
       if (unit === 'ea' && hit.barcodeKind === 'weight_embedded') {
         throw new ScaleLabelRefusedError(hit.product.productId, hit.product.name, unit, 'weight_label_for_counted_item');
       }
-      if ((unit === 'L' || unit === 'ml') && hit.barcodeKind !== 'weight_embedded') {
+      // OB-570 (owner, 31 Oct 2026 — OB-302 follow-up, option A): a kg / g product read from a code that carries no weight
+      // (its plain barcode, a 2D code) is refused by name exactly as a litre product is — never rung as one gram and then
+      // given a keyed weight. Only a scale label (the weight inside the code) rings it. Nothing is added; no network.
+      if (MEASURED.has(unit) && hit.barcodeKind !== 'weight_embedded') {
         throw new MeasuredItemNeedsLabelError(hit.product.productId, hit.product.name, unit);
       }
       // A price-embedded barcode carries the line price for one unit; a batch under markdown is charged its markdown price
@@ -392,6 +400,19 @@ export function createPosView(
     },
 
     setQuantity(lineId: string, qty: number): void {
+      session.setQuantity(lineId, qty);
+    },
+
+    keyQuantity(lineId: string, qty: number): void {
+      // OB-302: a weight or volume is never keyed. Judged on the line's own unit and on its product's unit in this lane's
+      // pack (NEW-2), so a line cannot dodge it by the spelling it was rung under. The session's own rules still apply after.
+      const line = session.basket().find((l) => l.lineId === lineId);
+      if (line !== undefined) {
+        const own = normaliseUom(line.uom) ?? line.uom;
+        const packed = catalogue?.findByProductId(line.productId)?.baseUom;
+        const unit = MEASURED.has(own) ? own : packed !== undefined && MEASURED.has(normaliseUom(packed) ?? packed) ? (normaliseUom(packed) ?? packed) : undefined;
+        if (unit !== undefined) throw new MeasuredLineQuantityRefusedError(line.description, unit);
+      }
       session.setQuantity(lineId, qty);
     },
 

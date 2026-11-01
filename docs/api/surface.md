@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1631 | 946 | 946 | 178 | 436 |
+| 13 | 1634 | 948 | 948 | 178 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -153,6 +153,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/catalogue/products/:productId/tobacco-warning-confirmation` | `catalogue.tobacco.warning.confirm` | core | yes |
 | POST | `/v1/catalogue/products/duplicates` | `catalogue.pack.read` | core | yes |
 | GET | `/v1/catalogue/reports/variants` | `catalogue.pack.read` | core | — |
+| GET | `/v1/catalogue/scale-label-rules` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/scale-label-rules/:prefix` | `catalogue.pack.publish` | core | yes |
+| POST | `/v1/catalogue/scale-label-rules/:prefix/withdrawal` | `catalogue.pack.publish` | core | yes |
 | POST | `/v1/catalogue/search-misses` | `catalogue.search.miss.record` | core | yes |
 | GET | `/v1/catalogue/tax-classes/:hsnCode/cess` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/tax-classes/:hsnCode/cess/:effectiveFrom` | `catalogue.pack.publish` | core | yes |
