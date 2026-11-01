@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, afterAll, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,14 @@ import { makeEvent, type DomainEvent } from '../../packages/contracts/src/event'
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { addDays, rosterWeekStartOf } from '../../packages/workforce/src/working-time';
+import { pinTheEveningClock } from '../support/evening-clock';
+
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop. The marks are made
+// hours before "now", so the shop's midnight falls between them EVERY run: the across-midnight rule (attendance-pairing.ts)
+// is proved each time, instead of only when CI happens to run between 03:00 and 04:00 shop time.
+pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
+
 
 /**
  * **Round 7 · OB-507 and OB-502 — THE PROOF on the REAL store computer (`startEdge`) and the REAL head office (the API

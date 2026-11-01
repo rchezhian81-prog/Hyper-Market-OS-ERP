@@ -28,6 +28,8 @@ const PINNED_SUITES: readonly string[] = [
   'tests/integration/production-moves-ordinary-stock.test.ts',
   'tests/integration/p6-a-self-checkout-basket-reaches-loss-prevention-and-the-camera-links.test.ts',
   'tests/e2e/round-a-the-office-pages-show-head-offices-records.e2e.ts',
+  'tests/integration/r7d-an-expired-food-certificate-blocks-food-work-and-marks-are-relayed.test.ts',
+  'tests/integration/r7d-the-roster-and-certificates-ride-the-signed-pack-to-the-box.test.ts',
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')
