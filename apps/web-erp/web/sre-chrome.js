@@ -606,6 +606,8 @@
     'epr': 'trash', // R4 Lane 1 (B20–B22): the EPR registers page — this one line only
     'online-store': 'receipt-text', // R4 Lane 2
     'product-content': 'package', // R4 Lane 2
+    // Round 4a (products and prices): icons already in the set.
+    'product-details': 'package', 'product-categories': 'layers', 'product-merges': 'git-merge', 'tax-rates': 'receipt', 'price-lists': 'indian-rupee', 'offer-results': 'chart-column',
     'payroll': 'banknote',
     'my-payslip': 'wallet',
     'ess': 'user-round',

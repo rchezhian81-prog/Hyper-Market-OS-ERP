@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Product details</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Product details (Round 4a · M03-FR-01/02/03/04 · WF-01 "tax/UOM/pack/content" step · re-audit G-1). A THIN CLIENT over
+      head office's product master: one product's record — category, brand, manufacturer, variant parent, tax (HSN) class,
+      lifecycle, MRP from a date, the category's attributes, ingredients, allergens, origin, storage and the nutrition panel
+      (POST /v1/catalogue/products/:id/publish, a new version each time); its barcodes and pack hierarchy, with the case-to-unit
+      conversion checked (…/barcodes/:code, …/pack, …/pack/convert); the bundle it is sold as (/v1/catalogue/bundles/:id); and
+      the products that may stand in for it (…/substitutes). Every rule is head office's — a draft saves whatever is known and
+      says what still blocks it; a tax-class change or an age-limited product waits for a second person, asked here and
+      approved on the Approvals page in that person's own session. The page decides nothing itself, writes nothing on open,
+      and has no prompt/confirm/alert or timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      label.check { display: flex; align-items: center; gap: 8px; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      input[type="checkbox"] { min-height: 24px; width: 24px; }
+      textarea { min-height: 72px; resize: vertical; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .head-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; justify-content: space-between; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.unknown { color: var(--warn); }
+      #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      ul.rows, ol.rows { margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows { list-style: none; }
+      ol.rows { padding-inline-start: 24px; }
+      .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; }
+      fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; margin: 0; }
+      legend { font-weight: 700; font-size: 15px; padding: 0 6px; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Product details</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <div class="head-row">
+          <div>
+            <h2 id="page-h">Product details</h2>
+            <p class="lead" id="lead"></p>
+          </div>
+        </div>
+        <form class="row" id="ask">
+          <label for="product"><span id="l-product">Product id</span><input id="product" list="product-list" autocomplete="off" required /></label>
+          <button id="show" type="submit">Show</button>
+        </form>
+        <datalist id="product-list"></datalist>
+        <div class="panels" id="panels" role="status" aria-live="polite" hidden>
+          <div class="panel"><span class="k" id="k-state">Where it stands</span><span class="v" id="v-state">—</span></div>
+          <div class="panel"><span class="k" id="k-codes">Barcodes</span><span class="v" id="v-codes">—</span></div>
+          <div class="panel"><span class="k" id="k-pack">Pack</span><span class="v" id="v-pack">—</span></div>
+          <div class="panel"><span class="k" id="k-bundle">Bundle</span><span class="v" id="v-bundle">—</span></div>
+          <div class="panel"><span class="k" id="k-subs">Substitutes</span><span class="v" id="v-subs">—</span></div>
+        </div>
+        <p class="status" id="result" role="status" aria-live="polite"></p>
+      </section>
+
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-record" type="button" aria-current="page">Record</button>
+        <button id="tab-codes" type="button">Barcodes and packs</button>
+        <button id="tab-bundle" type="button">Bundle</button>
+        <button id="tab-subs" type="button">Substitutes</button>
+      </nav>
+
+      <section id="view-record" aria-labelledby="record-h" hidden>
+        <h3 id="record-h">Record</h3>
+        <p class="lead" id="record-lead"></p>
+        <form id="record-form" class="row">
+          <label for="r-name"><span id="l-r-name">Name</span><input id="r-name" autocomplete="off" /></label>
+          <label for="r-sku"><span id="l-r-sku">SKU</span><input id="r-sku" autocomplete="off" /></label>
+          <label for="r-baseUom"><span id="l-r-baseUom">Unit it is counted in</span><select id="r-baseUom"><option value="ea">ea</option><option value="kg">kg</option><option value="g">g</option><option value="l">l</option><option value="ml">ml</option></select></label>
+          <label for="r-category"><span id="l-r-category">Category</span><select id="r-category"></select></label>
+          <label for="r-brand"><span id="l-r-brand">Brand</span><input id="r-brand" autocomplete="off" /></label>
+          <label for="r-manufacturer"><span id="l-r-manufacturer">Manufacturer</span><input id="r-manufacturer" autocomplete="off" /></label>
+          <label for="r-parent"><span id="l-r-parent">A variant of (parent product id)</span><input id="r-parent" list="product-list" autocomplete="off" /></label>
+          <label for="r-taxClass"><span id="l-r-taxClass">Tax (HSN) class</span><input id="r-taxClass" inputmode="numeric" autocomplete="off" /></label>
+          <label for="r-lifecycle"><span id="l-r-lifecycle">Lifecycle</span>
+            <select id="r-lifecycle"><option value="draft" id="o-draft">Draft</option><option value="new" id="o-new">New</option><option value="active" id="o-active">Active</option><option value="clearance" id="o-clearance">Clearance</option><option value="discontinued" id="o-discontinued">Discontinued</option></select>
+          </label>
+        </form>
+        <div id="attrs" class="row"></div>
+        <fieldset id="mrp-box">
+          <legend id="mrp-h">MRP</legend>
+          <ul class="rows" id="mrp-list"></ul>
+          <div class="row">
+            <label for="m-from"><span id="l-m-from">New MRP from (date)</span><input id="m-from" type="date" /></label>
+            <label for="m-rupees"><span id="l-m-rupees">New MRP (₹)</span><input id="m-rupees" inputmode="decimal" autocomplete="off" /></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend id="safety-h">Safety and label</legend>
+          <div class="row">
+            <label for="s-ingredients"><span id="l-s-ingredients">Ingredients</span><textarea id="s-ingredients" maxlength="2000"></textarea></label>
+            <label for="s-allergens"><span id="l-s-allergens">Allergens it contains (comma between)</span><input id="s-allergens" autocomplete="off" /></label>
+            <label class="check" for="s-none"><input id="s-none" type="checkbox" /><span id="l-s-none">Contains none of the allergens (declared)</span></label>
+            <label for="s-origin"><span id="l-s-origin">Country of origin</span><input id="s-origin" autocomplete="off" /></label>
+            <label for="s-storage"><span id="l-s-storage">Storage conditions</span><input id="s-storage" autocomplete="off" /></label>
+            <label for="s-net"><span id="l-s-net">Net quantity as printed</span><input id="s-net" autocomplete="off" /></label>
+            <label for="s-packer"><span id="l-s-packer">Packer or importer</span><input id="s-packer" autocomplete="off" /></label>
+            <label for="s-care"><span id="l-s-care">Consumer care contact</span><input id="s-care" autocomplete="off" /></label>
+            <label class="check" for="s-packedBySre"><input id="s-packedBySre" type="checkbox" /><span id="l-s-packedBySre">SRE packs or labels it</span></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend id="nutrition-h">Nutrition (per 100 g or 100 ml)</legend>
+          <p class="muted" id="nutrition-lead"></p>
+          <div class="row" id="nutrition"></div>
+        </fieldset>
+        <div class="row">
+          <label for="r-why"><span id="l-r-why">Why (kept with the version)</span><input id="r-why" autocomplete="off" maxlength="200" /></label>
+          <button id="save" class="primary" type="button">Save as a new version</button>
+          <button id="ask-approval" type="button" hidden>Ask for approval</button>
+        </div>
+        <p class="status" id="record-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="view-codes" aria-labelledby="codes-h" hidden>
+        <h3 id="codes-h">Barcodes and packs</h3>
+        <p class="lead" id="codes-lead"></p>
+        <ul class="rows" id="barcode-list" aria-label="Barcodes"></ul>
+        <form class="row" id="barcode-form">
+          <label for="b-code"><span id="l-b-code">Barcode</span><input id="b-code" autocomplete="off" inputmode="numeric" /></label>
+          <label for="b-kind"><span id="l-b-kind">Kind</span><select id="b-kind"><option value="ean">EAN</option><option value="gtin">GTIN</option><option value="upc">UPC</option><option value="internal" id="o-internal">Shop's own</option><option value="case" id="o-case">Case</option><option value="embedded" id="o-embedded">Weight or price inside</option></select></label>
+          <label for="b-level"><span id="l-b-level">Pack level (if not a single)</span><input id="b-level" autocomplete="off" /></label>
+          <button id="add-barcode" type="submit">Give this barcode</button>
+        </form>
+        <fieldset>
+          <legend id="pack-h">Pack hierarchy</legend>
+          <p class="muted" id="pack-lead"></p>
+          <div id="pack-rows"></div>
+          <button id="save-pack" type="button">Save the pack</button>
+        </fieldset>
+        <form class="row" id="convert-form">
+          <label for="cv-qty"><span id="l-cv-qty">How many</span><input id="cv-qty" inputmode="numeric" autocomplete="off" /></label>
+          <label for="cv-level"><span id="l-cv-level">Of which level</span><select id="cv-level"></select></label>
+          <button id="convert" type="submit">Work out the units</button>
+        </form>
+        <p class="status" id="codes-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="view-bundle" aria-labelledby="bundle-h" hidden>
+        <h3 id="bundle-h">Bundle</h3>
+        <p class="lead" id="bundle-lead"></p>
+        <p class="muted" id="bundle-say"></p>
+        <ul class="rows" id="bundle-history" aria-label="Versions"></ul>
+        <div id="bundle-rows"></div>
+        <div class="row">
+          <label for="bd-why"><span id="l-bd-why">Why</span><input id="bd-why" autocomplete="off" maxlength="200" /></label>
+          <button id="save-bundle" type="button">Save what the bundle holds</button>
+        </div>
+        <p class="status" id="bundle-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="view-subs" aria-labelledby="subs-h" hidden>
+        <h3 id="subs-h">Substitutes</h3>
+        <p class="lead" id="subs-lead"></p>
+        <p class="muted" id="subs-say"></p>
+        <ol class="rows" id="subs-list" aria-label="Substitutes in order"></ol>
+        <div class="row">
+          <label for="sb-list"><span id="l-sb-list">Product ids, in the order to try them (comma between; empty clears it)</span><input id="sb-list" autocomplete="off" /></label>
+          <label for="sb-why"><span id="l-sb-why">Why</span><input id="sb-why" autocomplete="off" maxlength="200" /></label>
+          <button id="save-subs" type="button">Save the list</button>
+        </div>
+        <p class="status" id="subs-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./product-details.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

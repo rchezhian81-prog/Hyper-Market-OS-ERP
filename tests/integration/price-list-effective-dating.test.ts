@@ -56,12 +56,12 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     await h.seedOwner(A, 'u-owner');
 
     await publish(h, A, 'u-owner', 'P1', 'e-now', { scope: 'store', scopeRef: 'store-1', priceMinor: 10_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(0) });
-    await publish(h, A, 'u-owner', 'P1', 'e-future', { scope: 'store', scopeRef: 'store-1', priceMinor: 8_000, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(30) });
+    await publish(h, A, 'u-owner', 'P1', 'e-future', { scope: 'store', scopeRef: 'store-1', priceMinor: 9_500, costMinor: 5_000, marginFloorBps: 2_000, mrpMinor: 20_000, currency: 'INR', effectiveFrom: iso(30) });
 
     // Before the future date, today's price still applies.
     expect(((await resolve(h, A, 'u-owner', 'P1', { at: iso(1), storeId: 'store-1' })).body as Resolved).priceMinor).toBe(10_000);
     // On/after the future date, the newer effective price wins.
-    expect(((await resolve(h, A, 'u-owner', 'P1', { at: iso(31), storeId: 'store-1' })).body as Resolved).priceMinor).toBe(8_000);
+    expect(((await resolve(h, A, 'u-owner', 'P1', { at: iso(31), storeId: 'store-1' })).body as Resolved).priceMinor).toBe(9_500);
   });
 
   it('refuses a price above MRP and refuses back-dating — and records nothing', async () => {
@@ -147,8 +147,10 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ approvedBy: 'u-owner' });
 
-    // A healthy-margin price needs no approval at all.
-    const healthy = await setBy('e-fine', { ...base, priceMinor: 8_000 });
+    // Round 4a (OB-291): moving PX from that ₹40 to a healthy ₹80 is more than the set size, so it needs a second person too.
+    expect(codeOf(await setBy('e-fine', { ...base, priceMinor: 8_000 }))).toBe('price_change_needs_second_person');
+    // A healthy-margin first price needs no approval at all (a first price is not a change).
+    const healthy = await h.request({ method: 'POST', path: '/v1/prices/list/PY/entries/e-fine', userId: 'u-mgr', tenantId: A, idempotencyKey: 'pe-PY-e-fine', body: { ...base, priceMinor: 8_000 } });
     expect(healthy.status).toBe(201);
     expect(healthy.body).toMatchObject({ approvedBy: null });
   });

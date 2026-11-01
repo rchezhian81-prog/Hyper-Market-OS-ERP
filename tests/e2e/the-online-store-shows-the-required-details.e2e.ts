@@ -45,6 +45,8 @@ describe.skipIf(!existsSync(CHROMIUM))('the online store shows the required deta
     const c: ShopCalls = callsFor(() => h, T);
     const { req, ok } = c;
     await seedOnlineShop(h, T, c);
+    // Round 4a (M03-FR-04): the shop's approved substitutes for MILK — the basket shows them, by name, before paying.
+    await ok(req('POST', '/v1/catalogue/products/MILK/substitutes', { substitutes: ['BROOM'], reason: 'e2e (synthetic)' }), 'substitutes');
     await ok(req('PUT', '/v1/serviceability/delivery-service', { storeLocation: STORE_AT, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 }), 'delivery service');
     const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
     const slot = ((await ok(req('GET', '/v1/serviceability/delivery-service', undefined, OWNER, { day: tomorrow }), 'slots')).body as { slots: { startsAt: string; endsAt: string }[] }).slots[0]!;
@@ -113,6 +115,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the online store shows the required deta
       expect(await duty('grievance officer contact')).toBe('not set');
       expect(await milk.locator('.state').textContent()).toBe('Not sold online yet: online listing incomplete: grievance officer name');
       expect(await milk.locator('.total').textContent()).toBe('Total with delivery: ₹100.00');
+      expect(await milk.locator('.substitutes').textContent()).toBe('If it runs out, the shop may offer instead: Synthetic Broom');
       expect(await page.textContent('#duties-shop')).toBe('The online store is not open yet: online listing incomplete: grievance officer name · Sold by: Synthetic Hyper Market Private Limited');
       // Tamil words for the same details.
       await page.click('#lang');

@@ -115,7 +115,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -174,7 +174,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindConfigChange: 'Change a high-impact setting', kindFlagChange: 'Turn a high-impact switch on or off',
     kindDepartmentScopeChange: 'Limit a person\'s role to some departments',
     kindRoleScopeChange: 'Limit a person\'s role to some suppliers, categories or locations', // FG-4 · M02-FR-02
-    kindTaxRateChange: 'Change the GST rate of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
+    kindTaxRateChange: 'Change the GST rate of an HSN class', kindCessRateChange: 'Change the compensation cess of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
     kindHsnClassChange: 'Change the tax (HSN) class of a published product',
     kindMrpReplacement: 'Replace an MRP that is not yet in force',
     kindRegulatedProductPublish: 'Put an age-restricted or regulated product on sale',
@@ -259,7 +259,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindConfigChange: 'அதிக தாக்கமுள்ள அமைப்பை மாற்றுதல்', kindFlagChange: 'அதிக தாக்கமுள்ள சுவிட்சை இயக்குதல் அல்லது நிறுத்துதல்',
     kindDepartmentScopeChange: 'ஒருவரின் பங்கைச் சில துறைகளுக்கு மட்டும் வரம்பிடுதல்',
     kindRoleScopeChange: 'ஒருவரின் பங்கைச் சில விநியோகஸ்தர்கள், வகைகள் அல்லது இடங்களுக்கு மட்டும் வரம்பிடுதல்', // FG-4 · M02-FR-02
-    kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
+    kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindCessRateChange: 'ஒரு HSN வகையின் இழப்பீட்டு செஸ்ஸை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
     kindHsnClassChange: 'வெளியிடப்பட்ட பொருளின் வரி (HSN) வகையை மாற்றுதல்',
     kindMrpReplacement: 'இன்னும் நடைமுறைக்கு வராத MRP-ஐ மாற்றுதல்',
     kindRegulatedProductPublish: 'வயது வரம்புள்ள அல்லது ஒழுங்குமுறைக்கு உட்பட்ட பொருளை விற்பனைக்கு வைத்தல்',
@@ -355,7 +355,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   flag_change: 'kindFlagChange', department_scope_change: 'kindDepartmentScopeChange',
   role_scope_change: 'kindRoleScopeChange', // FG-4 · M02-FR-02
   // OB-288 P2: a GST rate change (Finance approves) and a supplier's funding of an offer.
-  tax_rate_change: 'kindTaxRateChange', promotion_funding: 'kindPromotionFunding',
+  tax_rate_change: 'kindTaxRateChange', cess_rate_change: 'kindCessRateChange', promotion_funding: 'kindPromotionFunding',
   // OB-288 till side (OB-347): a published product's tax class changed — Finance approves.
   hsn_class_change: 'kindHsnClassChange',
   // OB-512: an MRP not yet in force replaced — another catalogue publisher approves.

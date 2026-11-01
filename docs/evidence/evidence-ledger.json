@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2001,
+  "testFiles": 2003,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -35,7 +35,7 @@
         "unit": 30,
         "integration": 28,
         "realDb": 12,
-        "browser": 9,
+        "browser": 10,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -122,6 +122,7 @@
           "tests/e2e/document-template-publish-delivery.e2e.ts",
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/r13a-the-office-pages-open-on-the-shops-day.e2e.ts",
+          "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
           "tests/e2e/the-manager-sees-when-the-box-zone-is-not-the-shops.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
@@ -260,9 +261,9 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 21,
-        "integration": 21,
-        "realDb": 5,
-        "browser": 4,
+        "integration": 22,
+        "realDb": 6,
+        "browser": 6,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -308,6 +309,7 @@
           "tests/integration/product-master-durability.test.ts",
           "tests/integration/product-master.test.ts",
           "tests/integration/product-merge.test.ts",
+          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts",
           "tests/integration/step-up-payroll-and-publish.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/tax-class-rates.test.ts",
@@ -318,13 +320,16 @@
           "tests/integration/head-office-scale-label-rules-ride-the-signed-pack.test.ts",
           "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts"
         ],
         "browser": [
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
+          "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
           "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts"
         ],
         "connected": [
@@ -399,9 +404,9 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 19,
-        "integration": 21,
-        "realDb": 7,
-        "browser": 7,
+        "integration": 22,
+        "realDb": 8,
+        "browser": 8,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -446,6 +451,7 @@
           "tests/integration/promotion-catalogue.test.ts",
           "tests/integration/promotion-effectiveness.test.ts",
           "tests/integration/promotion-governance.test.ts",
+          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
           "tests/integration/the-margin-floor-is-the-stores.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
@@ -457,6 +463,7 @@
           "tests/integration/p1-money-limits-escalation-and-price-check.test.ts",
           "tests/integration/p2-offers-funding-and-results-are-folded-from-the-bills.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
           "tests/integration/the-store-trades-a-day.test.ts"
         ],
@@ -466,6 +473,7 @@
           "tests/e2e/catalogue-promotion-launch-delivery.e2e.ts",
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
           "tests/e2e/pricing-promotions-menu-links.e2e.ts",
+          "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-gives-the-launched-offer.e2e.ts"
         ],
@@ -2702,8 +2710,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 15,
-        "realDb": 5,
+        "integration": 16,
+        "realDb": 6,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -2733,6 +2741,7 @@
           "tests/integration/legal-holds.test.ts",
           "tests/integration/old-till-cash-is-placed-once-and-head-office-records-decide.test.ts",
           "tests/integration/physical-to-system.test.ts",
+          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts",
           "tests/integration/risk-followthrough.test.ts",
           "tests/integration/risk-register.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
@@ -2743,7 +2752,8 @@
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/old-till-cash-is-placed-once-and-head-office-records-decide.test.ts",
-          "tests/integration/physical-to-system.test.ts"
+          "tests/integration/physical-to-system.test.ts",
+          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts"
         ],
         "browser": [
           "tests/e2e/risk-acceptance-delivery.e2e.ts",
@@ -4257,7 +4267,7 @@
         "unit": 0,
         "integration": 10,
         "realDb": 3,
-        "browser": 2,
+        "browser": 3,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -4283,7 +4293,8 @@
         ],
         "browser": [
           "tests/e2e/product-publish-delivery.e2e.ts",
-          "tests/e2e/product-publish-on-the-production-api.e2e.ts"
+          "tests/e2e/product-publish-on-the-production-api.e2e.ts",
+          "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts"
         ],
         "connected": [
           "tests/e2e/product-publish-on-the-production-api.e2e.ts"
