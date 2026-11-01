@@ -10695,6 +10695,90 @@
         }
       }
     },
+    "/v1/catalogue/products/{productId}/safety": {
+      "post": {
+        "operationId": "postCatalogueProductsByProductIdSafety",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.publish",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCatalogueProductsByProductIdSafetyRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueProductsByProductIdSafetyReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.publish\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/products/{productId}/substitutes": {
       "get": {
         "operationId": "getCatalogueProductsByProductIdSubstitutes",
@@ -119557,6 +119641,9 @@
           "product"
         ],
         "properties": {
+          "version": {
+            "type": "number"
+          },
           "product": {
             "$ref": "#/components/schemas/ProductRecord"
           }
@@ -168187,6 +168274,265 @@
                     "type": "string"
                   }
                 ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/product-master.ts"
+      },
+      "PostCatalogueProductsByProductIdSafetyReply": {
+        "type": "object",
+        "required": [
+          "version",
+          "reason",
+          "product"
+        ],
+        "properties": {
+          "version": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "activation": {
+            "type": "object",
+            "required": [
+              "refused",
+              "because",
+              "standing",
+              "detail",
+              "nextSafeAction"
+            ],
+            "properties": {
+              "refused": {
+                "type": "boolean"
+              },
+              "because": {
+                "type": "string"
+              },
+              "standing": {
+                "type": "string",
+                "enum": [
+                  "confirmation_expired",
+                  "never_confirmed",
+                  "no_picture_notified"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              },
+              "nextSafeAction": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "regulatedApproval": {
+            "type": "object",
+            "required": [
+              "regulated",
+              "approvedBy",
+              "approvalId"
+            ],
+            "properties": {
+              "regulated": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "approvalId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "mrpReplacement": {
+            "$ref": "#/components/schemas/MrpReplacement"
+          },
+          "taxClassChange": {
+            "type": "object",
+            "required": [
+              "from",
+              "to",
+              "approvedBy"
+            ],
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "approvedBy": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "categoriesDefined": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "product": {
+            "$ref": "#/components/schemas/ProductRecord"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/product-master.ts"
+      },
+      "PostCatalogueProductsByProductIdSafetyRequest": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "approvedBy": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "expectedVersion": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "safety": {
+            "type": "object",
+            "properties": {
+              "allergens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "bannedSingleUsePlastic": {
+                "type": "boolean"
+              },
+              "bisControlled": {
+                "type": "boolean"
+              },
+              "bisLicenceNo": {
+                "type": "string"
+              },
+              "bisLicenceValidUntil": {
+                "type": "string"
+              },
+              "carryBag": {
+                "type": "boolean"
+              },
+              "consumerCareContact": {
+                "type": "string"
+              },
+              "countryOfOrigin": {
+                "type": "string"
+              },
+              "gold": {
+                "type": "boolean"
+              },
+              "huid": {
+                "type": "string"
+              },
+              "ingredients": {
+                "type": "string"
+              },
+              "liquor": {
+                "type": "boolean"
+              },
+              "medicine": {
+                "type": "boolean"
+              },
+              "minimumAge": {
+                "type": "number"
+              },
+              "netQuantity": {
+                "type": "string"
+              },
+              "nutrition": {
+                "type": "object",
+                "properties": {
+                  "basis": {
+                    "type": "string",
+                    "enum": [
+                      "per_100g",
+                      "per_100ml"
+                    ]
+                  },
+                  "energyKcal": {
+                    "type": "number"
+                  },
+                  "proteinG": {
+                    "type": "number"
+                  },
+                  "carbohydrateG": {
+                    "type": "number"
+                  },
+                  "totalSugarsG": {
+                    "type": "number"
+                  },
+                  "addedSugarsG": {
+                    "type": "number"
+                  },
+                  "totalFatG": {
+                    "type": "number"
+                  },
+                  "saturatedFatG": {
+                    "type": "number"
+                  },
+                  "transFatG": {
+                    "type": "number"
+                  },
+                  "cholesterolMg": {
+                    "type": "number"
+                  },
+                  "sodiumMg": {
+                    "type": "number"
+                  },
+                  "servingSize": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "packMinimumMinor": {
+                "type": "number"
+              },
+              "packedBySre": {
+                "type": "boolean"
+              },
+              "packerDetails": {
+                "type": "string"
+              },
+              "perishable": {
+                "type": "boolean"
+              },
+              "plasticMaterial": {
+                "type": "string",
+                "enum": [
+                  "cloth",
+                  "compostable",
+                  "paper",
+                  "plastic"
+                ]
+              },
+              "plasticThicknessMicrons": {
+                "type": "number"
+              },
+              "storageConditions": {
+                "type": "string"
+              },
+              "tobacco": {
+                "type": "boolean"
               }
             },
             "additionalProperties": true

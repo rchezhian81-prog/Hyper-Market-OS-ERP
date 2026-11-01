@@ -2231,8 +2231,10 @@ export function productMasterAdapter(input: {
     return byId;
   };
   return {
-    publish: async (tenantId, record, key, skuVersion) => {
+    publish: async (tenantId, record, key, skuVersion, alsoGuard) => {
       const at = input.now();
+      // The SKU's guard (when the caller read it) and the owner-2A safety save's guard (`product-safety:<id>`), all or none.
+      const guards = [...(skuVersion === undefined ? [] : [{ key: `sku:${record.sku}`, expectedVersion: skuVersion }]), ...(alsoGuard === undefined ? [] : [alsoGuard])];
       // The product's version and its SKU index entries, in ONE atomic batch — guarded on the SKU when the caller read it.
       await ensureSkuIndex(input.store, tenantId);
       await input.store.appendBatch(tenantId, [{ stream, event: makeEvent({
@@ -2244,8 +2246,12 @@ export function productMasterAdapter(input: {
         idempotencyKey: `product-${tenantId}-${record.productId}-${key}`,
         source: 'api/catalogue',
         payload: record,
-      }) }, ...skuIndexEntries(tenantId, record, key, at)], skuVersion === undefined ? undefined : { guard: { key: `sku:${record.sku}`, expectedVersion: skuVersion } });
+      }) }, ...skuIndexEntries(tenantId, record, key, at)], guards.length === 0 ? undefined : { guard: guards[0]!, ...(guards.length > 1 ? { alsoGuards: guards.slice(1) } : {}) });
     },
+    // Owner 2A: a product's version is how many versions of it were published (a retry under the same key is deduplicated).
+    productVersion: async (tenantId, productId) =>
+      (await input.store.readStream(tenantId, stream, { type: 'ProductPublished' })).filter((e) => payloadOf<ProductRecord>(e).productId === productId).length,
+    safetyGuardVersion: (tenantId, productId) => input.store.guardVersion(tenantId, `product-safety:${productId}`),
     skuHolder: (tenantId, sku, productId) => skuHolderOf(input.store, tenantId, sku, productId),
     categoryRegister: { ...categoryRegisterAdapter(input), approvals: approvalRequestsAdapter(input) },
     product: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),

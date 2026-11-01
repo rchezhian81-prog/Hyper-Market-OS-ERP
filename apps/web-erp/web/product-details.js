@@ -1,6 +1,7 @@
 // Product details (Round 4a · M03-FR-01/02/03/04 · WF-01 · re-audit G-1): a THIN CLIENT over head office's product master.
 // One product at a time: its record (a new version on each save, through the same publish route and the same tested rules
-// as every other door), its barcodes and pack hierarchy, the bundle it is sold as and the products that may stand in for
+// as every other door; once published, its safety, label and nutrition facts save on their own route naming the version
+// the page opened — owner 2A: someone else's newer save is refused by head office, never overwritten), its barcodes and pack hierarchy, the bundle it is sold as and the products that may stand in for
 // it. Head office answers every question and makes every refusal; the page shows its words. A change that needs a second
 // person (a published product's tax class, a new age limit or tobacco) is asked for here, decided by that person on their
 // own Approvals page, and then saved naming that approval. Every word has a Tamil twin; nothing is written on open.
@@ -48,6 +49,10 @@ const WORDS = {
     asked: 'Asked. It waits for the second person on their Approvals page; nothing is saved until then.', waiting: 'Still waiting for the second person to decide. Nothing was saved.',
     rejectedBy: 'The second person rejected it: {why}', usingApproval: 'Saved with the approval of {by}.',
     stateDraft: 'Draft — not on sale', stateNew: 'New — on sale', stateActive: 'On sale', stateClearance: 'Clearance — on sale', stateDiscontinued: 'Discontinued — not sold', stateNotYet: 'Not saved yet',
+    safetySaveH: 'Save the safety, label and nutrition facts', safetySaveLead: 'These facts are saved on their own, with the version you opened. If someone else saved this product since, head office refuses and nothing of yours is saved — nobody’s change is ever overwritten.',
+    saveSafety: 'Save safety and label', reload: 'Reload', safetyFirst: 'This product is not saved yet: its safety and label facts go with the record the first time — press “Save as a new version”.',
+    changedMeanwhile: 'Someone else saved this product after you opened it. Nothing of yours was saved. Press “Reload” to see what is held now, then make your change again.',
+    useSafetySave: 'You changed the safety, label or nutrition facts: save them with “Save safety and label” below. Nothing was saved.', savedVersion: 'Saved — version {v}.',
     yes: 'yes', count: '{n} on record', defined: '{n} levels', subsCount: '{n} in order', notSet: 'not set', notKnown: 'Not known', by: 'by', version: 'Version', attrsFor: 'Attributes of this category',
   },
   ta: {
@@ -80,6 +85,10 @@ const WORDS = {
     asked: 'கேட்கப்பட்டது. இரண்டாம் நபரின் ஒப்புதல்கள் பக்கத்தில் காத்திருக்கிறது; அதுவரை எதுவும் சேமிக்கப்படாது.', waiting: 'இரண்டாம் நபர் இன்னும் முடிவு செய்யவில்லை. எதுவும் சேமிக்கப்படவில்லை.',
     rejectedBy: 'இரண்டாம் நபர் நிராகரித்தார்: {why}', usingApproval: '{by} அவர்களின் ஒப்புதலுடன் சேமிக்கப்பட்டது.',
     stateDraft: 'வரைவு — விற்பனையில் இல்லை', stateNew: 'புதியது — விற்பனையில்', stateActive: 'விற்பனையில்', stateClearance: 'விற்றுத்தீர்ப்பு — விற்பனையில்', stateDiscontinued: 'நிறுத்தப்பட்டது — விற்கப்படாது', stateNotYet: 'இன்னும் சேமிக்கப்படவில்லை',
+    safetySaveH: 'பாதுகாப்பு, லேபிள், ஊட்டச்சத்து விவரங்களைச் சேமி', safetySaveLead: 'இந்த விவரங்கள் நீங்கள் திறந்த பதிப்புடன் தனியாகச் சேமிக்கப்படும். அதன் பிறகு வேறொருவர் இந்தப் பொருளைச் சேமித்திருந்தால், தலைமை அலுவலகம் மறுக்கும்; உங்களுடையது எதுவும் சேமிக்கப்படாது — யாருடைய மாற்றமும் அழிக்கப்படாது.',
+    saveSafety: 'பாதுகாப்பையும் லேபிளையும் சேமி', reload: 'மீண்டும் ஏற்று', safetyFirst: 'இந்தப் பொருள் இன்னும் சேமிக்கப்படவில்லை: முதல் முறை அதன் பாதுகாப்பு, லேபிள் விவரங்கள் பதிவுடன் சேர்ந்து செல்லும் — “புதிய பதிப்பாகச் சேமி” அழுத்துங்கள்.',
+    changedMeanwhile: 'நீங்கள் திறந்த பிறகு வேறொருவர் இந்தப் பொருளைச் சேமித்துவிட்டார். உங்களுடையது எதுவும் சேமிக்கப்படவில்லை. இப்போது உள்ளதைப் பார்க்க “மீண்டும் ஏற்று” அழுத்தி, உங்கள் மாற்றத்தை மீண்டும் செய்யுங்கள்.',
+    useSafetySave: 'பாதுகாப்பு, லேபிள் அல்லது ஊட்டச்சத்து விவரங்களை மாற்றியுள்ளீர்கள்: கீழே உள்ள “பாதுகாப்பையும் லேபிளையும் சேமி” மூலம் சேமியுங்கள். எதுவும் சேமிக்கப்படவில்லை.', savedVersion: 'சேமிக்கப்பட்டது — பதிப்பு {v}.',
     yes: 'ஆம்', count: '{n} பதிவில்', defined: '{n} நிலைகள்', subsCount: '{n} வரிசையில்', notSet: 'அமைக்கப்படவில்லை', notKnown: 'தெரியவில்லை', by: 'செய்தவர்', version: 'பதிப்பு', attrsFor: 'இந்த வகையின் பண்புகள்',
   },
 };
@@ -126,6 +135,8 @@ async function ownApproval(kind, subjectRef, details) {
 // ── what the page holds ─────────────────────────────────────────────────────────────────────────────────────────────
 let productId = '';
 let held = null;          // the product as head office holds it; null for a product not saved yet
+let heldVersion;          // owner 2A: the version head office said it holds when the page read it (undefined: not told)
+let safetyConflict = false; // owner 2A: the last safety save was refused because someone else saved meanwhile
 let readFailed = false;
 let categories = [];
 let barcodes = null;
@@ -215,7 +226,8 @@ function fillRecord() {
   const n = s.nutrition ?? {};
   $('n-basis').value = n.basis ?? 'per_100g';
   for (const [key] of [...NUTRIENTS, ['servingSize']]) $(`n-${key}`).value = n[key] === undefined ? '' : String(n[key]);
-  $('m-from').value = ''; $('m-rupees').value = ''; $('r-why').value = '';
+  $('m-from').value = ''; $('m-rupees').value = ''; $('r-why').value = ''; $('s-why').value = '';
+  if (!safetyConflict) { $('safety-status').className = 'status'; $('safety-status').textContent = held === null && mayEdit ? t('safetyFirst') : ''; }
   paintAttributes();
 }
 
@@ -225,22 +237,11 @@ function paintMrp() {
     : list.map((m) => Object.assign(document.createElement('li'), { textContent: `₹${(Number(m.value?.minor) / 100).toFixed(2)} ${t('mrpLine')} ${m.effectiveFrom}` }))));
 }
 
-/** The record to send: head office's own copy with this form's edits — fields the form does not show are kept as held. */
-function recordFromForm() {
-  const p = held === null ? {} : JSON.parse(JSON.stringify(held));
-  for (const k of ['productId', 'tenantId', 'appContent', 'tobaccoWarning', 'mrpReplacements']) delete p[k];
+/** The safety facts to send: head office's own copy with this form's edits — safety fields the form does not show are kept. */
+function safetyFromForm() {
   const text = (id) => $(id).value.trim();
   const put = (obj, key, v) => { if (v === '') delete obj[key]; else obj[key] = v; };
-  p.name = text('r-name'); p.sku = text('r-sku'); p.baseUom = $('r-baseUom').value;
-  p.primaryCategoryId = $('r-category').value === '' ? null : $('r-category').value;
-  p.taxClass = text('r-taxClass') === '' ? null : text('r-taxClass');
-  p.lifecycle = $('r-lifecycle').value;
-  put(p, 'brand', text('r-brand')); put(p, 'manufacturer', text('r-manufacturer'));
-  if (text('r-parent') === '') delete p.parentProductId; else p.parentProductId = text('r-parent');
-  const attrs = { ...(p.attributes ?? {}) };
-  for (const el of $('attrs').querySelectorAll('[data-attr]')) { if (el.value.trim() === '') delete attrs[el.dataset.attr]; else attrs[el.dataset.attr] = el.value.trim(); }
-  if (Object.keys(attrs).length === 0) delete p.attributes; else p.attributes = attrs;
-  const s = { ...(p.safety ?? {}) };
+  const s = JSON.parse(JSON.stringify(held?.safety ?? {}));
   put(s, 'ingredients', text('s-ingredients')); put(s, 'countryOfOrigin', text('s-origin')); put(s, 'storageConditions', text('s-storage'));
   put(s, 'netQuantity', text('s-net')); put(s, 'packerDetails', text('s-packer')); put(s, 'consumerCareContact', text('s-care'));
   const allergens = text('s-allergens').split(',').map((a) => a.trim()).filter((a) => a !== '');
@@ -254,7 +255,28 @@ function recordFromForm() {
     for (const [key, v] of boxes) if (v !== '' || key !== 'servingSize') n[key] = v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : v);
     s.nutrition = n;
   }
-  if (Object.keys(s).length === 0) delete p.safety; else p.safety = s;
+  return s;
+}
+
+/** The record to send: head office's own copy with this form's edits — fields the form does not show are kept as held. */
+function recordFromForm(freshSafety) {
+  const p = held === null ? {} : JSON.parse(JSON.stringify(held));
+  for (const k of ['productId', 'tenantId', 'appContent', 'tobaccoWarning', 'mrpReplacements']) delete p[k];
+  const text = (id) => $(id).value.trim();
+  const put = (obj, key, v) => { if (v === '') delete obj[key]; else obj[key] = v; };
+  p.name = text('r-name'); p.sku = text('r-sku'); p.baseUom = $('r-baseUom').value;
+  p.primaryCategoryId = $('r-category').value === '' ? null : $('r-category').value;
+  p.taxClass = text('r-taxClass') === '' ? null : text('r-taxClass');
+  p.lifecycle = $('r-lifecycle').value;
+  put(p, 'brand', text('r-brand')); put(p, 'manufacturer', text('r-manufacturer'));
+  if (text('r-parent') === '') delete p.parentProductId; else p.parentProductId = text('r-parent');
+  const attrs = { ...(p.attributes ?? {}) };
+  for (const el of $('attrs').querySelectorAll('[data-attr]')) { if (el.value.trim() === '') delete attrs[el.dataset.attr]; else attrs[el.dataset.attr] = el.value.trim(); }
+  if (Object.keys(attrs).length === 0) delete p.attributes; else p.attributes = attrs;
+  // Owner 2A: once published, the safety facts travel on their own save — the record carries head office's own copy as
+  // read just before this save (`freshSafety`), never this form's, so a full publish cannot overwrite a newer safety edit.
+  const s = held === null ? safetyFromForm() : freshSafety;
+  if (s === undefined || Object.keys(s).length === 0) delete p.safety; else p.safety = s;
   const from = $('m-from').value; const rupees = text('m-rupees');
   if (from !== '' || rupees !== '') {
     const minor = Math.round(Number(rupees) * 100);
@@ -342,7 +364,7 @@ function paintWords() {
     ['l-r-taxClass', 'taxClass'], ['l-r-lifecycle', 'lifecycle'], ['o-draft', 'draft'], ['o-new', 'new'], ['o-active', 'active'], ['o-clearance', 'clearance'], ['o-discontinued', 'discontinued'],
     ['mrp-h', 'mrpH'], ['l-m-from', 'mrpFrom'], ['l-m-rupees', 'mrpRupees'], ['safety-h', 'safetyH'], ['l-s-ingredients', 'ingredients'], ['l-s-allergens', 'allergens'], ['l-s-none', 'none'],
     ['l-s-origin', 'origin'], ['l-s-storage', 'storage'], ['l-s-net', 'net'], ['l-s-packer', 'packer'], ['l-s-care', 'care'], ['l-s-packedBySre', 'packedBySre'],
-    ['nutrition-h', 'nutritionH'], ['nutrition-lead', 'nutritionLead'], ['l-r-why', 'why'], ['save', 'save'], ['ask-approval', 'ask'],
+    ['nutrition-h', 'nutritionH'], ['nutrition-lead', 'nutritionLead'], ['safety-save-h', 'safetySaveH'], ['safety-save-lead', 'safetySaveLead'], ['l-s-why', 'why'], ['save-safety', 'saveSafety'], ['safety-reload', 'reload'], ['l-r-why', 'why'], ['save', 'save'], ['ask-approval', 'ask'],
     ['codes-h', 'tabCodes'], ['codes-lead', 'codesLead'], ['l-b-code', 'code'], ['l-b-kind', 'kind'], ['o-internal', 'internal'], ['o-case', 'case'], ['o-embedded', 'embedded'], ['l-b-level', 'level'], ['add-barcode', 'addBarcode'],
     ['pack-h', 'packH'], ['pack-lead', 'packLead'], ['save-pack', 'savePack'], ['l-cv-qty', 'cvQty'], ['l-cv-level', 'cvLevel'], ['convert', 'convert'],
     ['bundle-h', 'tabBundle'], ['bundle-lead', 'bundleLead'], ['l-bd-why', 'why'], ['save-bundle', 'saveBundle'],
@@ -358,13 +380,16 @@ function paint() {
   const shown = productId !== '' && !readFailed && mayRead;
   $('tabs').hidden = false; // the tiles always say what the page holds; a section opens once a product is shown
   for (const v of ['record', 'codes', 'bundle', 'subs']) $(`view-${v}`).hidden = !shown || tab !== v;
-  for (const id of ['record-form', 'attrs', 'm-from', 'm-rupees', 'save', 'r-why', 'barcode-form', 'save-pack', 'bundle-rows', 'save-bundle', 'bd-why', 'sb-list', 'sb-why', 'save-subs']) {
+  for (const id of ['record-form', 'attrs', 'm-from', 'm-rupees', 'save', 'r-why', 'barcode-form', 'save-pack', 'bundle-rows', 'save-bundle', 'bd-why', 'sb-list', 'sb-why', 'save-subs', 's-why', 'save-safety']) {
     const el = $(id); if (el === null) continue;
     if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) el.disabled = !mayEdit;
     else for (const c of el.querySelectorAll('input, select, textarea, button')) c.disabled = !mayEdit;
   }
   for (const el of document.querySelectorAll('#view-record fieldset input, #view-record fieldset select, #view-record fieldset textarea, #pack-rows input')) el.disabled = !mayEdit;
   $('ask-approval').hidden = pendingAsk === null || !mayEdit;
+  $('save-safety').disabled = !mayEdit || held === null;
+  $('safety-reload').hidden = !safetyConflict;
+  if (safetyConflict) tell($('safety-status'), false, t('changedMeanwhile'));
   paintCategories(); paintMrp(); paintPanels();
   if (shown) { paintCodes(); paintBundle(); paintSubs(); }
 }
@@ -390,6 +415,8 @@ async function load() {
   ]);
   readFailed = !p.ok && p.status !== 404;
   held = p.ok ? p.body?.product ?? null : null;
+  heldVersion = p.ok && Number.isInteger(p.body?.version) ? p.body.version : undefined;
+  safetyConflict = false;
   barcodes = b.ok && Array.isArray(b.body?.barcodes) ? b.body.barcodes : null;
   pack = pk.ok ? pk.body?.pack ?? null : pk.status === 404 ? null : undefined;
   bundle = bd.ok ? bd.body : bd.status === 404 ? null : undefined;
@@ -414,7 +441,15 @@ function showTab(which) {
 async function saveRecord() {
   const st = $('record-status');
   if (productId === '') { tell(st, false, t('needId')); return; }
-  const product = recordFromForm();
+  // Owner 2A: safety edits on a published product have their own save — said, never silently dropped (P-08).
+  if (held !== null && canonical(safetyFromForm()) !== canonical(held.safety ?? {})) { tell(st, false, t('useSafetySave')); return; }
+  let freshSafety;
+  if (held !== null) {
+    const now = await call('GET', `/v1/catalogue/products/${encodeURIComponent(productId)}`);
+    if (!now.ok) { say(st, now, ''); return; }
+    freshSafety = now.body?.product?.safety;
+  }
+  const product = recordFromForm(freshSafety);
   const details = { product, productId };
   // A second person's approval already given for exactly this record is named; else head office says whether one is needed.
   let approval = {};
@@ -439,6 +474,26 @@ async function saveRecord() {
   tell($('record-status'), true, approval.decidedBy === undefined ? t('saved') : fill(t('usingApproval'), { by: approval.decidedBy }));
 }
 
+/** Owner 2A: the safety, label and nutrition facts, saved on their own route with the version this page opened. */
+async function saveSafety() {
+  const st = $('safety-status');
+  if (productId === '') { tell(st, false, t('needId')); return; }
+  if (held === null) { tell(st, false, t('safetyFirst')); return; }
+  const why = $('s-why').value.trim();
+  if (why === '') { tell(st, false, t('needWhy')); return; }
+  if (heldVersion === undefined) { tell(st, false, t('cannotRead')); return; }
+  const out = await call('POST', `/v1/catalogue/products/${encodeURIComponent(productId)}/safety`, { expectedVersion: heldVersion, safety: safetyFromForm(), reason: why });
+  if (out.status === 409 && out.body?.error?.code === 'product_changed_meanwhile') {
+    // Nothing was written. The person's typed facts stay on the form until they press Reload.
+    safetyConflict = true; tell(st, false, t('changedMeanwhile')); $('safety-reload').hidden = false;
+    return;
+  }
+  if (!out.ok) { say(st, out, ''); return; }
+  // Said only once head office's new version is read back into the form — what is shown is what head office kept.
+  await load();
+  tell($('safety-status'), true, fill(t('savedVersion'), { v: heldVersion ?? out.body?.version }));
+}
+
 async function askApproval() {
   const st = $('record-status');
   if (pendingAsk === null) return;
@@ -452,6 +507,8 @@ $('ask').addEventListener('submit', (e) => { e.preventDefault(); void load(); })
 $('r-category').addEventListener('change', paintAttributes);
 $('save').addEventListener('click', () => { void saveRecord(); });
 $('ask-approval').addEventListener('click', () => { void askApproval(); });
+$('save-safety').addEventListener('click', () => { void saveSafety(); });
+$('safety-reload').addEventListener('click', () => { void load(); });
 $('barcode-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const code = $('b-code').value.trim();
