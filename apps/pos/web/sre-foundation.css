@@ -646,3 +646,41 @@ body.sre-shell main :focus-visible { outline: 3px solid var(--focus); outline-of
 .sre-sign-out { min-height: 44px; min-width: 44px; padding: 0 14px; font: inherit; font-size: 14px; cursor: pointer;
   border: 1px solid var(--line, currentColor); border-radius: 8px; background: transparent; color: inherit; }
 .sre-sign-out:focus-visible { outline: 3px solid var(--focus, currentColor); outline-offset: 2px; }
+
+/* ── UI-2 (owner, 1 Nov 2026 · "UI/UX also very poor" · design system §4.3): the till, the handhelds and the kiosks ──
+   Three parts the device screens share. None moves (§3.4 rule 5: nothing animates on a scan or a total), none is colour
+   alone, every word sits beside its icon, and nothing a person must read is under 14px. */
+
+/* The scan line: the screen SAYS it is ready for a scan, shows what the scanner (or a keyboard) has typed so far, and
+   names the last thing it took — so a cashier never wonders whether the till heard the beep. A wedge scanner types
+   into the page, never into a field, so this is words on a panel, not an input; "Type a barcode" opens the keypad. */
+.sre-scan-ready {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); background: var(--panel);
+  border: var(--hairline) solid var(--line); border-left: 5px solid var(--accent); border-radius: var(--radius-lg);
+}
+.sre-scan-ready > .sre-icon, .sre-scan-ready > span > .sre-icon { width: 30px; height: 30px; color: var(--accent); }
+.sre-scan-words { display: grid; gap: 2px; min-width: 0; }
+.sre-scan-say { font-size: var(--fs-lg); font-weight: 700; color: var(--ink); line-height: var(--leading-tight); }
+.sre-scan-code { font: 700 var(--fs-xl)/1.2 var(--mono); letter-spacing: .08em; color: var(--ink); font-variant-numeric: var(--numbers); overflow-wrap: anywhere; }
+.sre-scan-code:empty, .sre-scan-last:empty { display: none; }
+.sre-scan-last { font-size: var(--fs-base); color: var(--ink-2); overflow-wrap: anywhere; }
+/* Digits are arriving: the panel turns mint and the left bar deepens — and the words change, so it is never colour alone. */
+.sre-scan-ready[data-state="reading"] { background: var(--mint); border-left-color: var(--focus); }
+
+/* The customer's figure: a price or an amount to pay read from two metres away — the largest thing on a kiosk. */
+.sre-figure-xl {
+  display: block; font-size: clamp(48px, 8vw, 104px); font-weight: 800; line-height: 1.05; letter-spacing: var(--tracking-tight);
+  font-variant-numeric: var(--numbers); color: var(--ink); white-space: nowrap;
+}
+
+/* The customer's card: one plain answer on a white panel, large type, the words first and the detail under them. */
+.sre-kiosk-card {
+  width: min(960px, 100%); display: grid; gap: var(--space-3); justify-items: center; text-align: center;
+  padding: var(--space-8) var(--space-6); background: var(--panel); border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-xl); box-shadow: var(--shadow-sm);
+}
+.sre-kiosk-card[data-tone="warn"] { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+.sre-kiosk-name { font-size: clamp(26px, 3.4vw, 40px); font-weight: 700; line-height: var(--leading-tight); overflow-wrap: anywhere; }
+.sre-kiosk-note { font-size: var(--fs-lg); color: var(--ink-2); }
+.sre-kiosk-card[data-tone="warn"] .sre-kiosk-note { color: var(--on-warn-surface); }

@@ -340,7 +340,7 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     expect(await page.textContent('#queue-text')).toBe('1 saved here');
     expect(await page.textContent('#sent-work .sent[data-kind="put_away"] .pill')).toBe('Saved on this handheld — not yet with the store computer');
     // The pick line is untouched by the put-away: still 12 to pick from BIN-A.
-    expect(await page.textContent('.item.pick .qty')).toBe('12 units · EA');
+    expect(await page.textContent('.item.pick .qty')).toBe('12 units');
   });
 
   it('warehouse budget — receive a line 2 (tap Receive a delivery → scan the item), saved on the handheld at once (QG-02 · M07 · OB-288 gates lane)', async () => {
@@ -381,7 +381,7 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await taps.scan('890RICE');
     await page.waitForSelector('#confirm:not([hidden])');
     expect(await page.textContent('#confirm-title')).toBe('Confirm the pick — ORD-77');
-    expect(await page.textContent('#confirm-qty')).toBe('12 units · EA');
+    expect(await page.textContent('#confirm-qty')).toBe('12 units');
     expect(await page.textContent('#confirm-hint')).toBe('p-rice · from bin BIN-A');
     await taps.tap('#confirm-ok');
     await page.waitForSelector('#banner.good:not([hidden])');
@@ -404,7 +404,7 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     const taps = new Tally(page);
     expect(await page.textContent('.item.issue .where')).toBe('BIN-A');
     expect(await page.textContent('.item.issue .what')).toBe('ind-1 · p-rice · asked by u-floor');
-    expect(await page.textContent('.item.issue .qty')).toBe('6 units · EA · still owed');
+    expect(await page.textContent('.item.issue .qty')).toBe('6 units · still owed');
     await taps.tap('.item.issue');
     expect(await page.textContent('#step')).toContain('Scan the bin you are taking it from');
     taps.reset();
@@ -415,7 +415,7 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await taps.scan('890RICE');
     await page.waitForSelector('#confirm:not([hidden])');
     expect(await page.textContent('#confirm-title')).toBe('Confirm the issue — ind-1');
-    expect(await page.textContent('#confirm-qty')).toBe('6 units · EA');
+    expect(await page.textContent('#confirm-qty')).toBe('6 units');
     expect(await page.textContent('#confirm-hint')).toBe('p-rice · from bin BIN-A · asked by u-floor');
     await taps.tap('#confirm-ok');
     await page.waitForSelector('#banner.good:not([hidden])');
@@ -452,7 +452,7 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     expect(await page.isHidden('#confirm')).toBe(true);
     await page.click('#banner-ok');
     expect(await page.evaluate('globalThis.warehouseOutbox.unsentCount()')).toBe(0);
-    expect(await page.textContent('.item.pick .qty')).toBe('12 units · EA');
+    expect(await page.textContent('.item.pick .qty')).toBe('12 units');
 
     // And the refusal reads in Tamil too.
     await page.click('#lang');
