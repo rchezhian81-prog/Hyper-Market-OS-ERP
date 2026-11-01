@@ -6,7 +6,8 @@
 //   3. a warehouse supervisor is named, so a transfer one person proposed is sent by another (§28) and counted in —
 //      Transfers could not be used with one manager alone;
 //   4. the picker and driver handhelds get real work: an online order, its wave and its route, which the demo box pulls;
-//   5. OB-559: business customers are switched on in the demo copy.
+//   5. OB-559: business customers are switched on in the demo copy;
+//   6. OB-573: a pretend, clearly synthetic weighing scale weighs for the demo till, and the demo box's store pack says so.
 // Synthetic data only, in the demo tenant (hard rule #7).
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -14,7 +15,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions } from '../../db/seed/pilot/apply';
 import {
   PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH,
-  PILOT_DEMO_WAREHOUSE, PILOT_DEMO_TILL, PILOT_DEMO_ONLINE_ORDER, PILOT_DEMO_PICKER, PILOT_DEMO_DRIVER,
+  PILOT_DEMO_WAREHOUSE, PILOT_DEMO_TILL, PILOT_DEMO_ONLINE_ORDER, PILOT_DEMO_PICKER, PILOT_DEMO_DRIVER, PILOT_DEMO_SCALE,
 } from '../../db/seed/pilot/dataset';
 
 const T = PILOT_DEMO_TENANT;
@@ -102,6 +103,18 @@ describe('Round 3: the demo copy is set up for every screen', () => {
   it('5. OB-559: business customers are switched on in the demo copy', async () => {
     const res = await get('/v1/platform/entitlements', OWNER);
     expect((res.body as { entitled: readonly string[] }).entitled).toContain('b2b');
+  });
+
+  it('6. OB-573: the demo till has a pretend, clearly synthetic weighing scale on the register, and the demo box\'s store pack carries it for that lane', async () => {
+    const register = await get('/v1/facilities/scales', OWNER);
+    expect(register.status).toBe(200);
+    const onRegister = JSON.stringify(register.body);
+    expect(onRegister).toContain(PILOT_DEMO_SCALE.assetId);
+    expect(onRegister).toContain('synthetic, not a real certificate');
+    const pack = await get(`/v1/store-packs/${PILOT_DEMO_BRANCH}`, 'pilot-store-edge');
+    expect(pack.status).toBe(200);
+    const scales = (pack.body as { sections: { weighingScales?: readonly { assetId: string; laneIds: readonly string[]; reverificationDueOn: string }[] } }).sections.weighingScales;
+    expect(scales?.find((x) => x.assetId === PILOT_DEMO_SCALE.assetId)).toMatchObject({ laneIds: [PILOT_DEMO_TILL.tillId], reverificationDueOn: PILOT_DEMO_SCALE.reverificationDueOn });
   });
 
   it('re-running the whole seed lands nothing twice and refuses nothing', async () => {

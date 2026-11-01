@@ -1529,6 +1529,7 @@ function renderScale() {
         const out = await scaleRules.withdraw(record.prefix, el('scale-reason').value);
         const said = scaleKit.scaleRuleOutcomeWords(lang, out);
         scaleSay('scale-save-status', said.text, said.ok);
+        if (out.kind === 'invalid') { stop.disabled = false; el('scale-reason').focus(); return; } // OB-574: say why first
         await loadScale();
       });
       box.append(stop);
