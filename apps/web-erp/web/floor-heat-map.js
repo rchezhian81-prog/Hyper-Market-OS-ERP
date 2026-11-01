@@ -110,6 +110,8 @@ async function show() {
 $('show').addEventListener('click', () => { void show(); });
 for (const m of ['sales', 'margin']) $(`m-${m}`).addEventListener('click', () => { measure = m; paint(); if (heat !== null) void show(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+// Wave 2: the box names its own store, so the page starts on it (head office still answers only what the person may see).
+if (typeof window.floorHeatMapData?.storeId === 'string' && $('store').value === '') $('store').value = window.floorHeatMapData.storeId;
 paint();
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 

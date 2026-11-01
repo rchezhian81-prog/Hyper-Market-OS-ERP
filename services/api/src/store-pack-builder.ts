@@ -50,6 +50,7 @@ import {
 } from './adapters';
 import { currentFoodLicence } from '../../../packages/compliance/src/obligations';
 import { inForcePlanogram } from '../../inventory/src/planograms';
+import { floorPlanSpaceSection } from './p2-catalogue-adapters';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
@@ -447,7 +448,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   //   shelfCounts ← every shelf count taken;  backstock ← the stock ledger at the store's back store;
   //   assortment ← the store's effective-dated range decisions;  displayContracts / fundingReceivedMinor ← the supplier
   //   display contracts for this store and what FINANCE has received against each (display-funding journals).
-  // Not sent (no register yet — the screen names the gap): space areas and sales / margin by area.
+  // Wave 2: space areas and sales / margin by area ← the store's floor plan in force and this shop month's banked sales
+  // (the Floor heat map's own fold); left out when the store has no floor plan (the screen then names the gap).
   const shelf = planogramStoreAdapter({ store, now });
   const map = await shelf.shelfMap(tenantId, storeId);
   if (map !== undefined) sections['shelfLocations'] = map.locations;
@@ -481,6 +483,13 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     sections['displayContracts'] = contracts;
     const received = await displayFundingAdapter({ store, now }).fundingReceived(tenantId);
     sections['fundingReceivedMinor'] = Object.fromEntries(contracts.map((c) => [c.contractId, received[c.contractId]?.minor ?? 0]));
+  }
+
+  const space = await floorPlanSpaceSection({ store, now, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }, tenantId, storeId);
+  if (space !== undefined) {
+    sections['spaceAreas'] = space.spaceAreas;
+    sections['salesByAreaMinor'] = space.salesByAreaMinor;
+    sections['marginByAreaMinor'] = space.marginByAreaMinor;
   }
 
   // OB-288 P4 (R8-9 · OB-316): the rollout switches — always sent once wired, so a till tells "nothing on" from "not told".

@@ -380,6 +380,7 @@ import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liabil
 import { qualitySampleAdapter, inMemoryQualitySamples, scaleStampExpirySweep } from './r6b-quality-scale-adapters'; // Round 6 · R6-B — quality samples (M10-FR-02), scale-stamp alerts (B7)
 import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
 import { productsPricesSurface } from './w1-products-prices-adapters'; // Round 4a — products and prices
+import { spaceSurface } from './w2-space-adapters'; // Wave 2 · Round 4a part 2 — shelves, floor plan, display space, range, product checks
 import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 — store floor devices (ESL, RFID, IoT, CCTV events)
 import { r16aSaleBranches } from './r16a-check-gaps-adapters'; // R16-A · OB-612: the bill findings narrow to the caller's branches
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
@@ -1112,7 +1113,7 @@ export function buildSurface(deps: {
       : planogramStoreAdapter({ store, now })),
     // Space productivity + supplier display-contract governance (M04-FR-04) — margin-per-sq-ft ranking
     // and the expired-still-occupying / unapproved / funding-not-received exceptions on display deals.
-    ...spacePerformanceRoutes(store === undefined
+    ...calendared(spacePerformanceRoutes)(store === undefined
       ? { contracts: empty([]), recordContract: () => {}, now }
       // FUL-11: the review's "received" is finance's own display-funding journals, never a typed figure.
       : { ...spacePerformanceAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), fundingReceived: displayFundingAdapter({ store, now }).fundingReceived, registeredStores: (t: string) => registeredStores({ store, now }, t) }),
@@ -2265,6 +2266,7 @@ export function buildSurface(deps: {
   floorDevicesSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
   fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
   productsPricesSurface(surface, { store, now, calendar: shopCalendar, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Round 4a (M03-FR-01..04 · M05-FR-01 · OB-291): product and price audit, the price basis
+  spaceSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Wave 2 (M04-FR-01..04 · D02-FR-02/06 · OB-625): space audit, product checks
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));

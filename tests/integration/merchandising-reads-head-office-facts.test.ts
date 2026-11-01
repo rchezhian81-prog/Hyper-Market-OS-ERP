@@ -204,5 +204,14 @@ describe.each(backings)('FUL-11 merchandising reads head office\'s own facts —
     // What head office has no register for is LEFT OUT — the store computer says it was not told, never a zero.
     expect(pack.spaceAreas.known).toBe(false);
     expect(pack.salesByAreaMinor.known).toBe(false);
+
+    // Wave 2: once the store has a floor plan, its areas and what each took this shop month reach the pack — the Shelves and
+    // space page's Space tab reads them (the same fold as the Floor heat map).
+    expect((await call('POST', `/v1/merchandising/stores/${STORE}/floor-plan`, MGR, { widthFt: 100, depthFt: 80, areas: [
+      { areaId: 'tea', name: 'Tea and coffee', x: 0, y: 0, width: 20, depth: 10, locationIds: ['A1-1', 'END-1'] },
+    ] })).status).toBe(201);
+    const again = readPack((((await h.request({ method: 'GET', path: `/v1/store-packs/${STORE}`, userId: BOX, tenantId: t, branchId: STORE })).body) as { sections: Record<string, unknown> }).sections, new Date().toISOString());
+    expect(again.spaceAreas.known && again.spaceAreas.value).toEqual([{ areaId: 'tea', storeId: STORE, name: 'Tea and coffee', squareFeet: 200, locationIds: ['A1-1', 'END-1'] }]);
+    expect(again.salesByAreaMinor.known && again.salesByAreaMinor.value).toEqual({ tea: 0 }); // nothing banked this month: a real nought
   }, 120_000);
 });
