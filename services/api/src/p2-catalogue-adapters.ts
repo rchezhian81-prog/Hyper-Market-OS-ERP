@@ -28,6 +28,8 @@ import type { BundleDefinition, SubstituteList, ProductRecord } from '../../../p
 import type { FloorPlan, ProductTakings, SeasonPlan, GapFact, SearchMiss, SoldProduct } from '../../../packages/merchandising/src/index';
 import { bestPrice, promotionLines, type Promotion, type BasketLine } from '../../../packages/promotions/src/promotions';
 import { bundleRoutes } from '../../catalogue/src/bundles';
+import { scaleLabelRuleRoutes } from '../../catalogue/src/scale-label-rules';
+import { scaleLabelRuleStore } from './scale-label-rule-store';
 import { substituteRoutes } from '../../catalogue/src/substitutes';
 import { variantReportRoutes } from '../../catalogue/src/variant-report';
 import { searchMissRoutes, type SearchMissRecord } from '../../catalogue/src/search-misses';
@@ -298,6 +300,8 @@ export function p2CatalogueRoutes(raw: { readonly store: EventStore | undefined;
       definitions: (t) => payloads<BundleDefinition>(store, t, BUNDLES, 'BundleDefined'),
       recordDefinition: (t, d) => append(store, t, BUNDLES, 'BundleDefined', `${d.bundleProductId}-v${d.version}`, d.definedAt, d),
     }),
+    // OB-570 "A" (M03-FR-02): the scale-label rules head office sets — they ride the signed pack (`cataloguePreviewAdapter`).
+    ...scaleLabelRuleRoutes({ now, ...audit, ...scaleLabelRuleStore({ store }) }),
     ...substituteRoutes({
       products, now, ...audit,
       lists: (t, productId) => payloads<SubstituteList>(store, t, SUBSTITUTES(productId), 'SubstitutesSet'),
