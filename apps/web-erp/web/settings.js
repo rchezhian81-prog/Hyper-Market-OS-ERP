@@ -15,13 +15,15 @@ function button(words, cls, onClick) { const b = document.createElement('button'
 let settings = null;
 const open = new Map(); // key -> versions shown
 const asked = new Map(); // `${key}:${version}` -> { requestId, ask }
+// What the last "put back" on a version said: kept across the reload that follows it, so the person always sees it.
+const said = new Map(); // `${key}:${version}` -> words
 
 function versionNode(s, v) {
   const li = document.createElement('li'); li.dataset.version = String(v.version);
   li.append(text('p', `${t('version')} ${v.version}: ${api.valueWords(v.value)}`),
     text('p', `${t('by')} ${v.author} · ${t('at')} ${session.moment(v.at)} · ${t('why')}: ${v.reason}${v.rolledBackFrom === null ? '' : ` · ${t('restoredFrom')} ${v.rolledBackFrom}`}`, 'meta'));
   if (may.write && v.version !== s.version) {
-    const status = text('p', '', 'status'); status.setAttribute('role', 'status');
+    const status = text('p', said.get(`${s.key}:${v.version}`) ?? '', 'status'); status.setAttribute('role', 'status');
     const l = document.createElement('label'); const id = `why-${s.key}-${v.version}`; l.htmlFor = id; l.append(text('span', t('reason')));
     const why = document.createElement('input'); why.id = id; why.autocomplete = 'off'; l.append(why);
     const acts = document.createElement('div'); acts.className = 'acts';
@@ -47,6 +49,7 @@ function versionNode(s, v) {
         return;
       }
       status.textContent = t('restored').replace('{v}', String(out.value.version));
+      said.set(tag, status.textContent);
       void load();
     };
     acts.append(l, button(t('goBack'), 'quiet', () => { void goBack(undefined); }));

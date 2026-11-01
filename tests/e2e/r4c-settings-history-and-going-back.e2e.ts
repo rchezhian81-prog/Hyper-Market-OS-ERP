@@ -55,6 +55,8 @@ describe.skipIf(!HAVE_BROWSER)('Settings and their history (Round 4c)', () => {
     await p.page.click(`${radius} li[data-version="1"] button:has-text("Put this value back")`);
     await says(p.page, `${radius} li[data-version="1"] .status`, /now version 3/);
     await says(p.page, radius, /In force: 5 · version 3/);
+    // The confirmation survives the reload that follows the put-back (it used to be wiped by the repaint).
+    await says(p.page, `${radius} li[data-version="1"] .status`, /now version 3/);
     const history = (await shop.call('GET', '/v1/platform/config/delivery.radius_km/history', OWNER)).body as { versions: { version: number; rolledBackFrom: number | null }[] };
     expect(history.versions.map((v) => [v.version, v.rolledBackFrom])).toEqual([[1, null], [2, null], [3, 1]]);
 
