@@ -42,6 +42,7 @@
       workspaceWord: 'Workspace', branchWorkspace: 'Branch workspace', findScreen: 'Find a screen', noScreenMatches: 'No screen matches',
       findScreenHint: 'Find a screen — type a word like cash, GST or expiry', matchesOne: '1 screen matches', matchesMany: '{n} screens match',
       pinned: 'Pinned', recent: 'Recently opened', pinPage: 'Pin this page', unpinPage: 'Unpin this page',
+      signOut: 'Sign out',
       storeAlarm: 'The store computer needs you',
       storeCopy: 'These figures are the store computer\'s copy of head office\'s records, as head office last sent it at {at} ({age}). Anything changed at head office since then is not shown yet.',
       storeCopyNone: 'Head office has not sent this store computer its records yet, so this page shows only what the store computer itself knows.',
@@ -62,6 +63,7 @@
       workspaceWord: 'பணியிடம்', branchWorkspace: 'கிளைப் பணியிடம்', findScreen: 'ஒரு திரையைத் தேடு', noScreenMatches: 'பொருந்தும் திரை இல்லை',
       findScreenHint: 'திரையைத் தேடு — பணம், ஜிஎஸ்டி, காலாவதி போன்ற சொல்லைத் தட்டச்சு செய்க', matchesOne: '1 திரை பொருந்துகிறது', matchesMany: '{n} திரைகள் பொருந்துகின்றன',
       pinned: 'மேலே வைத்தவை', recent: 'சமீபத்தில் திறந்தவை', pinPage: 'இந்தப் பக்கத்தை மேலே வை', unpinPage: 'மேலிருந்து எடு',
+      signOut: 'வெளியேறு',
       storeAlarm: 'கடை கணினிக்கு உங்கள் கவனம் தேவை',
       storeCopy: 'இந்த எண்கள் தலைமை அலுவலகப் பதிவுகளின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {at} அன்று அனுப்பியது ({age}). அதன் பிறகு தலைமை அலுவலகத்தில் மாறியவை இன்னும் காட்டப்படவில்லை.',
       storeCopyNone: 'தலைமை அலுவலகம் தன் பதிவுகளை இந்தக் கடைக் கணினிக்கு இன்னும் அனுப்பவில்லை, எனவே இந்தப் பக்கம் கடைக் கணினிக்குத் தெரிந்ததை மட்டுமே காட்டுகிறது.',
@@ -462,6 +464,17 @@
       scroller.append(section);
     }
     panel.append(personCard(nav));
+    // Round 4c: "Sign out" inside the product's own menu, under the person — where the box drew no Sign out bar of its
+    // own (the hosted copy: the front signed the person in, and its door ends the session). A plain same-origin POST.
+    const out = window.sreSignOut && typeof window.sreSignOut.action === 'string' && window.sreSignOut.action.startsWith('/') ? window.sreSignOut.action : null;
+    if (out !== null && !byId('sre-office-bar')) {
+      const form = document.createElement('form');
+      form.method = 'post'; form.action = out; form.id = 'sre-sign-out';
+      const b = document.createElement('button');
+      b.type = 'submit'; b.className = 'sre-sign-out'; b.textContent = t('signOut');
+      form.append(b);
+      panel.append(form);
+    }
     filterMenu(byId('sre-find')?.value ?? '');
     layout();
     const current = scroller.querySelector('.group-section a[aria-current="page"]');
@@ -634,6 +647,11 @@
     'quotations': 'file-text', // round 7 · OB-506 — an icon already in the set
     'certificates': 'badge-check', // round 8 · OB-522 — an icon already in the set
     'findings': 'clipboard-check', // OB-609 — an icon already in the set
+    'staff': 'users', // Round 4c — an icon already in the set
+    'posh-committee': 'book', // Round 4c — an icon already in the set
+    'branches': 'store', // Round 4c — an icon already in the set
+    'do-not-contact': 'message-circle', // Round 4c — an icon already in the set
+    'cert-in': 'shield-check', // Round 4c — an icon already in the set
     'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE CERT-In reports and capacity</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      CERT-In reports and capacity (Round 4c · M35-FR-04 · §32 · §34). A THIN CLIENT over head office: the six-hour CERT-In
+      clock (GET /v1/platform/cert-in), classify an open incident and record the report (POST
+      /v1/platform/incidents/:id/cert-in, …/report), and the capacity report and plan (GET /v1/platform/capacity-report, PUT
+      /v1/platform/capacity-plan). Its session is apps/web-erp/src/cert-in-capacity-session.ts. No prompt/confirm/alert.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      ul.rows > li.overdue, ul.rows > li.short { border-left-color: var(--error); } ul.rows > li.due { border-left-color: var(--degraded); } ul.rows > li.ok, ul.rows > li.reported_in_time { border-left-color: var(--ok); }
+      .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">CERT-In reports and capacity</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">CERT-In reports and capacity</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="cert" hidden aria-labelledby="cert-h">
+        <h3 id="cert-h"></h3>
+        <p class="meta" id="cert-lead"></p>
+        <p class="status" id="cert-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="clocks"></ul>
+        <div id="classify" hidden>
+          <h4 id="classify-h"></h4>
+          <form class="row-form" id="classify-form">
+            <label for="c-incident"><span id="c-incident-l"></span><select id="c-incident"></select></label>
+            <label for="c-reportable"><span id="c-reportable-l"></span><select id="c-reportable"><option value="yes" id="c-yes"></option><option value="no" id="c-no"></option></select></label>
+            <label for="c-category"><span id="c-category-l"></span><input id="c-category" autocomplete="off" /></label>
+            <label for="c-noticed"><span id="c-noticed-l"></span><input id="c-noticed" type="datetime-local" /></label>
+            <label for="c-reason"><span id="c-reason-l"></span><input id="c-reason" autocomplete="off" /></label>
+            <button id="c-save" type="submit"><span id="c-save-text"></span></button>
+          </form>
+          <p class="status" id="classify-status" role="status" aria-live="polite"></p>
+          <h4 id="report-h"></h4>
+          <form class="row-form" id="report-form">
+            <label for="r-incident"><span id="r-incident-l"></span><input id="r-incident" autocomplete="off" /></label>
+            <label for="r-at"><span id="r-at-l"></span><input id="r-at" type="datetime-local" /></label>
+            <label for="r-reference"><span id="r-reference-l"></span><input id="r-reference" autocomplete="off" /></label>
+            <label for="r-channel"><span id="r-channel-l"></span><input id="r-channel" autocomplete="off" /></label>
+            <button id="r-save" type="submit" class="quiet"><span id="r-save-text"></span></button>
+          </form>
+          <p class="status" id="report-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <section id="capacity" hidden aria-labelledby="cap-h">
+        <h3 id="cap-h"></h3>
+        <p class="meta" id="cap-lead"></p>
+        <p class="status" id="cap-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="cap-rows"></ul>
+        <div id="plan" hidden>
+          <h4 id="plan-h"></h4>
+          <form class="row-form" id="plan-form">
+            <label for="p-growth"><span id="p-growth-l"></span><input id="p-growth" inputmode="numeric" autocomplete="off" /></label>
+            <div id="p-measures" class="row-form"></div>
+            <button id="p-save" type="submit" class="quiet"><span id="p-save-text"></span></button>
+          </form>
+          <p class="status" id="plan-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./cert-in.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

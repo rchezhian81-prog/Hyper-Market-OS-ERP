@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2018,
+  "testFiles": 2035,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -35,7 +35,7 @@
         "unit": 30,
         "integration": 28,
         "realDb": 12,
-        "browser": 10,
+        "browser": 12,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -123,6 +123,8 @@
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/r13a-the-office-pages-open-on-the-shops-day.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
+          "tests/e2e/r4c-a-branch-closes-for-now-and-reopens.e2e.ts",
+          "tests/e2e/r4c-settings-history-and-going-back.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
           "tests/e2e/the-manager-sees-when-the-box-zone-is-not-the-shops.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
@@ -149,7 +151,7 @@
         "unit": 32,
         "integration": 29,
         "realDb": 13,
-        "browser": 8,
+        "browser": 9,
         "connected": 3,
         "device": 0,
         "uat": 0
@@ -242,6 +244,7 @@
           "tests/e2e/customer-login.e2e.ts",
           "tests/e2e/delegation-on-the-production-api.e2e.ts",
           "tests/e2e/manager-decisions-survive-reload.e2e.ts",
+          "tests/e2e/r4c-users-and-roles-give-and-take-back-a-role.e2e.ts",
           "tests/e2e/the-access-review-page-shows-who-holds-what.e2e.ts",
           "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts"
         ],
@@ -2112,7 +2115,7 @@
         "unit": 14,
         "integration": 27,
         "realDb": 12,
-        "browser": 10,
+        "browser": 12,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -2181,6 +2184,8 @@
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/checklist-delivery.e2e.ts",
           "tests/e2e/help-readings-and-losses-are-saved-at-the-store-with-the-line-down.e2e.ts",
+          "tests/e2e/r4c-help-manager-tools-work-on-the-store-computer.e2e.ts",
+          "tests/e2e/r4c-the-staff-list-adds-people-and-shifts.e2e.ts",
           "tests/e2e/r7d-staff-see-their-shift-and-clock-in-with-the-line-down.e2e.ts",
           "tests/e2e/r8c-a-cook-is-allowed-once-the-certificate-is-recorded-and-verified.e2e.ts",
           "tests/e2e/r8c-the-rota-shows-the-store-computers-copy-with-the-line-down.e2e.ts",
@@ -2528,7 +2533,7 @@
         "unit": 6,
         "integration": 14,
         "realDb": 7,
-        "browser": 1,
+        "browser": 2,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -2568,7 +2573,8 @@
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [
-          "tests/e2e/document-template-publish-delivery.e2e.ts"
+          "tests/e2e/document-template-publish-delivery.e2e.ts",
+          "tests/e2e/r4c-the-do-not-contact-list.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -2654,7 +2660,7 @@
         "unit": 22,
         "integration": 20,
         "realDb": 4,
-        "browser": 3,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -2715,6 +2721,7 @@
         "browser": [
           "tests/e2e/admin-support-access-delivery.e2e.ts",
           "tests/e2e/fleet-change-delivery.e2e.ts",
+          "tests/e2e/r4c-tills-and-devices-registers-a-till.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts"
         ],
         "connected": [],
@@ -2731,7 +2738,7 @@
         "unit": 9,
         "integration": 16,
         "realDb": 6,
-        "browser": 2,
+        "browser": 3,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -2775,6 +2782,7 @@
           "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts"
         ],
         "browser": [
+          "tests/e2e/r4c-the-audit-log-reads-the-stored-trail.e2e.ts",
           "tests/e2e/risk-acceptance-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts"
         ],
@@ -2792,7 +2800,7 @@
         "unit": 16,
         "integration": 39,
         "realDb": 31,
-        "browser": 3,
+        "browser": 4,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -2893,6 +2901,7 @@
         "browser": [
           "tests/e2e/a-sale-sent-by-the-store-computer-keeps-its-time.test.ts",
           "tests/e2e/incidents-on-the-production-api.e2e.ts",
+          "tests/e2e/r4c-cert-in-and-capacity.e2e.ts",
           "tests/e2e/store-computers-on-the-production-api.e2e.ts"
         ],
         "connected": [
@@ -3560,7 +3569,7 @@
         "unit": 2,
         "integration": 12,
         "realDb": 5,
-        "browser": 2,
+        "browser": 3,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3592,6 +3601,7 @@
           "tests/integration/the-store-computer-carries-readings-losses-and-acknowledgements.test.ts"
         ],
         "browser": [
+          "tests/e2e/r4c-help-manager-tools-work-on-the-store-computer.e2e.ts",
           "tests/e2e/rostering-delivery.e2e.ts",
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts"
         ],

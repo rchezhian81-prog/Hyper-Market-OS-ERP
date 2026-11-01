@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Audit log</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Audit log (Round 4c · M34-FR-01/02 · NFR-15 · hard rule #6). A THIN CLIENT over head office's stored domain audit trail:
+      search (GET /v1/audit/trail), check the whole chain (GET /v1/audit/trail/verify), rebuild one thing from the evidence
+      (GET /v1/audit/trail/reconstruct). Reads only — nothing here, nor anywhere, changes or removes a record. Its session is
+      apps/web-erp/src/audit-log-session.ts. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 160px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      ul.rows > li.tone-error { border-left-color: var(--error); }
+      .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Audit log</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Audit log</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="search" hidden aria-labelledby="search-h">
+        <h3 id="search-h"></h3>
+        <p class="meta" id="search-lead"></p>
+        <form class="row-form" id="search-form">
+          <label for="q-actor"><span id="q-actor-l"></span><input id="q-actor" autocomplete="off" /></label>
+          <label for="q-type"><span id="q-type-l"></span><input id="q-type" autocomplete="off" /></label>
+          <label for="q-id"><span id="q-id-l"></span><input id="q-id" autocomplete="off" /></label>
+          <label for="q-action"><span id="q-action-l"></span><input id="q-action" autocomplete="off" /></label>
+          <label for="q-from"><span id="q-from-l"></span><input id="q-from" type="date" /></label>
+          <label for="q-until"><span id="q-until-l"></span><input id="q-until" type="date" /></label>
+          <button id="q-find" type="submit"><span id="q-find-text"></span></button>
+        </form>
+        <p class="status" id="search-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="rows"></ul>
+      </section>
+      <section id="verify" hidden aria-labelledby="verify-h">
+        <h3 id="verify-h"></h3>
+        <p class="meta" id="verify-lead"></p>
+        <button id="v-check" type="button" class="quiet"><span id="v-check-text"></span></button>
+        <p class="status" id="verify-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="findings"></ul>
+      </section>
+      <section id="rebuild" hidden aria-labelledby="rebuild-h">
+        <h3 id="rebuild-h"></h3>
+        <p class="meta" id="rebuild-lead"></p>
+        <form class="row-form" id="rebuild-form">
+          <label for="r-type"><span id="r-type-l"></span><input id="r-type" autocomplete="off" /></label>
+          <label for="r-id"><span id="r-id-l"></span><input id="r-id" autocomplete="off" /></label>
+          <button id="r-go" type="submit" class="quiet"><span id="r-go-text"></span></button>
+        </form>
+        <p class="status" id="rebuild-status" role="status" aria-live="polite"></p>
+        <p id="rebuilt-state"></p>
+        <ul class="rows" id="history"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./audit-log.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

@@ -30,6 +30,7 @@ import {
   type ShiftRequirement, type ShiftAssignment, type Employee,
 } from '../../../packages/workforce/src/workforce';
 import { myRosterFrom } from '../../../packages/workforce/src/my-roster';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 /** The published week a shift staff can see belongs to, and the limits not checked when it was published. */
 export interface PublishedWeekRef {
@@ -66,8 +67,22 @@ export interface RosterStoreDeps {
   }>;
   /** OB-607: the tenant's shop calendar — each roster gap names its hour in that zone. Absent → the shop default, never UTC. */
   readonly calendar?: (tenantId: string) => Promise<{ readonly timeZone: string }> | { readonly timeZone: string };
+  /**
+   * Round 4c (the Staff list page): seal a staff-record or shift change into the domain audit trail (M34-FR-01), attributed to
+   * the caller — who added or changed whom, before and after. Optional on a bare stub; the running system provides it.
+   */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
+
+/** A staff record's state for the audit trail — never the pay rate's figure (who changed it is recorded, not the amount). */
+const employeeState = (e: Employee): Record<string, string> => ({
+  name: e.name, branchId: e.branchId, roles: e.roles.join(','), active: String(e.active),
+  ...(e.hourlyRateMinor === undefined ? {} : { hourlyRate: 'set' }),
+});
+const shiftState = (s: ShiftRequirement): Record<string, string> => ({
+  branchId: s.branchId, startsAt: s.startsAt, endsAt: s.endsAt, requiredRoles: s.requiredRoles.map((r) => `${r.role}x${r.count}`).join(','),
+});
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isArr = (v: unknown): v is unknown[] => Array.isArray(v);
@@ -143,9 +158,17 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
         if (existing !== undefined) assertBranchInScope(ctx, existing.branchId);
         // OB-357: the home department is set by its own route (which checks the department); an upsert keeps it — unless
         // the person moves store, when it no longer fits and is taken off (their hours then show "not attributed").
-        const kept: Employee = existing?.homeDepartmentId !== undefined && existing.branchId === employee.branchId
+        const kept0: Employee = existing?.homeDepartmentId !== undefined && existing.branchId === employee.branchId
           ? { ...employee, homeDepartmentId: existing.homeDepartmentId } : employee;
+        // Round 4c: a change sent without a pay rate (the Staff list page never carries one) keeps the rate on record —
+        // never silently drops it.
+        const kept: Employee = kept0.hourlyRateMinor === undefined && existing?.hourlyRateMinor !== undefined ? { ...kept0, hourlyRateMinor: existing.hourlyRateMinor } : kept0;
         await deps.putEmployee(ctx.tenantId, kept, ctx.idempotencyKey ?? `emp-${employeeId}-${deps.now()}`);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: existing === undefined ? 'staff.add' : kept.active ? 'staff.change' : 'staff.leave', objectType: 'employee', objectId: employeeId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: kept.branchId },
+          before: existing === undefined ? null : employeeState(existing), after: employeeState(kept), correlationId: `employee:${employeeId}`,
+        });
         return { status: 200, body: { employee: kept } };
       },
     },
@@ -168,6 +191,11 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
         const existingShift = (await deps.roster(ctx.tenantId)).shifts.find((x) => x.shiftId === shiftId);
         if (existingShift !== undefined) assertBranchInScope(ctx, existingShift.branchId);
         await deps.putShift(ctx.tenantId, shift, ctx.idempotencyKey ?? `shift-${shiftId}-${deps.now()}`);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: existingShift === undefined ? 'shift.add' : 'shift.change', objectType: 'shift', objectId: shiftId,
+          at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: shift.branchId },
+          before: existingShift === undefined ? null : shiftState(existingShift), after: shiftState(shift), correlationId: `shift:${shiftId}`,
+        });
         return { status: 200, body: { shift } };
       },
     },

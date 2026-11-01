@@ -830,6 +830,9 @@ export function startScreenServer(input: {
           ...(officeUser === null ? {} : signedInGlobals(officeUser)),
           // OB-388: with no office PIN on this box, the head-office sign-in names who is looking — and draws the Sign out bar.
           ...(officeUser !== null || headOfficeUser === null ? {} : signedInGlobals({ userId: headOfficeUser, displayName: displayNameIn(snap.pack, headOfficeUser), expiresAt: '' })),
+          // Round 4c: behind the authenticating front (the hosted copy) the box draws no Sign out bar — the front signed the
+          // person in, so the page's own menu offers "Sign out" to the front's door (`/login/logout`, POST, same origin).
+          ...(officeUser === null && headOfficeUser === null && signedIn !== null && input.trustForwardedUser === true ? { sreSignOut: { action: '/login/logout' } } : {}),
           catalogueFreshness: catalogueFreshness(snap),
           // OB-606: the shop's zone from this box's SIGNED store pack (else the shop default) — every page dates "today",
           // a month and a shown date by it (packages/calendar shop-day), never by its device's own zone; no network call.

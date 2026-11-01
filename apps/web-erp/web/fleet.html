@@ -12,7 +12,8 @@
       packages/ui + packages/a11y primitives. Read-only in this increment: the shop's registered tills,
       scanners, scales and kiosks with their health — the ones that need a look (cannot trade, then
       must-update, then GONE-QUIET) first, each with a status that is never a bare colour (an icon and a
-      word ride with it). Registering / blocking / retiring a device is the audited write path, wired next.
+      word ride with it). Round 4c: a till or device is registered here, and blocked, retired or brought back per row — each
+      queued in the outbox and sent by "Send now" as the signed-in person (the audited write path).
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -69,6 +70,11 @@
       .vx-row dl { margin:0; display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; font-size:15px; }
       .vx-row dt { color:var(--muted); } .vx-row dd { margin:0; overflow-wrap:anywhere; }
       .vx-row .vx-detail { margin:0; color:var(--muted); font-size:14px; }
+      /* Round 4c: the register form. */
+      .reg-form { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
+      .reg-form label { display:grid; gap:4px; font-size:14px; font-weight:600; flex:1 1 180px; }
+      .reg-form input, .reg-form select { font:inherit; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); min-height:48px; min-width:0; box-sizing:border-box; }
+      section.vx[hidden] { display:none; }
     </style>
   </head>
   <body>
@@ -102,6 +108,23 @@
 
       <ul class="rows" id="rows" aria-label="Registered devices"></ul>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <!-- Round 4c: register a till or device — queued in the outbox, sent by "Send now" as the signed-in person. -->
+      <section class="vx" id="register" aria-labelledby="register-h" hidden>
+        <div>
+          <h2 id="register-h">Register a till or device</h2>
+          <p class="lead" id="register-lead"></p>
+        </div>
+        <form id="register-form" class="reg-form">
+          <label for="reg-id"><span id="reg-id-l"></span><input id="reg-id" autocomplete="off" /></label>
+          <label for="reg-kind"><span id="reg-kind-l"></span><select id="reg-kind"></select></label>
+          <label for="reg-label"><span id="reg-label-l"></span><input id="reg-label" autocomplete="off" maxlength="80" /></label>
+          <label for="reg-store"><span id="reg-store-l"></span><input id="reg-store" autocomplete="off" /></label>
+          <label for="reg-version"><span id="reg-version-l"></span><input id="reg-version" autocomplete="off" /></label>
+          <button id="reg-btn" type="submit" class="filter"></button>
+        </form>
+        <p class="vx-info" id="reg-status" role="status" aria-live="polite"></p>
+      </section>
 
       <!-- R10-A · OB-540: handheld work done on a withdrawn or too-old app version, from head office's register (read-only). -->
       <section class="vx" id="vx" aria-labelledby="vx-h">
