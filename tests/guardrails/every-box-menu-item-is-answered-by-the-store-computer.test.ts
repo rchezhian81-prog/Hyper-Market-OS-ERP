@@ -84,8 +84,9 @@ describe('every menu item the store computer may offer is answered by its server
       const payload = JSON.parse(m![1]!) as Record<string, unknown>;
       // OB-612 (R16-A): the Bill findings page is also told WHICH store this box is (its signed pack's branch), so it asks head
       // office for this store's findings — the box's own identity, as the Devices page is told it (OB-601), never a figure.
+      // Wave 2: the shelf pages (setup, display space, heat map, bays) start on the box's own store the same way.
       // Round 4c: the Staff list is told it too, to fill its store boxes with this box's own store.
-      expect(Object.keys(payload).sort(), p.screen).toEqual((p.screen === 'findings' || p.screen === 'staff') && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
+      expect(Object.keys(payload).sort(), p.screen).toEqual((['findings', 'staff', 'space-setup', 'display-contracts', 'floor-heat-map', 'planogram-compliance'] as string[]).includes(p.screen) && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
       expect(payload['userId']).toBe('u-owner');
     }
   });

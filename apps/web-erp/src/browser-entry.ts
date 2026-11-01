@@ -78,10 +78,6 @@ import {
   createMerchandisingSession,
   type MerchandisingPorts, type MerchandisingSession, type MerchandisingDevice, type RefillIndentPort,
 } from './merchandising-session';
-import {
-  createMerchSetupSession, merchSetupWords, merchSetupOutcomeWords, askWords as merchAskWords, shelfRowsOf, planRowsOf, areaRowsOf,
-  CLUSTER_DROP_REASONS, SHELF_ZONES, type MerchSetupSession,
-} from './merchandising-setup-session'; // Round 4a: the Shelves and space page's head-office setup tabs
 import { createUnsellableSession, type UnsellableSession, type UnsellableData } from './unsellable-session';
 import {
   createFinanceCloseSession, browserFinanceCloseHttp, closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords,
@@ -1351,6 +1347,13 @@ export interface ViewerIdentity {
   readonly permissions: readonly string[];
 }
 
+/** Wave 2: keep the store the box named for the page (it starts on it) beside who is looking — nothing else. */
+function withStore(viewer: ViewerIdentity | undefined, raw: unknown): (ViewerIdentity & { readonly storeId?: string }) | undefined {
+  if (viewer === undefined) return undefined;
+  const storeId = raw !== null && typeof raw === 'object' ? (raw as { storeId?: unknown }).storeId : undefined;
+  return typeof storeId === 'string' && storeId.trim() !== '' ? { ...viewer, storeId: storeId.trim() } : viewer;
+}
+
 /**
  * Keep only who is looking and the permission words from an injected payload; `undefined` (nobody named) when it is
  * absent or malformed. The permissions only shape what a screen OFFERS — the cloud re-checks every act.
@@ -1360,8 +1363,6 @@ export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sa
 /** Round 12: the competitor-price panel's words and readings (tested in `competitor-price-session.ts`). */
 export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
 /** OB-570 "A": the scale-label rules panel's words and readings (tested in `scale-label-rules-session.ts`). */
-/** Round 4a: the Shelves and space setup tabs' words and readings (tested in `merchandising-setup-session.ts`). */
-export const MERCH_SETUP_KIT = Object.freeze({ words: merchSetupWords, outcomeWords: merchSetupOutcomeWords, askWords: merchAskWords, shelfRowsOf, planRowsOf, areaRowsOf, reasons: CLUSTER_DROP_REASONS, zones: SHELF_ZONES });
 export const SCALE_RULES_KIT = Object.freeze({ scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, kinds: SCALE_VALUE_KINDS });
 
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
@@ -5225,9 +5226,6 @@ interface ManagerWindow {
   merchandisingOutbox?: SyncOutbox;
   merchandisingRelay?: ManagerRelay;
   merchandisingStorageProblem?: string;
-  /** Round 4a (M04-FR-04 · R8-8 · Round D): the page's head-office setup tabs — display contracts, clusters and seasons, the
-   *  shelf map, the planogram and the floor plan — over head office's own routes as the signed-in person. */
-  merchSetup?: { readonly session: MerchSetupSession; readonly kit: typeof MERCH_SETUP_KIT; readonly storeId: string; readonly today: string };
   /** SP-8c-ii: the "Products nobody can sell" screen — read-only, the list the till payload is built from. */
   unsellableData?: UnsellableData;
   unsellableSession?: UnsellableSession;
@@ -5392,7 +5390,7 @@ interface ManagerWindow {
   // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
   approvalRulesData?: ViewerIdentity;
   // OB-288 P2: the Floor heat map page — who is looking; head office answers the rest.
-  floorHeatMapData?: ViewerIdentity;
+  floorHeatMapData?: ViewerIdentity & { readonly storeId?: string };
   floorHeatMap?: {
     readonly session: HeatMapSession; readonly words: typeof heatMapWords; readonly outcomeWords: typeof heatMapOutcomeWords; readonly heatBand: typeof heatBand;
     readonly areaName: typeof areaName; readonly figureWords: typeof figureWords; readonly areaNotes: typeof areaNotes; readonly rupees: typeof heatRupees;
@@ -5433,7 +5431,7 @@ interface ManagerWindow {
   /** R4 D-21: the "Seen together" panel on the Investigations page (reads who is looking from the inbox's own payload). */
   lpCorrelation?: { readonly session: CorrelationSession; readonly words: typeof correlationWords; readonly outcomeWords: typeof correlationOutcomeWords; readonly rupees: typeof correlationRupees };
   /** R4 D-13: the Shelf compliance by bay page — who is looking; head office answers the rest. */
-  planogramBaysData?: ViewerIdentity;
+  planogramBaysData?: ViewerIdentity & { readonly storeId?: string };
   planogramBays?: { readonly session: BaysSession; readonly words: typeof baysWords; readonly outcomeWords: typeof baysOutcomeWords; readonly scoreWords: typeof bayScoreWords };
   // ── R4 Lane 4 — end
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
@@ -6688,14 +6686,6 @@ if (browserWindow !== undefined) {
       if (indentsStorageProblem !== undefined) browserWindow.merchandisingStorageProblem = indentsStorageProblem;
     }
   }
-  // Round 4a (M04-FR-04 · R8-8 · Round D): the head-office setup tabs on the same page — a thin client over head office's own
-  // routes as the signed-in person (who is looking, from the page's payload; head office re-checks every act).
-  if (merchandisingData !== undefined) {
-    browserWindow.merchSetup = {
-      session: createMerchSetupSession(viewerIdentity(merchandisingData), browserFinanceCloseHttp()), kit: MERCH_SETUP_KIT,
-      storeId: merchandisingData.storeId ?? '', today: merchandisingData.today ?? '',
-    };
-  }
   // The "Products nobody can sell" screen (SP-8c-ii · P-08): read-only, from the list the box builds the till's catalogue with.
   const unsellable = bootUnsellable(browserWindow.unsellableData);
   if (unsellable !== null) browserWindow.unsellableSession = unsellable;
@@ -7431,7 +7421,7 @@ if (browserWindow !== undefined) {
   browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, noteView: qg10NoteView, names: GATE_NAMES, releases: GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
   // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
-  browserWindow.floorHeatMapData = viewerIdentity(browserWindow.floorHeatMapData);
+  browserWindow.floorHeatMapData = withStore(viewerIdentity(browserWindow.floorHeatMapData), browserWindow.floorHeatMapData);
   browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees, todayAtShop: heatMapTodayAtShop };
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
@@ -7467,7 +7457,7 @@ if (browserWindow !== undefined) {
     browserWindow.lpCorrelation = { session: createCorrelationSession({ viewer: viewerIdentity(browserWindow.lossPreventionInboxData) }), words: correlationWords, outcomeWords: correlationOutcomeWords, rupees: correlationRupees };
   }
   // R4 D-13: Shelf compliance by bay — a read of the staff counts against the plan; a photo is kept only on an explicit click.
-  browserWindow.planogramBaysData = viewerIdentity(browserWindow.planogramBaysData);
+  browserWindow.planogramBaysData = withStore(viewerIdentity(browserWindow.planogramBaysData), browserWindow.planogramBaysData);
   browserWindow.planogramBays = { session: createBaysSession({ viewer: browserWindow.planogramBaysData }), words: baysWords, outcomeWords: baysOutcomeWords, scoreWords: bayScoreWords };
   // ── R4 Lane 4 — end
   // ── P3 procure-to-pay (OB-288): the Requisitions and quotes page — a requisition, its quotes, head office's comparison,

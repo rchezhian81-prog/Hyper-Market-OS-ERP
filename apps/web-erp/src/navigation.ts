@@ -180,6 +180,13 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'store-setup': { en: 'settings configure shop setup', ta: 'அமைப்புகள்' },
   'data-io': { en: 'import export excel csv upload download', ta: 'இறக்குமதி ஏற்றுமதி' },
   'suppliers': { en: 'vendor supplier distributor', ta: 'விநியோகஸ்தர்' },
+  // OB-620 (owner, 1 Nov 2026): the two shelf pages were renamed plainly; their old names still find them.
+  'floor-heat-map': { en: 'floor heat map sales per square foot margin area space', ta: 'தள வெப்ப வரைபடம் சதுர அடி' },
+  'planogram-compliance': { en: 'shelf compliance by bay planogram gaps photo', ta: 'அலமாரி இணக்கம் பகுதி வாரியாக' },
+  'space-setup': { en: 'planogram shelf map bay aisle rack floor plan layout fixture', ta: 'அலமாரித் திட்டம் தளத் திட்டம்' },
+  'display-contracts': { en: 'end cap gondola display contract supplier funding', ta: 'காட்சி ஒப்பந்தம்' },
+  'range-clusters': { en: 'cluster season range assortment festival', ta: 'பருவம் வரிசை' },
+  'product-checks': { en: 'hsn gst tax missing allergen ingredient barcode data check', ta: 'விடுபட்ட பார்கோடு ஒவ்வாமை' },
 });
 
 /**
@@ -230,6 +237,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // makes (`catalogue.pack.read`). A head-office page, served by the store computer (OB-380).
   { id: 'shelf-tags', label: 'Shelf tags', labelTa: 'அலமாரி விலைச் சீட்டுகள்', path: '/shelf-tags', requires: 'catalogue.pack.read', group: 'Products' },
   { id: 'data-quality', label: 'Data quality', labelTa: 'தரவுத் தரம்', path: '/data-quality', requires: 'ai.proposal.read', group: 'Products' },
+  // Wave 2 · OB-625 (owner, 1 Nov 2026): three read-only product checks — no tax mapping, allergen or ingredient details
+  // missing where the category needs them, no barcode — with counts and the register of products. Gated on the report read
+  // the route checks (`reporting.report.read`). A head-office page, served by the store computer (OB-380).
+  { id: 'product-checks', label: 'Product checks', labelTa: 'பொருள் சரிபார்ப்புகள்', path: '/product-checks', requires: 'reporting.report.read', group: 'Products' },
 
   // Buying — the buyer's one screen: supplier invoices, matching against the order, raising an order (M06).
   // Gated on the purchase-commitment read the order list checks (`purchase.commitment.read`); the propose action
@@ -272,8 +283,17 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // photo with a shelf check, kept on the shop's own server; image recognition switched off. Gated on the read the bay route
   // checks (`planogram.compliance.read`). A head-office page (served by the store computer since OB-380).
   // OB-288 P2 (M04-FR-04 · OB-308): the shop floor seen from above, each shelf area coloured by sales or margin per sq ft.
-  { id: 'floor-heat-map', label: 'Floor heat map', labelTa: 'தள வெப்ப வரைபடம்', path: '/floor-heat-map', requires: 'merchandising.space.read', group: 'Floor' },
-  { id: 'planogram-compliance', label: 'Shelf compliance by bay', labelTa: 'அலமாரி இணக்கம் — பகுதி வாரியாக', path: '/planogram-compliance', requires: 'planogram.compliance.read', group: 'Floor' },
+  { id: 'floor-heat-map', label: 'Which areas earn most', labelTa: 'எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன', path: '/floor-heat-map', requires: 'merchandising.space.read', group: 'Floor' },
+  { id: 'planogram-compliance', label: 'Shelves against the plan', labelTa: 'திட்டத்துடன் அலமாரிகள்', path: '/planogram-compliance', requires: 'planogram.compliance.read', group: 'Floor' },
+  // Wave 2 · Round 4a part 2 (M04-FR-02/03/04 · SCREEN-GAP Round D): the setup the three shelf pages read — the shelf places,
+  // the planograms and the floor plan, each published as a new version. Gated on the shelf-plan read the routes check
+  // (`planogram.compliance.read`); publishing needs `planogram.publish`. A head-office page, served by the store computer.
+  { id: 'space-setup', label: 'Set up shelves and floor plan', labelTa: 'அலமாரிகளையும் தளத் திட்டத்தையும் அமை', path: '/space-setup', requires: 'planogram.compliance.read', group: 'Floor' },
+  // Wave 2 (M04-FR-04 · D02-FR-06): supplier-paid display space — each contract, its finding, Finance's approval of the funding
+  // terms (maker-checker) and the money received. Gated on the register read (`merchandising.space.read`).
+  { id: 'display-contracts', label: 'Supplier display space', labelTa: 'சப்ளையர் காட்சி இடம்', path: '/display-contracts', requires: 'merchandising.space.read', group: 'Floor' },
+  // Wave 2 (D02-FR-02 · OB-318): the range for a group of stores (a price zone) and season plans. Gated on the range read.
+  { id: 'range-clusters', label: 'Store groups and seasons', labelTa: 'கடைக் குழுக்களும் பருவங்களும்', path: '/range-clusters', requires: 'merchandising.range.read', group: 'Floor' },
   { id: 'count-plans', label: 'Count plans', labelTa: 'எண்ணிக்கைத் திட்டங்கள்', path: '/count-plans', requires: 'inventory.count.plan', group: 'Inventory' },
   // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.
   { id: 'transfers', label: 'Transfers', labelTa: 'இடமாற்றங்கள்', path: '/transfers', requires: 'inventory.availability.read', group: 'Inventory' },

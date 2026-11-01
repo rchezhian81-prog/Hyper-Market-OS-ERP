@@ -70,10 +70,10 @@ const WORDS = {
     hoSays: 'Head office recorded it', dropRefused: 'Head office refused:',
     dropUnreachable: 'Head office cannot be reached, so nothing was taken out of the range. Try again when the line is back.',
     dropNotConnected: 'This screen is not connected to head office, so nothing was taken out of the range.',
-    spaceLead: 'What each part of the floor earns per square foot. Margin, not turnover — a big seller on a thin margin can be the worst use of space in the building.',
+    spaceLead: 'What each part of the floor earns per square foot this month so far, from the floor plan and the bills head office holds (as of the store computer\'s last update). Margin, not turnover — a big seller on a thin margin can be the worst use of space in the building.',
     area: 'Area', sqft: 'Sq ft', salesPerSqFt: 'Sales / sq ft', marginPerSqFt: 'Margin / sq ft',
     notMeaningful: 'not measured', tooMuchSpace: 'takes more space than it earns',
-    noAreas: 'This screen has not been told how big each part of the floor is.',
+    noAreas: 'This screen has not been told how big each part of the floor is. Draw the floor plan on the page "Set up shelves and floor plan".',
     contracts: 'Supplier display space',
     contractsLead: 'An expired contract with the stand still on the floor is space you are giving away.',
     noContracts: 'No display contracts.', owed: 'Owed',
@@ -120,10 +120,10 @@ const WORDS = {
     hoSays: 'தலைமை அலுவலகம் பதிவு செய்தது', dropRefused: 'தலைமை அலுவலகம் மறுத்தது:',
     dropUnreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே வரிசையிலிருந்து எதுவும் நீக்கப்படவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
     dropNotConnected: 'இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை, எனவே வரிசையிலிருந்து எதுவும் நீக்கப்படவில்லை.',
-    spaceLead: 'தரையின் ஒவ்வொரு பகுதியும் ஒரு சதுர அடிக்கு எவ்வளவு ஈட்டுகிறது. விற்பனை அல்ல, லாபம் — அதிகம் விற்றாலும் குறைந்த லாபம் என்றால் அது கடையின் மோசமான இட பயன்பாடாக இருக்கலாம்.',
+    spaceLead: 'இந்த மாதம் இதுவரை தரையின் ஒவ்வொரு பகுதியும் ஒரு சதுர அடிக்கு எவ்வளவு ஈட்டுகிறது — தளத் திட்டம் மற்றும் தலைமை அலுவலகத்தின் பில்களிலிருந்து (கடைக் கணினியின் கடைசிப் புதுப்பிப்பின்படி). விற்பனை அல்ல, லாபம் — அதிகம் விற்றாலும் குறைந்த லாபம் என்றால் அது கடையின் மோசமான இட பயன்பாடாக இருக்கலாம்.',
     area: 'பகுதி', sqft: 'சதுர அடி', salesPerSqFt: 'விற்பனை / சதுர அடி', marginPerSqFt: 'லாபம் / சதுர அடி',
     notMeaningful: 'அளக்கப்படவில்லை', tooMuchSpace: 'ஈட்டுவதை விட அதிக இடம் எடுக்கிறது',
-    noAreas: 'தரையின் ஒவ்வொரு பகுதியும் எவ்வளவு பெரியது என்று இந்தத் திரைக்குத் தெரியவில்லை.',
+    noAreas: 'தரையின் ஒவ்வொரு பகுதியும் எவ்வளவு பெரியது என்று இந்தத் திரைக்குத் தெரியவில்லை. "அலமாரிகளையும் தளத் திட்டத்தையும் அமை" பக்கத்தில் தளத் திட்டத்தை வரையுங்கள்.',
     contracts: 'சப்ளையர் காட்சி இடம்',
     contractsLead: 'காலாவதியான ஒப்பந்தம், ஆனால் ஸ்டாண்ட் இன்னும் தரையில் — அது நீங்கள் இலவசமாகக் கொடுக்கும் இடம்.',
     noContracts: 'காட்சி ஒப்பந்தங்கள் இல்லை.', owed: 'வர வேண்டியது',
@@ -191,12 +191,12 @@ const COUNT_REFUSAL_WORDS = {
 /** Why the shelves cannot be checked at all — one entry per `NoPlanReason`. */
 const NO_PLAN_WORDS = {
   this_store_has_no_shelf_map: {
-    en: 'Nobody has addressed this shop’s shelves yet, so there is nothing to check against. Head office publishes the shelf map on the Shelf layout tab.',
-    ta: 'இந்தக் கடையின் அலமாரிகளுக்கு இன்னும் முகவரி கொடுக்கப்படவில்லை. எனவே ஒப்பிட எதுவும் இல்லை. தலைமை அலுவலகம் அலமாரி அமைப்பு தாவலில் அலமாரி வரைபடத்தை வெளியிடுகிறது.',
+    en: 'Nobody has addressed this shop’s shelves yet, so there is nothing to check against.',
+    ta: 'இந்தக் கடையின் அலமாரிகளுக்கு இன்னும் முகவரி கொடுக்கப்படவில்லை. எனவே ஒப்பிட எதுவும் இல்லை.',
   },
   this_store_has_never_published_a_planogram: {
-    en: 'This shop has never published a shelf plan, so there is nothing to compare the shelves with. Head office publishes the planogram on the Shelf layout tab.',
-    ta: 'இந்தக் கடை இதுவரை அலமாரித் திட்டம் ஒன்றை வெளியிடவில்லை. எனவே அலமாரிகளை எதனுடனும் ஒப்பிட முடியாது. தலைமை அலுவலகம் அலமாரி அமைப்பு தாவலில் திட்ட வரைபடத்தை வெளியிடுகிறது.',
+    en: 'This shop has never published a shelf plan, so there is nothing to compare the shelves with.',
+    ta: 'இந்தக் கடை இதுவரை அலமாரித் திட்டம் ஒன்றை வெளியிடவில்லை. எனவே அலமாரிகளை எதனுடனும் ஒப்பிட முடியாது.',
   },
 };
 
@@ -291,8 +291,7 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-// Round 4a: 'clusters' and 'layout' are the head-office setup tabs (merchandising-setup.js paints them).
-const VIEWS = ['count', 'refill', 'range', 'space', 'clusters', 'layout'];
+const VIEWS = ['count', 'refill', 'range', 'space'];
 function show(name) {
   for (const view of VIEWS) {
     el(`view-${view}`).hidden = view !== name;

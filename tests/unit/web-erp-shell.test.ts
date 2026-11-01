@@ -44,7 +44,8 @@ describe('role-scoped navigation', () => {
     // W1 (1 Nov 2026): task workspaces — Cash, accounts & GST before Reports; within a workspace the most-used screen
     // leads (Reports first in its own workspace). R4 Lane 3: the report read also opens "Bought together" (D-23);
     // OB-391: and the Company report.
-    expect(labels).toEqual(['Today', 'Cash over / short', 'Reopen a locked day', 'Reports', 'Company report', 'Bought together']);
+    // W2 (OB-625): the report read also opens Product checks, under Products & prices (before Cash, accounts & GST).
+    expect(labels).toEqual(['Today', 'Product checks', 'Cash over / short', 'Reopen a locked day', 'Reports', 'Company report', 'Bought together']);
     expect(labels).not.toContain('Users & roles'); // not their job
     expect(labels).not.toContain('Stock counts');
   });
@@ -54,11 +55,12 @@ describe('role-scoped navigation', () => {
     // OB-16: the owner's workspaces, in the rail's fixed order — the same screens, regrouped.
     // W1: the task workspaces — the service desk and customer cases under Customers & service, products nobody can sell
     // under Waste, expiry & returns. Round 8: + Customer cases (service.case.read).
-    expect(nav.map((g) => g.group)).toEqual(['Today', 'Receiving', 'Inventory', 'Waste', 'Customers', 'Finance', 'Reports']);
+    // W2 (OB-625): + Products & prices, for Product checks (the report read).
+    expect(nav.map((g) => g.group)).toEqual(['Today', 'Products', 'Receiving', 'Inventory', 'Waste', 'Customers', 'Finance', 'Reports']);
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
     // Round 12: Transfers (gated on the same availability read) joins the Inventory group.
     // W1: Stock health and Stock counts lead (NAV_ITEM_ORDER); the rest keep their declared order.
-    expect(nav[2]?.items.map((i) => i.id)).toEqual(['stock-health', 'counts', 'transfers', 'packaging', 'warehouse-supervisor', 'demand-events']); // R4 Lane 3: Store events (D-24) on the same read; round 6: Packaging and crates (M28-FR-03) on the same read
+    expect(nav.find((g) => g.group === 'Inventory')?.items.map((i) => i.id)).toEqual(['stock-health', 'counts', 'transfers', 'packaging', 'warehouse-supervisor', 'demand-events']); // R4 Lane 3: Store events (D-24) on the same read; round 6: Packaging and crates (M28-FR-03) on the same read
   });
 
   it('shows nothing to an unknown user (default-deny)', () => {

@@ -11066,6 +11066,50 @@
         }
       }
     },
+    "/v1/catalogue/reports/product-checks": {
+      "get": {
+        "operationId": "getCatalogueReportsProductChecks",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "reporting.report.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCatalogueReportsProductChecksReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"reporting.report.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/reports/variants": {
       "get": {
         "operationId": "getCatalogueReportsVariants",
@@ -65581,6 +65625,50 @@
         }
       }
     },
+    "/v1/merchandising/display-contracts": {
+      "get": {
+        "operationId": "getMerchandisingDisplayContracts",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "merchandising.space.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMerchandisingDisplayContractsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"merchandising.space.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/merchandising/display-contracts/review": {
       "post": {
         "operationId": "postMerchandisingDisplayContractsReview",
@@ -119816,6 +119904,68 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/storefront-ratings.ts"
       },
+      "GetCatalogueReportsProductChecksReply": {
+        "type": "object",
+        "required": [
+          "onDay",
+          "readOnly",
+          "asAt",
+          "checked",
+          "onMaster",
+          "rows",
+          "counts",
+          "notJudged"
+        ],
+        "properties": {
+          "onDay": {
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "checked": {
+            "type": "number"
+          },
+          "onMaster": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductCheckRow"
+            }
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "tax",
+              "allergens",
+              "barcode"
+            ],
+            "properties": {
+              "tax": {
+                "type": "number"
+              },
+              "allergens": {
+                "type": "number"
+              },
+              "barcode": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "notJudged": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/product-checks.ts"
+      },
       "GetCatalogueReportsVariantsReply": {
         "type": "object",
         "required": [
@@ -142804,6 +142954,135 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/season-plans.ts"
+      },
+      "GetMerchandisingDisplayContractsReply": {
+        "type": "object",
+        "required": [
+          "contracts",
+          "count",
+          "flagged",
+          "onDate",
+          "receivedFrom",
+          "asAt"
+        ],
+        "properties": {
+          "contracts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "approved",
+                "finding",
+                "detail",
+                "daysRemaining",
+                "receivedMinor",
+                "outstandingMinor",
+                "contractId",
+                "storeId",
+                "supplierId",
+                "description",
+                "locationIds",
+                "fundingAmount",
+                "startsOn",
+                "endsOn"
+              ],
+              "properties": {
+                "approved": {
+                  "type": "boolean"
+                },
+                "finding": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "expired_still_occupying",
+                    "expiring_soon",
+                    "funding_not_received",
+                    "no_space_named",
+                    "unapproved"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "daysRemaining": {
+                  "type": "number"
+                },
+                "receivedMinor": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "outstandingMinor": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "contractId": {
+                  "type": "string"
+                },
+                "storeId": {
+                  "type": "string"
+                },
+                "supplierId": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "areaId": {
+                  "type": "string"
+                },
+                "locationIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "fundingAmount": {
+                  "$ref": "#/components/schemas/Money.code"
+                },
+                "startsOn": {
+                  "type": "string"
+                },
+                "endsOn": {
+                  "type": "string"
+                },
+                "approvedBy": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "flagged": {
+            "type": "number"
+          },
+          "onDate": {
+            "type": "string"
+          },
+          "receivedFrom": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/space-performance.ts"
       },
       "GetMerchandisingPlanogramComplianceBaysReply": {
         "type": "object",
@@ -210436,6 +210715,12 @@
             "x-unchecked": true,
             "description": "Read and passed on as given; the handler does not check its type."
           },
+          "productIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "reason": {
             "type": "string",
             "enum": [
@@ -210499,6 +210784,15 @@
         ],
         "properties": {
           "effectiveFrom": {
+            "type": "string"
+          },
+          "productIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
             "type": "string"
           }
         },
@@ -289155,6 +289449,87 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProductCheckRow": {
+        "type": "object",
+        "required": [
+          "report",
+          "productId",
+          "sku",
+          "name",
+          "categoryId",
+          "categoryName",
+          "hsnCode",
+          "reasons"
+        ],
+        "properties": {
+          "report": {
+            "type": "string",
+            "enum": [
+              "allergens",
+              "barcode",
+              "tax"
+            ]
+          },
+          "productId": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "categoryId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "categoryName": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "hsnCode": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "category_not_on_the_list",
+                "gst_rate_not_read",
+                "no_allergen_declaration",
+                "no_barcode",
+                "no_gst_rate_today",
+                "no_hsn_code",
+                "no_ingredient_list"
+              ]
+            }
+          },
+          "soldByWeight": {
+            "type": "boolean"
           }
         },
         "additionalProperties": true

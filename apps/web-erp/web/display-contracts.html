@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Supplier display space</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Supplier display space (Wave 2 · M04-FR-04 "record display contract + funding → link to space … an expired display
+      contract flags for renewal/removal" · D02-FR-06 · §28 "Finance approves funding terms"). A THIN CLIENT over head
+      office's register (GET /v1/merchandising/display-contracts — each contract, its finding on the shop's today, and what
+      Finance has received from the display-funding journals) and its record route (POST …/display-contracts/:contractId,
+      append-only: a correction supersedes, nothing is deleted). The funding terms need a Finance approver — the accountant
+      or the owner, never the person who records them: asked here for exactly those terms, decided on the approver's own
+      Approvals page, then recorded naming the approval. Until then the contract stands as "unapproved". Every word has a
+      Tamil twin; nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--field-line, var(--line)); border-radius: 10px; background: var(--field, var(--bg)); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field, var(--bg)); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Supplier display space</h1>
+      <span class="sync"><button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button></span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Supplier display space</h2>
+        <p class="lead" id="lead"></p>
+        <div id="cards"></div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="list-h">
+        <h3 id="list-h">Display contracts</h3>
+        <p class="lead" id="list-lead"></p>
+        <div id="register"></div>
+      </section>
+      <section aria-labelledby="form-h" id="form-section">
+        <h3 id="form-h">Record a display contract</h3>
+        <p class="lead" id="form-lead"></p>
+        <form id="form">
+          <div class="row">
+            <label for="c-id"><span id="l-id">Contract code</span><input id="c-id" autocomplete="off" maxlength="40" /></label>
+            <label for="c-supplier"><span id="l-supplier">Supplier code</span><input id="c-supplier" autocomplete="off" /></label>
+            <label for="c-what"><span id="l-what">What the space is (e.g. tea end cap by the tills)</span><input id="c-what" autocomplete="off" maxlength="200" /></label>
+            <label for="c-store"><span id="l-store">Store</span><input id="c-store" autocomplete="off" /></label>
+            <label for="c-places"><span id="l-places">Shelf places it buys (codes, separated by commas)</span><input id="c-places" autocomplete="off" /></label>
+            <label for="c-area"><span id="l-area">Floor area (optional)</span><input id="c-area" autocomplete="off" /></label>
+            <label for="c-money"><span id="l-money">Money the supplier pays (₹)</span><input id="c-money" inputmode="decimal" autocomplete="off" /></label>
+            <label for="c-from"><span id="l-from">Starts on</span><input id="c-from" type="date" /></label>
+            <label for="c-to"><span id="l-to">Ends on</span><input id="c-to" type="date" /></label>
+          </div>
+          <button id="record" class="primary" type="submit">Record the contract</button>
+          <div class="row" id="ask-row" hidden>
+            <label for="why"><span id="l-why">Why (for the Finance approver)</span><input id="why" autocomplete="off" maxlength="300" /></label>
+            <button id="ask" type="button">Ask Finance to approve these terms</button>
+          </div>
+          <p class="status" id="form-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./display-contracts.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

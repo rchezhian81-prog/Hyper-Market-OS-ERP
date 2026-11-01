@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Shelf and floor setup</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Shelf and floor setup (Wave 2 · Round 4a part 2 · M04-FR-02 "aisle, rack, bay, shelf and capacity mapping" · M04-FR-03
+      "planogram creation … a planogram change is versioned" · M04-FR-04 "heat-map readiness" · SCREEN-GAP Round D). A THIN
+      CLIENT over head office's routes: the store's shelf map (GET/PUT /v1/merchandising/stores/:storeId/shelf-map), its
+      planograms (GET …/planograms, GET/PUT …/planograms/:planogramId) and its floor plan (GET/POST …/floor-plan). Each
+      publish is a NEW VERSION — nothing is edited in place; head office refuses a shelf place named twice, a facing on a shelf
+      the map does not have, two primary homes for one product, an area off the floor or over another, and says why. These
+      three registers are what the Shelves and space page, "Which areas earn most" (the floor heat map) and "Shelves against the plan" (shelf compliance by bay) read. Every word has
+      a Tamil twin; nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      label.inline { display: flex; align-items: center; gap: 8px; min-height: var(--tap); }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--field-line, var(--line)); border-radius: 10px; background: var(--field, var(--bg)); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      input[type=checkbox] { min-height: 24px; width: 24px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field, var(--bg)); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      button:disabled { opacity: .6; cursor: not-allowed; }
+      fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; margin: 0; }
+      legend { font-weight: 700; font-size: 15px; padding: 0 6px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Shelf and floor setup</h1>
+      <span class="sync"><button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button></span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Shelf and floor setup</h2>
+        <p class="lead" id="lead"></p>
+        <form class="row" id="pick">
+          <label for="store"><span id="l-store">Store</span><input id="store" autocomplete="off" /></label>
+          <button id="read" class="primary" type="submit">Read this store's setup</button>
+        </form>
+        <div id="cards"></div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="map-h">
+        <h3 id="map-h">1. Shelf places</h3>
+        <p class="lead" id="map-lead"></p>
+        <div id="map-register"></div>
+        <form id="add-places">
+          <fieldset>
+            <legend id="add-h">Add shelf places</legend>
+            <p class="muted" id="add-lead"></p>
+            <div class="row">
+              <label for="p-aisle"><span id="l-aisle">Aisle</span><input id="p-aisle" type="number" min="1" inputmode="numeric" /></label>
+              <label for="p-rack"><span id="l-rack">Rack</span><input id="p-rack" type="number" min="1" inputmode="numeric" /></label>
+              <label for="p-bay"><span id="l-bay">Bay</span><input id="p-bay" type="number" min="1" inputmode="numeric" /></label>
+              <label for="p-shelves"><span id="l-shelves">Shelves in the bay</span><input id="p-shelves" type="number" min="1" max="12" inputmode="numeric" value="1" /></label>
+              <label for="p-positions"><span id="l-positions">Places on each shelf</span><input id="p-positions" type="number" min="1" max="20" inputmode="numeric" value="1" /></label>
+              <label for="p-zone"><span id="l-zone">Kept</span><select id="p-zone"><option value="ambient">Ambient</option><option value="chilled">Chilled</option><option value="frozen">Frozen</option><option value="secure">Locked case</option></select></label>
+              <label for="p-label"><span id="l-label">Name on the shelf (optional)</span><input id="p-label" autocomplete="off" maxlength="60" /></label>
+            </div>
+            <button id="add-places-go" class="primary" type="submit">Add these places to the shelf map</button>
+            <p class="status" id="map-status" role="status" aria-live="polite"></p>
+          </fieldset>
+        </form>
+      </section>
+
+      <section aria-labelledby="plan-h">
+        <h3 id="plan-h">2. Planograms — what goes on each shelf</h3>
+        <p class="lead" id="plan-lead"></p>
+        <div id="plan-register"></div>
+        <form id="plan-form">
+          <fieldset>
+            <legend id="edit-h">Make or change a planogram</legend>
+            <div class="row">
+              <label for="g-id"><span id="l-gid">Planogram name (letters, numbers, dashes)</span><input id="g-id" autocomplete="off" maxlength="40" /></label>
+              <label for="g-from"><span id="l-gfrom">In force from</span><input id="g-from" type="date" /></label>
+            </div>
+            <ul class="rows" id="facings" aria-label="Facings in this planogram"></ul>
+            <div class="row">
+              <label for="f-product"><span id="l-fproduct">Product code</span><input id="f-product" autocomplete="off" /></label>
+              <label for="f-place"><span id="l-fplace">Shelf place</span><select id="f-place"></select></label>
+              <label for="f-cap"><span id="l-fcap">Holds (units)</span><input id="f-cap" type="number" min="1" inputmode="numeric" /></label>
+              <label class="inline" for="f-primary"><input id="f-primary" type="checkbox" checked /><span id="l-fprimary">Its main place in this store</span></label>
+              <button id="f-add" type="button">Add this facing</button>
+            </div>
+            <button id="plan-go" class="primary" type="submit">Publish this planogram</button>
+            <p class="status" id="plan-status" role="status" aria-live="polite"></p>
+          </fieldset>
+        </form>
+      </section>
+
+      <section aria-labelledby="floor-h">
+        <h3 id="floor-h">3. Floor plan — where each area sits</h3>
+        <p class="lead" id="floor-lead"></p>
+        <div id="floor-register"></div>
+        <form id="floor-form">
+          <fieldset>
+            <legend id="size-h">The shop floor</legend>
+            <div class="row">
+              <label for="fl-w"><span id="l-flw">Width (feet, side to side)</span><input id="fl-w" type="number" min="1" inputmode="numeric" /></label>
+              <label for="fl-d"><span id="l-fld">Depth (feet, entrance to back)</span><input id="fl-d" type="number" min="1" inputmode="numeric" /></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend id="area-h">Add an area</legend>
+            <p class="muted" id="area-lead"></p>
+            <div class="row">
+              <label for="a-id"><span id="l-aid">Area code</span><input id="a-id" autocomplete="off" maxlength="40" /></label>
+              <label for="a-name"><span id="l-aname">Name</span><input id="a-name" autocomplete="off" maxlength="60" /></label>
+              <label for="a-nameta"><span id="l-anameta">Name in Tamil (optional)</span><input id="a-nameta" autocomplete="off" maxlength="60" /></label>
+              <label for="a-x"><span id="l-ax">Feet from the left wall</span><input id="a-x" type="number" min="0" inputmode="numeric" /></label>
+              <label for="a-y"><span id="l-ay">Feet from the entrance</span><input id="a-y" type="number" min="0" inputmode="numeric" /></label>
+              <label for="a-w"><span id="l-aw">Width (feet)</span><input id="a-w" type="number" min="1" inputmode="numeric" /></label>
+              <label for="a-d"><span id="l-ad">Depth (feet)</span><input id="a-d" type="number" min="1" inputmode="numeric" /></label>
+              <label for="a-places"><span id="l-aplaces">Shelf places in it (codes, separated by commas)</span><input id="a-places" autocomplete="off" /></label>
+              <button id="a-add" type="button">Add this area</button>
+            </div>
+          </fieldset>
+          <ul class="rows" id="areas" aria-label="Areas to publish"></ul>
+          <button id="floor-go" class="primary" type="submit">Publish the floor plan</button>
+          <p class="status" id="floor-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./space-setup.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

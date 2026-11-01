@@ -1703,11 +1703,7 @@ export function merchandisingPayload(input: ScreenInput): Record<string, unknown
   const indentsPolicy = input.pack.indentsPolicy.known ? input.pack.indentsPolicy.value : undefined;
   const who = policy.userId ?? indentsPolicy?.userId;
   if (who !== undefined) payload['userId'] = who;
-  // Round 4a (M04-FR-04 · R8-8 · Round D): the head-office setup tabs on this page offer an action only to a viewer who holds
-  // its permission — so the page is told the named person's permissions from this box's role register when the pack's policy
-  // names none (re-addressed to the person who signed in, `asSignedInPerson`). Head office re-checks every act.
-  const merchPermissions = policy.permissions ?? (who === undefined ? undefined : permissionsOf(who, input.pack) ?? undefined);
-  if (merchPermissions !== undefined) payload['permissions'] = merchPermissions;
+  if (policy.permissions !== undefined) payload['permissions'] = policy.permissions;
   if (indentsPolicy !== undefined) {
     const indents: Record<string, unknown> = { permissions: indentsPolicy.permissions };
     if (who !== undefined) indents['userId'] = who;

@@ -108,7 +108,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     if (process.env['HEATMAP_SHOT'] !== undefined) await page.screenshot({ path: process.env['HEATMAP_SHOT'], fullPage: true });
 
     await page.click('#lang');
-    expect(await page.textContent('#page-h')).toBe('தள வெப்ப வரைபடம்');
+    expect(await page.textContent('#page-h')).toBe('எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன');
     expect(await page.locator('#floor .area[data-area="dairy"]').innerText()).toBe('பால் பொருட்கள் · தெரியவில்லை');
     expect(errors).toEqual([]);
     await context.close();

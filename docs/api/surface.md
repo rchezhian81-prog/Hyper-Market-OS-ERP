@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1641 | 951 | 951 | 178 | 436 |
+| 13 | 1643 | 951 | 951 | 178 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -154,6 +154,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/catalogue/products/:productId/substitutes` | `catalogue.pack.publish` | core | yes |
 | POST | `/v1/catalogue/products/:productId/tobacco-warning-confirmation` | `catalogue.tobacco.warning.confirm` | core | yes |
 | POST | `/v1/catalogue/products/duplicates` | `catalogue.pack.read` | core | yes |
+| GET | `/v1/catalogue/reports/product-checks` | `reporting.report.read` | core | — |
 | GET | `/v1/catalogue/reports/variants` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/scale-label-rules` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/scale-label-rules/:prefix` | `catalogue.pack.publish` | core | yes |
@@ -434,6 +435,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/merchandising/clusters` | `merchandising.range.read` | core | — |
 | POST | `/v1/merchandising/clusters/:zoneId/:productId/drop` | `merchandising.range.manage` | core | yes |
 | POST | `/v1/merchandising/clusters/:zoneId/:productId/list` | `merchandising.range.manage` | core | yes |
+| GET | `/v1/merchandising/display-contracts` | `merchandising.space.read` | core | — |
 | POST | `/v1/merchandising/display-contracts/:contractId` | `merchandising.display.manage` | core | yes |
 | POST | `/v1/merchandising/display-contracts/review` | `merchandising.space.read` | core | yes |
 | POST | `/v1/merchandising/planogram-compliance` | `planogram.compliance.read` | core | yes |

@@ -96,7 +96,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Shelf 
       expect(listed.photos).toEqual([expect.objectContaining({ bayKey: 'A1-R1-B1', mediaType: 'image/png', bytes: PNG.length })]);
 
       await page.click('#lang');
-      expect(await page.textContent('#page-h')).toBe('அலமாரி இணக்கம் — பகுதி வாரியாக');
+      expect(await page.textContent('#page-h')).toBe('திட்டத்துடன் அலமாரிகள்');
       expect(errors).toEqual([]);
     } finally { await context.close(); }
   }, 180_000);

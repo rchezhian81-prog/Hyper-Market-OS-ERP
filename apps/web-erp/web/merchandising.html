@@ -107,20 +107,6 @@
       p.note { margin: 0; color: var(--muted); font-size: 14px; }
       [hidden] { display: none !important; }
 
-      /* Round 4a: the head-office setup forms. A status line says what head office answered, in words. */
-      .setup { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 8px; }
-      .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; }
-      .actions button { padding: 0 16px; }
-      .status { margin: 4px 0 8px; font-size: 15px; }
-      .status.ok { color: var(--good); font-weight: 600; }
-      .status.err { color: var(--danger-text, var(--danger)); font-weight: 600; }
-      .setup-note, p.meta { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
-      .grid-wrap { overflow-x: auto; max-width: 100%; }
-      table.grid input, table.grid select { width: 100%; min-width: 64px; min-height: 44px; font-size: 15px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); color: var(--ink); }
-      table.grid td { padding: 4px; }
-      table.grid input[type='checkbox'] { min-width: 24px; min-height: 24px; width: 24px; }
-      .spacer { display: block; font-size: 15px; }
-
       .sheet h3 { margin: 0; font-size: 19px; }
       .choices { display: grid; gap: 10px; }
       .choices button { text-align: left; padding: 0 16px; min-height: var(--tap); }
@@ -156,8 +142,6 @@
       <button id="tab-refill" type="button">Refills</button>
       <button id="tab-range" type="button">Range</button>
       <button id="tab-space" type="button">Space</button>
-      <button id="tab-clusters" type="button" data-w="clustersTab">Clusters &amp; seasons</button>
-      <button id="tab-layout" type="button" data-w="layoutTab">Shelf layout</button>
     </nav>
 
     <main>
@@ -251,140 +235,6 @@
         <h3 id="contracts-title">Supplier display space</h3>
         <p class="lead" id="contracts-lead">An expired contract with the stand still on the floor is space you are giving away.</p>
         <div id="contracts-list"></div>
-
-        <!--
-          Round 4a (M04-FR-04): record a display contract at head office. Finance approves the money (D02-FR-06): ask first,
-          then record naming the approval head office holds — never a typed name. The view is merchandising-setup.js.
-        -->
-        <div class="setup" id="contract-setup">
-          <h3 data-w="contractH">Record a display contract</h3>
-          <p class="lead" data-w="contractLead"></p>
-          <p class="setup-note" id="contract-note" hidden></p>
-          <div class="two">
-            <div class="field"><label for="ct-id" data-w="contractId">Contract number</label><input id="ct-id" type="text" autocomplete="off" /></div>
-            <div class="field"><label for="ct-store" data-w="contractStore">Store</label><input id="ct-store" type="text" autocomplete="off" /></div>
-            <div class="field"><label for="ct-supplier" data-w="supplier">Supplier code</label><input id="ct-supplier" type="text" autocomplete="off" /></div>
-            <div class="field"><label for="ct-funding" data-w="funding">Money agreed (₹)</label><input id="ct-funding" type="text" inputmode="decimal" autocomplete="off" /></div>
-            <div class="field"><label for="ct-starts" data-w="startsOn">Starts on</label><input id="ct-starts" type="date" /></div>
-            <div class="field"><label for="ct-ends" data-w="endsOn">Ends on</label><input id="ct-ends" type="date" /></div>
-          </div>
-          <div class="field"><label for="ct-description" data-w="description">What the space is</label><input id="ct-description" type="text" autocomplete="off" /></div>
-          <div class="two">
-            <div class="field"><label for="ct-places" data-w="places">Shelf places it covers</label><input id="ct-places" type="text" autocomplete="off" /></div>
-            <div class="field"><label for="ct-area" data-w="contractArea">Floor area (optional)</label><input id="ct-area" type="text" autocomplete="off" /></div>
-          </div>
-          <div class="field"><label for="ct-reason" data-w="askReason">Why (for Finance)</label><input id="ct-reason" type="text" autocomplete="off" /></div>
-          <div class="actions">
-            <button id="ct-ask" class="primary" type="button" data-w="askFinance">Ask Finance to approve</button>
-            <button id="ct-record" type="button" data-w="recordUnapproved">Record without approval</button>
-            <button id="ct-asks-show" type="button" data-w="showAsks">Show my asks</button>
-          </div>
-          <p class="status" id="ct-status" role="status"></p>
-          <h3 data-w="myAsks" id="ct-asks-h" hidden>Your asks to Finance</h3>
-          <ul class="saved" id="ct-asks"></ul>
-        </div>
-      </section>
-
-      <!-- Round 4a (R8-8 · OB-318): clusters (the price-zone register) and season plans, at head office. -->
-      <section id="view-clusters" hidden>
-        <h2 data-w="clustersH">Store clusters</h2>
-        <p class="lead" data-w="clustersLead"></p>
-        <p class="setup-note" id="clusters-note" hidden></p>
-        <button id="cl-show" type="button" data-w="showClusters">Show the clusters</button>
-        <p class="status" id="cl-read-status" role="status"></p>
-        <div id="cl-list"></div>
-
-        <div class="two">
-          <div class="field"><label for="cl-zone" data-w="cluster">Cluster (price zone)</label><input id="cl-zone" type="text" list="cl-zones" autocomplete="off" /><datalist id="cl-zones"></datalist></div>
-          <div class="field"><label for="cl-product" data-w="product">Item code</label><input id="cl-product" type="text" autocomplete="off" /></div>
-          <div class="field"><label for="cl-from" data-w="effectiveFrom">From</label><input id="cl-from" type="date" /></div>
-          <div class="field"><label for="cl-reason" data-w="dropReason">Why it is dropped</label><select id="cl-reason"></select></div>
-          <div class="field"><label for="cl-note" data-w="reasonNote">Note (optional)</label><input id="cl-note" type="text" autocomplete="off" /></div>
-          <div class="field"><label for="cl-replaced" data-w="replacedBy">Replaced by (item code)</label><input id="cl-replaced" type="text" autocomplete="off" /></div>
-        </div>
-        <div class="actions">
-          <button id="cl-list-btn" class="primary" type="button" data-w="listInCluster">List in every store of the cluster</button>
-          <button id="cl-drop-btn" type="button" data-w="dropInCluster">Drop in every store of the cluster</button>
-        </div>
-        <p class="status" id="cl-status" role="status"></p>
-
-        <h3 data-w="storeRangeH">A store's range at head office</h3>
-        <div class="two">
-          <div class="field"><label for="sr-store" data-w="contractStore">Store</label><input id="sr-store" type="text" autocomplete="off" /></div>
-          <div class="field"><label for="sr-date" data-w="carried">Carried on</label><input id="sr-date" type="date" /></div>
-        </div>
-        <button id="sr-show" type="button" data-w="showRange">Show the range</button>
-        <p class="status" id="sr-status" role="status"></p>
-
-        <h3 data-w="seasonsH">Season plans</h3>
-        <p class="lead" data-w="seasonsLead"></p>
-        <button id="se-show" type="button" data-w="showSeasons">Show the season plans</button>
-        <p class="status" id="se-read-status" role="status"></p>
-        <div id="se-list"></div>
-        <div class="two">
-          <div class="field"><label for="se-plan" data-w="planId">Plan name</label><input id="se-plan" type="text" autocomplete="off" /></div>
-          <div class="field"><label for="se-scope" data-w="scope">For</label><select id="se-scope"><option value="zone" data-w="scopeZone">a cluster</option><option value="store" data-w="scopeStore">one store</option></select></div>
-          <div class="field"><label for="se-scope-id" data-w="scopeId">Cluster or store</label><input id="se-scope-id" type="text" list="cl-zones" autocomplete="off" /></div>
-          <div class="field"><label for="se-products" data-w="products">Item codes</label><input id="se-products" type="text" autocomplete="off" /></div>
-          <div class="field"><label for="se-from" data-w="listFrom">First day</label><input id="se-from" type="date" /></div>
-          <div class="field"><label for="se-to" data-w="listTo">Last day</label><input id="se-to" type="date" /></div>
-        </div>
-        <div class="field"><label for="se-reason" data-w="seasonReason">Why</label><input id="se-reason" type="text" autocomplete="off" /></div>
-        <div class="actions">
-          <button id="se-make" class="primary" type="button" data-w="makeSeason">Make this season plan</button>
-          <button id="se-sweep" type="button" data-w="sweep">End the seasons that are over now</button>
-        </div>
-        <p class="status" id="se-status" role="status"></p>
-      </section>
-
-      <!-- Round 4a (screen gap audit Round D): the shelf map, the planogram and the floor plan head office holds for a store. -->
-      <section id="view-layout" hidden>
-        <h2 data-w="layoutH">Shelf layout</h2>
-        <p class="lead" data-w="layoutLead"></p>
-        <p class="setup-note" id="layout-note" hidden></p>
-        <div class="two">
-          <div class="field"><label for="ly-store" data-w="layoutStore">Store</label><input id="ly-store" type="text" autocomplete="off" /></div>
-          <div class="field"><span class="spacer">&nbsp;</span><button id="ly-load" type="button" data-w="loadLayout">Load what head office holds</button></div>
-        </div>
-        <p class="status" id="ly-status" role="status"></p>
-
-        <h3 data-w="shelfMapH">Shelf map</h3>
-        <p class="lead" data-w="shelfMapLead"></p>
-        <p class="meta" id="sm-meta"></p>
-        <div class="grid-wrap"><table class="grid" id="sm-rows"></table></div>
-        <div class="actions">
-          <button id="sm-add" type="button" data-w="addLine">Add a line</button>
-          <button id="sm-publish" class="primary" type="button" data-w="publishShelfMap">Publish the shelf map</button>
-        </div>
-        <p class="status" id="sm-status" role="status"></p>
-
-        <h3 data-w="planogramH">Planogram</h3>
-        <p class="lead" data-w="planogramLead"></p>
-        <p class="meta" id="pg-meta"></p>
-        <div class="two">
-          <div class="field"><label for="pg-id" data-w="planogramId">Plan name</label><input id="pg-id" type="text" autocomplete="off" /></div>
-          <div class="field"><label for="pg-from" data-w="effectiveFrom">From</label><input id="pg-from" type="date" /></div>
-        </div>
-        <div class="grid-wrap"><table class="grid" id="pg-rows"></table></div>
-        <div class="actions">
-          <button id="pg-add" type="button" data-w="addLine">Add a line</button>
-          <button id="pg-publish" class="primary" type="button" data-w="publishPlanogram">Publish the planogram</button>
-        </div>
-        <p class="status" id="pg-status" role="status"></p>
-
-        <h3 data-w="floorPlanH">Floor plan</h3>
-        <p class="lead" data-w="floorPlanLead"></p>
-        <p class="meta" id="fp-meta"></p>
-        <div class="two">
-          <div class="field"><label for="fp-width" data-w="widthFt">Floor width (ft)</label><input id="fp-width" type="number" inputmode="numeric" min="1" step="1" /></div>
-          <div class="field"><label for="fp-depth" data-w="depthFt">Floor depth (ft)</label><input id="fp-depth" type="number" inputmode="numeric" min="1" step="1" /></div>
-        </div>
-        <div class="grid-wrap"><table class="grid" id="fp-rows"></table></div>
-        <div class="actions">
-          <button id="fp-add" type="button" data-w="addLine">Add a line</button>
-          <button id="fp-publish" class="primary" type="button" data-w="publishFloorPlan">Publish the floor plan</button>
-        </div>
-        <p class="status" id="fp-status" role="status"></p>
       </section>
     </main>
 
@@ -406,8 +256,6 @@
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>
     <script type="module" src="./merchandising.js"></script>
-    <!-- Round 4a: the head-office setup tabs (display contracts, clusters and seasons, shelf layout). -->
-    <script type="module" src="./merchandising-setup.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

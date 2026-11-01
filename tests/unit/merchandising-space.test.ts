@@ -149,3 +149,18 @@ describe('reviewDisplayContracts — is the supplier paying for the end-cap?', (
     expect(rows[0]?.finding).toBe('expiring_soon');
   });
 });
+
+describe('spacePerformance — an area whose margin is not known (Wave 2 · P-08)', () => {
+  it('says "not measured" for its margin and never flags it, while its sales per square foot still show', () => {
+    const rows = spacePerformance({
+      areas: AREAS,
+      sales: { grocery: money(40_000_00, INR), fresh: money(20_000_00, INR), household: money(12_000_00, INR) },
+      grossMargin: { grocery: money(2_000_00, INR), fresh: money(5_000_00, INR) }, // household: a product with no buying cost
+      currency: INR,
+    });
+    const household = rows.find((r) => r.areaId === 'household')!;
+    expect(household.marginPerSqFt.kind).toBe('not_meaningful');
+    expect(household.salesPerSqFt).toEqual({ kind: 'per_sq_ft', minorPerSqFt: 300 }); // ₹12,000 over 4,000 sq ft = ₹3 a sq ft
+    expect(household.underperforming).toBe(false);
+  });
+});

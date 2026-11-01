@@ -29,6 +29,7 @@ import {
   type SpaceArea, type DisplayContract,
 } from '../../../packages/merchandising/src/index';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
+import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 const CURRENCIES: readonly CurrencyCode[] = ['INR', 'USD', 'EUR', 'GBP'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -65,6 +66,8 @@ export interface SpacePerformanceDeps {
    */
   readonly fundingReceived?: (tenantId: string) => Promise<Readonly<Record<string, Money>>> | Readonly<Record<string, Money>>;
   readonly now: () => string;
+  /** Wave 2 (M04-FR-04 register): the shop's calendar — a contract's days left are counted from the SHOP's today. */
+  readonly calendar?: ShopCalendarOf;
 }
 
 export function spacePerformanceRoutes(deps: SpacePerformanceDeps): readonly Route[] {
@@ -133,6 +136,36 @@ export function spacePerformanceRoutes(deps: SpacePerformanceDeps): readonly Rou
             statuses, count: statuses.length, flagged,
             receivedFrom: fromFinance === undefined ? 'the_request' : 'finance_display_funding_journals',
             ...(fromFinance !== undefined && b['received'] !== undefined ? { typedReceivedIgnored: true } : {}),
+          },
+        };
+      },
+    },
+    {
+      // Wave 2 (M04-FR-04 · D02-FR-06 · SCREEN-GAP Round D): the register the Supplier display space page reads — every
+      // contract as last recorded (a correction supersedes), each with the review's finding judged on the SHOP's today and
+      // what FINANCE has received against it (the display-funding journals; "not wired" said, never a typed figure).
+      // ?storeId= narrows to one store. Read-only.
+      api: 'API-04', method: 'GET', path: '/v1/merchandising/display-contracts',
+      permission: 'merchandising.space.read',
+      handler: async (ctx) => {
+        const storeId = isStr(ctx.query['storeId']) ? ctx.query['storeId'].trim() : undefined;
+        const all = await deps.contracts(ctx.tenantId);
+        const contracts = storeId === undefined ? all : all.filter((c) => c.storeId === storeId);
+        const fromFinance = deps.fundingReceived === undefined ? undefined : await deps.fundingReceived(ctx.tenantId);
+        const onDate = await shopToday(deps, ctx.tenantId);
+        const statuses = new Map(reviewDisplayContracts({ contracts, onDate, received: fromFinance ?? {}, currency: 'INR' }).map((s) => [s.contractId, s] as const));
+        const rows = [...contracts].sort((a, b) => (a.endsOn < b.endsOn ? -1 : a.endsOn > b.endsOn ? 1 : a.contractId.localeCompare(b.contractId))).map((c) => {
+          const s = statuses.get(c.contractId)!;
+          return {
+            ...c, approved: c.approvedBy !== undefined && c.approvedBy.trim() !== '', finding: s.finding, detail: s.detail, daysRemaining: s.daysRemaining,
+            receivedMinor: fromFinance === undefined ? null : (fromFinance[c.contractId]?.minor ?? 0), outstandingMinor: fromFinance === undefined ? null : s.outstanding.minor,
+          };
+        });
+        return {
+          status: 200,
+          body: {
+            contracts: rows, count: rows.length, flagged: rows.filter((r) => r.finding !== 'active').length, onDate,
+            receivedFrom: fromFinance === undefined ? 'not_wired' : 'finance_display_funding_journals', asAt: deps.now(),
           },
         };
       },
