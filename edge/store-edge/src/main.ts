@@ -2094,7 +2094,7 @@ export async function startEdge(
   seriesClockRef.guard = clockGuard; // A2: the bill series' year switch now follows the clock check
   /** OB-403 "A" · §31.1: what this box holds while its clock is 5+ minutes out — the offers and prices due, by name. */
   const activationHoldNow = (now: string): ActivationHoldReport => activationHoldReport({
-    hold: clockGuard.activationHold(), pack, now, tradingDay: packTradingDay(pack, now),
+    hold: clockGuard.activationHold(), pack, now,
     promotions: node.pack()?.snapshot.promotions ?? [],
     priceEntries: pack.priceEntries.known ? pack.priceEntries.value : [],
   });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -15,6 +15,7 @@ import { tradingMonthIn, shopDateIn } from '../../packages/calendar/src/shop-clo
 import { financeAdapter, eInvoiceAdapter, eWayBillAdapter } from '../../services/api/src/adapters';
 import { TALLY_OUTBOX_STREAM } from '../../services/api/src/finance-bridge-adapters';
 import type { IrnRequest } from '../../packages/e-invoice/src/index';
+import { pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
 /**
  * **Round A (screen gap audit, 31 Oct 2026) in a real browser: five office pages that were empty forever now show head
@@ -36,7 +37,8 @@ import type { IrnRequest } from '../../packages/e-invoice/src/index';
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const S1 = 'S1';
 const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: 'S1-BACK' };
-const inDays = (n: number): string => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+/** A day n days from now on the SHOP's calendar (never the UTC date — the shop's yesterday from 18:30 to 24:00 UTC). */
+const inDays = (n: number): string => shopDateIn(new Date(Date.now() + n * 86_400_000).toISOString());
 
 interface Doc { readonly document: { readonly body: { readonly innerText: string } } }
 const bodyText = (page: Page): Promise<string> => page.evaluate(() => (globalThis as unknown as Doc).document.body.innerText);
@@ -52,6 +54,10 @@ describe.skipIf(!existsSync(CHROMIUM))('Round A: five office pages show head off
   const savedFetch = globalThis.fetch;
 
   beforeAll(async () => {
+    // Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop — before this
+    // shop's 02:00 cut-off, so its trading day is still yesterday while its calendar date (what a price "from today" and head
+    // office's back-dating rule go by) is today. The pages' clocks follow (`pinThePageClock`).
+    pinTheEveningClock();
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
     h = apiHarness();
@@ -127,6 +133,7 @@ describe.skipIf(!existsSync(CHROMIUM))('Round A: five office pages show head off
   }, 240_000);
 
   afterAll(async () => {
+    vi.useRealTimers();
     globalThis.fetch = savedFetch;
     await browser?.close();
     await edge?.stop();
@@ -143,6 +150,7 @@ describe.skipIf(!existsSync(CHROMIUM))('Round A: five office pages show head off
    *  office in THEIR session — the part the hosted front plays (and the store PC's head-office sign-in, OB-388). */
   const asPerson = async (user: string): Promise<{ context: BrowserContext; page: Page; errors: string[] }> => {
     const context = await browser.newContext({ serviceWorkers: 'block', extraHTTPHeaders: { 'x-sre-user': user } });
+    await pinThePageClock(context);
     await context.route('**/v1/**', async (route) => {
       if (!net.up) { await route.abort('internetdisconnected'); return; }
       const u = new URL(route.request().url());

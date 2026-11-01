@@ -49,6 +49,7 @@ import { readMachineReference, type MachineRefReading } from '../../../packages/
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 import { floorRefusal } from '../../../packages/price-guard/src/till-override'; // OB-500 (R7-A)
+import { operatorLabel } from './operator-label'; // OB-638
 import { APP_BUILD_VERSION, judgeClientVersion, readPackVersionPolicy, type ClientKind, type ClientVersionJudgement } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A) · OB-521 (R8-A)
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
@@ -1180,6 +1181,12 @@ export function bootPos(config?: {
   readonly resumeAtTill: (token: string) => Promise<boolean>;
   /** End the session on the box and forget it here. */
   readonly signOutAtTill: () => Promise<void>;
+  /**
+   * OB-638: the person at the till as the screen names them — "Ravi (u-ravi)", the name the store computer gave at
+   * sign-in with the staff code beside it; the code alone when no name is known; undefined when nobody is signed in.
+   * Words only: `operator()` (the code) is still what every record carries.
+   */
+  readonly operatorShown: () => string | undefined;
   /** How this box signs a cashier in — `pin`, or the hosted copy's `verified_sign_in`; `null` when the box did not answer. */
   readonly tillSignInBy: () => Promise<'pin' | 'verified_sign_in' | null>;
   /** The session token this tab holds, for the page to keep across a reload (never the PIN). */
@@ -1975,10 +1982,19 @@ export function bootPos(config?: {
   // WHO IS AT THE TILL, verified by the store computer (ADR-0020). The model is told the person only once the box has
   // said who they are; the box then binds every money write to the session.
   const operators = config?.operatorPort ?? laneOperator(config?.lanePort ?? DEFAULT_LANE_PORT);
+  // OB-638: the name the store computer gave with the session, kept beside the code it belongs to — shown only while that
+  // same person is the one signed in, so a later sign-in (or a sign-out) can never show the last person's name.
+  let signedInName: { readonly userId: string; readonly name: string } | null = null;
+  const rememberName = (userId: string, name: unknown): void => { signedInName = typeof name === 'string' ? { userId, name } : null; };
+  const operatorShown = (): string | undefined => {
+    const id = session.operator();
+    return operatorLabel(id, signedInName !== null && signedInName.userId === id ? signedInName.name : undefined);
+  };
   const signInAtTill = async (input: { readonly staffId?: string; readonly pin?: string }): Promise<TillSignInOutcome> => {
     const outcome = await operators.signIn(input);
     if (outcome.signedIn) {
       tillOperatorSession.token = outcome.token;
+      rememberName(outcome.userId, outcome.displayName);
       signIn(outcome.userId);
     }
     return outcome;
@@ -1987,6 +2003,7 @@ export function bootPos(config?: {
     const status = await operators.status(token);
     if (status?.signedIn === true && typeof status.userId === 'string') {
       tillOperatorSession.token = token;
+      rememberName(status.userId, status.displayName);
       signIn(status.userId);
       return true;
     }
@@ -1995,6 +2012,7 @@ export function bootPos(config?: {
   const signOutAtTill = async (): Promise<void> => {
     const token = tillOperatorSession.token;
     tillOperatorSession.token = undefined;
+    signedInName = null;
     signOut();
     await operators.signOut(token);
   };
@@ -2239,7 +2257,7 @@ export function bootPos(config?: {
   });
   const cancellableView = Object.assign(quotedView, { ringQuotationAtTill: ringQuotationRemembered, cancelBillAtTill, quotationsOnBill, billCancelWords: (lang: 'en' | 'ta') => BILL_CANCEL_WORDS[lang] });
   // ── R8-B · OB-523 — end ──
-  return Object.assign(cancellableView, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
+  return Object.assign(cancellableView, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

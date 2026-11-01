@@ -41,7 +41,7 @@ const WORDS = {
     title: 'Queue till', notBuilt: 'The queue till\'s programme is not on this store computer. Ask the manager.',
     signedInAs: 'Signed in', notSignedIn: 'Not signed in', boxUp: 'Store computer connected', boxDown: 'Store computer not answering — scanning goes on; hand over and payment wait for it',
     empty: 'Scan the customer\'s items. Each line is priced by the shop\'s own price list.', toPay: 'To pay',
-    key: 'Key a code', waitingBtn: 'Waiting baskets', card: 'Card', upi: 'UPI', handover: 'Hand to a till',
+    key: 'Key a code', waitingBtn: 'Waiting baskets', qtyWord: 'Quantity', card: 'Card', upi: 'UPI', handover: 'Hand to a till',
     paymentsOff: 'This handheld does not take payments — hand each basket to a till.', mirror: 'Mirror pilot: the old system takes the money. Hand each basket to a till.',
     keyTitle: 'Key the barcode', keyHint: 'The digits under the barcode.', cancel: 'Cancel', ok: 'OK', read: 'Read this',
     lineWhat: 'This line', qtyBtn: 'Change the quantity', voidBtn: 'Take this line off', qtyTitle: 'How many?',
@@ -67,7 +67,7 @@ const WORDS = {
     title: 'வரிசை பில்லிங்', notBuilt: 'வரிசை பில்லிங் நிரல் இந்தக் கடை கணினியில் இல்லை. மேலாளரிடம் கேட்கவும்.',
     signedInAs: 'உள்நுழைந்தவர்', notSignedIn: 'உள்நுழையவில்லை', boxUp: 'கடை கணினி இணைப்பில் உள்ளது', boxDown: 'கடை கணினி பதிலளிக்கவில்லை — ஸ்கேன் தொடரும்; ஒப்படைப்பும் கட்டணமும் காத்திருக்கும்',
     empty: 'வாடிக்கையாளரின் பொருட்களை ஸ்கேன் செய்யவும். ஒவ்வொரு வரியும் கடையின் சொந்த விலைப் பட்டியலால் விலையிடப்படும்.', toPay: 'செலுத்த வேண்டியது',
-    key: 'குறியீட்டை உள்ளிடு', waitingBtn: 'காத்திருக்கும் கூடைகள்', card: 'அட்டை', upi: 'UPI', handover: 'பில்லிங்குக்கு ஒப்படை',
+    key: 'குறியீட்டை உள்ளிடு', waitingBtn: 'காத்திருக்கும் கூடைகள்', qtyWord: 'எண்ணிக்கை', card: 'அட்டை', upi: 'UPI', handover: 'பில்லிங்குக்கு ஒப்படை',
     paymentsOff: 'இந்தக் கருவி கட்டணம் பெறாது — ஒவ்வொரு கூடையையும் பில்லிங்குக்கு ஒப்படைக்கவும்.', mirror: 'மிரர் சோதனை: பழைய அமைப்பு பணம் பெறும். கூடையை பில்லிங்குக்கு ஒப்படைக்கவும்.',
     keyTitle: 'பார்கோடை உள்ளிடவும்', keyHint: 'பார்கோடின் கீழ் உள்ள இலக்கங்கள்.', cancel: 'ரத்து', ok: 'சரி', read: 'இதைப் படிக்கவும்',
     lineWhat: 'இந்த வரி', qtyBtn: 'அளவை மாற்று', voidBtn: 'இந்த வரியை நீக்கு', qtyTitle: 'எத்தனை?',
@@ -180,7 +180,10 @@ function render() {
   say(el('upi'), t('upi'), 'monitor-smartphone');
   say(el('handover'), t('handover'), 'send');
   const ctx = window.queuePos || {};
-  el('who').textContent = signedIn && ctx.signedIn ? `${t('signedInAs')}: ${ctx.signedIn.displayName}` : t('notSignedIn');
+  // OB-638: the person by name with their staff code beside it ("Ravi (u-ravi)"), as the till's own session names them from
+  // the store computer's answer; the code alone when no name is known.
+  const shown = till && typeof till.operatorShown === 'function' ? till.operatorShown() : undefined;
+  el('who').textContent = signedIn && ctx.signedIn ? `${t('signedInAs')}: ${shown ?? ctx.signedIn.displayName}` : t('notSignedIn');
   el('box').className = boxUp === false ? 'box down' : 'box';
   el('box-text').textContent = boxUp === false ? t('boxDown') : t('boxUp');
   if (!session) { el('notice').hidden = false; el('notice').textContent = t('notBuilt'); return; }
@@ -199,7 +202,8 @@ function render() {
     b.className = l.voided ? 'line voided' : 'line';
     b.dataset.lineId = l.lineId;
     const what = document.createElement('span'); what.className = 'what'; what.textContent = l.description;
-    const qty = document.createElement('span'); qty.className = 'qty'; qty.textContent = l.qtyText || `× ${l.qty}`;
+    // UI-2: the quantity said in words ("Quantity 2", "Quantity 1.250 kg"), never a bare number under the name.
+    const qty = document.createElement('span'); qty.className = 'qty'; qty.textContent = `${t('qtyWord')} ${l.qtyText || l.qty}`;
     const amount = document.createElement('span'); amount.className = 'amount'; amount.textContent = inr(l.amountMinor);
     b.append(what, qty, amount);
     if (!l.voided) b.addEventListener('click', () => { void lineMenu(l); });

@@ -5,7 +5,7 @@
 // (`window.shellCachedAt`). The page is fetched from the network first every time: it carries the box's signed price
 // list, and yesterday's prices must never be served as today's (P-08). A missing script is never answered with a page.
 
-const CACHE = 'sre-self-checkout-shell-6e2e662a495c';
+const CACHE = 'sre-self-checkout-shell-04ece67f7dc5';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];

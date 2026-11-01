@@ -149,7 +149,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld issues against a floor in
     expect(await page.textContent('#issue-heading')).toBe('To issue to the floor');
     expect(await page.textContent('#issue-lines .item.issue .where')).toBe('BIN-A');
     expect(await page.textContent('#issue-lines .item.issue .what')).toBe('ind-1 · RICE · asked by u-floor');
-    expect(await page.textContent('#issue-lines .item.issue .qty')).toBe('12 units · EA · still owed');
+    expect(await page.textContent('#issue-lines .item.issue .qty')).toBe('12 units · still owed');
     expect(await page.isHidden('#issue')).toBe(false);
 
     // A bin holding none of the product is refused at the racking — nothing confirmed, nothing queued.
@@ -180,7 +180,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld issues against a floor in
     await scan(page, '890RICE');
     await page.waitForSelector('#confirm:not([hidden])');
     expect(await page.textContent('#confirm-title')).toBe('Confirm the issue — ind-1');
-    expect(await page.textContent('#confirm-qty')).toBe('12 units · EA');
+    expect(await page.textContent('#confirm-qty')).toBe('12 units');
     expect(await page.textContent('#confirm-hint')).toBe('RICE · from bin BIN-A · asked by u-floor');
     await page.click('#confirm-ok');
     await page.waitForSelector('#banner:not([hidden])');

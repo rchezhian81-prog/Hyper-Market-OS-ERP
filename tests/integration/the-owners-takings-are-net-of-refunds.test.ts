@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, afterAll, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +6,13 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import { bootOwner, forgetfulQueueStore } from '../../apps/owner-app/src/browser-entry';
 import { prepareTillBox, signInTill, managerApprovesOn } from '../support/till-operator';
+import { DEFAULT_SHOP_CALENDAR } from '../../packages/calendar/src/shop-clock';
+import { pinTheEveningClock } from '../support/evening-clock';
+
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop, when the UTC date is
+// still the shop's yesterday — so this file proves the shop's date every time it runs, not only when CI runs after 18:30 UTC.
+pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
 
 /**
  * **The owner's "Today" takings are net of today's refunds (Round B · M29-FR-01 · P-02 · P-08).** Before this, a ₹35 refund
@@ -51,7 +58,9 @@ describe("the owner's takings count today's refunds", () => {
     stops.push(() => edge.stop());
 
     // One bill: two ₹48 packs, cash — ₹96 taken.
-    const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port });
+    // The shop's zone, as the box serves it to every till page (the pack names none, so the shop default): the till then
+    // dates the bill on the shop's day, as the box dates "today" — never on this machine's UTC date (18:30–24:00 UTC).
+    const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port, timeZone: DEFAULT_SHOP_CALENDAR.timeZone });
     await signInTill(till, 'u-meena');
     till.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 4_800, qty: 2 });
     await till.tenderCash('S-1', await till.nextReceipt(), new Date().toISOString());

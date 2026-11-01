@@ -69,7 +69,7 @@ import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
-import { packTimeZone, packTradingDay } from './shop-zone';
+import { packCalendarDate, packTimeZone, packTradingDay } from './shop-zone';
 import { toCloudReturn } from './cloud-return';
 import { refundLegs, type DayBookReturn } from '../../../packages/finance/src/day-book';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
@@ -1569,6 +1569,12 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
  * floor check passes loudly and wrongly at the moment somebody is relying on it — the screen turns
  * an absent cost into a refusal that needs an approver, which is the honest answer.
  */
+/** The shop's calendar date at the box's clock (`now`) — the day "today's price" is decided by; the trading day when the
+ *  clock cannot be read (nothing is made up). */
+function priceDayOf(input: ScreenInput): string {
+  return Number.isNaN(Date.parse(input.now)) ? input.tradingDay : packCalendarDate(input.pack, input.now);
+}
+
 export function cataloguePayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.pricingPolicy.known) return null;
   const policy = input.pack.pricingPolicy.value;
@@ -1576,10 +1582,13 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
   const payload: Record<string, unknown> = {
     userId: policy.userId,
     storeId: input.pack.policies.known ? input.pack.policies.value.storeId : 'store-1',
-    // The shop's own trading day, not the browser's clock. A device whose date is a day out would
+    // The shop's own date, not the browser's clock. A device whose date is a day out would
     // otherwise activate tomorrow's price today. OB-403 "A": while this box's clock is 5+ minutes out, the day stays the
     // one the clock was last trusted on, so a price dated later is held (listed in `activationHold`), never made today's.
-    today: input.activationHold?.priceDay ?? input.tradingDay,
+    // The shop's CALENDAR date (its zone's midnight), not the trading day: a price "from 2 Nov" is in force from the shop's
+    // midnight (R1c) and head office refuses one dated before the shop's calendar today, so with a 02:00 cut-off the trading
+    // day said "1 Nov" from 00:00 to 02:00 and the screen showed "No price set" beside the price the till was charging.
+    today: input.activationHold?.priceDay ?? priceDayOf(input),
     ...(input.activationHold?.held === true ? { activationHold: input.activationHold } : {}),
     marginFloorBps: policy.marginFloorBps,
     // The setter is removed here rather than trusted to leave themselves alone (§28). The session

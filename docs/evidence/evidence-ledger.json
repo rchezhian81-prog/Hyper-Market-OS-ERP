@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2044,
+  "testFiles": 2051,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -32,8 +32,8 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 30,
-        "integration": 28,
+        "unit": 31,
+        "integration": 29,
         "realDb": 12,
         "browser": 12,
         "connected": 5,
@@ -68,6 +68,7 @@
           "tests/unit/the-box-says-when-its-zone-is-not-the-shops.test.ts",
           "tests/unit/the-last-fixed-offset-sites-read-the-shops-day.test.ts",
           "tests/unit/the-owner-setup-commands-refuse-before-they-call.test.ts",
+          "tests/unit/the-price-screen-goes-by-the-shops-date-before-a-late-cut-off.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/the-rules-read-the-shops-day-after-midnight.test.ts",
           "tests/unit/the-shop-clock-dates-by-the-shops-zone.test.ts",
@@ -75,6 +76,7 @@
         ],
         "integration": [
           "tests/integration/a-branch-closes-only-on-measured-facts.test.ts",
+          "tests/integration/a-price-set-just-after-the-shops-midnight-still-needs-a-second-person.test.ts",
           "tests/integration/a-sale-or-return-after-the-shops-midnight-is-booked-on-its-own-trading-day.test.ts",
           "tests/integration/an-org-rename-is-kept.test.ts",
           "tests/integration/branch-lifecycle.test.ts",
@@ -413,8 +415,8 @@
       "id": "M05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 19,
-        "integration": 22,
+        "unit": 20,
+        "integration": 23,
         "realDb": 8,
         "browser": 8,
         "connected": 1,
@@ -440,11 +442,13 @@
           "tests/unit/rate.test.ts",
           "tests/unit/screen-router.test.ts",
           "tests/unit/service-catalogue.test.ts",
+          "tests/unit/the-price-screen-goes-by-the-shops-date-before-a-late-cut-off.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/till-side-the-till-carries-head-offices-catalogue-rules.test.ts"
         ],
         "integration": [
           "tests/integration/a-launched-offer-is-the-offer-the-till-gives.test.ts",
+          "tests/integration/a-price-set-just-after-the-shops-midnight-still-needs-a-second-person.test.ts",
           "tests/integration/a-saved-price-is-the-price-the-till-charges.test.ts",
           "tests/integration/audit-trail-store.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",

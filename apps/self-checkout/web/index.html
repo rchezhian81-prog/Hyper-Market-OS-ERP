@@ -18,13 +18,17 @@
 
       Off until the owner switches self-checkout on for THIS lane (OB-316). Card or UPI on the shop's machine only.
       Framework-free and static; targets 56px and up.
+
+      UI-2 (owner, 1 Nov 2026): a customer's screen in plain, large type — each item at 20px with its quantity said in
+      words, the amount to pay the largest figure on the screen (the shared `.sre-figure-xl` scale), and every word a
+      screen reader hears in English and Tamil too (design system §4.3).
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 64px; }
-      body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.45 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 20px/1.45 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
       header {
         display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
         padding: var(--space-3) var(--space-4); background: var(--panel); border-bottom: 1px solid var(--line);
@@ -55,16 +59,18 @@
       .now.closed { background: var(--panel-2); color: var(--ink); border-color: var(--line-strong); }
       .basket { overflow-y: auto; display: grid; gap: var(--space-2); align-content: start; }
       .line { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); }
-      .line .what { font-weight: 600; overflow-wrap: anywhere; }
-      .line .what small { display: block; color: var(--muted); font-weight: 400; font-size: 15px; }
-      .line .amount { font-variant-numeric: var(--numbers); font-weight: 700; }
+      .line .what { font-weight: 600; font-size: 22px; overflow-wrap: anywhere; }
+      .line .what small { display: block; color: var(--ink-2); font-weight: 400; font-size: 17px; }
+      .line .amount { font-variant-numeric: var(--numbers); font-weight: 700; font-size: 24px; }
       .line button { min-height: 56px; font-size: 16px; background: var(--panel); }
       .empty { color: var(--muted); padding: var(--space-6) var(--space-4); text-align: center; background: var(--panel); border: 1px dashed var(--line-strong); border-radius: var(--radius-xl); }
       .empty[hidden] { display: none; }
       footer.pay { display: grid; gap: var(--space-3); background: var(--panel); border-top: 1px solid var(--line); padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); }
-      .total { display: flex; justify-content: space-between; align-items: baseline; font-size: 26px; font-weight: 700; font-variant-numeric: var(--numbers); }
+      .total { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); font-size: 28px; font-weight: 700; font-variant-numeric: var(--numbers); }
+      /* The amount to pay is the largest figure a customer reads (UI-2). */
+      .total #total { font-size: clamp(44px, 6vw, 72px); font-weight: 800; line-height: 1.05; letter-spacing: var(--tracking-tight); white-space: nowrap; }
       .pay-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
-      .pay-buttons button { font-size: 21px; }
+      .pay-buttons button { font-size: 22px; min-height: 72px; }
       .receipt { margin: 0; font-size: 20px; font-weight: 700; }
       .receipt[hidden] { display: none; }
 

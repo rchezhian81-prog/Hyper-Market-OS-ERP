@@ -262,6 +262,44 @@ with the audit in §5.1.
   Enter opens the first.
 - **Breadcrumbs**: "Workspace › the workspace › the screen", read off the rail.
 
+### 4.3 The till, the handhelds and the kiosks (UI-2, 1 November 2026) — implemented
+The owner said (1 Nov 2026) "UI/UX also very poor" and chose the till and the handhelds as one area. These are the
+patterns the device screens now share, in the OB-13 look (no new colour, no new icon). The look is in the shared
+foundation `packages/ui/web/sre-foundation.css` (copied to every app by `node scripts/sync-ui-foundation.mjs`); each
+screen keeps its own small script. Nothing here moves (§3.4 rule 5), no word is colour alone, nothing a person must read
+is under 14px, every word is in English and Tamil, and none of it changes a price, a tax, a payment or a sale's path.
+
+| Part | Class | Rules |
+| --- | --- | --- |
+| **Scan line** | `.sre-scan-ready` with `.sre-scan-say`, `.sre-scan-code`, `.sre-scan-last`; `data-state="ready" \| "reading"` | Sits over the bill and never leaves it. Says "Ready to scan" in words; shows the digits a scanner or a keyboard has typed since the last Enter (the panel turns mint AND the words change to "Typed so far — press Enter…"); Backspace takes a digit back, Esc clears; names the last item a scan added as the bill now holds it ("Last added: Toor dal 1kg · 3 · ₹435.00"). A wedge scanner types into the page, never a field, so this is words on a panel, not an input. Its one button, **Type a barcode**, opens the screen's own keypad (14 digits) and sends the code down exactly the scan's path. |
+| **Customer figure** | `.sre-figure-xl` | A price or an amount to pay read from two metres: 48–104px, tabular figures, never wraps. The largest thing on a kiosk. |
+| **Customer card** | `.sre-kiosk-card` (`data-tone="warn"` for a refusal), `.sre-kiosk-name`, `.sre-kiosk-note` | One plain answer on a white panel: the name large, the figure, the note under it. A refusal is the same card in amber with the words as the message. The sentence the model wrote is kept whole for a screen reader; only its parts are laid out. |
+
+**Where they are used (UI-2):**
+- **The till** (`apps/pos/web`): the scan line over the bill; the bill's lines at 20px; the number of lines under "Total
+  to pay"; a code the price list does not hold says what happened, that nothing was added and what to do next ("Not in
+  the price list … Scan it again, or type the number under the barcode. If it is still not found, put the item aside and
+  call the manager."). Hold/Recall and Tender stay one tap; the five actions, the strip and the total are unchanged. A
+  scan still makes no network call and is drawn before the key handler returns (measured < 300 ms, §32).
+- **The price kiosk** (`apps/price-kiosk/web`): the answer on the customer card — name, price as the customer figure,
+  "Offers are applied at the till" under it; a refusal on the amber card.
+- **Self-checkout** (`apps/self-checkout/web`) and **the queue till** (`apps/queue-pos/web`): the amount to pay is the
+  largest figure; each line's quantity is said in words ("Quantity 2"); the self-checkout's screen-reader names are in
+  Tamil too.
+- **Who is signed in (OB-638, owner's option A, 1 Nov 2026):** the till header, the self-checkout lane's "Opened by" and
+  the queue till say the person's NAME with the staff code beside it — "Signed in: Ravi (u-ravi)" — using the name the
+  store computer gave at sign-in (`apps/pos/src/operator-label.ts`, the till session's `operatorShown()`, the lane's
+  `attendantShown`). With no name known, the code alone. Words only: every record still carries the code.
+- **The handhelds** keep their task-first layouts (§3.2): the warehouse header names the job ("Stock room work") with the
+  staff code and the job under it, each said as what it is; a count of pieces reads "12 units" (the code "EA" is gone; a
+  unit the handheld does not know keeps its code beside the word). Their sync badge stays in the header, always seen.
+
+**Proof:** `tests/e2e/ui2-the-till-reads-at-arms-length-and-is-always-ready-to-scan.e2e.ts` and
+`tests/e2e/ui2-the-handhelds-and-kiosks-read-at-a-glance.e2e.ts` — real Chromium, the till at 1366 and 1024, the
+handhelds and the queue till at 360px, the kiosks at their own screens, English and Tamil: no sideways scroll, every
+control at the screen's own target (56px on the till, the handhelds and the self-checkout lane, 64px on the price kiosk;
+never under 44px), the §5.1 audit clean.
+
 ## 5. Accessibility (NFR-07)
 - Target **WCAG 2.2 AA** for customer/web surfaces; keyboard, touch and high-contrast paths for staff surfaces.
 - Contrast ≥ 4.5:1 for text; focus indicators visible; no action requires fine motor precision.
