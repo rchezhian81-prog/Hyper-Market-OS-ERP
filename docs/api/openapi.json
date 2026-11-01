@@ -298362,6 +298362,7 @@
             "items": {
               "type": "string",
               "enum": [
+                "assigned work",
                 "categories",
                 "locations",
                 "money limit",

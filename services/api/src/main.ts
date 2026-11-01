@@ -350,6 +350,8 @@ import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks,
 import { receiptCostHooks } from './receipt-cost-adapters';
 // OB-288 P2 (catalogue, pricing and product legal guards): M03-FR-01–04 · M04-FR-04 · M05-FR-03/04 · D02-FR-02/04 · B15 · B17.
 import { p2CatalogueRoutes, p2TaxClassHooks, p2PromotionHooks, p2SeasonSweep } from './p2-catalogue-adapters';
+import { assignedWorkSurface } from './w2-assigned-work'; // OB-571: Picker and Delivery driver — assigned orders only
+import { movementJobsSurface } from './w2-movement-jobs'; // OB-623: each stock role posts only its own kinds of movement
 import { fg4BuyingSurface, contractExpirySweep } from './fg4-buying-adapters'; // FG-4 final gaps — contract-expiry alerts, PPV, free samples, scopes, VMI
 import { commercialDesksRoutes, commercialDeskB2BHooks, withSupplierPartnerIndex, commercialDesksSweep, commercialDeskContractState, b2bRecurringOrdersAdapter } from './commercial-desks-adapters'; // OB-288 commercial desks — B2B contracts and desk, supplier review desk, concessions
 import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep, finBridgeDayBookHooks, finBridgePaymentHooks } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
@@ -2267,6 +2269,11 @@ export function buildSurface(deps: {
   fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
   productsPricesSurface(surface, { store, now, calendar: shopCalendar, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Round 4a (M03-FR-01..04 · M05-FR-01 · OB-291): product and price audit, the price basis
   spaceSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Wave 2 (M04-FR-01..04 · D02-FR-02/06 · OB-625): space audit, product checks
+  // OB-623 (owner, 1 Nov 2026): the Receiver/QC and the Warehouse user post only their own kinds of stock movement — wrapped
+  // last, so it speaks before every other check on those routes.
+  movementJobsSurface(surface, { store });
+  // OB-571 (owner, 31 Oct 2026): the Picker and the Delivery driver work only the waves and routes assigned to them (§28).
+  assignedWorkSurface(surface, { store, now });
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));

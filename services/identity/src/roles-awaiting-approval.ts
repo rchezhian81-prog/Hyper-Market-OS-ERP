@@ -24,7 +24,7 @@ export interface RoleAwaitingOwnerApproval extends Role {
   /** Roadmap §28, word for word: the role's SCOPE, what it MAY do and what it MUST NOT. */
   readonly roadmap: { readonly scope: string; readonly may: string; readonly mustNot: string };
   /** Which reach limits (M02-FR-02 role scopes) the role is meant to be narrowed by once granted. */
-  readonly limitedBy: readonly ('suppliers' | 'categories' | 'locations' | 'money limit')[];
+  readonly limitedBy: readonly ('suppliers' | 'categories' | 'locations' | 'money limit' | 'assigned work')[];
   /** Every permission word, each with the reason it is there (the same set as `permissions`). */
   readonly words: readonly WaitingPermission[];
   /** Words deliberately LEFT OUT because of the MUST NOT, each with the reason. */

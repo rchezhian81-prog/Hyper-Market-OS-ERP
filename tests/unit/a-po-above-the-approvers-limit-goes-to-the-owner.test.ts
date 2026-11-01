@@ -8,7 +8,7 @@ import { money } from '../../packages/contracts/src/money';
 // right but limited to ₹25,000 (a store manager's ladder) cannot issue a ₹30,000 order — it goes to the owner, recorded on
 // the trail; the owner (unlimited) issues it. The limit in a request body is never read. Route-level, over a stub register.
 
-const rolesOf: Record<string, string[]> = { 'u-mgr': ['store_manager'], 'u-owner': ['owner'], 'u-acc': ['accountant'] };
+const rolesOf: Record<string, string[]> = { 'u-mgr': ['store_manager'], 'u-owner': ['owner'], 'u-acc': ['accountant'], 'u-pa': ['purchase_approver'] };
 const po = (totalMinor: number): StoredPurchaseOrder => ({
   poId: 'po-1', number: 'po-1', supplierId: 'sup-1', deliverToLocationId: 'store-1', requisitionedBy: 'u-buyer', at: '2026-10-23T05:00:00.000Z',
   lines: [{ productId: 'rice', orderedQty: totalMinor / 100, unitCost: money(100, 'INR') }], totalMinor, currency: 'INR', status: 'proposed',
@@ -53,5 +53,15 @@ describe('a purchase order above the approver\'s limit goes to the owner (OB-290
   it('within the limit the approver issues it; a person with no PO limit set issues nothing', async () => {
     expect((await routes(po(2_500_000)).call('u-mgr')).status).toBe(200);
     expect(await refusal(routes(po(100)).call('u-acc'))).toMatchObject({ status: 422, code: 'above_your_limit_goes_to_owner' });
+  });
+
+  it('OB-622: the Purchase approver has no money limit until the owner sets one — even a ₹1 order goes to the owner', async () => {
+    // The limits in force when the owner has changed nothing carry no row for the role, so its authority is "not set".
+    expect(DECIDED_AUTHORITY_LIMITS.byRole['purchase_approver']).toBeUndefined();
+    const r = routes(po(100));
+    const refused = await refusal(r.call('u-pa'));
+    expect(refused).toMatchObject({ status: 422, code: 'above_your_limit_goes_to_owner' });
+    expect(refused.what).toContain('not set — the owner has not given a limit for this');
+    expect(r.issued).toEqual([]);
   });
 });

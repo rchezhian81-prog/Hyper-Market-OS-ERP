@@ -85,7 +85,8 @@ export const SECURITY_REVIEWER_ROLE_ID = 'security_reviewer';
  */
 export { PLATFORM_ADMIN_ROLE_ID, isPlatformAdministrationRole } from '../../identity/src/separation-of-duties';
 
-export const ROLE_CATALOGUE: readonly Role[] = [
+/** The roles written before Round 4c; the live catalogue (`ROLE_CATALOGUE`, below) adds the roadmap §28 roles to them. */
+const BASE_ROLES: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
     name: 'Owner',
@@ -1117,11 +1118,23 @@ export const ROLE_CATALOGUE: readonly Role[] = [
   },
 ];
 
-// ── Round 4c · OB-615 (owner, 31 Oct 2026, in writing) — begin ───────────────────────────────────────────────────────
-// The four roadmap §28 roles for buying and stock, defined with exactly the roadmap's scope, MAY and MUST NOT, and NOT
-// LIVE: the owner sees each role's permissions on the Users & roles page and approves them in writing before anybody may
-// hold one. Until then the grant routes refuse them by name (services/identity/src/roles-awaiting-approval.ts). Going
-// live is a reviewed code change: the approved role moves from this list into ROLE_CATALOGUE above.
+
+// ── Round 4c · OB-615 → OB-622 / OB-623 / OB-571 (wave 2) — begin ─────────────────────────────────────────────────────
+// The roadmap §28 roles for buying, stock and online orders, each written with exactly the roadmap's SCOPE, MAY and MUST
+// NOT, every permission word with the reason it is there, and the words deliberately LEFT OUT with theirs.
+//
+//   • OB-615 (owner, 31 Oct 2026): the four buying and stock roles were written down and held back until the owner had read
+//     their permissions. OB-622 (owner, 1 Nov 2026, in writing): "all four approved as shown" — they are LIVE: they can be
+//     given on Users & roles through the normal maker-checker grant. The Purchase approver has NO money limit until the
+//     owner sets one on the Approval rules page: its row is absent from the limits in force, so `authorityOf` says
+//     "not set" and the purchase-order routes approve no money for it (packages/approvals/src/authority-rules.ts).
+//   • OB-623 (owner, 1 Nov 2026, in writing): the Receiver/QC and the Warehouse user hold the stock-movement word, but each
+//     may post ONLY its own kinds of movement — judged on head office's server for every route that word opens
+//     (services/api/src/w2-movement-jobs.ts). The owner and the store manager keep what they have.
+//   • OB-571 (owner, 31 Oct 2026, in writing — "A"): the roadmap's Picker/Delivery row (§28: assigned orders;
+//     pick/pack/deliver/proof/COD; cannot change catalogue price or reroute without policy) as a Picker role and a Delivery
+//     role, so a picker and a driver can each use their own handheld. Each holds the ONE word its phone's job needs — the
+//     word the phone sign-in asks for and head office re-checks on every record (edge/store-edge/src/handheld-sign-in.ts).
 //
 // Every word here is one a route already checks; nothing new is invented. The words every member of staff holds for
 // themselves (their own sign-in, their own payslip and rota) are the first two of each role.
@@ -1131,12 +1144,25 @@ const selfService: readonly WaitingPermission[] = [
   { permission: 'payroll.ess.self', why: 'See their own payslip and their own rota — the same as every member of staff.' },
 ];
 
-const waitingRole = (r: Omit<RoleAwaitingOwnerApproval, 'permissions'>): RoleAwaitingOwnerApproval =>
+/** A roadmap §28 role, written in full — what the Users & roles page and the owner read; the catalogue carries its words. */
+export interface Section28Role extends RoleAwaitingOwnerApproval {
+  /** The owner's written decision that made the role live. */
+  readonly liveBy: string;
+}
+
+const section28Role = (r: Omit<Section28Role, 'permissions'>): Section28Role =>
   Object.freeze({ ...r, permissions: Object.freeze(r.words.map((w) => w.permission)) });
 
-export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[] = Object.freeze([
-  waitingRole({
-    id: 'purchase_user', name: 'Purchase user',
+export const PURCHASE_USER_ROLE_ID = 'purchase_user';
+export const PURCHASE_APPROVER_ROLE_ID = 'purchase_approver';
+export const RECEIVER_QC_ROLE_ID = 'receiver_qc';
+export const WAREHOUSE_USER_ROLE_ID = 'warehouse_user';
+export const PICKER_ROLE_ID = 'picker';
+export const DELIVERY_ROLE_ID = 'delivery_driver';
+
+export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
+  section28Role({
+    id: PURCHASE_USER_ROLE_ID, name: 'Purchase user', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
     roadmap: { scope: 'Assigned suppliers/categories', may: 'Requisition/RFQ/PO draft', mustNot: 'Cannot receive, match and pay same transaction' },
     limitedBy: ['suppliers', 'categories'],
     words: [
@@ -1145,19 +1171,21 @@ export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[]
       { permission: 'catalogue.pack.read', why: 'See the products, to put them on a requisition or a draft order.' },
       { permission: 'supplier.view', why: 'See the supplier list, to choose who to ask.' },
       { permission: 'purchase.commitment.read', why: 'See the requisitions, the quotes side by side, and the orders already placed (read only).' },
-      { permission: 'purchase.order.propose', why: 'Raise a requisition, record a supplier\'s quote (RFQ) and draft a purchase order — every draft still needs a Purchase approver.' },
+      { permission: 'purchase.order.propose', why: 'Raise a requisition, record a supplier\'s quote (RFQ) and draft a purchase order — every draft still needs a Purchase approver; and change the reorder settings (owner, 1 Nov 2026).' },
     ],
     withheld: [
+      { permission: 'purchase.supplier.manage', why: 'Adding or editing a supplier stays with the store manager (owner, 1 Nov 2026).' },
       { permission: 'purchase.order.approve', why: 'Approving an order is the Purchase approver\'s.' },
       { permission: 'purchase.order.receive', why: 'MUST NOT receive the same order — receiving is the Receiver/QC\'s.' },
       { permission: 'purchase.invoice.capture', why: 'MUST NOT match the same order — entering a supplier bill is kept apart.' },
       { permission: 'purchase.invoice.match', why: 'MUST NOT match the same order — matching a bill is Finance\'s.' },
       { permission: 'purchase.supplier.pay', why: 'MUST NOT pay the same order — paying a supplier is Finance\'s.' },
     ],
-    questions: ['M06-FR-01 also names the purchase user as the person who ASKS for a new supplier (purchase.supplier.manage). §28 does not list it. Add it, or leave it with the store manager?'],
+    // Answered by the owner, 1 Nov 2026: no supplier.manage (the manager keeps adding and editing suppliers); reorder settings yes.
+    questions: [],
   }),
-  waitingRole({
-    id: 'purchase_approver', name: 'Purchase approver',
+  section28Role({
+    id: PURCHASE_APPROVER_ROLE_ID, name: 'Purchase approver', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
     roadmap: { scope: 'Configured limits', may: 'PO/contract/rate approval', mustNot: 'Cannot approve own supplier/bank creation' },
     limitedBy: ['money limit'],
     words: [
@@ -1167,7 +1195,7 @@ export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[]
       { permission: 'supplier.view', why: 'See the supplier an order or contract is with.' },
       { permission: 'purchase.commitment.read', why: 'See the orders, quotes, contracts and what is already committed (read only).' },
       { permission: 'purchase.order.approve', why: 'Approve, issue or cancel a purchase order (and a standing order) — up to the money limit the owner sets for this role on the Approval rules page; until he sets one it is "not set" and approves no money.' },
-      { permission: 'purchase.supplier.approve', why: 'Approve a supplier contract and its rates, a new supplier and a change of where a supplier is paid — never one they created or asked for themselves (head office refuses that by name).' },
+      { permission: 'purchase.supplier.approve', why: 'One permission for supplier deals (owner, 1 Nov 2026): approve a supplier contract and its rates, a rebate scheme and its claims, a supplier\'s offer funding, a new supplier and a change of where a supplier is paid — never one they created or asked for themselves (head office refuses that by name).' },
     ],
     withheld: [
       { permission: 'purchase.order.propose', why: 'Drafting the order is the Purchase user\'s: one person drafts, another approves.' },
@@ -1175,10 +1203,11 @@ export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[]
       { permission: 'purchase.supplier.bank', why: 'MUST NOT approve their own bank change — so they do not enter bank details.' },
       { permission: 'purchase.supplier.pay', why: 'Paying is Finance\'s, not the approver\'s.' },
     ],
-    questions: ['purchase.supplier.approve is also the word that approves supplier rebate schemes and claims, a supplier\'s display funding and a supplier\'s promotion funding (today the accountant and the owner). §28 says "PO/contract/rate approval". Keep the word (the approver also approves those), or leave it out (orders only; contracts stay with the accountant and the owner)?'],
+    // Answered by the owner, 1 Nov 2026: keep purchase.supplier.approve as one permission for supplier deals.
+    questions: [],
   }),
-  waitingRole({
-    id: 'receiver_qc', name: 'Receiver / QC',
+  section28Role({
+    id: RECEIVER_QC_ROLE_ID, name: 'Receiver / QC', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
     roadmap: { scope: 'Assigned locations', may: 'Receive/count/QC/quarantine', mustNot: 'Cannot change PO price or approve supplier payment' },
     limitedBy: ['locations'],
     words: [
@@ -1191,7 +1220,7 @@ export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[]
       { permission: 'inventory.dsd.checkin', why: 'Check in a direct delivery at the door (no cash is paid).' },
       { permission: 'inventory.goodsreceipt.read', why: 'Open the goods-receipt list.' },
       { permission: 'inventory.availability.read', why: 'See stock and the count sheets.' },
-      { permission: 'inventory.movement.append', why: 'Enter a count on a count sheet. (The same word records stock moves; a difference above the limit still waits for a second person.)' },
+      { permission: 'inventory.movement.append', why: 'Only its own kinds of stock movement (OB-623): book a delivery at the receiving door, record and complete a goods receipt, and enter a count. Any other kind is refused by head office by name; a count difference above the limit still waits for a second person.' },
       { permission: 'quality.hold.manage', why: 'Put a batch in quarantine and record the quality samples taken from it.' },
       { permission: 'quality.coldchain.assess', why: 'Check the cold chain of a chilled or frozen delivery.' },
       { permission: 'quality.lottrace.read', why: 'Trace which batches came in on which delivery.' },
@@ -1202,11 +1231,12 @@ export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[]
       { permission: 'purchase.supplier.pay', why: 'MUST NOT approve a supplier payment.' },
       { permission: 'purchase.invoice.match', why: 'Matching the bill to what was received is Finance\'s — never the person who received it.' },
       { permission: 'inventory.adjustment.approve', why: 'A count difference is approved by another person, never the counter.' },
+      { permission: 'quality.hold.release', why: 'Releasing a batch from quarantine for sale stays with the store manager (owner, 1 Nov 2026).' },
     ],
-    questions: ['§28 says "quarantine". Releasing a batch FROM quarantine for sale (quality.hold.release) is not said. Add it to the Receiver/QC, or leave release with the store manager?'],
+    questions: [],
   }),
-  waitingRole({
-    id: 'warehouse_user', name: 'Warehouse user',
+  section28Role({
+    id: WAREHOUSE_USER_ROLE_ID, name: 'Warehouse user', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
     roadmap: { scope: 'Assigned locations', may: 'Put-away/pick/transfer/count', mustNot: 'Cannot self-approve material variances' },
     limitedBy: ['locations'],
     words: [
@@ -1214,7 +1244,7 @@ export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[]
       { permission: 'org.branch.read', why: 'See the stores and their warehouse places.' },
       { permission: 'catalogue.pack.read', why: 'See the products being moved.' },
       { permission: 'inventory.availability.read', why: 'See the bins, the put-away suggestions, the transfers and the count sheets.' },
-      { permission: 'inventory.movement.append', why: 'Put away, pick, send and receive a transfer between stores, and enter a count — on the warehouse handheld or the office page.' },
+      { permission: 'inventory.movement.append', why: 'Only its own kinds of stock movement (OB-623): put away, move between bins, pick and put back; issue stock from the back store to the floor and take the floor\'s returns back; send and receive a transfer; and enter a count — on the warehouse handheld or the office page. Any other kind is refused by head office by name.' },
     ],
     withheld: [
       { permission: 'inventory.adjustment.approve', why: 'MUST NOT self-approve a material variance: a count difference or a transfer shortfall is approved by another person.' },
@@ -1222,5 +1252,53 @@ export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[]
     ],
     questions: [],
   }),
+  section28Role({
+    id: PICKER_ROLE_ID, name: 'Picker', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
+    roadmap: { scope: 'Assigned orders', may: 'Pick/pack/deliver/proof/COD', mustNot: 'Cannot change catalogue price or reroute without policy' },
+    limitedBy: ['assigned work'],
+    words: [
+      ...selfService,
+      { permission: 'fulfilment.pack.record', why: 'Pick and pack the online orders on the waves handed to them, on the picker handheld: each line picked, short, swapped for the shop\'s approved substitute or failed on quality, at the price the shop set; then the order packed with its temperature and seal evidence. Head office takes it only for a wave assigned to them.' },
+    ],
+    withheld: [
+      { permission: 'fulfilment.wave.assign', why: 'Building waves and handing them out is the store manager\'s — a picker works only what is assigned to them.' },
+      { permission: 'order.lifecycle.manage', why: 'Changing an order or a customer\'s substitution choice is the desk\'s; the picker records only what the shop\'s rules allow at the shelf.' },
+      { permission: 'price.change.propose', why: 'MUST NOT change a catalogue price.' },
+      { permission: 'delivery.dispatch.manage', why: 'MUST NOT reroute: planning and reassigning routes is the store manager\'s.' },
+      { permission: 'delivery.attempt.record', why: 'Delivering is the Delivery role\'s; a person who does both jobs is given both roles.' },
+    ],
+    questions: [],
+  }),
+  section28Role({
+    id: DELIVERY_ROLE_ID, name: 'Delivery driver', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
+    roadmap: { scope: 'Assigned orders', may: 'Pick/pack/deliver/proof/COD', mustNot: 'Cannot change catalogue price or reroute without policy' },
+    limitedBy: ['assigned work'],
+    words: [
+      ...selfService,
+      { permission: 'delivery.attempt.record', why: 'Deliver the orders on the route handed to them, on the delivery handheld: each stop departed, at the door, delivered with proof (a photo or the customer\'s signature), partly delivered, or failed with a reason; the cash on delivery taken; the end-of-shift settlement and the cash counted in. Head office takes it only for a route assigned to them.' },
+    ],
+    withheld: [
+      { permission: 'delivery.dispatch.manage', why: 'MUST NOT reroute without policy: planning, assigning and reassigning routes is the store manager\'s.' },
+      { permission: 'delivery.settlement.approve', why: 'Approving a route\'s settlement is another person\'s, never the driver\'s.' },
+      { permission: 'order.payment.record', why: 'Cash on delivery is recorded on the stop and counted in at the handover; recording a payment on an order is the desk\'s.' },
+      { permission: 'price.change.propose', why: 'MUST NOT change a catalogue price.' },
+      { permission: 'online.return.collect', why: 'Collecting an online return at the door is not in §28\'s "Pick/pack/deliver/proof/COD" — left with the store manager until the owner decides.' },
+      { permission: 'fulfilment.pack.record', why: 'Picking and packing is the Picker role\'s; a person who does both jobs is given both roles.' },
+    ],
+    questions: ['A route can carry an online return to collect at the door (WF-16), which needs online.return.collect. §28\'s Picker/Delivery row says "Pick/pack/deliver/proof/COD". Add it to the Delivery driver (so a route with a collection can go to a driver), or leave collections with the store manager?'],
+  }),
 ]);
-// ── Round 4c · OB-615 — end
+
+/** The live catalogue head office enforces and every store setup carries: the roles above plus the §28 roles' words. */
+export const ROLE_CATALOGUE: readonly Role[] = Object.freeze([
+  ...BASE_ROLES,
+  ...SECTION_28_ROLES.map((r): Role => Object.freeze({ id: r.id, name: r.name, permissions: r.permissions })),
+]);
+
+/**
+ * Roles written down but waiting for the owner's approval before anybody may hold one (OB-615) — none now: OB-622 approved
+ * all four as shown. The refusal stays wired (services/identity/src/roles-awaiting-approval.ts) for the next role written
+ * from the roadmap, so a role is never live before the owner has read it.
+ */
+export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[] = Object.freeze([]);
+// ── Round 4c · OB-615 → OB-622 / OB-623 / OB-571 — end
