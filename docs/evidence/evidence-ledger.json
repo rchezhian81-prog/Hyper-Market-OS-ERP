@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2035,
+  "testFiles": 2042,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -352,9 +352,9 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 10,
-        "realDb": 3,
-        "browser": 4,
+        "integration": 11,
+        "realDb": 4,
+        "browser": 7,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -381,18 +381,23 @@
           "tests/integration/planogram-store.test.ts",
           "tests/integration/shelf-count.test.ts",
           "tests/integration/space-and-display.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/w2-space-setup-display-contracts-and-product-checks.test.ts"
         ],
         "realDb": [
           "tests/integration/an-expiring-display-or-supplier-contract-reaches-the-owner.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
-          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts"
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts",
+          "tests/integration/w2-space-setup-display-contracts-and-product-checks.test.ts"
         ],
         "browser": [
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
           "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
-          "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts"
+          "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts",
+          "tests/e2e/w2-shelves-and-floor-are-set-up-and-the-shelf-pages-read-them.e2e.ts",
+          "tests/e2e/w2-store-groups-and-seasons-set-the-range.e2e.ts",
+          "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
@@ -2736,8 +2741,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 16,
-        "realDb": 6,
+        "integration": 17,
+        "realDb": 7,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -2771,6 +2776,7 @@
           "tests/integration/risk-followthrough.test.ts",
           "tests/integration/risk-register.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/w2-space-setup-display-contracts-and-product-checks.test.ts",
           "tests/security/personal-data-safeguards.test.ts"
         ],
         "realDb": [
@@ -2779,7 +2785,8 @@
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/old-till-cash-is-placed-once-and-head-office-records-decide.test.ts",
           "tests/integration/physical-to-system.test.ts",
-          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts"
+          "tests/integration/r4a-products-and-prices-are-audited-and-judged-on-head-offices-figures.test.ts",
+          "tests/integration/w2-space-setup-display-contracts-and-product-checks.test.ts"
         ],
         "browser": [
           "tests/e2e/r4c-the-audit-log-reads-the-stored-trail.e2e.ts",
@@ -3045,9 +3052,9 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 9,
-        "realDb": 3,
-        "browser": 2,
+        "integration": 10,
+        "realDb": 4,
+        "browser": 4,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3068,16 +3075,20 @@
           "tests/integration/planogram-store.test.ts",
           "tests/integration/promotion-effectiveness.test.ts",
           "tests/integration/space-and-display.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/w2-space-setup-display-contracts-and-product-checks.test.ts"
         ],
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
-          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts"
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts",
+          "tests/integration/w2-space-setup-display-contracts-and-product-checks.test.ts"
         ],
         "browser": [
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
-          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/w2-store-groups-and-seasons-set-the-range.e2e.ts",
+          "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"

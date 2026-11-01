@@ -42,6 +42,8 @@ import type { StoredPostingMap } from '../../finance/src/day-book';
 import type { WaveLineOutcome } from '../../fulfilment/src/waves';
 import type { StoredSubstitution } from '../../orders/src/index';
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { tradingDayWindow } from '../../../packages/calendar/src/trading-day';
+import { floorHeatMap } from '../../../packages/merchandising/src/index';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 interface Base { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly calendar?: ShopCalendarOf }
@@ -237,6 +239,38 @@ async function primaryPlacements(input: Base, tenantId: string, storeId: string)
   const out = new Map<string, string>();
   for (const id of [...latest.keys()].sort()) for (const a of latest.get(id)!.assignments) if (a.primary && !out.has(a.productId)) out.set(a.productId, a.locationId);
   return out;
+}
+
+/**
+ * Wave 2 (M04-FR-04 · the Shelves and space page's Space tab): the store's floor-plan areas as space areas, with what each
+ * took this shop month so far (the 1st to the shop's today) — the same fold the Floor heat map runs (`floorHeatMap`), so the
+ * two never disagree. An area whose margin is not known (a product sold with no buying cost) is LEFT OUT of the margin map,
+ * so the tab says "not measured" for it rather than a fabricated nought (P-08). Undefined when the store has no floor plan.
+ */
+export async function floorPlanSpaceSection(raw: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }, tenantId: string, storeId: string): Promise<{
+  readonly spaceAreas: readonly { readonly areaId: string; readonly storeId: string; readonly name: string; readonly squareFeet: number; readonly locationIds: readonly string[] }[];
+  readonly salesByAreaMinor: Readonly<Record<string, number>>;
+  readonly marginByAreaMinor: Readonly<Record<string, number>>;
+  readonly from: string;
+  readonly to: string;
+} | undefined> {
+  const input: Base = { store: raw.store, now: raw.now, ...(raw.calendar === undefined ? {} : { calendar: raw.calendar }) };
+  const plans = await payloads<FloorPlan>(input.store, tenantId, FLOOR_PLANS(storeId), 'FloorPlanPublished');
+  const plan = [...plans].sort((a, b) => a.version - b.version).at(-1);
+  if (plan === undefined) return undefined;
+  const cal = await shopClock(input.calendar).calendar(tenantId);
+  const to = await shopClock(input.calendar).today(tenantId, input.now());
+  const from = `${to.slice(0, 7)}-01`;
+  const [placements, taken] = await Promise.all([primaryPlacements(input, tenantId, storeId), takingsByProduct(input, tenantId, tradingDayWindow(from, cal).from, tradingDayWindow(to, cal).to, { storeId })]);
+  const takings: ProductTakings[] = [...taken.entries()].map(([productId, v]) => ({ productId, salesMinor: v.salesMinor, netSalesMinor: v.netSalesMinor, costMinor: v.costKnown ? v.costMinor : undefined }));
+  const heat = floorHeatMap({ plan, primaryLocationOf: placements, takings, measure: 'margin', currency: 'INR' });
+  const salesByAreaMinor: Record<string, number> = {};
+  const marginByAreaMinor: Record<string, number> = {};
+  for (const a of heat.areas) {
+    salesByAreaMinor[a.areaId] = a.salesMinor;
+    if (a.marginMinor !== null) marginByAreaMinor[a.areaId] = a.marginMinor;
+  }
+  return { spaceAreas: plan.areas.map((a) => ({ areaId: a.areaId, storeId, name: a.name, squareFeet: a.squareFeet, locationIds: a.locationIds })), salesByAreaMinor, marginByAreaMinor, from, to };
 }
 
 // ── the wiring ──────────────────────────────────────────────────────────────────────────────────────────────────────

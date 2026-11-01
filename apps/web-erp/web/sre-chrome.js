@@ -652,6 +652,10 @@
     'branches': 'store', // Round 4c — an icon already in the set
     'do-not-contact': 'message-circle', // Round 4c — an icon already in the set
     'cert-in': 'shield-check', // Round 4c — an icon already in the set
+    'space-setup': 'boxes', // Wave 2 — an icon already in the set
+    'display-contracts': 'banknote', // Wave 2 — an icon already in the set
+    'range-clusters': 'calendar-days', // Wave 2 — an icon already in the set
+    'product-checks': 'clipboard-check', // Wave 2 — an icon already in the set
     'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set

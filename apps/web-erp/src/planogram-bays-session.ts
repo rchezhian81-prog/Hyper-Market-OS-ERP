@@ -32,7 +32,7 @@ export const PHOTO_MAX_BYTES = 700 * 1024;
 
 export const BAYS_COPY = {
   en: {
-    lang: 'தமிழ்', title: 'Shelf compliance by bay',
+    lang: 'தமிழ்', title: 'Shelves against the plan',
     lead: 'Each bay\'s shelf compared with the approved planogram, from the staff counts, with every gap named. A photo can go with a shelf check; it is kept on the shop\'s own computer.',
     store: 'Store', show: 'Show the bays', score: 'Score', notScored: 'Not scored', counted: 'counted', planned: 'facings planned', noGaps: 'No gaps.',
     photos: 'Photos', measuredBy: 'Measured by: counted by staff', recognitionOff: 'Image recognition is switched off: no photo leaves the shop.',
@@ -40,9 +40,10 @@ export const BAYS_COPY = {
     typeNotAllowed: 'image type not allowed — use a JPEG, PNG or WebP photo. Nothing was sent.', tooLarge: 'image too large — at most 700 KB. Nothing was sent.',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read shelf compliance.', cannotRecord: 'Your role cannot add shelf photos.',
     needAll: 'Fill in the store, the bay and the photo first. Nothing was sent.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
+    noSetup: 'This store has no shelf map or no planogram in force yet, so there is nothing to compare the shelves with. Set them up on the page "Set up shelves and floor plan" (Shelves & shop floor).',
   },
   ta: {
-    lang: 'English', title: 'அலமாரி இணக்கம் — பகுதி வாரியாக',
+    lang: 'English', title: 'திட்டத்துடன் அலமாரிகள்',
     lead: 'ஒவ்வொரு பகுதியின் அலமாரியும் ஒப்புதல் பெற்ற திட்ட வரைபடத்துடன், பணியாளர் எண்ணிக்கையிலிருந்து ஒப்பிடப்படுகிறது; ஒவ்வொரு இடைவெளியும் பெயரிடப்படுகிறது. அலமாரிச் சரிபார்ப்புடன் ஒரு புகைப்படம் சேர்க்கலாம்; அது கடையின் சொந்தக் கணினியில் வைக்கப்படும்.',
     store: 'கடை', show: 'பகுதிகளைக் காட்டு', score: 'மதிப்பெண்', notScored: 'மதிப்பிடப்படவில்லை', counted: 'எண்ணப்பட்டது', planned: 'திட்டமிட்ட இடங்கள்', noGaps: 'இடைவெளி இல்லை.',
     photos: 'புகைப்படங்கள்', measuredBy: 'அளந்தது: பணியாளர் எண்ணிக்கை', recognitionOff: 'பட அடையாளம் அணைக்கப்பட்டுள்ளது: எந்தப் புகைப்படமும் கடையை விட்டு வெளியே செல்லாது.',
@@ -50,12 +51,15 @@ export const BAYS_COPY = {
     typeNotAllowed: 'இந்தப் பட வகை அனுமதிக்கப்படவில்லை — JPEG, PNG அல்லது WebP புகைப்படம் பயன்படுத்தவும். எதுவும் அனுப்பப்படவில்லை.', tooLarge: 'படம் மிகப் பெரியது — அதிகபட்சம் 700 KB. எதுவும் அனுப்பப்படவில்லை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு அலமாரி இணக்கத்தைப் படிக்க முடியாது.', cannotRecord: 'உங்கள் பங்கு அலமாரிப் புகைப்படங்களைச் சேர்க்க முடியாது.',
     needAll: 'முதலில் கடை, பகுதி, புகைப்படம் ஆகியவற்றை நிரப்பவும். எதுவும் அனுப்பப்படவில்லை.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
+    noSetup: 'இந்தக் கடைக்கு இன்னும் அலமாரி வரைபடமோ நடைமுறையில் உள்ள அலமாரித் திட்டமோ இல்லை, எனவே அலமாரிகளை ஒப்பிட எதுவும் இல்லை. "அலமாரிகளையும் தளத் திட்டத்தையும் அமை" பக்கத்தில் (அலமாரிகளும் கடைத் தளமும்) அமையுங்கள்.',
   },
 } as const;
 export type BaysCopyKey = keyof typeof BAYS_COPY.en;
 
 export const baysWords = (lang: Lang, key: BaysCopyKey | string): string => (BAYS_COPY[lang] as Record<string, string>)[key] ?? (BAYS_COPY.en as Record<string, string>)[key] ?? key;
 export function baysOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
+  // Wave 2: a store with nothing set up is sent to the page that sets it up, not left at a dead end.
+  if (out.result === 'refused' && (out.code === 'this_store_has_no_shelf_map' || out.code === 'this_store_has_never_published_a_planogram')) return baysWords(lang, 'noSetup');
   if (out.result === 'refused') return `${baysWords(lang, 'refused')} ${out.whatHappened}`;
   if (out.result === 'invalid') return baysWords(lang, out.why);
   if (out.result === 'lost_link') return baysWords(lang, 'unreachable');

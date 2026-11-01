@@ -80,6 +80,9 @@ export function spacePerformance(input: {
   return input.areas
     .map((area): SpacePerformanceRow => {
       const sales = input.sales[area.areaId] ?? { minor: 0, currency: input.currency };
+      // Wave 2 (P-08): an area with no margin figure is "not measured", never a nought — its sales may be known while its
+      // buying cost is not, and a zero margin would send someone to shrink an area that may be the shop's best.
+      const marginKnown = input.grossMargin[area.areaId] !== undefined;
       const margin = input.grossMargin[area.areaId] ?? { minor: 0, currency: input.currency };
       const shareOfSpaceBp =
         totalSqFt === 0 ? 0 : Math.round((area.squareFeet * 10_000) / totalSqFt);
@@ -93,11 +96,11 @@ export function spacePerformance(input: {
         sales,
         grossMargin: margin,
         salesPerSqFt: ratio(sales.minor, area.squareFeet, 'this area has no recorded floor space'),
-        marginPerSqFt: ratio(margin.minor, area.squareFeet, 'this area has no recorded floor space'),
+        marginPerSqFt: marginKnown ? ratio(margin.minor, area.squareFeet, 'this area has no recorded floor space') : { kind: 'not_meaningful', because: 'the margin of what this area sold is not known (a product with no buying cost)' },
         shareOfSpaceBp,
         shareOfMarginBp,
         underperforming:
-          totalMarginMinor > 0 && shareOfMarginBp + tolerance < shareOfSpaceBp,
+          marginKnown && totalMarginMinor > 0 && shareOfMarginBp + tolerance < shareOfSpaceBp,
       };
     })
     .sort((a, b) => {
