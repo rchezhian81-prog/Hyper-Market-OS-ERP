@@ -5,6 +5,16 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UI/UX gap audit (1 November 2026): can a shop person use each screen, and is it honest?
+- **Why:** the owner asked for the gap audit of the UI/UX. Read-only: `docs/audit/UI-UX-GAP-AUDIT-2026-11-01.md` plus the five lane tables in `docs/audit/ui-ux-gap-audit-2026-11-01/`. Nothing in the product changed.
+- **How:** a throw-away browser sweep (not kept) opened all 127 menu screens on a real store computer fed by a real head office, as every role that may open each one, at desk and phone width, in English and Tamil (295 page-and-role rows, the product's own WCAG audit on each, 380 screenshots), plus the eight device shells; five checkers then read the code behind every page against the design system's rules (§1, §27.1, QG-02, P-07, P-08).
+- **Result (140 screens):** CLEAR 22 · ROUGH 100 · HARD 18. The look and the accessibility audit hold almost everywhere; the usability rules do not: no page marks its one primary action; forms take typed codes instead of a pick list on 30+ pages; ~20 money, stock, price and privilege actions move on one click with no consequence or confirm; the page heading stays English after the Tamil toggle on 35 pages and head office's own words on 56; "0" or "all clear" stands for "not known" on ~12 pages and on the owner's phone; two save buttons (Floor indents, Production) are unreadable (1.73:1); Store setup has 26px switches and scrolls sideways; Users & roles shows the owner nothing; "Audit log" opens retention rules and answered the accountant 403.
+- **Never done:** the QG-02 session with real staff (UAT-06 is still "not yet required"); tap counts for every office action except approvals, tasks, a price change and an over-budget order; the rendered WCAG audit on the owner phone, self-checkout, kiosks, queue till and portals.
+- **Proposed:** fix rounds U0 (same-day, no decision) to U6, and the real-staff session as the gate; six owner decisions in the report (Tamil for head office's words, a confirm sheet, driver customer contact, owner-phone audit/health views, the cashier's menu, the order).
+- **Tests:** none changed; the guardrails ran green on this branch before the pull request (docs only).
+- **Next:** the owner answers the six decisions and picks the order; U0 can start without any of them.
+- **Blocked:** nothing. **Owner decisions needed:** the six in the report.
+
 ## OB-573 and OB-574 (1 November 2026): a demo weighing scale; a reason to stop a scale-label rule
 - **OB-573 "A":** the demo copy puts a pretend weighing scale (`DEMO-SCALE-1`, every field marked synthetic) on head office's scale register for the demo till, so the demo's loose rice rings from its scale label end to end. Demo tenant only.
 - **OB-574 "A":** stopping a scale-label rule needs a written reason. Head office refuses a stop without one (`withdrawal_reason_required`, nothing changed); the office screen asks for it before sending, in English and Tamil. Setting a rule may still say why.
