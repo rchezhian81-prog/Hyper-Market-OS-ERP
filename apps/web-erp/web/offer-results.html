@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Offer results</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Offer results (Round 4a · M05-FR-03 "promotion lifecycle" · M05-FR-04 "measure effectiveness … compares vs baseline").
+      A THIN CLIENT over head office's offer register (GET /v1/promotions), each offer's rule (…/definition), what it did
+      against a baseline (…/results: units, margin and supplier funding, from head office's banked bills and average buying
+      cost — "not known" by name where a cost is missing, never costed at zero) and the Stop (…/stop, from now it never
+      applies). An offer is defined and started on the Products page's Offer tab; this page reads and stops. Nothing is
+      written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.unknown { color: var(--warn); font-size: 15px; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; }
+      tr[data-id] { cursor: pointer; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Offer results</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Offer results</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel"><span class="k" id="k-active">Running now</span><span class="v" id="v-active">—</span></div>
+          <div class="panel"><span class="k" id="k-draft">Recorded, not started</span><span class="v" id="v-draft">—</span></div>
+          <div class="panel"><span class="k" id="k-stopped">Stopped</span><span class="v" id="v-stopped">—</span></div>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="list-h">
+        <h3 id="list-h">Offers</h3>
+        <div class="table-wrap"><table aria-labelledby="list-h">
+          <thead><tr><th id="c-id">Offer</th><th id="c-kind">Kind</th><th id="c-on">On</th><th id="c-dates">Dates</th><th id="c-status">Where it stands</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+      </section>
+
+      <section id="record" aria-labelledby="record-h" hidden>
+        <h3 id="record-h"></h3>
+        <p class="muted" id="rule"></p>
+        <div class="row">
+          <label for="b-from"><span id="l-b-from">Compare with the days from</span><input id="b-from" type="date" /></label>
+          <label for="b-to"><span id="l-b-to">to</span><input id="b-to" type="date" /></label>
+          <button id="measure" class="primary" type="button">Measure the offer</button>
+        </div>
+        <p class="muted" id="baseline-say"></p>
+        <div class="panels" id="result-panels" aria-live="polite">
+          <div class="panel"><span class="k" id="k-units">Units: offer · before</span><span class="v" id="v-units">—</span></div>
+          <div class="panel"><span class="k" id="k-uplift">Extra units</span><span class="v" id="v-uplift">—</span></div>
+          <div class="panel"><span class="k" id="k-margin">Margin kept, with supplier money</span><span class="v" id="v-margin">—</span></div>
+          <div class="panel"><span class="k" id="k-funding">Supplier money received</span><span class="v" id="v-funding">—</span></div>
+          <div class="panel"><span class="k" id="k-verdict">Worth doing?</span><span class="v" id="v-verdict">—</span></div>
+        </div>
+        <p class="muted" id="result-say"></p>
+        <div class="row" id="stop-row">
+          <label for="s-why"><span id="l-s-why">Why stop it</span><input id="s-why" autocomplete="off" maxlength="300" /></label>
+          <button id="stop" type="button">Stop this offer now</button>
+        </div>
+        <p class="status" id="record-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./offer-results.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

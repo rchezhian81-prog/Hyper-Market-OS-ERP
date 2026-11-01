@@ -95,6 +95,36 @@ function rowNode(r) {
   return li;
 }
 
+// ── Repeat orders (M17-FR-02 · OB-303, Round 4b) ────────────────────────────
+const ro = window.repeatOrders ?? null;
+const rw = (k) => (ro === null ? k : ro.words(lang, k));
+let repeat = null;
+function paintRepeat() {
+  if (ro === null) return;
+  for (const [id, k] of [['repeat-h', 'h'], ['repeat-lead', 'lead'], ['repeat-show', 'show'], ['repeat-run', 'run'], ['repeat-np-h', 'notPlacedH'], ['repeat-plans-h', 'plansH']]) el(id).textContent = rw(k);
+  el('repeat-not-placed').replaceChildren(); el('repeat-plans').replaceChildren();
+  el('repeat-np-h').hidden = repeat === null; el('repeat-plans-h').hidden = repeat === null;
+  if (repeat === null) return;
+  const li = (words, data) => { const n = document.createElement('li'); n.textContent = words; Object.assign(n.dataset, data); return n; };
+  el('repeat-not-placed').append(...(repeat.notPlaced.length === 0 ? [li(rw('allPlaced'), {})] : repeat.notPlaced.map((o) => li(ro.occurrenceWords(lang, o), { subscription: o.subscriptionId, day: o.day, outcome: o.outcome }))));
+  el('repeat-plans').append(...(repeat.subscriptions.length === 0 ? [li(rw('none'), {})] : repeat.subscriptions.map((p) => li(ro.planWords(lang, p), { subscription: p.subscriptionId, state: p.state }))));
+}
+async function readRepeat() {
+  const out = await ro.session.read();
+  if (out.result === 'ok') { repeat = out.value; el('repeat-status').textContent = ''; } else { repeat = null; el('repeat-status').textContent = ro.outcomeWords(lang, out); }
+  paintRepeat();
+}
+if (ro !== null && ro.session.may.read) {
+  el('repeat').hidden = false;
+  el('repeat-run').hidden = !ro.session.may.run;
+  el('repeat-show').addEventListener('click', () => { void readRepeat(); });
+  el('repeat-run').addEventListener('click', async () => {
+    const out = await ro.session.run();
+    if (out.result === 'ok') await readRepeat();
+    el('repeat-status').textContent = ro.outcomeWords(lang, out);
+  });
+}
+
 function paint() {
   const view = session.view(lang);
 
@@ -181,11 +211,12 @@ async function act(action, exceptionId) {
 }
 el('resolve').addEventListener('click', () => { void act('resolve', el('work-item').value); });
 el('release').addEventListener('click', () => { void act('release', el('work-item').value); });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintRepeat(); });
 
 el('sample').hidden = window.substitutionExceptionInboxSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
+paintRepeat();
 
 // Read the live worklist (a GET — read-only). Offline or refused, the screen keeps its current view and the
 // stale strip already says the page is what the box last told it.

@@ -27,6 +27,13 @@ const WORDS = {
     empty: 'No places yet. Start with the company.', reading: 'Reading the hierarchy from head office…', cannotRead: 'Your role cannot read the organisation.',
     readOnly: 'You can read the hierarchy; changing it needs setup rights.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.',
+    deptH: 'Departments and their categories', deptLede: 'Each department owns the product categories its sales and reports count. A category belongs to one department; a change is the owner\'s approval.',
+    deptCats: 'Owns', noCats: 'no categories yet — nothing is counted to it', catsInput: 'Categories it owns (ids, comma between)', why: 'Why', saveCats: 'Save the categories',
+    unowned: 'Categories no department owns (their sales are counted apart): {list}', noUnowned: 'Every category belongs to a department.', noDepts: 'No department has been added yet — add one below.',
+    catsAsked: 'Asked — the owner approves which categories a department owns. When he has approved it on the Approvals page, press “Save the categories” again.',
+    catsWaiting: 'Still waiting for the owner\'s approval on the Approvals page.', catsRejected: 'The owner rejected it: {why}', catsSaved: 'Saved — head office counts these categories to the department.', needWhy: 'Write why first.',
+    reportDay: 'Trading day', showReport: 'Show the department\'s sales', reportTotal: '{name} on {day}: {total} from {n} products. Sales no department owns that day: {unowned}.', reportNone: 'No sale of this department\'s products that day.',
+    reportLine: '{name}: {qty} · {value} · {bills} bills',
   },
   ta: {
     title: 'அமைப்பு', treeH: 'கடையின் இடங்கள்',
@@ -44,6 +51,13 @@ const WORDS = {
     empty: 'இன்னும் இடங்கள் இல்லை. நிறுவனத்துடன் தொடங்குங்கள்.', reading: 'தலைமை அலுவலகத்திலிருந்து அமைப்பைப் படிக்கிறது…', cannotRead: 'உங்கள் பங்கால் அமைப்பைப் படிக்க முடியாது.',
     readOnly: 'நீங்கள் அமைப்பைப் படிக்கலாம்; மாற்ற அமைப்பு உரிமை தேவை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.',
+    deptH: 'பிரிவுகளும் அவற்றின் வகைகளும்', deptLede: 'ஒவ்வொரு பிரிவும் அதன் விற்பனையும் அறிக்கைகளும் கணக்கிடும் பொருள் வகைகளைக் கொண்டுள்ளது. ஒரு வகை ஒரே பிரிவைச் சேர்ந்தது; மாற்றம் உரிமையாளரின் ஒப்புதல்.',
+    deptCats: 'கொண்டிருப்பவை', noCats: 'இன்னும் வகைகள் இல்லை — எதுவும் இதற்குக் கணக்கிடப்படவில்லை', catsInput: 'இது கொண்டிருக்கும் வகைகள் (எண்கள், காற்புள்ளியால் பிரிக்கவும்)', why: 'ஏன்', saveCats: 'வகைகளைச் சேமி',
+    unowned: 'எந்தப் பிரிவும் கொண்டிராத வகைகள் (அவற்றின் விற்பனை தனியாகக் கணக்கிடப்படும்): {list}', noUnowned: 'ஒவ்வொரு வகையும் ஒரு பிரிவைச் சேர்ந்தது.', noDepts: 'இன்னும் பிரிவு சேர்க்கப்படவில்லை — கீழே ஒன்றைச் சேருங்கள்.',
+    catsAsked: 'கேட்கப்பட்டது — ஒரு பிரிவு எந்த வகைகளைக் கொண்டிருக்கும் என்பதை உரிமையாளர் ஒப்புக்கொள்கிறார். அவர் ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டதும் மீண்டும் “வகைகளைச் சேமி” அழுத்தவும்.',
+    catsWaiting: 'ஒப்புதல்கள் பக்கத்தில் உரிமையாளரின் ஒப்புதலுக்காக இன்னும் காத்திருக்கிறது.', catsRejected: 'உரிமையாளர் நிராகரித்தார்: {why}', catsSaved: 'சேமிக்கப்பட்டது — தலைமை அலுவலகம் இந்த வகைகளைப் பிரிவுக்குக் கணக்கிடுகிறது.', needWhy: 'முதலில் ஏன் என்று எழுதுங்கள்.',
+    reportDay: 'வணிக நாள்', showReport: 'பிரிவின் விற்பனையைக் காட்டு', reportTotal: '{day} அன்று {name}: {n} பொருட்களிலிருந்து {total}. அன்று எந்தப் பிரிவுக்கும் சேராத விற்பனை: {unowned}.', reportNone: 'அன்று இந்தப் பிரிவின் பொருட்கள் எதுவும் விற்கப்படவில்லை.',
+    reportLine: '{name}: {qty} · {value} · {bills} பில்கள்',
   },
 };
 let lang = 'en';
@@ -188,7 +202,7 @@ function render() {
 
 function paintWords() {
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title', 'title'], ['tree-h', 'treeH'], ['tree-lede', 'treeLede'], ['add-h', 'addH'], ['add-lede', 'addLede'], ['l-add-kind', 'kind'], ['l-add-name', 'name'], ['l-add-code', 'code'], ['l-add-parent', 'parent'], ['add', 'add'], ['o-branch', 'branch'], ['o-warehouse', 'warehouse'], ['o-department', 'department'], ['o-company', 'company']]) {
+  for (const [id, k] of [['title', 'title'], ['tree-h', 'treeH'], ['tree-lede', 'treeLede'], ['dept-h', 'deptH'], ['dept-lede', 'deptLede'], ['add-h', 'addH'], ['add-lede', 'addLede'], ['l-add-kind', 'kind'], ['l-add-name', 'name'], ['l-add-code', 'code'], ['l-add-parent', 'parent'], ['add', 'add'], ['o-branch', 'branch'], ['o-warehouse', 'warehouse'], ['o-department', 'department'], ['o-company', 'company']]) {
     const el = $(id);
     if (el) el.textContent = t(k);
   }
@@ -216,6 +230,129 @@ async function load() {
   render();
 }
 
+
+// ── M01-FR-01: which categories each department owns, and the department's own report (Round 4a) ───────────────────
+const mayReport = perms.has('reporting.report.read');
+const fillIn = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
+const rupeesOf = (minor) => `₹${(minor / 100).toFixed(2)}`;
+let departments = null;
+let unownedCategories = [];
+function canonicalOf(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(canonicalOf).join(',')}]`;
+  return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonicalOf(v[k])}`).join(',')}}`;
+}
+/** This person's own request to set exactly these categories on a department: approved (its id), waiting, rejected or none. */
+async function askedDepartment(departmentId, details) {
+  try {
+    const res = await fetch('/v1/approvals/requests', { method: 'GET', credentials: 'same-origin', headers: { accept: 'application/json' } });
+    const body = await res.json().catch(() => ({}));
+    const mine = (Array.isArray(body.mine) ? body.mine : []).filter((r) => r.kind === 'org_structure_change' && r.subjectRef === `department:${departmentId}` && canonicalOf(r.details) === canonicalOf(details));
+    const newest = (rows) => rows.slice().sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt)))[0];
+    const approved = newest(mine.filter((r) => r.status === 'approved'));
+    if (approved !== undefined) return { approvalId: approved.requestId };
+    if (mine.some((r) => r.status === 'waiting')) return { waiting: true };
+    const last = newest(mine);
+    return last?.status === 'rejected' ? { rejected: last.decisionReason ?? '' } : {};
+  } catch { return {}; }
+}
+
+function departmentRow(d) {
+  const li = document.createElement('li'); li.className = 'place'; li.dataset.department = d.departmentId;
+  const head = document.createElement('div'); head.className = 'head';
+  const name = document.createElement('span'); name.className = 'name'; name.textContent = d.name;
+  const state = document.createElement('span'); state.textContent = t(d.status);
+  head.append(name, state);
+  const facts = document.createElement('p'); facts.className = 'facts'; facts.dataset.role = 'categories';
+  facts.textContent = `${t('deptCats')}: ${d.categoryIds.length === 0 ? t('noCats') : d.categoryIds.join(', ')}`;
+  li.append(head, facts);
+  const line = document.createElement('p'); line.className = 'status'; line.setAttribute('role', 'status');
+  if (mayChange) {
+    const acts = document.createElement('div'); acts.className = 'acts';
+    const cats = document.createElement('input'); cats.setAttribute('aria-label', `${t('catsInput')}: ${d.name}`); cats.placeholder = t('catsInput'); cats.autocomplete = 'off';
+    cats.value = d.categoryIds.join(', '); cats.setAttribute('list', 'category-list'); cats.dataset.role = 'cats';
+    const why = document.createElement('input'); why.setAttribute('aria-label', `${t('why')}: ${d.name}`); why.placeholder = t('why'); why.autocomplete = 'off'; why.dataset.role = 'why';
+    const save = document.createElement('button'); save.type = 'button'; save.textContent = t('saveCats'); save.dataset.act = 'save-categories';
+    save.addEventListener('click', async () => {
+      const reason = why.value.trim();
+      if (reason === '') { line.className = 'status err'; line.textContent = t('needWhy'); return; }
+      const categoryIds = [...new Set(cats.value.split(',').map((c) => c.trim()).filter((c) => c !== ''))].sort();
+      const details = { categoryIds, reason, departmentId: d.departmentId };
+      const asked = await askedDepartment(d.departmentId, details);
+      if (asked.waiting === true) { line.className = 'status err'; line.textContent = `⏳ ${t('catsWaiting')}`; return; }
+      if (asked.rejected !== undefined) { line.className = 'status err'; line.textContent = fillIn(t('catsRejected'), { why: asked.rejected }); return; }
+      if (asked.approvalId === undefined) {
+        const ask = await post('/v1/approvals/requests', { kind: 'org_structure_change', subjectRef: `department:${d.departmentId}`, details, valueMinor: null, summary: `${d.name}: categories ${categoryIds.join(', ') || 'none'}`, reason });
+        if (ask.ok) { line.className = 'status good'; line.textContent = `⏳ ${t('catsAsked')}`; } else say(line, ask, '');
+        return;
+      }
+      const out = await post(`/v1/org/departments/${encodeURIComponent(d.departmentId)}/categories`, { categoryIds, reason, approvalId: asked.approvalId });
+      if (out.ok) {
+        await loadDepartments();
+        const again = [...document.querySelectorAll('#depts li.place')].find((x) => x.dataset.department === d.departmentId)?.querySelector(':scope > p.status');
+        if (again) { again.className = 'status good'; again.textContent = t('catsSaved'); }
+      } else say(line, out, '');
+    });
+    acts.append(cats, why, save);
+    li.append(acts);
+  }
+  if (mayReport) {
+    const acts = document.createElement('div'); acts.className = 'acts';
+    const day = document.createElement('input'); day.type = 'date'; day.setAttribute('aria-label', `${t('reportDay')}: ${d.name}`); day.dataset.role = 'day';
+    day.value = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const show = document.createElement('button'); show.type = 'button'; show.textContent = t('showReport'); show.dataset.act = 'report';
+    const out = document.createElement('ul'); out.className = 'tree'; out.dataset.role = 'report';
+    show.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`/v1/org/departments/${encodeURIComponent(d.departmentId)}/report?${new URLSearchParams({ day: day.value })}`, { credentials: 'same-origin', headers: { accept: 'application/json' }, cache: 'no-store' });
+        const body = await res.json().catch(() => null);
+        if (!res.ok) { say(line, { ok: false, status: res.status, body }, ''); out.replaceChildren(); return; }
+        line.className = 'status';
+        line.textContent = fillIn(t('reportTotal'), { name: body.name, day: body.tradingDay, total: rupeesOf(body.totalValueMinor), n: body.products.length, unowned: rupeesOf(body.unownedValueMinor) });
+        out.replaceChildren(...(body.products.length === 0 ? [Object.assign(document.createElement('li'), { className: 'muted', textContent: t('reportNone') })]
+          : body.products.map((p) => Object.assign(document.createElement('li'), { className: 'place', textContent: fillIn(t('reportLine'), { name: p.name ?? p.productId, qty: p.quantityMinor, value: rupeesOf(p.valueMinor), bills: p.bills }) }))));
+      } catch { say(line, { ok: false, status: 0, body: null }, ''); }
+    });
+    acts.append(day, show);
+    li.append(acts, out);
+  }
+  li.append(line);
+  return li;
+}
+
+function renderDepartments() {
+  const ul = $('depts');
+  ul.replaceChildren();
+  $('dept-section').hidden = !mayRead;
+  if (departments === null) return;
+  if (departments.length === 0) ul.append(Object.assign(document.createElement('li'), { className: 'muted', textContent: t('noDepts') }));
+  for (const d of departments) ul.append(departmentRow(d));
+  $('unowned').textContent = unownedCategories.length === 0 ? t('noUnowned') : fillIn(t('unowned'), { list: unownedCategories.join(', ') });
+}
+
+async function loadDepartments() {
+  if (!mayRead) { renderDepartments(); return; }
+  try {
+    const [res, cats] = await Promise.all([
+      fetch('/v1/org/departments', { headers: { accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
+      fetch('/v1/catalogue/categories', { headers: { accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }).catch(() => null),
+    ]);
+    const body = await res.json().catch(() => null);
+    if (!res.ok) { departments = null; say($('dept-status'), { ok: false, status: res.status, body }, ''); renderDepartments(); return; }
+    departments = Array.isArray(body?.departments) ? body.departments : [];
+    unownedCategories = Array.isArray(body?.unownedCategories) ? body.unownedCategories : [];
+    if (cats !== null && cats.ok) {
+      const list = (await cats.json().catch(() => ({}))).categories ?? [];
+      $('category-list').replaceChildren(...list.map((c) => Object.assign(document.createElement('option'), { value: c.categoryId, label: c.name })));
+    }
+    $('dept-status').textContent = '';
+  } catch {
+    departments = null;
+    $('dept-status').className = 'status err'; $('dept-status').textContent = t('unreachable');
+  }
+  renderDepartments();
+}
+
 $('add').addEventListener('click', async () => {
   const name = $('add-name').value.trim();
   const code = $('add-code').value.trim();
@@ -227,132 +364,19 @@ $('add').addEventListener('click', async () => {
   say($('add-status'), out, t('added'));
   if (out.ok) { $('add-name').value = ''; $('add-code').value = ''; }
   await load();
-  if (out.ok && kind === 'department') await loadDepartments(); // M01-FR-01: a new department appears in the pickers
+  await loadDepartments();
 });
-
-// ── M01-FR-01 — begin: departments own categories; one department's report ─────────────────────────────────────
-//
-// Through the tested model (`org-departments-session.ts`, attached as `window.orgDepartmentsSession` / `orgDepartmentsKit`).
-// Saying which categories a department owns is a structural change: the person ASKS the owner for exactly that list (kind
-// org_structure_change); the owner approves on his Approvals page; then "Save the approved change" sends it naming that
-// approval number. Nothing here approves, and nobody's name is typed. Head office's refusals are shown in its words.
-const depts = window.orgDepartmentsSession ?? null;
-const deptKit = window.orgDepartmentsKit ?? null;
-const dw = (key, fill) => (deptKit === null ? key : deptKit.orgDeptWords(lang)(key, fill));
-let deptRead = null;   // GET /v1/org/departments (an outcome)
-let deptMine = null;   // the person's own requests for the chosen department (an outcome)
-let reportRead = null; // the last report (an outcome)
-
-function deptSay(id, said) { const e = $(id); e.className = `status ${said.ok ? 'good' : 'err'}`; e.textContent = said.text; }
-const chosenDept = () => $('dept-pick').value;
-
-function fillDeptPicks(list) {
-  for (const id of ['dept-pick', 'report-dept']) {
-    const sel = $(id); const was = sel.value;
-    sel.replaceChildren(...list.map((d) => { const o = document.createElement('option'); o.value = d.departmentId; o.textContent = `${d.name} (${d.departmentId})`; return o; }));
-    if ([...sel.options].some((o) => o.value === was)) sel.value = was;
-  }
-}
-
-function renderDepartments() {
-  if (deptKit === null || depts === null) { $('dept-section').hidden = true; $('report-section').hidden = true; return; }
-  for (const [id, k] of [['dept-h', 'h'], ['dept-lede', 'lede'], ['l-dept-pick', 'department'], ['l-dept-cats', 'pick'], ['l-dept-reason', 'reason'], ['dept-ask', 'ask'],
-    ['dept-mine-h', 'mineH'], ['report-h', 'reportH'], ['report-lede', 'reportLede'], ['l-report-dept', 'department'], ['l-report-day', 'day'], ['report-show', 'showReport']]) $(id).textContent = dw(k);
-  $('dept-section').hidden = !depts.may.read;
-  $('report-section').hidden = !(depts.may.read && depts.may.report);
-  $('dept-link').hidden = !depts.may.link;
-  const status = $('dept-status');
-  status.className = 'status'; status.textContent = depts.may.link ? '' : dw('readOnly');
-  $('dept-owns').textContent = ''; $('dept-unowned').textContent = ''; $('dept-cats').replaceChildren(); $('dept-mine').replaceChildren();
-  if (deptRead === null) return;
-  if (deptRead.kind !== 'done') { deptSay('dept-status', deptKit.orgDeptOutcomeWords(lang, deptRead, 'read')); return; }
-  const list = deptRead.body.departments;
-  fillDeptPicks(list);
-  if (list.length === 0) { status.className = 'status'; status.textContent = dw('noDepartments'); $('dept-link').hidden = true; return; }
-  const d = list.find((x) => x.departmentId === chosenDept()) ?? list[0];
-  $('dept-owns').textContent = d.categoryIds.length === 0 ? dw('ownsNothing') : dw('owns', { list: d.categoryIds.join(', ') });
-  const unowned = deptRead.body.unownedCategories;
-  $('dept-unowned').textContent = dw('unowned', { list: unowned.length === 0 ? dw('none') : unowned.join(', ') });
-  // The choice: what it owns now (ticked) and what nobody owns. A category another department owns is not offered —
-  // head office would refuse it; it is taken off that department first, with the owner's approval too.
-  for (const c of [...new Set([...d.categoryIds, ...unowned])].sort()) {
-    const lab = document.createElement('label');
-    const box = document.createElement('input'); box.type = 'checkbox'; box.value = c; box.checked = d.categoryIds.includes(c); box.dataset.cat = c;
-    lab.append(box, document.createTextNode(c));
-    $('dept-cats').append(lab);
-  }
-  if (deptMine === null || !depts.may.link) return;
-  if (deptMine.kind !== 'done') { deptSay('dept-link-status', deptKit.orgDeptOutcomeWords(lang, deptMine, 'read')); return; }
-  if (deptMine.body.length === 0) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = dw('noMine'); $('dept-mine').append(li); return; }
-  for (const r of deptMine.body) {
-    const li = document.createElement('li'); li.className = 'place'; li.dataset.request = r.requestId; li.dataset.status = r.status;
-    const line = document.createElement('span'); line.textContent = deptKit.requestLine(lang, r);
-    li.append(line);
-    if (r.status === 'approved') {
-      const use = document.createElement('button'); use.type = 'button'; use.dataset.use = r.requestId; use.textContent = dw('useApproved');
-      use.addEventListener('click', async () => {
-        use.disabled = true;
-        const out = await depts.saveApprovedLink(r);
-        deptSay('dept-link-status', deptKit.orgDeptOutcomeWords(lang, out, 'link'));
-        await loadDepartments();
-      });
-      li.append(use);
-    }
-    $('dept-mine').append(li);
-  }
-}
-
-function renderReport() {
-  if (deptKit === null || depts === null) return;
-  $('report-total').textContent = ''; $('report-lines').replaceChildren(); $('report-unowned').textContent = ''; $('report-note').textContent = '';
-  if (reportRead === null) return;
-  if (reportRead.kind !== 'done') { deptSay('report-status', deptKit.orgDeptOutcomeWords(lang, reportRead, 'read')); return; }
-  $('report-status').textContent = '';
-  const said = deptKit.reportLines(lang, reportRead.body);
-  $('report-total').textContent = said.total;
-  for (const text of said.lines) { const li = document.createElement('li'); li.className = 'place'; li.textContent = text; $('report-lines').append(li); }
-  $('report-unowned').textContent = said.unowned;
-  $('report-note').textContent = said.note ?? '';
-}
-
-async function loadDepartments() {
-  if (depts === null || !depts.may.read) { renderDepartments(); return; }
-  deptRead = await depts.departments();
-  renderDepartments(); // fills the pickers, so the chosen department is known
-  deptMine = depts.may.link && deptRead.kind === 'done' && chosenDept() !== '' ? await depts.myRequests(chosenDept()) : null;
-  renderDepartments();
-}
-
-if (depts !== null) {
-  $('dept-pick').addEventListener('change', () => { $('dept-link-status').textContent = ''; void loadDepartments(); });
-  $('dept-ask').addEventListener('click', async () => {
-    const categoryIds = [...document.querySelectorAll('#dept-cats input[type=checkbox]')].filter((b) => b.checked).map((b) => b.value);
-    const out = await depts.askLink({ departmentId: chosenDept(), categoryIds, reason: $('dept-reason').value });
-    deptSay('dept-link-status', deptKit.orgDeptOutcomeWords(lang, out, 'ask'));
-    if (out.kind === 'done') $('dept-reason').value = '';
-    if (out.kind !== 'invalid') await loadDepartments();
-  });
-  $('report-show').addEventListener('click', async () => {
-    $('report-status').className = 'status'; $('report-status').textContent = '';
-    reportRead = await depts.report($('report-dept').value, $('report-day').value);
-    renderReport();
-  });
-}
-// ── M01-FR-01 — end
 
 $('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintWords();
   render();
-  renderDepartments(); // M01-FR-01
-  renderReport();
+  renderDepartments();
 });
 
 paintWords();
-if (who !== null) { $('tree-status').textContent = t('reading'); void load(); }
-renderDepartments(); // M01-FR-01
-if (who !== null) void loadDepartments();
+if (who !== null) { $('tree-status').textContent = t('reading'); void load(); void loadDepartments(); }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

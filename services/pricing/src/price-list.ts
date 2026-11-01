@@ -49,13 +49,6 @@ export interface PriceListDeps {
   readonly allowedEntries?: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
   /** D-19: the store → zone register — the zone a store belongs to, when the request names none. */
   readonly zoneOfStore?: (tenantId: string, storeId: string) => Promise<string | undefined>;
-  /**
-   * OB-291 (owner, 23 Oct 2026): an entry that moves the price it replaces by more than the owner's set size (more than
-   * 10% or more than ₹50 a unit, numbers changeable) needs a second person — the SAME rule the governed change route
-   * (`POST /v1/prices/changes`) applies, so a dated or scoped price is not a way round it. Returns the plain reason when
-   * it does; judged after the MRP ceiling and the margin floor, so those still speak first. Optional on a bare stub.
-   */
-  readonly entryNeedsSecondPerson?: (tenantId: string, productId: string, entry: { readonly scope: PriceScope; readonly scopeRef: string; readonly priceMinor: number; readonly effectiveFrom: string; readonly batchId?: string }) => Promise<string | undefined>;
   readonly now: () => string;
 }
 
@@ -163,18 +156,6 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
           });
         }
 
-        // OB-291: a change larger than the owner's set size needs a second person too — the change route's rule, here.
-        if (approval === undefined && deps.entryNeedsSecondPerson !== undefined) {
-          const why = await deps.entryNeedsSecondPerson(ctx.tenantId, productId, {
-            scope: b.scope, scopeRef: b.scopeRef, priceMinor, effectiveFrom: from, ...(batchId === undefined ? {} : { batchId }),
-          });
-          if (why !== undefined) {
-            throw apiError(422, {
-              code: 'price_change_needs_second_person', whatHappened: why, wasItSaved: 'not_saved',
-              nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind price_list_entry, with exactly this entry); once someone who may approve prices approves it, send the approvalId. Nothing was recorded.',
-            });
-          }
-        }
         // Every rule passed: the approval is spent — once — and only then is the entry recorded.
         await opened?.spend();
         // Version is monotonic per (scope, ref) — a later entry supersedes on tie, and a sale can lock it.

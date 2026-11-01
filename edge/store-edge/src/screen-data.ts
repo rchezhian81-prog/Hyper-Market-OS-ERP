@@ -1996,6 +1996,9 @@ export function expiryPayload(input: ScreenInput): Record<string, unknown> | nul
     now: input.now,
     tradingDay: input.tradingDay,
     nearExpiryDays: policy.nearExpiryDays,
+    // Round 4b (M10-FR-01 expired register): what the signed-in person holds — filled by `asSignedInPerson` from this box's
+    // role register — so the "Taken off sale" tab offers head office's expired register only to whoever may read stock.
+    permissions: [],
   };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
 

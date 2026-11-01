@@ -360,8 +360,8 @@ export interface OnlineShop {
   listing(): Promise<MineOutcome<unknown>>;
   /** A product's image from the shop's own server (OB-215), as a data address the page can show; none → refused. */
   image(productId: string): Promise<MineOutcome<string>>;
-  /** G-1 (M03-FR-04): the shop's approved substitutes for a product, only those it can sell now — shown, never applied. */
-  substitutes(productId: string): Promise<MineOutcome<readonly ShopSubstitute[]>>;
+  /** Round 4a (M03-FR-04): the shop's own approved substitutes for a product, in order — only those on sale now, by name. */
+  substitutes(productId: string): Promise<MineOutcome<{ readonly set: boolean; readonly substitutes: readonly { readonly productId: string; readonly name: string; readonly nameTa?: string }[] }>>;
   receiptChoice(): Promise<MineOutcome<unknown>>;
   setReceipts(on: boolean): Promise<MineOutcome<boolean>>;
   receipts(): Promise<MineOutcome<unknown>>;
@@ -373,9 +373,6 @@ export interface OnlineShop {
 
 /** Why a call about my own records did not happen — the view words each one, in English and Tamil. */
 export type MineRefusal = 'not_signed_in' | 'no_road_to_the_shop' | 'not_saved_no_connection' | 'signed_out' | 'the_shop_could_not_answer' | 'the_shop_refused';
-/** G-1 (M03-FR-04): one of the shop's approved substitutes, as `GET /v1/storefront/products/:productId/substitutes` gives it. */
-export interface ShopSubstitute { readonly productId: string; readonly name: string; readonly nameTa?: string }
-
 export type MineOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refusal: MineRefusal; readonly shopSaid?: string };
 export interface MyCase {
   readonly caseId: string; readonly kind: string; readonly state: string; readonly openedAt: string; readonly orderRef?: string;
@@ -674,14 +671,14 @@ export function bootShop(
         if ((b.mediaType !== 'image/jpeg' && b.mediaType !== 'image/png' && b.mediaType !== 'image/webp') || typeof b.contentBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(b.contentBase64)) return { ok: false, refusal: 'the_shop_refused' };
         return { ok: true, value: `data:${b.mediaType};base64,${b.contentBase64}` };
       },
-      // G-1 (M03-FR-04): the shop's own list (head office keeps only what it can sell now). The app SHOWS these; the
-      // customer adds one with their own tap — a substitution is never applied for them (A04).
       substitutes: async (productId) => {
         const a = await storefrontCall(`products/${encodeURIComponent(productId)}/substitutes`);
         if (!a.ok) return a;
-        const list = (a.body as { substitutes?: unknown }).substitutes;
-        const shown = Array.isArray(list) ? list.filter((x): x is ShopSubstitute => typeof x === 'object' && x !== null && typeof (x as ShopSubstitute).productId === 'string' && typeof (x as ShopSubstitute).name === 'string') : [];
-        return { ok: true, value: shown.map((x) => ({ productId: x.productId, name: x.name, ...(typeof x.nameTa === 'string' ? { nameTa: x.nameTa } : {}) })) };
+        const b = a.body as { set?: unknown; substitutes?: unknown };
+        const list = Array.isArray(b.substitutes) ? (b.substitutes as { productId?: unknown; name?: unknown; nameTa?: unknown }[])
+          .filter((s) => typeof s.productId === 'string' && typeof s.name === 'string')
+          .map((s) => ({ productId: s.productId as string, name: s.name as string, ...(typeof s.nameTa === 'string' ? { nameTa: s.nameTa } : {}) })) : [];
+        return { ok: true, value: { set: b.set === true, substitutes: list } };
       },
       receiptChoice: async () => { const a = await mineCall({ method: 'GET', path: 'receipts/choice' }); return a.ok ? { ok: true, value: a.body } : a; },
       setReceipts: async (on) => {

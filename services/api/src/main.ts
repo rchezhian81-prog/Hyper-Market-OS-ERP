@@ -140,6 +140,7 @@ import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { floorIndentRoutes } from '../../inventory/src/floor-indents';
 import { syncedFloorIndentRoutes } from '../../inventory/src/floor-indents-synced';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
+import { replenishmentParameterRoutes } from '../../inventory/src/replenishment-parameters';
 import { salesHistoryRoutes } from '../../inventory/src/sales-history';
 import { countsRoutes, decideCount } from '../../inventory/src/counts';
 import { syncedCountsRoutes } from '../../inventory/src/counts-synced';
@@ -216,6 +217,7 @@ import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
 import { receiptPrefixRoutes } from '../../platform/src/receipt-prefixes';
+import { replenishmentParametersAdapter } from './adapters'; // M09-FR-02 (Round 4b)
 import { receiptPrefixAdapter } from './adapters';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { boxHealthRoutes, boxHistorySealKey } from '../../platform/src/box-health';
@@ -355,7 +357,7 @@ import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting
 import { customerFollowupsRoutes } from './customer-followups-adapters'; // OB-288 customer & delivery follow-ups — referrals (OB-351), scan-and-go (OB-350)
 import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
 import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
-import { p1IdentitySurface, approvalAgeSweep, priceListEntrySize } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
+import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
 import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
@@ -377,6 +379,7 @@ import { dataInTemplates, dataInCommitDeps, dataOutDomains } from './data-in-ada
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { qualitySampleAdapter, inMemoryQualitySamples, scaleStampExpirySweep } from './r6b-quality-scale-adapters'; // Round 6 · R6-B — quality samples (M10-FR-02), scale-stamp alerts (B7)
 import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
+import { productsPricesSurface } from './w1-products-prices-adapters'; // Round 4a — products and prices
 import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 — store floor devices (ESL, RFID, IoT, CCTV events)
 import { r16aSaleBranches } from './r16a-check-gaps-adapters'; // R16-A · OB-612: the bill findings narrow to the caller's branches
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
@@ -632,6 +635,12 @@ export function buildSurface(deps: {
     unitValueMinor: empty(undefined), countPolicy: empty(undefined), binExpected: empty(undefined), now,
   } : { ...countsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze };
   // WF-08 (round 8): stock-count plans — plan/freeze, blind count, recount, cause, one approval — on the same count register.
+  // FUL-11: a proposal for ONE store, on head office's on-hand / on-order / in-transit / sold for it — never typed figures.
+  const replenishment = calendared(replenishmentRoutes)(store === undefined ? { now } : {
+    now, ...replenishmentFactsAdapter({ store, now, calendar: shopCalendar, branchOf: locationBranchesOf(store, now) }),
+    rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
+    masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
+  });
   const countPlanDeps = store === undefined ? undefined
     : { ...countPlansAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   // WF-08 / OB-59 (round 10): the count freeze EVERY head-office adjustment / write-off path asks — the open plan that
@@ -853,10 +862,7 @@ export function buildSurface(deps: {
       }),
     ...calendared(priceListRoutes)(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
-      : {
-        ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */,
-        entryNeedsSecondPerson: priceListEntrySize({ store, now, settings }), // OB-291: the change route's set size, at this door too
-      }),
+      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */ }),
     // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
     ...(store === undefined ? [] : competitorPriceRoutes({
       now, ...competitorPriceAdapter({ store, now }),
@@ -1141,12 +1147,13 @@ export function buildSurface(deps: {
     ...calendared(floorIndentRoutes)(floorIndentDeps),
     // SP-8b: the floor's indent and its independent receipt RELAYED from the served Indents screen through the box.
     ...syncedFloorIndentRoutes(floorIndentDeps),
-    // FUL-11: a proposal for ONE store, on head office's on-hand / on-order / in-transit / sold for it — never typed figures.
-    ...calendared(replenishmentRoutes)(store === undefined ? { now } : {
-      now, ...replenishmentFactsAdapter({ store, now, calendar: shopCalendar, branchOf: locationBranchesOf(store, now) }),
-      rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
-      masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
-    }),
+    ...replenishment,
+    // M09-FR-02 (Round 4b): the planning parameters stored per product and store (versioned, audited), and the proposal
+    // worked out on them by the same route above — never on typed parameters.
+    ...(store === undefined ? [] : replenishmentParameterRoutes({
+      ...replenishmentParametersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now),
+      propose: async (ctx, storeId, items) => replenishment.find((r) => r.method === 'POST' && r.path === '/v1/replenishment/propose')!.handler({ ...ctx, body: { items }, query: { storeId } }),
+    })),
     ...calendared(salesHistoryRoutes)(store === undefined ? { soldLines: empty([]), now } : { ...salesHistoryAdapter({ store, now }), demandCalendar: demandCalendarFor({ store, now })! /* R4 Lane 3 · D-24 */ }),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.
@@ -2248,12 +2255,13 @@ export function buildSurface(deps: {
   followupsSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 integration follow-ups (the seams between the five lanes)
   aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
   customerCommerceSurface(surface, { store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }); // OB-288 wave 3 (M16-FR-04 · M17-FR-01/02 · M18-FR-04 · M20 · M21-FR-01/02 · WF-13 · D08 · OB-295/303/311/314/322/329)
-  tillBillSurface(surface, { store, now }); // Till bill and GST (audit-1 P5 · audit-2 P3)
+  tillBillSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Till bill and GST (audit-1 P5 · audit-2 P3); Round 4a: a cess change with Finance
   lpWorkforceSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 LP, workforce, facilities and adoption (M15-FR-02/03 · M25 · M26 · M28-FR-01 · QG-09 · D11 · OB-301/317/320/323)
   ownerReportingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 4 · P2 (M29-FR-01/03/04 · M28-FR-04 · D13)
   saasRolloutSurface(surface, { store, now, calendar: shopCalendar, plans: PROPOSED_PLANS, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P4 (M36-FR-01/03 · D12-FR-05/06 · R8-2 · R8-9 · C8 · C9 · OB-316/321/324)
   floorDevicesSurface(surface, { store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 P6 (R8-4 ESL · R8-5 RFID · R8-6 IoT · R8-7 CCTV · D14-FR-05 · OB-217/316)
   fg4BuyingSurface(surface, { store, now, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-4 (M04-FR-04 · M06-FR-03 · D03-FR-04/05 · A12 · OB-386 · M02-FR-02 · SEC-03)
+  productsPricesSurface(surface, { store, now, calendar: shopCalendar, settings, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // Round 4a (M03-FR-01..04 · M05-FR-01 · OB-291): product and price audit, the price basis
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));

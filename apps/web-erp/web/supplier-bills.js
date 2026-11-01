@@ -507,6 +507,118 @@ function renderWaiting() {
   }));
 }
 
+// ── Supplier advances (D10-FR-01, Round 4b) ──────────────────────────────────
+//
+// Its own tested session (window.supplierAdvances, apps/web-erp/src/supplier-advances-session.ts). Reading is a click; paying
+// is asked for, approved by a different person on the Approvals page, then recorded exactly as approved; a use against a bill
+// and its undo are one journal each. After every write the register is read again, so what is shown is what head office kept.
+
+const adv = window.supplierAdvances ?? null;
+const at = (k) => (adv === null ? k : adv.words(lang, k));
+let advRegister = null;
+let advAsks = null;
+const advNode = (tag, cls, words) => { const n = document.createElement(tag); if (cls) n.className = cls; if (words !== undefined) n.textContent = words; return n; };
+const advInput = (cls, label, type) => { const i = document.createElement('input'); i.className = cls; i.autocomplete = 'off'; i.placeholder = label; i.setAttribute('aria-label', label); if (type) i.type = type; return i; };
+function advSay(node, out, good) { node.className = `status ${out.result === 'ok' ? 'good' : 'err'}`; node.textContent = adv.outcomeWords(lang, out, good); }
+
+function renderAdvances() {
+  $('adv-summary').replaceChildren(); $('adv-list').replaceChildren(); $('adv-ledger').textContent = '';
+  if (advRegister === null) return;
+  const r = advRegister;
+  const box = (label, value) => { const d = advNode('div'); d.append(advNode('span', 'label', label), advNode('span', 'value', value)); return d; };
+  $('adv-summary').append(box(at('register'), adv.rupees(r.registerLeftMinor)), box(at('ledger'), r.ledgerMinor === null ? '—' : adv.rupees(r.ledgerMinor)));
+  $('adv-ledger').textContent = r.advancesAccount === null ? at('ledgerNotKnown') : r.agrees ? at('ledgerAgrees') : at('ledgerDisagrees');
+  $('adv-ledger').className = r.agrees ? 'muted' : 'status err';
+  if (r.advances.length === 0) { $('adv-list').append(advNode('li', 'bill', at('none'))); return; }
+  for (const a of r.advances) {
+    const li = advNode('li', 'bill'); li.dataset.advance = a.advanceId;
+    li.append(advNode('span', 'what', `${at('advance')} ${a.advanceId} · ${at('supplier')} ${a.supplierId}${a.poId === null ? '' : ` · ${at('order')} ${a.poId}`}`));
+    li.append(advNode('span', 'facts', `${at('paid')} ${adv.rupees(a.paidMinor)} · ${at('used')} ${adv.rupees(a.appliedMinor)} · ${at('left')} ${adv.rupees(a.leftMinor)} · ${at('paidOn')} ${a.paidOn}${a.approvedBy === null ? '' : ` · ${at('approvedBy')} ${a.approvedBy}`}`));
+    const undone = new Set(a.applications.filter((x) => x.reverses !== null).map((x) => x.reverses));
+    if (a.applications.length === 0) li.append(advNode('span', 'facts', at('noUses')));
+    for (const u of a.applications) {
+      const row = advNode('div', 'facts'); row.dataset.application = u.applicationId;
+      row.append(advNode('span', '', u.reverses === null ? `${at('bill')} ${u.invoiceId ?? '—'} · ${adv.rupees(u.amountMinor)} · ${u.on}` : `${at('undoOf')} ${u.reverses} · ${adv.rupees(u.amountMinor)} · ${u.on}`));
+      if (adv.session.may.use && u.reverses === null && !undone.has(u.applicationId)) {
+        const on = advInput('undo-on', at('usedOn'), 'date');
+        const go = advNode('button', '', at('undo')); go.type = 'button'; go.dataset.act = 'undo';
+        const st = advNode('p', 'status');
+        go.addEventListener('click', async () => {
+          const out = await adv.session.undo(a.advanceId, u, on.value);
+          if (out.result === 'ok') { await showAdvances(); advSay($('adv-status'), out, 'undoneNow'); return; }
+          advSay(st, out);
+        });
+        row.append(on, go, st);
+      }
+      li.append(row);
+    }
+    if (adv.session.may.use && a.leftMinor > 0) {
+      const form = advNode('div', 'row use');
+      const bill = advInput('use-bill', at('invoiceId')); const amount = advInput('use-amount', at('amountRs')); amount.inputMode = 'decimal'; const on = advInput('use-on', at('usedOn'), 'date');
+      const go = advNode('button', '', at('use')); go.type = 'button'; go.dataset.act = 'use';
+      const st = advNode('p', 'status');
+      go.addEventListener('click', async () => {
+        const out = await adv.session.use(a.advanceId, { invoiceId: bill.value, amountRupees: amount.value, on: on.value });
+        if (out.result === 'ok') { await showAdvances(); advSay($('adv-status'), out, 'usedNow'); return; }
+        advSay(st, out);
+      });
+      form.append(bill, amount, on, go);
+      li.append(advNode('span', 'facts', at('useH')), form, st);
+    }
+    $('adv-list').append(li);
+  }
+}
+
+function renderAsks() {
+  $('adv-asks').replaceChildren();
+  if (advAsks === null) return;
+  for (const q of advAsks) {
+    const li = advNode('li', 'bill'); li.dataset.request = q.requestId; li.dataset.status = q.status;
+    const d = q.details;
+    li.append(advNode('span', 'what', `${q.subjectRef.slice('advance:'.length)} · ${at('supplier')} ${d.supplierId} · ${adv.rupees(Number(d.amountMinor))} · ${at(`m_${d.method}`)} ${d.reference}`));
+    li.append(advNode('span', `pill ${q.status === 'approved' ? 'done' : q.status === 'waiting' ? 'waiting' : ''}`, at(`st_${q.status}`)));
+    if (q.status === 'approved') {
+      const go = advNode('button', 'primary', at('record')); go.type = 'button'; go.dataset.act = 'record';
+      const st = advNode('p', 'status');
+      go.addEventListener('click', async () => {
+        const out = await adv.session.record(q);
+        if (out.result === 'ok') { await showAdvances(); advSay($('adv-status'), out, 'recordedNow'); return; }
+        advSay(st, out);
+      });
+      li.append(go, st);
+    }
+    $('adv-asks').append(li);
+  }
+}
+
+async function showAdvances() {
+  const out = await adv.session.register();
+  if (out.result === 'ok') { advRegister = out.value; $('adv-status').className = 'status'; $('adv-status').textContent = ''; }
+  else { advRegister = null; advSay($('adv-status'), out); }
+  if (adv.session.may.pay) { const asks = await adv.session.myAsks(); advAsks = asks.result === 'ok' ? asks.value : null; }
+  renderAdvances(); renderAsks();
+}
+
+function paintAdvances() {
+  for (const [id, k] of [['adv-h', 'h'], ['adv-lede', 'lead'], ['adv-show', 'show'], ['adv-ask-h', 'askH'], ['l-adv-supplier', 'supplier'], ['l-adv-amount', 'amountRs'], ['l-adv-on', 'paidOnL'],
+    ['l-adv-method', 'method'], ['adv-m-bank', 'm_bank_transfer'], ['adv-m-cheque', 'm_cheque'], ['adv-m-upi', 'm_upi'], ['adv-m-cash', 'm_cash'], ['l-adv-ref', 'reference'], ['l-adv-po', 'poId'],
+    ['adv-ask', 'ask'], ['adv-asks-h', 'approvedH']]) $(id).textContent = at(k);
+  renderAdvances(); renderAsks();
+}
+
+if (adv !== null && adv.session.may.read) {
+  $('adv-section').hidden = false;
+  $('adv-show').addEventListener('click', () => { void showAdvances(); });
+  if (adv.session.may.pay) {
+    $('adv-pay').hidden = false;
+    $('adv-ask').addEventListener('click', async () => {
+      const out = await adv.session.askToPay({ supplierId: $('adv-supplier').value, amountRupees: $('adv-amount').value, paidOn: $('adv-on').value, method: $('adv-method').value, reference: $('adv-ref').value, poId: $('adv-po').value });
+      advSay($('adv-ask-status'), out, 'askedNow');
+      if (out.result === 'ok') await showAdvances();
+    });
+  }
+}
+
 // ── Language and boot ──────────────────────────────────────────────────────
 
 function paint() {
@@ -534,6 +646,7 @@ function paint() {
   if (who === null || session === null) { $('nobody').hidden = false; $('nobody').textContent = t('nobody'); }
   renderRegister();
   renderWaiting();
+  paintAdvances();
   if (openDoc !== null) renderDrawer();
 }
 

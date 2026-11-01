@@ -327,6 +327,25 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
     }
   });
 
+  it('OB-31 (Round 4b): a weighed loss is typed in kg — head office is asked the value of 2500 g, and its figure reads "2.500 kg ×"', async () => {
+    const ho = newHeadOffice();
+    const { page, errors, teardown } = await openPage(ho);
+    try {
+      await page.fill('#wo-product', 'Toor dal 1kg');
+      await page.fill('#wo-location', 'aisle-3');
+      await page.fill('#wo-uom', 'kg');
+      await page.fill('#wo-qty', '2.5');
+      await page.press('#wo-qty', 'Tab');
+      await page.waitForFunction(() => ((globalThis as unknown as BrowserGlobals).document.getElementById('value-hint-text')?.textContent ?? '').includes('2.500 kg × '), undefined, { timeout: 10_000 });
+      // Head office was asked the value of 2500 g (the old form sent 2 — Math.trunc of "2.5") and its figure is worded in kg.
+      expect((await page.textContent('#value-hint-text'))?.trim()).toMatch(/^Head office's value: 2\.500 kg × ₹95\.00 = ₹/);
+      expect(await page.inputValue('#wo-value')).not.toBe('190.00');
+      expect(errors).toEqual([]);
+    } finally {
+      await teardown();
+    }
+  });
+
   it('D-5: the reason is a chip from the closed waste reason list — a loss with none chosen is not sent; the chosen code is what head office records', async () => {
     const ho = newHeadOffice();
     const { page, errors, teardown } = await openPage(ho);

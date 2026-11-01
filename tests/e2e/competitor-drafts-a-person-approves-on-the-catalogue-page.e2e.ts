@@ -51,7 +51,6 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor
         const req = (path: string, body: unknown) => cloud.request({ method: 'POST', path, userId: OWNER, body, idempotencyKey: `seed-${randomUUID()}` });
         await ok(req('/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' }), 'company');
         await ok(req('/v1/org/nodes/store-1', { kind: 'branch', name: 'Store 1', parentId: 'C1', companyId: 'C1' }), 'store');
-        await ok(req('/v1/stores/store-1/rules', { ...STORE_RULES, marginFloorBps: 2_000 }), 'rules');
         await ok(req('/v1/catalogue/tax-classes/0902/rates/2017-07-01', { rateBps: 500 }), 'tax');
         for (const [id, name, shelfMinor, mrp, cost, theirs] of [['p-tea', 'Tea 250g', 10_000, 10_500, 7_000, 9_400], ['p-oil', 'Groundnut oil 1L', 20_000, 21_000, 17_000, 18_800]] as const) {
           await ok(req(`/v1/catalogue/products/${id}/publish`, { product: { sku: `SKU-${id}`, name, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '0902', lifecycle: 'active', mrpHistory: [{ value: { minor: mrp, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }), `publish ${id}`);
@@ -59,6 +58,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor
           await ok(req('/v1/inventory/movements', { movementId: `rx-${id}`, productId: id, locationId: 'store-1', kind: 'received', quantityMinor: 10, uom: 'EA', occurredAt: daysAgo(30), enteredBy: OWNER, unitCostMinor: cost }), `receive ${id}`);
           await ok(req(`/v1/prices/competitor/o-${id}`, { productId: id, storeId: 'store-1', competitor: 'Shop A', priceMinor: theirs, observedAt: daysAgo(2), source: 'shelf_visit' }), `sighting ${id}`);
         }
+        // Round 4a (OB-291): head office judges a price-list entry on the store's own floor, so the 20% floor is set after
+        // the opening shelf prices (the oil's ₹200 on ₹170 is below it) — it still judges the competitor drafts below.
+        await ok(req('/v1/stores/store-1/rules', { ...STORE_RULES, marginFloorBps: 2_000 }), 'rules');
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });

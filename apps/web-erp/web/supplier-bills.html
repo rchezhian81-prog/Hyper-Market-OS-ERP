@@ -108,6 +108,34 @@
         <ul class="register" id="cnk-list" aria-label="Deliveries waiting for their bill"></ul>
       </section>
 
+      <!-- D10-FR-01 (Round 4b): supplier advances — money paid before the bill. Pay (asked for, approved by a second person in their
+           own session, then recorded exactly as approved), use against the same supplier's matched bill, undo a use by a
+           compensating journal; the register beside the ledger's advances account. Session: apps/web-erp/src/supplier-advances-session.ts. -->
+      <section aria-labelledby="adv-h" id="adv-section" hidden>
+        <h2 id="adv-h">Supplier advances</h2>
+        <p class="lede" id="adv-lede"></p>
+        <button id="adv-show" type="button">Show the advances</button>
+        <p class="status" id="adv-status" role="status" aria-live="polite"></p>
+        <div class="summary" id="adv-summary"></div>
+        <p class="muted" id="adv-ledger"></p>
+        <ul class="register" id="adv-list"></ul>
+        <div id="adv-pay" hidden>
+          <h3 id="adv-ask-h">Pay an advance</h3>
+          <div class="row">
+            <label for="adv-supplier"><span id="l-adv-supplier"></span><input id="adv-supplier" autocomplete="off" /></label>
+            <label for="adv-amount"><span id="l-adv-amount"></span><input id="adv-amount" inputmode="decimal" autocomplete="off" /></label>
+            <label for="adv-on"><span id="l-adv-on"></span><input id="adv-on" type="date" /></label>
+            <label for="adv-method"><span id="l-adv-method"></span><select id="adv-method"><option value="bank_transfer" id="adv-m-bank"></option><option value="cheque" id="adv-m-cheque"></option><option value="upi" id="adv-m-upi"></option><option value="cash" id="adv-m-cash"></option></select></label>
+            <label for="adv-ref"><span id="l-adv-ref"></span><input id="adv-ref" autocomplete="off" /></label>
+            <label for="adv-po"><span id="l-adv-po"></span><input id="adv-po" autocomplete="off" /></label>
+          </div>
+          <button id="adv-ask" class="primary" type="button">Ask for approval to pay</button>
+          <p class="status" id="adv-ask-status" role="status" aria-live="polite"></p>
+          <h3 id="adv-asks-h">Payments you asked for</h3>
+          <ul class="register" id="adv-asks"></ul>
+        </div>
+      </section>
+
       <section aria-labelledby="drawer-h" id="drawer" hidden>
         <h2 id="drawer-h">Bill</h2>
         <p class="facts" id="drawer-facts"></p>

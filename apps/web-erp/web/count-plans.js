@@ -90,7 +90,7 @@ function sheetNode(line) {
   const word = line.toDo === 'count' ? t('count') : line.toDo === 'recount' ? `${t('recount')} (${t('recountOfCount')} ${line.recountOf})` : t('done');
   li.append(node('b', { textContent: `${line.productId} — ${word}` }));
   if (line.toDo !== 'done' && current.sheet.state === 'counting' && session.may.count) {
-    const qty = node('input', { className: 'qty', inputMode: 'numeric', 'aria-label': `${t('qty')}: ${line.productId}`, placeholder: t('qty'), autocomplete: 'off' });
+    const qty = node('input', { className: 'qty', inputMode: 'decimal', 'aria-label': `${t('qty')}: ${line.productId}`, placeholder: t('qty'), autocomplete: 'off' });
     const uom = node('input', { className: 'uom', value: 'EA', 'aria-label': `${t('uom')}: ${line.productId}`, autocomplete: 'off' });
     const go = node('button', { type: 'button', textContent: line.toDo === 'count' ? t('countIt') : t('recountIt'), dataset: { act: 'count' } });
     go.addEventListener('click', async () => {
@@ -150,6 +150,51 @@ async function openDrawer(planId) {
   $('d-close').focus();
 }
 
+// M08-FR-03: the corrections the handhelds asked for. Each is decided once, by a person who did not ask for it; head office
+// posts the one compensating movement on approval. The list is read again after every decision, so it shows what was kept.
+let adjustments = null;
+function adjustmentNode(r) {
+  const v = session.adjustmentView(lang, r);
+  const li = node('li', { className: `tone-${v.tone}`, dataset: { request: v.requestId, status: v.status } });
+  li.append(node('b', { textContent: v.heading }));
+  li.append(node('span', { className: 'muted', textContent: v.where }));
+  li.append(node('span', { className: 'muted', textContent: v.value }));
+  if (v.note !== null && v.note !== '') li.append(node('span', { className: 'muted', textContent: v.note }));
+  for (const f of v.flags) li.append(node('span', { className: 'finding', textContent: `⚠ ${f}` }));
+  li.append(node('span', { className: 'state', textContent: v.stateWord }));
+  if (v.status === 'pending' && v.yours) li.append(node('span', { className: 'muted yours', textContent: t('adjYours') }));
+  if (v.canDecide) {
+    const why = node('input', { className: 'adj-reason', 'aria-label': `${t('adjReason')}: ${v.requestId}`, placeholder: t('adjReason'), autocomplete: 'off' });
+    const status = node('p', { className: 'status', role: 'status' });
+    const decide = (decision) => async () => {
+      const out = await session.decideAdjustment(v.requestId, decision, why.value);
+      if (out.result === 'ok') {
+        await loadAdjustments();
+        const good = out.body?.alreadyDecided === true ? 'adjAlready' : decision === 'approved' ? 'adjApprovedNow' : 'adjRejectedNow';
+        say($('adj-status'), out, good);
+        return;
+      }
+      say(status, out);
+    };
+    const yes = node('button', { type: 'button', textContent: t('adjApprove'), dataset: { act: 'approve' } });
+    const no = node('button', { type: 'button', className: 'quiet', textContent: t('adjReject'), dataset: { act: 'reject' } });
+    yes.addEventListener('click', decide('approved'));
+    no.addEventListener('click', decide('rejected'));
+    li.append(node('div', { className: 'inline' }, why, yes, no), status);
+  }
+  return li;
+}
+function paintAdjustments() {
+  if (adjustments === null) { $('adj-rows').replaceChildren(); return; }
+  $('adj-rows').replaceChildren(...(adjustments.length === 0 ? [node('li', { className: 'muted', textContent: t('adjEmpty') })] : adjustments.map(adjustmentNode)));
+}
+async function loadAdjustments() {
+  const out = await session.adjustments($('adj-all').checked);
+  if (out.result === 'ok') { adjustments = out.requests; $('adj-status').textContent = `${out.pending} ${t('adjPending')}`; $('adj-status').className = 'status'; }
+  else { adjustments = null; say($('adj-status'), out); }
+  paintAdjustments();
+}
+
 function paintKinds() {
   const box = $('kinds');
   const was = new Set([...box.querySelectorAll('input:checked')].map((i) => i.value));
@@ -169,11 +214,13 @@ function paintWords() {
     ['l-freeze', 'freezeLegend'], ['f-default', 'freezeDefault'], ['f-custom', 'freezeCustom'], ['f-none', 'freezeNone'], ['l-note', 'note'], ['create', 'create'],
     ['reg-h', 'registerH'], ['reg-lede', 'registerLede'], ['c-plan', 'colPlan'], ['c-place', 'colPlace'], ['c-products', 'colProducts'], ['c-state', 'colState'], ['c-freeze', 'colFreeze'],
     ['d-open', 'open'], ['l-d-reason', 'reason'], ['d-approve', 'approve'], ['d-cancel', 'cancel'], ['d-sheet-h', 'sheetH'], ['d-sheet-lede', 'sheetLede'], ['d-lines-h', 'linesH'],
-    ['d-breaches-h', 'breachesH'], ['d-breaches-lede', 'breachesLede'], ['d-held-h', 'heldH'], ['d-held-lede', 'heldLede']];
+    ['d-breaches-h', 'breachesH'], ['d-breaches-lede', 'breachesLede'], ['d-held-h', 'heldH'], ['d-held-lede', 'heldLede'],
+    ['adj-h', 'adjH'], ['adj-lede', 'adjLede'], ['adj-show', 'adjShow'], ['l-adj-all', 'adjAll']];
   for (const [id, k] of map) { const el = $(id); if (el) el.textContent = t(k); }
   $('d-close').setAttribute('aria-label', t('close'));
   if (session !== null && !session.nobody && !session.may.read) { $('list-status').className = 'status'; $('list-status').textContent = t('cannotRead'); }
   $('new-section').hidden = session === null || session.nobody || !session.may.plan;
+  $('adj-section').hidden = session === null || session.nobody || !session.may.readAdjustments;
   const nobody = $('nobody');
   nobody.hidden = !(session === null || session.nobody);
   nobody.textContent = t('nobody');
@@ -198,6 +245,8 @@ if (session !== null) {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.approve(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
   $('d-cancel').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.cancel(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
+  $('adj-show').addEventListener('click', () => { void loadAdjustments(); });
+  $('adj-all').addEventListener('change', () => { if (adjustments !== null) void loadAdjustments(); });
   $('d-close').addEventListener('click', () => { $('drawer').hidden = true; current = null; });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('drawer').hidden) { $('drawer').hidden = true; current = null; } });
   $('lang').addEventListener('click', () => {
@@ -206,6 +255,7 @@ if (session !== null) {
     paintWords();
     paintRegister();
     paintDrawer();
+    paintAdjustments();
   });
 }
 

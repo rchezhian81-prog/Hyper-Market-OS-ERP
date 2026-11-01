@@ -32,6 +32,7 @@ const W = {
     returnsTitle: 'My returns', noReturns: 'You have not asked to return anything.', policyNotSet: 'The shop has not set its return windows yet ("not set"), so a return cannot be judged — raise a complaint and the shop will help.',
     policySet: 'Return windows by department, in days after delivery:',
     rateTitle: 'Rate what you bought', rateNone: 'Rate products once your order has reached you.', rated: 'Thank you — your stars are saved.',
+    substitutesIf: 'If it runs out, the shop may offer instead:', noSubstitutes: 'The shop has set nothing to offer in its place.',
     signIn: 'Please sign in first.', offline: 'Not saved — no connection. Please try again.', refused: 'The shop did not accept this:', busy: 'The shop could not answer just now. Please try again.',
   },
   ta: {
@@ -50,6 +51,7 @@ const W = {
     returnsTitle: 'என் திருப்பி அனுப்புதல்கள்', noReturns: 'நீங்கள் எதையும் திருப்பி அனுப்பக் கேட்கவில்லை.', policyNotSet: 'கடை இன்னும் திருப்பி அனுப்பும் காலத்தை அமைக்கவில்லை ("அமைக்கப்படவில்லை"); அதுவரை புகார் எழுப்பினால் கடை உதவும்.',
     policySet: 'பிரிவு வாரியாக, விநியோகத்திற்குப் பிறகு திருப்பி அனுப்பும் நாட்கள்:',
     rateTitle: 'நீங்கள் வாங்கியதை மதிப்பிடுங்கள்', rateNone: 'உங்கள் ஆர்டர் வந்த பிறகு பொருட்களை மதிப்பிடலாம்.', rated: 'நன்றி — உங்கள் நட்சத்திரங்கள் சேமிக்கப்பட்டன.',
+    substitutesIf: 'தீர்ந்துவிட்டால், கடை இதற்குப் பதிலாக வழங்கக்கூடியவை:', noSubstitutes: 'இதற்குப் பதிலாக வழங்க கடை எதையும் அமைக்கவில்லை.',
     signIn: 'முதலில் உள்நுழையுங்கள்.', offline: 'சேமிக்கப்படவில்லை — இணைப்பு இல்லை. மீண்டும் முயலுங்கள்.', refused: 'கடை இதை ஏற்கவில்லை:', busy: 'கடையால் இப்போது பதில் அளிக்க முடியவில்லை. மீண்டும் முயலுங்கள்.',
   },
 };
@@ -61,6 +63,8 @@ const nameOf = (id) => (window.shopData?.products ?? []).find((p) => p.productId
 
 let listing = null;
 const pictures = new Map(); // productId → data address from the shop's own server, or null when it has none
+// Round 4a (M03-FR-04): each basket product's approved substitutes as the shop answered them (null when it could not say).
+const substitutesOf = new Map();
 
 async function loadListing() {
   if (!signedIn()) { listing = null; return; }
@@ -70,6 +74,12 @@ async function loadListing() {
     if (p.image === undefined || pictures.has(`${p.productId}:${p.image.version}`)) continue;
     const pic = await shopNow().online.image(p.productId);
     pictures.set(`${p.productId}:${p.image.version}`, pic.ok ? pic.value : null);
+  }
+  const inBasket = (shopNow()?.state?.()?.lines ?? []).filter((l) => l.quantityMinor > 0).map((l) => l.productId);
+  for (const id of inBasket) {
+    if (shopNow().online.substitutes === undefined) break;
+    const subs = await shopNow().online.substitutes(id);
+    substitutesOf.set(id, subs.ok ? subs.value : null);
   }
 }
 
@@ -120,6 +130,12 @@ function renderDuties() {
     const src = p.image === undefined ? null : pictures.get(`${p.productId}:${p.image.version}`);
     if (src) { const img = document.createElement('img'); img.className = 'pic'; img.src = src; img.alt = p.name; row.append(img); }
     const stars = document.createElement('p'); stars.className = 'note rating'; stars.textContent = starsText(p.rating); row.append(stars);
+    const subs = substitutesOf.get(l.productId);
+    if (subs !== undefined && subs !== null) {
+      const sub = document.createElement('p'); sub.className = 'note substitutes';
+      sub.textContent = subs.substitutes.length === 0 ? t('noSubstitutes') : `${t('substitutesIf')} ${subs.substitutes.map((s) => (lang() === 'ta' && s.nameTa ? s.nameTa : s.name)).join(', ')}`;
+      row.append(sub);
+    }
     row.append(dutyList(p.lines));
     if (typeof p.goodsMinor === 'number' && typeof p.deliveryFeeMinor === 'number') {
       const total = document.createElement('p'); total.className = 'note total';

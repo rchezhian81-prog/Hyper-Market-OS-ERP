@@ -237,10 +237,10 @@ describe('Ask for approval — the raiser’s own request, for exactly this loss
     expect(s.presentAskOutcome('en', o).label).toBe(`${WRITE_OFF_CAPTURE_COPY.en.asked} Write off 12 × Toor dal 1kg — damage, ₹1,140.00`);
   });
 
-  it('the summary is in the asker’s language, and names the unit when it is not each', async () => {
+  it('the summary is in the asker’s language, and names the unit when it is not each — 3000 g of a kg item reads "3.000 kg" (OB-31)', async () => {
     const { s, asks } = office();
-    await s.askApproval('ta', big({ qty: 3, uom: 'kg', lossType: 'expiry' }), WHY);
-    expect(asks[0]!.summary).toBe('3 kg × Toor dal 1kg இழப்பாகக் கழித்தல் — காலாவதி, ₹1,140.00');
+    await s.askApproval('ta', big({ qty: 3_000, uom: 'kg', lossType: 'expiry' }), WHY);
+    expect(asks[0]!.summary).toBe('3.000 kg × Toor dal 1kg இழப்பாகக் கழித்தல் — காலாவதி, ₹1,140.00');
     await s.askApproval('en', big({ lossType: 'expiry' }), WHY);
     expect(asks[1]!.summary).toBe('Write off 12 × Toor dal 1kg — expired, ₹1,140.00');
   });
@@ -550,6 +550,12 @@ describe('SF-05 — the screen shows head office\'s value of the loss; nobody ty
     await s.valueLoss({ productId: 'OIL-5L', locationId: 'store-1', qty: 7 });
     expect(s.needsApproval({ writeOffId: 'w', valueMinor: 35_000, productId: 'OIL-5L', locationId: 'store-1', qty: 7 })).toBe(true);
     expect(s.needsApproval({ writeOffId: 'w', valueMinor: 30_000, productId: 'OIL-5L', locationId: 'store-1', qty: 6 })).toBe(false);
+  });
+
+  it('OB-31 (Round 4b): a weighed loss is worded in kg — 2500 g at ₹60 a kg reads "2.500 kg × ₹60.00 = ₹150.00", never 2500 ×', async () => {
+    const { s } = session(async () => ({ result: 'valued', known: true, unitCostMinor: 6_000, valueMinor: 15_000, material: false }));
+    const o = await s.valueLoss({ productId: 'RICE', locationId: 'store-1', qty: 2_500, uom: 'kg' });
+    expect(s.presentValue('en', o)!.label).toBe('Head office\'s value: 2.500 kg × ₹60.00 = ₹150.00.');
   });
 
   it('no cost held: the loss always needs a photo or witness and a second person, whatever value is typed', async () => {

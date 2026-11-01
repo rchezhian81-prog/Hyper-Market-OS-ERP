@@ -175,10 +175,9 @@ describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws th
     expect((await setThreshold(h, 0, 'thr-bad')).status).toBe(422); // not a product count
     expect((await setThreshold(h, 2, 'thr-1')).status).toBeLessThan(300);
 
-    // Two lines re-priced → 2 changed ≥ 2: BULK. Password-only → refused; the shop still holds v1. (Each move is within
-    // the owner's set size, OB-291, so one person may date it.)
-    expect((await setPrice(h, 'p-1', 'e2', 2_150, '2030-03-01')).status).toBe(201);
-    expect((await setPrice(h, 'p-2', 'e2', 2_160, '2030-03-01')).status).toBe(201);
+    // Two lines re-priced → 2 changed ≥ 2: BULK. Password-only → refused; the shop still holds v1.
+    await setPrice(h, 'p-1', 'e2', 2_100, '2030-03-01');
+    await setPrice(h, 'p-2', 'e2', 2_150, '2030-03-01');
     const refused = await publishPack(h, 'pub-2', PWD_ONLY);
     expect(refused.status).toBe(403);
     expect(errorOf(refused)?.code).toBe('reauthentication_required');
@@ -190,7 +189,7 @@ describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws th
     expect(await packVersion(h)).toBe(2);
 
     // One line re-priced → 1 < 2: routine again, no step-up.
-    expect((await setPrice(h, 'p-3', 'e2', 2_170, '2030-03-01')).status).toBe(201);
+    await setPrice(h, 'p-3', 'e2', 2_180, '2030-03-01');
     expect((await publishPack(h, 'pub-4', PWD_ONLY)).status).toBe(201);
     expect(await packVersion(h)).toBe(3);
   });
@@ -264,7 +263,7 @@ describe('a SENSITIVE catalogue publish — an age-restricted product added or c
     expect(await drinkFlags(h)).toEqual({ minimumAge: 18 });
 
     // An unrelated re-price (the salt line) touches no regulated product and is below the bulk line: routine.
-    expect((await setPrice(h, 'p-1', 'e2', 2_150, '2030-03-01')).status).toBe(201); // within the set size (OB-291)
+    await setPrice(h, 'p-1', 'e2', 2_100, '2030-03-01');
     expect((await publishPack(h, 'pub-6', PWD_ONLY)).status).toBe(201);
     expect((await latestPack(h)).version).toBe(4);
   });

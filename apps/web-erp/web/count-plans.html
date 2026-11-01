@@ -10,7 +10,9 @@
       Count plans (WF-08 · D05-FR-05 · M09-FR-04 · OB-59 · OB-66 · §28). A THIN CLIENT over head office's count-plan routes
       (/v1/inventory/count-plans*): plan a count for one place (the freeze defaults to the owner's choice — adjustments and
       write-offs only), open it (the freeze starts), count blind from the sheet, recount, give each difference a cause, and
-      have a DIFFERENT person approve it (head office posts one correction per line) or cancel it. The plan's freeze
+      have a DIFFERENT person approve it (head office posts one correction per line) or cancel it. M08-FR-03: the stock
+      corrections a warehouse handheld asked for wait here for a different person to approve (one compensating movement) or
+      reject — never the person who asked. The plan's freeze
       exceptions and the damaged write-offs held on it are shown as head office reports them. Every rule and every refusal
       is head office's; the words come from the tested session model (apps/web-erp/src/count-plans-session.ts).
     -->
@@ -47,6 +49,8 @@
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: 14px; }
       .drawer-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      label.check { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); }
+      label.check input { min-height: auto; width: 20px; height: 20px; }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -100,6 +104,17 @@
           <thead><tr><th id="c-plan">Plan</th><th id="c-place">Place</th><th id="c-products">Products</th><th id="c-state">State</th><th id="c-freeze">Freeze</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
+      </section>
+      <!-- M08-FR-03 · §28: the stock corrections a handheld asked for, approved or rejected by a DIFFERENT person. -->
+      <section aria-labelledby="adj-h" id="adj-section" hidden>
+        <h3 id="adj-h">Stock corrections asked for from the handhelds</h3>
+        <p class="lede" id="adj-lede"></p>
+        <div class="inline">
+          <button id="adj-show" type="button">Show the corrections waiting</button>
+          <label class="check"><input type="checkbox" id="adj-all" /><span id="l-adj-all">Show decided ones too</span></label>
+        </div>
+        <p class="status" id="adj-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="adj-rows"></ul>
       </section>
     </main>
 

@@ -94,7 +94,7 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     makerPermission: 'price.change.propose', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
   },
   price_list_entry: {
-    kind: 'price_list_entry', label: 'Add a price-list entry by more than the set size, or below cost or the margin floor',
+    kind: 'price_list_entry', label: 'Add a price-list entry below cost or below the margin floor',
     makerPermission: 'price.change.propose', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
   },
   promotion_launch: {
@@ -305,6 +305,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   // asked by the person who keeps the catalogue and approved by Finance (`catalogue.tax.approve`: the accountant, the owner).
   tax_rate_change: {
     kind: 'tax_rate_change', label: 'Change the GST rate of an HSN class',
+    makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
+  },
+  // Round 4a (M03.md "tax change with Finance approval", as tax_rate_change): a new compensation cess on an HSN that already has
+  // one is asked by the person who keeps the catalogue and approved by Finance (`catalogue.tax.approve`: the accountant, the owner).
+  cess_rate_change: {
+    kind: 'cess_rate_change', label: 'Change the compensation cess of an HSN class',
     makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
   },
   // M05-FR-04 · D02-FR-06 pattern: a supplier's funding of a promotion is approved by Finance, like a display contract.

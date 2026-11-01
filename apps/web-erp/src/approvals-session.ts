@@ -115,7 +115,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -149,7 +149,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'Your reason (the person who asked will read it)', reasonPlaceholder: 'For example: checked the prices against the supplier\'s letter.',
     approveBtn: 'Approve', rejectBtn: 'Reject',
     kindDataImport: 'Apply a bulk import', kindDataImportRollback: 'Undo a bulk import', kindCategoryDefine: 'Add or change a product category', kindSupplierBank: 'Change where a supplier is paid',
-    kindPriceChange: 'Change a price by more than the set size, or below cost or the margin floor', kindPriceListEntry: 'Add a price-list entry by more than the set size, or below cost or the margin floor',
+    kindPriceChange: 'Change a price by more than the set size, or below cost or the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
     kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
     kindQuotationFloorNotKnown: 'Quote a customer a price on a product whose lowest price is not known (owner only)', // R9-A · OB-532
     kindQuotationFloorNotKnownOwnerQuoted: 'The owner quotes a customer a price on a product whose lowest price is not known (accountant approves)', // R10-A · OB-542
@@ -174,7 +174,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindConfigChange: 'Change a high-impact setting', kindFlagChange: 'Turn a high-impact switch on or off',
     kindDepartmentScopeChange: 'Limit a person\'s role to some departments',
     kindRoleScopeChange: 'Limit a person\'s role to some suppliers, categories or locations', // FG-4 · M02-FR-02
-    kindTaxRateChange: 'Change the GST rate of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
+    kindTaxRateChange: 'Change the GST rate of an HSN class', kindCessRateChange: 'Change the compensation cess of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
     kindHsnClassChange: 'Change the tax (HSN) class of a published product',
     kindMrpReplacement: 'Replace an MRP that is not yet in force',
     kindRegulatedProductPublish: 'Put an age-restricted or regulated product on sale',
@@ -235,7 +235,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'உங்கள் காரணம் (கேட்டவர் இதைப் படிப்பார்)', reasonPlaceholder: 'உதாரணம்: விநியோகஸ்தரின் கடிதத்துடன் விலைகளைச் சரிபார்த்தேன்.',
     approveBtn: 'அனுமதி', rejectBtn: 'மறு',
     kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindDataImportRollback: 'மொத்த இறக்குமதியைத் திரும்பப் பெறுதல்', kindCategoryDefine: 'பொருள் வகையைச் சேர்த்தல் அல்லது மாற்றுதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
-    kindPriceChange: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலையை மாற்றுதல்', kindPriceListEntry: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே தேதியிட்ட விலைப்பட்டியல் பதிவு',
+    kindPriceChange: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலையை மாற்றுதல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
     kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
     kindQuotationFloorNotKnown: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு வாடிக்கையாளருக்கு விலை மேற்கோள் (உரிமையாளர் மட்டும்)', // R9-A · OB-532
     kindQuotationFloorNotKnownOwnerQuoted: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு உரிமையாளரே வாடிக்கையாளருக்குச் சொன்ன விலை (கணக்காளர் அனுமதிப்பார்)', // R10-A · OB-542
@@ -259,7 +259,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindConfigChange: 'அதிக தாக்கமுள்ள அமைப்பை மாற்றுதல்', kindFlagChange: 'அதிக தாக்கமுள்ள சுவிட்சை இயக்குதல் அல்லது நிறுத்துதல்',
     kindDepartmentScopeChange: 'ஒருவரின் பங்கைச் சில துறைகளுக்கு மட்டும் வரம்பிடுதல்',
     kindRoleScopeChange: 'ஒருவரின் பங்கைச் சில விநியோகஸ்தர்கள், வகைகள் அல்லது இடங்களுக்கு மட்டும் வரம்பிடுதல்', // FG-4 · M02-FR-02
-    kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
+    kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindCessRateChange: 'ஒரு HSN வகையின் இழப்பீட்டு செஸ்ஸை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
     kindHsnClassChange: 'வெளியிடப்பட்ட பொருளின் வரி (HSN) வகையை மாற்றுதல்',
     kindMrpReplacement: 'இன்னும் நடைமுறைக்கு வராத MRP-ஐ மாற்றுதல்',
     kindRegulatedProductPublish: 'வயது வரம்புள்ள அல்லது ஒழுங்குமுறைக்கு உட்பட்ட பொருளை விற்பனைக்கு வைத்தல்',
@@ -355,7 +355,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   flag_change: 'kindFlagChange', department_scope_change: 'kindDepartmentScopeChange',
   role_scope_change: 'kindRoleScopeChange', // FG-4 · M02-FR-02
   // OB-288 P2: a GST rate change (Finance approves) and a supplier's funding of an offer.
-  tax_rate_change: 'kindTaxRateChange', promotion_funding: 'kindPromotionFunding',
+  tax_rate_change: 'kindTaxRateChange', cess_rate_change: 'kindCessRateChange', promotion_funding: 'kindPromotionFunding',
   // OB-288 till side (OB-347): a published product's tax class changed — Finance approves.
   hsn_class_change: 'kindHsnClassChange',
   // OB-512: an MRP not yet in force replaced — another catalogue publisher approves.

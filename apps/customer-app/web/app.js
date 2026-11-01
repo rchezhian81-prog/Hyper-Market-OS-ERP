@@ -83,7 +83,6 @@ const WORDS = {
     unknownPurpose: 'That setting is not one we use.',
     priceChanged: 'Prices changed while you were deciding. Please check your basket again before paying.',
     unavailableNow: 'is not available today', shortNow: 'we only have',
-    insteadTry: 'The shop suggests instead:', insteadAdd: 'Add instead', insteadUnread: 'The shop’s suggestions could not be read just now.',
     subtotal: 'Basket total', deliveryExtra: 'Delivery is worked out at checkout.',
   },
   ta: {
@@ -120,7 +119,6 @@ const WORDS = {
     unknownPurpose: 'அந்த அமைப்பை நாங்கள் பயன்படுத்துவதில்லை.',
     priceChanged: 'நீங்கள் யோசித்துக் கொண்டிருந்தபோது விலை மாறியது. பணம் செலுத்தும் முன் கூடையை மீண்டும் சரிபார்க்கவும்.',
     unavailableNow: 'இன்று கிடைக்கவில்லை', shortNow: 'எங்களிடம் உள்ளது',
-    insteadTry: 'அதற்குப் பதிலாகக் கடை பரிந்துரைப்பது:', insteadAdd: 'பதிலாகச் சேர்', insteadUnread: 'கடையின் பரிந்துரைகளை இப்போது படிக்க முடியவில்லை.',
     subtotal: 'கூடை மொத்தம்', deliveryExtra: 'டெலிவரிக் கட்டணம் கடைசியில் கணக்கிடப்படும்.',
     signInTitle: 'ஆர்டர் செய்ய உள்நுழைக', signInLead: 'உங்கள் தொலைபேசிக்கு ஒரு முறை குறியீடு அனுப்புவோம். கடைக்கு உங்கள் கடவுச்சொல் தெரியாது.',
     mobileNumber: 'கைபேசி எண்', sendCode: 'குறியீடு அனுப்பு', enterCode: 'குறியீட்டை உள்ளிடவும்', verifyAndSignIn: 'சரிபார்த்து உள்நுழைக',
@@ -431,45 +429,6 @@ function renderLists() {
 
 // ── The basket ──────────────────────────────────────────────────────────────
 
-// G-1 (M03-FR-04): for an item the shop cannot supply, the shop's own APPROVED substitutes (head office's list, only what
-// it can sell now) — shown under the line. The customer adds one with their own tap; nothing is ever swapped for them (A04).
-// Read once per review, only when signed in (the shop answers a signed-in customer); a failed read is said, never hidden.
-let substituteReads = { review: null, byProduct: new Map() };
-function substitutesFor(review, productId) {
-  const box = document.createElement('span');
-  box.className = 'subs';
-  box.dataset.substitutesFor = productId;
-  if (!shop.isSignedIn() || shop.online === undefined || typeof shop.online.substitutes !== 'function') return box;
-  if (substituteReads.review !== review) substituteReads = { review, byProduct: new Map() };
-  if (!substituteReads.byProduct.has(productId)) substituteReads.byProduct.set(productId, shop.online.substitutes(productId));
-  void substituteReads.byProduct.get(productId).then((out) => paintSubstitutes(box, out));
-  return box;
-}
-function paintSubstitutes(box, out) {
-  if (!out.ok) { box.textContent = ` ${t('insteadUnread')}`; return; }
-  if (out.value.length === 0) { box.replaceChildren(); return; }
-  const products = window.shopData?.products ?? [];
-  const label = document.createElement('span');
-  label.textContent = ` ${t('insteadTry')} `;
-  box.replaceChildren(label, ...out.value.map((sub) => {
-    const item = document.createElement('span');
-    item.className = 'sub';
-    item.dataset.substitute = sub.productId;
-    item.textContent = lang === 'ta' && sub.nameTa ? sub.nameTa : sub.name;
-    // Only an item this app can price is offered to add — the customer then sees it in the basket and reviews again.
-    if (products.some((p) => p.productId === sub.productId)) {
-      const add = document.createElement('button');
-      add.type = 'button';
-      add.dataset.addInstead = sub.productId;
-      add.textContent = t('insteadAdd');
-      add.setAttribute('aria-label', `${t('insteadAdd')}: ${item.textContent}`);
-      add.addEventListener('click', () => { shop.setLine(sub.productId, qtyOf(sub.productId) + 1); render(); });
-      item.append(' ', add);
-    }
-    return item;
-  }));
-}
-
 function renderBasket() {
   const state = shop.state();
   const say = el('basket-say');
@@ -494,17 +453,16 @@ function renderBasket() {
   el('problems').hidden = !hasProblems;
   if (hasProblems) {
     const rows = [
-      ...(review.unavailable ?? []).map((l) => ({ text: `${l.name ?? l.productId} — ${t('unavailableNow')}`, unavailable: l.productId })),
-      ...(review.shortfalls ?? []).map((l) => ({ text: `${l.name ?? l.productId} — ${t('shortNow')} ${l.availableMinor}` })),
+      ...(review.unavailable ?? []).map((l) => `${l.name ?? l.productId} — ${t('unavailableNow')}`),
+      ...(review.shortfalls ?? []).map((l) => `${l.name ?? l.productId} — ${t('shortNow')} ${l.availableMinor}`),
     ];
-    el('problem-lines').replaceChildren(...rows.map(({ text, unavailable }) => {
+    el('problem-lines').replaceChildren(...rows.map((text) => {
       const row = document.createElement('p');
       row.className = 'row';
       const note = document.createElement('span');
       note.className = 'note bad';
       note.textContent = text;
       row.append(note);
-      if (unavailable !== undefined) row.append(substitutesFor(review, unavailable));
       return row;
     }));
   }

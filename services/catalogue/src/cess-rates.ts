@@ -8,15 +8,29 @@
 //
 // Append-only (hard rule #2): a change is a new period from a later date; a different rate on a date that already has one is
 // refused as ambiguous; an identical re-send is a no-op. Setting is `catalogue.pack.publish`; reading `catalogue.pack.read`.
+//
+// Round 4a (M03.md "Permissions (§28): tax change with Finance approval", as the GST rate in `tax-classes.ts`): the FIRST
+// cess of an HSN is setting it up; a CHANGE — a new period on an HSN that already has a cess — needs a Finance approver
+// through the maker-checker engine (ADR-0024, kind `cess_rate_change`, checker `catalogue.tax.approve`: the accountant and
+// the owner), never the person asking. Every set and change is sealed in the audit trail with who asked and who approved.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { cessRateOn, type CessRatePeriod } from '../../../packages/finance/src/cess';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 export interface CessRateDeps {
   readonly setCess: (tenantId: string, hsnCode: string, period: CessRatePeriod, key: string) => Promise<void> | void;
   readonly schedule: (tenantId: string, hsnCode: string) => Promise<readonly CessRatePeriod[]> | readonly CessRatePeriod[];
+  /** Round 4a: head office's maker-checker engine — a cess CHANGE needs a Finance approver. Absent: every approval is unknown. */
+  readonly approvals?: ApprovalPort;
+  /** Seal a cess set or change into the audit trail (M34-FR-01). Optional on a bare stub. */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  readonly now?: () => string;
 }
+
+const cessWords = (p: CessRatePeriod): string => `${p.advaloremBps} bps${p.specificPerQuantityMinor > 0 ? ` + ${p.specificPerQuantityMinor} paise per ${p.perQuantity}` : ''}`;
 
 const isDate = (s: unknown): s is string =>
   typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00.000Z`).toISOString().slice(0, 10) === s;
@@ -61,8 +75,34 @@ export function cessRateRoutes(deps: CessRateDeps): readonly Route[] {
           }
           return { status: 201, body: { cess: existing } };
         }
+        // Round 4a (M03-FR-03 §28): an HSN that already has a cess is CHANGED only with a Finance approver's approval.
+        const before = [...(await deps.schedule(ctx.tenantId, hsnCode))].sort((x, y) => (x.effectiveFrom < y.effectiveFrom ? -1 : 1));
+        const now = deps.now?.() ?? new Date().toISOString();
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'cess_rate_change', subjectRef: hsnCode, details: actionDetails(ctx.body, { hsnCode, effectiveFrom }), valueMinor: null,
+          maker: ctx.userId, usedBy: `cess-rate:${hsnCode}:${effectiveFrom}`, now,
+        });
+        if (before.length > 0 && opened === undefined) {
+          const inForce = before.filter((p) => p.effectiveFrom <= effectiveFrom).at(-1) ?? before[0]!;
+          throw apiError(422, {
+            code: 'cess_change_needs_finance_approval',
+            whatHappened: `HSN "${hsnCode}" already carries a compensation cess of ${cessWords(inForce)} (from ${inForce.effectiveFrom}); changing it to ${cessWords(period)} from ${effectiveFrom} is a tax change, which needs a Finance approver (the accountant or the owner) — never the person asking.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind cess_rate_change, subjectRef the HSN, with exactly this change and the HSN and date); once a Finance approver approves it, send the approvalId. Nothing was changed.',
+          });
+        }
+        await opened?.spend();
         await deps.setCess(ctx.tenantId, hsnCode, period, ctx.idempotencyKey ?? `${hsnCode}:${effectiveFrom}`);
-        return { status: 201, body: { cess: period } };
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: before.length === 0 ? 'catalogue.cess_rate.set' : 'catalogue.cess_rate.change', objectType: 'tax_class', objectId: hsnCode,
+          at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: before.length === 0 ? null : { schedule: before.map((p) => `${p.effectiveFrom}:${p.advaloremBps}/${p.specificPerQuantityMinor}/${p.perQuantity}`).join(',') },
+          after: { effectiveFrom, advaloremBps: String(period.advaloremBps), specificPerQuantityMinor: String(period.specificPerQuantityMinor), perQuantity: String(period.perQuantity), approvedBy: opened?.decision.decidedBy ?? '' },
+          ...(opened === undefined ? {} : { approvalId: opened.decision.requestId }),
+          correlationId: `cess-rate:${hsnCode}:${effectiveFrom}`,
+        });
+        return { status: 201, body: { cess: period, ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }) } };
       },
     },
     {

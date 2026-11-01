@@ -91,10 +91,6 @@ import { createCashierProductView, NAME_PRICE_BARCODE, type CashierProductView }
 import { createMonthCloseSession, MONTH_CLOSE_PERMISSION, type MonthClosePorts, type MonthCloseSession } from './month-close-session';
 import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
 import { createScaleRulesSession, scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, SCALE_VALUE_KINDS, type ScaleRulesSession } from './scale-label-rules-session';
-import { createTaxRatesSession, taxRateWords, gstLine, cessLine, requestLine, taxOutcomeWords, NEEDS_FINANCE_APPROVAL, type TaxRatesSession } from './tax-rates-session';
-import { createOrgDepartmentsSession, orgDeptWords, requestLine as departmentRequestLine, reportLines as departmentReportLines, orgDeptOutcomeWords, type OrgDepartmentsSession } from './org-departments-session';
-import { createProductSetupSession, productSetupWords, setupOutcomeWords, describeMerge, askedStatusWords, CATEGORY_REGULATED_KINDS, type ProductSetupSession } from './product-setup-session';
-import { createPriceListSession, figuresFromPageData, priceListWords, priceListOutcomeWords, needsSecondPerson, entryWords, inForceWords, zonesOf, switchSubjectWords, rupeesOf as priceListRupees, paiseOf as priceListPaise, PRICE_SCOPES, PRICE_CHANNELS, type PriceListSession } from './price-lists-session'; // M05-FR-01
 import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
@@ -121,6 +117,7 @@ import {
   createPayrollSession, type PayrollPorts, type PayrollSession, type EmployeeInput as PayrollEmployeeInput,
 } from './payroll-session';
 import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
+import { wireBuyingAndStockScreens } from './buying-stock-browser-wiring'; // Round 4b: buying and stock
 import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring'; // M28-FR-02 · M28-FR-03 · M29-FR-02
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
@@ -1364,14 +1361,6 @@ export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, c
 /** Round 4a: the Shelves and space setup tabs' words and readings (tested in `merchandising-setup-session.ts`). */
 export const MERCH_SETUP_KIT = Object.freeze({ words: merchSetupWords, outcomeWords: merchSetupOutcomeWords, askWords: merchAskWords, shelfRowsOf, planRowsOf, areaRowsOf, reasons: CLUSTER_DROP_REASONS, zones: SHELF_ZONES });
 export const SCALE_RULES_KIT = Object.freeze({ scaleRuleWords, describeScaleRule, scaleRuleOutcomeWords, setByWords, kinds: SCALE_VALUE_KINDS });
-/** M03-FR-03 tax side: the Tax rates panel's words and readings (tested in `tax-rates-session.ts`). */
-export const TAX_RATES_KIT = Object.freeze({ taxRateWords, gstLine, cessLine, requestLine, taxOutcomeWords, needsFinanceApproval: NEEDS_FINANCE_APPROVAL });
-/** M01-FR-01: the Organisation page's Departments part — words and readings (tested in `org-departments-session.ts`). */
-export const ORG_DEPARTMENTS_KIT = Object.freeze({ orgDeptWords, requestLine: departmentRequestLine, reportLines: departmentReportLines, orgDeptOutcomeWords });
-/** G-1 (M03-FR-01/02/04): the Product setup tab's words and readings (tested in `product-setup-session.ts`). */
-export const PRODUCT_SETUP_KIT = Object.freeze({ productSetupWords, setupOutcomeWords, describeMerge, askedStatusWords, regulatedKinds: CATEGORY_REGULATED_KINDS });
-/** M05-FR-01: the Price lists panel's words and readings (tested in `price-lists-session.ts`). */
-export const PRICE_LISTS_KIT = Object.freeze({ priceListWords, priceListOutcomeWords, needsSecondPerson, entryWords, inForceWords, zonesOf, switchSubjectWords, rupees: priceListRupees, paiseOf: priceListPaise, scopes: PRICE_SCOPES, channels: PRICE_CHANNELS });
 
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -5325,15 +5314,6 @@ interface ManagerWindow {
   competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
   scaleRulesSession?: ScaleRulesSession;
   scaleRulesKit?: typeof SCALE_RULES_KIT;
-  taxRatesSession?: TaxRatesSession;
-  taxRatesKit?: typeof TAX_RATES_KIT;
-  orgDepartmentsSession?: OrgDepartmentsSession;
-  orgDepartmentsKit?: typeof ORG_DEPARTMENTS_KIT;
-  productSetupSession?: ProductSetupSession;
-  productSetupKit?: typeof PRODUCT_SETUP_KIT;
-  /** M05-FR-01: the Price lists panel on the catalogue page, over head office's own price-list, zone and channel routes. */
-  priceListSession?: PriceListSession;
-  priceListKit?: typeof PRICE_LISTS_KIT;
   /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
   supplierBillsData?: ViewerIdentity;
   supplierBillsSession?: SupplierBillsSession;
@@ -7347,12 +7327,6 @@ if (browserWindow !== undefined) {
   browserWindow.serviceDeskData = viewerIdentity(browserWindow.serviceDeskData);
   browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
   browserWindow.organisationData = viewerIdentity(browserWindow.organisationData);
-  // M01-FR-01: the Departments part of the Organisation page — a thin client over head office's department routes, only for
-  // someone named (nobody named → no session; the page offers nothing).
-  if (browserWindow.organisationData !== undefined) {
-    browserWindow.orgDepartmentsKit = ORG_DEPARTMENTS_KIT;
-    browserWindow.orgDepartmentsSession = createOrgDepartmentsSession({ permissions: browserWindow.organisationData.permissions }, browserCompetitorHttp());
-  }
   browserWindow.delegationData = viewerIdentity(browserWindow.delegationData);
   // Round 12: the Month-end page — identity only plus this month as the box's calendar says; every figure is a live read.
   const rawClose = browserWindow.financeCloseData as unknown;
@@ -7384,25 +7358,6 @@ if (browserWindow !== undefined) {
   if (cat !== undefined) browserWindow.scaleRulesKit = SCALE_RULES_KIT;
   if (cat !== undefined && Array.isArray(cat.permissions)) {
     browserWindow.scaleRulesSession = createScaleRulesSession({ permissions: cat.permissions }, browserCompetitorHttp());
-  }
-  // M03-FR-03 tax side: the Tax rates panel — the same rule: only where head office told the page who is looking.
-  if (cat !== undefined) browserWindow.taxRatesKit = TAX_RATES_KIT;
-  if (cat !== undefined && Array.isArray(cat.permissions)) {
-    browserWindow.taxRatesSession = createTaxRatesSession({ permissions: cat.permissions }, browserCompetitorHttp());
-  }
-  // G-1 (M03-FR-01/02/04): the Product setup tab — the same rule: only where head office told the page who is looking.
-  if (cat !== undefined) browserWindow.productSetupKit = PRODUCT_SETUP_KIT;
-  if (cat !== undefined && Array.isArray(cat.permissions)) {
-    browserWindow.productSetupSession = createProductSetupSession({ ...(cat.userId === undefined ? {} : { userId: cat.userId }), permissions: cat.permissions }, browserCompetitorHttp());
-  }
-  // M05-FR-01: the Price lists panel — the same rule: only where head office told the page who is looking. The MRP, cost and
-  // floor an entry is judged by are the page's own (the ones "Change a price" sends); a second person goes through the
-  // same approval engine (kind price_list_entry).
-  if (cat !== undefined) browserWindow.priceListKit = PRICE_LISTS_KIT;
-  if (cat !== undefined && Array.isArray(cat.permissions)) {
-    browserWindow.priceListSession = createPriceListSession({
-      permissions: cat.permissions, ...(cat.userId === undefined ? {} : { userId: cat.userId }), ...(cat.storeId === undefined ? {} : { storeId: cat.storeId }),
-    }, browserCompetitorHttp(), figuresFromPageData(cat), CATALOGUE_APPROVALS);
   }
   // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
   // no session (the page says so and offers nothing).
@@ -7540,6 +7495,8 @@ if (browserWindow !== undefined) {
   }
   // QG-02 lane 1 R4: the Dock diary, Standing orders, Supplier offer funding and Feature switches pages.
   wireR4Screens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // Round 4b: the Buying page's Open orders tab (M06-FR-04) and the buying-and-stock sections.
+  wireBuyingAndStockScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 6: Scrap and recycling, Packaging and crates, Compare side by side.
   wireSalvageAndCompareScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 7 (R7-C): Shelf tags (OB-505) and Quotations (OB-506).

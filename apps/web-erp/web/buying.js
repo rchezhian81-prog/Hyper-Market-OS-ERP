@@ -279,7 +279,7 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['invoice', 'match', 'po', 'budget'];
+const VIEWS = ['invoice', 'match', 'po', 'budget', 'orders', 'reorder'];
 for (const name of VIEWS) {
   el(`tab-${name}`).addEventListener('click', () => {
     for (const other of VIEWS) {
@@ -764,6 +764,266 @@ el('budget-save').addEventListener('click', async () => {
   if (answer.ok) await readOtb();
 });
 
+// ── Open orders (M06-FR-04 · OB-289, Round 4b) ──────────────────────────────
+//
+// Head office's open-commitment report, read live under the signed-in person's session (`window.buyingOpenOrders`, the
+// tested model in apps/web-erp/src/open-orders-session.ts). Opening the tab writes nothing; reading is a click. A person who
+// approves orders may change (amend) or cancel part of an issued order — each a click with a reason, head office's answer
+// shown in its own words, and the report read again so what is shown is what head office kept.
+
+const oo = window.buyingOpenOrders ?? null;
+const ot = (k) => (oo === null ? k : oo.words(lang, k));
+let ooLast = null;
+
+function ooSay(node, out, good) { node.className = `otb-status ${out.result === 'ok' ? 'good' : 'err'}`; node.textContent = oo.outcomeWords(lang, out, good); }
+
+function groupRows(groups, label) {
+  if (groups.length === 0) return [textCell('p', '—', 'empty')];
+  return groups.map((g) => {
+    const row = document.createElement('div');
+    row.className = 'group-row';
+    row.dataset.key = g.key;
+    row.append(textCell('span', label(g.key)), textCell('span', `${g.orders} ${ot('orders')} · ${g.lines} ${ot('lines')} · ${oo.rupees(g.openValueMinor)}`));
+    return row;
+  });
+}
+
+function ooInput(cls, value, label) { const i = document.createElement('input'); i.className = cls; i.value = value; i.autocomplete = 'off'; i.setAttribute('aria-label', label); return i; }
+function ooField(node) { const f = document.createElement('div'); f.className = 'field'; f.append(node); return f; }
+
+function orderBox(order) {
+  const lines = ooLast.report.lines.filter((l) => l.poId === order.poId);
+  const unit = (productId) => order.lines.find((l) => l.productId === productId)?.uom ?? 'ea';
+  const box = document.createElement('div');
+  box.className = 'open-order';
+  box.dataset.po = order.poId;
+  const scope = lines[0]?.buyingScope ?? 'scope_not_recorded';
+  box.append(textCell('div', `${ot('order')} ${order.number} (${order.poId}) · ${ot('supplier')} ${order.supplierId} · ${ot('deliverTo')} ${order.deliverTo === 'store_not_named' ? ot('store_not_named') : order.deliverTo} · ${ot(`sc_${scope}`)}${order.amendmentCount > 0 ? ` · ${order.amendmentCount} ${ot('amendments')}` : ''}`, 'what'));
+  const wrap = document.createElement('div'); wrap.className = 'table-wrap';
+  const table = document.createElement('table');
+  table.className = 'open-lines';
+  const head = document.createElement('tr');
+  for (const [k, cls] of [['product', ''], ['ordered', 'amount'], ['received', 'amount'], ['cancelled', 'amount'], ['open', 'amount'], ['value', 'amount']]) head.append(textCell('th', ot(k), cls));
+  table.append(head);
+  for (const l of lines) {
+    const tr = document.createElement('tr');
+    tr.dataset.product = l.productId;
+    if (l.openQty < 0 || !l.agrees) tr.className = 'blocked';
+    const u = unit(l.productId);
+    tr.append(textCell('td', l.productId), textCell('td', oo.lineQty(l.orderedQty, u), 'amount'), textCell('td', oo.lineQty(l.receivedQty, u), 'amount'),
+      textCell('td', oo.lineQty(l.cancelledQty, u), 'amount'), textCell('td', oo.lineQty(l.openQty, u), 'amount'), textCell('td', oo.rupees(l.openValueMinor), 'amount'));
+    table.append(tr);
+  }
+  wrap.append(table);
+  box.append(wrap);
+  if (!oo.session.may.change) return box;
+
+  // Change the order: every line's new quantity (in its unit) and price per unit.
+  const amend = document.createElement('details');
+  amend.className = 'amend';
+  amend.append(textCell('summary', ot('amendH')), textCell('p', ot('amendLead'), 'lead'));
+  const at = document.createElement('table');
+  const ah = document.createElement('tr');
+  for (const k of ['product', 'newQty', 'price']) ah.append(textCell('th', ot(k)));
+  at.append(ah);
+  for (const l of order.lines) {
+    const tr = document.createElement('tr');
+    tr.dataset.product = l.productId;
+    const qty = ooInput('amend-qty', oo.editableQty(l.orderedQty, l.uom ?? 'ea'), `${l.productId} — ${ot('newQty')}`);
+    const price = ooInput('amend-price', oo.editablePrice(l), `${l.productId} — ${ot('price')}`);
+    if (price.value === '') price.placeholder = ot('casePriced');
+    const q = document.createElement('td'); q.append(qty); const p = document.createElement('td'); p.append(price);
+    tr.append(textCell('td', `${l.productId} (${l.uom ?? 'ea'})`), q, p);
+    at.append(tr);
+  }
+  const aReason = ooInput('amend-reason', '', ot('reason')); aReason.placeholder = ot('reason');
+  const aOver = ooInput('amend-over', '', ot('overBudgetReason')); aOver.placeholder = ot('overBudgetReason');
+  const aGo = document.createElement('button'); aGo.type = 'button'; aGo.className = 'primary'; aGo.dataset.act = 'amend'; aGo.textContent = ot('amend');
+  const aStatus = textCell('p', '', 'otb-status'); aStatus.setAttribute('role', 'status');
+  aGo.addEventListener('click', async () => {
+    const out = await oo.session.amend(order, {
+      lines: [...at.querySelectorAll('tr[data-product]')].map((tr) => ({ productId: tr.dataset.product, qtyText: tr.querySelector('input.amend-qty').value, priceText: tr.querySelector('input.amend-price').value })),
+      reason: aReason.value, overBudgetReason: aOver.value,
+    });
+    if (out.result === 'ok') { await readOrders(); ooSay(el('orders-status'), out, 'amended'); return; }
+    ooSay(aStatus, out);
+  });
+  amend.append(at, ooField(aReason), ooField(aOver), aGo, aStatus);
+  box.append(amend);
+
+  // Cancel quantity: per item, in its unit; blank means none of that item.
+  const cancel = document.createElement('details');
+  cancel.className = 'cancel';
+  cancel.append(textCell('summary', ot('cancelH')));
+  const ct = document.createElement('table');
+  const chd = document.createElement('tr');
+  for (const k of ['product', 'open', 'cancelQty']) chd.append(textCell('th', ot(k)));
+  ct.append(chd);
+  for (const l of lines) {
+    const tr = document.createElement('tr');
+    tr.dataset.product = l.productId;
+    const qty = ooInput('cancel-qty', '', `${l.productId} — ${ot('cancelQty')}`);
+    const q = document.createElement('td'); q.append(qty);
+    tr.append(textCell('td', `${l.productId} (${unit(l.productId)})`), textCell('td', oo.lineQty(l.openQty, unit(l.productId))), q);
+    ct.append(tr);
+  }
+  const cReason = ooInput('cancel-reason', '', ot('reason')); cReason.placeholder = ot('reason');
+  const cGo = document.createElement('button'); cGo.type = 'button'; cGo.dataset.act = 'cancel'; cGo.textContent = ot('cancel');
+  const cStatus = textCell('p', '', 'otb-status'); cStatus.setAttribute('role', 'status');
+  cGo.addEventListener('click', async () => {
+    const out = await oo.session.cancel(order, { lines: [...ct.querySelectorAll('tr[data-product]')].map((tr) => ({ productId: tr.dataset.product, qtyText: tr.querySelector('input.cancel-qty').value })), reason: cReason.value });
+    if (out.result === 'ok') { await readOrders(); ooSay(el('orders-status'), out, 'cancelledNow'); return; }
+    ooSay(cStatus, out);
+  });
+  cancel.append(ct, ooField(cReason), cGo, cStatus);
+  box.append(cancel);
+  return box;
+}
+
+function renderOrders() {
+  for (const id of ['orders-summary', 'orders-by-scope', 'orders-by-supplier', 'orders-by-store', 'orders-exceptions', 'orders-list']) el(id).replaceChildren();
+  if (ooLast === null) return;
+  const r = ooLast.report;
+  el('orders-summary').replaceChildren(...[[ot('totalOpen'), oo.rupees(r.totalOpenMinor)], [ot('issuedOrders'), String(r.issuedOrders)]].map(([label, value]) => {
+    const box = document.createElement('div');
+    box.append(textCell('span', label, 'label'), textCell('span', value, 'value'));
+    return box;
+  }));
+  el('orders-by-scope').replaceChildren(...groupRows(r.byScope, (k) => ot(`sc_${k}`)));
+  el('orders-by-supplier').replaceChildren(...groupRows(r.bySupplier, (k) => k));
+  el('orders-by-store').replaceChildren(...groupRows(r.byStore, (k) => (k === 'store_not_named' ? ot('store_not_named') : k)));
+  const unitOf = (poId, productId) => ooLast.orders.find((o) => o.poId === poId)?.lines.find((l) => l.productId === productId)?.uom ?? 'ea';
+  const ex = [
+    ...r.overReceived.map((o) => textCell('p', `⚠ ${ot('overReceived')}: ${o.poId} · ${o.productId} · ${oo.lineQty(o.overByQty, unitOf(o.poId, o.productId))}`, 'exception')),
+    ...r.receiptsDisagree.map((o) => textCell('p', `⚠ ${ot('receiptsDisagree')}: ${o.poId} · ${o.productId}`, 'exception')),
+  ];
+  el('orders-exceptions').replaceChildren(...(ex.length === 0 ? [textCell('p', ot('noExceptions'), 'empty')] : ex));
+  el('orders-list').replaceChildren(...(ooLast.orders.length === 0 ? [textCell('p', ot('noOrders'), 'empty')] : ooLast.orders.map(orderBox)));
+}
+
+async function readOrders() {
+  if (oo === null) { el('orders-status').className = 'otb-status err'; el('orders-status').textContent = t('notSignedIn'); return; }
+  const out = await oo.session.read({ buyingScope: el('orders-scope').value, supplierId: el('orders-supplier').value, storeId: el('orders-store').value });
+  if (out.result !== 'ok') { ooLast = null; renderOrders(); ooSay(el('orders-status'), out); return; }
+  ooLast = out.value;
+  el('orders-status').className = 'otb-status'; el('orders-status').textContent = '';
+  renderOrders();
+}
+
+function paintOrdersWords() {
+  el('tab-orders').textContent = ot('tab');
+  el('orders-title').textContent = ot('title');
+  el('orders-lead').textContent = ot('lead');
+  for (const [id, k] of [['orders-scope-label', 'filterScope'], ['orders-supplier-label', 'filterSupplier'], ['orders-store-label', 'filterStore'], ['orders-read', 'show'],
+    ['orders-scope-all', 'allScopes'], ['orders-scope-cw', 'sc_central_via_warehouse'], ['orders-scope-cd', 'sc_central_direct_to_store'], ['orders-scope-local', 'sc_local'], ['orders-scope-nr', 'sc_scope_not_recorded'],
+    ['orders-scope-h', 'byScopeH'], ['orders-supplier-h', 'bySupplierH'], ['orders-store-h', 'byStoreH'], ['orders-exceptions-h', 'exceptionsH'], ['orders-list-h', 'ordersH']]) el(id).textContent = ot(k);
+  if (oo !== null && !oo.session.may.read) { el('orders-status').className = 'otb-status'; el('orders-status').textContent = ot(oo.session.may.named ? 'cannotRead' : 'nobody'); }
+  renderOrders();
+}
+
+el('orders-read').addEventListener('click', () => { void readOrders(); });
+
+// ── Reorder (M09-FR-02 · WF-03, Round 4b) ───────────────────────────────────
+//
+// The reorder settings stored per item at a store, head office's proposal worked out on them and its own stock (advisory
+// only), and a requisition raised from ticked lines or from an assistant's draft — through the tested model
+// (`window.buyingReorder`, apps/web-erp/src/replenishment-session.ts). Opening the tab writes nothing.
+
+const rp = window.buyingReorder ?? null;
+const rt = (k) => (rp === null ? k : rp.words(lang, k));
+let rpParams = null;
+let rpProposal = null;
+const RP_FIELDS = ['maxLevel', 'reorderPoint', 'safetyStock', 'leadTimeDays', 'minOrderQty', 'orderMultiple', 'avgDailyDemand'];
+function rpSay(id, out, good) { el(id).className = `otb-status ${out.result === 'ok' ? 'good' : 'err'}`; el(id).textContent = rp.outcomeWords(lang, out, good); }
+const rpQty = (minor, productId) => (minor === undefined ? '—' : rp.qtyIn(minor, rp.session.uomOf(productId)));
+
+function renderReorder() {
+  el('reorder-proposal').replaceChildren(); el('reorder-params').replaceChildren(); el('reorder-exceptions').replaceChildren();
+  el('reorder-raise-box').hidden = true;
+  el('reorder-advisory').textContent = rpProposal === null ? '' : rt('advisory');
+  if (rpProposal !== null) {
+    const lines = rpProposal.proposals;
+    if (lines.length === 0) el('reorder-proposal').append(textCell('caption', rpProposal.parametersNotSet ? rt('noParams') : rt('noProposal')));
+    else {
+      const head = document.createElement('tr');
+      for (const k of ['choose', 'product', 'position', 'reorderPoint', 'suggested', 'yourQty']) head.append(textCell('th', rt(k)));
+      el('reorder-proposal').append(head);
+      for (const l of lines) {
+        const tr = document.createElement('tr');
+        tr.dataset.product = l.productId; tr.dataset.reason = l.reason;
+        const pick = document.createElement('td');
+        if (l.suggestedQty > 0 && rp.session.may.set) { const c = document.createElement('input'); c.type = 'checkbox'; c.className = 'tick'; c.setAttribute('aria-label', `${rt('choose')} ${l.productId}`); pick.append(c); }
+        const mine = document.createElement('td');
+        if (l.suggestedQty > 0 && rp.session.may.set) { const q = document.createElement('input'); q.className = 'qty'; q.setAttribute('aria-label', `${l.productId} — ${rt('yourQty')}`); mine.append(q); }
+        tr.append(pick, textCell('td', l.productId), textCell('td', rpQty(l.position, l.productId)), textCell('td', rpQty(l.reorderPoint, l.productId)),
+          textCell('td', `${rpQty(l.suggestedQty, l.productId)} · ${rt(`r_${l.reason}`)}`), mine);
+        el('reorder-proposal').append(tr);
+      }
+      el('reorder-raise-box').hidden = !rp.session.may.set;
+    }
+    for (const o of rpProposal.outOfRange ?? []) el('reorder-exceptions').append(textCell('p', `${o.productId}: ${rt('outOfRange')} (${o.status})`, 'exception'));
+    for (const o of rpProposal.stoppedByLifecycle ?? []) el('reorder-exceptions').append(textCell('p', `${o.productId}: ${rt('stopped')} (${o.lifecycle})`, 'exception'));
+  }
+  if (rpParams !== null) {
+    if (rpParams.products.length === 0) { el('reorder-params').append(textCell('caption', rt('noParams'))); return; }
+    const head = document.createElement('tr');
+    for (const k of ['product', ...RP_FIELDS, 'version']) head.append(textCell('th', rt(k)));
+    el('reorder-params').append(head);
+    for (const { current: c, history } of rpParams.products) {
+      const tr = document.createElement('tr');
+      tr.dataset.product = c.productId; tr.dataset.version = String(c.version);
+      tr.append(textCell('td', c.productId), ...RP_FIELDS.map((f) => textCell('td', f === 'leadTimeDays' ? (c[f] === undefined ? '—' : String(c[f])) : rpQty(c[f], c.productId))),
+        textCell('td', `${rt('version')} ${c.version} · ${rt('setBy')} ${c.setBy} · ${rt('why')}: ${c.reason}${history.length > 1 ? ` · ${rt('history')}: ${history.slice(0, -1).map((h) => `v${h.version} ${rpQty(h.maxLevel, c.productId)} (${h.setBy})`).join(', ')}` : ''}`));
+      el('reorder-params').append(tr);
+    }
+  }
+}
+
+async function readReorder() {
+  if (rp === null) { el('reorder-status').className = 'otb-status err'; el('reorder-status').textContent = t('notSignedIn'); return; }
+  const store = el('reorder-store').value;
+  const [params, proposal] = [await rp.session.parameters(store), await rp.session.proposal(store)];
+  if (params.result !== 'ok') { rpParams = null; rpProposal = null; renderReorder(); rpSay('reorder-status', params); return; }
+  rpParams = params.value;
+  if (proposal.result !== 'ok') { rpProposal = null; renderReorder(); rpSay('reorder-status', proposal); return; }
+  rpProposal = proposal.value;
+  el('reorder-status').className = 'otb-status'; el('reorder-status').textContent = '';
+  renderReorder();
+}
+
+function paintReorderWords() {
+  el('tab-reorder').textContent = rt('tab'); el('reorder-title').textContent = rt('title'); el('reorder-lead').textContent = rt('lead');
+  for (const [id, k] of [['reorder-store-label', 'store'], ['reorder-read', 'show'], ['reorder-proposal-h', 'proposalH'], ['reorder-raise', 'raise'], ['reorder-params-h', 'paramsH'],
+    ['reorder-set-h', 'setH'], ['rp-productId-l', 'product'], ['rp-reason-l', 'reason'], ['rp-save', 'set'], ['draft-h', 'draftH'], ['dr-id-l', 'draftId'], ['dr-product-l', 'product'], ['dr-qty-l', 'draftQty'], ['dr-raise', 'raiseDraft'],
+    ...RP_FIELDS.map((f) => [`rp-${f}-l`, f])]) el(id).textContent = rt(k);
+  if (rp !== null && !rp.session.may.read) { el('reorder-status').className = 'otb-status'; el('reorder-status').textContent = rt(rp.session.may.named ? 'cannotRead' : 'nobody'); }
+  el('reorder-set').hidden = rp === null || !rp.session.may.set;
+  renderReorder();
+}
+
+el('reorder-read').addEventListener('click', () => { void readReorder(); });
+el('rp-save').addEventListener('click', async () => {
+  if (rp === null) return;
+  const form = Object.fromEntries(['productId', 'reason', ...RP_FIELDS].map((f) => [f, el(`rp-${f}`).value]));
+  const out = await rp.session.setParameters(el('reorder-store').value, form);
+  rpSay('rp-status', out, 'savedNow');
+  if (out.result === 'ok') { await readReorder(); rpSay('rp-status', out, 'savedNow'); }
+});
+// A product chosen in the form shows its current settings, in its own unit, ready to change.
+el('rp-productId').addEventListener('change', () => {
+  const c = rpParams?.products.find((p) => p.current.productId === el('rp-productId').value.trim())?.current;
+  if (c === undefined) return;
+  for (const f of RP_FIELDS) el(`rp-${f}`).value = f === 'leadTimeDays' ? (c[f] === undefined ? '' : String(c[f])) : rp.editable(c[f], rp.session.uomOf(c.productId));
+});
+el('reorder-raise').addEventListener('click', async () => {
+  const ticked = [...el('reorder-proposal').querySelectorAll('tr[data-product]')].filter((tr) => tr.querySelector('input.tick')?.checked === true)
+    .map((tr) => ({ productId: tr.dataset.product, qtyText: tr.querySelector('input.qty')?.value ?? '' }));
+  rpSay('reorder-raise-status', await rp.session.raise(rpProposal, ticked), 'raisedNow');
+});
+el('dr-raise').addEventListener('click', async () => {
+  rpSay('dr-status', await rp.session.raiseFromDraft({ proposalId: el('dr-id').value, productId: el('dr-product').value, qtyText: el('dr-qty').value }), 'raisedNow');
+});
+
 // ── Language ────────────────────────────────────────────────────────────────
 
 function paintChrome() {
@@ -812,6 +1072,8 @@ function paintChrome() {
   el('budget-reason-label').textContent = t('budgetReason');
   el('budget-save').textContent = t('setIt');
   el('history-title').textContent = t('historyTitle');
+  paintOrdersWords();
+  paintReorderWords();
   renderOtb();
   renderGaps();
 }

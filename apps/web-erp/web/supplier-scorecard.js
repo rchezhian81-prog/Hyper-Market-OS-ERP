@@ -153,12 +153,51 @@ async function show(event) {
   paint();
 }
 
+// M06-FR-03 (Round 4b): supplier contracts — its own tested session (window.supplierTerms).
+const terms = window.supplierTerms ?? null;
+const tt = (k) => (terms === null ? k : terms.words(lang, k));
+let contracts = null;
+function paintContracts() {
+  for (const [id, key] of [['contracts-h', 'contractsH'], ['contracts-show-text', 'contractsShow'], ['contract-h', 'contractH'], ['contract-lead', 'contractLead'], ['k-id-l', 'contractId'],
+    ['k-supplier-l', 'supplier'], ['k-starts-l', 'startsOn'], ['k-ends-l', 'endsOn'], ['k-lead-l', 'leadDays'], ['k-ask-text', 'ask'], ['k-record-text', 'record']]) $(id).textContent = tt(key);
+  const body = $('contracts').querySelector('tbody');
+  body.replaceChildren();
+  if (contracts === null) return;
+  if (contracts.length === 0) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.textContent = tt('noContracts'); tr.append(td); body.append(tr); return; }
+  for (const a of contracts) {
+    const tr = document.createElement('tr');
+    tr.dataset.contract = a.contractId; tr.dataset.finding = a.finding;
+    for (const [v, cls] of [[a.contractId, ''], [a.supplierId, ''], [tt(`f_${a.finding}`), a.finding === 'active' ? '' : 'over'], [`${a.daysRemaining} ${tt('daysLeft')}`, 'num']]) {
+      const td = document.createElement('td'); td.textContent = v; if (cls) td.className = cls; tr.append(td);
+    }
+    body.append(tr);
+  }
+}
+async function showContracts() {
+  const out = await terms.session.contracts();
+  if (out.result === 'ok') { contracts = out.value.alerts; $('contracts-status').className = 'status'; $('contracts-status').textContent = ''; }
+  else { contracts = null; $('contracts-status').className = 'status err'; $('contracts-status').textContent = terms.outcomeWords(lang, out); }
+  paintContracts();
+}
+const contractForm = () => ({ contractId: $('k-id').value, supplierId: $('k-supplier').value, startsOn: $('k-starts').value, endsOn: $('k-ends').value, leadDays: $('k-lead').value });
+const kSay = (out) => { $('k-status').className = `status${out.result === 'ok' ? '' : ' err'}`; $('k-status').textContent = terms.outcomeWords(lang, out); };
+if (terms !== null && terms.session.may.read) {
+  $('contracts-section').hidden = false;
+  $('contracts-show').addEventListener('click', () => { void showContracts(); });
+  if (terms.session.may.manage) {
+    $('contract-form').hidden = false;
+    $('k-ask').addEventListener('click', async () => { kSay(await terms.session.askContract(contractForm())); });
+    $('k-record').addEventListener('click', async () => { const out = await terms.session.recordContract(contractForm()); kSay(out); if (out.result === 'ok') await showContracts(); kSay(out); });
+  }
+}
+
 $('ask').addEventListener('submit', (e) => { void show(e); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintPpv(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintPpv(); paintContracts(); });
 $('ppv-show').addEventListener('click', () => { void showPpv(); });
 $('ppv-back').addEventListener('click', () => { drill = null; paintPpv(); });
 paint();
 paintPpv();
+paintContracts();
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 
 if ('serviceWorker' in navigator) {

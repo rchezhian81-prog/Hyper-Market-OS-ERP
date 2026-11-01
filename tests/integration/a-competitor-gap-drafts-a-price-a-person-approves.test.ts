@@ -72,7 +72,6 @@ describe.each(backings)('a competitor gap drafts a price a person approves — o
     const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
     const today = shopDateIn(new Date().toISOString());
     await ok(req('POST', '/v1/catalogue/tax-classes/09024020/rates/2017-07-01', { rateBps: 500 }), 'tax');
-    await ok(req('POST', `/v1/stores/${STORE}/rules`, RULES), 'store rules (20% floor)');
     const product = async (id: string, shelf: number, mrp: number, cost: number | null) => {
       await ok(req('POST', `/v1/catalogue/products/${id}/publish`, { product: { sku: `SKU-${id}`, name: id, baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '09024020', lifecycle: 'draft', mrpHistory: [{ value: { minor: mrp, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }), `publish ${id}`);
       await ok(req('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: STORE, priceMinor: shelf, mrpMinor: mrp, costMinor: cost ?? 0, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }), `price ${id}`);
@@ -82,6 +81,9 @@ describe.each(backings)('a competitor gap drafts a price a person approves — o
     await product('p-oil', 20_000, 21_000, 17_000);
     await product('p-salt', 2_000, 2_200, 1_200);
     await product('p-milk', 3_000, 3_200, null);
+    // The store's 20% floor is set after the shelf prices: p-oil was already priced under it (Round 4a: a scoped price is
+    // judged on the store rules' floor when it is set, so the seed comes first).
+    await ok(req('POST', `/v1/stores/${STORE}/rules`, RULES), 'store rules (20% floor)');
     const seen = (id: string, productId: string, competitor: string, priceMinor: number, ago: number) =>
       ok(req('POST', `/v1/prices/competitor/${id}`, { productId, storeId: STORE, competitor, priceMinor, observedAt: daysAgo(ago), source: 'shelf_visit' }, 'u-mgr'), `sighting ${id}`);
     await seen('o-tea', 'p-tea', 'Shop A', 9_400, 2);

@@ -103,6 +103,12 @@
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+      /* Round 4b: the "Taken off sale" tab. */
+      .expired-row { background: var(--panel); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; display: grid; gap: 4px; border-left: 6px solid var(--line); }
+      .expired-row[data-to-bin="true"] { border-left-color: var(--danger); }
+      .expired-row .what { font-weight: 700; overflow-wrap: anywhere; } .expired-row .figures, .expired-row .writeoffs { color: var(--muted); font-size: 15px; }
+      .expired-row .warn { color: var(--danger-text); font-weight: 600; }
+      #view-expired input { font: inherit; min-height: var(--tap); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; width: 100%; box-sizing: border-box; background: var(--bg); color: var(--ink); margin: 6px 0 10px; }
     </style>
   </head>
   <body>
@@ -119,6 +125,7 @@
     <nav id="tabs" aria-label="Sections">
       <button id="tab-expiry" type="button" aria-current="page">Going out of date</button>
       <button id="tab-recall" type="button">Recalls</button>
+      <button id="tab-expired" type="button">Taken off sale</button>
     </nav>
 
     <main>
@@ -127,6 +134,18 @@
         <p class="lead" id="expiry-lead">Earliest first. Expired stock is thrown away; stock close to its date is marked down while it can still sell.</p>
         <p class="lead" id="no-batches" hidden></p>
         <div id="expiry-list"></div>
+      </section>
+
+      <!-- M10-FR-01 (Round 4b): head office's expired register — every batch the daily sweep moved off sale, what is still on
+           the shelf to throw away, and the write-offs that binned it. Read live; it changes nothing. -->
+      <section id="view-expired" hidden>
+        <h2 id="expired-title">Taken off sale</h2>
+        <p class="lead" id="expired-lead"></p>
+        <label for="expired-place" id="expired-place-l">Place</label>
+        <input id="expired-place" type="text" autocomplete="off" />
+        <button id="expired-read" type="button">Show what was taken off sale</button>
+        <p class="lead" id="expired-status" role="status" aria-live="polite"></p>
+        <div id="expired-list"></div>
       </section>
 
       <section id="view-recall" hidden>

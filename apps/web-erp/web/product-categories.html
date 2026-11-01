@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Categories</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Categories (Round 4a · M03-FR-01 · OB-24 "A" · re-audit G-1). A THIN CLIENT over head office's one category list
+      (GET/POST /v1/catalogue/categories/:id) and its category report with variants rolled up (GET /v1/catalogue/reports/variants).
+      The owner adds or changes a category directly — his act is the approval; a store manager proposes one and asks the
+      owner's approval (kind category_define), which the owner gives on his own Approvals page. A change is a new version,
+      never an overwrite; nothing is ever deleted. Every rule and refusal is head office's; nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      label.check { display: flex; align-items: center; gap: 8px; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      input[type="checkbox"] { min-height: 24px; width: 24px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.unknown { color: var(--warn); font-size: 16px; }
+      #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; margin: 0; }
+      legend { font-weight: 700; font-size: 15px; padding: 0 6px; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; }
+      tr[data-id] { cursor: pointer; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Categories</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Categories</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel"><span class="k" id="k-count">Categories on the list</span><span class="v" id="v-count">—</span></div>
+          <div class="panel"><span class="k" id="k-top">Top-level departments</span><span class="v" id="v-top">—</span></div>
+          <div class="panel"><span class="k" id="k-regulated">Regulated categories</span><span class="v" id="v-regulated">—</span></div>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-list" type="button" aria-current="page">Category list</button>
+        <button id="tab-variants" type="button">Report by category</button>
+      </nav>
+
+      <section id="view-list" aria-labelledby="list-h">
+        <h3 id="list-h">Category list</h3>
+        <p class="lead" id="list-lead"></p>
+        <div class="table-wrap"><table aria-labelledby="list-h">
+          <thead><tr><th id="c-path">Category</th><th id="c-id">Id</th><th id="c-reg">Regulated as</th><th id="c-attrs">Attributes</th><th id="c-ver">Version</th><th id="c-by">Approved by</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+        <fieldset id="form">
+          <legend id="form-h">Add or change a category</legend>
+          <div class="row">
+            <label for="f-id"><span id="l-f-id">Category id</span><input id="f-id" autocomplete="off" /></label>
+            <label for="f-name"><span id="l-f-name">Name</span><input id="f-name" autocomplete="off" /></label>
+            <label for="f-parent"><span id="l-f-parent">Sits under</span><select id="f-parent"></select></label>
+          </div>
+          <p class="muted" id="l-f-reg">Regulated as (drives the safety rules every product in it must meet)</p>
+          <div class="row" id="f-reg"></div>
+          <p class="muted" id="l-f-attrs">Attributes every product in it may or must carry</p>
+          <div id="f-attrs"></div>
+          <div class="row">
+            <label for="f-why"><span id="l-f-why">Why (for the owner's approval)</span><input id="f-why" autocomplete="off" maxlength="300" /></label>
+            <button id="save" class="primary" type="button">Save the category</button>
+            <button id="ask" type="button" hidden>Ask the owner to approve</button>
+          </div>
+          <p class="status" id="form-status" role="status" aria-live="polite"></p>
+        </fieldset>
+      </section>
+
+      <section id="view-variants" aria-labelledby="variants-h" hidden>
+        <h3 id="variants-h">Report by category</h3>
+        <p class="lead" id="variants-lead"></p>
+        <form class="row" id="variants-form">
+          <label for="v-cat"><span id="l-v-cat">Category (and everything under it)</span><select id="v-cat"></select></label>
+          <button id="run" type="submit">Show the report</button>
+        </form>
+        <p class="muted" id="v-summary"></p>
+        <ul class="rows" id="v-makers" aria-label="By manufacturer"></ul>
+        <ul class="rows" id="v-families" aria-label="Families"></ul>
+        <p class="status" id="variants-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./product-categories.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
