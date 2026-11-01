@@ -8,7 +8,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 ## Round 4a, this session's part (1 November 2026): the Shelves & space setup; the product safety save
 - **Owner decided (OB-626):** the other session's Round 4a (#861) stays; this session's duplicate (#862) is cut down to what main lacked. The other session builds Rounds 4b–4d; this session starts no further round.
 - **Shelves & space:** record a display contract (M04-FR-04; Finance approves, or it is kept flagged as not approved, OB-631); Clusters & seasons (R8-8, OB-318: the clusters are the price zones; season plans); Shelf layout (head office sets a store's shelf map, planogram and floor plan, each published as a new version; screen-gap Round D closed). The store computer tells this page the signed-in person's own permissions; head office re-checks every act.
-- **OB-627 (in progress):** a separate, versioned safety save for a product's ingredients, allergens, nutrition, origin, storage and label fields, so a second editor can never silently overwrite the first.
+- **OB-627 built:** a separate, versioned safety save for a product's ingredients, allergens, nutrition, origin, storage and label fields, so a second editor can never silently overwrite the first.
 - **Owner decisions recorded:** OB-626 to OB-633.
 - **OB-632 decided:** main's stricter rule stays (a first channel or customer price is compared with the shelf price).
 - **Blocked:** nothing.
