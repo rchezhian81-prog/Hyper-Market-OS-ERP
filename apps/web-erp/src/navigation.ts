@@ -195,6 +195,12 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'display-contracts': { en: 'end cap gondola display contract supplier funding', ta: 'காட்சி ஒப்பந்தம்' },
   'range-clusters': { en: 'cluster season range assortment festival', ta: 'பருவம் வரிசை' },
   'product-checks': { en: 'hsn gst tax missing allergen ingredient barcode data check', ta: 'விடுபட்ட பார்கோடு ஒவ்வாமை' },
+  // Wave 3 (security, people and operations).
+  'emergency-access': { en: 'temporary access break glass elevated support urgent', ta: 'தற்காலிக அணுகல் அவசரம்' },
+  'safety-incidents': { en: 'injury accident near miss fire first aid safety incident', ta: 'காயம் விபத்து தீ பாதுகாப்பு' },
+  'ops-alerts': { en: 'alert backup down offline escalation owner acknowledge', ta: 'எச்சரிக்கை காப்புப் பிரதி' },
+  'document-retention': { en: 'retention dispose disposal archive keep documents', ta: 'ஆவணம் காப்பு அகற்று' },
+  'sales-commission': { en: 'commission salesperson rate incentive earned', ta: 'கமிஷன் விற்பனையாளர்' },
 });
 
 /**
@@ -587,6 +593,18 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // OB-288 lane 1 · P1 (M02-FR-01/02): who holds which role, where and up to how much — read-only, with the permission matrix as CSV.
   { id: 'access-review', label: 'Access review', labelTa: 'அணுகல் மீளாய்வு', path: '/access-review', requires: 'identity.access.review', group: 'Administration' },
   { id: 'approval-rules', label: 'Approval rules', labelTa: 'ஒப்புதல் விதிகள்', path: '/approval-rules', requires: 'approvals.rules.read', group: 'Administration' },
+  // Wave 3 (D11-FR-02 · M02-FR-04): ask for emergency access, give it once the owner approved it, end it early, and the review.
+  // Opened by the word that asks (`identity.role.request` — the owner and the store manager); head office re-checks each call.
+  // Under "Checks & investigations": the Administration workspace already holds its 16 screens (W1).
+  { id: 'emergency-access', label: 'Emergency access', labelTa: 'அவசர அணுகல்', path: '/emergency-access', requires: 'identity.role.request', group: 'Operations' },
+  // Wave 3 (D11-FR-06): record a staff injury or other safety incident, and close it with what was done.
+  { id: 'safety-incidents', label: 'Safety incidents', labelTa: 'பாதுகாப்பு நிகழ்வுகள்', path: '/safety-incidents', requires: 'facilities.incident.record', group: 'People' },
+  // Wave 3 (M35-FR-04): my alerts, every live alert, tick one as seen, and who owns each alert.
+  { id: 'ops-alerts', label: 'Operational alerts', labelTa: 'செயல்பாட்டு எச்சரிக்கைகள்', path: '/ops-alerts', requires: 'platform.health.read', group: 'Systems' },
+  // Wave 3 (M31-FR-01): documents past their keeping time, and record a disposal with a reason.
+  { id: 'document-retention', label: 'Document retention', labelTa: 'ஆவணக் காப்புக் காலம்', path: '/document-retention', requires: 'document.template.read', group: 'Operations' },
+  // Wave 3 (M22-FR-03): a business salesperson's commission rate — proposed, approved by someone else — and what they earned.
+  { id: 'sales-commission', label: 'Sales commission', labelTa: 'விற்பனைக் கமிஷன்', path: '/sales-commission', requires: 'b2b.commission.read', group: 'Customers' },
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
   // permission the locked-day list checks); the reopen itself needs `till.dayclose.approve`, which the box and
   // cloud enforce, and the screen offers the form only to a holder. Accountant/owner work.

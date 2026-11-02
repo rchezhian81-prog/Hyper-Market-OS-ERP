@@ -61,6 +61,9 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   // W3 (customers): data requests (M16-FR-03), customer value (D07-FR-05), the message queue (M31-FR-04), compensation limits
   // (M21-FR-03) and gift cards (D07-FR-04).
   'data-requests', 'customer-value', 'message-queue', 'compensation-limits', 'gift-cards',
+  // Wave 3 (security, people and operations): emergency access, safety incidents, operational alerts, document retention,
+  // sales commission.
+  'emergency-access', 'safety-incidents', 'ops-alerts', 'document-retention', 'sales-commission',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -158,6 +161,11 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'message-queue': 'messageQueueData',
   'compensation-limits': 'compensationLimitsData',
   'gift-cards': 'giftCardsData',
+  'emergency-access': 'emergencyAccessData',
+  'safety-incidents': 'safetyIncidentsData',
+  'ops-alerts': 'opsAlertsData',
+  'document-retention': 'documentRetentionData',
+  'sales-commission': 'salesCommissionData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
@@ -211,6 +219,8 @@ export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
   'display-contracts': findingsPagePayload,
   // Round 4d: the facilities set-up reads and writes the box's own store (head office keeps each to the stores the person holds).
   'facilities-setup': findingsPagePayload,
+  // Wave 3: the safety incidents page starts on the box's own store (head office keeps each to the stores the person holds).
+  'safety-incidents': findingsPagePayload,
 }) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */

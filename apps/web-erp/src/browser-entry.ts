@@ -124,6 +124,7 @@ import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and ad
 import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
 import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
 import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
+import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7510,4 +7511,5 @@ if (browserWindow !== undefined) {
   wireRound4d(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4d
   wireWave3Catalogue(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · D01-FR-05, D02-FR-04, D06-FR-05, D06-FR-06
   wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
+  wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
 }
