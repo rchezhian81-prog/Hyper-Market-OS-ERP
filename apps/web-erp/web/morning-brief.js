@@ -6,7 +6,7 @@
 const $ = (id) => document.getElementById(id);
 const api = window.morningBrief ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, read: false };
+const may = session?.may ?? { named: false, read: false, manage: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
@@ -41,6 +41,7 @@ function paint() {
   $('whoami').textContent = window.morningBriefData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('show').disabled = !may.read;
+  paintSchedule();
   $('brief-section').hidden = brief === null;
   if (brief === null) return;
   $('sent-v').textContent = brief.sent ? t('sent') : t('notSent');
@@ -49,6 +50,33 @@ function paint() {
   paintUi3();
   $('lines').replaceChildren(...(brief.lines ?? []).map((l) => { const li = document.createElement('li'); li.className = 'row'; li.textContent = l; return li; }));
 }
+
+// W3 (D13-FR-01..06): the brief's schedule — read as the page opens; the owner changes it with an explicit press.
+let schedule = null;
+function paintSchedule() {
+  for (const [id, k] of [['schedule-h', 'scheduleH'], ['sch-time-l', 'dueAt'], ['sch-lang-l', 'language'], ['sch-stale-l', 'staleMinutes'], ['sch-save-text', 'saveSchedule'], ['schedule-note', 'recipientsNote']]) $(id).textContent = t(k);
+  const opts = $('sch-lang').options; opts[0].textContent = t('lang_en'); opts[1].textContent = t('lang_ta');
+  $('schedule-section').hidden = !may.read;
+  $('schedule-form').hidden = !may.manage;
+  if (schedule === null) return;
+  $('schedule-now').textContent = schedule.set
+    ? `${t('setTo')} ${schedule.dueAt} · ${t(`lang_${schedule.language}`)}${schedule.staleAfterMinutes === null ? '' : ` · ${schedule.staleAfterMinutes} min`} · ${schedule.sentDays} ${t('sentDays')}`
+    : t('notSet');
+}
+async function loadSchedule() {
+  const out = await session.schedule();
+  if (out.result === 'ok') {
+    schedule = out.value;
+    if (schedule.set) { $('sch-time').value = schedule.dueAt; $('sch-lang').value = schedule.language; $('sch-stale').value = schedule.staleAfterMinutes === null ? '' : String(schedule.staleAfterMinutes); }
+    if (!may.manage) { $('schedule-status').className = 'status'; $('schedule-status').textContent = t('cannotManage'); }
+  } else { schedule = null; say('schedule-status', out); }
+  paintSchedule();
+}
+$('schedule-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = await session.setSchedule({ dueAt: $('sch-time').value, language: $('sch-lang').value, staleMinutes: $('sch-stale').value });
+  if (out.result === 'ok') { $('schedule-status').className = 'status good'; $('schedule-status').textContent = `${t('scheduleSaved')} ${out.value.dueAt}.`; void loadSchedule(); } else say('schedule-status', out);
+});
 
 async function show() {
   const out = await session.today();
@@ -60,7 +88,7 @@ $('show').addEventListener('click', () => { void show(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
-else if (may.read) void show();
+else if (may.read) { void show(); void loadSchedule(); }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

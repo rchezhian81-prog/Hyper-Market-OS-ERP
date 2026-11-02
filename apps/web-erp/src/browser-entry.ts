@@ -122,6 +122,7 @@ import { wireFindings } from './findings-browser-wiring'; // OB-609
 import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
 import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
 import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
+import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7506,4 +7507,5 @@ if (browserWindow !== undefined) {
   wireUsers(browserWindow as unknown as Record<string, unknown>, viewerIdentity, HEAD_OFFICE_PEOPLE); // Round 4c
   wireRound4c(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4c
   wireRound4d(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4d
+  wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
 }
