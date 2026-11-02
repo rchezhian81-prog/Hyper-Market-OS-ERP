@@ -16,7 +16,7 @@ import {
   validateOutwardLine, gstr1Table12, gstr1Return, toGstnGstr1,
   salesToOutwardSupplies, netTable12, toGstnB2cFromSales, InvalidSalesToOutwardInput, Gstr1ExportRefused, GstnB2cFromSalesRefused,
   type OutwardSupplyLine, type ClassifiedLine, type SupplyKind,
-  type SoldTaxLine, type ProductTaxEntry, type PlaceOfSupply,
+  type SoldTaxLine, type ProductTaxEntry, type PlaceOfSupply, type OutwardNote,
 } from '../../../packages/finance/src/index';
 import { GST_STATE_NAMES } from '../../../packages/finance/src/gst-states';
 
@@ -70,6 +70,11 @@ export interface GstReturnsDeps {
    * table still overrides it per product. Products with no HSN carried are omitted (they surface as unmapped).
    */
   readonly productTaxTable: (tenantId: string) => Promise<readonly ProductTaxEntry[]> | readonly ProductTaxEntry[];
+  /**
+   * M23-FR-02 · OB-678: every GST credit / debit note issued to a business customer, as GSTR-1 reads it (its own number and
+   * date). The return's credit/debit-note section is built from the notes dated inside the period. Absent: none.
+   */
+  readonly customerNotes?: (tenantId: string) => Promise<readonly OutwardNote[]> | readonly OutwardNote[];
   readonly now: () => string;
 }
 
@@ -269,7 +274,9 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
           throw apiError(400, { code: 'return_needs_from_to', whatHappened: 'The GSTR-1 return needs ?from=YYYY-MM-DD&to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send the return period’s from and to dates.' });
         }
         const docs = (await deps.documents(ctx.tenantId)).filter((d) => d.documentDate >= from && d.documentDate <= to);
-        return { status: 200, body: { from, to, documentCount: docs.length, ...gstr1Return(docs) } };
+        // M23-FR-02 · OB-678: the notes ISSUED in the period (CGST s.34 — the note's own date, never the invoice's).
+        const notes = ((await deps.customerNotes?.(ctx.tenantId)) ?? []).filter((n) => n.noteDate >= from && n.noteDate <= to);
+        return { status: 200, body: { from, to, documentCount: docs.length, ...gstr1Return(docs, notes) } };
       },
     },
     {

@@ -165,6 +165,9 @@ const BASE_ROLES: readonly Role[] = [
       'customer.campaign.policy',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
+      // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): a GST credit note to a business customer counts as a refund under
+      // the money limits (OB-290) — this is the authority to APPROVE one (store manager up to his refund limit, owner unlimited).
+      'finance.creditnote.approve',
       // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
       'order.exception.work', 'order.exception.manage',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
@@ -537,6 +540,9 @@ const BASE_ROLES: readonly Role[] = [
       'customer.campaign.send', 'customer.campaign.read',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
+      // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): a GST credit note to a business customer counts as a refund under
+      // the money limits (OB-290) — this is the authority to APPROVE one (store manager up to his refund limit, owner unlimited).
+      'finance.creditnote.approve',
       // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
       'order.exception.work', 'order.exception.manage',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',

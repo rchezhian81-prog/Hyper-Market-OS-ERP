@@ -250,8 +250,9 @@ import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlert
 import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
 import type { DayBookSale, DayBookLoyalty } from '../../../packages/finance/src/index';
-import type { CreditNoteDeps } from '../../finance/src/credit-notes';
-import type { CreditNote, ProductTaxEntry, OutwardSupplyLine } from '../../../packages/finance/src/index';
+import { notePostableSourceId, type CreditNoteDeps } from '../../finance/src/credit-notes';
+import type { CreditNote, CustomerNote, ProductTaxEntry, OutwardSupplyLine } from '../../../packages/finance/src/index';
+import { isCustomerNote, outwardNoteOf } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { SegmentDeps } from '../../customer/src/segments';
 import { collapseConsent } from '../../customer/src/segments';
@@ -1260,6 +1261,13 @@ export function gstReturnsAdapter(input: {
   const calendarOf = shopCalendarOf(input.calendar);
   return {
     now: input.now,
+
+    // M23-FR-02 · OB-678: the GST notes to business customers, from the CreditNoteIssued facts (first record of an id stands).
+    customerNotes: async (tenantId) => {
+      const byId = new Map<string, CustomerNote>();
+      for (const n of (await allOf<CreditNote>(input.store, tenantId, STREAM.finance, 'CreditNoteIssued')).filter(isCustomerNote)) if (!byId.has(n.noteId)) byId.set(n.noteId, n);
+      return [...byId.values()].map(outwardNoteOf);
+    },
 
     documents: async (tenantId) => {
       const all = await allOf<StoredOutwardDoc>(input.store, tenantId, STREAM.gstreturns, 'OutwardSupplyRecorded');
@@ -9331,11 +9339,49 @@ export function financeNotesAdapter(input: {
    * rebuilt from the ledger) — just rebuilt on each cold start.
    */
   readonly snapshots?: SnapshotStore;
-}): CreditNoteDeps {
+  /** M23-FR-02 · OB-678: the gap-free number series the customer credit-note and debit-note series are drawn from. */
+  readonly numberSeries?: NumberSeriesStore;
+}): CreditNoteDeps & {
+  readonly alreadyCredited: (tenantId: string, invoiceId: string) => Promise<number>;
+  readonly appendCreditNote: (tenantId: string, note: CreditNote) => Promise<void>;
+} {
   const snapshots = input.snapshots ?? new InMemorySnapshotStore();
+  const numberSeries = input.numberSeries ?? new InMemoryNumberSeriesStore();
+  const b2bDocs = b2bDocumentsAdapter({ store: input.store, now: input.now, numberSeries });
+  const books = b2bPostingAdapter({ store: input.store, now: input.now });
 
   return {
     now: input.now,
+
+    // M23-FR-02 · OB-678: the business tax invoice head office holds — the only source a note is worked from.
+    businessInvoice: (tenantId, customerId, documentId) => b2bDocs.document(tenantId, customerId, documentId),
+    businessDocuments: (tenantId, customerId) => b2bDocs.documents(tenantId, customerId),
+    allocateNumber: (tenantId, series) => numberSeries.allocate(tenantId, series),
+    // The posting rules in force (kinds only) and the B2B facts already journalled — where each note stands in the books.
+    postingState: async (tenantId) => {
+      const [map, journals] = await Promise.all([books.postingMap(tenantId), books.b2bJournals(tenantId)]);
+      return { ruleKinds: map?.rules.map((r) => r.kind), journals: journals.map((j) => ({ sourceId: j.b2b.sourceId, entryId: j.entryId, period: j.period })) };
+    },
+    // ONE batch: the note, its movement on the customer's AR ledger (a credit note brings what is owed down, a debit note
+    // up) and its fact for the books (posted by the accountant's B2B posting run through HIS rule, or visibly waiting).
+    recordCustomerNote: async (tenantId, note, issuedBy) => {
+      const at = input.now();
+      const credit = note.kind === 'credit_note';
+      const ar: RecordedReceivable = {
+        movementId: `${credit ? 'cn' : 'dn'}-${note.noteId}`, customerId: note.customerId, kind: credit ? 'credit_note' : 'invoice',
+        deltaMinor: credit ? -note.grossMinor : note.grossMinor, at, ref: note.number, on: note.issuedOn,
+      };
+      const postable: B2BPostable = {
+        sourceId: notePostableSourceId(note), kind: note.kind, customerId: note.customerId, documentDate: note.issuedOn,
+        components: { total: note.grossMinor, net: note.taxableMinor, tax: note.taxMinor }, ref: note.number,
+      };
+      await input.store.appendBatch(tenantId, [
+        { stream: STREAM.finance, event: makeEvent({ id: note.noteId, type: 'CreditNoteIssued', occurredAt: at, idempotencyKey: `creditnote-${tenantId}-${note.noteId}`, source: 'api/finance', payload: { ...note, issuedBy } }) },
+        { stream: forB2BCustomer(note.customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+        receivableCustomerIndexEntry(tenantId, note.customerId, at),
+      ]);
+    },
 
     // Σ of what earlier CREDIT notes already took off this invoice, projected through the snapshot
     // facility rather than re-summing the whole history. This is what makes the s.34 cap hold across

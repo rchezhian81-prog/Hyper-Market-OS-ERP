@@ -88,6 +88,9 @@ export interface CustomerNote extends CreditNote {
   readonly placeOfSupplyStateCode: string;
   readonly recipientGstin?: string;
   readonly financialYear: string;
+  /** Who issued it (the signed-in maker) and, for a credit note, who approved it (OB-678 · OB-290) — set by head office. */
+  readonly issuedBy?: string;
+  readonly approvedBy?: string;
 }
 
 export type CustomerNoteOutcome =

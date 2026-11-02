@@ -382,6 +382,14 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'b2b_credit_override', label: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
     makerPermission: 'b2b.document.issue', checkerPermission: 'b2b.credit.override', validForMinutes: 24 * 60,
   },
+  // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): a GST credit note to a business customer counts as a REFUND under the
+  // money limits (OB-290) — the store manager approves up to his refund limit (₹5,000), the owner without limit; the
+  // accountant has no figure set, so a note above another approver's limit waits for the owner. The person who raised it
+  // never approves it. The amount asked is the note's whole value (taxable value plus its GST), worked out by head office.
+  customer_credit_note: {
+    kind: 'customer_credit_note', label: 'Issue a GST credit note to a business customer (money back off their tax invoice)',
+    makerPermission: 'finance.creditnote.issue', checkerPermission: 'finance.creditnote.approve', validForMinutes: 24 * 60,
+  },
   // OB-360 (owner, 24–25 Oct 2026, in writing): EVERY change of a B2B credit limit (or the terms set with it) goes through
   // the engine with a second person, like a contract's limit — the owner and the accountant check each other.
   b2b_credit_limit: {

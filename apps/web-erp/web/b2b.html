@@ -167,10 +167,26 @@
         <ul class="rows" id="tn-list"></ul>
         <p class="status" id="tn-status" role="status" aria-live="polite"></p>
       </section>
+
+      <!-- W3 · M23-FR-02 · OB-678: GST credit and debit notes against the open customer's business tax invoices — worked out
+           by head office from the invoice it holds; a credit note asks a second person's approval first
+           (apps/web-erp/src/b2b-notes-session.ts, window.b2bNotes, drawn by b2b-notes.js). Nothing is read on open. -->
+      <section id="cn" hidden aria-labelledby="cn-h">
+        <h3 id="cn-h"></h3>
+        <p class="meta" id="cn-lead"></p>
+        <button id="cn-show" type="button"><span id="cn-show-text"></span></button>
+        <ul class="rows" id="cn-invoices"></ul>
+        <p class="status" id="cn-status" role="status" aria-live="polite"></p>
+        <h3 id="cn-asked-h"></h3>
+        <ul class="rows" id="cn-asked"></ul>
+        <h3 id="cn-notes-h"></h3>
+        <ul class="rows" id="cn-notes"></ul>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./b2b.js" type="module"></script>
     <script src="./b2b-payments.js" type="module"></script>
+    <script src="./b2b-notes.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>
