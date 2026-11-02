@@ -53,6 +53,9 @@ function toCloudTender(t: unknown): IncomingTender {
     ? ((removedMark as Rec)['fields'] as unknown[]).filter((f): f is string => typeof f === 'string') : undefined;
   // OB-271 · audit A9: the shop's own machine's approval / reference number travels when it reads cleanly (never card data).
   const machine = r['machineRef'] === undefined ? undefined : readMachineReference(r['machineRef']);
+  // W3 · OB-677: a gift-card tender's own code and whether the store computer took it offline (stamped before its disk).
+  const gc = isObject(r['giftCard']) ? r['giftCard'] as Rec : undefined;
+  const giftCard = gc !== undefined && str(gc['code']) !== undefined ? { code: str(gc['code'])!, ...(gc['capturedOffline'] === true ? { capturedOffline: true } : {}) } : undefined;
   return {
     kind: str(r['kind']) ?? '',
     ...(amountMinor === undefined ? {} : { amountMinor }),
@@ -60,6 +63,7 @@ function toCloudTender(t: unknown): IncomingTender {
     ...(machine?.ok === true ? { machineRef: machine.value } : {}),
     ...(points === undefined ? {} : { points }),
     ...(card?.ok === true ? { card: card.value } : {}),
+    ...(giftCard === undefined ? {} : { giftCard }),
     ...(removedFields === undefined ? {} : { cardDataRemoved: { fields: removedFields } }),
   } as IncomingTender;
 }
@@ -113,9 +117,48 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     ...(isOldErpBillNumber(r['oldErpBillNumber']) ? { oldErpBillNumber: r['oldErpBillNumber'] } : {}),
     // OB-299: a bill the till marked for delivery — the fee product and what it charged. Head office books it once.
     ...((d) => (d === undefined ? {} : { delivery: d }))(deliveryOf(r['delivery'])),
+    // W3 · OB-673: the coupons the till honoured on this bill (their discount is already inside the lines).
+    ...((c) => (c.length === 0 ? {} : { coupons: c }))(couponsOf(r['coupons'])),
     // OB-501 (R7-A): the till's app build, and the store computer's own mark on it — both records, judged at head office.
     ...(str(r['appVersion']) === undefined ? {} : { appVersion: str(r['appVersion'])! }),
     ...(isObject(r['storeComputerVersionCheck']) ? { storeComputerVersionCheck: r['storeComputerVersionCheck'] as IncomingSale['storeComputerVersionCheck'] } : {}),
+  };
+}
+
+/** W3 · OB-673: the coupons a bill carries — each a code and the whole discount it gave (≥ 0); anything else is left out. */
+function couponsOf(v: unknown): readonly { readonly code: string; readonly discountMinor: number }[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((c) => {
+    const x = (isObject(c) ? c : {}) as Rec;
+    const code = str(x['code']);
+    const d = int(x['discountMinor']);
+    return code === undefined || d === undefined || !Number.isSafeInteger(d) || d < 0 ? [] : [{ code, discountMinor: d }];
+  });
+}
+
+/**
+ * W3 · OB-677: a gift card's SALE as head office's gift-card door reads it (`POST /v1/stored-value/till-sales`). Its own
+ * shape, never a goods bill: no lines, no bill number, no tax invoice — the cards sold and how they were paid.
+ */
+export function toCloudGiftCardSale(record: unknown, storeId?: string, laneId?: string): Record<string, unknown> {
+  const r = (record !== null && typeof record === 'object' ? record : {}) as Rec;
+  const cards = Array.isArray(r['giftCardsSold']) ? (r['giftCardsSold'] as unknown[]).flatMap((c) => {
+    const x = (isObject(c) ? c : {}) as Rec;
+    return str(x['code']) !== undefined && int(x['faceValueMinor']) !== undefined ? [{ code: str(x['code'])!, faceValueMinor: int(x['faceValueMinor'])! }] : [];
+  }) : [];
+  return {
+    saleId: str(r['saleId']) ?? str(r['id']) ?? '',
+    laneId: str(r['laneId']) ?? str(laneId) ?? '',
+    cashierId: str(r['cashierId']) ?? '',
+    tradingDay: str(r['tradingDay']) ?? '',
+    committedAt: str(r['committedAt']) ?? '',
+    totalMinor: int(r['totalMinor']) ?? int(r['total']) ?? 0,
+    currency: str(r['currency']) ?? 'INR',
+    cards,
+    tenders: Array.isArray(r['tenders']) ? (r['tenders'] as unknown[]).map(toCloudTender) : [],
+    ...(locationOf(r, storeId) === undefined ? {} : { locationId: locationOf(r, storeId) }),
+    ...(isMemberRef(r['customerRef']) ? { customerRef: r['customerRef'] } : {}),
+    ...(isObject(r['operatorVerified']) ? { operatorVerified: r['operatorVerified'] } : {}),
   };
 }
 

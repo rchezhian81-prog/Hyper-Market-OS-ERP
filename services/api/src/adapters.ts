@@ -10181,6 +10181,12 @@ export function couponAdapter(input: {
         source: 'api/customer',
         payload: coupon,
       }));
+      // D06-FR-03 · OB-673: every coupon goes on the coupon index (the same fact the stored fraud signals read, idempotent per
+      // code), so the store pack can carry every live coupon to the till — whichever route issued it.
+      await input.store.append(tenantId, streamName(STREAM.lossPrevention, 'coupon-index'), makeEvent({
+        id: `CouponIndexed-${coupon.code}`, type: 'CouponIndexed', occurredAt: input.now(),
+        idempotencyKey: `${tenantId}-CouponIndexed-${coupon.code}`, source: 'api/lp-workforce', payload: { code: coupon.code },
+      }));
     },
     coupon: async (tenantId, code) => {
       const events = await input.store.readStream(tenantId, forCode(code), { type: 'CouponIssued' });

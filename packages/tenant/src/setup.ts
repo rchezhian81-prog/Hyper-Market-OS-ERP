@@ -241,6 +241,14 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     ...TILL_SPEND_CAP,
   },
   {
+    // D07-FR-04 · OB-677: the offline gift-card limit per till per card (the owner's answer, ₹500, is the default).
+    setting: SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE,
+    group: 'check_default',
+    required: false,
+    question: 'At most how much may one till take from one gift card while the store computer cannot reach head office, in paise? (0 takes no gift card offline.)',
+    ...TILL_SPEND_CAP,
+  },
+  {
     // OB-78 "A" (owner, 12 Oct 2026): the early disk warning for each store computer, in hours of trading left.
     setting: SETTINGS.BOX_DISK_WARN_HOURS,
     group: 'check_default',

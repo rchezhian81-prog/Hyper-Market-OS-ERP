@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1657 | 958 | 958 | 183 | 436 |
+| 13 | 1662 | 960 | 960 | 183 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -784,6 +784,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/stored-value/instruments/:instrumentId` | `loyalty.value.read` | core | — |
 | POST | `/v1/stored-value/instruments/:instrumentId/redeem` | `loyalty.value.redeem` | core | yes |
 | GET | `/v1/stored-value/liability` | `lp.case.read` | core | — |
+| POST | `/v1/stored-value/till-sales` | `pos.sale.sync` | core | yes |
 | GET | `/v1/stored-value/velocity` | `lp.case.read` | core | — |
 
 ## API-07 — OMS (M18)
@@ -1304,6 +1305,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/fssai-licence` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.decide` | core | yes |
+| GET | `/v1/compliance/gate-evidence` | `compliance.gate.read` | core | — |
+| POST | `/v1/compliance/gate-evidence/:evidenceId` | `compliance.gate.decide` | core | yes |
 | GET | `/v1/compliance/gate-register` | `compliance.gate.read` | core | — |
 | GET | `/v1/compliance/gate-register/qg10-evidence` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-register/qg10-evidence` | `compliance.qg10.evidence.push` | core | yes |
@@ -1492,6 +1495,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/integration/health` | `platform.health.read` | core | — |
 | POST | `/v1/integration/matrix/:entryId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-deliveries/drain` | `platform.setup.write` | core | yes |
+| GET | `/v1/integration/outbound-webhooks` | `platform.health.read` | core | — |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId/deactivate` | `platform.setup.write` | core | yes |
 | GET | `/v1/integration/outbound-webhooks/:subscriptionId/dead-letters` | `platform.health.read` | core | — |
@@ -1567,6 +1571,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/platform/operational-health` | `platform.health.read` | core | yes |
 | GET | `/v1/platform/operational-health/observed` | `platform.health.read` | core | — |
 | POST | `/v1/platform/operational-health/observed/raise` | `platform.alert.manage` | core | yes |
+| GET | `/v1/platform/partners` | `platform.partner.read` | core | — |
 | GET | `/v1/platform/partners/:credentialId` | `platform.partner.read` | core | — |
 | POST | `/v1/platform/partners/:credentialId` | `platform.partner.manage` | core | yes |
 | POST | `/v1/platform/partners/:credentialId/revoke` | `platform.partner.manage` | core | yes |

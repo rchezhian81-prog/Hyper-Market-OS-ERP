@@ -4089,6 +4089,7 @@
                   "cash",
                   "exchange",
                   "exchange_credit",
+                  "gift_card",
                   "loyalty_points",
                   "paid_on_old_erp",
                   "split",
@@ -5749,6 +5750,7 @@
               "card",
               "cash",
               "exchange_credit",
+              "gift_card",
               "loyalty_points",
               "paid_on_old_erp",
               "split",
@@ -5771,6 +5773,7 @@
                     "card",
                     "cash",
                     "exchange_credit",
+                    "gift_card",
                     "loyalty_points",
                     "paid_on_old_erp",
                     "split",
@@ -5960,6 +5963,25 @@
           "tenders"
         ],
         "properties": {
+          "coupons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code",
+                "discountMinor"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "discountMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "delivery": {
             "type": "object",
             "required": [
@@ -6326,6 +6348,21 @@
                 "items": {
                   "type": "string"
                 }
+              }
+            },
+            "additionalProperties": true
+          },
+          "giftCard": {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "capturedOffline": {
+                "type": "boolean"
               }
             },
             "additionalProperties": true

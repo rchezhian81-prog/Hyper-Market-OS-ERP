@@ -66,6 +66,7 @@ import { dsdCheckInAdapter } from './r3-ops-adapters';
 import { rosterPackSection, certificationsPackSection } from './r7d-workforce-adapters'; // Round 7 · OB-507 · OB-502
 import { wasteWriteOffsSectionFor, categoryPolicySectionFor } from './r2-screen-feeds'; // screen gap audit Round A
 import { catalogueMasterSections, expirySections, financeSections, gstReconciliationQueueSection } from './round-a-pack-sections'; // Round A
+import { couponPackSectionFor, giftCardPackSectionFor } from './till-vouchers-adapters'; // W3 · OB-673 · OB-677
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -120,6 +121,12 @@ export interface StorePackBuildInput {
    * reports can run (P-02). Absent → the section is left out and the page says it was not told (never an empty list).
    */
   readonly reportingRecords?: readonly string[];
+  /**
+   * W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: carry the shop's live coupons and its gift cards to the store computer, so
+   * the till honours a coupon and takes a gift card with the internet down; `giftCardOfflineCapMinor` is the owner's offline
+   * limit per till per card (the tenant setting, default ₹500). Absent → neither section is sent (the till says so).
+   */
+  readonly tillVouchers?: { readonly giftCardOfflineCapMinor: (tenantId: string) => Promise<number> };
 }
 
 /**
@@ -534,5 +541,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // the box's copy, said as a copy and how old, when head office cannot be reached (P-01 · P-08). Always sent for the
   // store: an empty list is head office's own answer "none kept yet"; a box on an older pack says it was not told.
   sections['reorderSettings'] = { storeId, products: parametersAt(await replenishmentParametersAdapter({ store, now }).versions(tenantId), storeId) }; // no build time inside: the content hash must not change when nothing did (PA-06 renewal)
+  // W3 · OB-673 · OB-677: the coupons and gift cards the till judges offline (till-vouchers-adapters.ts) — no build time inside.
+  if (input.tillVouchers !== undefined) {
+    sections['coupons'] = await couponPackSectionFor({ store, now }, tenantId, shopZone);
+    sections['giftCards'] = await giftCardPackSectionFor({ store, now }, tenantId, await input.tillVouchers.giftCardOfflineCapMinor(tenantId));
+  }
   return sections;
 }

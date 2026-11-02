@@ -504,7 +504,7 @@ const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>
     untaxedRate: 'Exempt / nil — no GST', untaxedValue: 'Value', untaxedTotal: 'Exempt / nil-rated value (no GST)',
     rounded: '(rounded to ₹)', roundOff: 'Round off',
     paid: 'Paid', change: 'Change', approval: 'approval', for: 'For', signatory: 'Authorised signatory', till: 'Till', cashier: 'Cashier',
-    cash: 'Cash', card: 'Card', upi: 'UPI', loyalty_points: 'Points', store_credit: 'Store credit',
+    cash: 'Cash', card: 'Card', upi: 'UPI', loyalty_points: 'Points', store_credit: 'Store credit', gift_card: 'Gift card',
     cess: 'Compensation cess', interState: 'inter-State supply', fssai: 'FSSAI Lic. No.', b2cQr: 'Scan to pay this bill by UPI',
   },
   ta: {
@@ -516,7 +516,7 @@ const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>
     untaxedRate: 'Exempt / nil (விலக்கு / பூஜ்யம்) — GST இல்லை', untaxedValue: 'மதிப்பு', untaxedTotal: 'விலக்கு / பூஜ்ய மதிப்பு (GST இல்லை)',
     rounded: '(₹ க்கு முழுமையாக்கப்பட்டது)', roundOff: 'முழுமையாக்கல் (Round off)',
     paid: 'செலுத்தியது', change: 'மீதி', approval: 'அனுமதி எண்', for: '', signatory: 'அங்கீகரிக்கப்பட்ட கையொப்பம்', till: 'டில்', cashier: 'காசாளர்',
-    cash: 'பணம்', card: 'கார்டு', upi: 'UPI', loyalty_points: 'புள்ளிகள்', store_credit: 'கடை வரவு',
+    cash: 'பணம்', card: 'கார்டு', upi: 'UPI', loyalty_points: 'புள்ளிகள்', store_credit: 'கடை வரவு', gift_card: 'பரிசு அட்டை',
     cess: 'இழப்பீட்டு செஸ் (Compensation cess)', interState: 'மாநிலங்களுக்கு இடையிலான வழங்கல்', fssai: 'FSSAI உரிம எண் (Lic. No.)', b2cQr: 'இந்த பில்லை UPI மூலம் செலுத்த ஸ்கேன் செய்யவும்',
   },
 };

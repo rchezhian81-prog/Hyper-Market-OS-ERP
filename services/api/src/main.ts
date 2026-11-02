@@ -83,6 +83,8 @@ import { lpCasesRoutes, lpRulesRoutes, lpActivityRoutes } from '../../pos/src/lo
 import { fraudSignalsRoutes } from '../../pos/src/fraud-signals';
 import { storedValueRoutes } from '../../customer/src/stored-value';
 import { couponRoutes } from '../../customer/src/coupons';
+import { tillVoucherEffects, tillGiftCardSaleRoutes } from '../../customer/src/till-vouchers'; // W3 · OB-673 · OB-677
+import { tillVoucherDepsOf } from './till-vouchers-adapters';
 import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
 import { pendingTenderRoutes } from '../../finance/src/pending-tender';
@@ -1248,6 +1250,7 @@ export function buildSurface(deps: {
         calendar: shopCalendar, // R1a: the shop's zone rides the pack, so the store box dates by it
         tillControls: tillControlsPackSectionOf({ store, now, settings, signer }), versionPolicy: versionPolicyPackSectionOf({ store, now }), // OB-500 · OB-501 (R7-A)
         reportingRecords: REPORTING_RECORDS, // Round A: the store's Reports page reads the same list head office's catalogue does
+        tillVouchers: { giftCardOfflineCapMinor: (tt) => settings.value(tt, SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE) }, // W3 · OB-673 · OB-677
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1314,6 +1317,8 @@ export function buildSurface(deps: {
     } : {
       ...posAdapter({ store, now }), ...r16aSaleBranches({ store, now }) /* OB-612 */, tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
+      // W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: a till bill's coupons and gift cards — recorded once, never refused.
+      vouchersOnSale: tillVoucherEffects(tillVoucherDepsOf({ store, now, calendar: shopCalendar })),
       // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
       huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
       shopStateOf: shopStateOf({ store, now }), deliveryOnSale: tillDeliveryOnSale({ store, now }), // OB-288 till side: OB-348 · OB-299
@@ -1471,6 +1476,11 @@ export function buildSurface(deps: {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
     } : { ...storedValueAdapter({ store, now }), calendar: shopCalendar }), // R1b · A12: the GST date is the shop's day
+    // W3 · OB-677: a gift card SOLD at the till, relayed by its store computer — issued once, never refused.
+    ...tillGiftCardSaleRoutes(store === undefined ? {
+      now, coupon: async () => undefined, redemptions: async () => [], recordRedemption: async () => {}, instrument: async () => undefined, movements: async () => [],
+      recordMovement: async () => {}, recordIssue: async () => {}, recordGiftCardSale: async () => {}, recordExceptions: async () => {},
+    } : tillVoucherDepsOf({ store, now, calendar: shopCalendar })),
     // Coupons / personalised offers / referrals (M17-FR-02) — issue, redeem (authoritative single-use guard), read.
     ...couponRoutes(store === undefined ? {
       issue: () => {}, coupon: empty(undefined), redemptions: empty([]), recordRedemption: () => {},

@@ -118,6 +118,17 @@ export const SETTINGS = {
     defaultValue: 50_000,
   } as TenantSetting<number>,
   /**
+   * D07-FR-04 · OB-677 (owner, 2 Nov 2026, in writing — "A: ₹500 offline limit"): the most ONE till may take from ONE gift
+   * card while its store computer cannot reach head office, in paise. Above it the till asks for another payment until the
+   * link is back; a card overspent across tills meanwhile is a visible exception for the manager (hard rule #10). It rides
+   * the signed store pack to the store computer, which judges it with no network. The default is the owner's answer.
+   */
+  GIFT_CARD_OFFLINE_CAP_PAISE: {
+    key: 'loyalty.gift_card_offline_cap_paise',
+    label: 'Most one till may take from one gift card while head office cannot be reached (paise; 0 = none offline)',
+    defaultValue: 50_000,
+  } as TenantSetting<number>,
+  /**
    * The in-store production departments this tenant actually operates
    * (OB-04 / AVR-12). Empty by default: the roadmap's rule is that a module is
    * never built or enabled for a department the store does not have (§2.2).
