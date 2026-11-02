@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Old system checks</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Old system checks (W3 · MG-01 · MG-03 · MG-07 · MG-08 · MG-09 · MG-11 · MG-12 · roadmap §30). A THIN CLIENT over head
+      office's migration routes that had no caller on any screen: discovery, mapping coverage and approval, the left-behind
+      exclusions and the owner's decision, the two-export comparison, the switch-over window and night check, undoing an
+      opening load inside its window (a second person approves), and the retirement check. Its session is
+      apps/web-erp/src/old-system-session.ts. Nothing is read before the person asks, nothing written except on an explicit
+      click; the person's name is never sent (head office takes the signed-in person). No prompt/confirm/alert; no timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      label.check { display: inline-flex; gap: 8px; align-items: center; min-height: var(--tap); }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      label.check input { min-height: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; font-size: 14px; }
+      ul.rows > li.tone-ok { border-left-color: var(--ok); } ul.rows > li.tone-degraded { border-left-color: var(--degraded); } ul.rows > li.tone-error { border-left-color: var(--error); }
+      .verdict { font-weight: 700; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+      .facts { font-size: 13px; color: var(--muted); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Old system checks</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Old system checks</h2>
+        <p class="lead" id="lead"></p>
+      </section>
+
+      <!-- MG-01 -->
+      <section aria-labelledby="disc-h" id="disc">
+        <h3 id="disc-h">What the old shop keeps its records in</h3>
+        <p class="lead" id="disc-lead"></p>
+        <div class="row-form">
+          <label for="src-id"><span data-w="srcId"></span><input id="src-id" type="text" autocomplete="off" /></label>
+          <label for="src-name"><span data-w="srcName"></span><input id="src-name" type="text" autocomplete="off" /></label>
+          <label for="src-kind"><span data-w="srcKind"></span><select id="src-kind"></select></label>
+          <label for="src-owner"><span data-w="srcOwner"></span><input id="src-owner" type="text" autocomplete="off" /></label>
+          <label for="src-rows"><span data-w="srcRows"></span><input id="src-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="src-basis"><span data-w="srcBasis"></span><select id="src-basis"></select></label>
+          <label for="src-retention"><span data-w="srcRetention"></span><input id="src-retention" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label class="check" for="src-extract"><input id="src-extract" type="checkbox" checked /> <span data-w="srcExtract"></span></label>
+          <button id="src-add" type="button" class="quiet"><span data-w="addSource"></span></button>
+        </div>
+        <ul class="rows" id="src-list"></ul>
+        <button id="src-check" type="button"><span data-w="checkSources"></span></button>
+        <p class="status" id="disc-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="disc-result"></ul>
+      </section>
+
+      <!-- MG-03 -->
+      <section aria-labelledby="map-h" id="map">
+        <h3 id="map-h">How the old codes map</h3>
+        <p class="lead" id="map-lead"></p>
+        <div class="row-form">
+          <label for="map-id"><span data-w="mapId"></span><input id="map-id" type="text" autocomplete="off" /></label>
+          <label for="map-version"><span data-w="mapVersion"></span><input id="map-version" type="text" inputmode="numeric" value="1" autocomplete="off" /></label>
+        </div>
+        <div class="row-form">
+          <label for="map-domain"><span data-w="mapDomain"></span><select id="map-domain"></select></label>
+          <label for="map-old"><span data-w="mapOld"></span><input id="map-old" type="text" autocomplete="off" /></label>
+          <label for="map-new"><span data-w="mapNew"></span><input id="map-new" type="text" autocomplete="off" /></label>
+          <label for="map-why"><span data-w="mapWhy"></span><input id="map-why" type="text" autocomplete="off" /></label>
+          <button id="map-add" type="button" class="quiet"><span data-w="addEntry"></span></button>
+        </div>
+        <ul class="rows" id="map-list"></ul>
+        <h4 data-w="seenH"></h4>
+        <div class="row-form">
+          <label for="seen-domain"><span data-w="mapDomain"></span><select id="seen-domain"></select></label>
+          <label for="seen-value"><span data-w="seenValue"></span><input id="seen-value" type="text" autocomplete="off" /></label>
+          <label for="seen-rows"><span data-w="seenRows"></span><input id="seen-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <button id="seen-add" type="button" class="quiet"><span data-w="addSeen"></span></button>
+        </div>
+        <ul class="rows" id="seen-list"></ul>
+        <div class="row-form">
+          <button id="map-approve" type="button"><span data-w="approveMapping"></span></button>
+          <button id="map-coverage" type="button"><span data-w="checkCoverage"></span></button>
+        </div>
+        <p class="status" id="map-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="map-result"></ul>
+        <a id="map-save" hidden></a>
+      </section>
+
+      <!-- MG-07 -->
+      <section aria-labelledby="excl-h" id="excl">
+        <h3 id="excl-h">Old records left behind</h3>
+        <p class="lead" id="excl-lead"></p>
+        <button id="excl-show" type="button" class="quiet"><span data-w="showExclusions"></span></button>
+        <ul class="rows" id="excl-list"></ul>
+        <div id="excl-propose">
+          <div class="row-form">
+            <label for="excl-id"><span data-w="exclId"></span><input id="excl-id" type="text" autocomplete="off" /></label>
+            <label for="excl-scope"><span data-w="exclScope"></span><select id="excl-scope"></select></label>
+            <label for="excl-count"><span data-w="exclCount"></span><input id="excl-count" type="text" inputmode="numeric" autocomplete="off" /></label>
+            <label for="excl-value"><span data-w="exclValue"></span><input id="excl-value" type="text" inputmode="decimal" autocomplete="off" /></label>
+          </div>
+          <label for="excl-desc"><span data-w="exclDesc"></span><input id="excl-desc" type="text" autocomplete="off" /></label>
+          <label for="excl-reason"><span data-w="exclReason"></span><textarea id="excl-reason" rows="2"></textarea></label>
+          <button id="excl-propose-btn" type="button"><span data-w="proposeExclusion"></span></button>
+        </div>
+        <div id="excl-decide">
+          <div class="row-form">
+            <label for="excl-which"><span data-w="exclId"></span><select id="excl-which"></select></label>
+            <label for="excl-choice"><span data-w="decideExclusion"></span>
+              <select id="excl-choice"><option value=""></option><option value="approve" data-w="approveK"></option><option value="reject" data-w="rejectK"></option></select>
+            </label>
+          </div>
+          <label for="excl-statement"><span data-w="statementK"></span><textarea id="excl-statement" rows="2"></textarea></label>
+          <button id="excl-decide-btn" type="button"><span data-w="decideExclusion"></span></button>
+        </div>
+        <p class="status" id="excl-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- MG-09 -->
+      <section aria-labelledby="diff-h" id="diff">
+        <h3 id="diff-h">Compare two exports from the old system</h3>
+        <p class="lead" id="diff-lead"></p>
+        <button id="diff-show" type="button" class="quiet"><span data-w="showDiffs"></span></button>
+        <ul class="rows" id="diff-runs"></ul>
+        <div id="diff-form">
+          <div class="row-form">
+            <label for="diff-id"><span data-w="diffId"></span><input id="diff-id" type="text" autocomplete="off" /></label>
+            <label for="diff-domain"><span data-w="diffDomain"></span><select id="diff-domain"></select></label>
+          </div>
+          <div class="row-form" id="diff-columns"></div>
+          <div class="row-form">
+            <label for="diff-baseline"><span data-w="baselineFile"></span><input id="diff-baseline" type="file" accept=".csv,text/csv" /></label>
+            <label for="diff-latest"><span data-w="latestFile"></span><input id="diff-latest" type="file" accept=".csv,text/csv" /></label>
+          </div>
+          <button id="diff-run" type="button"><span data-w="runDiff"></span></button>
+        </div>
+        <p class="status" id="diff-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- MG-11 night, OB-52 window, MG-08 reversal -->
+      <section aria-labelledby="night-h" id="night">
+        <h3 id="night-h">The switch-over night</h3>
+        <p class="lead" id="night-lead"></p>
+        <div class="row-form">
+          <label for="cutover-id"><span data-w="cutoverId"></span><input id="cutover-id" type="text" autocomplete="off" /></label>
+          <button id="window-show" type="button" class="quiet"><span data-w="showWindow"></span></button>
+          <button id="night-check" type="button"><span data-w="nightCheck"></span></button>
+        </div>
+        <ul class="rows" id="night-result"></ul>
+        <div class="row-form">
+          <label for="load-id"><span data-w="loadId"></span><input id="load-id" type="text" autocomplete="off" /></label>
+          <label for="reverse-reason"><span data-w="reverseReason"></span><input id="reverse-reason" type="text" autocomplete="off" /></label>
+        </div>
+        <div class="row-form">
+          <button id="reverse-ask" type="button"><span data-w="askReverse"></span></button>
+          <button id="reverse-approve" type="button"><span data-w="approveReverse"></span></button>
+          <button id="reverse-show" type="button" class="quiet"><span data-w="showReverse"></span></button>
+        </div>
+        <p class="status" id="night-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="reverse-result"></ul>
+      </section>
+
+      <!-- MG-12 -->
+      <section aria-labelledby="retire-h" id="retire">
+        <h3 id="retire-h">Switching the old system off</h3>
+        <p class="lead" id="retire-lead"></p>
+        <div class="row-form">
+          <label for="ar-id"><span data-w="archiveId"></span><input id="ar-id" type="text" autocomplete="off" /></label>
+          <label for="ar-source"><span data-w="archiveSource"></span><input id="ar-source" type="text" autocomplete="off" /></label>
+          <label for="ar-digest"><span data-w="archiveDigest"></span><input id="ar-digest" type="text" autocomplete="off" /></label>
+          <label for="ar-rows"><span data-w="archiveRows"></span><input id="ar-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="ar-on"><span data-w="archivedOn"></span><input id="ar-on" type="date" /></label>
+          <label for="ar-years"><span data-w="retentionYears"></span><input id="ar-years" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="ar-earliest"><span data-w="earliest"></span><input id="ar-earliest" type="date" /></label>
+          <label for="ar-latest"><span data-w="latest"></span><input id="ar-latest" type="date" /></label>
+          <label for="ar-restore"><span data-w="restoreOn"></span><input id="ar-restore" type="date" /></label>
+          <label for="ar-open"><span data-w="openAssessments"></span><input id="ar-open" type="text" inputmode="numeric" value="0" autocomplete="off" /></label>
+          <label class="check" for="ar-accepted"><input id="ar-accepted" type="checkbox" /> <span data-w="cutoverAccepted"></span></label>
+        </div>
+        <button id="ar-assess" type="button"><span data-w="assess"></span></button>
+        <p class="status" id="retire-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="retire-result"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./old-system.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

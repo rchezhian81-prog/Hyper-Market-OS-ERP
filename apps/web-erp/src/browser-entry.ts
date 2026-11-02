@@ -127,6 +127,7 @@ import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · custom
 import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
 import { wireW3Money } from './w3-money-browser-wiring'; // W3 · money: card, UPI and bank; rebate accruals; owed to customers
 import { wireW3Orders } from './w3-orders-browser-wiring'; // W3 · online orders desk and delivery area (M18 · D05-FR-03)
+import { wireW3Migration } from './w3-browser-wiring'; // W3 · the Old system checks page (MG-01/03/07/08/09/11/12)
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -353,7 +354,7 @@ import { createAffinitySession, affinityWords, affinityOutcomeWords, type Affini
 import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type EventsSession } from './demand-events-session';
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
 // OB-288 gates lane (QG-12): the Quality gates page — the owner's GO / HOLD / REWORK register.
-import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, qg10NoteView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
+import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, qg10NoteView, outsideStandingView, OUTSIDE_KINDS, OUTSIDE_TIMINGS, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
 // OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
@@ -5393,7 +5394,7 @@ interface ManagerWindow {
   // ── end R4 Lane 3 ──
   // OB-288 gates lane (QG-12): the Quality gates page — who is looking; head office answers the rest.
   gatesData?: ViewerIdentity;
-  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly noteView: typeof qg10NoteView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
+  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly noteView: typeof qg10NoteView; readonly outsideView: typeof outsideStandingView; readonly outsideKinds: typeof OUTSIDE_KINDS; readonly outsideTimings: typeof OUTSIDE_TIMINGS; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
   approvalRulesData?: ViewerIdentity;
   // OB-288 P2: the Floor heat map page — who is looking; head office answers the rest.
@@ -7429,7 +7430,7 @@ if (browserWindow !== undefined) {
   // ── end R4 Lane 3 ──
   // OB-288 gates lane (QG-12): the Quality gates page — reads on a click, writes only the owner's explicit decision.
   browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
-  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, noteView: qg10NoteView, names: GATE_NAMES, releases: GATE_RELEASES };
+  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, noteView: qg10NoteView, outsideView: outsideStandingView, outsideKinds: OUTSIDE_KINDS, outsideTimings: OUTSIDE_TIMINGS, names: GATE_NAMES, releases: GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
   // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
   browserWindow.floorHeatMapData = withStore(viewerIdentity(browserWindow.floorHeatMapData), browserWindow.floorHeatMapData);
@@ -7516,4 +7517,5 @@ if (browserWindow !== undefined) {
   wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
   wireW3Money(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · money
   wireW3Orders(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · M18 · D05-FR-03
+  wireW3Migration(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · Old system checks
 }

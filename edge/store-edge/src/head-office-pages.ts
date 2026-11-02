@@ -71,6 +71,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   // Wave 3 (D14-FR-05/06 · M36-FR-02/04): partner webhooks, partners and sandboxes, the developer guide, the floor devices
   // (shelf labels, RFID, cameras) and the shop's own name and colours — head-office pages over their own routes.
   'partner-webhooks', 'partners', 'developer-docs', 'floor-devices', 'branding',
+  // W3 (migration controls): Old system checks — MG-01/03/07/08/09/11/12 head-office routes that had no screen.
+  'old-system',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -181,6 +183,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'developer-docs': 'developerDocsData',
   'floor-devices': 'floorDevicesData',
   branding: 'brandingData',
+  'old-system': 'oldSystemData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({

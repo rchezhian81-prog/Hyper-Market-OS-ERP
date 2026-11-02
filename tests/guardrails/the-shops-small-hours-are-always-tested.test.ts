@@ -35,6 +35,8 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts',
   // W3 (money): the rebate period runs to the shop's today.
   'tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts',
+  // W3 · QG-04: the served till sells through a cloud outage — its price is dated the shop's today.
+  'tests/e2e/qg04-the-served-till-sells-through-a-cloud-outage-and-syncs-once.e2e.ts',
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')

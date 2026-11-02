@@ -189,6 +189,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'gift-cards': { en: 'gift card voucher balance issue redeem stored value', ta: 'பரிசு அட்டை இருப்பு வழங்கு' },
   'online-orders': { en: 'order cancel backorder payment pending bank reconcile channel reservation buffer online stock app', ta: 'ஆர்டர் ரத்து கட்டணம் வங்கி ஒப்பிடு ஒதுக்கீடு ஆன்லைன் சரக்கு' },
   'delivery-area': { en: 'delivery radius km slots capacity fee minimum order serviceability area', ta: 'டெலிவரி தூரம் நேரம் கட்டணம் குறைந்தபட்ச ஆர்டர் பகுதி' },
+  'old-system': { en: 'migration old erp legacy discovery mapping codes exclusion export compare cutover night rollback undo opening load retire switch off archive', ta: 'பழைய முறை தரவு மாற்றம் குறியீடு ஒப்பீடு மாற்ற இரவு காப்பகம்' },
   'facilities-setup': { en: 'asset spare parts amc chiller freezer cold room range schedule pest fire food safety check setup', ta: 'சொத்து உதிரி பாகம் குளிர் அறை அட்டவணை சோதனை அமைப்பு' },
   'loss-prevention': { en: 'theft fraud investigation case', ta: 'திருட்டு மோசடி' },
   'dispatch': { en: 'delivery driver van route', ta: 'டெலிவரி' },
@@ -542,7 +543,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Migration — where the cutover stands, the figures, the data, the parallel run, the old system (MG-01–MG-12).
   // Gated on the exceptions read the desk route checks (`migration.cleaning.read`); a decision needs
   // `migration.exception.resolve` / `migration.controltotal.sign`, which the routes enforce.
-  { id: 'migration', label: 'Migration', labelTa: 'தரவு மாற்றம்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },  { id: 'store-setup', label: 'Store setup', labelTa: 'கடை அமைப்பு', path: '/setup', requires: 'platform.setup.read', group: 'Administration' },
+  { id: 'migration', label: 'Migration', labelTa: 'தரவு மாற்றம்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },
+  // W3 (MG-01/03/07/08/09/11/12): head office's migration controls that had no screen — discovery, code mappings, records
+  // left behind, two-export comparison, the switch-over night and window, undoing an opening load, switching the old system off.
+  { id: 'old-system', label: 'Old system checks', labelTa: 'பழைய முறை சோதனைகள்', path: '/old-system', requires: 'migration.reconciliation.read', group: 'Administration' },  { id: 'store-setup', label: 'Store setup', labelTa: 'கடை அமைப்பு', path: '/setup', requires: 'platform.setup.read', group: 'Administration' },
   // Document templates — the wording on every bill / invoice / PO / GRN / statement, versioned: drafted by one
   // person, approved by another, published; the previous version kept (M01-FR-02, §28). Gated on the SAME
   // permission the register route checks (`platform.setup.read`), so the menu never offers a screen the server

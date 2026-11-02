@@ -678,6 +678,7 @@
     'developer-docs': 'book-open', // Wave 3 — an icon already in the set
     'floor-devices': 'tag', // Wave 3 — an icon already in the set
     'branding': 'store', // Wave 3 — an icon already in the set
+    'old-system': 'history', // W3 — an icon already in the set
     'cert-in': 'shield-check', // Round 4c — an icon already in the set
     'emergency-access': 'key-round', // Wave 3 — an icon already in the set
     'safety-incidents': 'shield-alert', // Wave 3 — an icon already in the set

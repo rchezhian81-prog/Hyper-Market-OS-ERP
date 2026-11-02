@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { createGatesSession, GATES_COPY, GATE_NAMES, stateView, gatesWords, RELEASES } from '../../apps/web-erp/src/gates-session';
+import { createGatesSession, GATES_COPY, GATE_NAMES, stateView, gatesWords, RELEASES, outsideStandingView, OUTSIDE_KINDS } from '../../apps/web-erp/src/gates-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
-import { QUALITY_GATES, RELEASES as ENGINE_RELEASES } from '../../packages/compliance/src/index';
+import { QUALITY_GATES, RELEASES as ENGINE_RELEASES, GATE_EVIDENCE_KINDS } from '../../packages/compliance/src/index';
 
 /**
  * QG-12 (roadmap §22; OB-288 gates lane) — the Quality gates page's session: what it refuses before asking head office,
@@ -100,5 +100,45 @@ describe('the Quality gates session', () => {
     const r = recorder(422, { error: { code: 'go_refused_while_blocked', whatHappened: 'QG-06 cannot be GO while 1 thing(s) block it' } });
     const out = await createGatesSession({ viewer: viewer('compliance.gate.read', 'compliance.gate.decide'), fetch: r.fetch }).decide({ ...good, decision: 'GO' });
     expect(out).toEqual({ result: 'refused', status: 422, code: 'go_refused_while_blocked', whatHappened: 'QG-06 cannot be GO while 1 thing(s) block it' });
+  });
+});
+
+// W3 · QG-04 / QG-05 / QG-06 — the outside evidence on the Quality gates page.
+describe('the Quality gates session — outside evidence (W3 · QG-04 · QG-05 · QG-06)', () => {
+  const ev = { kind: 'scan_to_line_p95', result: '', measuredMs: ' 280 ', where: ' lane 1 ', reportRef: ' docs/perf.md ', testedOn: '2026-11-01', statement: ' watched it ' };
+  it('refuses before asking: nobody, no decide right, no kind, a timing without a whole p95, a test without a result, no where/report/day/statement', async () => {
+    const r = recorder();
+    const owner = createGatesSession({ viewer: viewer('compliance.gate.read', 'compliance.gate.decide'), fetch: r.fetch, newEvidenceId: () => 'ev-1' });
+    expect(await createGatesSession({ viewer: undefined, fetch: r.fetch }).recordOutside(ev)).toEqual({ result: 'invalid', why: 'nobody' });
+    expect(await createGatesSession({ viewer: viewer('compliance.gate.read'), fetch: r.fetch }).recordOutside(ev)).toEqual({ result: 'invalid', why: 'cannotDecide' });
+    expect(await owner.recordOutside({ ...ev, kind: 'x' })).toEqual({ result: 'invalid', why: 'noKind' });
+    expect(await owner.recordOutside({ ...ev, measuredMs: '2.5' })).toEqual({ result: 'invalid', why: 'noMs' });
+    expect(await owner.recordOutside({ ...ev, kind: 'independent_pentest' })).toEqual({ result: 'invalid', why: 'noResult' });
+    expect(await owner.recordOutside({ ...ev, where: ' ' })).toEqual({ result: 'invalid', why: 'noWhere' });
+    expect(await owner.recordOutside({ ...ev, reportRef: '' })).toEqual({ result: 'invalid', why: 'noRef' });
+    expect(await owner.recordOutside({ ...ev, testedOn: '' })).toEqual({ result: 'invalid', why: 'noDay' });
+    expect(await owner.recordOutside({ ...ev, statement: '' })).toEqual({ result: 'invalid', why: 'noStatement' });
+    expect(r.calls).toEqual([]);
+  });
+  it('a timing sends only its measured p95 (head office works the result out); a test sends its result; never the recorder', async () => {
+    const r = recorder(201, { evidence: {} });
+    const owner = createGatesSession({ viewer: viewer('compliance.gate.read', 'compliance.gate.decide'), fetch: r.fetch, newEvidenceId: () => 'ev-1' });
+    await owner.recordOutside(ev);
+    await owner.recordOutside({ ...ev, kind: 'independent_pentest', result: 'passed', measuredMs: '' });
+    expect(r.calls.map((c) => [c.method, c.url, c.body])).toEqual([
+      ['POST', '/v1/compliance/gate-evidence/ev-1', { kind: 'scan_to_line_p95', measuredMs: 280, where: 'lane 1', reportRef: 'docs/perf.md', testedOn: '2026-11-01', statement: 'watched it' }],
+      ['POST', '/v1/compliance/gate-evidence/ev-1', { kind: 'independent_pentest', result: 'passed', where: 'lane 1', reportRef: 'docs/perf.md', testedOn: '2026-11-01', statement: 'watched it' }],
+    ]);
+    expect(r.calls.every((c) => typeof c.key === 'string')).toBe(true);
+    const read = recorder(200, { records: [], kinds: [] });
+    await createGatesSession({ viewer: viewer('compliance.gate.read'), fetch: read.fetch }).readOutside();
+    expect(read.calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/compliance/gate-evidence']);
+  });
+  it('nothing on file reads ○ "nothing on file", never ✓; a failed timing shows its figure', () => {
+    expect(outsideStandingView('en', { kind: 'independent_pentest', gate: 'QG-06', standing: 'nothing_on_file', latest: null })).toMatchObject({ icon: '○', tone: 'idle', words: 'Independent penetration test (QG-06, from R4) — nothing on file' });
+    const latest = { evidenceId: 'e', kind: 'scan_to_line_p95' as const, gate: 'QG-05', result: 'failed' as const, measuredMs: 340, where: 'lane 1', reportRef: 'r.md', testedOn: '2026-11-01', statement: 's', recordedBy: 'u', recordedAt: 'x' };
+    expect(outsideStandingView('en', { kind: 'scan_to_line_p95', gate: 'QG-05', maxMs: 300, standing: 'failed', latest })).toMatchObject({ icon: '⚠', tone: 'error' });
+    expect(outsideStandingView('ta', { kind: 'scan_to_line_p95', gate: 'QG-05', maxMs: 300, standing: 'failed', latest }).words).toContain('p95 340 ms');
+    expect(OUTSIDE_KINDS).toEqual(GATE_EVIDENCE_KINDS);
   });
 });

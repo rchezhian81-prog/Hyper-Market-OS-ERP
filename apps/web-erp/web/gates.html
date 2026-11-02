@@ -49,6 +49,10 @@
       ul.qg10-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
       ul.qg10-notes > li { border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; }
       ul.qg10-notes > li.tone-ok { border-left-color: var(--ok); } ul.qg10-notes > li.tone-error { border-left-color: var(--error); }
+      /* W3: the outside evidence (QG-04 / QG-05 / QG-06) */
+      ul.outside { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      ul.outside > li { border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; overflow-wrap: anywhere; }
+      ul.outside > li.tone-ok { border-left-color: var(--ok); } ul.outside > li.tone-error { border-left-color: var(--error); }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -100,6 +104,29 @@
           <label for="rationale"><span id="reason-label">Why</span><textarea id="rationale" rows="3"></textarea></label>
           <button id="record" type="button"><span id="record-text">Record the decision</span></button>
           <p class="status" id="decide-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- W3 · QG-04 / QG-05 / QG-06: the outside evidence; nothing on file is never a pass. -->
+      <section aria-labelledby="outside-h" id="outside-section" hidden>
+        <h3 id="outside-h">Outside evidence</h3>
+        <p class="lead" id="outside-lead"></p>
+        <ul class="outside" id="outside-list"></ul>
+        <p class="status" id="outside-not"></p>
+        <div id="outside-form">
+          <div class="row-form">
+            <label for="outside-kind"><span id="outside-kind-label">Which test</span><select id="outside-kind"></select></label>
+            <label for="outside-result" id="outside-result-wrap"><span id="outside-result-label">Result</span>
+              <select id="outside-result"><option value=""></option><option value="passed" id="outside-opt-passed">passed</option><option value="failed" id="outside-opt-failed">failed</option></select>
+            </label>
+            <label for="outside-ms" id="outside-ms-wrap"><span id="outside-ms-label">Measured p95 (milliseconds)</span><input id="outside-ms" type="text" inputmode="numeric" autocomplete="off" /></label>
+            <label for="outside-on"><span id="outside-on-label">Day it was tested</span><input id="outside-on" type="date" /></label>
+          </div>
+          <label for="outside-where"><span id="outside-where-label">Where it was done</span><input id="outside-where" type="text" autocomplete="off" /></label>
+          <label for="outside-ref"><span id="outside-ref-label">Where the report is</span><input id="outside-ref" type="text" autocomplete="off" /></label>
+          <label for="outside-statement"><span id="outside-statement-label">What you saw</span><textarea id="outside-statement" rows="2"></textarea></label>
+          <button id="outside-record" type="button"><span id="outside-record-text">Record this evidence</span></button>
+          <p class="status" id="outside-status" role="status" aria-live="polite"></p>
         </div>
       </section>
     </main>

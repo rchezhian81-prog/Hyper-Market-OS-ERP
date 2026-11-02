@@ -107,6 +107,8 @@ export interface OtherGateBlocker {
   readonly kind: 'finding' | 'check';
   readonly ref: string;
   readonly reason: string;
+  /** W3: the releases it counts for (absent: every release). `can-pass` has no release, so it shows every blocker. */
+  readonly releases?: readonly string[];
 }
 
 // A stable digest so any real change to a risk is a new append-only fact, but an exact re-send collapses.

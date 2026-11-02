@@ -29,6 +29,8 @@ describe.each(backings)('a critical or high risk is accepted only by the owner a
     const ownerSigns = (id: string, who = 'u-owner') => req('POST', `/v1/compliance/risks/${id}/acceptance`, who, { rationale: 'carried for the pilot with compensating controls' });
     const reviewerSigns = (id: string, who = 'u-rev') => req('POST', `/v1/compliance/risks/${id}/acceptance/review`, who, { rationale: 'controls checked by the reviewer' });
     const canPass = async (): Promise<boolean> => ((await req('GET', '/v1/compliance/gates/QG-06/can-pass', 'u-owner')).body as { canPass: boolean }).canPass;
+    // W3: the independent penetration test is on file, so only the risks stand between QG-06 and can-pass here.
+    expect((await req('POST', '/v1/compliance/gate-evidence/pt-1', 'u-owner', { kind: 'independent_pentest', result: 'passed', where: 'Synthetic Security Ltd (independent)', reportRef: 'pentest/synthetic.pdf', testedOn: '2026-10-20', statement: 'report received' })).status).toBe(201);
     expect((await risk('R-C', 'critical')).status).toBe(201);
     expect((await risk('R-H', 'high')).status).toBe(201);
     expect((await risk('R-M', 'medium')).status).toBe(201);
