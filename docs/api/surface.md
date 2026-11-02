@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1661 | 959 | 959 | 183 | 436 |
+| 13 | 1681 | 970 | 970 | 189 | 438 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -64,6 +64,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/reject` | `b2b.account.manage` | core | yes |
 | POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/revoke` | `b2b.account.manage` | core | yes |
 | POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/sign-in` | `b2b.account.manage` | core | yes |
+| GET | `/v1/identity/outside-logins/concessionaires` | `concession.contract.manage` | core | — |
+| POST | `/v1/identity/outside-logins/concessionaires/:partyId/invites/:inviteId` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/approve` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/reject` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/revoke` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/sign-in` | `concession.contract.manage` | core | yes |
 | GET | `/v1/identity/outside-logins/customers` | `customer.identity.manage` | core | — |
 | POST | `/v1/identity/outside-logins/customers/:partyId/invites/:inviteId` | `customer.identity.manage` | core | yes |
 | POST | `/v1/identity/outside-logins/customers/invites/:inviteId/approve` | `customer.identity.manage` | core | yes |
@@ -784,6 +790,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/stored-value/instruments/:instrumentId` | `loyalty.value.read` | core | — |
 | POST | `/v1/stored-value/instruments/:instrumentId/redeem` | `loyalty.value.redeem` | core | yes |
 | GET | `/v1/stored-value/liability` | `lp.case.read` | core | — |
+| POST | `/v1/stored-value/till-sales` | `pos.sale.sync` | core | yes |
 | GET | `/v1/stored-value/velocity` | `lp.case.read` | core | — |
 
 ## API-07 — OMS (M18)
@@ -840,6 +847,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/orders/:orderId/substitution-preference` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/:orderId/transition` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/channel-reconcile` | `order.read` | core | yes |
+| GET | `/v1/orders/exception-queue-staffing` | `order.read` | core | — |
+| POST | `/v1/orders/exception-queue-staffing` | `order.exception.staffing.set` | core | yes |
 | GET | `/v1/orders/refunds/pending` | `order.read` | core | — |
 | GET | `/v1/orders/reservations` | `order.reservation.read` | core | — |
 | GET | `/v1/orders/substitution-exceptions` | `order.read` | core | — |
@@ -901,6 +910,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/delivery/fleet-settlements/:routeId` | `delivery.dispatch.manage` | `delivery` | yes |
 | POST | `/v1/delivery/fleet-settlements/:routeId/approve` | `delivery.settlement.approve` | `delivery` | yes |
 | POST | `/v1/delivery/fleet-settlements/:routeId/paid` | `delivery.settlement.approve` | `delivery` | yes |
+| GET | `/v1/delivery/handover-tolerance` | `delivery.run.read` | `delivery` | — |
+| POST | `/v1/delivery/handover-tolerance/:storeId` | `delivery.controls.set` | `delivery` | yes |
 | GET | `/v1/delivery/locations` | `delivery.serviceability.read` | core | — |
 | POST | `/v1/delivery/locations/:locationId` | `delivery.serviceability.manage` | core | yes |
 | GET | `/v1/delivery/orders/:orderId` | `delivery.run.read` | `delivery` | — |
@@ -1002,6 +1013,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/b2b/transfer-notes` | `b2b.receivable.record` | `b2b` | — |
 | POST | `/v1/b2b/transfer-notes/:noteId/match` | `b2b.receivable.record` | `b2b` | yes |
 | POST | `/v1/b2b/transfer-notes/:noteId/reject` | `b2b.receivable.record` | `b2b` | yes |
+| GET | `/v1/concession-portal/me/counters` | `concession.portal.self` | `dept.concession` | — |
+| GET | `/v1/concession-portal/me/invoices` | `concession.portal.self` | `dept.concession` | — |
+| GET | `/v1/concession-portal/me/sales` | `concession.portal.self` | `dept.concession` | — |
+| GET | `/v1/concession-portal/me/stock` | `concession.portal.self` | `dept.concession` | — |
 | GET | `/v1/concession/branches/:branchId/store-valuation` | `concession.charge.read` | `dept.concession` | — |
 | GET | `/v1/concession/concessionaires/:concessionaireId/deposit` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/concessionaires/:concessionaireId/deposit-movements/:movementId` | `concession.contract.manage` | `dept.concession` | yes |
@@ -1454,6 +1469,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/hr/workforce/my-roster` | `payroll.ess.self` | core | — |
 | GET | `/v1/hr/workforce/my-tasks` | `workforce.task.complete.own` | core | — |
 | GET | `/v1/hr/workforce/productivity` | `workforce.incentive.read` | core | — |
+| GET | `/v1/hr/workforce/role-checks` | `workforce.roster.read` | core | — |
+| POST | `/v1/hr/workforce/role-checks/:roleId` | `workforce.training.manage` | core | yes |
+| GET | `/v1/hr/workforce/role-checks/:roleId/attempts` | `workforce.roster.read` | core | — |
+| POST | `/v1/hr/workforce/role-checks/:roleId/attempts/:attemptId` | `workforce.training.manage` | core | yes |
+| POST | `/v1/hr/workforce/role-checks/:roleId/pass-mark` | `workforce.curriculum.approve` | core | yes |
 | GET | `/v1/hr/workforce/roster` | `workforce.roster.read` | core | — |
 | GET | `/v1/hr/workforce/roster-gaps` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/roster-gaps` | `workforce.roster.read` | core | yes |

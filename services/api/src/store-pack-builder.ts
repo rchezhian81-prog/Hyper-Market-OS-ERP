@@ -127,6 +127,7 @@ export interface StorePackBuildInput {
    * limit per till per card (the tenant setting, default ₹500). Absent → neither section is sent (the till says so).
    */
   readonly tillVouchers?: { readonly giftCardOfflineCapMinor: (tenantId: string) => Promise<number> };
+  /**
    * OB-676 (owner, 2 Nov 2026): who confirmed the driver cash hand-over limit in force, and when — carried in the policies as
    * `handoverToleranceConfirmed`, so the store computer and the driver's phone say, with no network, whether the owner has
    * confirmed it. Absent, or undefined for a store, → left out, which every reader takes as "not confirmed".
