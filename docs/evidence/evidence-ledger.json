@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2084,
+  "testFiles": 2086,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -32,7 +32,7 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 31,
+        "unit": 32,
         "integration": 29,
         "realDb": 12,
         "browser": 12,
@@ -42,6 +42,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-till-told-no-zone-dates-by-the-shops-clock.test.ts",
           "tests/unit/config.test.ts",
           "tests/unit/document-templates-session.test.ts",
           "tests/unit/document-templates.test.ts",
@@ -2770,7 +2771,7 @@
       "id": "M34",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 17,
         "realDb": 7,
         "browser": 3,
@@ -2780,6 +2781,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-device-registered-blocked-or-retired-is-on-the-audit-trail.test.ts",
           "tests/unit/audit-retention-schedule.test.ts",
           "tests/unit/audit.test.ts",
           "tests/unit/compliance-obligations.test.ts",

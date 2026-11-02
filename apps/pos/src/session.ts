@@ -22,6 +22,7 @@ import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspended-sales/src/suspended-bill';
 import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
@@ -53,7 +54,8 @@ export interface PosSessionConfig {
   readonly tradingDayCutoff?: string;
   /**
    * R1 (M01-FR-02): the shop's IANA time zone, from the store pack through the box. The till dates by it, not by the zone
-   * the device happens to be set to. Absent (a page from an older box): this device's own wall clock, as before.
+   * the device happens to be set to. Absent (a page from an older box, or a test): the shop's default zone — the same default the
+   * box uses when the pack names none, and the zone the slip's time is already printed in — never the device's own zone (W3).
    */
   readonly timeZone?: string;
   readonly currency: CurrencyCode;
@@ -1135,7 +1137,7 @@ export class PosSession {
    * clock cannot be read; the scan then cannot judge the date and does not guess.
    */
   laneToday(): string | undefined {
-    try { return tradingDateOf(this.nowIso(), makeTradingDayRule('00:00'), this.config.timeZone); } catch { return undefined; }
+    try { return tradingDateOf(this.nowIso(), makeTradingDayRule('00:00'), this.config.timeZone ?? DEFAULT_SHOP_CALENDAR.timeZone); } catch { return undefined; }
   }
 
   /** The lane's own clock now, as ISO UTC (the fixed instant `setNow` gave, else the lane's clock, else the machine's). */
@@ -1150,7 +1152,7 @@ export class PosSession {
    */
   private gateContext(atIsoUtc: string, exceptLineId?: string): TillGateContext {
     let today: string | undefined;
-    try { today = tradingDateOf(atIsoUtc, makeTradingDayRule('00:00'), this.config.timeZone); } catch { today = undefined; }
+    try { today = tradingDateOf(atIsoUtc, makeTradingDayRule('00:00'), this.config.timeZone ?? DEFAULT_SHOP_CALENDAR.timeZone); } catch { today = undefined; }
     const sold = new Set<string>([...(this.config.soldHuids?.() ?? []), ...this.huidsSoldHere]);
     for (const l of this.activeLines()) {
       if (l.lineId === exceptLineId) continue;
@@ -1355,12 +1357,12 @@ export class PosSession {
   }
 
   /**
-   * The trading day a moment belongs to — per this shop's cut-off, in this machine's wall clock (M01-FR-02), or the
+   * The trading day a moment belongs to — per this shop's cut-off, on the shop's clock (its zone, else the shop default; M01-FR-02), or the
    * fixed day the session was built with. Worked out at COMMIT, so a till left open past the cut-off dates the next
    * sale to the new day rather than the one the page was opened on (F09).
    */
   tradingDayFor(atIsoUtc: string): string {
-    return this.config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(this.config.tradingDayCutoff ?? '00:00'), this.config.timeZone);
+    return this.config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(this.config.tradingDayCutoff ?? '00:00'), this.config.timeZone ?? DEFAULT_SHOP_CALENDAR.timeZone);
   }
 
   setNow(atIsoUtc: string): void {

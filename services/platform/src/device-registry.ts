@@ -260,6 +260,14 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
           by: ctx.userId, at, ...(isStr(b['appVersion']) ? { appVersion: b['appVersion'] } : {}),
         };
         await deps.recordDeviceEvent(ctx.tenantId, event, ctx.idempotencyKey ?? `${deviceId}-register-${at}`);
+        // M34: who registered (or relabelled) which device, at which branch — with what it was before.
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: existing === undefined ? 'device.register' : 'device.reregister', objectType: 'device', objectId: deviceId,
+          at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: existing === undefined ? null : { branchId: existing.branchId, kind: existing.kind, label: existing.label, status: existing.status, ...(existing.appVersion === undefined ? {} : { appVersion: existing.appVersion }) },
+          after: { branchId: b['branchId'] as string, kind: b['kind'], label: b['label'] as string, ...(isStr(b['appVersion']) ? { appVersion: b['appVersion'] } : {}) },
+          correlationId: deviceId,
+        });
         return { status: 201, body: { deviceId, registered: true, branchId: event.branchId, kind: event.deviceKind, label: event.label, at } };
       },
     },
@@ -282,6 +290,15 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         }
         const at = deps.now();
         await deps.recordDeviceEvent(ctx.tenantId, { kind: 'status', deviceId, ...(knownDevice.kind === 'pos_lane' ? { branchId: knownDevice.branchId } : {}), status: b['status'], reason: b['reason'] as string, by: ctx.userId, at }, ctx.idempotencyKey ?? `${deviceId}-status-${at}`);
+        // M34: a block, retire or reinstate is a traceable decision — who, which device, from what to what, and why.
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'device.status.change', objectType: 'device', objectId: deviceId,
+          at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: { status: knownDevice.status, branchId: knownDevice.branchId },
+          after: { status: b['status'], branchId: knownDevice.branchId },
+          reason: b['reason'] as string,
+          correlationId: deviceId,
+        });
         return { status: 200, body: { deviceId, status: b['status'], at } };
       },
     },
