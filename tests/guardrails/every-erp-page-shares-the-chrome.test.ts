@@ -297,6 +297,11 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'facilities-setup.js': 'apps/web-erp/src/facilities-setup-session.ts',
     'production-recipes.js': 'apps/web-erp/src/production-recipes-session.ts',
     'production-repack.js': 'apps/web-erp/src/production-repack-session.ts',
+    // W3 (catalogue and pricing): each new section's words are in its tested session model.
+    'catalogue-rule.js': 'apps/web-erp/src/markdown-session.ts',
+    'expiry-markdown.js': 'apps/web-erp/src/markdown-session.ts',
+    'product-tobacco.js': 'apps/web-erp/src/tobacco-warning-session.ts',
+    'range-gaps.js': 'apps/web-erp/src/range-gaps-session.ts',
     'concession-invoices.js': 'apps/web-erp/src/concession-invoices-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.

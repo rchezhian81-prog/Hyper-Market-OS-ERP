@@ -1640,6 +1640,18 @@ renderItems();
 // ?tab=price / ?tab=promo (screen-server SCREEN_ALIASES); anything else opens on the item list.
 const wantedTab = new URLSearchParams(window.location.search).get('tab');
 show(TABS.includes(wantedTab) ? wantedTab : 'items');
+// W3 · D06-FR-05: a markdown sent from the Expiry page (../catalogue/?tab=price&product=…&price=…) opens here holding its
+// product and its proposed price, checked as if typed — the normal limits, and the second person's approval where needed.
+{
+  const sent = new URLSearchParams(window.location.search);
+  const code = (sent.get('product') ?? '').trim();
+  if (wantedTab === 'price' && code !== '') {
+    const view = session.shelf().find((v) => v.product.sku === code || v.product.productId === code);
+    if (view !== undefined) openPriceFor(view.product); else { el('price-item').value = code; renderLimits(); }
+    const sentPrice = (sent.get('price') ?? '').trim();
+    if (sentPrice !== '') { el('new-price').value = sentPrice; checkThePrice(true); }
+  }
+}
 renderRivals();
 if (wantedTab === 'rivals') void loadRivals();
 renderScale();
