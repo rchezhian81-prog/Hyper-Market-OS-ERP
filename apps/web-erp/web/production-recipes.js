@@ -14,6 +14,7 @@ const office = () => window.sreOffice ?? null;
 function el(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
 
 let read = null; let readOut = null; let register = null;
+let depts = null; // W3 · M11-FR-04: { on, available } as head office said
 let ingredientRows = 1;
 const deptWords = (d) => both(`d_${d}`);
 const uomOptions = () => api.uoms.map((u) => ({ value: u, label: both(`u_${u}`) }));
@@ -105,17 +106,42 @@ function fillForm(r) {
   $('r-product').focus();
 }
 
+// W3 · M11-FR-04: the departments this shop runs, and a "Switch on" for each it does not (the store manager only).
+function paintDepartments() {
+  $('departments').hidden = depts === null;
+  if (depts === null || api === null) return;
+  $('dept-rows').replaceChildren(...depts.available.map((d) => {
+    const li = el('li'); li.dataset.department = d;
+    const on = depts.on.includes(d);
+    const name = el('strong', t(`d_${d}`)); const state = el('span', t(on ? 'deptIsOn' : 'deptIsOff'), 'state');
+    li.append(name, state);
+    if (!on && may.manage) {
+      const b = el('button', t('switchOn'), 'quiet'); b.type = 'button'; b.id = `dept-on-${d}`;
+      b.addEventListener('click', () => { void switchOn(d); });
+      li.append(b);
+    }
+    return li;
+  }));
+}
+async function switchOn(d) {
+  $('dept-status').textContent = t('switching');
+  const out = await session.switchOn(d);
+  $('dept-status').textContent = out.result === 'ok' ? `${t('switchedOn')} ${t(`d_${out.value.departmentId}`)}.` : api.outcomeWords(lang, out);
+  if (out.result === 'ok') await load();
+}
+
 function paintWords() {
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   document.title = `SRE ${t('title')}`;
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['register-h', 'registerH'], ['form-h', 'formH'], ['inputs-h', 'inputsH'], ['add-ingredient-text', 'addIngredient'], ['save-recipe-text', 'save']]) $(id).textContent = t(key);
+  for (const [id, key] of [['dept-h', 'deptH'], ['dept-lead', 'deptLead'], ['register-h', 'registerH'], ['form-h', 'formH'], ['inputs-h', 'inputsH'], ['add-ingredient-text', 'addIngredient'], ['save-recipe-text', 'save']]) $(id).textContent = t(key);
 }
-function paintAll() { paintCards(); paintRegister(); if (may.manage && office() !== null && read !== null) buildForm(); }
+function paintAll() { paintCards(); paintRegister(); paintDepartments(); if (may.manage && office() !== null && read !== null) buildForm(); }
 
 async function load() {
   $('page-status').textContent = t('reading');
-  const out = await session.read();
+  const [out, d] = await Promise.all([session.read(), session.departments()]);
+  depts = d.result === 'ok' ? d.value : null;
   if (out.result === 'ok') { read = out.value; readOut = null; $('page-status').textContent = may.manage ? '' : t('cannotManage'); } else { read = null; readOut = out; $('page-status').textContent = api.outcomeWords(lang, out); }
   $('editor').hidden = !(may.manage && read !== null);
   paintAll();

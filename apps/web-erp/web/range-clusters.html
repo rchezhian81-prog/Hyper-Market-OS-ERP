@@ -14,6 +14,9 @@
       clearance, never deleted; head office reads the stock, never this page), and season plans (GET/POST
       /v1/merchandising/season-plans — listed from the first day, ended into clearance after the last by the ops worker).
       Every word has a Tamil twin; nothing is written on open.
+      W3 (D02-FR-04 · OB-319): the range-gap report (GET /v1/merchandising/range-gaps) — short-picks, turned-down
+      substitutes and empty app searches by category and price band, and own-brand margin against branded. Read only; its
+      session is apps/web-erp/src/range-gaps-session.ts and its view range-gaps.js.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -98,9 +101,24 @@
           </fieldset>
         </form>
       </section>
+      <section id="gaps" hidden aria-labelledby="gaps-h">
+        <h3 id="gaps-h">Range gaps and own brand</h3>
+        <p class="lead" id="gaps-lead"></p>
+        <form id="gaps-form">
+          <div class="row">
+            <label for="g-from"><span id="l-gfrom">From</span><input id="g-from" type="date" /></label>
+            <label for="g-to"><span id="l-gto">To</span><input id="g-to" type="date" /></label>
+            <label for="g-bands"><span id="l-gbands">Price bands</span><input id="g-bands" autocomplete="off" inputmode="decimal" /></label>
+          </div>
+          <button id="gaps-go" class="primary" type="submit">Show the report</button>
+        </form>
+        <p class="status" id="gaps-status" role="status" aria-live="polite"></p>
+        <div id="gaps-report"></div>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./range-clusters.js" type="module"></script>
+    <script src="./range-gaps.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>
