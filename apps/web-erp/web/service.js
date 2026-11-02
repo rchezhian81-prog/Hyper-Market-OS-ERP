@@ -314,13 +314,29 @@ function lineRow(line) {
 
 // ── Putting it through ──────────────────────────────────────────────────────
 
-el('put-through').addEventListener('click', () => {
+// OB-626: money goes back across the desk only after the shared confirm sheet (the chrome's) says how much, how, for which
+// bill, and in whose name — and the person confirms. Go back puts nothing through.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const CONFIRM = {
+  en: { title: '{amount} will be given back by {tender} for {n} line(s) of bill {bill}', detail: 'The return is recorded and the goods go where each line says. Cash leaves the drawer now; a card refund waits for the bank. A return cannot be undone from this screen.', authority: 'In your name. Head office refuses more than was paid, a reason it does not know, and a same-person approval.', label: 'Put the return through' },
+  ta: { title: 'பில் {bill}-இன் {n} வரி(கள்)க்கு {tender} மூலம் {amount} திரும்பத் தரப்படும்', detail: 'திருப்பம் பதிவு செய்யப்பட்டு, பொருட்கள் ஒவ்வொரு வரியும் சொல்லும் இடத்திற்குச் செல்லும். பணம் இப்போதே அலமாரியிலிருந்து வெளியேறும்; கார்டுத் திருப்பம் வங்கிக்காகக் காத்திருக்கும். இந்தத் திரையிலிருந்து திருப்பத்தைச் செயல்தவிர்க்க முடியாது.', authority: 'உங்கள் பெயரில். செலுத்தியதை விட அதிகம், தெரியாத காரணம், ஒரே நபரின் அனுமதி ஆகியவற்றைத் தலைமை அலுவலகம் மறுக்கும்.', label: 'திருப்பத்தைப் பதிவு செய்' },
+};
+const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
+function returnSheet(refundMinor) {
+  const tenderEl = el('tender');
+  const values = { amount: inr(refundMinor), tender: tenderEl.selectedOptions[0]?.textContent ?? tenderEl.value, n: chosen.size, bill: open.sale.number };
+  const pair = (k) => ({ en: fillIn(CONFIRM.en[k], values), ta: fillIn(CONFIRM.ta[k], values) });
+  return { title: pair('title'), detail: pair('detail'), authority: pair('authority'), confirmLabel: pair('label'), tone: 'primary' };
+}
+el('put-through').addEventListener('click', () => { void putThrough(); });
+async function putThrough() {
   if (open === null) return;
   const refundMinor = paise(el('refund').value);
   if (refundMinor === null) {
     tell(t('read'), words(REFUND_REFUSAL_WORDS, 'more_than_was_paid'));
     return;
   }
+  if (!(await (await office()).confirm(returnSheet(refundMinor))).ok) return;
   const outcome = session.refund({
     returnId: `RT-${open.sale.saleId}-${chosen.size}-${refundMinor}`,
     number: `RTN-${open.sale.number}`,
@@ -340,7 +356,7 @@ el('put-through').addEventListener('click', () => {
   chosen.clear();
   el('refund').value = '';
   findBill();
-});
+}
 
 // ── Cases ───────────────────────────────────────────────────────────────────
 

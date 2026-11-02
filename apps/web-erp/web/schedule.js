@@ -33,6 +33,8 @@ function paint() {
   $('whoami').textContent = window.scheduleData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('draft').disabled = !may.draft; $('commit').disabled = !may.commit || draft === null || draft.committedBy !== null;
+  whyDisabled($('draft'), may.draft ? '' : 'role');
+  whyDisabled($('commit'), !may.commit ? 'role' : draft === null ? { en: 'Draft the roster first.', ta: 'முதலில் அட்டவணையை வரைவு செய்யவும்.' } : draft.committedBy !== null ? { en: 'This roster is already committed.', ta: 'இந்த அட்டவணை ஏற்கனவே உறுதிசெய்யப்பட்டது.' } : '');
 
   const limits = demand?.workingTime?.limits ?? [];
   $('all-pending').hidden = !(demand?.workingTime?.allPending); $('all-pending').textContent = t('allPending');
@@ -77,6 +79,12 @@ async function makeDraft() {
 }
 async function commit() {
   if (draft === null) return;
+  // OB-626 A (U1): the roster is committed only through the shared confirm sheet — the week, how many shifts and people.
+  if (!window.sreOffice || typeof window.sreOffice.confirm !== 'function') { $('commit-status').className = 'status err'; $('commit-status').textContent = t('noChrome'); return; }
+  const vars = { week: draft.weekStart, shifts: String(draft.draft.shifts.length), people: String(new Set(draft.draft.assignments.map((a) => a.employeeId)).size), uncovered: String(draft.draft.uncovered.length) };
+  const said = (key) => ({ en: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), api.words('en', key)), ta: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), api.words('ta', key)) });
+  const answer = await window.sreOffice.confirm({ title: said('confirmCommit'), detail: said('confirmCommitDetail'), authority: said('confirmCommitAuthority'), confirmLabel: said('commit'), tone: 'primary' });
+  if (!answer.ok) { $('commit-status').className = 'status'; $('commit-status').textContent = t('notCommitted'); return; }
   const out = await session.commit(draft.draftId);
   if (out.result === 'ok') { draft = out.value.draft; say('commit-status', `${t('committed')} ${draft.committedBy}`, true); } else say('commit-status', out, false);
   paint();
@@ -99,4 +107,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     // No offline copy this time; the screen still works online.
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

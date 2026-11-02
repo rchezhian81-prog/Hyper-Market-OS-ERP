@@ -597,7 +597,7 @@ function goLink(target) {
   if (!target) return null;
   if (target.view) {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'go'; b.textContent = t('open');
+    b.type = 'button'; b.className = 'go sre-btn'; b.textContent = t('open');
     b.addEventListener('click', () => show(target.view));
     return b;
   }
@@ -881,7 +881,7 @@ function renderApprovals() {
       ]) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = cls;
+        button.className = `${cls} sre-btn${cls === 'primary' ? ' sre-btn-primary' : cls === 'danger' ? ' sre-btn-danger' : ''}`;
         button.textContent = label;
         button.addEventListener('click', () => decide(row.request, decision));
         actions.appendChild(button);
@@ -1078,7 +1078,7 @@ function renderLines() {
     const qty = document.createElement('span');
     qty.className = 'q';
     qty.textContent = [String(line.quantityMinor), line.temperatureC === undefined ? '' : `${line.temperatureC} °C`, line.manufacturedOn === undefined ? '' : `${t('mfgWord')} ${line.manufacturedOn}`].filter((x) => x !== '').join(' · ');
-    const remove = document.createElement('button');
+    const remove = document.createElement('button'); remove.classList.add('sre-btn');
     remove.type = 'button';
     remove.textContent = '×';
     remove.setAttribute('aria-label', `${t('remove')} ${line.productId}`);

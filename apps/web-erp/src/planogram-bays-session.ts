@@ -5,6 +5,7 @@
 // the shop, and every score is "counted by staff". The session refuses only the cheap things before a request.
 
 import type { ViewerIdentity } from './browser-entry';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type Outcome<T> =
@@ -56,7 +57,7 @@ export type BaysCopyKey = keyof typeof BAYS_COPY.en;
 
 export const baysWords = (lang: Lang, key: BaysCopyKey | string): string => (BAYS_COPY[lang] as Record<string, string>)[key] ?? (BAYS_COPY.en as Record<string, string>)[key] ?? key;
 export function baysOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${baysWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return baysWords(lang, out.why);
   if (out.result === 'lost_link') return baysWords(lang, 'unreachable');
   return '';

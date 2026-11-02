@@ -85,7 +85,7 @@ describe('Payroll on the box: read only', () => {
     const s = createPayrollLiveSession({ viewer: accountant, fetch: headOffice(answers).fetch });
     expect(payrollLiveOutcome('en', await s.readRun('PR-NONE'))).toBe('Head office has no pay run with that number.');
     const refusing = createPayrollLiveSession({ viewer: accountant, fetch: headOffice(() => ({ status: 403, body: { error: { code: 'forbidden', whatHappened: 'Not your branch.' } } })).fetch });
-    expect(payrollLiveOutcome('en', await refusing.readHold())).toBe('Head office refused: Not your branch.');
+    expect(payrollLiveOutcome('en', await refusing.readHold())).toMatch(/^Head office refused: Not your branch\. Nothing was changed\. .+/); // U1: the three parts
     expect(payrollLiveOutcome('en', { result: 'invalid', why: 'noRunNumber' })).toBe('Type the pay run number head office gave it.');
   });
 

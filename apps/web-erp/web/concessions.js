@@ -12,7 +12,7 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const money = (minor) => (api === null ? String(minor) : api.rupees(minor));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
+function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 let counters = null; let asked = []; let off = false;
 

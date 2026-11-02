@@ -85,8 +85,10 @@ function rowNode(r) {
   return li;
 }
 
+let lastView = null;
 function paint() {
   const view = session.view(lang);
+  lastView = view;
 
   el('title').textContent = t('title');
   el('lead').textContent = t('lead');
@@ -150,11 +152,28 @@ function paintResult(presentation) {
 // The reviewer's sign-off — a HUMAN write that runs ONLY on this explicit click, never on load. On success the
 // worklist is re-read (a GET) so the signed-off row drops off. The server enforces §28 (reviewer ≠ cashier);
 // the screen refuses an own-drawer sign-off locally too and never sends a self-review.
+// OB-626: a drawer's over/short is signed off only after the shared confirm sheet (the chrome's) says which shift, what
+// finding, and in whose name — and the reviewer confirms. Go back sends nothing.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const CONFIRM = {
+  en: { title: 'Shift {shift} will be signed off as "{finding}"', detail: 'The over/short stands as recorded against that drawer and leaves the worklist; the finding goes on the audit trail with your name. It cannot be unsigned from this screen.', authority: 'In your name as the reviewer. Head office refuses a sign-off of your own drawer, or one without a finding.', label: 'Sign it off' },
+  ta: { title: 'ஷிப்ட் {shift} "{finding}" எனக் கையொப்பமிடப்படும்', detail: 'அந்த அலமாரிக்கு எதிராக கூடுதல்/குறைவு பதிவானபடி நிற்கும்; பணிப்பட்டியலிலிருந்து நீங்கும்; கண்டுபிடிப்பு உங்கள் பெயருடன் தணிக்கைப் பதிவில் சேரும். இந்தத் திரையிலிருந்து கையொப்பத்தை நீக்க முடியாது.', authority: 'சரிபார்ப்பவராக உங்கள் பெயரில். உங்கள் சொந்த அலமாரியையோ, கண்டுபிடிப்பு இல்லாமலோ கையொப்பமிடுவதைத் தலைமை அலுவலகம் மறுக்கும்.', label: 'கையொப்பமிடு' },
+};
+const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
+function signSheet() {
+  const shiftEl = el('sign-shift'); const dispEl = el('sign-disposition');
+  const values = { shift: shiftEl.selectedOptions[0]?.textContent ?? shiftEl.value, finding: dispEl.selectedOptions[0]?.textContent ?? dispEl.value };
+  const pair = (k) => ({ en: fillIn(CONFIRM.en[k], values), ta: fillIn(CONFIRM.ta[k], values) });
+  return { title: pair('title'), detail: pair('detail'), authority: pair('authority'), confirmLabel: pair('label'), tone: 'primary' };
+}
 el('sign').addEventListener('click', () => {
   void (async () => {
     const shiftId = el('sign-shift').value;
     const disposition = el('sign-disposition').value;
     const note = el('sign-note').value;
+    // A refusal the screen already knows (your own drawer, §28) is said at once — the sheet never asks for a word head office would refuse.
+    const ownDrawer = lastView?.open.find((r) => r.shiftId === shiftId)?.isOwnDrawer === true;
+    if (!ownDrawer && !(await (await office()).confirm(signSheet())).ok) return;
     const result = await session.signOff(shiftId, disposition, note);
     paintResult(session.presentSignOffResult(lang, result));
     if (result === 'signed') { el('sign-note').value = ''; await refresh(); }

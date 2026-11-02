@@ -26,7 +26,7 @@
       input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       textarea { min-height: 96px; }
       input[type="checkbox"] { min-height: 24px; width: 24px; height: 24px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: 0.55; cursor: not-allowed; }
       button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -43,6 +43,9 @@
       .stops li { padding: 6px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
       .stops li.flagged { border-color: var(--error); }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -65,8 +68,8 @@
       <section aria-labelledby="waves-h">
         <h3 id="waves-h">Waves from confirmed orders</h3>
         <div class="row-form">
-          <button id="show-orders" type="button"><span id="show-orders-text">Show orders waiting</span></button>
-          <button id="show-waves" type="button" class="quiet"><span id="show-waves-text">Show the waves</span></button>
+          <button id="show-orders" type="button" class="sre-btn"><span id="show-orders-text">Show orders waiting</span></button>
+          <button id="show-waves" type="button" class="quiet sre-btn sre-btn-quiet"><span id="show-waves-text">Show the waves</span></button>
         </div>
         <p class="status" id="waves-status" role="status" aria-live="polite"></p>
         <div id="candidates" hidden>
@@ -79,7 +82,7 @@
           <div class="row-form">
             <label for="wave-id"><span id="wave-id-l">Wave id</span><input id="wave-id" autocomplete="off" /></label>
             <label for="picker"><span id="picker-l">Picker</span><input id="picker" autocomplete="off" /></label>
-            <button id="build" type="button"><span id="build-text">Build the wave and give it to the picker</span></button>
+            <button id="build" type="button" class="sre-btn sre-btn-primary"><span id="build-text">Build the wave and give it to the picker</span></button>
           </div>
         </div>
         <ul class="rows" id="waves" hidden></ul>
@@ -91,7 +94,7 @@
         <div class="row-form">
           <label for="speed"><span id="speed-l">Average speed (km/h)</span><input id="speed" inputmode="decimal" autocomplete="off" /></label>
           <label for="minutes"><span id="minutes-l">Minutes at each door</span><input id="minutes" inputmode="numeric" autocomplete="off" /></label>
-          <button id="plan" type="button"><span id="plan-text">Plan the day</span></button>
+          <button id="plan" type="button" class="sre-btn"><span id="plan-text">Plan the day</span></button>
         </div>
         <p class="status" id="plan-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="planned" hidden></ul>
@@ -99,7 +102,7 @@
         <div class="row-form">
           <label for="off-driver"><span id="off-driver-l">Driver</span><input id="off-driver" autocomplete="off" /></label>
           <label for="off-reason"><span id="off-reason-l">Why?</span><input id="off-reason" autocomplete="off" /></label>
-          <button id="off-road" type="button" class="quiet"><span id="off-road-text">Driver off the road — take their routes back</span></button>
+          <button id="off-road" type="button" class="quiet sre-btn sre-btn-quiet"><span id="off-road-text">Driver off the road — take their routes back</span></button>
         </div>
       </section>
 
@@ -109,7 +112,7 @@
         <p class="muted" id="till-jobs-lead"></p>
         <div class="row-form">
           <label for="till-day"><span id="till-day-l">Slot day (YYYY-MM-DD)</span><input id="till-day" autocomplete="off" inputmode="numeric" /></label>
-          <button id="show-till-jobs" type="button"><span id="show-till-jobs-text">Show the till deliveries</span></button>
+          <button id="show-till-jobs" type="button" class="sre-btn"><span id="show-till-jobs-text">Show the till deliveries</span></button>
         </div>
         <p class="status" id="till-jobs-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="till-jobs" hidden></ul>
@@ -117,14 +120,14 @@
 
       <section aria-labelledby="board-h">
         <h3 id="board-h">The day’s routes</h3>
-        <div class="row-form"><button id="show-board" type="button"><span id="show-board-text">Show the routes</span></button></div>
+        <div class="row-form"><button id="show-board" type="button" class="sre-btn"><span id="show-board-text">Show the routes</span></button></div>
         <p class="status" id="board-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="board" hidden></ul>
       </section>
 
       <section aria-labelledby="contribution-h">
         <h3 id="contribution-h">Orders held under the contribution rule</h3>
-        <div class="row-form"><button id="show-held" type="button"><span id="show-held-text">Show the contribution rule</span></button></div>
+        <div class="row-form"><button id="show-held" type="button" class="sre-btn"><span id="show-held-text">Show the contribution rule</span></button></div>
         <p class="status" id="contribution-status" role="status" aria-live="polite"></p>
         <p id="threshold" hidden></p>
         <ul class="rows" id="contribution" hidden></ul>
@@ -132,7 +135,7 @@
 
       <section aria-labelledby="controls-h">
         <h3 id="controls-h">The owner’s numbers</h3>
-        <div class="row-form"><button id="show-controls" type="button"><span id="show-controls-text">Show the numbers</span></button></div>
+        <div class="row-form"><button id="show-controls" type="button" class="sre-btn"><span id="show-controls-text">Show the numbers</span></button></div>
         <p class="status" id="controls-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="controls" hidden></ul>
       </section>
@@ -141,13 +144,13 @@
         <h3 id="settle-h">Own-fleet settlement</h3>
         <div class="row-form">
           <label for="settle-route"><span id="settle-route-l">Route</span><input id="settle-route" autocomplete="off" /></label>
-          <button id="propose" type="button"><span id="propose-text">Propose the settlement</span></button>
-          <button id="approve-settle" type="button" class="quiet"><span id="approve-settle-text">Approve the settlement</span></button>
+          <button id="propose" type="button" class="sre-btn"><span id="propose-text">Propose the settlement</span></button>
+          <button id="approve-settle" type="button" class="quiet sre-btn sre-btn-quiet"><span id="approve-settle-text">Approve the settlement</span></button>
         </div>
         <div class="row-form">
           <label for="paid-amount"><span id="paid-amount-l">Amount paid (₹)</span><input id="paid-amount" inputmode="decimal" autocomplete="off" /></label>
           <label for="voucher"><span id="voucher-l">Voucher</span><input id="voucher" autocomplete="off" /></label>
-          <button id="paid" type="button" class="quiet"><span id="paid-text">Record the payment</span></button>
+          <button id="paid" type="button" class="quiet sre-btn sre-btn-quiet"><span id="paid-text">Record the payment</span></button>
         </div>
         <p class="status" id="settle-status" role="status" aria-live="polite"></p>
       </section>

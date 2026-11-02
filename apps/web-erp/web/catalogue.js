@@ -72,6 +72,12 @@ const WORDS = {
     lowestPrice: 'Lowest price that keeps the margin', newPrice: 'New price (in rupees)',
     startsOn: 'Starts on', checkPrice: 'Check this price', priceThis: 'Change price', priceThisOf: 'Change the price of',
     saveIt: 'Save this price', priceOk: 'This price is fine', needsApproval: 'Somebody else has to approve this',
+    // U1 · OB-626: the consequence-and-confirm sheet before a price changes
+    confirmPriceTitle: 'Change the price of {product} {from}to {price}',
+    confirmPriceFrom: 'from {old} ', confirmPriceDetail: 'From the day given, every till of this shop charges it (next store pack). A price change stays on record beside the ones before it; it is never deleted.',
+    confirmPriceAuthority: 'In your name. Head office re-checks the MRP, the cost and the margin floor and refuses it if your role may not change prices.',
+    confirmPriceAuthorityApproved: 'With the approval of the second person you named — head office refuses it if the approval does not match these figures.',
+    confirmPriceLabel: 'Save this price', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     askForApproval: 'Ask for approval', saveWithApproval: 'Save it',
     priceApprovalLead: 'This price needs a second person. 1. Write why and press “Ask for approval”. 2. Someone else who may approve prices approves it on their Approvals page. 3. Come back and press “Save it”. Nothing is saved until then.',
     offerApprovalLead: 'This offer loses margin, so it needs a second person. 1. Write why and press “Ask for approval”. 2. Someone else who may approve prices approves it on their Approvals page. 3. Come back and press “Start this offer”. Nothing starts until then.',
@@ -144,6 +150,11 @@ const WORDS = {
     lowestPrice: 'லாபத்தைக் காக்கும் குறைந்தபட்ச விலை', newPrice: 'புதிய விலை (ரூபாயில்)',
     startsOn: 'தொடங்கும் நாள்', checkPrice: 'இந்த விலையைச் சரிபார்', priceThis: 'விலையை மாற்று', priceThisOf: 'இதன் விலையை மாற்று:',
     saveIt: 'இந்த விலையைச் சேமி', priceOk: 'இந்த விலை சரியானது', needsApproval: 'வேறு ஒருவர் இதை ஒப்புதல் அளிக்க வேண்டும்',
+    confirmPriceTitle: '{product}இன் விலை {from}{price} ஆக மாற்றப்படும்',
+    confirmPriceFrom: '{old}இலிருந்து ', confirmPriceDetail: 'குறிப்பிட்ட நாளிலிருந்து இந்தக் கடையின் எல்லாக் கவுண்டர்களும் அதை வசூலிக்கும் (அடுத்த கடைப் பொதி). விலை மாற்றம் முந்தையவற்றின் அருகில் பதிவில் இருக்கும்; ஒருபோதும் நீக்கப்படாது.',
+    confirmPriceAuthority: 'உங்கள் பெயரில். MRP, செலவு, லாப வரம்பை தலைமை அலுவலகம் மீண்டும் சரிபார்க்கும்; விலை மாற்றும் உரிமை இல்லையெனில் மறுக்கும்.',
+    confirmPriceAuthorityApproved: 'நீங்கள் குறிப்பிட்ட இரண்டாம் நபரின் ஒப்புதலுடன் — ஒப்புதல் இந்த எண்களுடன் பொருந்தவில்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmPriceLabel: 'இந்த விலையைச் சேமி', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     askForApproval: 'அனுமதி கேள்', saveWithApproval: 'சேமி',
     priceApprovalLead: 'இந்த விலைக்கு இரண்டாம் நபர் தேவை. 1. ஏன் என்று எழுதி “அனுமதி கேள்” அழுத்தவும். 2. விலைகளை அனுமதிக்கக்கூடிய வேறொருவர் தனது அனுமதிகள் பக்கத்தில் அனுமதிப்பார். 3. பிறகு திரும்பி வந்து “சேமி” அழுத்தவும். அதுவரை எதுவும் சேமிக்கப்படாது.',
     offerApprovalLead: 'இந்தச் சலுகையால் லாபம் குறைவதால் இரண்டாம் நபர் தேவை. 1. ஏன் என்று எழுதி “அனுமதி கேள்” அழுத்தவும். 2. விலைகளை அனுமதிக்கக்கூடிய வேறொருவர் தனது அனுமதிகள் பக்கத்தில் அனுமதிப்பார். 3. பிறகு திரும்பி வந்து “இந்தச் சலுகையைத் தொடங்கு” அழுத்தவும். அதுவரை எதுவும் தொடங்காது.',
@@ -188,6 +199,15 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 
 /** Why a price change was refused — one entry per `PriceChangeRefusal`, in both languages. */
 const PRICE_REFUSAL_WORDS = {
@@ -496,7 +516,7 @@ function cashierRow(r) {
   if (r.priceState !== 'loaded' && r.priceState !== 'none' && r.priceState !== 'loading') {
     const show = document.createElement('button');
     show.type = 'button';
-    show.className = 'show-price';
+    show.className = 'show-price sre-btn';
     show.textContent = t('showPrice');
     show.setAttribute('aria-label', `${t('showPrice')}: ${r.name}`);
     show.addEventListener('click', () => { void cashierView.loadPrice(r.productId).then(() => { renderItems(); }); renderItems(); });
@@ -594,7 +614,7 @@ function itemRow(view) {
     ? `${view.score.required.done}/${view.score.required.total}`
     : '—';
 
-  const open = document.createElement('button');
+  const open = document.createElement('button'); open.classList.add('sre-btn');
   open.type = 'button';
   open.textContent = '›';
   open.setAttribute('aria-label', view.product.name);
@@ -604,7 +624,7 @@ function itemRow(view) {
   // this item — its code filled, its MRP and margin floor shown — so the person types only the new price.
   const price = document.createElement('button');
   price.type = 'button';
-  price.className = 'price-this';
+  price.className = 'price-this sre-btn';
   price.dataset.sku = view.product.sku;
   price.setAttribute('aria-label', `${t('priceThisOf')} ${view.product.name === '' ? view.product.sku : view.product.name}`);
   if (window.sreIcon && typeof window.sreIcon.withWord === 'function') price.replaceChildren(window.sreIcon.withWord('indian-rupee', t('priceThis')));
@@ -653,6 +673,7 @@ function openPriceFor(product) {
   el('save-price').hidden = true;
   el('price-approval').hidden = true;
   lastProposal = null;
+  paintCheckPrimary();
   renderLimits();
   renderHistory(product.productId);
   el('new-price').focus();
@@ -873,6 +894,7 @@ function checkThePrice(quiet) {
   const view = session.shelf().find((v) => v.product.sku === sku || v.product.productId === sku);
   if (quiet && (sku === '' || priceText === '' || from === '' || view === undefined || !(toMinor(priceText) > 0))) {
     lastProposal = null;
+    paintCheckPrimary();
     el('price-verdict').hidden = true;
     el('save-price').hidden = true;
     el('price-approval').hidden = true;
@@ -936,15 +958,19 @@ let priceAskedFor = null;
 const priceKey = (proposal) => `${proposal.draft.productId}|${proposal.draft.price.minor}`;
 
 /** Which of "Ask for approval" and "Save it" is the main action: asking first, then saving once asked. */
+/** Step 1's button, 'Check this price', is the primary only until a check has been made (U1 - G3: one primary per step). */
+function paintCheckPrimary() { el('check-price').classList.toggle('sre-btn-primary', lastProposal === null); }
+
 function paintPriceApproval() {
+  paintCheckPrimary();
   el('price-approval-lead').textContent = t('priceApprovalLead');
   el('price-why-label').textContent = t('whyLabel');
   el('price-why').placeholder = t('whyPlaceholder');
   el('ask-price').textContent = t('askForApproval');
   const needs = lastProposal !== null && lastProposal.needsApproval;
   const asked = needs && priceAskedFor === priceKey(lastProposal);
-  el('ask-price').classList.toggle('primary', needs && !asked);
-  el('save-price').classList.toggle('primary', !needs || asked);
+  el('ask-price').classList.toggle('primary', needs && !asked); el('ask-price').classList.toggle('sre-btn-primary', needs && !asked);
+  el('save-price').classList.toggle('primary', !needs || asked); el('save-price').classList.toggle('sre-btn-primary', !needs || asked);
 }
 
 // Ask for approval — the price setter's OWN request, in their own session, for exactly this change. Nothing is saved.
@@ -964,6 +990,13 @@ el('save-price').addEventListener('click', () => {
   void busy('save-price', async () => {
     if (lastProposal === null) return;
     const proposal = lastProposal;
+
+    // U1 · OB-626: the consequence-and-confirm sheet before the price changes — Go back sends nothing.
+    const sub = (l, key) => String(WORDS[l][key]).replace('{product}', proposal.draft.productId).replace('{price}', inr(proposal.draft.price.minor))
+      .replace('{from}', proposal.replaces === null ? '' : String(WORDS[l].confirmPriceFrom).replace('{old}', inr(proposal.replaces.price.minor)));
+    const answer = await confirmFirst({ title: { en: sub('en', 'confirmPriceTitle'), ta: sub('ta', 'confirmPriceTitle') }, detail: { en: WORDS.en.confirmPriceDetail, ta: WORDS.ta.confirmPriceDetail }, authority: { en: WORDS.en[proposal.needsApproval ? 'confirmPriceAuthorityApproved' : 'confirmPriceAuthority'], ta: WORDS.ta[proposal.needsApproval ? 'confirmPriceAuthorityApproved' : 'confirmPriceAuthority'] }, confirmLabel: { en: WORDS.en.confirmPriceLabel, ta: WORDS.ta.confirmPriceLabel }, tone: 'primary' });
+    if (answer === 'unavailable') { tell(t('read'), t('confirmUnavailable')); return; }
+    if (answer === null) return;
 
     // A below-cost / below-floor price needs a second person's OWN approval (ADR-0024 · §28): "Save it" finds the
     // setter's own APPROVED request for exactly these figures and sends the change naming it. Not asked, waiting,
@@ -1223,15 +1256,26 @@ let offerAskedFor = null;
 const offerKey = (input) => JSON.stringify(input);
 
 /** Which of "Ask for approval" and "Start this offer" is the main action: asking first, then starting once asked. */
+/** The Offer tab's three steps (offerLead): 1 work out what it costs - 2 record the rule - 3 start. The step the person is on has the one primary (U1 - G3). */
+let ruleDefined = false;
+function paintOfferSteps() {
+  const simulated = lastSimulation !== null;
+  el('simulate').classList.toggle('sre-btn-primary', !simulated);
+  el('define-offer').classList.toggle('sre-btn-primary', simulated && !ruleDefined);
+}
+paintOfferSteps();
+
 function paintLaunchApproval() {
+  paintOfferSteps();
+  const step3 = lastSimulation !== null && ruleDefined;
   el('promo-approval-lead').textContent = t('offerApprovalLead');
   el('promo-why-label').textContent = t('whyLabel');
   el('promo-why').placeholder = t('whyPlaceholder');
   el('ask-launch').textContent = t('askForApproval');
   const needs = lastSimulation !== null && lastSimulation.blocksApproval;
   const asked = needs && lastSimulationInput !== null && offerAskedFor === offerKey(lastSimulationInput);
-  el('ask-launch').classList.toggle('primary', needs && !asked);
-  el('launch').classList.toggle('primary', !needs || asked);
+  el('ask-launch').classList.toggle('primary', needs && !asked); el('ask-launch').classList.toggle('sre-btn-primary', step3 && needs && !asked);
+  el('launch').classList.toggle('primary', !needs || asked); el('launch').classList.toggle('sre-btn-primary', step3 && (!needs || asked));
 }
 
 // Ask for approval — the proposer's OWN request, in their own session, for exactly this offer. Nothing starts.
@@ -1344,7 +1388,7 @@ el('define-offer').addEventListener('click', () => busy('define-offer', async ()
     minSpend: value('rule-min-spend'), coupon: value('rule-coupon'), memberOnly: el('rule-member-only').checked,
     exclusiveGroup: value('rule-exclusive'), maxApplications: value('rule-cap'),
   });
-  if (outcome.kind === 'defined') ruleSay(`${t('ruleRecorded')} ${outcome.promotionId} · ${value('rule-starts')} – ${value('rule-ends')}`, true);
+  if (outcome.kind === 'defined') { ruleDefined = true; paintLaunchApproval(); ruleSay(`${t('ruleRecorded')} ${outcome.promotionId} · ${value('rule-starts')} – ${value('rule-ends')}`, true); }
   else if (outcome.kind === 'invalid') ruleSay(words(OFFER_PROBLEM_WORDS, outcome.problem), false);
   else if (outcome.kind === 'refused') ruleSay(`${t('ruleRefused')} ${outcome.whatHappened === '' ? outcome.code : outcome.whatHappened}`, false);
   else if (outcome.kind === 'lost_link') ruleSay(t('ruleUnreachable'), false);
@@ -1443,7 +1487,7 @@ function renderDrafts() {
     what.append(line);
     const approve = document.createElement('button');
     approve.type = 'button';
-    approve.className = 'primary';
+    approve.className = 'primary sre-btn sre-btn-primary';
     approve.dataset.approve = draft.productId;
     approve.textContent = rw('approveDraft');
     approve.addEventListener('click', async () => {
@@ -1521,7 +1565,7 @@ function renderScale() {
     if (scaleRules.may.set) {
       const stop = document.createElement('button');
       stop.type = 'button';
-      stop.className = 'danger';
+      stop.className = 'danger sre-btn sre-btn-danger';
       stop.dataset.withdraw = record.prefix;
       stop.textContent = sw('withdraw');
       stop.addEventListener('click', async () => {

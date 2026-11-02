@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -32,6 +32,8 @@
       ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
       .meta { font-size: var(--fs-sm); color: var(--muted); }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -59,7 +61,7 @@
           <label for="p-phones"><span id="p-phones-l"></span><input id="p-phones" autocomplete="off" inputmode="tel" /></label>
           <label for="p-accounts"><span id="p-accounts-l"></span><input id="p-accounts" autocomplete="off" /></label>
         </div>
-        <button id="p-save" type="button"><span id="p-save-text"></span></button>
+        <button id="p-save" type="button" class="sre-btn"><span id="p-save-text"></span></button>
         <p class="status" id="p-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="p-rows"></ul>
         <h3 id="m-h"></h3>
@@ -73,14 +75,14 @@
           <label for="s-cap"><span id="s-cap-l"></span><input id="s-cap" autocomplete="off" inputmode="decimal" /></label>
           <label for="s-desk"><span id="s-desk-l"></span><input id="s-desk" autocomplete="off" /></label>
         </div>
-        <button id="s-save" type="button"><span id="s-save-text"></span></button>
+        <button id="s-save" type="button" class="sre-btn"><span id="s-save-text"></span></button>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
         <h3 id="a-h"></h3>
         <div class="row-form" id="a-form">
           <label for="a-emp"><span id="a-emp-l"></span><input id="a-emp" autocomplete="off" /></label>
           <label for="a-ref"><span id="a-ref-l"></span><input id="a-ref" autocomplete="off" /></label>
         </div>
-        <button id="a-save" type="button"><span id="a-save-text"></span></button>
+        <button id="a-save" type="button" class="sre-btn"><span id="a-save-text"></span></button>
         <p class="status" id="a-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="a-rows"></ul>
       </section>
@@ -91,7 +93,7 @@
           <label for="w-emp"><span id="w-emp-l"></span><input id="w-emp" autocomplete="off" /></label>
           <label for="w-ref"><span id="w-ref-l"></span><input id="w-ref" autocomplete="off" /></label>
         </div>
-        <button id="w-save" type="button"><span id="w-save-text"></span></button>
+        <button id="w-save" type="button" class="sre-btn"><span id="w-save-text"></span></button>
         <p class="status" id="w-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="w-rows"></ul>
       </section>

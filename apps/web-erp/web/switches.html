@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -34,6 +34,8 @@
       .meta { font-size: 14px; color: var(--muted); }
       .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -51,7 +53,7 @@
       </section>
       <section id="board" hidden aria-labelledby="board-h">
         <h3 id="board-h"></h3>
-        <button id="s-show" type="button"><span id="s-show-text"></span></button>
+        <button id="s-show" type="button" class="sre-btn"><span id="s-show-text"></span></button>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="board-rows"></ul>
         <ul class="rows" id="history-rows"></ul>
@@ -65,8 +67,8 @@
         <label for="ch-reason"><span id="ch-reason-l"></span><input id="ch-reason" autocomplete="off" /></label>
         <label for="ch-approval"><span id="ch-approval-l"></span><input id="ch-approval" autocomplete="off" /></label>
         <div class="row-form">
-          <button id="ch-preview" type="button" class="quiet"><span id="ch-preview-text"></span></button>
-          <button id="ch-save" type="button"><span id="ch-save-text"></span></button>
+          <button id="ch-preview" type="button" class="quiet sre-btn sre-btn-quiet"><span id="ch-preview-text"></span></button>
+          <button id="ch-save" type="button" class="sre-btn sre-btn-primary"><span id="ch-save-text"></span></button>
         </div>
         <p class="meta" id="ch-said" role="status" aria-live="polite"></p>
         <p class="status" id="ch-status" role="status" aria-live="polite"></p>

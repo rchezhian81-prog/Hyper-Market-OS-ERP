@@ -57,7 +57,7 @@
       .sheet .msg { color:var(--danger-text); min-height:1.2em; }
       .sheet .row2 { display:flex; gap:10px; justify-content:flex-end; }
       .sheet button { min-height:44px; padding:0 18px; border:0; border-radius:10px; font-size:15px; font-weight:600; }
-      .sheet .primary { background:var(--info); color:var(--on-info); } .sheet .ghost { background:var(--line); color:var(--ink); }
+      .sheet .primary {   } .sheet .ghost { background:var(--line); color:var(--ink); }
       /* R10-A · OB-540: handheld work on a withdrawn or too-old app version — read-only, from head office's register. */
       section.vx { display:grid; gap:10px; border-top:1px solid var(--line); padding-top:16px; }
       .vx-status { margin:0; padding:12px 14px; background:var(--panel); border-radius:12px; display:flex; gap:8px; align-items:flex-start; font-weight:600; border-left:6px solid var(--idle); }
@@ -69,6 +69,9 @@
       .vx-row dl { margin:0; display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; font-size:15px; }
       .vx-row dt { color:var(--muted); } .vx-row dd { margin:0; overflow-wrap:anywhere; }
       .vx-row .vx-detail { margin:0; color:var(--muted); font-size:14px; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -78,7 +81,7 @@
     <p class="manage" id="manage" hidden></p>
     <div class="manage pending" id="pending" role="status" aria-live="polite" hidden>
       <span id="pending-count"></span>
-      <button class="send" id="send" type="button" hidden></button>
+      <button class="send sre-btn" id="send" type="button" hidden></button>
       <span id="deliver-msg"></span>
     </div>
 
@@ -123,8 +126,8 @@
         <input id="reason" type="text" autocomplete="off" aria-label="Reason" />
         <p class="msg" id="sheet-msg" role="alert"></p>
         <div class="row2">
-          <button class="ghost" id="sheet-cancel" type="button"></button>
-          <button class="primary" id="sheet-confirm" type="button"></button>
+          <button class="ghost sre-btn sre-btn-quiet" id="sheet-cancel" type="button"></button>
+          <button class="primary sre-btn sre-btn-primary" id="sheet-confirm" type="button"></button>
         </div>
       </div>
     </div>

@@ -34,7 +34,7 @@
       textarea { min-height: 72px; resize: vertical; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .head-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; justify-content: space-between; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
@@ -54,6 +54,9 @@
       .muted { color: var(--muted); font-size: 14px; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -75,7 +78,7 @@
         </div>
         <form class="row" id="ask">
           <label for="product"><span id="l-product">Product id</span><input id="product" list="product-list" autocomplete="off" required /></label>
-          <button id="show" type="submit">Show</button>
+          <button id="show" type="submit" class="sre-btn">Show</button>
         </form>
         <datalist id="product-list"></datalist>
         <div class="panels" id="panels" role="status" aria-live="polite" hidden>
@@ -141,8 +144,8 @@
         </fieldset>
         <div class="row">
           <label for="r-why"><span id="l-r-why">Why (kept with the version)</span><input id="r-why" autocomplete="off" maxlength="200" /></label>
-          <button id="save" class="primary" type="button">Save as a new version</button>
-          <button id="ask-approval" type="button" hidden>Ask for approval</button>
+          <button id="save" class="primary sre-btn sre-btn-primary" type="button">Save as a new version</button>
+          <button id="ask-approval" type="button" hidden class="sre-btn sre-btn-primary">Ask for approval</button>
         </div>
         <p class="status" id="record-status" role="status" aria-live="polite"></p>
       </section>
@@ -155,18 +158,18 @@
           <label for="b-code"><span id="l-b-code">Barcode</span><input id="b-code" autocomplete="off" inputmode="numeric" /></label>
           <label for="b-kind"><span id="l-b-kind">Kind</span><select id="b-kind"><option value="ean">EAN</option><option value="gtin">GTIN</option><option value="upc">UPC</option><option value="internal" id="o-internal">Shop's own</option><option value="case" id="o-case">Case</option><option value="embedded" id="o-embedded">Weight or price inside</option></select></label>
           <label for="b-level"><span id="l-b-level">Pack level (if not a single)</span><input id="b-level" autocomplete="off" /></label>
-          <button id="add-barcode" type="submit">Give this barcode</button>
+          <button id="add-barcode" type="submit" class="sre-btn">Give this barcode</button>
         </form>
         <fieldset>
           <legend id="pack-h">Pack hierarchy</legend>
           <p class="muted" id="pack-lead"></p>
           <div id="pack-rows"></div>
-          <button id="save-pack" type="button">Save the pack</button>
+          <button id="save-pack" type="button" class="sre-btn sre-btn-primary">Save the pack</button>
         </fieldset>
         <form class="row" id="convert-form">
           <label for="cv-qty"><span id="l-cv-qty">How many</span><input id="cv-qty" inputmode="numeric" autocomplete="off" /></label>
           <label for="cv-level"><span id="l-cv-level">Of which level</span><select id="cv-level"></select></label>
-          <button id="convert" type="submit">Work out the units</button>
+          <button id="convert" type="submit" class="sre-btn">Work out the units</button>
         </form>
         <p class="status" id="codes-status" role="status" aria-live="polite"></p>
       </section>
@@ -179,7 +182,7 @@
         <div id="bundle-rows"></div>
         <div class="row">
           <label for="bd-why"><span id="l-bd-why">Why</span><input id="bd-why" autocomplete="off" maxlength="200" /></label>
-          <button id="save-bundle" type="button">Save what the bundle holds</button>
+          <button id="save-bundle" type="button" class="sre-btn sre-btn-primary">Save what the bundle holds</button>
         </div>
         <p class="status" id="bundle-status" role="status" aria-live="polite"></p>
       </section>
@@ -192,7 +195,7 @@
         <div class="row">
           <label for="sb-list"><span id="l-sb-list">Product ids, in the order to try them (comma between; empty clears it)</span><input id="sb-list" autocomplete="off" /></label>
           <label for="sb-why"><span id="l-sb-why">Why</span><input id="sb-why" autocomplete="off" maxlength="200" /></label>
-          <button id="save-subs" type="button">Save the list</button>
+          <button id="save-subs" type="button" class="sre-btn sre-btn-primary">Save the list</button>
         </div>
         <p class="status" id="subs-status" role="status" aria-live="polite"></p>
       </section>

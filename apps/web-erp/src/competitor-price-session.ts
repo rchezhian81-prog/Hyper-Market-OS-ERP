@@ -10,6 +10,7 @@
 import { translator, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { rupees, paiseOf, outcomeOf, type HttpAnswer, type Outcome } from './finance-close-session';
 import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
+import { refusalWords } from './refusal-words';
 
 export { rupees, paiseOf };
 
@@ -117,7 +118,7 @@ export function competitorOutcomeWords(lang: Lang, o: Outcome<{ alreadyRecorded?
   const w = competitorWords(lang);
   switch (o.kind) {
     case 'done': return { ok: true, text: o.body.alreadyRecorded === true ? w('already') : w('recorded') };
-    case 'refused': return { ok: false, text: `${w('refused')} ${o.whatHappened}${o.nextSafeAction === '' ? '' : ` ${o.nextSafeAction}`}` };
+    case 'refused': return { ok: false, text: refusalWords(lang, o) };
     case 'not_allowed': return { ok: false, text: w('notAllowed') };
     case 'invalid': return { ok: false, text: o.detail === '' ? w('needFields') : o.detail };
     case 'unreachable': return { ok: false, text: w('unreachable') };

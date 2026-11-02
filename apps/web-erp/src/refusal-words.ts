@@ -41,10 +41,10 @@ export function causeOf(out: RefusalShape): RefusalCause {
   return 'unknown';
 }
 
-/** A sentence head office really wrote, as opposed to nothing or a bare "status 404". */
+/** A sentence head office really wrote, as opposed to nothing, a bare "status 404" or the stand-in "Head office answered 404." (U1). */
 export function headOfficeSaid(out: RefusalShape): string | null {
   const said = (out.whatHappened ?? '').trim();
-  if (said === '' || /^status \d{3}$/i.test(said) || said === (out.code ?? '')) return null;
+  if (said === '' || /^status \d{3}$/i.test(said) || /^Head office answered \d{3}\.?$/i.test(said) || said === (out.code ?? '')) return null;
   return said;
 }
 
@@ -111,5 +111,9 @@ export function nextSafeActionWords(lang: RefusalLang, out: RefusalShape): strin
 export function refusalWords(lang: RefusalLang, out: RefusalShape): string {
   const said = whatHappenedWords(lang, out);
   const stop = /[.!?।]$/.test(said) ? '' : '.';
-  return `${w(lang, 'refused')} ${said}${stop} ${w(lang, 'nothingChanged')} ${nextSafeActionWords(lang, out)}`;
+  const next = nextSafeActionWords(lang, out);
+  // When head office's own next-step sentence already says nothing was saved or changed, the middle part is not said
+  // twice ("Nothing was changed. Nothing was saved.").
+  const alreadySaysNothingChanged = /\bnothing (?:was|has been|is) (?:saved|changed|sent|recorded|posted)\b|எதுவும் (?:சேமிக்கப்படவில்லை|மாற்றப்படவில்லை|அனுப்பப்படவில்லை)/i.test(next);
+  return `${w(lang, 'refused')} ${said}${stop} ${alreadySaysNothingChanged ? '' : `${w(lang, 'nothingChanged')} `}${next}`;
 }

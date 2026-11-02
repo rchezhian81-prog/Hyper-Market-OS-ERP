@@ -59,6 +59,8 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       p.muted { margin:0; color:var(--muted); font-size:14px; }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -82,7 +84,7 @@
 
       <section class="picker" aria-label="Choose a document kind">
         <label for="kind"><span id="kind-label"></span><select id="kind"></select></label>
-        <button id="load" class="quiet" type="button"></button>
+        <button id="load" class="quiet sre-btn sre-btn-quiet" type="button"></button>
       </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
@@ -102,7 +104,7 @@
           <label for="note"><span id="note-label"></span><input id="note" type="text" maxlength="200" /></label>
         </div>
         <p class="hint" id="limits"></p>
-        <div><button id="draft" class="act" type="button"></button></div>
+        <div><button id="draft" class="act sre-btn sre-btn-primary" type="button"></button></div>
       </form>
 
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>

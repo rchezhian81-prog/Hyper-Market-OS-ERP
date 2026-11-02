@@ -18,6 +18,22 @@ let status = null;
 let journeys = null;
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
+
+// U1 · G3: a button greyed for a role says why beside it (words, `title` and `aria-describedby`), never a mute grey.
+const WHY_DISABLED = { role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' } };
+function whyDisabled(btn, why) {
+  if (!btn || btn.tagName !== 'BUTTON') return;
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : (WHY_DISABLED[why]?.[tongue] ?? why);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
 for (const [id, name] of [['show-words', 'book-open'], ['draft', 'file-text'], ['find-audience', 'users'], ['plan', 'shield-check'], ['send', 'send'], ['show-status', 'activity'], ['show-journeys', 'repeat'], ['run-journeys', 'refresh-cw']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
@@ -40,9 +56,10 @@ function paintWords() {
     li.append(text('span', v.body, 'facts'));
     li.append(text('span', `${t('draftedBy')} ${v.draftedBy}${v.approvedBy ? ` · ${t('approvedBy')} ${v.approvedBy}` : ''}`, 'facts'));
     if (v.state === 'draft') {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet approve';
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet approve';
       const i = icon('circle-check'); if (i !== null) b.append(i);
       b.append(text('span', t('approve'))); b.disabled = !may.words;
+      whyDisabled(b, may.words ? '' : 'role');
       b.addEventListener('click', () => { void approveWords(v); });
       li.append(b);
     }
@@ -51,8 +68,9 @@ function paintWords() {
   options($('template'), approved().map((v) => v.templateId), (id) => { const v = approved().find((x) => x.templateId === id); return `${id} · ${v.channel}`; });
 }
 
+const CAP_NOT_READ = { en: 'Not read yet — the cap is read from head office when the audience is found.', ta: 'இன்னும் படிக்கப்படவில்லை — பார்வையாளர்கள் கண்டறியப்படும்போது வரம்பு தலைமை அலுவலகத்திலிருந்து படிக்கப்படும்.' };
 function paintCap() {
-  if (cap === undefined) { $('cap').textContent = ''; return; }
+  if (cap === undefined) { $('cap').dataset.state = 'not_read'; $('cap').textContent = `○ ${CAP_NOT_READ[lang]}`; return; } // a state line, never an empty panel
   $('cap').dataset.state = cap.policy === null ? 'not_set' : 'set';
   $('cap').textContent = cap.policy === null ? `⚠ ${t('capNotSet')}` : `✓ ${cap.detail}`;
 }
@@ -92,9 +110,10 @@ function paintJourneys() {
     const form = document.createElement('div'); form.className = 'row-form';
     const label = document.createElement('label'); const reason = document.createElement('input'); reason.className = 'reason'; reason.autocomplete = 'off'; reason.maxLength = 300;
     label.append(text('span', t('reason')), reason);
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet switch';
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn switch';
     const i = icon(j.on ? 'pause' : 'check'); if (i !== null) b.append(i);
     b.append(text('span', j.on ? t('switchOff') : t('switchOn'))); b.disabled = !may.send;
+    whyDisabled(b, may.send ? '' : 'role');
     b.addEventListener('click', () => { void switchJourney(j, !j.on, reason.value); });
     form.append(label, b); li.append(form);
     return li;
@@ -112,10 +131,15 @@ function paint() {
   options($('segment'), [...(api?.segments ?? [])], (s) => t(`seg_${s}`));
   options($('template-channel'), [...(api?.channels ?? [])], (c) => c);
   for (const id of ['show-words']) $(id).disabled = !may.templates;
+  whyDisabled($('show-words'), may.templates ? '' : 'role');
   for (const id of ['draft', 'template-id', 'template-channel', 'template-body']) $(id).disabled = !may.words;
+  whyDisabled($('draft'), may.words ? '' : 'role');
   for (const id of ['find-audience']) $(id).disabled = !may.audience;
+  whyDisabled($('find-audience'), may.audience ? '' : 'role');
   for (const id of ['plan', 'send', 'run-journeys', 'value', 'campaign-id']) $(id).disabled = !may.send;
+  for (const id of ['plan', 'send', 'run-journeys']) whyDisabled($(id), may.send ? '' : 'role');
   for (const id of ['show-status', 'status-id', 'show-journeys']) $(id).disabled = !may.read;
+  for (const id of ['show-status', 'show-journeys']) whyDisabled($(id), may.read ? '' : 'role');
   paintWords(); paintCap(); paintAudience(); paintPlan(); paintStatus(); paintJourneys();
 }
 
@@ -152,7 +176,23 @@ async function planIt() {
   plan = out.value; $('plan-status').className = 'status'; $('plan-status').textContent = '';
   paintPlan();
 }
+// OB-626: messages leave the shop only after the shared confirm sheet (the chrome's) says how many customers, which campaign,
+// and in whose name — and the person confirms. Go back sends nothing. The plan's count is the figure; with no plan the sheet
+// says so and head office decides.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const CONFIRM = {
+  en: { title: '{n} customers will be messaged now, campaign {id}', titleNoPlan: 'Campaign {id} will be sent now to everyone its plan allows', detail: 'Every message goes out through the shop\'s SMS provider and counts against its cost; a sent message cannot be recalled. Customers who have not said yes are never messaged.', authority: 'In your name. The words were approved by a second person; head office refuses words nobody approved.', label: 'Send the campaign' },
+  ta: { title: '{n} வாடிக்கையாளர்களுக்கு இப்போது செய்தி அனுப்பப்படும், பிரச்சாரம் {id}', titleNoPlan: 'பிரச்சாரம் {id} அதன் திட்டம் அனுமதிக்கும் அனைவருக்கும் இப்போது அனுப்பப்படும்', detail: 'ஒவ்வொரு செய்தியும் கடையின் எஸ்எம்எஸ் வழங்குநர் வழியாகச் சென்று அதன் செலவில் சேரும்; அனுப்பிய செய்தியைத் திரும்பப் பெற முடியாது. ஒப்புக்கொள்ளாத வாடிக்கையாளர்களுக்கு ஒருபோதும் அனுப்பப்படாது.', authority: 'உங்கள் பெயரில். வார்த்தைகளை இரண்டாவது நபர் அனுமதித்தார்; யாரும் அனுமதிக்காத வார்த்தைகளைத் தலைமை அலுவலகம் மறுக்கும்.', label: 'பிரச்சாரத்தை அனுப்பு' },
+};
+const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
+function sendSheet() {
+  const values = { n: plan === null ? '' : String(plan.sendToCount), id: $('campaign-id').value.trim() || '—' };
+  const key = plan === null ? 'titleNoPlan' : 'title';
+  const pair = (k) => ({ en: fillIn(CONFIRM.en[k], values), ta: fillIn(CONFIRM.ta[k], values) });
+  return { title: pair(key), detail: pair('detail'), authority: pair('authority'), confirmLabel: pair('label'), tone: 'primary' };
+}
 async function send() {
+  if (!(await (await office()).confirm(sendSheet())).ok) return;
   const out = await session.send({ campaignId: $('campaign-id').value.trim(), template: chosenTemplate(), containsPromotion: $('promotion').checked, plan: plan ?? undefined, value: $('value').value });
   if (out.result !== 'ok') { bad('plan-status', out); return; }
   $('plan-status').dataset.queued = String(out.value.queued);

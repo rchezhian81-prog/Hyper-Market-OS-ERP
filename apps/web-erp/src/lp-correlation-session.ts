@@ -7,6 +7,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type Outcome<T> =
@@ -55,7 +56,7 @@ export type CorrelationCopyKey = keyof typeof CORRELATION_COPY.en;
 export const correlationWords = (lang: Lang, key: CorrelationCopyKey | string): string =>
   (CORRELATION_COPY[lang] as Record<string, string>)[key] ?? (CORRELATION_COPY.en as Record<string, string>)[key] ?? key;
 export function correlationOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${correlationWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return correlationWords(lang, out.why);
   if (out.result === 'lost_link') return correlationWords(lang, 'unreachable');
   return '';

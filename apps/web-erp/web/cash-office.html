@@ -41,8 +41,7 @@
       .signer { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .signer label { font-size:14px; color:var(--muted); }
       .signer select, .signer input { width:100%; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
-      button.act:focus-visible, select:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      button:focus-visible, select:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
@@ -90,7 +89,7 @@
           <label for="sign-note" id="sign-note-label"></label>
           <input id="sign-note" type="text" autocomplete="off" />
         </div>
-        <button id="sign" class="act" type="button"></button>
+        <button id="sign" class="sre-btn sre-btn-primary" type="button"></button>
       </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>

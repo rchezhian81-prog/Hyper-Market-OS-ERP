@@ -236,6 +236,7 @@ export interface LossRequestsView {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
+  | 'confirmTitle' | 'confirmDetail' | 'confirmAuthority' | 'confirmLabel' | 'confirmUnavailable' // U1 · OB-626
   | 'lossWastage' | 'lossDamage' | 'lossExpiry' | 'lossDonation' | 'lossDestruction'
   | 'productLabel' | 'locationLabel' | 'qtyLabel' | 'uomLabel' | 'valueLabel' | 'lossTypeLabel' | 'reasonLabel' | 'evidenceLabel'
   | 'recordBtn'
@@ -261,6 +262,11 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     productLabel: 'Which item', locationLabel: 'Where in the store', qtyLabel: 'How many', uomLabel: 'Unit',
     valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss', reasonLabel: 'Why it is lost', evidenceLabel: 'Photo or witness (for a big loss)',
     recordBtn: 'Record the loss',
+    // U1 · OB-626: the consequence-and-confirm sheet before a loss goes into the books
+    confirmTitle: 'Record a loss of {qty} of {product} worth {value}',
+    confirmDetail: 'Stock falls by that much in the books, in your name. A big loss goes only with the approval named on this form. A loss is never undone — a mistake is corrected by a new entry.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not record a loss or the approval does not match.',
+    confirmLabel: 'Record the loss', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     materialHint: 'This is a big loss — it needs a photo or witness, and a second person who handles stock must approve it.',
     immaterialHint: 'This loss is small enough to record on your own.',
     thresholdLabel: 'A loss is "big" at or above',
@@ -322,6 +328,10 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     productLabel: 'எந்தப் பொருள்', locationLabel: 'கடையில் எங்கே', qtyLabel: 'எத்தனை', uomLabel: 'அலகு',
     valueLabel: 'மதிப்பு (₹)', lossTypeLabel: 'எந்த வகை இழப்பு', reasonLabel: 'ஏன் இழப்பு', evidenceLabel: 'புகைப்படம் அல்லது சாட்சி (பெரிய இழப்புக்கு)',
     recordBtn: 'இழப்பைப் பதிவு செய்',
+    confirmTitle: '{product} — {qty}, மதிப்பு {value} இழப்பாகப் பதியப்படும்',
+    confirmDetail: 'கணக்கில் சரக்கு அந்த அளவு குறையும், உங்கள் பெயரில். பெரிய இழப்பு இந்தப் படிவத்தில் குறிப்பிட்ட அனுமதியுடன் மட்டுமே செல்லும். இழப்பைத் திரும்பப் பெற முடியாது — தவறு புதிய பதிவால் திருத்தப்படும்.',
+    confirmAuthority: 'உங்கள் பெயரில். இழப்பைப் பதியும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் அல்லது அனுமதி பொருந்தவில்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmLabel: 'இழப்பைப் பதிவு செய்', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     materialHint: 'இது ஒரு பெரிய இழப்பு — புகைப்படம் அல்லது சாட்சி தேவை; சரக்கைக் கையாளும் இரண்டாம் நபர் அதை அனுமதிக்க வேண்டும்.',
     immaterialHint: 'இந்த இழப்பு நீங்களே பதிவு செய்யும் அளவுக்குச் சிறியது.',
     thresholdLabel: 'இதற்குச் சமமாக அல்லது அதற்கு மேல் ஒரு இழப்பு "பெரியது"',

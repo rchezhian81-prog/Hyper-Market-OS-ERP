@@ -268,7 +268,7 @@ function reportRow(entry, ready) {
   row.append(what);
 
   if (ready) {
-    const open = document.createElement('button');
+    const open = document.createElement('button'); open.classList.add('sre-btn');
     open.type = 'button';
     open.textContent = t('run');
     open.addEventListener('click', () => { openReport(entry.report.id); });

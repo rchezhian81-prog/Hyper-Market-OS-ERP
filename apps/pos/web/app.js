@@ -178,6 +178,15 @@ const WORDS = {
     // decided there. The words for each refusal are the store computer's own (English) and their Tamil twins.
     takeFloat: 'Take float (open the till)', floatAmount: 'How much float is going into the drawer?', floatTaken: 'Float taken — the till is open',
     cashSaved: 'Recorded on the store computer', cashNotSaved: 'NOT recorded. Do not move the money.',
+    // OB-626 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
+    goBack: 'Go back', confirmFloatTitle: 'Record the float?', confirmSafeTitle: 'Record cash to the safe?',
+    confirmFloatWhat: '{amount} will be recorded as float put into this drawer.', confirmSafeWhat: '{amount} will be recorded as moved from this drawer to the safe.',
+    confirmCashDetail: 'The store computer records it before anything else happens; the cash office counts this shift against it. A wrong figure is corrected only by a second movement, never by changing this one.',
+    confirmCashWho: 'By {who} at {time} on this till.', confirmFloat: 'Record the float', confirmSafe: 'Record the move',
+    confirmCutTitle: 'Lower the price of this line?', confirmCutWhat: '{item}: from {from} to {to} for one unit — {cut} off this line ({pct}%).',
+    confirmCutFloor: 'The lowest price this item may be sold at is {floor}.',
+    confirmCutDetail: 'The store computer checks the cut against the approving manager\'s limit; above it the approval is refused and the line keeps its price.',
+    confirmCutWho: 'Recorded on this bill in your name and the manager\'s, with the reason the manager gives.', askManager: 'Ask the manager',
     whyOut: 'Why is the drawer out?', tillClosed: 'Till closed',
     pendingCash: 'A cash movement from before was still waiting — it has now been recorded.',
     cash_till_already_assigned: 'This till already has a float out. Close the till before another float is taken.',
@@ -415,6 +424,14 @@ const WORDS = {
     countHint: 'டிராயரில் உள்ளதை எண்ணவும். எவ்வளவு இருக்க வேண்டும் என்பதை இந்தத் திரை சொல்லாது — அது வேண்டுமென்றே.',
     takeFloat: 'ஆரம்பப் பணம் எடு (டில்லைத் திற)', floatAmount: 'டிராயரில் எவ்வளவு ஆரம்பப் பணம் போகிறது?', floatTaken: 'ஆரம்பப் பணம் எடுக்கப்பட்டது — டில் திறந்துள்ளது',
     cashSaved: 'கடை கணினியில் பதிவு செய்யப்பட்டது', cashNotSaved: 'பதிவு செய்யப்படவில்லை. பணத்தை நகர்த்த வேண்டாம்.',
+    goBack: 'பின் செல்', confirmFloatTitle: 'ஆரம்பப் பணத்தைப் பதிவு செய்யவா?', confirmSafeTitle: 'பெட்டகத்திற்குப் பணத்தைப் பதிவு செய்யவா?',
+    confirmFloatWhat: '{amount} இந்த டிராயரில் போடப்பட்ட ஆரம்பப் பணமாகப் பதிவு செய்யப்படும்.', confirmSafeWhat: '{amount} இந்த டிராயரிலிருந்து பெட்டகத்திற்கு மாற்றப்பட்டதாகப் பதிவு செய்யப்படும்.',
+    confirmCashDetail: 'வேறு எதுவும் நடப்பதற்கு முன் கடை கணினி இதைப் பதிவு செய்கிறது; பண அலுவலகம் இந்த ஷிஃப்டை இதற்கு எதிராகக் கணக்கிடும். தவறான தொகை இரண்டாவது பதிவால் மட்டுமே திருத்தப்படும், இதை மாற்றுவதால் அல்ல.',
+    confirmCashWho: '{who} மூலம், {time} மணிக்கு, இந்த டில்லில்.', confirmFloat: 'ஆரம்பப் பணத்தைப் பதிவு செய்', confirmSafe: 'மாற்றத்தைப் பதிவு செய்',
+    confirmCutTitle: 'இந்த வரியின் விலையைக் குறைக்கவா?', confirmCutWhat: '{item}: ஒரு அலகுக்கு {from} இலிருந்து {to} வரை — இந்த வரியில் {cut} குறைவு ({pct}%).',
+    confirmCutFloor: 'இந்தப் பொருளை விற்கக்கூடிய குறைந்தபட்ச விலை {floor}.',
+    confirmCutDetail: 'அனுமதிக்கும் மேலாளரின் வரம்புக்கு எதிராகக் கடை கணினி இந்தக் குறைப்பைச் சரிபார்க்கிறது; அதற்கு மேல் அனுமதி மறுக்கப்பட்டு வரி அதன் விலையை வைத்திருக்கும்.',
+    confirmCutWho: 'மேலாளர் தரும் காரணத்துடன், உங்கள் பெயரிலும் மேலாளரின் பெயரிலும் இந்த பில்லில் பதிவு செய்யப்படும்.', askManager: 'மேலாளரிடம் கேள்',
     whyOut: 'டிராயர் ஏன் வித்தியாசமாக உள்ளது?', tillClosed: 'டில் மூடப்பட்டது',
     pendingCash: 'முன்பு காத்திருந்த பணப் பதிவு இப்போது பதிவு செய்யப்பட்டது.',
     cash_till_already_assigned: 'இந்த டில்லில் ஏற்கனவே ஆரம்பப் பணம் உள்ளது. மற்றொன்று எடுப்பதற்கு முன் டில்லை மூடவும்.',
@@ -1033,9 +1050,17 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
+  // OB-626 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
+  el('consequence').hidden = mode !== 'confirm';
+  if (mode === 'confirm' && consequence !== null) {
+    el('consequence-what').textContent = consequence.what;
+    el('consequence-detail').textContent = consequence.detail;
+    el('consequence-who').textContent = consequence.who;
+  }
+  el('sheet-ok').classList.toggle('danger', mode === 'confirm' && consequence !== null && consequence.tone === 'danger');
   // A bill number keyed by hand has letters in it: the letters pad shows first (a bill number starts with them), and the
   // switch key flips between letters and digits. Both pads keep the till's full-size keys.
   entryHasLetters = mode === 'number' && letters === true;
@@ -1066,8 +1091,8 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
     button.addEventListener('click', () => { closeSheet(String(option.value)); });
     return button;
   }));
-  el('sheet-cancel').textContent = t('cancel');
-  el('sheet-ok').textContent = t('ok');
+  el('sheet-cancel').textContent = mode === 'confirm' ? t('goBack') : t('cancel');
+  el('sheet-ok').textContent = mode === 'confirm' && consequence !== null ? consequence.confirmLabel : t('ok');
   onEntryChange = onChange;
   chosen = null;
 
@@ -1091,11 +1116,24 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
 
   el('sheet').hidden = false;
   if (mode === 'text') el('entry-text').focus();
+  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-626).
+  if (mode === 'confirm') el('sheet-cancel').focus();
   return new Promise((resolve) => { sheetResolve = resolve; });
+}
+
+/**
+ * OB-626 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
+ * Says what will happen (with the figure), what it means and in whose name; the only ways on are the verb or Go back.
+ * Resolves `true` only when the verb was tapped. Nothing here sends anything — the caller sends only on `true`.
+ */
+function confirmAction({ title, what, detail, who, confirmLabel, tone = 'primary' }) {
+  return ask({ title, mode: 'confirm', consequence: { what, detail, who, confirmLabel, tone } }).then((answer) => answer === true);
 }
 
 function closeSheet(answer) {
   el('sheet').hidden = true;
+  el('consequence').hidden = true;
+  el('sheet-ok').classList.remove('danger');
   el('entry-text').value = '';
   el('entry-text').hidden = true;
   sheetMode = null;
@@ -1141,8 +1179,13 @@ el('pad-switch').addEventListener('click', () => {
 
 el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
-  closeSheet(sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
+  closeSheet(sheetMode === 'confirm' ? true : sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
 });
+// OB-626: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
+// by Enter on the verb itself once a person has moved the focus to it on purpose.)
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && sheetMode === 'confirm' && !el('sheet').hidden) { event.preventDefault(); event.stopPropagation(); closeSheet(null); }
+}, true);
 // Enter in the typed field is OK (a scanner ends its code with Enter); it never reaches the sale screen's scanner.
 el('entry-text').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); closeSheet(el('entry-text').value); }
@@ -2253,6 +2296,19 @@ async function changeLinePrice() {
   const toUnitMinor = Math.round(Number(typed) * 100);
   const value = session.priceChangeValue(lineId, toUnitMinor);
   if (!value.ok) { tell(t('read'), saidInLang(value), STOP); return; }
+  // OB-626 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
+  // knows — so the person who keys their PIN next approves a figure they have read, not a request they have not seen.
+  const lineFrom = value.fromUnitMinor * (value.quantityMinor || 1);
+  const pct = lineFrom > 0 ? Math.round((value.reductionMinor / lineFrom) * 100) : 0;
+  const onBill = session.basket().find((l) => l.lineId === lineId);
+  const confirmed = await confirmAction({
+    title: t('confirmCutTitle'),
+    what: t('confirmCutWhat').replace('{item}', (onBill && onBill.description) || descOf(value.productId)).replace('{from}', inr(value.fromUnitMinor)).replace('{to}', inr(toUnitMinor)).replace('{cut}', inr(value.reductionMinor)).replace('{pct}', String(pct)),
+    detail: `${typeof value.floorMinor === 'number' ? `${t('confirmCutFloor').replace('{floor}', inr(value.floorMinor))} ` : ''}${t(value.ownerOnly ? 'overrideOwnerOnly' : 'confirmCutDetail')}`,
+    who: t('confirmCutWho'),
+    confirmLabel: t('askManager'),
+  });
+  if (!confirmed) return;
   // OB-500 (R7-A): the product and the new price go with the request — the store computer judges its floor and the manager's limit.
   const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t(value.ownerOnly ? 'overrideOwnerOnly' : 'overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason', priceCut: { productId: value.productId, toUnitMinor, lineId: value.lineId, fromUnitMinor: value.fromUnitMinor, quantityMinor: value.quantityMinor, uom: value.uom } });
   if (!approval) return;
@@ -2313,8 +2369,19 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   if (amount === null) return;
   const minor = Math.round(Number(amount) * 100);
   if (minor <= 0) return;
+  // OB-626 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
+  const at = new Date().toISOString();
+  const float = kind === 'float_issue';
+  const confirmed = await confirmAction({
+    title: t(float ? 'confirmFloatTitle' : 'confirmSafeTitle'),
+    what: t(float ? 'confirmFloatWhat' : 'confirmSafeWhat').replace('{amount}', inr(minor)),
+    detail: t('confirmCashDetail'),
+    who: t('confirmCashWho').replace('{who}', (session.operator && session.operator()) || '—').replace('{time}', shopTimeOf(at) || '—'), // OB-607: the shop's clock, never this device's; '—' when the page has no shop clock
+    confirmLabel: t(float ? 'confirmFloat' : 'confirmSafe'),
+  });
+  if (!confirmed) return;
   try {
-    const outcome = await sendCash({ kind, amountMinor: minor, at: new Date().toISOString(), movementId: `cm-${kind}-${Date.now().toString(36)}` });
+    const outcome = await sendCash({ kind, amountMinor: minor, at, movementId: `cm-${kind}-${Date.now().toString(36)}` });
     if (outcome.committed) tell(t(doneKey), `${inr(minor)} — ${t('cashSaved')}`, SUCCESS);
     else tell(t('cashNotSaved'), cashWords(outcome), STOP);
   } catch (e) {

@@ -143,7 +143,7 @@ function placeNode(entry) {
   if (mayChange) {
     const acts = document.createElement('div'); acts.className = 'acts';
     const input = document.createElement('input'); input.setAttribute('aria-label', `${t('newName')}: ${n.name}`); input.placeholder = t('newName'); input.autocomplete = 'off';
-    const rename = document.createElement('button'); rename.type = 'button'; rename.textContent = t('rename'); rename.dataset.act = 'rename';
+    const rename = document.createElement('button'); rename.classList.add('sre-btn'); rename.type = 'button'; rename.textContent = t('rename'); rename.dataset.act = 'rename';
     const line = document.createElement('p'); line.className = 'status'; line.setAttribute('role', 'status');
     rename.addEventListener('click', async () => {
       const next = input.value.trim();
@@ -157,7 +157,7 @@ function placeNode(entry) {
     });
     acts.append(input, rename);
     if (n.status === 'draft') {
-      const activate = document.createElement('button'); activate.type = 'button'; activate.textContent = t('activate'); activate.dataset.act = 'activate';
+      const activate = document.createElement('button'); activate.classList.add('sre-btn'); activate.type = 'button'; activate.textContent = t('activate'); activate.dataset.act = 'activate';
       activate.addEventListener('click', async () => {
         // A structural change is the owner's approval: send the one already approved; else ask for it, once.
         const asked = await askedActivation(n.nodeId);
@@ -272,7 +272,7 @@ function departmentRow(d) {
     const cats = document.createElement('input'); cats.setAttribute('aria-label', `${t('catsInput')}: ${d.name}`); cats.placeholder = t('catsInput'); cats.autocomplete = 'off';
     cats.value = d.categoryIds.join(', '); cats.setAttribute('list', 'category-list'); cats.dataset.role = 'cats';
     const why = document.createElement('input'); why.setAttribute('aria-label', `${t('why')}: ${d.name}`); why.placeholder = t('why'); why.autocomplete = 'off'; why.dataset.role = 'why';
-    const save = document.createElement('button'); save.type = 'button'; save.textContent = t('saveCats'); save.dataset.act = 'save-categories';
+    const save = document.createElement('button'); save.classList.add('sre-btn'); save.type = 'button'; save.textContent = t('saveCats'); save.dataset.act = 'save-categories';
     save.addEventListener('click', async () => {
       const reason = why.value.trim();
       if (reason === '') { line.className = 'status err'; line.textContent = t('needWhy'); return; }
@@ -300,7 +300,7 @@ function departmentRow(d) {
     const acts = document.createElement('div'); acts.className = 'acts';
     const day = document.createElement('input'); day.type = 'date'; day.setAttribute('aria-label', `${t('reportDay')}: ${d.name}`); day.dataset.role = 'day';
     day.value = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    const show = document.createElement('button'); show.type = 'button'; show.textContent = t('showReport'); show.dataset.act = 'report';
+    const show = document.createElement('button'); show.classList.add('sre-btn'); show.type = 'button'; show.textContent = t('showReport'); show.dataset.act = 'report';
     const out = document.createElement('ul'); out.className = 'tree'; out.dataset.role = 'report';
     show.addEventListener('click', async () => {
       try {

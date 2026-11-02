@@ -132,6 +132,7 @@ function paintRecord() {
   $('gst-list').replaceChildren(...list(open.gst, gstWords));
   $('cess-list').replaceChildren(...list(open.cess, cessWords));
   for (const id of ['g-from', 'g-rate', 'g-save', 'c-from', 'c-adv', 'c-spec', 'c-per', 'c-save', 'why']) $(id).disabled = !mayEdit;
+  whyDisabled($('g-save'), mayEdit ? '' : 'role'); whyDisabled($('c-save'), mayEdit ? '' : 'role');
   $('ask').hidden = pending === null || !mayEdit;
 }
 
@@ -220,4 +221,26 @@ if (named && mayRead) void load();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it is not kept for offline use */ });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

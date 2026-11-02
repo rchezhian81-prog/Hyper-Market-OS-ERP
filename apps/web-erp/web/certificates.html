@@ -26,7 +26,7 @@
       label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); }
       label.tick input { width: 24px; height: 24px; min-height: 0; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -41,6 +41,8 @@
       .meta { font-size: 14px; color: var(--muted); }
       .acts { display: flex; gap: 8px; flex-wrap: wrap; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -68,12 +70,12 @@
         </div>
         <label class="tick" for="c-seen"><input id="c-seen" type="checkbox" /><span id="c-seen-l"></span></label>
         <p class="meta" id="c-renewing" hidden></p>
-        <button id="c-record" type="button"><span id="c-record-text"></span></button>
+        <button id="c-record" type="button" class="sre-btn sre-btn-primary"><span id="c-record-text"></span></button>
         <p class="status" id="c-status" role="status" aria-live="polite"></p>
       </section>
       <section id="list" hidden aria-labelledby="list-h">
         <h3 id="list-h"></h3>
-        <button id="l-reload" type="button" class="quiet"><span id="l-reload-text"></span></button>
+        <button id="l-reload" type="button" class="quiet sre-btn sre-btn-quiet"><span id="l-reload-text"></span></button>
         <p class="status" id="l-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="people"></ul>
       </section>

@@ -101,7 +101,17 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Staff 
       // The draft rostered nobody yet.
       expect(((await shop.cloud().request({ method: 'GET', path: '/v1/hr/workforce/roster', userId: OWNER })).body as { assignments: unknown[] }).assignments).toEqual([]);
 
+      // OB-626 A (U1): the commit goes through the shared confirm sheet — the week, the shifts and people, Go back sends nothing.
       await page.click('#commit');
+      await page.locator('#sre-confirm').waitFor({ timeout: 15_000 });
+      expect(await page.textContent('#sre-confirm-title')).toMatch(/The roster for the week of \d{4}-\d{2}-\d{2} will be committed: \d+ shifts, \d+ people, \d+ still uncovered\./);
+      expect(await page.textContent('#sre-confirm .sre-confirm-authority')).toMatch(/In your name as the store manager/);
+      await page.click('#sre-confirm-back');
+      await expect.poll(() => page.textContent('#commit-status')).toMatch(/Nothing was committed\./);
+      expect(((await shop.cloud().request({ method: 'GET', path: '/v1/hr/workforce/roster', userId: OWNER })).body as { assignments: unknown[] }).assignments).toEqual([]);
+      await page.click('#commit');
+      await page.locator('#sre-confirm').waitFor({ timeout: 15_000 });
+      await page.click('#sre-confirm-go');
       await expect.poll(() => page.textContent('#commit-status')).toMatch(/Committed to the roster by u-owner/);
       expect(await page.isDisabled('#commit')).toBe(true);
       expect(((await shop.cloud().request({ method: 'GET', path: '/v1/hr/workforce/roster', userId: OWNER })).body as { assignments: unknown[] }).assignments).toHaveLength(15);

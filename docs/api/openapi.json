@@ -74440,16 +74440,14 @@
         ],
         "requestBody": {
           "required": false,
-          "description": "This route reads no body; anything sent is ignored.",
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/PostOnlineStorePublishRequest"
               }
             }
           }
         },
-        "x-request-body": "none",
         "x-body-schema": "derived",
         "responses": {
           "200": {
@@ -217222,6 +217220,17 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/storefront-online-store.ts"
       },
+      "PostOnlineStorePublishRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/orders/src/storefront-online-store.ts"
+      },
       "PostOrdersByOrderIdBackorderReply200": {
         "$ref": "#/components/schemas/BackorderPlan",
         "x-body-schema": "derived",
@@ -283439,6 +283448,9 @@
             "type": "string"
           },
           "at": {
+            "type": "string"
+          },
+          "reason": {
             "type": "string"
           }
         },

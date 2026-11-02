@@ -138,7 +138,7 @@ else {
     $('f-status').textContent = out.value.length === 0 ? t('none') : '';
     $('f-rows').replaceChildren(...out.value.map((r) => {
       const li = text('li', `${r.name} · ${r.barcode ?? r.sku} · ${api.rupees(r.priceMinor)}`);
-      const add = document.createElement('button'); add.type = 'button'; add.className = 'quiet'; add.dataset.code = r.barcode ?? r.productId;
+      const add = document.createElement('button'); add.type = 'button'; add.className = 'quiet sre-btn sre-btn-quiet'; add.dataset.code = r.barcode ?? r.productId;
       const i = icon('list-plus'); if (i !== null) add.append(i);
       add.append(text('span', t('add')));
       add.addEventListener('click', () => { const box = $('t-codes'); box.value = `${box.value.trim() === '' ? '' : `${box.value.trim()}\n`}${add.dataset.code}`; });

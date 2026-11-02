@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .table-wrap { overflow-x: auto; }
       table { border-collapse: collapse; width: 100%; font-size: 15px; }
@@ -40,6 +40,9 @@
       .facts { font-size: var(--fs-sm); color: var(--muted); display: grid; gap: 2px; }
       .flags { margin: 0; padding-left: 18px; font-size: 14px; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -55,8 +58,8 @@
         <p class="lead" id="lead"></p>
         <div class="row-form">
           <label class="check" for="only-flagged"><input id="only-flagged" type="checkbox" /> <span id="only-flagged-l">Only the ones that need a look</span></label>
-          <button id="read" type="button"><span id="read-text">Show who holds what</span></button>
-          <button id="export" type="button"><span id="export-text">Save the permission matrix (CSV)</span></button>
+          <button id="read" type="button" class="sre-btn sre-btn-primary"><span id="read-text">Show who holds what</span></button>
+          <button id="export" type="button" class="sre-btn"><span id="export-text">Save the permission matrix (CSV)</span></button>
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
         <p class="meta" id="last-sign-in"></p>

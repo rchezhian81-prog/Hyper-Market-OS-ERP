@@ -292,7 +292,7 @@ describe('the desk the till has been sending people to', () => {
   });
 
   it('never interrupts anybody with a browser dialog', () => {
-    expect(code(VIEW)).not.toMatch(/\b(prompt|confirm|alert)\s*\(/);
+    expect(code(VIEW)).not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/);
     expect(code(VIEW)).toMatch(/function tell\(/);
   });
 

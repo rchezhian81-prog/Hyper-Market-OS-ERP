@@ -14,6 +14,7 @@
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { createBoxQueue, STATE_KEYS, type BoxQueue } from './lpw-box-queue';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -49,7 +50,7 @@ export const helpWords = (lang: Lang, key: string): string =>
 
 export function helpOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => helpWords(lang, k);
-  if (out.result === 'refused') return `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

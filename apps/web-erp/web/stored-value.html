@@ -52,6 +52,8 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       .muted { color:var(--muted); font-size:14px; margin:0; }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -71,7 +73,7 @@
 
       <div class="bar">
         <span class="asof" id="asof" role="status" aria-live="polite"></span>
-        <button class="refresh" id="refresh" type="button"></button>
+        <button class="refresh sre-btn sre-btn-quiet" id="refresh" type="button"></button>
       </div>
 
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
@@ -82,7 +84,7 @@
           <span id="owner-label-text"></span>
           <input id="owner-ref" name="ownerRef" autocomplete="off" />
         </label>
-        <button id="lookup-btn" type="submit"></button>
+        <button id="lookup-btn" type="submit" class="sre-btn sre-btn-primary"></button>
       </form>
       <ul class="rows" id="losses" aria-label="Cards given away twice"></ul>
       <p class="muted" id="loss-none" hidden></p>
@@ -93,7 +95,7 @@
           <span id="posted-label-text"></span>
           <input id="posted-figure" name="posted" inputmode="numeric" autocomplete="off" />
         </label>
-        <button id="reconcile-btn" type="submit"></button>
+        <button id="reconcile-btn" type="submit" class="sre-btn"></button>
       </form>
       <div class="gap" id="gap-panel" hidden></div>
       <p class="muted" id="gap-needs" hidden></p>

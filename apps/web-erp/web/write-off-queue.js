@@ -9,6 +9,15 @@ const q = window.writeOffQueue ?? null;
 const dec = window.writeOffDecide ?? null;
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const w = (k) => (q !== null ? q.text(lang(), k) : dec !== null ? dec.words(lang(), k) : k);
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, cls) { const b = document.createElement('button'); b.type = 'button'; b.className = `act ${cls ?? ''}`; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
@@ -42,9 +51,18 @@ if (q !== null) {
   const i = icon('trash'); if (i !== null) el('woq-save').prepend(i);
   el('woq-form').addEventListener('submit', (ev) => {
     ev.preventDefault();
+    void (async () => {
+    // U1 · OB-626: the consequence-and-confirm sheet before the loss is saved for sending — Go back saves nothing. An
+    // incomplete form skips the sheet and gets the queue's own words on what is missing (nothing is saved either way).
+    const complete = ['woq-product', 'woq-location', 'woq-qty', 'woq-type', 'woq-reason'].every((id) => el(id).value.trim() !== '');
+    const sub = (l, key) => String(q.text(l, key)).replace('{qty}', `${el('woq-qty').value} ${el('woq-uom').value}`.trim()).replace('{product}', el('woq-product').value);
+    const answer = complete ? await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'danger' }) : { ok: true };
+    if (answer === 'unavailable') { el('woq-result').hidden = false; el('woq-result-icon').textContent = '⚠'; el('woq-result-text').textContent = w('confirmUnavailable'); return; }
+    if (answer === null) return;
     const out = q.save(lang(), { productId: el('woq-product').value, locationId: el('woq-location').value, qty: el('woq-qty').value, uom: el('woq-uom').value, lossType: el('woq-type').value, reasonCode: el('woq-reason').value, evidenceRef: el('woq-evidence').value });
     el('woq-result').hidden = false; el('woq-result-icon').textContent = out.ok ? '✓' : '✕'; el('woq-result-text').textContent = out.ok ? w('stSavedHere') : out.words;
     paintQueue(); void syncQueue();
+    })();
   });
 }
 

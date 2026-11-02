@@ -182,6 +182,19 @@ describe('the picker’s three steps start at the bin, as the spec says (picker-
   });
 });
 
+describe('a greyed warehouse button says why it waits (U1 · UI/UX gap audit G3 · design system §4)', () => {
+  it('Count a bin and Adjust stock carry "needs the store computer" while they are disabled, in both languages', () => {
+    const paint = code(WAREHOUSE);
+    expect(paint).toMatch(/sayAction\(el\('count-bin'\), t\('countBin'\), 'calculator', real === undefined \? t\('waitsForBox'\) : ''\)/);
+    expect(paint).toMatch(/sayAction\(el\('adjust-stock'\), t\('adjustStock'\), 'sliders', real === undefined \? t\('waitsForBox'\) : ''\)/);
+    expect(paint).toMatch(/if \(el\(id\)\.disabled\) el\(id\)\.title = t\('waitsForBox'\)/);
+    const en = WAREHOUSE.slice(WAREHOUSE.indexOf('  en: {'), WAREHOUSE.indexOf('  ta: {'));
+    const ta = WAREHOUSE.slice(WAREHOUSE.indexOf('  ta: {'));
+    expect(en).toMatch(/waitsForBox: 'needs the store computer'/);
+    expect(ta).toMatch(/waitsForBox: '[஀-௿ ]+'/);
+  });
+});
+
 describe('the warehouse pick starts at the bin the pick list names, as the spec says (inventory-warehouse.md · W1)', () => {
   it('a bin label scanned from the list IS step 1 — the scan chooses the line that names that bin', () => {
     // "pick a line (≤3): scan bin → scan item → confirm" begins with a scan, not a tap — the same rule as the picker.

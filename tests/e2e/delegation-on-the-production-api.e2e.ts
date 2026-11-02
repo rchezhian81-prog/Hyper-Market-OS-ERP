@@ -76,6 +76,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Delega
     await page.check('input[name="kind"][value="refund"]');
     await page.fill('#reason', reason);
     await page.click('#lend');
+    // OB-626 A (U1): the privilege moves only through the shared confirm sheet.
+    await page.locator('#sre-confirm-go').waitFor({ timeout: 15_000 });
+    await page.click('#sre-confirm-go');
   };
 
   it('the owner lends the manager\'s refund authority, time-boxed and capped; head office records it as the owner\'s act', async () => {

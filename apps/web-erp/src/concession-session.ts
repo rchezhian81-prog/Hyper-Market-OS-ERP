@@ -11,6 +11,7 @@
 // Nothing is read or written on open; every write is a person's click.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -52,7 +53,7 @@ export const concessionWords = (lang: Lang, key: string): string =>
 
 export function concessionOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => concessionWords(lang, k);
-  if (out.result === 'refused') return out.code === 'feature_not_entitled' ? w('off') : `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return out.code === 'feature_not_entitled' ? w('off') : refusalWords(lang, out);
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

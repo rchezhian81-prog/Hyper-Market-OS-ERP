@@ -8,10 +8,19 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, review: false, record: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, act, iconName, quiet) {
-  const b = document.createElement('button'); b.type = 'button'; b.dataset.act = act; if (quiet) b.className = 'quiet';
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.act = act; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet';
   const i = icon(iconName); if (i !== null) b.append(i);
   b.append(text('span', words)); return b;
 }
@@ -90,6 +99,14 @@ if (may.named && may.review) {
     $('record').hidden = false;
     $('s-by').value = session.userId ?? '';
     $('s-record').addEventListener('click', async () => {
+      // U1 · OB-626: the consequence-and-confirm sheet before the disposal is recorded — Go back sends nothing.
+      const proceeds = Number($('s-proceeds').value);
+      const sub = (l, key) => String(api.words(l, key)).replace('{kg}', $('s-kg').value).replace('{category}', $('s-category').value).replace('{disposal}', $('s-disposal').value).replace('{proceeds}', Number.isFinite(proceeds) ? `₹${proceeds.toFixed(2)}` : $('s-proceeds').value);
+      // An incomplete form skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
+      const complete = $('s-branch').value.trim() !== '' && Number($('s-kg').value) > 0 && Number.isFinite(proceeds) && $('s-by').value.trim() !== '';
+      const answer = !complete ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
+      if (answer === 'unavailable') { $('s-status').textContent = t('confirmUnavailable'); return; }
+      if (answer === null) return;
       const out = await session.record({
         branchId: $('s-branch').value, category: $('s-category').value, disposal: $('s-disposal').value, kg: $('s-kg').value, proceedsRupees: $('s-proceeds').value,
         buyerName: $('s-buyer').value, evidence: $('s-evidence').value, recyclerRegistration: $('s-recycler').value, handledBy: $('s-by').value,

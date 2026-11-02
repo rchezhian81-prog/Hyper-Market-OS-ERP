@@ -15,6 +15,22 @@ let money = null;
 let draft = null;
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
+
+// U1 · G3: a button greyed for a role says why beside it (words, `title` and `aria-describedby`), never a mute grey.
+const WHY_DISABLED = { role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' } };
+function whyDisabled(btn, why) {
+  if (!btn || btn.tagName !== 'BUTTON') return;
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : (WHY_DISABLED[why]?.[tongue] ?? why);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
 for (const [id, name] of [['show-pending', 'clock'], ['show-order', 'search'], ['ask', 'hand'], ['issue', 'indian-rupee']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
@@ -29,9 +45,11 @@ function outcomeForm(r) {
   label.append(text('span', t('statementRef')), input);
   const mk = (result, words, iconName) => {
     const b = document.createElement('button'); b.type = 'button'; b.className = `quiet outcome-${result}`;
+    b.className = 'sre-btn';
     const i = icon(iconName); if (i !== null) b.append(i);
     b.append(text('span', words));
     b.disabled = !may.issue;
+    whyDisabled(b, may.issue ? '' : 'role');
     b.addEventListener('click', () => { void recordOutcome(r, result, input.value); });
     return b;
   };
@@ -82,7 +100,9 @@ function paint() {
   $('basis').replaceChildren(...(api?.bases ?? []).map((b) => { const o = document.createElement('option'); o.value = b; o.textContent = t(`basis_${b}`); return o; }));
   $('basis').value = chosen;
   for (const id of ['show-pending', 'show-order', 'order-id']) $(id).disabled = !may.read;
+  for (const id of ['show-pending', 'show-order']) whyDisabled($(id), may.read ? '' : 'role');
   for (const id of ['ask', 'issue', 'amount', 'basis', 'reason']) $(id).disabled = !may.issue;
+  for (const id of ['ask', 'issue']) whyDisabled($(id), may.issue ? '' : 'role');
   paintPending(); paintMoney();
 }
 
@@ -105,8 +125,23 @@ async function ask() {
   $('approval-id').value = out.value.requestId;
   good('refund-status', `${t('asked')} ${out.value.requestId}. ${t('askedNext')}`);
 }
+// OB-626: an order refund is issued only after the shared confirm sheet (the chrome's) says the amount, the order, the basis
+// and in whose name — and the person confirms. Go back sends nothing.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const CONFIRM = {
+  en: { title: '{amount} will be refunded on order {order} ({basis})', detail: 'The money goes back to the payment the customer used, never anywhere else. A card or UPI refund reads "waiting for the bank" until the bank confirms it; it cannot be taken back once issued.', authority: 'In your name, under approval {approval}. Head office refuses it without a second person\'s approval of exactly this refund.', label: 'Issue the refund' },
+  ta: { title: 'ஆர்டர் {order}-க்கு {amount} திருப்பித் தரப்படும் ({basis})', detail: 'பணம் வாடிக்கையாளர் பயன்படுத்திய கட்டணத்திற்கே திரும்பும், வேறெங்கும் அல்ல. வங்கி உறுதிப்படுத்தும் வரை கார்டு அல்லது யுபிஐ திருப்பம் "வங்கிக்காகக் காத்திருக்கிறது" என்றே படிக்கும்; வழங்கிய பின் திரும்பப் பெற முடியாது.', authority: 'உங்கள் பெயரில், அனுமதி {approval}-இன் கீழ். இதே திருப்பத்திற்கு இரண்டாவது நபரின் அனுமதி இல்லாமல் தலைமை அலுவலகம் மறுக்கும்.', label: 'திருப்பத்தை வழங்கு' },
+};
+const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
+function issueSheet() {
+  const basisEl = $('basis');
+  const values = { amount: api.rupees(draft.amountMinor), order: draft.orderId, basis: basisEl?.selectedOptions?.[0]?.textContent ?? draft.basis, approval: $('approval-id').value.trim() || '—' };
+  const pair = (k) => ({ en: fillIn(CONFIRM.en[k], values), ta: fillIn(CONFIRM.ta[k], values) });
+  return { title: pair('title'), detail: pair('detail'), authority: pair('authority'), confirmLabel: pair('label'), tone: 'primary' };
+}
 async function issue() {
   if (draft === null) { $('refund-status').className = 'status err'; $('refund-status').textContent = `⚠ ${t('needAsk')}`; return; }
+  if (!(await (await office()).confirm(issueSheet())).ok) return;
   const out = await session.issue(draft, $('approval-id').value);
   if (out.result !== 'ok') { bad('refund-status', out); return; }
   const state = out.value.refund.effectiveState;

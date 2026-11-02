@@ -23,7 +23,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
@@ -44,6 +44,8 @@
       td, th { text-align: left; }
       .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -59,7 +61,7 @@
         <p class="lead" id="lead"></p>
         <form class="form-row" id="ask">
           <label for="branch"><span id="l-branch">Store</span><input id="branch" autocomplete="off" /></label>
-          <button id="show" type="submit">Show the report</button>
+          <button id="show" type="submit" class="sre-btn sre-btn-primary">Show the report</button>
         </form>
         <div class="panels" id="bands" role="status" aria-live="polite"></div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>

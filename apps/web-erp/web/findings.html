@@ -23,7 +23,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -37,6 +37,8 @@
       .meta { font-size: 14px; color: var(--muted); margin: 0; }
       .status { font-size: 14px; min-height: 20px; margin: 0; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -55,7 +57,7 @@
       <section id="sales" hidden aria-labelledby="sales-h">
         <h3 id="sales-h"></h3>
         <p class="meta" id="sales-lead"></p>
-        <button id="s-reload" type="button" class="quiet"><span id="s-reload-text"></span></button>
+        <button id="s-reload" type="button" class="quiet sre-btn sre-btn-quiet"><span id="s-reload-text"></span></button>
         <p class="counts" id="s-counts"></p>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="s-rows"></ul>
@@ -65,7 +67,7 @@
         <p class="meta" id="att-lead"></p>
         <form class="row-form" id="a-ask">
           <label for="a-day"><span id="a-day-l"></span><input id="a-day" type="date" /></label>
-          <button id="a-show" type="submit"><span id="a-show-text"></span></button>
+          <button id="a-show" type="submit" class="sre-btn sre-btn-primary"><span id="a-show-text"></span></button>
         </form>
         <p class="counts" id="a-counts"></p>
         <p class="status" id="a-status" role="status" aria-live="polite"></p>

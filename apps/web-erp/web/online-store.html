@@ -29,9 +29,7 @@
       label { display:grid; gap:2px; font-size:14px; color:var(--muted); }
       input, select, textarea { min-height:var(--tap); font:inherit; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); min-width:0; }
       textarea { padding:8px 10px; }
-      button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--on-accent); padding:0 16px; cursor:pointer; }
-      button.act.quiet { background:var(--line); color:var(--ink); }
-      button.act:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:8px; border-left:6px solid var(--idle); overflow-wrap:anywhere; }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); } li.row.tone-error { border-left-color:var(--error); }
@@ -73,9 +71,9 @@
         <label for="d-grievanceOfficerName"><span id="l-grievanceOfficerName"></span><input id="d-grievanceOfficerName" type="text" maxlength="120" /></label>
         <label for="d-grievanceOfficerContact"><span id="l-grievanceOfficerContact"></span><input id="d-grievanceOfficerContact" type="text" maxlength="200" /></label>
         <label for="d-reason"><span id="l-reason"></span><input id="d-reason" type="text" maxlength="200" /></label>
-        <button class="act" id="save-details" type="submit">Save</button>
+        <button class="sre-btn" id="save-details" type="submit">Save</button>
       </form>
-      <button class="act quiet" id="publish-store" type="button">Publish the online store</button>
+      <button class="sre-btn sre-btn-primary" id="publish-store" type="button">Publish the online store</button>
       <p class="lead" id="tcs"></p>
 
       <h3 id="h-listings"></h3>
@@ -91,7 +89,7 @@
         <label for="p-windows"><span id="l-windows"></span><input id="p-windows" type="text" placeholder="dairy=2, household=7" /></label>
         <label for="p-nonreturnable"><span id="l-nonreturnable"></span><input id="p-nonreturnable" type="text" /></label>
         <label for="p-reason"><span id="l-preason"></span><input id="p-reason" type="text" maxlength="200" /></label>
-        <button class="act" id="save-policy" type="submit">Save</button>
+        <button class="sre-btn" id="save-policy" type="submit">Save</button>
       </form>
       <ul class="rows" id="returns" aria-label="Online returns"></ul>
     </main>

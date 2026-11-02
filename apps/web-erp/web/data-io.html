@@ -42,9 +42,9 @@
       li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
       .chip { display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:14px; }
       .chip .icon { font-size:16px; }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:var(--on-info); }
-      button.act.primary { background:var(--good); color:var(--on-accent); }
-      button.act.small { min-height: var(--tap); font-size:14px; background:var(--info); color:var(--on-info); }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700;   }
+      button.act.primary { background:var(--good);  }
+      button.act.small { min-height: var(--tap); font-size:14px;   }
       button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       .preview { background:var(--bg); border-radius:12px; padding:12px 14px; font-size:14px; display:grid; gap:6px; }
       .preview.ready { border-left:5px solid var(--ok); } .preview.notready { border-left:5px solid var(--error); }
@@ -58,6 +58,8 @@
       .preview .changeline { font-size: var(--fs-sm); }
       li.row .undo { display:grid; gap:6px; width:100%; }
       li.row .undo .actions { margin-top:0; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -97,7 +99,7 @@
           <textarea id="import-file" autocomplete="off" spellcheck="false"></textarea>
           <label for="import-total" id="total-label"></label>
           <input id="import-total" type="text" inputmode="numeric" autocomplete="off" />
-          <button id="validate" class="act small" type="button"></button>
+          <button id="validate" class="act small sre-btn" type="button"></button>
           <p class="result" id="validate-result" hidden role="status" aria-live="polite"><span class="icon" id="validate-result-icon" aria-hidden="true"></span><span id="validate-result-text"></span></p>
           <div class="preview" id="preview" hidden></div>
           <div class="row2">
@@ -105,8 +107,8 @@
             <div><label for="import-why" id="why-label"></label><input id="import-why" type="text" autocomplete="off" maxlength="300" /></div>
           </div>
           <div class="actions">
-            <button id="ask" class="act small" type="button"></button>
-            <button id="commit" class="act primary" type="button"></button>
+            <button id="ask" class="act small sre-btn" type="button"></button>
+            <button id="commit" class="act primary sre-btn sre-btn-primary" type="button"></button>
           </div>
           <p class="result" id="ask-result" hidden role="status" aria-live="polite"><span class="icon" id="ask-result-icon" aria-hidden="true"></span><span id="ask-result-text"></span></p>
           <p class="result" id="commit-result" hidden role="status" aria-live="polite"><span class="icon" id="commit-result-icon" aria-hidden="true"></span><span id="commit-result-text"></span></p>

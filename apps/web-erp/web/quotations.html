@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -35,6 +35,8 @@
       .acts input { flex: 1 1 200px; }
       .number { font-size: 22px; font-weight: 800; letter-spacing: 1px; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -62,16 +64,16 @@
           <label for="l-qty"><span id="l-qty-l"></span><input id="l-qty" inputmode="numeric" autocomplete="off" /></label>
           <label for="l-price"><span id="l-price-l"></span><input id="l-price" inputmode="decimal" autocomplete="off" /></label>
         </div>
-        <button id="l-add" type="button" class="quiet"><span id="l-add-text"></span></button>
+        <button id="l-add" type="button" class="quiet sre-btn sre-btn-quiet"><span id="l-add-text"></span></button>
         <p class="status" id="l-status" role="status" aria-live="polite"></p>
         <h4 id="lines-h"></h4>
         <ul class="rows" id="lines"></ul>
         <p class="meta" id="lines-total"></p>
         <label for="q-approval"><span id="q-approval-l"></span><input id="q-approval" autocomplete="off" /></label>
-        <button id="q-make" type="button"><span id="q-make-text"></span></button>
+        <button id="q-make" type="button" class="sre-btn sre-btn-primary"><span id="q-make-text"></span></button>
         <p class="status" id="q-status" role="status" aria-live="polite"></p>
         <!-- R8-B · OB-525: shown only when head office refused a price below its floor — asks a second person for exactly it. -->
-        <button id="q-ask" type="button" class="quiet" hidden><span id="q-ask-text"></span></button>
+        <button id="q-ask" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span id="q-ask-text"></span></button>
         <p class="status" id="q-ask-status" role="status" aria-live="polite"></p>
         <p class="number" id="q-number" hidden></p>
       </section>
@@ -81,8 +83,8 @@
           <label for="s-state"><span id="s-state-l"></span><select id="s-state"></select></label>
         </div>
         <div class="acts">
-          <button id="s-show" type="button"><span id="s-show-text"></span></button>
-          <button id="s-follow" type="button" class="quiet"><span id="s-follow-text"></span></button>
+          <button id="s-show" type="button" class="sre-btn"><span id="s-show-text"></span></button>
+          <button id="s-follow" type="button" class="quiet sre-btn sre-btn-quiet"><span id="s-follow-text"></span></button>
         </div>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="rows"></ul>

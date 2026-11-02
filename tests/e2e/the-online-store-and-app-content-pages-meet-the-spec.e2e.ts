@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { seedOnlineCatalogue, type ShopCalls, type Res } from '../support/online-shop';
 import type { RealCloud } from '../support/real-store';
@@ -31,6 +31,13 @@ const callsOn = (cloud: () => RealCloud): ShopCalls => {
     cloud().request({ method, path: query === undefined ? path : `${path}?${new URLSearchParams(query).toString()}`, userId, ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
   const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; if (r.status >= 300) throw new Error(`${what}: ${r.status} ${JSON.stringify(r.body)}`); return r; };
   return { req, ok };
+};
+
+/** OB-626: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
 };
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Online store and App content pages (B23 · A26 · WF-16 · D01-FR-06) on the production API, in a real browser', () => {
@@ -78,6 +85,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Online sto
 
       // Publishing the store is refused by name.
       await page.click('#publish-store');
+      await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+      await page.fill('#sre-confirm-reason', 'synthetic: trying to publish before the officer is named');
+      await confirmSheet(page);
       await page.locator('#result', { hasText: 'online listing incomplete: grievance officer name' }).waitFor({ timeout: 15_000 });
       expect(await page.textContent('#store-state')).toBe('The online store cannot be published yet: online listing incomplete: grievance officer name');
 

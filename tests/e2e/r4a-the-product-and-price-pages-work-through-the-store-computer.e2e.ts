@@ -11,6 +11,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { decide } from '../support/approval-request';
 import { deliveryPlaces } from '../support/approved-supplier';
 import { STREAM, streamName } from '../../services/api/src/adapters';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 
 /**
  * **Round 4a — the product-master and price-list pages, in a real browser, served by the store computer, over head office's
@@ -396,7 +397,8 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await o.page.click('#stop');
     await says(o.page, 'record-status', /^Write why first\.$/);
     await o.page.fill('#s-why', 'ended early (synthetic)');
-    await o.page.click('#stop');
+    // U1 · OB-626: the consequence-and-confirm sheet names the offer; Go back sends nothing; Confirm sends once.
+    await askedThenConfirmed(o.page, () => o.page.click('#stop'), /Stop the offer rice-10 now/, writeCounter(o.page));
     await says(o.page, 'record-status', /^Stopped\./);
     await o.page.locator('#rows tr[data-id="rice-10"][data-status="stopped"]').waitFor();
     expect(((await req('GET', '/v1/promotions/rice-10/definition')).body as { status: string }).status).toBe('stopped');

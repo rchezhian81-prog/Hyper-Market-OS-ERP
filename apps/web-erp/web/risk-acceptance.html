@@ -47,6 +47,8 @@
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -81,7 +83,7 @@
           <div><label for="reviewer-id" id="reviewer-id-label"></label><input id="reviewer-id" type="text" autocomplete="off" /></div>
           <div><label for="reviewer-name" id="reviewer-name-label"></label><input id="reviewer-name" type="text" autocomplete="off" /></div>
           <div><label for="reviewer-reason" id="reviewer-reason-label"></label><input id="reviewer-reason" type="text" autocomplete="off" /></div>
-          <button id="name-reviewer" class="act" type="button"></button>
+          <button id="name-reviewer" class="act sre-btn" type="button"></button>
         </div>
       </section>
 
@@ -95,7 +97,7 @@
           <label for="accept-rationale" id="accept-rationale-label"></label>
           <input id="accept-rationale" type="text" autocomplete="off" />
         </div>
-        <button id="accept" class="act" type="button"></button>
+        <button id="accept" class="act sre-btn sre-btn-primary" type="button"></button>
       </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>

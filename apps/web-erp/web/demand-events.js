@@ -33,6 +33,7 @@ function paint() {
   $('whoami').textContent = window.demandEventsData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('save').disabled = !may.manage; $('show').disabled = !may.read; $('forecast').disabled = !may.read;
+  whyDisabled($('save'), may.manage ? '' : 'role'); whyDisabled($('show'), may.read ? '' : 'role'); whyDisabled($('forecast'), may.read ? '' : 'role');
   const weather = forecast?.weather ?? events?.weather;
   $('weather').textContent = weather?.detail ?? ''; $('weather').dataset.state = weather?.state ?? '';
 
@@ -57,6 +58,35 @@ function paint() {
 }
 
 const store = () => $('store').value;
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not) or a page's own { en, ta } pair;
+ *  '' takes the words away. */
+const WHY_WORDS = {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+};
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (WHY_WORDS[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
+
 async function show(event) {
   event?.preventDefault();
   const out = await session.events(store());
@@ -65,6 +95,18 @@ async function show(event) {
 }
 async function record(event) {
   event.preventDefault();
+  // U1 · OB-626: the consequence-and-confirm sheet before the event changes the forecasts — Go back sends nothing.
+  const effect = Number($('effect').value);
+  const pct = Number.isFinite(effect) && effect > 0 ? Math.round(Math.abs(effect - 1) * 100) : null;
+  const w = (l, k) => api.words(l, k);
+  const effectWords = (l) => (pct === null ? $('effect').value : pct === 0 ? w(l, 'effectSame') : w(l, effect > 1 ? 'effectMore' : 'effectLess').replace('{pct}', String(pct)));
+  const productsWords = (l) => ($('products').value.trim() === '' ? w(l, 'allProducts') : $('products').value.trim());
+  const sub = (l, key) => String(w(l, key)).replace('{label}', $('label').value.trim()).replace('{kind}', w(l, $('kind').value)).replace('{from}', $('ev-from').value).replace('{to}', $('ev-to').value).replace('{effect}', effectWords(l)).replace('{products}', productsWords(l)).replace('{store}', store());
+  // An incomplete form skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
+  const complete = store().trim() !== '' && $('label').value.trim() !== '' && $('ev-from').value !== '' && $('ev-to').value !== '' && pct !== null;
+  const answer = !complete ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: w('en', 'confirmLabel'), ta: w('ta', 'confirmLabel') }, tone: 'primary' });
+  if (answer === 'unavailable') { say('record-status', t('confirmUnavailable'), false); return; }
+  if (answer === null) return;
   const out = await session.record({ storeId: store(), label: $('label').value, kind: $('kind').value, from: $('ev-from').value, to: $('ev-to').value, effect: $('effect').value, products: $('products').value });
   if (out.result === 'ok') { say('record-status', t('recorded'), true); await show(); } else say('record-status', out, false);
 }

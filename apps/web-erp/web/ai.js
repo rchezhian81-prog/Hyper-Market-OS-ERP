@@ -319,11 +319,11 @@ function field(tag = 'textarea') {
   return f;
 }
 function button(word, icon, cls, onClick, enabled = true) {
-  const b = document.createElement('button');
+  const b = document.createElement('button'); b.classList.add('sre-btn');
   b.type = 'button';
-  if (cls) b.className = cls;
+  if (cls) b.className = `${cls} sre-btn`;
   label(b, icon, word);
-  b.disabled = !enabled;
+  b.disabled = !enabled; whyDisabled(b, enabled ? '' : 'role');
   b.addEventListener('click', onClick);
   return b;
 }
@@ -372,7 +372,7 @@ function renderSwitch() {
   const single = el('scope').value === 'single_agent';
   el('which').hidden = !single;
   el('which-label').hidden = !single;
-  el('pull').disabled = !view.may.stop;
+  el('pull').disabled = !view.may.stop; whyDisabled(el('pull'), view.may.stop ? '' : 'role');
 
   // OB-390 · ai-control.md "pull an agent's kill switch ≤2": one button per RUNNING assistant, beside the reason. Write why,
   // press its button — two acts. The reason is never defaulted (a stop with a made-up reason cannot be reviewed); an empty
@@ -731,7 +731,7 @@ function renderIncidents() {
     o.textContent = a.agentId === '' ? a.name : `${a.agentId} — ${a.name}`;
     return o;
   }));
-  el('raise').disabled = view === null || !view.may.manageIncidents;
+  el('raise').disabled = view === null || !view.may.manageIncidents; whyDisabled(el('raise'), view === null ? 'offline' : view.may.manageIncidents ? '' : 'role');
 }
 
 el('raise').addEventListener('click', () => {
@@ -808,4 +808,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

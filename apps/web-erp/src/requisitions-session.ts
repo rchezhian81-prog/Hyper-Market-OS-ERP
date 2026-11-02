@@ -8,6 +8,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import { normaliseUom, quantityLabel, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type Outcome<T> =
@@ -110,7 +111,7 @@ export type RequisitionsCopyKey = keyof typeof REQUISITIONS_COPY.en;
 export const requisitionsWords = (lang: Lang, key: RequisitionsCopyKey | string): string =>
   (REQUISITIONS_COPY[lang] as Record<string, string>)[key] ?? (REQUISITIONS_COPY.en as Record<string, string>)[key] ?? key;
 export function requisitionsOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${requisitionsWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return requisitionsWords(lang, out.why);
   if (out.result === 'lost_link') return requisitionsWords(lang, 'unreachable');
   return '';

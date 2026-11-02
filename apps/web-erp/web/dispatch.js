@@ -27,7 +27,7 @@ function say(where, out) { $(where).className = 'status err'; $(where).textConte
 function good(where, words) { $(where).className = 'status good'; $(where).textContent = `✓ ${words}`; }
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, onClick, cls) {
-  const b = document.createElement('button'); b.type = 'button'; if (cls) b.className = cls;
+  const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls;
   const i = icon(iconName); if (i !== null) b.append(i, ' ');
   b.append(text('span', words)); b.addEventListener('click', onClick); return b;
 }
@@ -241,9 +241,13 @@ function paint() {
   $('whoami').textContent = window.dispatchData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('show-orders').disabled = !may.waves; $('show-waves').disabled = !may.waves; $('build').disabled = !may.waves;
+  for (const id of ['show-orders', 'show-waves', 'build']) whyDisabled($(id), may.waves ? '' : 'role');
   $('plan').disabled = !may.dispatch; $('off-road').disabled = !may.dispatch; $('propose').disabled = !may.dispatch;
+  for (const id of ['plan', 'off-road', 'propose']) whyDisabled($(id), may.dispatch ? '' : 'role');
   $('show-board').disabled = !may.read; $('show-held').disabled = !may.read; $('show-controls').disabled = !may.read;
+  for (const id of ['show-board', 'show-held', 'show-controls']) whyDisabled($(id), may.read ? '' : 'role');
   $('approve-settle').disabled = !may.approveSettlement; $('paid').disabled = !may.approveSettlement;
+  for (const id of ['approve-settle', 'paid']) whyDisabled($(id), may.approveSettlement ? '' : 'role');
 }
 
 $('show-orders').addEventListener('click', () => { void showOrders(); });
@@ -327,7 +331,7 @@ async function showTillJobs(say = true) {
 }
 function paintDesk() {
   for (const [id, k] of [['till-jobs-h', 'tillJobsH'], ['till-jobs-lead', 'tillJobsLead'], ['till-day-l', 'dayL'], ['show-till-jobs-text', 'showTillJobs']]) $(id).textContent = dk(k);
-  $('show-till-jobs').disabled = desk === null || !desk.session.may.read;
+  $('show-till-jobs').disabled = desk === null || !desk.session.may.read; whyDisabled($('show-till-jobs'), desk === null ? 'offline' : desk.session.may.read ? '' : 'role');
   paintTillJobs();
 }
 { const i = icon('truck'); if (i !== null) $('show-till-jobs').prepend(i, ' '); }
@@ -336,3 +340,25 @@ $('show-till-jobs').addEventListener('click', () => { void showTillJobs(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintDesk(); });
 if (api !== null) paint();
 paintDesk();
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}

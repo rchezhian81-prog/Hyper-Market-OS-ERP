@@ -21,6 +21,7 @@
 // writes on open.
 
 import type { ViewerIdentity } from './browser-entry';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -147,7 +148,7 @@ export function wordsFor(lang: Lang, key: CopyKey, slots: Readonly<Record<string
 
 /** How a refusal, a bad form or a lost link reads to a person (a success reads its own word). */
 export function outcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return out.code === 'scale_stamp_change_needs_approval' ? wordsFor(lang, 'needsApproval') : `${wordsFor(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return out.code === 'scale_stamp_change_needs_approval' ? wordsFor(lang, 'needsApproval') : refusalWords(lang, out);
   if (out.result === 'invalid') return wordsFor(lang, out.why);
   if (out.result === 'lost_link') return wordsFor(lang, 'unreachable');
   return '';

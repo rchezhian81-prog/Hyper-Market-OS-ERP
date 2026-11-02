@@ -32,6 +32,13 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['desks', 'e2e', 'key'].join('-').padEnd(48, '0');
 const day = (n: number): string => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
+/** OB-626: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
+};
+
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commercial desks (OB-288 package 3) on the production API, in a real browser', () => {
   let browser: Browser;
   let shop: InboxShop;
@@ -156,12 +163,14 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     await order.waitFor({ timeout: 15_000 });
     await order.locator('input.dispatched').first().fill('4');
     await order.locator('button[data-act="challan"]').click();
+    await confirmSheet(mgr.page);
     await mgr.page.locator('#d-rows li[data-kind="challan"]').waitFor({ timeout: 15_000 });
     // OB-426: the delivery State starts as the State of the customer's GSTIN (Tamil Nadu, 33), and says so; it can be changed.
     const orderNow = mgr.page.locator('#d-rows li[data-kind="sales_order"]');
     expect(await orderNow.locator('input.delivery-state').inputValue()).toBe('33');
     expect((await orderNow.textContent()) ?? '').toContain('Tamil Nadu (33) — Filled in from the State of the customer\'s GSTIN');
     await mgr.page.locator('#d-rows li[data-kind="sales_order"] button[data-act="invoice"]').click();
+    await confirmSheet(mgr.page);
     await mgr.page.locator('#d-rows li[data-kind="tax_invoice"]').waitFor({ timeout: 15_000 });
     // OB-416: the tax invoice is made out to the customer's GSTIN; the order-taker cannot change the GSTIN.
     await waitText(mgr.page, '#d-rows li[data-kind="tax_invoice"]', 'Bill to: Synthetic School Trust · GSTIN 33ZZZZZ9999Z1ZF · Tamil Nadu (33)');

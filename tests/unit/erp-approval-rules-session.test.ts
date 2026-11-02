@@ -60,8 +60,8 @@ describe('the Approval rules session', () => {
   it('a refusal and a lost link are said in the page\'s words, in both languages', async () => {
     const refusing = createApprovalRulesSession({ viewer: { userId: 'u', permissions: ['approvals.rules.read'] }, fetch: recorder(() => ({ status: 403, body: { error: { code: 'forbidden', whatHappened: 'no' } } })).fetch });
     const out = await refusing.read();
-    expect(approvalRulesOutcomeWords('en', out)).toBe('Head office refused: no');
-    expect(approvalRulesOutcomeWords('ta', out)).toBe('தலைமை அலுவலகம் மறுத்தது: no');
+    expect(approvalRulesOutcomeWords('en', out)).toBe('Head office refused: no. Nothing was changed. Ask a person who holds that right.'); // U1: the three parts (§1 rule 5)
+    expect(approvalRulesOutcomeWords('ta', out)).toBe('தலைமை அலுவலகம் மறுத்தது: no. எதுவும் மாற்றப்படவில்லை. அந்த உரிமை உள்ள ஒருவரிடம் கேளுங்கள்.'); // U1: the three parts, in Tamil
     const lost = createApprovalRulesSession({ viewer: { userId: 'u', permissions: ['approvals.rules.read'] }, fetch: (async () => { throw new Error('offline'); }) as typeof globalThis.fetch });
     expect(approvalRulesOutcomeWords('en', await lost.read())).toBe('Head office cannot be reached — nothing was changed.');
   });

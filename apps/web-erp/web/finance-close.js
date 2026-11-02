@@ -92,7 +92,7 @@ function resolveDrawer(e) {
   const amount = node('input', { className: 'amount', inputMode: 'decimal', value: (e.amountMinor / 100).toFixed(2) });
   const at = node('input', { className: 'at', type: 'datetime-local' });
   const complete = node('input', { className: 'complete', type: 'checkbox' });
-  const go = node('button', { type: 'button', className: 'go', textContent: w('resolve') });
+  const go = node('button', { type: 'button', className: 'sre-btn go', textContent: w('resolve') });
   const line = node('p', { className: 'status', role: 'status' });
   d.append(node('div', { className: 'row' },
     node('label', {}, node('span', { textContent: w('found') }), found),
@@ -176,7 +176,36 @@ async function loadStock() {
   cache.stock = await session.stockValuation(period());
   renderStock();
 }
+
+// OB-626: before money or stock moves, the shared confirm sheet (the chrome's) says what will happen in the person's own
+// words and asks for their word. Go back sends nothing. The words live here, in both languages, filled with the month.
+const officeWithSheet = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
+const MONTHS = { en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'] };
+/** The month in words from its own digits (never the device's clock or zone, OB-606): 2026-10 → "October 2026". */
+const monthInWords = (p, l) => { const m = /^(\d{4})-(\d{2})$/.exec(p); if (!m) return p; const name = MONTHS[l === 'ta' ? 'ta' : 'en'][Number(m[2]) - 1]; return name === undefined ? p : `${name} ${m[1]}`; };
+const CONFIRM_WORDS = {
+  en: {
+    authority: 'In your name. Where a second person\'s signature or approval was asked for, head office uses it and refuses without it.',
+    adjustTitle: 'The month-end stock adjustment for {m} will be posted to the accounts', adjustDetail: 'The valuation head office read becomes a journal in the books for that month. Nothing posts twice. The month\'s profit and loss changes with it.', adjustLabel: 'Post the adjustment',
+    closeTitle: 'The month {m} will be closed', closeDetail: 'No day of {m} can be posted or changed after this; Tally files and GST returns are built from what is in the books now. Reopening needs the owner\'s approval and a reason.', closeLabel: 'Close the month',
+    reopenTitle: 'The month {m} will be reopened', reopenDetail: 'Days of {m} can be posted and changed again, and every file built from the closed month is out of date until it is closed once more.', reopenLabel: 'Reopen the month',
+    depTitle: 'Depreciation for {m} will be posted for every asset in service', depDetail: 'One journal per asset, once per month. Running it again posts nothing twice.', depLabel: 'Post depreciation',
+  },
+  ta: {
+    authority: 'உங்கள் பெயரில். இரண்டாவது நபரின் கையொப்பமோ அனுமதியோ கேட்கப்பட்ட இடத்தில் தலைமை அலுவலகம் அதைப் பயன்படுத்தும்; அது இல்லாமல் மறுக்கும்.',
+    adjustTitle: '{m} மாத இறுதி சரக்கு சரிசெய்தல் கணக்குகளில் பதியப்படும்', adjustDetail: 'தலைமை அலுவலகம் படித்த மதிப்பீடு அந்த மாதத்தின் புத்தகங்களில் ஒரு பதிவாகும். எதுவும் இருமுறை பதியப்படாது. மாதத்தின் லாப நட்டம் அதனுடன் மாறும்.', adjustLabel: 'சரிசெய்தலைப் பதி',
+    closeTitle: '{m} மாதம் மூடப்படும்', closeDetail: 'இதன் பிறகு {m} மாதத்தின் எந்த நாளையும் பதியவோ மாற்றவோ முடியாது; டாலி கோப்புகளும் ஜிஎஸ்டி ரிட்டர்ன்களும் இப்போது புத்தகங்களில் உள்ளதிலிருந்து உருவாக்கப்படும். மீண்டும் திறக்க உரிமையாளரின் அனுமதியும் காரணமும் தேவை.', closeLabel: 'மாதத்தை மூடு',
+    reopenTitle: '{m} மாதம் மீண்டும் திறக்கப்படும்', reopenDetail: '{m} மாதத்தின் நாட்களை மீண்டும் பதியவும் மாற்றவும் முடியும்; மூடிய மாதத்திலிருந்து உருவாக்கிய ஒவ்வொரு கோப்பும் மீண்டும் மூடும் வரை காலாவதியானது.', reopenLabel: 'மாதத்தை மீண்டும் திற',
+    depTitle: '{m} மாதத்திற்கான தேய்மானம் பயன்பாட்டில் உள்ள ஒவ்வொரு சொத்துக்கும் பதியப்படும்', depDetail: 'ஒரு சொத்துக்கு ஒரு பதிவு, மாதத்திற்கு ஒருமுறை. மீண்டும் இயக்கினால் எதுவும் இருமுறை பதியப்படாது.', depLabel: 'தேய்மானத்தைப் பதி',
+  },
+};
+const confirmSheet = async (kind, tone = 'primary') => {
+  const pair = (key) => ({ en: fillIn(CONFIRM_WORDS.en[key], { m: monthInWords(period(), 'en') }), ta: fillIn(CONFIRM_WORDS.ta[key], { m: monthInWords(period(), 'ta') }) });
+  return (await officeWithSheet()).confirm({ title: pair(`${kind}Title`), detail: pair(`${kind}Detail`), authority: pair('authority'), confirmLabel: pair(`${kind}Label`), tone });
+};
 $('post-adjustment').addEventListener('click', () => busy($('post-adjustment'), async () => {
+  if (!(await confirmSheet('adjust')).ok) return;
   const out = await session.postStockAdjustment(period());
   status('post-status', out, out.kind === 'done' && out.body?.alreadyPosted ? w('alreadyPosted') : w('adjustmentPosted'));
   await loadStock();
@@ -260,6 +289,7 @@ $('asset-add-go').addEventListener('click', () => busy($('asset-add-go'), async 
   await loadAssets();
 }));
 $('run-depreciation').addEventListener('click', () => busy($('run-depreciation'), async () => {
+  if (!(await confirmSheet('dep')).ok) return;
   const out = await session.runDepreciation(period());
   if (out.kind === 'done') {
     const parts = [out.body.posted.length > 0 ? w('ranPosted', { n: out.body.posted.length }) : w('ranNothing')];
@@ -326,6 +356,7 @@ $('ask-close').addEventListener('click', () => busy($('ask-close'), async () => 
   await said(month.presentAskOutcome(lang, 'close', outcome));
 }));
 $('close-month').addEventListener('click', () => busy($('close-month'), async () => {
+  if (!(await confirmSheet('close', 'danger')).ok) return;
   await said(month.presentUseOutcome(lang, 'close', await month.closeWithApproval(period())));
 }));
 $('ask-reopen').addEventListener('click', () => busy($('ask-reopen'), async () => {
@@ -336,6 +367,7 @@ $('ask-reopen').addEventListener('click', () => busy($('ask-reopen'), async () =
   await said(month.presentAskOutcome(lang, 'reopen', outcome));
 }));
 $('reopen').addEventListener('click', () => busy($('reopen'), async () => {
+  if (!(await confirmSheet('reopen', 'danger')).ok) return;
   const outcome = await month.reopenWithApproval(period(), $('reopen-reason').value);
   if (outcome.kind === 'done') { reopenAskedFor = null; $('reopen-reason').value = ''; }
   await said(month.presentUseOutcome(lang, 'reopen', outcome));
@@ -390,7 +422,8 @@ $('lang').addEventListener('click', () => {
 
 paintWords();
 if (session !== null) {
-  $('period').value = session.period;
+  // A month to start on: the one head office names, else this month — never a blank every tab reads as 'pick a month'.
+  $('period').value = session.period || new Date().toISOString().slice(0, 7);
   if (!may.read) { $('tabs').hidden = true; for (const t of TABS) $(`view-${t}`).hidden = true; } else void show('payments');
 }
 

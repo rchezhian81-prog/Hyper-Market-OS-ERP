@@ -32,7 +32,7 @@ export type OnlineListingRecord =
   | { readonly kind: 'refused'; readonly productId: string; readonly refusal: string; readonly missing: readonly string[]; readonly otherSeller?: string; readonly by: string; readonly at: string };
 
 /** The online store's own publication — once every shop detail is set. */
-export interface OnlineStorePublication { readonly version: number; readonly detailsVersion: number; readonly by: string; readonly at: string }
+export interface OnlineStorePublication { readonly version: number; readonly detailsVersion: number; readonly by: string; readonly at: string; /** OB-626: why it went live, as the person wrote it on the confirm sheet (optional for older callers). */ readonly reason?: string }
 
 /** An online complaint as the clock reads it — a case raised in the app. */
 export interface OnlineComplaint { readonly caseId: string; readonly openedAt: string; readonly firstRespondedAt?: string; readonly resolvedAt?: string; readonly state: string }
@@ -179,7 +179,8 @@ export function onlineStoreRoutes(deps: OnlineStoreDeps): readonly Route[] {
         const pubs = await deps.publications(ctx.tenantId);
         const held = latest(pubs);
         if (held !== undefined && held.detailsVersion === d!.version) return { status: 200, body: { publication: held, alreadyPublished: true } };
-        const p: OnlineStorePublication = { version: (held?.version ?? 0) + 1, detailsVersion: d!.version, by: ctx.userId, at: deps.now() };
+        const reasonGiven = typeof (ctx.body as Record<string, unknown> | undefined)?.['reason'] === 'string' ? String((ctx.body as Record<string, unknown>)['reason']).trim().slice(0, 500) : '';
+        const p: OnlineStorePublication = { version: (held?.version ?? 0) + 1, detailsVersion: d!.version, by: ctx.userId, at: deps.now(), ...(reasonGiven === '' ? {} : { reason: reasonGiven }) };
         await deps.recordPublication(ctx.tenantId, p);
         return { status: 201, body: { publication: p } };
       },

@@ -60,7 +60,7 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button.primary { background: var(--good);  font-size: 18px; }
       button:disabled { opacity: .45; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { width: 100%; }
@@ -121,6 +121,8 @@
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -168,7 +170,7 @@
           <label for="count-qty" id="count-qty-label">How many are on the shelf</label>
           <input id="count-qty" type="number" inputmode="numeric" min="0" step="1" />
         </div>
-        <button id="save-count" class="primary wide" type="button">Save this count</button>
+        <button id="save-count" class="primary wide sre-btn sre-btn-primary" type="button">Save this count</button>
 
         <h3 id="saved-counts-heading" hidden>Saved on this screen</h3>
         <p class="note" id="saved-counts-lead" hidden></p>
@@ -188,7 +190,7 @@
 
         <h3 id="tasks-title">Go and fill these</h3>
         <div id="tasks-list"></div>
-        <button id="raise-refill" class="primary wide" type="button" hidden>Ask the back store for these</button>
+        <button id="raise-refill" class="primary wide sre-btn sre-btn-primary" type="button" hidden>Ask the back store for these</button>
 
         <h3 id="saved-refills-heading" hidden>Asked of the back store</h3>
         <p class="note" id="saved-refills-lead" hidden></p>
@@ -217,7 +219,7 @@
           <label for="drop-replacement" id="drop-replacement-label">Replaced by (item code)</label>
           <input id="drop-replacement" type="text" autocomplete="off" />
         </div>
-        <button id="drop-item" class="primary wide" type="button">Take it out of the range</button>
+        <button id="drop-item" class="primary wide sre-btn sre-btn-primary" type="button">Take it out of the range</button>
 
         <h3 id="range-issues-title">Where the range and the shop disagree</h3>
         <div id="range-issues"></div>
@@ -243,7 +245,7 @@
         <h3 id="sheet-title">—</h3>
         <p class="lead" id="sheet-note"></p>
         <div class="choices" id="choices"></div>
-        <button id="sheet-cancel" type="button">Cancel</button>
+        <button id="sheet-cancel" type="button" class="sre-btn">Cancel</button>
       </div>
     </div>
 

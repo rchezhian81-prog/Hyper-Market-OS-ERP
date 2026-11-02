@@ -29,7 +29,7 @@
       .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
       .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
       button.refresh, button.act, button.minor { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button.act { background:var(--accent, var(--line)); color:var(--on-accent); } /* U0: white words on the accent (was the ink, 1.73:1) */
+      button.act {   } /* U0: white words on the accent (was the ink, 1.73:1) */
       button:focus-visible, .lang:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
@@ -65,6 +65,8 @@
       p.result.tone-error, p.state.tone-error { color:var(--danger-text, var(--danger-text)); }
       p.result.tone-ok { color:var(--ink); }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -84,7 +86,7 @@
 
       <div class="bar">
         <span class="asof" id="asof" role="status" aria-live="polite"></span>
-        <button class="refresh" id="refresh" type="button"></button>
+        <button class="refresh sre-btn sre-btn-quiet" id="refresh" type="button"></button>
       </div>
 
       <p class="summary" id="summary" role="status" aria-live="polite" hidden></p>
@@ -111,14 +113,14 @@
             <input id="raise-uom" type="text" autocomplete="off" />
           </div>
         </div>
-        <button id="raise-add" class="minor" type="button"></button>
+        <button id="raise-add" class="minor sre-btn sre-btn-quiet" type="button"></button>
         <h3 id="raise-lines-heading" hidden></h3>
         <ul class="pending" id="raise-lines" aria-label="Lines on this indent"></ul>
         <div>
           <label for="raise-reason" id="raise-reason-label"></label>
           <input id="raise-reason" type="text" autocomplete="off" />
         </div>
-        <button id="raise" class="act" type="button"></button>
+        <button id="raise" class="act sre-btn sre-btn-primary" type="button"></button>
       </section>
       <p class="note" id="no-request" hidden></p>
 
@@ -135,7 +137,7 @@
             <input id="approve-reason" type="text" autocomplete="off" />
           </div>
         </div>
-        <button id="approve" class="act" type="button"></button>
+        <button id="approve" class="act sre-btn" type="button"></button>
       </section>
       <p class="note" id="no-approve" hidden></p>
 
@@ -150,7 +152,7 @@
           <h3 id="receive-counted-heading"></h3>
           <ul class="pending" id="receive-lines" aria-label="Counted on the floor"></ul>
         </div>
-        <button id="receive" class="act" type="button"></button>
+        <button id="receive" class="act sre-btn" type="button"></button>
       </section>
       <p class="note" id="no-receive" hidden></p>
 
@@ -175,7 +177,7 @@
             </div>
           </div>
         </div>
-        <button id="resolve" class="act" type="button"></button>
+        <button id="resolve" class="act sre-btn" type="button"></button>
       </section>
       <p class="note" id="no-resolve" hidden></p>
 

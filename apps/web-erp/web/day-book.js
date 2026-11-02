@@ -106,8 +106,10 @@ function exceptionNode(e) {
   return li;
 }
 
+let lastView = null;
 function paint() {
   const view = session.view(lang);
+  lastView = view;
 
   el('title').textContent = t('title');
   el('lead').textContent = t('lead');
@@ -178,8 +180,26 @@ function paintResult(presentation) {
 // The accountant's posting — a HUMAN write that runs ONLY on this explicit click, never on load. On success the
 // day is re-read (a GET) so the journals shown are the cloud's. The server needs a posting map and is idempotent
 // on the day; the screen never fakes a posting.
+// OB-626: before money moves, the shared confirm sheet (the chrome's) says what will be posted, in whose name, and asks
+// for the person's word. Go back sends nothing. A page that paints before the chrome waits for it.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const MONTHS = { en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'] };
+/** The shop's day in words from its own digits (never the device's clock or zone, OB-606): 2026-10-01 → "1 October 2026". */
+const dayInWords = (iso, l) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso); if (!m) return iso; const name = MONTHS[l === 'ta' ? 'ta' : 'en'][Number(m[2]) - 1]; return name === undefined ? iso : `${Number(m[3])} ${name} ${m[1]}`; };
+const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
+function postSheet() {
+  const day = el('day').value;
+  const total = lastView?.salesTotal ?? null;
+  const pair = (key, values) => ({ en: fillIn(session.text('en', key), values), ta: fillIn(session.text('ta', key), values) });
+  return {
+    title: { en: fillIn(session.text('en', total === null ? 'confirmTitleNoFigure' : 'confirmTitle'), { total, day: dayInWords(day, 'en') }), ta: fillIn(session.text('ta', total === null ? 'confirmTitleNoFigure' : 'confirmTitle'), { total, day: dayInWords(day, 'ta') }) },
+    detail: pair('confirmDetail', {}), authority: pair('confirmAuthority', {}), confirmLabel: pair('confirmLabel', {}), tone: 'primary',
+  };
+}
 el('post').addEventListener('click', () => {
   void (async () => {
+    const answer = await (await office()).confirm(postSheet());
+    if (!answer.ok) return;
     const result = await session.post(el('day').value);
     paintResult(session.presentPostResult(lang, result));
     if (result.result === 'posted' || result.result === 'nothing_new') await refresh();

@@ -52,7 +52,7 @@
       .depts { display: grid; gap: 4px; } .depts .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
       .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-      .actions button { min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px; background: var(--info); color: var(--on-info); font-size: 16px; font-weight: 700; }
+      .actions button { min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;   font-size: 16px; font-weight: 700; }
       .actions button[disabled] { background: var(--line); color: var(--muted); }
       .actions input { min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 15px; }
 
@@ -60,6 +60,9 @@
       #banner[hidden] { display: none; } #banner.good { border-top-color: var(--ok); }
       #banner button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--ink); color: var(--bg); font-weight: 700; justify-self: start; }
       .muted { color: var(--muted); font-size: var(--fs-sm); }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -87,7 +90,7 @@
         </div>
         <div class="actions">
           <input type="text" id="live-run" autocomplete="off" maxlength="64" />
-          <button type="button" id="live-show"></button>
+          <button type="button" id="live-show" class="sre-btn sre-btn-primary"></button>
         </div>
         <p class="status" id="live-status" role="status" aria-live="polite"></p>
         <div class="depts" id="live-rows"></div>

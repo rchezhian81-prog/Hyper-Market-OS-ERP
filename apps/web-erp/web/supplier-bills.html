@@ -32,7 +32,7 @@
       label.inline { display: flex; gap: 8px; align-items: center; font-weight: 500; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--line); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--accent-ink); }
+      button.primary {   }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
       .summary div { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
@@ -45,7 +45,7 @@
       li.bill .facts { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
       .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 600; background: var(--line); color: var(--ink); }
       .pill.waiting { background: var(--warn); color: var(--on-warn); }
-      .pill.done { background: var(--ok); color: var(--on-accent); }
+      .pill.done {   }
       .pill.blocked { background: var(--danger-surface); color: var(--on-danger); }
       .table-wrap { overflow-x: auto; }
       table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -84,7 +84,7 @@
           <label for="hand-supplier"><span id="l-hand-supplier">Supplier code (if the bill has no GSTIN)</span><input id="hand-supplier" autocomplete="off" /></label>
           <label for="hand-po"><span id="l-hand-po">Purchase order number (if you have it)</span><input id="hand-po" autocomplete="off" /></label>
         </div>
-        <button id="hand-in" class="primary" type="button">Hand in this bill</button>
+        <button id="hand-in" class="primary sre-btn sre-btn-primary" type="button">Hand in this bill</button>
         <p class="status" id="hand-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -114,7 +114,7 @@
       <section aria-labelledby="adv-h" id="adv-section" hidden>
         <h2 id="adv-h">Supplier advances</h2>
         <p class="lede" id="adv-lede"></p>
-        <button id="adv-show" type="button">Show the advances</button>
+        <button id="adv-show" type="button" class="sre-btn sre-btn-quiet">Show the advances</button>
         <p class="status" id="adv-status" role="status" aria-live="polite"></p>
         <div class="summary" id="adv-summary"></div>
         <p class="muted" id="adv-ledger"></p>
@@ -129,7 +129,7 @@
             <label for="adv-ref"><span id="l-adv-ref"></span><input id="adv-ref" autocomplete="off" /></label>
             <label for="adv-po"><span id="l-adv-po"></span><input id="adv-po" autocomplete="off" /></label>
           </div>
-          <button id="adv-ask" class="primary" type="button">Ask for approval to pay</button>
+          <button id="adv-ask" class="primary sre-btn sre-btn-primary" type="button">Ask for approval to pay</button>
           <p class="status" id="adv-ask-status" role="status" aria-live="polite"></p>
           <h3 id="adv-asks-h">Payments you asked for</h3>
           <ul class="register" id="adv-asks"></ul>
@@ -151,7 +151,7 @@
             <label for="confirm-po"><span id="l-confirm-po">Purchase order number</span><input id="confirm-po" autocomplete="off" /></label>
           </div>
           <label class="inline" for="confirm-accept"><input id="confirm-accept" type="checkbox" /><span id="l-confirm-accept">The lines differ from the bill's printed total and I will say why on the match</span></label>
-          <button id="confirm" class="primary" type="button">Confirm this bill</button>
+          <button id="confirm" class="primary sre-btn sre-btn-primary" type="button">Confirm this bill</button>
           <p class="status" id="confirm-status" role="status" aria-live="polite"></p>
         </div>
 
@@ -171,8 +171,8 @@
             <label for="type-other"><span id="l-type-other">Other charges on the bill (₹)</span><input id="type-other" inputmode="decimal" autocomplete="off" /></label>
           </div>
           <div class="table-wrap"><table id="type-lines"></table></div>
-          <button id="type-add-line" type="button">Add a line</button>
-          <button id="type-save" class="primary" type="button">Save this bill</button>
+          <button id="type-add-line" type="button" class="sre-btn">Add a line</button>
+          <button id="type-save" class="primary sre-btn sre-btn-primary" type="button">Save this bill</button>
           <p class="status" id="type-status" role="status" aria-live="polite"></p>
         </div>
 
@@ -180,7 +180,7 @@
           <h3 id="match-h">Check against the order</h3>
           <p class="lede" id="match-lede">Head office compares what was ordered, what arrived and what this bill claims. Where they disagree it holds the difference back.</p>
           <p class="facts" id="match-invoice"></p>
-          <button id="run-match" class="primary" type="button">Check this bill against the order</button>
+          <button id="run-match" class="primary sre-btn sre-btn-primary" type="button">Check this bill against the order</button>
           <p class="status" id="match-status" role="status" aria-live="polite"></p>
           <div class="verdict" id="match-verdict" hidden></div>
           <!-- OB-556: other charges of unknown kind are not in stock cost until a person says what they are. -->
@@ -188,8 +188,8 @@
             <p class="status" id="other-said" role="status"></p>
             <div id="other-mark" hidden>
               <label for="other-reason"><span id="l-other-reason">Why do you say so (for example, what the supplier's bill calls them)</span><input id="other-reason" autocomplete="off" /></label>
-              <button id="other-cost" type="button">They are freight / part of the goods' cost</button>
-              <button id="other-tax" type="button">They are a tax, not part of the goods' cost</button>
+              <button id="other-cost" type="button" class="sre-btn">They are freight / part of the goods' cost</button>
+              <button id="other-tax" type="button" class="sre-btn">They are a tax, not part of the goods' cost</button>
             </div>
             <p class="status" id="other-status" role="status" aria-live="polite"></p>
           </div>

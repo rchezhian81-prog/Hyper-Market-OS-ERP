@@ -9,6 +9,15 @@ const $ = (id) => document.getElementById(id);
 const session = window.countPlansSession ?? null;
 let lang = 'en';
 const t = (k) => (session === null ? k : session.text(lang, k));
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 
 let plans = null;
 let current = null; // { planId, view, sheet }
@@ -242,7 +251,15 @@ if (session !== null) {
   $('d-open').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.open(current.planId); await refreshDrawer(); say($('d-status'), out); });
   $('d-approve').addEventListener('click', async () => {
-    $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.approve(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
+    $('d-status').textContent = ''; $('d-status').className = 'status';
+    // U1 · OB-626: the consequence-and-confirm sheet before the corrections are posted — Go back sends nothing.
+    const tt = current?.view?.totals;
+    const sub = (l, key) => String(session.text(l, key)).replace('{plan}', current.planId).replace('{place}', current.view?.plan?.locationId ?? '').replace('{counted}', String(tt?.counted ?? '?')).replace('{products}', String(tt?.products ?? '?')).replace('{loss}', tt ? session.rupees(tt.lossMinor) : '—').replace('{gain}', tt ? session.rupees(tt.gainMinor) : '—');
+    // With no reason written the session says so, and nothing is sent — no sheet for that.
+    const answer = $('d-reason').value.trim() === '' ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
+    if (answer === 'unavailable') { $('d-status').className = 'status err'; $('d-status').textContent = t('confirmUnavailable'); return; }
+    if (answer === null) return;
+    const out = await session.approve(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
   $('d-cancel').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.cancel(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
   $('adj-show').addEventListener('click', () => { void loadAdjustments(); });

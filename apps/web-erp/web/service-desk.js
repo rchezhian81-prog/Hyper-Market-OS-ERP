@@ -129,7 +129,7 @@ function paintWords() {
   const nobody = $('nobody');
   nobody.hidden = mayAct;
   nobody.textContent = who === null ? t('nobody') : t('readOnly');
-  for (const id of ['open-case', 'ask-draft', 'resolve', 'rc-save']) $(id).disabled = !mayAct;
+  for (const id of ['open-case', 'ask-draft', 'resolve', 'rc-save']) { $(id).disabled = !mayAct; whyDisabled($(id), mayAct ? '' : 'role'); }
   $('open-section').hidden = !mayAct;
 }
 
@@ -167,8 +167,8 @@ function renderCase() {
     b.textContent = clock === undefined ? '…' : t(clock.status);
   }
   const resolved = picked.state === 'resolved' || picked.state === 'closed';
-  $('resolve').disabled = !mayAct || resolved;
-  $('rc-save').disabled = !mayAct || !resolved;
+  $('resolve').disabled = !mayAct || resolved; whyDisabled($('resolve'), !mayAct ? 'role' : resolved ? { en: 'This case is already resolved.', ta: 'இந்த வழக்கு ஏற்கனவே தீர்க்கப்பட்டது.' } : '');
+  $('rc-save').disabled = !mayAct || !resolved; whyDisabled($('rc-save'), !mayAct ? 'role' : !resolved ? { en: 'Resolve the case first.', ta: 'முதலில் வழக்கைத் தீர்க்கவும்.' } : '');
   const list = $('draft-list');
   list.replaceChildren();
   for (const d of drafts) {
@@ -191,7 +191,7 @@ function renderCase() {
       const edit = document.createElement('textarea'); edit.value = d.text; edit.setAttribute('aria-label', t('editLabel'));
       const row = document.createElement('div'); row.className = 'row';
       const btn = (label, cls, decision) => {
-        const b = document.createElement('button'); b.type = 'button'; b.textContent = t(label); if (cls) b.className = cls; b.disabled = !mayAct;
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = t(label); if (cls) b.className = `${cls} sre-btn`; b.disabled = !mayAct; whyDisabled(b, mayAct ? '' : 'role');
         b.addEventListener('click', async () => {
           const body = decision === 'edited_and_approved' ? { decision, finalText: edit.value } : { decision };
           const out = await post(`/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}/decision`, body);
@@ -206,7 +206,7 @@ function renderCase() {
       // reply sent by that channel. Two acts at head office, each re-checked; if the send is refused the approval stands,
       // the refusal is shown, and the draft offers "Send it" with the channel to choose.
       if (CHANNELS.includes(picked.channel)) {
-        const both = document.createElement('button'); both.type = 'button'; both.className = 'approve-send'; both.disabled = !mayAct;
+        const both = document.createElement('button'); both.type = 'button'; both.className = 'approve-send sre-btn'; both.disabled = !mayAct; whyDisabled(both, mayAct ? '' : 'role');
         both.textContent = `${t('approveSend')} ${t(picked.channel)}`;
         both.addEventListener('click', async () => {
           const base = `/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}`;
@@ -225,7 +225,7 @@ function renderCase() {
       for (const c of CHANNELS) { const o = document.createElement('option'); o.value = c; o.textContent = t(c); sel.append(o); }
       // OB-390: the case's own channel is chosen already; the person may still pick another.
       if (CHANNELS.includes(picked.channel)) sel.value = picked.channel;
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('send'); b.disabled = !mayAct; b.className = 'send';
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('send'); b.disabled = !mayAct; b.className = 'send sre-btn'; whyDisabled(b, mayAct ? '' : 'role');
       b.addEventListener('click', async () => {
         const out = await post(`/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}/send`, { channel: sel.value });
         say($('draft-status'), out);
@@ -348,4 +348,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     // No offline copy this time; the screen still works online.
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

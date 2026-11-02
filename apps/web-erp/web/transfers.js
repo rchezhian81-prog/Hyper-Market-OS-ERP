@@ -10,6 +10,15 @@ const session = window.transfersSession ?? null;
 let lang = 'en';
 const t = (k) => (session === null ? k : session.text(lang, k));
 
+// U1 · OB-626 (design system §1.3, §27.1): a stock-moving click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 let rows = null;
 let currentId = null;
 
@@ -71,7 +80,10 @@ function paintDrawer() {
   $('d-title').textContent = currentId;
   if (row === undefined) return;
   const v = session.rowView(lang, row);
-  $('d-state').textContent = [v.stateWord, ...v.flags].join(' · ');
+  // U1 · L: where it stands as a chip from the one icon set — the tone's shape AND the word, never colour alone.
+  const chipTone = v.tone === 'degraded' ? 'pending' : v.tone;
+  const chip = window.sreIcon && typeof window.sreIcon.chip === 'function' ? window.sreIcon.chip({ tone: chipTone, label: v.stateWord }) : node('span', { className: 'sre-chip', textContent: v.stateWord });
+  $('d-state').replaceChildren(chip, ...(v.flags.length === 0 ? [] : [node('span', { textContent: ` · ${v.flags.join(' · ')}` })]));
   $('d-state').dataset.state = v.state;
   $('d-route').textContent = v.route;
   $('d-people').textContent = v.people.join(' · ');
@@ -137,7 +149,20 @@ function paintWords() {
 
 if (session !== null) {
   $('d-dispatch').addEventListener('click', async () => {
-    $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.dispatch(currentId); await loadList(); say($('d-status'), out); });
+    $('d-status').textContent = ''; $('d-status').className = 'status';
+    // U1 · OB-626: the consequence-and-confirm sheet before stock leaves the store — Go back sends nothing.
+    const row = currentRow();
+    if (row === undefined) return;
+    const v = session.rowView(lang, row);
+    const linesText = v.lines.map((l) => `${l.productId} × ${qtyText(l.quantityMinor, l.uom)}`).join(', ');
+    const spec = (l) => ({
+      title: session.text(l, 'confirmSendTitle').replace('{lines}', linesText).replace('{route}', session.rowView(l, row).route),
+      detail: session.text(l, 'confirmSendDetail'), authority: session.text(l, 'confirmSendAuthority'), confirmLabel: session.text(l, 'confirmSendLabel'),
+    });
+    const answer = await confirmFirst({ title: { en: spec('en').title, ta: spec('ta').title }, detail: { en: spec('en').detail, ta: spec('ta').detail }, authority: { en: spec('en').authority, ta: spec('ta').authority }, confirmLabel: { en: spec('en').confirmLabel, ta: spec('ta').confirmLabel }, tone: 'primary' });
+    if (answer === 'unavailable') { $('d-status').className = 'status err'; $('d-status').textContent = t('confirmUnavailable'); return; }
+    if (answer === null) return;
+    const out = await session.dispatch(currentId); await loadList(); say($('d-status'), out); });
   $('d-cancel').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status';
     const out = await session.cancel(currentId, $('d-cancel-reason').value);

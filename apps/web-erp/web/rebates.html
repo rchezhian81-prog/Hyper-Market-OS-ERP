@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -38,6 +38,8 @@
       .draft { font-weight: 700; }
       [hidden] { display: none !important; }
       @media print { header, #page-intro, #register, #scheme, #raise, #receipt, #period, .no-print { display: none !important; } #doc { border: 0; } }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -55,7 +57,7 @@
       </section>
       <section id="register" hidden aria-labelledby="register-h">
         <h3 id="register-h"></h3>
-        <button id="r-show" type="button"><span id="r-show-text"></span></button>
+        <button id="r-show" type="button" class="sre-btn"><span id="r-show-text"></span></button>
         <p class="status" id="r-status" role="status" aria-live="polite"></p>
         <p class="meta" id="r-period"></p>
         <ul class="rows" id="scheme-rows"></ul>
@@ -68,7 +70,7 @@
         <h3 id="doc-h"></h3>
         <p class="draft" id="doc-draft" hidden></p>
         <div id="doc-body"></div>
-        <button id="doc-print" class="no-print" type="button"><span id="doc-print-text"></span></button>
+        <button id="doc-print" class="no-print sre-btn sre-btn-quiet" type="button"><span id="doc-print-text"></span></button>
       </section>
       <!-- M06-FR-03 (Round 4b): define a rebate scheme — asked for, approved by a different person (Finance) in their own
            session, then recorded naming that approval. Its session is apps/web-erp/src/supplier-terms-session.ts. -->
@@ -85,8 +87,8 @@
           <label for="s-ends"><span id="s-ends-l"></span><input id="s-ends" type="date" /></label>
         </div>
         <div class="acts">
-          <button id="s-ask" type="button"><span id="s-ask-text"></span></button>
-          <button id="s-record" class="quiet" type="button"><span id="s-record-text"></span></button>
+          <button id="s-ask" type="button" class="sre-btn sre-btn-primary"><span id="s-ask-text"></span></button>
+          <button id="s-record" class="quiet sre-btn sre-btn-quiet" type="button"><span id="s-record-text"></span></button>
         </div>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
       </section>
@@ -97,7 +99,7 @@
           <label for="c-amount"><span id="c-amount-l"></span><input id="c-amount" inputmode="decimal" autocomplete="off" /></label>
           <label for="c-note"><span id="c-note-l"></span><input id="c-note" autocomplete="off" maxlength="300" /></label>
         </div>
-        <button id="c-raise" type="button"><span id="c-raise-text"></span></button>
+        <button id="c-raise" type="button" class="sre-btn"><span id="c-raise-text"></span></button>
         <p class="status" id="c-status" role="status" aria-live="polite"></p>
       </section>
       <section id="receipt" hidden aria-labelledby="receipt-h">
@@ -109,7 +111,7 @@
           <label for="m-ref"><span id="m-ref-l"></span><input id="m-ref" autocomplete="off" /></label>
           <label for="m-claim"><span id="m-claim-l"></span><input id="m-claim" autocomplete="off" /></label>
         </div>
-        <button id="m-record" type="button"><span id="m-record-text"></span></button>
+        <button id="m-record" type="button" class="sre-btn"><span id="m-record-text"></span></button>
         <p class="status" id="m-status" role="status" aria-live="polite"></p>
       </section>
       <section id="period" hidden aria-labelledby="period-h">
@@ -119,8 +121,8 @@
           <label for="p-why"><span id="p-why-l"></span><input id="p-why" autocomplete="off" /></label>
         </div>
         <div class="acts">
-          <button id="p-set" type="button"><span id="p-set-text"></span></button>
-          <button id="p-clear" class="quiet" type="button"><span id="p-clear-text"></span></button>
+          <button id="p-set" type="button" class="sre-btn"><span id="p-set-text"></span></button>
+          <button id="p-clear" class="quiet sre-btn sre-btn-quiet" type="button"><span id="p-clear-text"></span></button>
         </div>
         <p class="status" id="p-status" role="status" aria-live="polite"></p>
       </section>

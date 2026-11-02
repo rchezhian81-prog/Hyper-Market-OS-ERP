@@ -24,7 +24,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
@@ -42,6 +42,9 @@
       .table-wrap { overflow-x: auto; max-width: 100%; }
       td, th { text-align: left; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -55,7 +58,7 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">Customers</h2>
         <p class="lead" id="lead"></p>
-        <button id="refresh" type="button">Show customers</button>
+        <button id="refresh" type="button" class="sre-btn sre-btn-quiet">Show customers</button>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
       <!-- M16-FR-04: one customer's record — what they bought and their history with the service desk, complaints first. -->
@@ -63,7 +66,7 @@
         <h3 id="record-h">A customer's record</h3>
         <form id="record-form" class="row-form">
           <label for="record-ref"><span id="l-record-ref">Customer code</span><input id="record-ref" autocomplete="off" /></label>
-          <button id="record-open" type="submit"><span id="record-open-text">Open the record</span></button>
+          <button id="record-open" type="submit" class="sre-btn sre-btn-primary"><span id="record-open-text">Open the record</span></button>
         </form>
         <p class="status" id="record-status" role="status" aria-live="polite"></p>
         <div id="record" hidden>
@@ -86,7 +89,7 @@
         <h3 id="duplicates-h">Records that may be the same person</h3>
         <form id="dup-form">
           <label for="candidates"><span id="l-candidates">Records to compare</span><textarea id="candidates" rows="4"></textarea></label>
-          <button id="check" type="submit">Find possible duplicates</button>
+          <button id="check" type="submit" class="sre-btn">Find possible duplicates</button>
         </form>
         <p class="status" id="dup-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="matches"></ul>

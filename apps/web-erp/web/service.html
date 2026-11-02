@@ -55,7 +55,6 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -122,7 +121,7 @@
 
         <label for="receipt" id="receipt-label">Receipt number</label>
         <input id="receipt" type="text" inputmode="latin" autocomplete="off" />
-        <button id="find" class="primary wide" type="button">Find the bill</button>
+        <button id="find" class="sre-btn sre-btn-primary wide" type="button">Find the bill</button>
 
         <!-- The bill, once found. -->
         <div id="found" hidden>
@@ -148,7 +147,7 @@
             </div>
           </div>
 
-          <button id="put-through" class="primary wide" type="button">Put the return through</button>
+          <button id="put-through" class="sre-btn sre-btn-primary wide" type="button">Put the return through</button>
           <p class="lead" id="put-note">The shop's record is written first. Nothing here waits on the internet.</p>
         </div>
       </section>

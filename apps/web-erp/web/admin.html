@@ -61,7 +61,7 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button.primary { background: var(--good);  font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -127,7 +127,7 @@
       li.wait .decide label { margin: 0; }
       li.wait .buttons { display: flex; gap: 12px; flex-wrap: wrap; }
       li.wait .buttons button { padding: 0 22px; }
-      button.approve { background: var(--good); color: var(--on-accent); }
+      button.approve { background: var(--good);  }
       button:disabled { opacity: 0.6; }
       .row .end { padding: 0 18px; flex: none; }
       /* On a phone the End button goes under the words, full width, so the words keep the row. */
@@ -155,6 +155,8 @@
       .row.state-issued { border-left: 6px solid var(--ok); }
       .row.state-ended { border-left: 6px solid var(--line); }
       @media (max-width: 560px) { #signins-form .row2 { grid-template-columns: 1fr; } }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -182,7 +184,7 @@
         <!-- Where the lists came from: head office as at a time, no connection, or not connected at all. -->
         <div class="source-line">
           <p class="source" id="support-source" role="status" aria-live="polite"><span class="icon" id="support-source-icon" aria-hidden="true"></span><span id="support-source-text"></span></p>
-          <button id="support-check" type="button" hidden>Check again</button>
+          <button id="support-check" type="button" hidden class="sre-btn">Check again</button>
         </div>
         <!-- The answer to the last Approve / Reject / End, in plain words. -->
         <p class="result" id="support-result" hidden role="status" aria-live="polite"><span class="icon" id="support-result-icon" aria-hidden="true"></span><span id="support-result-text"></span></p>
@@ -210,7 +212,7 @@
         <p class="lead" id="signins-lead"></p>
         <div class="source-line">
           <p class="source" id="signins-source" role="status" aria-live="polite"><span class="icon" id="signins-source-icon" aria-hidden="true"></span><span id="signins-source-text"></span></p>
-          <button id="signins-check" type="button">Check again</button>
+          <button id="signins-check" type="button" class="sre-btn">Check again</button>
         </div>
         <p class="readonly" id="signins-cannot" hidden></p>
         <form id="signins-form" hidden novalidate autocomplete="off">
@@ -225,7 +227,7 @@
             </div>
           </div>
           <p class="hint" id="signin-name-hint"></p>
-          <button id="signin-issue" class="primary" type="submit">Give a sign-in</button>
+          <button id="signin-issue" class="primary sre-btn sre-btn-primary" type="submit">Give a sign-in</button>
         </form>
         <p class="result" id="signins-result" hidden role="status" aria-live="polite"><span class="icon" id="signins-result-icon" aria-hidden="true"></span><span id="signins-result-text"></span></p>
         <!-- The one-time password: in memory and on screen only, until the administrator says it was handed over. -->
@@ -233,7 +235,7 @@
           <p id="handover-label"></p>
           <p class="otp" id="handover-otp"></p>
           <p id="handover-words"></p>
-          <button id="handover-done" class="primary" type="button">I have handed it over</button>
+          <button id="handover-done" class="primary sre-btn" type="button">I have handed it over</button>
         </div>
         <div id="signins-list"></div>
 
@@ -267,7 +269,7 @@
           </div>
           <p class="hint" id="outside-user-hint"></p>
           <fieldset id="outside-grants"><legend id="outside-grants-legend"></legend></fieldset>
-          <button id="outside-invite" class="primary" type="submit">Invite</button>
+          <button id="outside-invite" class="primary sre-btn sre-btn-primary" type="submit">Invite</button>
         </form>
         <p class="result" id="outside-result" hidden role="status" aria-live="polite"><span class="icon" id="outside-result-icon" aria-hidden="true"></span><span id="outside-result-text"></span></p>
         <!-- An outside login's one-time password: in memory and on screen only, until it is handed over. -->
@@ -275,7 +277,7 @@
           <p id="outside-handover-label"></p>
           <p class="otp" id="outside-handover-otp"></p>
           <p id="outside-handover-words"></p>
-          <button id="outside-handover-done" class="primary" type="button">I have handed it over</button>
+          <button id="outside-handover-done" class="primary sre-btn" type="button">I have handed it over</button>
         </div>
         <div id="outside-list"></div>
       </section>

@@ -139,6 +139,7 @@ export type CopyKey =
   | 'reasonTaxRateUnknown' | 'reasonTaxSplitFailed' | 'reasonNegativeLine' | 'reasonLinesDoNotSum' | 'reasonTendersDoNotSum'
   | 'reasonRefundSplitUnknown' | 'reasonUnmappedKind' | 'reasonMissingComponent' | 'reasonUnbalancedJournal' | 'reasonOther'
   | 'postDone' | 'postNothing' | 'postNoMap' | 'postRefused' | 'postLostLink' | 'postLate' | 'postCounted'
+  | 'confirmTitle' | 'confirmTitleNoFigure' | 'confirmDetail' | 'confirmAuthority' | 'confirmLabel'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -160,8 +161,11 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     reasonUnbalancedJournal: 'The journal did not balance — nothing posted for this kind', reasonOther: 'Could not be posted',
     postDone: 'Posted.', postNothing: 'Nothing new to post — the day is already posted, or has no sales.',
     postNoMap: 'The posting map is not defined — an accountant defines the rules first (Finance → posting map). Nothing was posted.',
-    postRefused: 'Could not post — you may not have permission, or the date is not a trading day. Nothing was posted.',
-    postLostLink: 'No connection — not saved. Try again.',
+    postRefused: 'Could not post — you may not have permission, or the date is not a trading day. Nothing was posted. Check the day is a trading day and that you hold the posting right; the accountant can post it.',
+    postLostLink: 'No connection — not saved. Try again when head office answers; nothing was posted.',
+    confirmTitle: '{total} of sales will be posted to the accounts for {day}', confirmTitleNoFigure: 'The day {day} will be posted to the accounts',
+    confirmDetail: 'Every till of this shop for that day becomes journals in the books. Nothing posts twice. A posted day is reopened only on "Reopen a locked day", with a second person.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not post or the posting map is not defined.', confirmLabel: 'Post this day',
     postLate: 'This day belongs to a closed month; it was posted to the next open period', postCounted: 'counted',
     scrReady: 'Showing the day book', scrEmpty: 'Nothing posted for this day yet.',
     stateNotPermitted: 'You do not have permission to see the day book.',
@@ -185,8 +189,11 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     reasonUnbalancedJournal: 'ஜர்னல் சமநிலையில் இல்லை — இந்த வகைக்கு எதுவும் பதிவு செய்யப்படவில்லை', reasonOther: 'பதிவு செய்ய முடியவில்லை',
     postDone: 'பதிவு செய்யப்பட்டது.', postNothing: 'புதிதாகப் பதிவு செய்ய எதுவும் இல்லை — நாள் ஏற்கனவே பதிவு செய்யப்பட்டது, அல்லது விற்பனை இல்லை.',
     postNoMap: 'பதிவு வரைபடம் வரையறுக்கப்படவில்லை — ஒரு கணக்காளர் முதலில் விதிகளை வரையறுக்கிறார் (நிதி → பதிவு வரைபடம்). எதுவும் பதிவு செய்யப்படவில்லை.',
-    postRefused: 'பதிவு செய்ய முடியவில்லை — உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம், அல்லது தேதி வர்த்தக நாள் அல்ல. எதுவும் பதிவு செய்யப்படவில்லை.',
-    postLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    postRefused: 'பதிவு செய்ய முடியவில்லை — உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம், அல்லது தேதி வர்த்தக நாள் அல்ல. எதுவும் பதிவு செய்யப்படவில்லை. நாள் வர்த்தக நாளா என்றும் உங்களுக்குப் பதிவு உரிமை உண்டா என்றும் சரிபார்க்கவும்; கணக்காளர் பதிவு செய்யலாம்.',
+    postLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. தலைமை அலுவலகம் பதிலளிக்கும்போது மீண்டும் முயற்சிக்கவும்; எதுவும் பதிவு செய்யப்படவில்லை.',
+    confirmTitle: '{day} நாளுக்கான {total} விற்பனை கணக்குகளில் பதியப்படும்', confirmTitleNoFigure: '{day} நாள் கணக்குகளில் பதியப்படும்',
+    confirmDetail: 'அந்த நாளின் இந்தக் கடையின் ஒவ்வொரு கல்லாவும் புத்தகங்களில் பதிவுகளாகும். எதுவும் இருமுறை பதியப்படாது. பதிந்த நாள் "பூட்டிய நாளை மீண்டும் திற" திரையில், இரண்டாவது நபருடன் மட்டுமே திறக்கப்படும்.',
+    confirmAuthority: 'உங்கள் பெயரில். உங்கள் பங்கு பதிய முடியாததாக இருந்தாலோ பதிவு வரைபடம் வரையறுக்கப்படாவிட்டாலோ தலைமை அலுவலகம் மறுக்கும்.', confirmLabel: 'இந்த நாளைப் பதி',
     postLate: 'இந்த நாள் மூடிய மாதத்திற்குரியது; அடுத்த திறந்த காலத்தில் பதிவு செய்யப்பட்டது', postCounted: 'எண்ணப்பட்டது',
     scrReady: 'நாள் புத்தகத்தைக் காட்டுகிறது', scrEmpty: 'இந்த நாளுக்கு இன்னும் எதுவும் பதிவு செய்யப்படவில்லை.',
     stateNotPermitted: 'நாள் புத்தகத்தைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',

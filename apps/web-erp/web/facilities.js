@@ -141,7 +141,7 @@ function rowNode(r) {
     if (r.mayVerify) {
       const actions = document.createElement('div'); actions.className = 'actions';
       const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('verifyHint');
-      const verify = document.createElement('button'); verify.className = 'act verify'; verify.type = 'button'; verify.dataset.taskId = r.taskId; verify.textContent = t('verifyBtn');
+      const verify = document.createElement('button'); verify.className = 'act verify sre-btn'; verify.type = 'button'; verify.dataset.taskId = r.taskId; verify.textContent = t('verifyBtn');
       actions.append(hint, verify);
       li.append(actions);
     }
@@ -155,7 +155,7 @@ function rowNode(r) {
     const actions = document.createElement('div'); actions.className = 'actions';
     const fields = document.createElement('div'); fields.className = 'fields';
     fields.append(labelledInput(t('evidenceLabel'), 'evidence'));
-    const complete = document.createElement('button'); complete.className = 'act complete'; complete.type = 'button'; complete.dataset.taskId = r.taskId; complete.textContent = t('completeBtn');
+    const complete = document.createElement('button'); complete.className = 'act complete sre-btn'; complete.type = 'button'; complete.dataset.taskId = r.taskId; complete.textContent = t('completeBtn');
     actions.append(fields, complete);
     li.append(actions);
   }
@@ -261,7 +261,7 @@ function fsForm(row) {
     selects[item.itemId] = sel; parts.push(fsField(item.label, sel));
   }
   const action = document.createElement('textarea'); action.className = 'fs-action'; parts.push(fsField(ft('fsAction'), action));
-  const save = document.createElement('button'); save.type = 'submit'; save.className = 'fs-save'; save.textContent = `✓ ${ft('fsSave')}`;
+  const save = document.createElement('button'); save.type = 'submit'; save.className = 'fs-save sre-btn'; save.textContent = `✓ ${ft('fsSave')}`;
   form.append(...parts, save);
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -314,7 +314,7 @@ setInterval(() => { void syncFoodSafety(); }, 15_000);
 const qhq = window.qualityReleaseQueue ?? null;
 const qt = (key) => (qhq === null ? key : qhq.text(lang, key));
 function qhButton(word, cls = 'qh-release', icon = 'shield-check') {
-  const b = document.createElement('button'); b.type = 'submit'; b.className = cls;
+  const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'submit'; b.className = cls;
   if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord(icon, word)); else b.textContent = word;
   return b;
 }

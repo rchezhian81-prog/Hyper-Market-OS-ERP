@@ -99,7 +99,7 @@ function paintRecord() {
     row.dataset.done = String(done);
     if (!done && open && may.manageIncidents) {
       const note = document.createElement('input'); note.placeholder = t('doneNote'); note.setAttribute('aria-label', t('doneNote')); note.dataset.role = 'done-note';
-      const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = t('markDone'); btn.dataset.act = 'done';
+      const btn = document.createElement('button'); btn.classList.add('sre-btn'); btn.type = 'button'; btn.textContent = t('markDone'); btn.dataset.act = 'done';
       btn.addEventListener('click', async () => {
         const out = await session.markActionDone(i.incidentId, a.actionId, note.value);
         say($('record-status'), out, t('actionDone'));

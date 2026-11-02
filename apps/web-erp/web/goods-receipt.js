@@ -75,6 +75,15 @@ function sampleSession() {
 
 let session = window.goodsReceiptSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 
 // OB-205: the register's captions, in both languages (the page's own words; the session's words are untouched).
 const VIEW_WORDS = {
@@ -236,7 +245,7 @@ function billBox(r) {
     const input = document.createElement('input');
     input.id = id; input.type = 'text'; input.autocomplete = 'off'; input.className = 'sre-input bill-invoice'; input.placeholder = t('billMatchPlaceholder');
     const button = document.createElement('button');
-    button.type = 'button'; button.className = 'sre-btn bill-match-btn'; button.dataset.grnId = r.grnId;
+    button.type = 'button'; button.className = 'sre-btn sre-btn-primary bill-match-btn'; // U1 · G3: the one action on each delivery button.dataset.grnId = r.grnId;
     const word = t('billMatchBtn');
     if (window.sreIcon && typeof window.sreIcon.withWord === 'function') button.append(window.sreIcon.withWord('receipt-text', word));
     else button.textContent = word;
@@ -282,7 +291,7 @@ function dispatcher(r, l) {
   const input = document.createElement('input');
   input.id = id; input.type = 'text'; input.autocomplete = 'off'; input.className = 'sre-input dispatch-reason';
   input.placeholder = t('dispatchReasonPlaceholder');
-  const button = document.createElement('button');
+  const button = document.createElement('button'); button.classList.add('sre-btn');
   button.type = 'button';
   button.className = 'sre-btn dispatch';
   button.dataset.grnId = r.grnId;
@@ -400,6 +409,15 @@ function paint() {
 el('return').addEventListener('click', () => {
   void (async () => {
     const [grnId, lineId] = el('return-line').value.split('|');
+    // U1 · OB-626: the consequence-and-confirm sheet before stock goes back — Go back sends nothing.
+    const chosen = el('return-line').selectedOptions[0];
+    const lineWords = chosen ? chosen.textContent.trim() : `${grnId ?? ''} ${lineId ?? ''}`.trim();
+    const sub = (l, key) => String(session.text(l, key)).replace('{line}', lineWords);
+    // No line chosen or no reason given: the session says so in its own words, and nothing is sent — no sheet for that.
+    const complete = (grnId ?? '') !== '' && (lineId ?? '') !== '' && el('return-reason').value.trim() !== '';
+    const answer = !complete ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmReturnTitle'), ta: sub('ta', 'confirmReturnTitle') }, detail: { en: sub('en', 'confirmReturnDetail'), ta: sub('ta', 'confirmReturnDetail') }, authority: { en: sub('en', 'confirmReturnAuthority'), ta: sub('ta', 'confirmReturnAuthority') }, confirmLabel: { en: sub('en', 'confirmReturnLabel'), ta: sub('ta', 'confirmReturnLabel') }, tone: 'danger' });
+    if (answer === 'unavailable') { paintResult({ tone: 'error', icon: '⚠', label: t('confirmUnavailable'), announcement: t('confirmUnavailable') }); return; }
+    if (answer === null) return;
     const outcome = await session.recordReturn({ grnId: grnId ?? '', lineId: lineId ?? '', reason: el('return-reason').value });
     paintResult(session.presentReturnOutcome(lang, outcome));
     if (outcome.outcome === 'returned' || outcome.outcome === 'already_returned') { el('return-reason').value = ''; await refresh(); }

@@ -21,6 +21,7 @@
 import type { ViewerIdentity } from './browser-entry';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { shopDay, servedShopZone, instantOfTyped } from '../../../packages/calendar/src/shop-day';
+import { refusalWords } from './refusal-words';
 
 /** Today in the shop's own zone (packages/calendar shop-clock), never the browser's or UTC — the reading window's default
  *  last day (its first day is the 1st of that month). From 18:30 UTC, and in a browser on UTC, the browser's own date is
@@ -169,7 +170,7 @@ export function wordsFor(lang: Lang, key: CopyKey, slots: Readonly<Record<string
 
 /** How a refusal, a page-side refusal or a lost link reads to a person (a success reads its own word). */
 export function outcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${wordsFor(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return wordsFor(lang, out.why);
   if (out.result === 'lost_link') return wordsFor(lang, 'unreachable');
   return '';

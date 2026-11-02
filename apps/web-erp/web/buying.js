@@ -375,6 +375,7 @@ function renderPreview(preview) {
   el('lines-preview').replaceChildren(linesTable(preview.lines));
   // The save button does not exist on the page until the model says the file may be saved.
   el('capture').hidden = !preview.readyToApprove;
+  el('preview').classList.toggle('sre-btn-primary', !preview.readyToApprove); el('capture').classList.toggle('sre-btn-primary', preview.readyToApprove);
   el('capture').textContent = t('saveInvoice');
 }
 
@@ -432,6 +433,7 @@ el('capture').addEventListener('click', () => {
   // Saved means ON THE DEVICE (SP-7a · F02): the model queued it before it said ok. The list says where it goes next.
   tell(t('saved'), `${outcome.lines.length} × ${inr(outcome.totalMinor)} — ${t('savedNote')}`, true);
   el('capture').hidden = true;
+  el('preview').classList.add('sre-btn-primary');
   renderSavedInvoices();
   void syncToBox();
 });
@@ -671,7 +673,7 @@ function issueControls(o, box) {
   overReason.setAttribute('aria-label', `${o.poId} — ${t('overReason')}`);
   overReason.placeholder = t('overReason');
   overReason.hidden = o.escalation === null;
-  const go = document.createElement('button');
+  const go = document.createElement('button'); go.classList.add('sre-btn');
   go.type = 'button';
   go.dataset.act = 'issue';
   go.textContent = t('issueIt');
@@ -838,7 +840,7 @@ function orderBox(order) {
   }
   const aReason = ooInput('amend-reason', '', ot('reason')); aReason.placeholder = ot('reason');
   const aOver = ooInput('amend-over', '', ot('overBudgetReason')); aOver.placeholder = ot('overBudgetReason');
-  const aGo = document.createElement('button'); aGo.type = 'button'; aGo.className = 'primary'; aGo.dataset.act = 'amend'; aGo.textContent = ot('amend');
+  const aGo = document.createElement('button'); aGo.type = 'button'; aGo.className = 'primary sre-btn sre-btn-primary'; aGo.dataset.act = 'amend'; aGo.textContent = ot('amend');
   const aStatus = textCell('p', '', 'otb-status'); aStatus.setAttribute('role', 'status');
   aGo.addEventListener('click', async () => {
     const out = await oo.session.amend(order, {
@@ -868,7 +870,7 @@ function orderBox(order) {
     ct.append(tr);
   }
   const cReason = ooInput('cancel-reason', '', ot('reason')); cReason.placeholder = ot('reason');
-  const cGo = document.createElement('button'); cGo.type = 'button'; cGo.dataset.act = 'cancel'; cGo.textContent = ot('cancel');
+  const cGo = document.createElement('button'); cGo.classList.add('sre-btn'); cGo.type = 'button'; cGo.dataset.act = 'cancel'; cGo.textContent = ot('cancel');
   const cStatus = textCell('p', '', 'otb-status'); cStatus.setAttribute('role', 'status');
   cGo.addEventListener('click', async () => {
     const out = await oo.session.cancel(order, { lines: [...ct.querySelectorAll('tr[data-product]')].map((tr) => ({ productId: tr.dataset.product, qtyText: tr.querySelector('input.cancel-qty').value })), reason: cReason.value });

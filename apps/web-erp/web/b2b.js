@@ -13,9 +13,32 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const money = (minor) => (api === null ? String(minor) : api.rupees(minor));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
+function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; b.className = quiet ? 'sre-btn sre-btn-quiet' : 'sre-btn'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 function field(labelWords, cls, value) { const l = document.createElement('label'); l.append(text('span', labelWords)); const i = document.createElement('input'); i.autocomplete = 'off'; i.className = cls; if (value !== undefined) i.value = value; l.append(i); return { label: l, input: i }; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
+// OB-626: an invoice (money owed), a delivery challan (stock leaves) and an order placed over the credit limit (a privilege
+// used) each go to head office only after the shared confirm sheet (the chrome's) says what will happen, in whose name, and
+// the person confirms. Go back sends nothing.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const CONFIRM = {
+  en: {
+    invoiceTitle: 'A GST invoice will be raised to {customer} for document {doc}', invoiceDetail: 'The customer owes the shop the invoiced amount from today; it goes on their account and on the GST return. An invoice is corrected only by a credit note, never edited.', invoiceLabel: 'Raise the invoice',
+    challanTitle: 'A delivery challan will be raised to {customer} for document {doc}', challanDetail: 'The goods leave the shop\'s stock against this challan and travel on it. A challan is cancelled only with a reason head office records.', challanLabel: 'Raise the challan',
+    convertTitle: 'Order {doc} for {customer} will be placed over the credit limit, under approval {approval}', convertDetail: 'The customer\'s account goes past its limit by this order; the approval is used up by it. Stock is reserved for the order.', convertLabel: 'Place the order',
+    authority: 'In your name. Head office refuses it if your role may not, or if the approval is not for exactly this.',
+  },
+  ta: {
+    invoiceTitle: '{customer}-க்கு ஆவணம் {doc}-க்கான ஜிஎஸ்டி விலைப்பட்டியல் எழுப்பப்படும்', invoiceDetail: 'இன்றிலிருந்து வாடிக்கையாளர் விலைப்பட்டியல் தொகையைக் கடைக்குக் கடன்பட்டவர்; அது அவர்களின் கணக்கிலும் ஜிஎஸ்டி ரிட்டர்னிலும் சேரும். விலைப்பட்டியல் கிரெடிட் நோட்டால் மட்டுமே திருத்தப்படும், திருத்தி எழுதப்படாது.', invoiceLabel: 'விலைப்பட்டியலை எழுப்பு',
+    challanTitle: '{customer}-க்கு ஆவணம் {doc}-க்கான டெலிவரி சலான் எழுப்பப்படும்', challanDetail: 'இந்தச் சலானுக்கு எதிராகப் பொருட்கள் கடையின் சரக்கிலிருந்து வெளியேறி அதன் மீது பயணிக்கும். தலைமை அலுவலகம் பதிவு செய்யும் காரணத்துடன் மட்டுமே சலான் ரத்து செய்யப்படும்.', challanLabel: 'சலானை எழுப்பு',
+    convertTitle: '{customer}-க்கான ஆர்டர் {doc} கடன் வரம்பைத் தாண்டி, அனுமதி {approval}-இன் கீழ் வைக்கப்படும்', convertDetail: 'இந்த ஆர்டரால் வாடிக்கையாளரின் கணக்கு வரம்பைத் தாண்டும்; அனுமதி இதனால் பயன்படுத்தப்பட்டுவிடும். ஆர்டருக்குச் சரக்கு ஒதுக்கப்படும்.', convertLabel: 'ஆர்டரை வை',
+    authority: 'உங்கள் பெயரில். உங்கள் பங்கு அனுமதிக்காவிட்டாலோ, அனுமதி சரியாக இதற்கல்ல என்றாலோ தலைமை அலுவலகம் மறுக்கும்.',
+  },
+};
+const fillIn = (textIn, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), textIn);
+async function confirmed(kind, values) {
+  const pair = (k) => ({ en: fillIn(CONFIRM.en[k], values), ta: fillIn(CONFIRM.ta[k], values) });
+  return (await (await office()).confirm({ title: pair(`${kind}Title`), detail: pair(`${kind}Detail`), authority: pair('authority'), confirmLabel: pair(`${kind}Label`), tone: 'primary' })).ok;
+}
 
 let desk = null; let requests = null; let customerId = null; let customer = null; let ageing = null; let asked = []; let recurring = [];
 const quoteLines = [{ productId: '', description: '', qty: '', taxPercent: '5' }];
@@ -98,7 +121,7 @@ function paintAsked() {
     }
     if (r.status === 'approved' && r.kind === 'b2b_credit_override' && may.issue) {
       const go = button(t('withApproval'), 'shield-check', 'order-with-approval');
-      go.addEventListener('click', async () => { const out = await session.convertWithApproval(r); say('d-status', out); if (out.result === 'ok') await openCustomer(customerId); });
+      go.addEventListener('click', async () => { if (!(await confirmed('convert', { customer: customerId, doc: r.subjectRef, approval: r.requestId }))) return; const out = await session.convertWithApproval(r); say('d-status', out); if (out.result === 'ok') await openCustomer(customerId); });
       li.append(go);
     }
     ul.append(li);
@@ -147,9 +170,9 @@ function paintDocs() {
       const pf = button(t('proforma'), 'file-text', 'proforma', true);
       pf.addEventListener('click', async () => { const o = await session.proforma(customerId, d.documentId); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
       const dc = button(t('challan'), 'truck', 'challan');
-      dc.addEventListener('click', async () => { const map = {}; for (const [k, i] of Object.entries(sent)) map[k] = i.value; const o = await session.challan(customerId, d.documentId, map); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
+      dc.addEventListener('click', async () => { if (!(await confirmed('challan', { customer: customerId, doc: d.documentId }))) return; const map = {}; for (const [k, i] of Object.entries(sent)) map[k] = i.value; const o = await session.challan(customerId, d.documentId, map); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
       const inv = button(t('invoice'), 'receipt', 'invoice');
-      inv.addEventListener('click', async () => { const o = await session.invoice(customerId, d.documentId, st.input.value); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
+      inv.addEventListener('click', async () => { if (!(await confirmed('invoice', { customer: customerId, doc: d.documentId }))) return; const o = await session.invoice(customerId, d.documentId, st.input.value); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
       const acts = document.createElement('div'); acts.className = 'actions'; acts.append(pf, dc, inv);
       li.append(row, acts);
     }

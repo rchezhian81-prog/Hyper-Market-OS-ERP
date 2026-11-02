@@ -10,6 +10,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 
 /**
  * **The Scrap and recycling page (M28-FR-02) and the Packaging and crates page (M28-FR-03) in a real browser, served by the
@@ -112,7 +113,8 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
     expect(await p.inputValue('#s-by')).toBe(OWNER);
     await p.fill('#s-branch', 'store-1'); await p.selectOption('#s-category', 'cardboard'); await p.selectOption('#s-disposal', 'sold');
     await p.fill('#s-kg', '12.5'); await p.fill('#s-proceeds', '250');
-    await p.click('#s-record');
+    // U1 · OB-626: the consequence-and-confirm sheet names the weight and the money; Go back sends nothing; Confirm sends once.
+    await askedThenConfirmed(p, () => p.click('#s-record'), /Record 12\.5 kg of cardboard disposed as sold, ₹250\.00 received/, writeCounter(p));
     await says(p, '#s-status', /^Recorded at head office\. It is NOT in the books until finance takes it up/);
 
     await p.fill('#v-branch', 'store-1');
@@ -159,7 +161,7 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
     const move = async (kind: string, qty: string): Promise<void> => {
       await p.fill('#m-item', 'crate-blue'); await p.fill('#m-branch', 'store-1'); await p.selectOption('#m-kind', kind); await p.fill('#m-qty', qty);
       await p.evaluate(() => { (globalThis as unknown as { document: { getElementById(id: string): { textContent: string } } }).document.getElementById('m-status').textContent = ''; });
-      await p.click('#m-record');
+      await askedThenConfirmed(p, () => p.click('#m-record'), new RegExp(`Record ${qty} × crate-blue`), writeCounter(p)); // U1 · OB-626
       await says(p, '#m-status', /^Recorded at head office\.$/);
     };
     await move('received', '10');

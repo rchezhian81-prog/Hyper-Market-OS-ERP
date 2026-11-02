@@ -256,6 +256,13 @@ interface BrowserGlobals {
   readonly document: { getElementById(id: string): { hidden: boolean; textContent: string | null } | null };
 }
 
+/** OB-626: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
+};
+
 describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by two people, end to end in a real browser (M23-FR-04 · ADR-0024)', () => {
   let browser: Browser;
 
@@ -299,6 +306,7 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
   /** Click a step and wait for the page to say THIS click's answer (head office's word, in the model's words). */
   const clickFor = async (page: Page, button: string, expected: RegExp): Promise<string> => {
     await page.click(button);
+    if (button === '#close-month' || button === '#reopen') await confirmSheet(page); // OB-626: these two move the month
     await page.waitForFunction(
       (source) => new RegExp(source).test((globalThis as unknown as BrowserGlobals).document.getElementById('month-status')?.textContent ?? ''),
       expected.source, { timeout: 10_000 },

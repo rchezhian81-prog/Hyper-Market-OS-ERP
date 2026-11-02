@@ -8,6 +8,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import type { Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export interface AccessRowView {
@@ -68,7 +69,7 @@ export const ACCESS_REVIEW_COPY = {
 } as const;
 export const accessReviewWords = (lang: Lang, key: string): string => (ACCESS_REVIEW_COPY[lang] as Record<string, string>)[key] ?? (ACCESS_REVIEW_COPY.en as Record<string, string>)[key] ?? key;
 export function accessReviewOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${accessReviewWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return accessReviewWords(lang, out.why);
   if (out.result === 'lost_link') return accessReviewWords(lang, 'unreachable');
   return '';

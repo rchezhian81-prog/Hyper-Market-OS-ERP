@@ -29,7 +29,7 @@
       fieldset label { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); }
       fieldset input { min-height: auto; width: 20px; height: 20px; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       li.lend { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; background: var(--bg); min-width: 0; border-left: 6px solid var(--idle); }
@@ -41,6 +41,8 @@
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: var(--fs-sm); }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -79,7 +81,7 @@
           <label><input type="checkbox" value="day_reopen" name="kind" /><span id="k-day_reopen">Reopening a closed day</span></label>
         </fieldset>
         <label for="reason"><span id="l-reason">Why</span><input id="reason" autocomplete="off" /></label>
-        <button id="lend" type="button">Lend this authority</button>
+        <button id="lend" type="button" class="sre-btn sre-btn-primary">Lend this authority</button>
         <p class="status" id="lend-status" role="status" aria-live="polite"></p>
       </section>
     </main>

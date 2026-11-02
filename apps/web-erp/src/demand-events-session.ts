@@ -40,6 +40,11 @@ export const EVENTS_COPY = {
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', cannotRead: 'Your role cannot read the forecast.', cannotManage: 'Only a manager can record or withdraw an event.',
     needStore: 'Fill in the store first. Nothing was sent.', needEvent: 'Fill in the name, both days and the expected effect (a number above 0). Nothing was sent.', needReason: 'Say why first. Nothing was sent.', needProduct: 'Give a product code first. Nothing was sent.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
+    // U1 · OB-626: the consequence-and-confirm sheet before an event changes the forecasts
+    confirmTitle: 'Record {label} ({kind}), {from} to {to}: orders will be proposed {effect} for {products}',
+    confirmDetail: 'From the next forecast, every order proposal for those days moves by that much. A wrong event is withdrawn with a reason; it stays on record.',
+    confirmAuthority: 'In your name as the manager of store {store}. Head office refuses it if your role may not manage events.',
+    confirmLabel: 'Record the event', effectMore: '{pct}% higher', effectLess: '{pct}% lower', effectSame: 'as usual', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
   },
   ta: {
     lang: 'English', title: 'கடை நிகழ்வுகள்',
@@ -54,6 +59,10 @@ export const EVENTS_COPY = {
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', cannotRead: 'உங்கள் பங்கு முன்கணிப்பைப் படிக்க முடியாது.', cannotManage: 'மேலாளர் மட்டுமே நிகழ்வைப் பதிவு செய்யவோ திரும்பப் பெறவோ முடியும்.',
     needStore: 'முதலில் கடையை நிரப்பவும். எதுவும் அனுப்பப்படவில்லை.', needEvent: 'பெயர், இரண்டு நாட்கள், எதிர்பார்க்கும் விளைவு (0-க்கு மேல்) நிரப்பவும். எதுவும் அனுப்பப்படவில்லை.', needReason: 'முதலில் காரணத்தைச் சொல்லுங்கள். எதுவும் அனுப்பப்படவில்லை.', needProduct: 'முதலில் பொருள் குறியீட்டைக் கொடுக்கவும். எதுவும் அனுப்பப்படவில்லை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
+    confirmTitle: '{label} ({kind}), {from} முதல் {to} வரை பதியப்படும்: {products}க்கான ஆர்டர்கள் {effect} பரிந்துரைக்கப்படும்',
+    confirmDetail: 'அடுத்த முன்கணிப்பிலிருந்து அந்த நாட்களின் ஒவ்வொரு ஆர்டர் பரிந்துரையும் அந்த அளவு மாறும். தவறான நிகழ்வு காரணத்துடன் திரும்பப் பெறப்படும்; பதிவில் இருக்கும்.',
+    confirmAuthority: 'கடை {store}இன் மேலாளராக உங்கள் பெயரில். நிகழ்வுகளை நிர்வகிக்கும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmLabel: 'நிகழ்வைப் பதிவு செய்', effectMore: '{pct}% கூடுதலாக', effectLess: '{pct}% குறைவாக', effectSame: 'வழக்கம் போல', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
   },
 } as const;
 export type EventsCopyKey = keyof typeof EVENTS_COPY.en;

@@ -103,15 +103,17 @@ describe.skipIf(!existsSync(CHROMIUM))('U0: the office pages the audit flagged r
     } finally { await s.context.close(); }
   }, 60_000);
 
-  it('Warehouse: the action buttons wear the accent, not the information tone', async () => {
+  it('Warehouse: no action button wears the information tone; the one primary (Propose transfer) wears the accent, the other is secondary (U1 · G3)', async () => {
     const s = await open(PEOPLE.manager, '/warehouse-supervisor/', DESK);
     try {
-      const styles = await s.page.$$eval('.card button.do', (els) => els.map((e) => (globalThis as unknown as { getComputedStyle(e: unknown): { backgroundColor: string } }).getComputedStyle(e).backgroundColor));
+      const styles = await s.page.$$eval('.card button.do', (els) => els.map((e) => ({ id: (e as unknown as { id: string }).id, bg: (globalThis as unknown as { getComputedStyle(e: unknown): { backgroundColor: string } }).getComputedStyle(e).backgroundColor })));
       const accent = await s.page.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`) as string;
       const info = await s.page.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--info').trim()`) as string;
       const toRgb = (hex: string): string => { const h = hex.replace('#', ''); return `rgb(${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)})`; };
       expect(styles.length).toBeGreaterThan(0);
-      for (const bg of styles) { expect(bg).not.toBe(toRgb(info)); expect(bg).toBe(toRgb(accent)); }
+      for (const { bg } of styles) expect(bg).not.toBe(toRgb(info));
+      expect(styles.find((x) => x.id === 't-do')?.bg, 'Propose transfer is the one primary').toBe(toRgb(accent));
+      expect(styles.filter((x) => x.bg === toRgb(accent)), 'one primary at a time').toHaveLength(1);
     } finally { await s.context.close(); }
   }, 60_000);
 });

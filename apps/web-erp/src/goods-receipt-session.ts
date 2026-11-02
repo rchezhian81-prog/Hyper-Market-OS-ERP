@@ -220,6 +220,7 @@ export interface GoodsReceiptConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
+  | 'confirmReturnTitle' | 'confirmReturnDetail' | 'confirmReturnAuthority' | 'confirmReturnLabel' | 'confirmUnavailable' // U1 · OB-626
   | 'listHeading' | 'asOfLabel' | 'refresh'
   | 'sigNeedsApproval' | 'sigDiscrepancies' | 'sigClean'
   | 'needsApprovalBadge' | 'noPo'
@@ -271,6 +272,11 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     returnsHeading: 'Going back to the supplier', returnAwaiting: 'Waiting to go back to the supplier', returnGone: 'Gone back to the supplier',
     returnNeedsCount: 'Count it first — handheld scans may have put it on the shelf', returnChoiceLabel: 'Which held line went back',
     returnReasonLabel: 'How it went back', returnReasonPlaceholder: 'e.g. the supplier’s driver collected it, van KA-01', returnBtn: 'Record it as gone back',
+    // U1 · OB-626: the consequence-and-confirm sheet before a delivery line goes back to the supplier
+    confirmReturnTitle: 'Send {line} back to the supplier',
+    confirmReturnDetail: 'Stock falls by that line and the supplier is owed nothing for it; the bill is matched without it. A return cannot be taken back from this screen.',
+    confirmReturnAuthority: 'In your name, with the words you gave on how it went back. Head office refuses it if the line is not waiting or your role may not return goods.',
+    confirmReturnLabel: 'Send it back', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     returnNoneWaiting: 'No held line is waiting to go back to a supplier.',
     returnRecorded: 'Recorded — the line has gone back to the supplier; its value is on the supplier’s debit note.', returnAlready: 'This line was already recorded as gone back.',
     returnRefused: 'Head office refused it:', returnLostLink: 'No connection — nothing was recorded. Try again.',
@@ -349,6 +355,10 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     returnsHeading: 'சப்ளையருக்குத் திரும்புபவை', returnAwaiting: 'சப்ளையருக்குத் திரும்பக் காத்திருக்கிறது', returnGone: 'சப்ளையருக்குத் திரும்பியது',
     returnNeedsCount: 'முதலில் எண்ணுங்கள் — கைக்கருவி ஸ்கேன்கள் அதை அடுக்கில் வைத்திருக்கலாம்', returnChoiceLabel: 'எந்தத் தடுத்த வரி திரும்பியது',
     returnReasonLabel: 'எப்படித் திரும்பியது', returnReasonPlaceholder: 'எ.கா. சப்ளையரின் ஓட்டுநர் எடுத்துச் சென்றார், வண்டி KA-01', returnBtn: 'திரும்பியதாகப் பதிவு செய்',
+    confirmReturnTitle: '{line} விநியோகஸ்தருக்குத் திருப்பி அனுப்பப்படும்',
+    confirmReturnDetail: 'அந்த வரிக்கு ஏற்பச் சரக்கு குறையும்; அதற்கு விநியோகஸ்தருக்கு எதுவும் தரப்படாது; பில் அது இல்லாமல் பொருத்தப்படும். இந்தத் திரையில் திருப்பலைத் திரும்பப் பெற முடியாது.',
+    confirmReturnAuthority: 'எப்படித் திரும்பியது என்று நீங்கள் எழுதிய சொற்களுடன், உங்கள் பெயரில். வரி காத்திருக்கவில்லையெனில் அல்லது சரக்கைத் திருப்பும் உரிமை இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmReturnLabel: 'திருப்பி அனுப்பு', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     returnNoneWaiting: 'சப்ளையருக்குத் திரும்ப எந்தத் தடுத்த வரியும் காத்திருக்கவில்லை.',
     returnRecorded: 'பதிவாகியது — வரி சப்ளையருக்குத் திரும்பியது; அதன் மதிப்பு சப்ளையரின் டெபிட் நோட்டில் உள்ளது.', returnAlready: 'இந்த வரி ஏற்கனவே திரும்பியதாகப் பதிவாகியுள்ளது.',
     returnRefused: 'தலைமை அலுவலகம் மறுத்தது:', returnLostLink: 'இணைப்பு இல்லை — எதுவும் பதிவாகவில்லை. மீண்டும் முயற்சிக்கவும்.',

@@ -11,6 +11,7 @@
 // Nothing is read before the person may see it; every write is a person's explicit click, in their own name.
 
 import { makeCaller, type Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type AlertKind = 'large_discount' | 'voided_bill' | 'price_override' | 'after_hours_login' | 'cash_short' | 'failed_sign_in';
@@ -75,7 +76,7 @@ export const ownerAlertsWords = (lang: Lang, key: string): string =>
 
 export function ownerAlertsOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => ownerAlertsWords(lang, k);
-  if (out.result === 'refused') return `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

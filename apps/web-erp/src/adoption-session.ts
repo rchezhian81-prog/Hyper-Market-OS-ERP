@@ -12,6 +12,7 @@
 // Every act is a person's click in their own name; head office re-checks it.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -55,7 +56,7 @@ export const adoptionWords = (lang: Lang, key: string): string =>
 
 export function adoptionOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => adoptionWords(lang, k);
-  if (out.result === 'refused') return `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

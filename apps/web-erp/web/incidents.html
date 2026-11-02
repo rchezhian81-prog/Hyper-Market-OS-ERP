@@ -28,7 +28,7 @@
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       textarea { min-height: 72px; resize: vertical; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.quiet { background: var(--line); color: var(--ink); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .head-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
@@ -53,6 +53,8 @@
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: var(--fs-sm); }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -71,7 +73,7 @@
             <h2 id="page-h">Incidents and recovery drills</h2>
             <p class="lead" id="lead">When something goes wrong, record it here with a named owner for each follow-up, write down what happened and what will change, and close it in your own name.</p>
           </div>
-          <button id="open-new" type="button">Record an incident</button>
+          <button id="open-new" type="button" class="sre-btn sre-btn-primary">Record an incident</button>
         </div>
         <div class="panels" role="status" aria-live="polite">
           <div class="panel" id="p-open"><span class="k" id="k-open">Open incidents</span><span class="v" id="v-open">—</span></div>
@@ -113,7 +115,7 @@
             <label for="d-loss"><span id="l-d-loss">Data lost (seconds)</span><input id="d-loss" inputmode="numeric" autocomplete="off" /></label>
             <label for="d-back"><span id="l-d-back">Time until back (minutes)</span><input id="d-back" inputmode="numeric" autocomplete="off" /></label>
           </div>
-          <button id="d-save" type="button">Record the drill</button>
+          <button id="d-save" type="button" class="sre-btn sre-btn-primary">Record the drill</button>
           <p class="status" id="drill-status" role="status" aria-live="polite"></p>
         </div>
       </section>
@@ -128,7 +130,7 @@
           <select id="n-severity"><option value="sev1" id="o-sev1">Severe</option><option value="sev2" id="o-sev2" selected>Serious</option><option value="sev3" id="o-sev3">Minor</option></select>
         </label>
         <label for="n-summary"><span id="l-n-summary">What is known so far</span><textarea id="n-summary"></textarea></label>
-        <div class="head-row"><button id="n-save" type="button">Record it</button><button id="n-cancel" class="quiet" type="button">Close</button></div>
+        <div class="head-row"><button id="n-save" type="button" class="sre-btn sre-btn-primary">Record it</button><button id="n-cancel" class="quiet sre-btn sre-btn-quiet" type="button">Close</button></div>
         <p class="status" id="new-status" role="status" aria-live="polite"></p>
       </div>
     </div>
@@ -136,7 +138,7 @@
     <!-- One incident: the record drawer. -->
     <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="r-title">
       <div class="sheet-inner" id="record">
-        <div class="head-row"><h2 id="r-title"></h2><button id="r-close" class="quiet" type="button">Close</button></div>
+        <div class="head-row"><h2 id="r-title"></h2><button id="r-close" class="quiet sre-btn sre-btn-quiet" type="button">Close</button></div>
         <p class="muted" id="r-meta"></p>
         <p id="r-summary"></p>
         <p class="status" id="record-status" role="status" aria-live="polite"></p>
@@ -146,7 +148,7 @@
         <div class="row" id="r-timeline-form">
           <label for="t-when"><span id="l-t-when">When it happened</span><input id="t-when" type="datetime-local" /></label>
           <label for="t-note"><span id="l-t-note">What happened</span><input id="t-note" autocomplete="off" /></label>
-          <button id="t-add" type="button">Add to the timeline</button>
+          <button id="t-add" type="button" class="sre-btn">Add to the timeline</button>
         </div>
 
         <h3 id="r-actions-h">Follow-ups</h3>
@@ -155,7 +157,7 @@
           <label for="a-desc"><span id="l-a-desc">What will be done</span><input id="a-desc" autocomplete="off" /></label>
           <label for="a-owner"><span id="l-a-owner">Who owns it</span><input id="a-owner" autocomplete="off" /></label>
           <label for="a-due"><span id="l-a-due">Done by</span><input id="a-due" type="date" /></label>
-          <button id="a-add" type="button">Add this follow-up</button>
+          <button id="a-add" type="button" class="sre-btn">Add this follow-up</button>
         </div>
 
         <h3 id="r-pm-h">Post-mortem</h3>
@@ -165,12 +167,12 @@
           <label for="pm-impact"><span id="l-pm-impact">Impact</span><textarea id="pm-impact"></textarea></label>
           <label for="pm-change"><span id="l-pm-change">What will change</span><textarea id="pm-change"></textarea></label>
           <label for="pm-well"><span id="l-pm-well">What went well (optional)</span><textarea id="pm-well"></textarea></label>
-          <button id="pm-save" type="button">Save the post-mortem</button>
+          <button id="pm-save" type="button" class="sre-btn">Save the post-mortem</button>
         </div>
 
         <div id="r-close-form" class="row">
           <label for="c-note"><span id="l-c-note">Why it is over</span><input id="c-note" autocomplete="off" /></label>
-          <button id="c-close" type="button">Close the incident</button>
+          <button id="c-close" type="button" class="sre-btn sre-btn-danger">Close the incident</button>
         </div>
       </div>
     </div>

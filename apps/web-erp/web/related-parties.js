@@ -25,7 +25,7 @@ function paintParties() {
     li.append(text('span', [p.kind === 'firm' ? t('firm') : t('person'), ...p.gstins, ...p.phones, ...p.bankAccountRefs].join(' · '), 'meta'));
     if (p.active) {
       const why = document.createElement('label'); why.append(text('span', t('takeOffWhy'))); const reason = document.createElement('input'); reason.autocomplete = 'off'; reason.className = 'take-off-why'; why.append(reason);
-      const off = document.createElement('button'); off.className = 'quiet'; off.type = 'button'; off.dataset.act = 'take-off'; const i = icon('x'); if (i !== null) off.append(i); off.append(text('span', t('takeOff')));
+      const off = document.createElement('button'); off.className = 'quiet sre-btn sre-btn-quiet'; off.type = 'button'; off.dataset.act = 'take-off'; const i = icon('x'); if (i !== null) off.append(i); off.append(text('span', t('takeOff')));
       off.addEventListener('click', async () => { const out = await session.takeOff(p.partyId, reason.value); say('p-status', out); if (out.result === 'ok') await loadParties(); });
       li.append(why, off);
     }

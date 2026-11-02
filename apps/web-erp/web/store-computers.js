@@ -32,7 +32,7 @@ function paintSummary() {
 }
 
 function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
-function button(text, act, onClick) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.dataset.act = act; b.addEventListener('click', onClick); return b; }
+function button(text, act, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = text; b.dataset.act = act; b.addEventListener('click', onClick); return b; }
 
 function paintBindings() {
   const body = $('binding-rows');

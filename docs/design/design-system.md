@@ -207,7 +207,7 @@ Tamil, and no animation after twenty till scans).
 ## 4. Core components (implemented later in `packages/ui`)
 | Component | Rules |
 | --- | --- |
-| Primary button | One per screen, dominant, thumb-reachable; disabled state explains why. |
+| Primary button | One per screen (per visible view), dominant, thumb-reachable; disabled state explains why. **Kept since U1 (2 Nov 2026):** every office page marks it with `.sre-btn-primary`, every other button is `.sre-btn` (secondary), `-quiet` or `-danger`, no page paints a button by itself, and a greyed button carries its reason beside it (`.sre-why`) and as its tooltip — `tests/guardrails/every-office-page-marks-one-primary-action.test.ts`, `tests/e2e/u1-every-office-page-shows-one-primary-action.e2e.ts`. |
 | Secondary / destructive button | Destructive shows consequence + confirm; financial adds authority check. |
 | Input / number pad | Large; POS number entry is a big on-screen pad; inline validation with the §27.1 error content. |
 | List / line item | Clear line height; swipe/tap targets large; running total pinned. |
@@ -233,6 +233,7 @@ every part works with no internet — P-01). A page that paints before the chrom
 | **Summary cards** | `sreOffice.cards(host, [{ label, value, note, tone, href, icon }])` | The label, the figure exactly as the page read it, a note. `value` null is **"Not known"** — never 0. Tone is a coloured edge AND the words (never colour alone). |
 | **Status chip** | `sreOffice.chip(tone, label)` | The tone's shape from the one icon set and its words (`ok`, `pending`, `degraded`, `error`, `idle`, `unknown`). |
 | **Form field** | `sreOffice.field({ id, label, type, required, hint, options })`, `sreOffice.check(form)` | A visible label that is the field's name; "(required)" said in words (not a lone star); a hint under it; a message beside the field in plain words when it is wrong ("Fill in "Customer code"."); the first wrong field takes the focus; nothing is sent until every field is right. |
+| **Confirm sheet** (U1, OB-626, 2 Nov 2026) | `sreOffice.confirm({ title, detail, authority, confirmLabel, tone, reason? })` → `{ ok, reason? }` | Before money, stock, a price or a privilege moves: one modal sheet that says what will happen (with the figure and its unit), the consequence and how it is undone, in whose name and who approves afterwards, and a button with the action's own verb (never "OK"). Focus lands on **Go back**; Escape, the scrim, a second ask and leaving the page answer Go back; Enter in a field never confirms; a required reason is refused blank beside the field; `tone: 'danger'` for the irreversible (a recall, a write-off, lending authority). English and Tamil, repainted live; never a browser dialog; works with no internet. A second person's PIN or signature stays and comes after it. Every money, stock, price and privilege action in the office goes through it (`tests/guardrails/money-moves-only-after-the-confirm-sheet.test.ts`); the till has the same step in its own panel. |
 
 **Where they are used first (W1):** Customers (segment cards and the customer register with drawer), Approvals (inbox
 cards, request chips, a required reason said beside the field, "not known" until head office answers — never "nothing

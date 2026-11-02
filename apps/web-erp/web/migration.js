@@ -1441,7 +1441,7 @@ function ecPaintMappings() {
       const all = (ecState.mappings.history ?? []).filter((h) => h.report === kind);
       if (all.length > 1) what.append(line(`${ec('changedBefore')}: ${all.slice(0, -1).map((h) => `${h.setBy} · ${h.setAt}`).join('; ')}`));
     }
-    const button = document.createElement('button');
+    const button = document.createElement('button'); button.classList.add('sre-btn');
     button.type = 'button';
     button.id = `ec-map-change-${kind}`;
     labelled(button, 'list-checks', ec('change'));

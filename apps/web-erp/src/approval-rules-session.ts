@@ -10,6 +10,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import type { Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type RuleName = 'limits' | 'escalation-waits' | 'price-check';
@@ -102,7 +103,7 @@ export const APPROVAL_RULES_COPY = {
 export type ApprovalRulesCopyKey = keyof typeof APPROVAL_RULES_COPY.en;
 export const approvalRulesWords = (lang: Lang, key: string): string => (APPROVAL_RULES_COPY[lang] as Record<string, string>)[key] ?? (APPROVAL_RULES_COPY.en as Record<string, string>)[key] ?? key;
 export function approvalRulesOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${approvalRulesWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return approvalRulesWords(lang, out.why);
   if (out.result === 'lost_link') return approvalRulesWords(lang, 'unreachable');
   return '';

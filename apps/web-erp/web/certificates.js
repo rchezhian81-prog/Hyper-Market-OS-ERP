@@ -12,7 +12,7 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, quiet) {
-  const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet';
+  const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet';
   const i = icon(iconName); if (i !== null) b.append(i);
   b.append(text('span', words)); return b;
 }

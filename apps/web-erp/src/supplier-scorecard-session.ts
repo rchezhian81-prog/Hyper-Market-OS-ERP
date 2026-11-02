@@ -11,6 +11,7 @@
 // its reason; a product with no contract price says so — never a zero.
 
 import type { ViewerIdentity } from './browser-entry';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type Outcome<T> =
@@ -84,7 +85,7 @@ export type ScorecardCopyKey = keyof typeof SCORECARD_COPY.en;
 export const scorecardWords = (lang: Lang, key: ScorecardCopyKey | string): string =>
   (SCORECARD_COPY[lang] as Record<string, string>)[key] ?? (SCORECARD_COPY.en as Record<string, string>)[key] ?? key;
 export function scorecardOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${scorecardWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return scorecardWords(lang, out.why);
   if (out.result === 'lost_link') return scorecardWords(lang, 'unreachable');
   return '';

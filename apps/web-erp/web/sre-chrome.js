@@ -1040,6 +1040,7 @@
       offline: 'Head office cannot be reached', offlineDetail: 'This list could not be read, so nothing here is current. Nothing was changed.',
       denied: 'Your role cannot open this', deniedDetail: 'Ask the owner or the manager if you need it.',
       notKnown: 'Not known', required: 'required', fillIn: 'Fill in "{f}".', fixFields: 'Some answers need fixing before this can be sent:', tryAgain: 'Try again',
+      beforeThis: 'Before this is sent', goBack: 'Go back', confirm: 'Confirm', reasonShort: 'Say why in at least {n} letters.',
     },
     ta: {
       search: 'இந்தப் பட்டியலில் தேடு', filterAll: 'அனைத்தும்', columns: 'நெடுவரிசைகள்', columnsShown: 'காட்ட வேண்டிய நெடுவரிசைகள்', open: 'திற', close: 'மூடு',
@@ -1052,6 +1053,7 @@
       offline: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை', offlineDetail: 'இந்தப் பட்டியலைப் படிக்க முடியவில்லை, எனவே இங்கு எதுவும் தற்போதையது அல்ல. எதுவும் மாற்றப்படவில்லை.',
       denied: 'உங்கள் பங்கால் இதைத் திறக்க முடியாது', deniedDetail: 'தேவையெனில் உரிமையாளர் அல்லது மேலாளரிடம் கேளுங்கள்.',
       notKnown: 'தெரியவில்லை', required: 'கட்டாயம்', fillIn: '"{f}" நிரப்பவும்.', fixFields: 'அனுப்பும் முன் சில பதில்களைச் சரிசெய்ய வேண்டும்:', tryAgain: 'மீண்டும் முயல்',
+      beforeThis: 'இது அனுப்பப்படும் முன்', goBack: 'பின் செல்', confirm: 'உறுதிப்படுத்து', reasonShort: 'குறைந்தது {n} எழுத்துகளில் ஏன் என்று சொல்லவும்.',
     },
   };
   const ow = (key) => OFFICE_WORDS[lang()][key] ?? OFFICE_WORDS.en[key];
@@ -1250,6 +1252,126 @@
     if (drawerReturn && typeof drawerReturn.focus === 'function' && document.contains(drawerReturn)) drawerReturn.focus();
     drawerReturn = null;
   }
+  // ── The confirm sheet (OB-626, 2 Nov 2026 · design system §1.3 · §27.1): consequence, authority, then the person's
+  // own word — BEFORE money, stock, a price or a privilege moves. `await sreOffice.confirm({ title, detail, authority,
+  // confirmLabel, tone, reason? })` → `{ ok: true, reason? }` only on the confirm button; Go back, Escape, a tap on the
+  // scrim, a second ask or leaving the page all answer `{ ok: false }`, and the page sends nothing on that. The safe
+  // answer holds the focus; Enter never confirms unless the focus is on the confirm button itself. A required reason
+  // refuses a blank with the message beside the field (the shared field rules). Never a browser dialog.
+  let confirmOpen = null;
+  function officeConfirm(spec) {
+    if (confirmOpen) confirmOpen.finish(false);
+    return new Promise((resolve) => {
+      const opener = document.activeElement;
+      const tone = spec.tone === 'danger' ? 'danger' : 'primary';
+      const sheet = document.createElement('div');
+      sheet.className = 'sre-sheet sre-confirm';
+      sheet.id = 'sre-confirm';
+      sheet.dataset.tone = tone;
+      sheet.setAttribute('role', 'dialog');
+      sheet.setAttribute('aria-modal', 'true');
+      sheet.setAttribute('aria-labelledby', 'sre-confirm-title');
+      sheet.setAttribute('aria-describedby', 'sre-confirm-detail');
+      const inner = document.createElement('form');
+      inner.className = 'sre-sheet-inner';
+      inner.noValidate = true;
+      inner.addEventListener('submit', (e) => { e.preventDefault(); });
+      const kicker = document.createElement('p');
+      kicker.className = 'sre-confirm-kicker';
+      const h = document.createElement('h2');
+      h.id = 'sre-confirm-title';
+      const detail = document.createElement('p');
+      detail.id = 'sre-confirm-detail';
+      detail.className = 'sre-confirm-detail';
+      const authority = document.createElement('p');
+      authority.className = 'sre-confirm-authority';
+      let reasonWrap = null;
+      if (spec.reason) {
+        reasonWrap = officeField({ id: 'sre-confirm-reason', label: spec.reason.label, type: 'textarea', required: spec.reason.required !== false, hint: spec.reason.hint });
+      }
+      const actions = document.createElement('div');
+      actions.className = 'sre-confirm-actions';
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'sre-btn';
+      back.id = 'sre-confirm-back';
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = `sre-btn ${tone === 'danger' ? 'sre-btn-danger' : 'sre-btn-primary'}`;
+      go.id = 'sre-confirm-go';
+      actions.append(back, go);
+      inner.append(kicker, h, detail, authority);
+      if (reasonWrap) inner.append(reasonWrap);
+      inner.append(actions);
+      sheet.append(inner);
+
+      const paintWords = () => {
+        kicker.textContent = ow('beforeThis');
+        h.textContent = said(spec.title);
+        detail.textContent = said(spec.detail);
+        authority.textContent = spec.authority ? said(spec.authority) : '';
+        authority.hidden = !spec.authority;
+        back.textContent = ow('goBack');
+        go.textContent = spec.confirmLabel ? said(spec.confirmLabel) : ow('confirm');
+        if (reasonWrap) {
+          const lab = reasonWrap.querySelector('.sre-field-label');
+          if (lab) { lab.replaceChildren(document.createTextNode(said(spec.reason.label))); if (spec.reason.required !== false) { const mark = document.createElement('span'); mark.className = 'sre-req'; mark.textContent = ` (${ow('required')})`; lab.append(mark); } }
+          const hint = reasonWrap.querySelector('.sre-field-hint');
+          if (hint && spec.reason.hint) hint.textContent = said(spec.reason.hint);
+        }
+      };
+      const observer = new MutationObserver(paintWords);
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+
+      const focusables = () => [...inner.querySelectorAll('button, textarea, input, select, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.disabled && visible(el));
+      const finish = (ok) => {
+        if (confirmOpen !== me) return;
+        let reason;
+        if (ok && reasonWrap) {
+          const control = reasonWrap.querySelector('textarea');
+          const msg = reasonWrap.querySelector('.sre-field-msg');
+          const text = String(control.value ?? '').trim();
+          const min = spec.reason.minLength ?? 1;
+          let problem = '';
+          if (text === '' && spec.reason.required !== false) problem = fill(ow('fillIn'), { f: said(spec.reason.label) });
+          else if (text !== '' && text.length < min) problem = fill(ow('reasonShort'), { n: min });
+          msg.hidden = problem === '';
+          msg.textContent = problem;
+          if (problem !== '') { control.setAttribute('aria-invalid', 'true'); control.focus(); return; }
+          control.removeAttribute('aria-invalid');
+          reason = text;
+        }
+        confirmOpen = null;
+        observer.disconnect();
+        window.removeEventListener('pagehide', onLeave);
+        sheet.remove();
+        if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+        resolve(ok ? (reason === undefined ? { ok: true } : { ok: true, reason }) : { ok: false });
+      };
+      const onLeave = () => finish(false);
+      const me = { finish };
+      confirmOpen = me;
+      window.addEventListener('pagehide', onLeave);
+      back.addEventListener('click', () => finish(false));
+      go.addEventListener('click', () => finish(true));
+      sheet.addEventListener('click', (e) => { if (e.target === sheet) finish(false); });
+      sheet.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); return; }
+        if (e.key === 'Enter' && e.target !== go && e.target !== back && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); return; }
+        if (e.key === 'Tab') {
+          const list = focusables();
+          if (list.length === 0) return;
+          const first = list[0]; const last = list[list.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      });
+      paintWords();
+      document.body.append(sheet);
+      back.focus();
+    });
+  }
+
   /** A record's facts as a definition list, for the drawer: `[[label, value], …]`; a missing value is "Not known". */
   function officeFacts(pairs) {
     const dl = document.createElement('dl');
@@ -1510,6 +1632,7 @@
   window.sreOffice = Object.freeze({
     table: officeTable, state: officeState, cards: officeCards, chip: officeChip, field: officeField, check: officeCheck,
     drawer: officeDrawer, closeDrawer, facts: officeFacts, stateOf: officeStateOf, words: (key) => ow(key),
+    confirm: officeConfirm,
   });
 
   // a register that is still on the page is redrawn in the new language; one its page has since replaced is let go

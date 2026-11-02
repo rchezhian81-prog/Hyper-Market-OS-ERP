@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { setUpPracticeStores } from '../support/real-store';
+import { askedThenConfirmed, confirmIt, writeCounter } from './lib/confirm-sheet';
 
 /**
  * **WF-11 / M13-FR-02 — "Returned goods to decide", in a real browser, on the PRODUCTION API over real PostgreSQL.**
@@ -85,6 +86,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Returned g
       await first.locator('select.decision').selectOption('return_to_supplier');
       await first.locator('input.reason').fill('supplier_fault');
       await first.locator('button.record').click();
+      await confirmIt(page); // U1 · OB-626: a return to the supplier moves stock, so the sheet is asked first
       await page.locator('#result.tone-error').waitFor({ timeout: 15_000 });
       expect(await page.textContent('#result')).toMatch(/Not recorded/);
       expect(await onHand()).toBe(8);
@@ -104,7 +106,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Returned g
       // NEW-7 (D-5): the reason is chosen from the closed list; the typed words are kept as the note.
       await second.locator('select.waste-reason').selectOption('damage');
       await second.locator('input.reason').fill('contents spilt');
-      await second.locator('button.record').click();
+      // U1 · OB-626: the consequence-and-confirm sheet names the unit and the reason; Go back sends nothing; Confirm sends once.
+      await askedThenConfirmed(page, () => second.locator('button.record').click(), /Write off DAL × 1 .*as Damaged/, writeCounter(page));
       await page.locator('#done-rows .row', { hasText: 'seal broken' }).waitFor({ timeout: 15_000 });
       expect(await page.locator('#done-rows .row', { hasText: 'seal broken' }).locator('.facts').textContent()).toMatch(/Write off by u-owner \(Damaged — contents spilt\) · Loss value ₹40\.00/);
       expect(await page.textContent('#summary')).toBe('Nothing is waiting — every returned unit has been decided.');

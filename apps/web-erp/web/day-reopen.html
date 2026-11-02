@@ -48,6 +48,8 @@
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -95,7 +97,7 @@
           <label for="reopener-pin" id="reopener-pin-label"></label>
           <input id="reopener-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
         </div>
-        <button id="do-reopen" class="act" type="button"></button>
+        <button id="do-reopen" class="act sre-btn sre-btn-primary" type="button"></button>
       </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>

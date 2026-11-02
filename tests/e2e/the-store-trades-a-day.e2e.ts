@@ -131,6 +131,9 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await page.waitForSelector('#sheet:not([hidden])');
     for (const digit of rupees) await page.click(`#keypad button:text-is("${digit}")`);
     await page.click('#sheet-ok');
+    // OB-626 (U1): a cash movement is confirmed on screen before the box is asked — the verb, after the panel says the figure.
+    await page.waitForSelector('#sheet:not([hidden]) #consequence:not([hidden])');
+    await page.click('#sheet-ok');
   };
   const shown = async (page: Page): Promise<{ title: string; text: string }> => {
     await page.waitForSelector('#refusal:not([hidden])');

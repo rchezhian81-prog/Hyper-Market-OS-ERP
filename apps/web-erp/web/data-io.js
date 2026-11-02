@@ -103,7 +103,7 @@ function paintExport() {
     const name = document.createElement('strong'); name.textContent = d.domain;
     if (d.sensitiveCount > 0) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = `${d.sensitiveCount} ${t('sensitiveTag')}`; name.append(tag); }
     what.append(name, line(d.columns.map((c) => c.name).join(', ')));
-    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act small export-btn'; btn.textContent = t('exportBtn'); btn.dataset.domain = d.domain;
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act small export-btn sre-btn'; btn.textContent = t('exportBtn'); btn.dataset.domain = d.domain;
     if (d.period) {
       // A dated domain (attendance): From / To, defaulting to the last 7 days ending yesterday in the shop's calendar.
       const chosen = periodChosen.get(d.domain) ?? { from: d.period.defaultFrom, to: d.period.defaultTo };
@@ -279,8 +279,8 @@ function paintLoads() {
       input.value = undoWhy.get(r.jobId) ?? '';
       input.addEventListener('input', () => { undoWhy.set(r.jobId, input.value); });
       const actions = document.createElement('div'); actions.className = 'actions';
-      const ask = document.createElement('button'); ask.type = 'button'; ask.className = 'act small ask-undo'; ask.textContent = t('askUndoBtn'); ask.dataset.job = r.jobId;
-      const go = document.createElement('button'); go.type = 'button'; go.className = 'act primary undo-btn'; go.textContent = t('undoBtn'); go.dataset.job = r.jobId;
+      const ask = document.createElement('button'); ask.type = 'button'; ask.className = 'act small ask-undo sre-btn'; ask.textContent = t('askUndoBtn'); ask.dataset.job = r.jobId;
+      const go = document.createElement('button'); go.type = 'button'; go.className = 'act primary undo-btn sre-btn sre-btn-primary'; go.textContent = t('undoBtn'); go.dataset.job = r.jobId;
       const result = document.createElement('p'); result.className = 'result undo-result'; result.hidden = true; result.setAttribute('role', 'status'); result.setAttribute('aria-live', 'polite');
       const show = (presentation) => {
         result.hidden = false; result.className = `result undo-result tone-${presentation.tone}`;

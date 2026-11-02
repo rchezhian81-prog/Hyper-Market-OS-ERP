@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -39,6 +39,8 @@
       .role-block label { display: flex; gap: 8px; align-items: center; font-weight: 400; min-height: var(--tap); }
       .role-block input[type=checkbox] { min-height: 24px; width: 24px; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -59,7 +61,7 @@
         <p class="verdict" id="gate-verdict" role="status" aria-live="polite"></p>
         <ul class="rows" id="gate-why"></ul>
         <div class="table-wrap"><table id="gate-roles"><thead><tr><th id="th-role"></th><th id="th-people"></th><th id="th-cur"></th><th id="th-missing"></th></tr></thead><tbody></tbody></table></div>
-        <button id="gate-read" type="button" class="quiet"><span id="gate-read-text"></span></button>
+        <button id="gate-read" type="button" class="quiet sre-btn sre-btn-quiet"><span id="gate-read-text"></span></button>
       </section>
       <section id="cur" hidden aria-labelledby="cur-h">
         <h3 id="cur-h"></h3>
@@ -73,7 +75,7 @@
           <label for="t-item"><span id="t-item-l"></span><input id="t-item" autocomplete="off" /></label>
           <label for="t-due"><span id="t-due-l"></span><input id="t-due" type="date" /></label>
         </div>
-        <button id="t-assign" type="button"><span id="t-assign-text"></span></button>
+        <button id="t-assign" type="button" class="sre-btn sre-btn-primary"><span id="t-assign-text"></span></button>
         <p class="status" id="t-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="t-rows"></ul>
       </section>
@@ -84,7 +86,7 @@
       </section>
       <section id="access" hidden aria-labelledby="access-h">
         <h3 id="access-h"></h3>
-        <button id="x-read" type="button" class="quiet"><span id="x-read-text"></span></button>
+        <button id="x-read" type="button" class="quiet sre-btn sre-btn-quiet"><span id="x-read-text"></span></button>
         <p class="status" id="x-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="x-rows"></ul>
       </section>
@@ -94,7 +96,7 @@
           <label for="pr-from"><span id="pr-from-l"></span><input id="pr-from" type="date" /></label>
           <label for="pr-to"><span id="pr-to-l"></span><input id="pr-to" type="date" /></label>
         </div>
-        <button id="pr-read" type="button" class="quiet"><span id="pr-read-text"></span></button>
+        <button id="pr-read" type="button" class="quiet sre-btn sre-btn-quiet"><span id="pr-read-text"></span></button>
         <p class="status" id="pr-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="pr-rows"></ul>
       </section>
@@ -104,7 +106,7 @@
           <label for="hd-emp"><span id="hd-emp-l"></span><input id="hd-emp" autocomplete="off" /></label>
           <label for="hd-dept"><span id="hd-dept-l"></span><select id="hd-dept"></select></label>
         </div>
-        <button id="hd-set" type="button"><span id="hd-set-text"></span></button>
+        <button id="hd-set" type="button" class="sre-btn"><span id="hd-set-text"></span></button>
         <p class="status" id="hd-status" role="status" aria-live="polite"></p>
       </section>
     </main>

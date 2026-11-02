@@ -31,7 +31,7 @@ function completeForm(task) {
   const ticks = task.steps.map((s) => { const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'step'; box.dataset.step = s.stepId; return [s, box]; });
   const evidence = document.createElement('input'); evidence.className = 'evidence'; evidence.autocomplete = 'off';
   const note = document.createElement('input'); note.className = 'note'; note.autocomplete = 'off';
-  const button = document.createElement('button'); button.type = 'submit'; button.className = 'done'; button.textContent = t('myDone');
+  const button = document.createElement('button'); button.type = 'submit'; button.className = 'done sre-btn'; button.textContent = t('myDone');
   const status = document.createElement('p'); status.className = 'status'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   form.append(...ticks.map(([s, box]) => field(s.label, box)), field(t('myEvidence'), evidence), field(t('myNote'), note), button, status);
   form.addEventListener('submit', async (event) => {

@@ -125,7 +125,7 @@ describe('an unpermitted user is offered no capture action, and the model refuse
 
 describe('the view defers to the model, uses no browser dialogs, and only writes on an explicit click', () => {
   it('never calls alert / confirm / prompt (the fields are inputs, not browser dialogs)', () => {
-    expect(/\b(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false);
+    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false); // U1 · OB-626: `office.confirm(` is the chrome's on-screen sheet, not a browser dialog
   });
 
   it('renders from the bundled session rather than re-deciding what to show', () => {
@@ -161,7 +161,7 @@ describe('the view defers to the model, uses no browser dialogs, and only writes
     // The two-person step is on the page instead: a reason box with a label, and the ask button.
     expect(HTML).toMatch(/<label for="wo-why" id="why-label">/);
     expect(HTML).toMatch(/<textarea id="wo-why"/);
-    expect(HTML).toMatch(/<button id="ask" class="act" type="button">/);
+    expect(HTML).toMatch(/<button id="ask" class="act sre-btn" type="button">/); // U1 · G3: on the foundation's buttons
   });
 
   it('the loss type is a CHOSEN chip, never a free-text field (M15)', () => {
@@ -189,8 +189,10 @@ describe('the view defers to the model, uses no browser dialogs, and only writes
   });
 
   it('one primary action at a time: "Record the loss" starts as the primary; the view moves it to "Ask for approval" for a big loss nobody was asked about', () => {
-    expect(HTML).toMatch(/<button id="record" class="act primary" type="button">/);
+    expect(HTML).toMatch(/<button id="record" class="act primary sre-btn sre-btn-primary" type="button">/); // U1 · G3
     expect(VIEW).toMatch(/el\('ask'\)\.classList\.toggle\('primary', askFirst\)/);
+    expect(VIEW).toMatch(/el\('ask'\)\.classList\.toggle\('sre-btn-primary', askFirst\)/); // U1 · G3: the foundation's mark moves with it
+    expect(VIEW).toMatch(/el\('record'\)\.classList\.toggle\('sre-btn-primary', !askFirst\)/);
     expect(VIEW).toMatch(/el\('record'\)\.classList\.toggle\('primary', !askFirst\)/);
   });
 });

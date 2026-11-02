@@ -31,7 +31,7 @@
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
@@ -50,6 +50,9 @@
       .muted { color: var(--muted); font-size: 14px; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -103,10 +106,10 @@
         </div>
         <p class="muted" id="basis-say"></p>
         <div class="row">
-          <button id="read-basis" type="button">Read head office's figures</button>
-          <button id="save" class="primary" type="button">Save the price</button>
+          <button id="read-basis" type="button" class="sre-btn">Read head office's figures</button>
+          <button id="save" class="primary sre-btn sre-btn-primary" type="button">Save the price</button>
           <label for="p-why"><span id="l-p-why">Why (for the approver, if one is needed)</span><input id="p-why" autocomplete="off" maxlength="300" /></label>
-          <button id="ask" type="button" hidden>Ask for approval</button>
+          <button id="ask" type="button" hidden class="sre-btn sre-btn-primary">Ask for approval</button>
         </div>
         <p class="status" id="price-status" role="status" aria-live="polite"></p>
         <h3 id="history-h">Every price on record for this product</h3>
@@ -126,7 +129,7 @@
         <div class="row" id="zone-form">
           <label for="z-store"><span id="l-z-store">Store</span><input id="z-store" list="store-list" autocomplete="off" /></label>
           <label for="z-zone"><span id="l-z-zone">Zone</span><input id="z-zone" autocomplete="off" /></label>
-          <button id="z-save" type="button">Put the store in this zone</button>
+          <button id="z-save" type="button" class="sre-btn sre-btn-primary">Put the store in this zone</button>
         </div>
         <datalist id="store-list"></datalist>
         <p class="status" id="zone-status" role="status" aria-live="polite"></p>
@@ -140,7 +143,7 @@
         <ul class="rows" id="pending" aria-label="Waiting"></ul>
         <div class="row">
           <label for="d-store"><span id="l-d-store">Compare the channels with the shelf at store</span><input id="d-store" list="store-list" autocomplete="off" /></label>
-          <button id="d-run" type="button">Show the differences</button>
+          <button id="d-run" type="button" class="sre-btn sre-btn-primary">Show the differences</button>
         </div>
         <ul class="rows" id="differences" aria-label="Differences"></ul>
         <p class="status" id="channel-status" role="status" aria-live="polite"></p>

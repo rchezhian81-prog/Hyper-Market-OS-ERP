@@ -19,6 +19,7 @@
 import { makeCaller, type Outcome } from './r4-insight-call';
 import type { PayRunAggregate } from '../../../packages/payroll/src/pay-run';
 import type { EmployeeSelfView } from '../../../packages/payroll/src/ess';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -55,7 +56,7 @@ export const payrollLiveWords = (lang: Lang, key: string): string =>
 /** The words for an outcome that is not ok. */
 export function payrollLiveOutcome(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => payrollLiveWords(lang, k);
-  if (out.result === 'refused') return out.status === 404 ? w('notFound') : `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return out.status === 404 ? w('notFound') : refusalWords(lang, out);
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return '';

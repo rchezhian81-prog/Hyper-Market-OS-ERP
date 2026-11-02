@@ -205,9 +205,9 @@ function renderApprovals() {
     if (row.actionable) {
       const buttons = document.createElement('div');
       buttons.className = 'buttons';
-      const approve = document.createElement('button'); approve.className = 'approve'; approve.type = 'button'; approve.textContent = t('approve');
+      const approve = document.createElement('button'); approve.className = 'approve sre-btn'; approve.type = 'button'; approve.textContent = t('approve');
       approve.addEventListener('click', () => openReason(row.request.id, 'approved'));
-      const reject = document.createElement('button'); reject.className = 'reject'; reject.type = 'button'; reject.textContent = t('reject');
+      const reject = document.createElement('button'); reject.className = 'reject sre-btn sre-btn-danger'; reject.type = 'button'; reject.textContent = t('reject');
       reject.addEventListener('click', () => openReason(row.request.id, 'rejected'));
       buttons.append(approve, reject);
       box.append(buttons);
@@ -228,7 +228,7 @@ function openReason(requestId, decision) {
   const choices = el('reason-choices');
   choices.textContent = '';
   for (const code of decision === 'approved' ? APPROVE_CODES : REJECT_CODES) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = t(code);
+    const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t(code);
     b.addEventListener('click', () => { el('reason-sheet').hidden = true; submit(requestId, decision, code); });
     choices.append(b);
   }

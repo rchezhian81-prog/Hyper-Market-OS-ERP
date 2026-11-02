@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 
 /**
  * **The accountant posts a trading day into the accounts, in a real browser (M23-FR-01 · API-09 · §28 — the E2E matrix).**
@@ -119,6 +119,13 @@ async function startShellAndCloud(rec: Recorder): Promise<{ base: string; stop: 
 
 const user = (userId: string, permissions: readonly string[]): Record<string, unknown> => ({ userId, tenantId: 't1', permissions });
 
+/** OB-626: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
+};
+
 describe.skipIf(!HAVE_BROWSER)('the accountant posts a trading day, end to end in a real browser (M23-FR-01)', () => {
   let browser: Browser;
 
@@ -153,6 +160,7 @@ describe.skipIf(!HAVE_BROWSER)('the accountant posts a trading day, end to end i
       expect(await page.locator('#post').getAttribute('hidden')).toBeNull(); // the posting act is offered
 
       await page.click('#post');
+      await confirmSheet(page);
 
       // The journals appear because the day was re-READ (server re-derive), not drawn from the POST reply.
       await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#journals li.row').length === 2, undefined, { timeout: 10_000 });
@@ -212,6 +220,7 @@ describe.skipIf(!HAVE_BROWSER)('the accountant posts a trading day, end to end i
     const { page, teardown } = await openScreen(rec);
     try {
       await page.click('#post');
+      await confirmSheet(page);
       await page.waitForSelector('#result:not([hidden])', { timeout: 10_000 });
       expect(await page.locator('#result').getAttribute('class')).toContain('tone-error');
       expect(await page.locator('#result').innerText()).toContain('posting map is not defined');

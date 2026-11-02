@@ -66,7 +66,7 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button.primary { background: var(--good);  font-size: 18px; }
       button:disabled { opacity: .45; }
       button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { width: 100%; }
@@ -151,6 +151,8 @@
       #reorder-proposal input.qty { width: 100%; min-height: var(--tap); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font: inherit; background: var(--bg); color: var(--ink); box-sizing: border-box; }
       .version { font-size: 15px; padding: 6px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
       .version.superseded { color: var(--muted); text-decoration: line-through; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -218,12 +220,12 @@
           <textarea id="file-text" spellcheck="false"></textarea>
         </div>
 
-        <button id="preview" class="primary wide" type="button">Check this invoice</button>
+        <button id="preview" class="primary wide sre-btn sre-btn-primary" type="button">Check this invoice</button>
 
         <div id="verdict" hidden></div>
         <div class="problems" id="problems"></div>
         <div id="lines-preview"></div>
-        <button id="capture" class="primary wide" type="button" hidden>Save this invoice</button>
+        <button id="capture" class="primary wide sre-btn sre-btn-primary" type="button" hidden>Save this invoice</button>
 
         <!-- SP-7a (F02): every invoice saved on this screen, from the DURABLE device queue, with where each has got to. -->
         <h3 id="saved-title" hidden>Invoices saved on this screen</h3>
@@ -243,7 +245,7 @@
           <label for="match-invoice" id="match-invoice-label">Invoice number</label>
           <input id="match-invoice" type="text" autocomplete="off" />
         </div>
-        <button id="run-match" class="primary wide" type="button">Compare them</button>
+        <button id="run-match" class="primary wide sre-btn sre-btn-primary" type="button">Compare them</button>
         <div id="match-verdict" hidden></div>
         <div id="match-lines"></div>
       </section>
@@ -272,9 +274,9 @@
           <label for="po-cost" id="po-cost-label">Agreed price each (in rupees)</label>
           <input id="po-cost" type="text" inputmode="decimal" autocomplete="off" />
         </div>
-        <button id="add-po-line" type="button" class="wide">Add this item</button>
+        <button id="add-po-line" type="button" class="wide sre-btn">Add this item</button>
         <div id="po-lines"></div>
-        <button id="raise-po" class="primary wide" type="button">Raise the order</button>
+        <button id="raise-po" class="primary wide sre-btn sre-btn-primary" type="button">Raise the order</button>
       </section>
 
       <!--
@@ -295,7 +297,7 @@
             <input id="budget-store" type="text" autocomplete="off" />
           </div>
         </div>
-        <button id="budget-read" class="wide" type="button">Show this month</button>
+        <button id="budget-read" class="wide sre-btn" type="button">Show this month</button>
         <p class="otb-status" id="budget-status" role="status" aria-live="polite"></p>
         <div class="otb-summary" id="budget-summary"></div>
         <table id="otb-table"></table>
@@ -314,7 +316,7 @@
             <div class="field"><label for="budget-amount" id="budget-amount-label">Budget for the month (in rupees)</label><input id="budget-amount" type="text" inputmode="decimal" autocomplete="off" /></div>
           </div>
           <div class="field"><label for="budget-reason" id="budget-reason-label">Why this figure</label><input id="budget-reason" type="text" autocomplete="off" /></div>
-          <button id="budget-save" class="primary wide" type="button">Set this budget</button>
+          <button id="budget-save" class="primary wide sre-btn sre-btn-primary" type="button">Set this budget</button>
           <p class="otb-status" id="budget-set-status" role="status" aria-live="polite"></p>
         </div>
         <p class="otb-status" id="budget-set-not" role="status"></p>
@@ -337,14 +339,14 @@
         <h2 id="reorder-title">Reorder</h2>
         <p class="lead" id="reorder-lead"></p>
         <div class="field"><label for="reorder-store" id="reorder-store-label">Store</label><input id="reorder-store" type="text" autocomplete="off" /></div>
-        <button id="reorder-read" class="wide" type="button">Show the settings and the proposal</button>
+        <button id="reorder-read" class="wide sre-btn" type="button">Show the settings and the proposal</button>
         <p class="otb-status" id="reorder-status" role="status" aria-live="polite"></p>
         <h3 id="reorder-proposal-h">What head office proposes to reorder</h3>
         <p class="lead" id="reorder-advisory"></p>
         <div class="table-wrap"><table id="reorder-proposal"></table></div>
         <div id="reorder-exceptions"></div>
         <div id="reorder-raise-box" hidden>
-          <button id="reorder-raise" class="primary wide" type="button">Raise a requisition from the ticked lines</button>
+          <button id="reorder-raise" class="primary wide sre-btn sre-btn-primary" type="button">Raise a requisition from the ticked lines</button>
           <p class="otb-status" id="reorder-raise-status" role="status" aria-live="polite"></p>
         </div>
         <h3 id="reorder-params-h">Reorder settings</h3>
@@ -362,7 +364,7 @@
             <div class="field"><label for="rp-avgDailyDemand" id="rp-avgDailyDemand-l"></label><input id="rp-avgDailyDemand" type="text" inputmode="decimal" autocomplete="off" /></div>
           </div>
           <div class="field"><label for="rp-reason" id="rp-reason-l"></label><input id="rp-reason" type="text" autocomplete="off" /></div>
-          <button id="rp-save" class="primary wide" type="button">Save the settings</button>
+          <button id="rp-save" class="primary wide sre-btn" type="button">Save the settings</button>
           <p class="otb-status" id="rp-status" role="status" aria-live="polite"></p>
           <h3 id="draft-h">Raise a requisition from an assistant's purchase draft</h3>
           <div class="otb-row">
@@ -370,7 +372,7 @@
             <div class="field"><label for="dr-product" id="dr-product-l"></label><input id="dr-product" type="text" autocomplete="off" /></div>
             <div class="field"><label for="dr-qty" id="dr-qty-l"></label><input id="dr-qty" type="text" inputmode="decimal" autocomplete="off" /></div>
           </div>
-          <button id="dr-raise" class="wide" type="button">Raise from this draft</button>
+          <button id="dr-raise" class="wide sre-btn" type="button">Raise from this draft</button>
           <p class="otb-status" id="dr-status" role="status" aria-live="polite"></p>
         </div>
       </section>
@@ -391,7 +393,7 @@
           <div class="field"><label for="orders-supplier" id="orders-supplier-label">Supplier</label><input id="orders-supplier" type="text" autocomplete="off" /></div>
           <div class="field"><label for="orders-store" id="orders-store-label">Store</label><input id="orders-store" type="text" autocomplete="off" /></div>
         </div>
-        <button id="orders-read" class="wide" type="button">Show what is on order</button>
+        <button id="orders-read" class="wide sre-btn" type="button">Show what is on order</button>
         <p class="otb-status" id="orders-status" role="status" aria-live="polite"></p>
         <div class="otb-summary" id="orders-summary"></div>
         <h3 id="orders-scope-h">By buying scope</h3>

@@ -22,6 +22,13 @@ const WORDS = {
     decisionLabel: 'Decision', restock: 'Put back on sale', writeOff: 'Write off', toSupplier: 'Return to supplier', repair: 'Send for repair',
     reasonLabel: 'Reason', supplierLabel: 'Supplier', supplierRefLabel: 'Supplier reference', evidenceLabel: 'Photo or witness reference', approvalLabel: 'Approval id (big loss)',
     record: 'Record decision', recorded: 'Recorded', refused: 'Not recorded', unreachable: 'Head office could not be reached. Nothing was recorded — try again.',
+    // U1 · OB-626: the consequence-and-confirm sheet before a unit is written off or sent back
+    confirmWriteOffTitle: 'Write off {product} × {qty} as {reason}',
+    confirmWriteOffDetail: 'The unit leaves stock as a loss in the books; head office values it. A big loss needs the approval named on the form. A write-off is never undone — a mistake is corrected by a new entry.',
+    confirmReturnTitle: 'Send {product} × {qty} back to supplier {supplier}',
+    confirmReturnDetail: 'The unit leaves stock and is set against the supplier. A return cannot be taken back from this screen.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not decide held goods.',
+    confirmWriteOffLabel: 'Write it off', confirmReturnLabel: 'Send it back', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     cannotRead: 'The list could not be read from head office. Nothing here is current.', needReason: 'Give a reason first.',
     valueLabel: 'Loss value', approvedByLabel: 'approved by',
     wasteReasonLabel: 'Why it is lost', noteLabel: 'Note (your own words)', needWasteReason: 'Choose why it is lost from the list first.',
@@ -37,6 +44,12 @@ const WORDS = {
     decisionLabel: 'முடிவு', restock: 'மீண்டும் விற்பனைக்கு வை', writeOff: 'தள்ளுபடி செய்', toSupplier: 'சப்ளையருக்குத் திருப்பு', repair: 'பழுதுபார்க்க அனுப்பு',
     reasonLabel: 'காரணம்', supplierLabel: 'சப்ளையர்', supplierRefLabel: 'சப்ளையர் குறிப்பு', evidenceLabel: 'புகைப்படம் அல்லது சாட்சி குறிப்பு', approvalLabel: 'ஒப்புதல் எண் (பெரிய இழப்பு)',
     record: 'முடிவைப் பதிவு செய்', recorded: 'பதிவு செய்யப்பட்டது', refused: 'பதிவு செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் பதிவு செய்யப்படவில்லை — மீண்டும் முயலவும்.',
+    confirmWriteOffTitle: '{product} × {qty} — {reason} எனக் கழித்து எழுதப்படும்',
+    confirmWriteOffDetail: 'அந்த அலகு இழப்பாகக் கணக்கிலிருந்து வெளியேறும்; தலைமை அலுவலகம் அதன் மதிப்பைக் கணக்கிடும். பெரிய இழப்புக்குப் படிவத்தில் குறிப்பிட்ட அனுமதி தேவை. கழித்து எழுதியதைத் திரும்பப் பெற முடியாது — தவறு புதிய பதிவால் திருத்தப்படும்.',
+    confirmReturnTitle: '{product} × {qty} — விநியோகஸ்தர் {supplier}க்குத் திருப்பி அனுப்பப்படும்',
+    confirmReturnDetail: 'அந்த அலகு சரக்கிலிருந்து வெளியேறி விநியோகஸ்தர் கணக்கில் வைக்கப்படும். இந்தத் திரையில் திருப்பலைத் திரும்பப் பெற முடியாது.',
+    confirmAuthority: 'உங்கள் பெயரில். நிறுத்தி வைத்த சரக்கை முடிவு செய்யும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmWriteOffLabel: 'கழித்து எழுது', confirmReturnLabel: 'திருப்பி அனுப்பு', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     cannotRead: 'தலைமை அலுவலகத்திலிருந்து பட்டியலைப் படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.', needReason: 'முதலில் காரணம் கொடுங்கள்.',
     valueLabel: 'இழப்பு மதிப்பு', approvedByLabel: 'ஒப்புதல் அளித்தவர்',
     wasteReasonLabel: 'ஏன் இழப்பு', noteLabel: 'குறிப்பு (உங்கள் சொற்களில்)', needWasteReason: 'முதலில் பட்டியலிலிருந்து இழப்புக் காரணத்தைத் தேர்ந்தெடுக்கவும்.',
@@ -92,12 +105,31 @@ function decisionForm(item) {
     approvalField.hidden = select.value !== 'write_off';
   };
   select.addEventListener('change', sync);
-  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record'; button.textContent = t('record');
+  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record sre-btn sre-btn-primary'; button.textContent = t('record');
   form.append(field('decisionLabel', select), wasteReasonField, reasonField, supplierField, supplierRefField, evidenceField, approvalField, button);
   sync();
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    void send(item, { decision: select.value, wasteReason: wasteReason.value, reasonCode: reason.value.trim(), supplierId: supplier.value.trim(), supplierRef: supplierRef.value.trim(), evidenceRef: evidence.value.trim(), approvalId: approval.value.trim() }, button);
+    const values = { decision: select.value, wasteReason: wasteReason.value, reasonCode: reason.value.trim(), supplierId: supplier.value.trim(), supplierRef: supplierRef.value.trim(), evidenceRef: evidence.value.trim(), approvalId: approval.value.trim() };
+    void (async () => {
+      // U1 · OB-626: a write-off or a return to the supplier moves stock — the consequence-and-confirm sheet first; Go back
+      // sends nothing. Restock and repair keep the goods and need no sheet.
+      if (values.decision === 'write_off' || values.decision === 'return_to_supplier') {
+        if (values.decision === 'write_off' && values.wasteReason === '') { tell(false, t('needWasteReason')); return; }
+        if (values.decision !== 'write_off' && values.reasonCode === '') { tell(false, t('needReason')); return; }
+        const off = values.decision === 'write_off';
+        const sub = (l, key) => String(WORDS[l][key]).replace('{product}', item.productId).replace('{qty}', qtyText(item.quantityMinor, item.uom)).replace('{reason}', WORDS[l][values.wasteReason] ?? values.wasteReason).replace('{supplier}', values.supplierId);
+        const answer = await confirmFirst({
+          title: { en: sub('en', off ? 'confirmWriteOffTitle' : 'confirmReturnTitle'), ta: sub('ta', off ? 'confirmWriteOffTitle' : 'confirmReturnTitle') },
+          detail: { en: sub('en', off ? 'confirmWriteOffDetail' : 'confirmReturnDetail'), ta: sub('ta', off ? 'confirmWriteOffDetail' : 'confirmReturnDetail') },
+          authority: { en: WORDS.en.confirmAuthority, ta: WORDS.ta.confirmAuthority },
+          confirmLabel: { en: WORDS.en[off ? 'confirmWriteOffLabel' : 'confirmReturnLabel'], ta: WORDS.ta[off ? 'confirmWriteOffLabel' : 'confirmReturnLabel'] }, tone: off ? 'danger' : 'primary',
+        });
+        if (answer === 'unavailable') { tell(false, t('confirmUnavailable')); return; }
+        if (answer === null) return;
+      }
+      await send(item, values, button);
+    })();
   });
   return form;
 }
@@ -109,10 +141,12 @@ function rowNode(item, open) {
   const head = document.createElement('div'); head.className = 'head';
   const headline = document.createElement('span'); headline.className = 'headline';
   headline.textContent = `${item.productId} × ${qtyText(item.quantityMinor, item.uom)}`;
-  const state = document.createElement('span'); state.className = 'state';
-  const icon = document.createElement('span'); icon.setAttribute('aria-hidden', 'true'); icon.textContent = open ? '⚠' : '✓';
-  const word = document.createElement('span'); word.textContent = t(STATE_WORD[item.state] ?? 'held');
-  state.append(icon, word);
+  // U1 · L: the state as a chip from the one icon set — the tone's shape AND the word, never a character or colour alone.
+  const stateLabel = t(STATE_WORD[item.state] ?? 'held');
+  const state = window.sreIcon && typeof window.sreIcon.chip === 'function'
+    ? window.sreIcon.chip({ tone: open ? 'degraded' : 'ok', label: stateLabel })
+    : Object.assign(document.createElement('span'), { className: 'sre-chip', textContent: stateLabel });
+  state.classList.add('state');
   head.append(headline, state);
   const facts = document.createElement('div'); facts.className = 'facts';
   const fact = (text) => { const s = document.createElement('span'); s.textContent = text; facts.append(s); };
@@ -146,6 +180,15 @@ function paint() {
   el('done-heading').hidden = done.length === 0; el('done-heading').textContent = t('doneHeading');
   el('rows').replaceChildren(...open.map((i) => rowNode(i, true)));
   el('done-rows').replaceChildren(...done.map((i) => rowNode(i, false)));
+}
+
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
 }
 
 function tell(ok, text) {

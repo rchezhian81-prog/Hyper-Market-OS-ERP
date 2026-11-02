@@ -173,6 +173,7 @@ function paintZones() {
     tbody.append(tr);
   }
   for (const id of ['z-store', 'z-zone', 'z-save']) $(id).disabled = !mayZone;
+  whyDisabled($('z-save'), mayZone ? '' : 'role');
   $('zone-form').hidden = !mayZone;
 }
 
@@ -207,7 +208,7 @@ function paintChannels() {
       const acts = document.createElement('div'); acts.className = 'acts';
       const label = document.createElement('label'); const span = document.createElement('span'); span.textContent = t('reasonFor');
       const input = document.createElement('input'); input.autocomplete = 'off'; input.setAttribute('aria-label', `${t('reasonFor')}: ${r.requestId}`); label.append(span, input);
-      const b = document.createElement('button'); b.type = 'button'; b.dataset.act = 'approve'; b.textContent = t('approveOn');
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.dataset.act = 'approve'; b.textContent = t('approveOn');
       const line = document.createElement('p'); line.className = 'status'; line.setAttribute('role', 'status');
       b.addEventListener('click', async () => {
         if (input.value.trim() === '') { tell(line, false, t('needWhy')); return; }
@@ -237,6 +238,7 @@ function paint() {
   $('lang').textContent = t('lang');
   $('nobody').hidden = named; $('nobody').textContent = t('nobody');
   for (const id of ['p-from', 'p-to', 'p-price', 'read-basis', 'save', 'p-why']) $(id).disabled = !mayPropose;
+  whyDisabled($('read-basis'), mayPropose ? '' : 'role'); whyDisabled($('save'), mayPropose ? '' : 'role');
   $('ask').hidden = pending === null || !mayPropose;
   for (const v of ['prices', 'zones', 'channels']) {
     $(`view-${v}`).hidden = tab !== v;
@@ -365,4 +367,26 @@ if (named && mayRead) {
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it is not kept for offline use */ });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

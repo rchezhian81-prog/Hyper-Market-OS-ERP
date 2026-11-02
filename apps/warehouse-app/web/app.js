@@ -92,7 +92,7 @@ const WORDS = {
     noWorkBody: 'Nothing is wrong. When work is assigned to you it will appear here on its own.',
     sample: 'Sample assignment — this is not real work.',
     // OB-205 (footer): an action's words, then — on its own smaller line — what it waits for, so a label never wraps to four lines.
-    receive: 'Receive a delivery', putAway: 'Put away', waitsForBin: 'scan the bin',
+    receive: 'Receive a delivery', putAway: 'Put away', waitsForBin: 'scan the bin', waitsForBox: 'needs the store computer',
     deliveries: 'Deliveries waiting for this store', chooseDelivery: 'Choose the delivery at the door first',
     receivingThis: 'receiving now', chooseThis: 'receive this one',
     doneReceiving: 'Delivery complete — send the receipt',
@@ -186,7 +186,7 @@ const WORDS = {
     goodsIn: 'அடுக்க வைக்கக் காத்திருப்பவை', noWork: 'இந்த கருவிக்கு இதுவரை கிடங்கு வேலை தரப்படவில்லை.',
     noWorkBody: 'எந்தப் பிரச்சனையும் இல்லை. உங்களுக்கு வேலை ஒதுக்கப்பட்டால் அது தானாகவே இங்கே தோன்றும்.',
     sample: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
-    receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு', waitsForBin: 'இடத்தை ஸ்கேன் செய்',
+    receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு', waitsForBin: 'இடத்தை ஸ்கேன் செய்', waitsForBox: 'கடை கணினி தேவை',
     deliveries: 'இந்தக் கடைக்கு வர வேண்டிய சரக்குகள்', chooseDelivery: 'முதலில் வாசலில் உள்ள சரக்கைத் தேர்ந்தெடுக்கவும்',
     receivingThis: 'இப்போது பெறப்படுகிறது', chooseThis: 'இதைப் பெறு',
     doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
@@ -591,10 +591,12 @@ function render() {
   say(el('pick-heading'), t('toPick'), 'shopping-basket');
   el('pick-heading').dataset.count = String(lines.length);
   sayAction(el('pick'), t('pick'), 'shopping-basket', t('waitsForBin'));
-  say(el('count-bin'), t('countBin'), 'calculator');
-  say(el('adjust-stock'), t('adjustStock'), 'sliders');
+  // U1 (UI/UX gap audit G3): a greyed button says why it waits — these two need the store computer's stock behind them.
+  sayAction(el('count-bin'), t('countBin'), 'calculator', real === undefined ? t('waitsForBox') : '');
+  sayAction(el('adjust-stock'), t('adjustStock'), 'sliders', real === undefined ? t('waitsForBox') : '');
   el('count-bin').disabled = real === undefined;
   el('adjust-stock').disabled = real === undefined;
+  for (const id of ['count-bin', 'adjust-stock']) { if (el(id).disabled) el(id).title = t('waitsForBox'); else el(id).removeAttribute('title'); }
   // The Pick button exists only while there is pick work; a bin scanned from the list needs it not at all.
   el('pick').hidden = lines.length === 0;
   if (!lines.some((l) => l.lineId === selectedPick)) selectedPick = null;

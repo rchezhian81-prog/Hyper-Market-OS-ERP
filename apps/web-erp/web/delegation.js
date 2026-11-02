@@ -14,6 +14,10 @@ const KINDS = ['refund', 'price_change', 'purchase_order', 'stock_adjustment', '
 const WORDS = {
   en: {
     title: 'Delegation', listH: 'Authority lent right now',
+    confirmLend: '{to} will be able to decide {kinds} as {from}, from {fromDate} until {until}, up to {cap}.',
+    confirmLendDetail: 'Every decision made under it is recorded in their own name, under this delegation, and counts against the lender\'s own limits. It ends on its last day, or earlier when you end it on this page.',
+    confirmLendAuthority: 'Authorised by you — a different person from the lender. Head office refuses it if either of you may not.',
+    noCap: 'no money cap', notLent: 'Nothing was lent.', noChrome: 'The screen did not finish loading, so nothing can be lent — reload the page. Nothing was lent.',
     listLede: 'Who is approving for whom, for what and until when. A delegation ends on its own on its last day; end one early here.',
     lendH: 'Lend someone\'s authority while they are away',
     lendLede: 'Never share a login. The colleague approves as themselves, under this delegation; you — a different person — authorise it.',
@@ -30,6 +34,10 @@ const WORDS = {
   },
   ta: {
     title: 'அதிகாரப் பகிர்வு', listH: 'இப்போது வழங்கப்பட்ட அதிகாரம்',
+    confirmLend: '{to} {from} ஆக {kinds} முடிவுகளை {fromDate} முதல் {until} வரை, {cap} வரை எடுக்க முடியும்.',
+    confirmLendDetail: 'இதன் கீழ் எடுக்கப்படும் ஒவ்வொரு முடிவும் அவர் பெயரிலேயே, இந்தப் பகிர்வின் கீழ் பதிவாகும்; வழங்குபவரின் சொந்த வரம்புகளுக்குள் கணக்கிடப்படும். கடைசி நாளில், அல்லது இந்தப் பக்கத்தில் நீங்கள் முன்பே முடிக்கும்போது முடியும்.',
+    confirmLendAuthority: 'வழங்குபவரிலிருந்து வேறொருவரான நீங்கள் அங்கீகரிக்கிறீர்கள். உங்களில் யாருக்காவது அனுமதி இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    noCap: 'பண வரம்பு இல்லை', notLent: 'எதுவும் வழங்கப்படவில்லை.', noChrome: 'திரை முழுமையாக ஏறவில்லை, எனவே எதுவும் வழங்க முடியாது — பக்கத்தை மீண்டும் ஏற்றவும். எதுவும் வழங்கப்படவில்லை.',
     listLede: 'யார் யாருக்காக, எதற்கு, எப்போது வரை அனுமதிக்கிறார். ஒரு பகிர்வு தன் கடைசி நாளில் தானாக முடியும்; முன்னதாக முடிக்க இங்கே.',
     lendH: 'ஒருவர் இல்லாதபோது அவரது அதிகாரத்தை வழங்கு',
     lendLede: 'உள்நுழைவை ஒருபோதும் பகிராதீர்கள். சக ஊழியர் தம் பெயரிலேயே, இந்தப் பகிர்வின் கீழ் அனுமதிப்பார்; வேறொருவரான நீங்கள் அங்கீகரிக்கிறீர்கள்.',
@@ -89,7 +97,7 @@ function render() {
     facts.textContent = `${t('until')} ${r.untilDate}${r.state === 'active' || r.state === 'expiring' ? ` · ${r.daysRemaining} ${t('daysLeft')}` : ''} · ${r.detail}`;
     li.append(head, facts);
     if (mayLend && (r.state === 'active' || r.state === 'expiring')) {
-      const end = document.createElement('button'); end.type = 'button'; end.textContent = t('end'); end.dataset.act = 'end';
+      const end = document.createElement('button'); end.classList.add('sre-btn'); end.type = 'button'; end.textContent = t('end'); end.dataset.act = 'end';
       end.addEventListener('click', async () => {
         const out = await post(`/v1/access/delegations/${encodeURIComponent(r.delegationId)}/revoke`, {});
         say($('list-status'), out, t('ended'));
@@ -144,6 +152,17 @@ $('lend').addEventListener('click', async () => {
   const capMinor = capText === '' ? null : paiseOf(capText);
   if (capMinor === undefined) { status.className = 'status err'; status.textContent = t('badCap'); return; }
   const cap = capMinor === null ? null : { minor: capMinor, currency: 'INR' };
+  // OB-626 A (U1): a privilege moves only through the shared confirm sheet — what will happen, in whose name, who may.
+  const kinds = subjectTypes.map((k) => t(k)).join(', ');
+  const capWords = capMinor === null ? t('noCap') : `₹${(capMinor / 100).toFixed(2)}`;
+  if (!window.sreOffice || typeof window.sreOffice.confirm !== 'function') { status.className = 'status err'; status.textContent = t('noChrome'); return; }
+  const vars = { to: toUserId, from: fromUserId, kinds, fromDate, until: untilDate, cap: capWords };
+  const said = (key) => ({ en: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), WORDS.en[key]), ta: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), WORDS.ta[key]) });
+  const answer = await window.sreOffice.confirm({
+    title: said('confirmLend'), detail: said('confirmLendDetail'), authority: said('confirmLendAuthority'),
+    confirmLabel: { en: WORDS.en.lend, ta: WORDS.ta.lend }, tone: 'danger',
+  });
+  if (!answer.ok) { status.className = 'status'; status.textContent = t('notLent'); return; }
   const delegationId = `dlg-${fromUserId}-${toUserId}-${fromDate}-${Date.now().toString(36)}`;
   // The lender's own approver record: whose authority it is. Head office replaces its branches with where the lender
   // genuinely holds the authority, and refuses a delegation wider than that; the authoriser is this session.

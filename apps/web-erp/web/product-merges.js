@@ -107,7 +107,7 @@ function paintMerges() {
     const acts = document.createElement('div'); acts.className = 'acts';
     const line = document.createElement('p'); line.className = 'status'; line.setAttribute('role', 'status');
     const act = (word, path, body, good) => {
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t(word); b.dataset.act = word;
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t(word); b.dataset.act = word;
       b.addEventListener('click', async () => {
         const out = await call('POST', path, body);
         if (out.ok) { await load(); tell($('merges-status'), true, t(good)); } else say(line, out, '');

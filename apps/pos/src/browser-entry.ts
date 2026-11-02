@@ -309,7 +309,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
  * first price, quantity and unit the store computer needs to work the cut out itself; or why it cannot be lowered.
  */
 export type PriceChangeValue =
-  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true }
+  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true; /** OB-626: the lowest allowed price the pack gives, for the confirm step to show. */ readonly floorMinor?: number }
   | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string };
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
@@ -1778,7 +1778,8 @@ export function bootPos(config?: {
       const floors = config?.priceFloors;
       const ownerOnly = floors !== undefined && floors !== null && value.reductionMinor > 0 && floors[productId] === undefined;
       // OB-500: the line, its first price, its quantity and unit go with the request — the store computer works out the cut itself.
-      return { ok: true, ...value, productId, lineId, quantityMinor: onBill?.quantityMinor ?? 0, uom: onBill?.uom ?? '', ...(ownerOnly ? { ownerOnly: true as const } : {}) };
+      const floorMinor = floors?.[productId];
+      return { ok: true, ...value, productId, lineId, quantityMinor: onBill?.quantityMinor ?? 0, uom: onBill?.uom ?? '', ...(ownerOnly ? { ownerOnly: true as const } : {}), ...(typeof floorMinor === 'number' ? { floorMinor } : {}) };
     } catch (e) {
       // B19: a carry bag cannot be made free — said in the gate's own words.
       if (e instanceof TillRuleRefusedError) return { ok: false, laneMessage: e.laneMessage };

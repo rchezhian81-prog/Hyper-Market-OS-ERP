@@ -223,6 +223,7 @@ function paintField(key) {
   }
   // Save is possible only for a clean, changed, not-in-flight draft.
   saveBtn.disabled = fs.status === 'saving' || !fs.dirty || Boolean(fs.error);
+  whyDisabled(saveBtn, fs.status === 'saving' ? { en: 'Saving…', ta: 'சேமிக்கிறது…' } : fs.error ? { en: 'Fix the refused value first.', ta: 'மறுக்கப்பட்ட மதிப்பை முதலில் சரிசெய்யவும்.' } : !fs.dirty ? { en: 'Nothing changed yet.', ta: 'இன்னும் எதுவும் மாறவில்லை.' } : '');
   saveBtn.textContent = t('save');
 }
 
@@ -327,11 +328,11 @@ function itemRow(item) {
     const saveBtn = document.createElement('button');
     saveBtn.id = `s-${item.key}`;
     saveBtn.type = 'button';
-    saveBtn.className = 'primary';
+    saveBtn.className = 'primary sre-btn sre-btn-primary';
     saveBtn.textContent = t('save');
     saveBtn.disabled = true;
 
-    const retryBtn = document.createElement('button');
+    const retryBtn = document.createElement('button'); retryBtn.classList.add('sre-btn');
     retryBtn.id = `r-${item.key}`;
     retryBtn.type = 'button';
     retryBtn.hidden = true;
@@ -397,11 +398,11 @@ function prefixMessage(msgEl, text, tone) {
 function wirePrefix(input, button, msgEl, target, done) {
   const paint = () => {
     const v = input.value;
-    if (v === '') { prefixMessage(msgEl, '', ''); button.disabled = true; return; }
+    if (v === '') { prefixMessage(msgEl, '', ''); button.disabled = true; whyDisabled(button, { en: 'Type the prefix first.', ta: 'முதலில் முன்னொட்டைத் தட்டச்சு செய்யவும்.' }); return; }
     const why = prefixes.check(v);
-    if (why) { prefixMessage(msgEl, `${pw('refused')} ${why}`, 'bad'); button.disabled = true; return; }
+    if (why) { prefixMessage(msgEl, `${pw('refused')} ${why}`, 'bad'); button.disabled = true; whyDisabled(button, `${pw('refused')} ${why}`); return; }
     prefixMessage(msgEl, `${pw('numbers')}: ${prefixes.preview(v)}`, '');
-    button.disabled = false;
+    button.disabled = false; whyDisabled(button, '');
   };
   input.addEventListener('input', paint);
   button.addEventListener('click', async () => {
@@ -457,7 +458,7 @@ function prefixRow(r) {
     input.setAttribute('aria-label', `${pw('prefix')} ${r.storeId} ${r.tillId}`);
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'primary';
+    button.className = 'primary sre-btn sre-btn-primary';
     button.id = `pb-${rowKey(r)}`;
     button.textContent = r.prefix ? pw('change') : pw('issue');
     const msg = document.createElement('small');
@@ -554,4 +555,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

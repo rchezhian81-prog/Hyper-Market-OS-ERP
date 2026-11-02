@@ -70,6 +70,7 @@ Close · Offline/sync health. Each handles the §27.1 universal states.
   | Suspend / recall | ≤ 3 |
   | Sign in for the shift (once a shift, not per sale) | 3 (Sign in → badge scan → till PIN) |
 - **Exceptions to ≤3 (justified):** first-time customer capture and age-verification prompts add a step **by design** (legal/consent) — listed here explicitly, not hidden behind "where feasible".
+- **OB-626 (owner, 2 Nov 2026):** taking the float, moving cash to the safe and lowering a price each gain ONE tap — the confirm step that says the figure, in whose name and (for a cut) the old price, the new price, how much off and the lowest allowed price before any manager is asked. Go back and Escape send nothing. Counted in `tests/e2e/u1-the-till-confirms-cash-and-price-cuts.e2e.ts`.
 
 ## Offline & state behaviour (§31 / hard rule #1)
 - The sale **never waits on the network**; cash/store-credit tender completes locally and prints.

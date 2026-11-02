@@ -67,7 +67,7 @@ function paintRequests() {
     li.append(head, state);
     if (r.status === 'approved' && may.manage) {
       const status = document.createElement('p'); status.className = 'status'; status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('saveApproved'); b.dataset.act = 'save-approved';
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t('saveApproved'); b.dataset.act = 'save-approved';
       b.addEventListener('click', async () => {
         const out = await session.saveApproved(r);
         say(status, out, t('saved'));

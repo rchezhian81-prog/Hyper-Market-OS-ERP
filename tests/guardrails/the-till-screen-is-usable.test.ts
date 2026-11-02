@@ -117,6 +117,58 @@ describe('the frequent actions fit the spec\'s budget by construction (Stage G s
   });
 });
 
+describe('OB-626 "A" (U1): money moves and a price cut are confirmed on screen, before the store computer is asked', () => {
+  // The owner decided (2 Nov 2026) that a money, price or stock action shows what will happen, in whose name, and asks
+  // for the verb before anything is sent. At the till that is the same on-screen panel in a `'confirm'` mode — never a
+  // browser dialog (the first test in this file still forbids those).
+  it('the panel has a confirm mode: the consequence block, Go back as the safe default, the verb on the button', () => {
+    expect(HTML).toContain('id="consequence"');
+    expect(HTML).toContain('id="consequence-what"');
+    expect(code(APP)).toMatch(/function confirmAction\(\{ title, what, detail, who, confirmLabel, tone = 'primary' \}\)/);
+    expect(code(APP)).toMatch(/mode: 'confirm'/);
+    expect(code(APP)).toMatch(/if \(mode === 'confirm'\) el\('sheet-cancel'\)\.focus\(\);/);
+    expect(code(APP)).toMatch(/mode === 'confirm' \? t\('goBack'\) : t\('cancel'\)/);
+  });
+
+  it('Escape on the confirm panel is Go back, and only the verb resolves true', () => {
+    expect(code(APP)).toMatch(/event\.key === 'Escape' && sheetMode === 'confirm' && !el\('sheet'\)\.hidden\) \{[^}]*closeSheet\(null\)/);
+    expect(code(APP)).toMatch(/closeSheet\(sheetMode === 'confirm' \? true : /);
+    expect(code(APP)).toMatch(/\.then\(\(answer\) => answer === true\)/);
+  });
+
+  it('the float and cash to safe are confirmed with the figure, the name and the time BEFORE sendCash; Go back sends nothing', () => {
+    const move = code(APP).slice(code(APP).indexOf('async function moveCashToBox'), code(APP).indexOf('const takeFloat ='));
+    const confirmAt = move.indexOf('await confirmAction({');
+    const sendAt = move.indexOf('await sendCash({ kind, amountMinor: minor');
+    expect(confirmAt).toBeGreaterThan(-1);
+    expect(sendAt).toBeGreaterThan(confirmAt);
+    expect(move).toMatch(/if \(!confirmed\) return;/);
+    expect(move).toContain("replace('{amount}', inr(minor))");
+    expect(move).toContain("replace('{who}', (session.operator && session.operator()) || '—')");
+    expect(move).toContain("replace('{time}', shopTimeOf(at) || '—')"); // OB-607: the shop's clock, never this device's
+  });
+
+  it('a price cut shows from, to, how much off and the lowest price BEFORE the manager is asked; Go back asks nobody', () => {
+    const cut = code(APP).slice(code(APP).indexOf('async function changeLinePrice'), code(APP).indexOf('async function nameLoyaltyMember'));
+    const confirmAt = cut.indexOf('await confirmAction({');
+    const managerAt = cut.indexOf('await managerApproves({');
+    expect(confirmAt).toBeGreaterThan(-1);
+    expect(managerAt).toBeGreaterThan(confirmAt);
+    expect(cut).toMatch(/if \(!confirmed\) return;/);
+    for (const slot of ['{item}', '{from}', '{to}', '{cut}', '{pct}']) expect(cut).toContain(`replace('${slot}'`);
+    expect(cut).toContain("t('confirmCutFloor').replace('{floor}', inr(value.floorMinor))");
+  });
+
+  it('every confirm word has its Tamil twin (the Tamil-for-every-word test below covers them; the keys are named here so a rename cannot drop one)', () => {
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    for (const key of ['goBack', 'confirmFloatTitle', 'confirmSafeTitle', 'confirmFloatWhat', 'confirmSafeWhat', 'confirmCashDetail', 'confirmCashWho', 'confirmFloat', 'confirmSafe', 'confirmCutTitle', 'confirmCutWhat', 'confirmCutFloor', 'confirmCutDetail', 'confirmCutWho', 'askManager']) {
+      expect(en, `${key} (en)`).toMatch(new RegExp(`\\b${key}: '`));
+      expect(ta, `${key} (ta)`).toMatch(new RegExp(`\\b${key}: '`));
+    }
+  });
+});
+
 describe('it can be read and reached', () => {
   it('states a touch target of at least 48px', () => {
     const tap = /--tap:\s*(\d+)px/.exec(HTML);

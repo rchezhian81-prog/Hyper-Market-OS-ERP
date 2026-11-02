@@ -48,6 +48,11 @@ const WORDS = {
     acceptLabel: 'If some is still out there, why are you closing it?',
     ok: 'OK', read: 'Please read this', done: 'Done',
     notSent: 'Not sent to head office, so it is not recorded. Nothing was saved — try again when the store computer is back online.',
+    // U1 · OB-626: the consequence-and-confirm sheet before a recall starts
+    confirmTitle: 'Recall batch {batch}: every till of every store will refuse it from the next store pack',
+    confirmDetail: 'Customers who bought it and can be reached are listed afterwards and the owner is told. A recall cannot be withdrawn from this screen — it is closed with evidence once the goods are back.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not start a recall.',
+    confirmLabel: 'Start the recall', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be started or closed — a recall carries the name of whoever ran it.',
     sampleData: 'Sample data — this is not your shop.',
     withdrawIt: 'Withdraw — started by mistake', withdrawn: 'withdrawn — started by mistake',
@@ -79,6 +84,10 @@ const WORDS = {
     acceptLabel: 'சில இன்னும் வெளியே இருந்தால், ஏன் இதை மூடுகிறீர்கள்?',
     ok: 'சரி', read: 'இதைப் படிக்கவும்', done: 'முடிந்தது',
     notSent: 'தலைமை அலுவலகத்திற்கு அனுப்பப்படவில்லை, எனவே பதிவு செய்யப்படவில்லை. எதுவும் சேமிக்கப்படவில்லை — கடை கணினி மீண்டும் இணையும்போது மீண்டும் முயற்சிக்கவும்.',
+    confirmTitle: 'தொகுதி {batch} திரும்பப்பெறல்: அடுத்த கடைப் பொதியிலிருந்து எல்லாக் கடைகளின் எல்லாக் கவுண்டர்களும் அதை மறுக்கும்',
+    confirmDetail: 'அதை வாங்கியவர்களில் தொடர்பு கொள்ளக்கூடியவர்கள் பின்னர் பட்டியலிடப்படுவர்; உரிமையாளருக்குத் தெரிவிக்கப்படும். இந்தத் திரையில் திரும்பப்பெறலைத் திரும்பப் பெற முடியாது — சரக்கு திரும்பியதும் ஆதாரத்துடன் மூடப்படும்.',
+    confirmAuthority: 'உங்கள் பெயரில். திரும்பப்பெறலைத் தொடங்கும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmLabel: 'திரும்பப்பெறலைத் தொடங்கு', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று இந்தக் கடைப் பெட்டிக்குத் தெரியவில்லை. எதையும் தொடங்கவோ மூடவோ முடியாது — திரும்பப் பெறுதல் அதை நடத்தியவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     withdrawIt: 'திரும்பப் பெறு — தவறாகத் தொடங்கப்பட்டது', withdrawn: 'திரும்பப் பெறப்பட்டது — தவறாகத் தொடங்கப்பட்டது',
@@ -189,6 +198,15 @@ const session = real ?? sampleSession();
 
 // ── The banner ──────────────────────────────────────────────────────────────
 
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 function tell(title, message, good = false) {
   el('banner-title').textContent = title;
   el('banner-text').textContent = message;
@@ -272,6 +290,11 @@ function emptyLine(text) {
 
 el('start').addEventListener('click', async () => {
   const go = el('start');
+  // U1 · OB-626: the consequence-and-confirm sheet before the recall starts — Go back sends nothing.
+  const batchKeyed = el('batch').value.trim();
+  const answer = await confirmFirst({ title: { en: String(WORDS.en.confirmTitle).replace('{batch}', batchKeyed), ta: String(WORDS.ta.confirmTitle).replace('{batch}', batchKeyed) }, detail: { en: String(WORDS.en.confirmDetail), ta: String(WORDS.ta.confirmDetail) }, authority: { en: String(WORDS.en.confirmAuthority), ta: String(WORDS.ta.confirmAuthority) }, confirmLabel: { en: String(WORDS.en.confirmLabel), ta: String(WORDS.ta.confirmLabel) }, tone: 'danger' });
+  if (answer === 'unavailable') { tell(t('read'), t('confirmUnavailable')); return; }
+  if (answer === null) return;
   go.disabled = true;
   try {
     const outcome = await session.start({
@@ -325,12 +348,12 @@ function recallRow(view) {
   row.append(what);
 
   if (view.open) {
-    const close = document.createElement('button');
+    const close = document.createElement('button'); close.classList.add('sre-btn');
     close.type = 'button';
     close.textContent = t('closeIt');
     close.addEventListener('click', () => { openCloseForm(view, row); });
     // OB-383: a recall started by mistake may be withdrawn, only before anyone is told or anything thrown away.
-    const withdraw = document.createElement('button');
+    const withdraw = document.createElement('button'); withdraw.classList.add('sre-btn');
     withdraw.type = 'button';
     withdraw.id = `withdraw-open-${view.recall.recallId}`;
     withdraw.textContent = t('withdrawIt');
@@ -413,7 +436,7 @@ function openCloseForm(view, row) {
 
   const go = document.createElement('button');
   go.type = 'button';
-  go.className = 'danger';
+  go.className = 'danger sre-btn sre-btn-danger';
   go.textContent = t('closeIt');
   go.addEventListener('click', async () => {
     go.disabled = true;

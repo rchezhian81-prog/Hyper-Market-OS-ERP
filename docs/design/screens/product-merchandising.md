@@ -20,7 +20,7 @@ All handle the §27.1 states.
   their own change** (§28); the change is versioned, never an in-place overwrite.
 - Promotions have clear rules, guardrails against stacking abuse, and a start/end;
   approved effective dates drive the shelf-edge price task on the manager surface.
-- **Interaction budget (≤3):** edit a price (≤3: open → new price → submit for approval) ·
+- **Interaction budget (≤3):** edit a price (4: open → new price → Save → Confirm; the fourth tap is the OB-626 confirm step, the written exception recorded in `tests/guardrails/frequent-actions-take-three-interactions.test.ts`) ·
   start a promotion (≤3) · set a recall block on an item (≤2).
 
 ## Merchandising & space (M04 / D02)

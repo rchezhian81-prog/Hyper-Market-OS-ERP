@@ -139,7 +139,7 @@ describe('the store computers session', () => {
     expect(await s.acknowledge({ storeId: 'S1', kind: 'report_refused', prefix: 'P', through: 1, since: 'x', detail: 'd' }, 'no')).toEqual({ result: 'invalid', why: 'shortReason' });
     expect(ho.sent).toEqual([]);
     const out = await s.ask({ ...DETAILS, toComputer: 'u-x' });
-    expect(outcomeWords('en', out)).toBe('Head office refused: u-x is not a store computer of store S1');
+    expect(outcomeWords('en', out)).toMatch(/^Head office refused: u-x is not a store computer of store S1\. Nothing was changed\. .+/); // U1: the three parts
     const nobody = createStoreComputersSession({ viewer: undefined, fetch: ho.fetch });
     expect(nobody.may).toEqual({ named: false, read: false });
     expect(await nobody.load()).toEqual({ result: 'invalid', why: 'nobody' });

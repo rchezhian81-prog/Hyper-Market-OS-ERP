@@ -184,7 +184,7 @@ function renderRegister() {
     const pill = document.createElement('span');
     pill.className = `pill ${d.state === 'confirmed' || d.state === 'captured' ? 'done' : 'waiting'}`;
     pill.textContent = t(`st_${d.state}`);
-    const open = document.createElement('button');
+    const open = document.createElement('button'); open.classList.add('sre-btn');
     open.type = 'button';
     open.dataset.act = 'open';
     open.textContent = t('open');
@@ -320,7 +320,7 @@ function drawTypeRows() {
       tr.append(td);
     }
     const rm = cell('td');
-    const b = document.createElement('button');
+    const b = document.createElement('button'); b.classList.add('sre-btn');
     b.type = 'button'; b.textContent = t('remove');
     b.addEventListener('click', () => { typeRows.splice(i, 1); if (typeRows.length === 0) typeRows.push({}); drawTypeRows(); });
     rm.append(b);
@@ -515,6 +515,15 @@ function renderWaiting() {
 
 const adv = window.supplierAdvances ?? null;
 const at = (k) => (adv === null ? k : adv.words(lang, k));
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 let advRegister = null;
 let advAsks = null;
 const advNode = (tag, cls, words) => { const n = document.createElement(tag); if (cls) n.className = cls; if (words !== undefined) n.textContent = words; return n; };
@@ -581,6 +590,11 @@ function renderAsks() {
       const go = advNode('button', 'primary', at('record')); go.type = 'button'; go.dataset.act = 'record';
       const st = advNode('p', 'status');
       go.addEventListener('click', async () => {
+        // U1 · OB-626: the consequence-and-confirm sheet before money is recorded as paid — Go back sends nothing.
+        const sub = (l, key) => String(adv.words(l, key)).replace('{amount}', adv.rupees(Number(d.amountMinor))).replace('{supplier}', d.supplierId).replace('{method}', adv.words(l, `m_${d.method}`)).replace('{reference}', d.reference ?? '');
+        const answer = await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
+        if (answer === 'unavailable') { st.className = 'status err'; st.textContent = at('confirmUnavailable'); return; }
+        if (answer === null) return;
         const out = await adv.session.record(q);
         if (out.result === 'ok') { await showAdvances(); advSay($('adv-status'), out, 'recordedNow'); return; }
         advSay(st, out);

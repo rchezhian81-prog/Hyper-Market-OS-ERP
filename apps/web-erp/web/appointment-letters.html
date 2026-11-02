@@ -21,7 +21,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -43,6 +43,8 @@
       textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: 96px; box-sizing: border-box; width: 100%; }
       .letter-text { white-space: pre-wrap; border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -65,7 +67,7 @@
           <p class="meta" id="fields"></p>
           <label for="wd-en"><span id="wd-en-l"></span><textarea id="wd-en"></textarea></label>
           <label for="wd-ta"><span id="wd-ta-l"></span><textarea id="wd-ta" lang="ta"></textarea></label>
-          <button id="wd-save" type="button"><span id="wd-save-text"></span></button>
+          <button id="wd-save" type="button" class="sre-btn"><span id="wd-save-text"></span></button>
         </div>
         <p class="status" id="wd-status" role="status" aria-live="polite"></p>
       </section>
@@ -75,7 +77,7 @@
           <label for="mk-emp"><span id="mk-emp-l"></span><input id="mk-emp" autocomplete="off" /></label>
           <label for="mk-from"><span id="mk-from-l"></span><input id="mk-from" type="date" /></label>
         </div>
-        <button id="mk-save" type="button"><span id="mk-save-text"></span></button>
+        <button id="mk-save" type="button" class="sre-btn sre-btn-primary"><span id="mk-save-text"></span></button>
         <p class="status" id="mk-status" role="status" aria-live="polite"></p>
       </section>
       <section id="list" hidden aria-labelledby="list-h">

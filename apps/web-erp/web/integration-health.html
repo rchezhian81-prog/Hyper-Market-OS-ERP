@@ -48,6 +48,8 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       .muted { color:var(--muted); font-size:14px; margin:0; }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -67,7 +69,7 @@
 
       <div class="bar">
         <span class="asof" id="asof" role="status" aria-live="polite"></span>
-        <button class="refresh" id="refresh" type="button"></button>
+        <button class="refresh sre-btn sre-btn-primary" id="refresh" type="button"></button>
       </div>
 
       <p class="reassure" id="till-safe" hidden><span class="icon" id="till-safe-icon" aria-hidden="true">✓</span><span id="till-safe-text"></span></p>

@@ -23,6 +23,11 @@ const CHROME = {
     valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss', reasonLabel: 'Why it is lost',
     evidenceLabel: 'Photo or witness (for a big loss)',
     recordBtn: 'Record the loss',
+    // U1 · OB-626: the consequence-and-confirm sheet before a loss goes into the books
+    confirmTitle: 'Record a loss of {qty} of {product} worth {value}',
+    confirmDetail: 'Stock falls by that much in the books, in your name. A big loss goes only with the approval named on this form. A loss is never undone — a mistake is corrected by a new entry.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not record a loss or the approval does not match.',
+    confirmLabel: 'Record the loss', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     lossWastage: 'Wastage', lossDamage: 'Damage', lossExpiry: 'Expired', lossDonation: 'Donation', lossDestruction: 'Destruction',
     thresholdLabel: 'A loss is "big" at or above',
     materialHint: 'This is a big loss — it needs a photo or witness, and a second person who handles stock must approve it.',
@@ -44,6 +49,10 @@ const CHROME = {
     valueLabel: 'மதிப்பு (₹)', lossTypeLabel: 'எந்த வகை இழப்பு', reasonLabel: 'ஏன் இழப்பு',
     evidenceLabel: 'புகைப்படம் அல்லது சாட்சி (பெரிய இழப்புக்கு)',
     recordBtn: 'இழப்பைப் பதிவு செய்',
+    confirmTitle: '{product} — {qty}, மதிப்பு {value} இழப்பாகப் பதியப்படும்',
+    confirmDetail: 'கணக்கில் சரக்கு அந்த அளவு குறையும், உங்கள் பெயரில். பெரிய இழப்பு இந்தப் படிவத்தில் குறிப்பிட்ட அனுமதியுடன் மட்டுமே செல்லும். இழப்பைத் திரும்பப் பெற முடியாது — தவறு புதிய பதிவால் திருத்தப்படும்.',
+    confirmAuthority: 'உங்கள் பெயரில். இழப்பைப் பதியும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் அல்லது அனுமதி பொருந்தவில்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmLabel: 'இழப்பைப் பதிவு செய்', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     lossWastage: 'கழிவு', lossDamage: 'சேதம்', lossExpiry: 'காலாவதி', lossDonation: 'நன்கொடை', lossDestruction: 'அழிப்பு',
     thresholdLabel: 'இதற்குச் சமமாக அல்லது அதற்கு மேல் ஒரு இழப்பு "பெரியது"',
     materialHint: 'இது ஒரு பெரிய இழப்பு — புகைப்படம் அல்லது சாட்சி தேவை; சரக்கைக் கையாளும் இரண்டாம் நபர் அதை அனுமதிக்க வேண்டும்.',
@@ -269,6 +278,15 @@ function paint() {
 let lastSaid = null;
 
 /** Show an answer, and remember how to say it in the other language. */
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 function say(present) {
   lastSaid = present;
   paintResult(present(lang));
@@ -294,8 +312,8 @@ function paintNextStep(big) {
   const inPlay = askedHere.has(writeOffId)
     || losses.rows.some((r) => r.writeOffId === writeOffId && (r.approvalStatus === 'waiting' || r.approvalStatus === 'approved'));
   const askFirst = big && !inPlay;
-  el('ask').classList.toggle('primary', askFirst);
-  el('record').classList.toggle('primary', !askFirst);
+  el('ask').classList.toggle('primary', askFirst); el('ask').classList.toggle('sre-btn-primary', askFirst);
+  el('record').classList.toggle('primary', !askFirst); el('record').classList.toggle('sre-btn-primary', !askFirst);
 }
 
 /** Put a loss asked about earlier back in the form, exactly as it was asked — the same id, the same figures. */
@@ -342,7 +360,7 @@ function paintLosses() {
     if (row.draft !== null) {
       const carry = document.createElement('button');
       carry.type = 'button';
-      carry.className = 'carry';
+      carry.className = 'carry sre-btn';
       carry.textContent = t('carryOnBtn');
       carry.addEventListener('click', () => carryOn(row.draft));
       li.append(carry);
@@ -384,7 +402,16 @@ el('ask').addEventListener('click', () => {
 // clears for the next loss.
 el('record').addEventListener('click', () => {
   void busy('record', async () => {
-    const result = await session.record(draftNow());
+    // U1 · OB-626: the consequence-and-confirm sheet before the loss goes into the books — Go back sends nothing.
+    const draft = draftNow();
+    // An incomplete draft skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
+    const complete = draft.productId.trim() !== '' && draft.locationId.trim() !== '' && Number.isFinite(draft.qty) && draft.qty > 0 && draft.lossType !== null && draft.reasonCode !== undefined;
+    const valueText = Number.isFinite(draft.valueMinor) ? rupees(draft.valueMinor) : '—';
+    const sub = (l, key) => String(session.text(l, key)).replace('{qty}', `${el('wo-qty').value} ${draft.uom}`.trim()).replace('{product}', draft.productId).replace('{value}', valueText);
+    const answer = complete ? await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'danger' }) : { ok: true };
+    if (answer === 'unavailable') { say((l) => ({ tone: 'error', icon: '⚠', label: session.text(l, 'confirmUnavailable'), announcement: session.text(l, 'confirmUnavailable') })); return; }
+    if (answer === null) return;
+    const result = await session.record(draft);
     say((l) => session.presentRecordOutcome(l, result));
     const inTheBooks = result.kind === 'recorded'
       || (result.kind === 'head_office_refused' && result.code === 'write_off_already_recorded');

@@ -23,7 +23,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -44,6 +44,8 @@
       .sop .words { white-space: pre-wrap; margin: 0; }
       textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: 96px; box-sizing: border-box; width: 100%; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -86,13 +88,13 @@
         </div>
         <label for="w-en"><span id="w-en-l"></span><textarea id="w-en"></textarea></label>
         <label for="w-ta"><span id="w-ta-l"></span><textarea id="w-ta" lang="ta"></textarea></label>
-        <button id="w-save" type="button"><span id="w-save-text"></span></button>
+        <button id="w-save" type="button" class="sre-btn sre-btn-primary"><span id="w-save-text"></span></button>
         <p class="status" id="w-status" role="status" aria-live="polite"></p>
       </section>
       <section id="set-contacts" hidden aria-labelledby="sc-h">
         <h3 id="sc-h"></h3>
         <label for="sc-lines"><span id="sc-lines-l"></span><textarea id="sc-lines"></textarea></label>
-        <button id="sc-save" type="button"><span id="sc-save-text"></span></button>
+        <button id="sc-save" type="button" class="sre-btn"><span id="sc-save-text"></span></button>
         <p class="status" id="sc-status" role="status" aria-live="polite"></p>
       </section>
       <section id="drills" hidden aria-labelledby="drill-h">
@@ -105,7 +107,7 @@
           <label for="d-who"><span id="d-who-l"></span><input id="d-who" autocomplete="off" /></label>
         </div>
         <label for="d-found"><span id="d-found-l"></span><textarea id="d-found"></textarea></label>
-        <button id="d-save" type="button"><span id="d-save-text"></span></button>
+        <button id="d-save" type="button" class="sre-btn"><span id="d-save-text"></span></button>
         <p class="status" id="d-status" role="status" aria-live="polite"></p>
       </section>
     </main>

@@ -74,7 +74,7 @@ function filingForm(year) {
   form.className = 'file';
   const on = document.createElement('input'); on.type = 'date'; on.className = 'filed-on'; on.name = 'filedOn'; on.value = today();
   const ref = document.createElement('input'); ref.className = 'reference'; ref.name = 'reference'; ref.autocomplete = 'off';
-  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record'; button.textContent = t('record');
+  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record sre-btn'; button.textContent = t('record');
   form.append(field('filedOnLabel', on), field('referenceLabel', ref), button);
   form.addEventListener('submit', (event) => {
     event.preventDefault();

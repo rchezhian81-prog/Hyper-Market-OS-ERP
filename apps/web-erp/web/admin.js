@@ -205,11 +205,11 @@ function waitingNode(request, view) {
   buttons.className = 'buttons';
   const approve = document.createElement('button');
   approve.type = 'button';
-  approve.className = 'approve';
+  approve.className = 'approve sre-btn';
   approve.textContent = st('approveBtn');
   const reject = document.createElement('button');
   reject.type = 'button';
-  reject.className = 'reject';
+  reject.className = 'reject sre-btn sre-btn-danger';
   reject.textContent = st('rejectBtn');
   // A decision is a HUMAN write that runs ONLY on these explicit clicks, never on load — and names nobody: head
   // office takes the signed-in person as the one who decided.
@@ -251,7 +251,7 @@ function sessionNode(view, mayDecide) {
   if (view.active && mayDecide) {
     const end = document.createElement('button');
     end.type = 'button';
-    end.className = 'danger end';
+    end.className = 'danger end sre-btn sre-btn-danger';
     end.textContent = st('endBtn');
     end.addEventListener('click', () => { void busy([end], () => endNow(view.session.sessionId)); });
     row.append(end);
@@ -455,7 +455,7 @@ let lastOutside = null;
 const OUTSIDE_GRANTS = ['view_invoices', 'view_statement', 'place_order', 'make_payment'];
 
 function outsideButton(label, onClick) {
-  const b = document.createElement('button');
+  const b = document.createElement('button'); b.classList.add('sre-btn');
   b.type = 'button';
   b.textContent = label;
   b.addEventListener('click', onClick);

@@ -23,7 +23,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -71,7 +71,7 @@
           <label for="q-item"><span id="q-item-l"></span><input id="q-item" autocomplete="off" /></label>
           <label for="q-branch"><span id="q-branch-l"></span><input id="q-branch" autocomplete="off" /></label>
         </div>
-        <button id="q-show" type="button"><span id="q-show-text"></span></button>
+        <button id="q-show" type="button" class="sre-btn"><span id="q-show-text"></span></button>
         <p class="status" id="q-status" role="status" aria-live="polite"></p>
         <p class="warn" id="q-negative" hidden></p>
         <div class="figures" id="q-figures"></div>
@@ -87,7 +87,7 @@
           <label for="i-deposit"><span id="i-deposit-l"></span><input id="i-deposit" inputmode="decimal" autocomplete="off" /></label>
         </div>
         <label class="check" for="i-returnable"><input id="i-returnable" type="checkbox" /><span id="i-returnable-l"></span></label>
-        <button id="i-save" type="button"><span id="i-save-text"></span></button>
+        <button id="i-save" type="button" class="sre-btn"><span id="i-save-text"></span></button>
         <p class="status" id="i-status" role="status" aria-live="polite"></p>
       </section>
       <section id="move" hidden aria-labelledby="move-h">
@@ -99,7 +99,7 @@
           <label for="m-qty"><span id="m-qty-l"></span><input id="m-qty" inputmode="numeric" autocomplete="off" /></label>
           <label for="m-ref"><span id="m-ref-l"></span><input id="m-ref" autocomplete="off" /></label>
         </div>
-        <button id="m-record" type="button"><span id="m-record-text"></span></button>
+        <button id="m-record" type="button" class="sre-btn sre-btn-primary"><span id="m-record-text"></span></button>
         <p class="status" id="m-status" role="status" aria-live="polite"></p>
       </section>
     </main>

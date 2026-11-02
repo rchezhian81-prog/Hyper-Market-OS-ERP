@@ -282,7 +282,7 @@ describe('the screen keeps the house rules', () => {
   });
 
   it('asks its questions on the page, never with a browser dialog', () => {
-    expect(code(VIEW)).not.toMatch(/\b(window\.)?(confirm|prompt|alert)\s*\(/);
+    expect(code(VIEW)).not.toMatch(/(?<![.\w])(window\.)?(confirm|prompt|alert)\s*\(/); // U1 · OB-626: `office.confirm(` is the chrome's on-screen consequence-and-confirm sheet, not a browser dialog
   });
 
   it('does not fade its banner away on a timer', () => {

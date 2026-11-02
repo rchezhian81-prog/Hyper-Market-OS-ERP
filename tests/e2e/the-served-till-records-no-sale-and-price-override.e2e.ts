@@ -105,6 +105,10 @@ describe.skipIf(!HAVE_BROWSER)('the served till records a no-sale and a price ch
     await sheetTitled(page, 'New price for one unit');
     for (const digit of '500') await page.click(`#keypad button:text-is("${digit}")`);
     await page.click('#sheet-ok');
+    // OB-626 (U1): the cut is shown in full and confirmed ("Ask the manager") before the manager's badge is asked for.
+    await sheetTitled(page, 'Lower the price of this line?');
+    expect(await page.textContent('#consequence-what')).toBe('Ghee 1L: from ₹640.00 to ₹500.00 for one unit — ₹140.00 off this line (22%).');
+    await page.click('#sheet-ok');
     await managerApprovesOnScreen(page, 'Damaged pack, sold as is');
     await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
     expect(await page.textContent('#refusal-title')).toBe('Price changed');

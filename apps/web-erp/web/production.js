@@ -25,6 +25,11 @@ function sampleSession() {
       yieldAsExpected: 'as expected', yieldLow: 'below standard', yieldHigh: 'above standard', yieldNotMeasured: 'not measured',
       exceptionWord: 'Exception', costUnknownWord: 'Cost not known', yieldOffWord: 'Yield off', awaitingWord: 'Awaiting',
       releaseBtn: 'Release for sale', holdBtn: 'Hold — check failed', releaseHint: 'Release makes the batch sellable in your name; hold keeps it in quarantine.',
+      // U1 · OB-626: the consequence-and-confirm sheet before a batch goes on sale
+      confirmReleaseTitle: 'Release batch {batch} of {product} ({qty}) for sale',
+      confirmReleaseDetail: 'From the next store pack every till of this shop sells it. A released batch comes back off the shelf only through a recall, with evidence.',
+      confirmReleaseAuthority: 'In your name as the quality-release person. Head office refuses it if the batch is expired, already decided, or your role may not release.',
+      confirmReleaseLabel: 'Release for sale', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
       releaseRecorded: 'Released for sale.', releaseHeld: 'Held in quarantine — check failed.', releaseRefused: 'Could not release — the batch may be expired or already released, or you do not have permission.', releaseLostLink: 'No connection — not saved. Try again.',
       scrReady: 'Showing the batches to release', scrEmpty: 'Nothing waiting — every finished batch has been released or held.',
       stateNotPermitted: 'You do not have permission to see production.', noRelease: 'You can see the batches, but releasing one needs quality-release permission.',
@@ -40,6 +45,10 @@ function sampleSession() {
       yieldAsExpected: 'எதிர்பார்த்தபடி', yieldLow: 'தரத்திற்குக் கீழே', yieldHigh: 'தரத்திற்கு மேலே', yieldNotMeasured: 'அளக்கப்படவில்லை',
       exceptionWord: 'விதிவிலக்கு', costUnknownWord: 'விலை தெரியாது', yieldOffWord: 'விளைச்சல் மாறுபாடு', awaitingWord: 'காத்திருக்கிறது',
       releaseBtn: 'விற்பனைக்கு விடுவி', holdBtn: 'தடு — சோதனை தோல்வி', releaseHint: 'விடுவித்தல் தொகுதியை உங்கள் பெயரில் விற்பனைக்கு ஆக்குகிறது; தடுத்தல் தனிமைப்படுத்தலில் வைக்கிறது.',
+      confirmReleaseTitle: '{product} தொகுதி {batch} ({qty}) விற்பனைக்கு விடுவிக்கப்படும்',
+      confirmReleaseDetail: 'அடுத்த கடைப் பொதியிலிருந்து இந்தக் கடையின் எல்லாக் கவுண்டர்களும் அதை விற்கும். விடுவித்த தொகுதி ஆதாரத்துடன் திரும்பப்பெறல் மூலமாகத்தான் அலமாரியிலிருந்து திரும்பும்.',
+      confirmReleaseAuthority: 'தர விடுவிப்பவராக உங்கள் பெயரில். தொகுதி காலாவதியானால், ஏற்கனவே முடிவானால், அல்லது விடுவிக்கும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+      confirmReleaseLabel: 'விற்பனைக்கு விடுவி', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
       releaseRecorded: 'விற்பனைக்கு விடுவிக்கப்பட்டது.', releaseHeld: 'தனிமைப்படுத்தலில் வைக்கப்பட்டது — சோதனை தோல்வி.', releaseRefused: 'விடுவிக்க முடியவில்லை — தொகுதி காலாவதியாகியிருக்கலாம் அல்லது ஏற்கனவே விடுவிக்கப்பட்டிருக்கலாம், அல்லது அனுமதி இல்லை.', releaseLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
       scrReady: 'விடுவிக்க வேண்டிய தொகுதிகளைக் காட்டுகிறது', scrEmpty: 'காத்திருப்பது எதுவும் இல்லை — ஒவ்வொரு தொகுதியும் விடுவிக்கப்பட்டது அல்லது தடுத்து வைக்கப்பட்டது.',
       stateNotPermitted: 'உற்பத்தியைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.', noRelease: 'தொகுதிகளைப் பார்க்கலாம், ஆனால் விடுவிக்க தரக் கட்டுப்பாட்டு அனுமதி தேவை.',
@@ -113,8 +122,8 @@ function rowNode(r) {
   // The two decisions — only for an operator who holds production.release.
   if (canReleaseNow) {
     const actions = document.createElement('div'); actions.className = 'actions';
-    const release = document.createElement('button'); release.className = 'act release'; release.type = 'button'; release.dataset.runId = r.runId; release.textContent = t('releaseBtn');
-    const hold = document.createElement('button'); hold.className = 'act hold'; hold.type = 'button'; hold.dataset.runId = r.runId; hold.textContent = t('holdBtn');
+    const release = document.createElement('button'); release.className = 'act release sre-btn sre-btn-primary'; release.type = 'button'; release.dataset.runId = r.runId; release.textContent = t('releaseBtn');
+    const hold = document.createElement('button'); hold.className = 'act hold sre-btn'; hold.type = 'button'; hold.dataset.runId = r.runId; hold.textContent = t('holdBtn');
     actions.append(release, hold);
     li.append(actions);
   }
@@ -288,6 +297,15 @@ el('label').addEventListener('click', () => {
   })();
 });
 
+// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 function paintResult(presentation) {
   const result = el('result');
   if (!result) return;
@@ -307,6 +325,15 @@ el('rows').addEventListener('click', (ev) => {
   const runId = btn.dataset.runId;
   const qcPassed = btn.classList.contains('release');
   void (async () => {
+    if (qcPassed) {
+      // U1 · OB-626: the consequence-and-confirm sheet before a batch goes on sale — Go back sends nothing. A hold is
+      // the safe direction and needs no sheet.
+      const row = session.view(lang).runs.find((r) => r.runId === runId);
+      const sub = (l, key) => String(session.text(l, key)).replace('{batch}', row?.batchId ?? runId).replace('{product}', row?.productId ?? '').replace('{qty}', row?.quantity ?? '');
+      const answer = await confirmFirst({ title: { en: sub('en', 'confirmReleaseTitle'), ta: sub('ta', 'confirmReleaseTitle') }, detail: { en: sub('en', 'confirmReleaseDetail'), ta: sub('ta', 'confirmReleaseDetail') }, authority: { en: sub('en', 'confirmReleaseAuthority'), ta: sub('ta', 'confirmReleaseAuthority') }, confirmLabel: { en: sub('en', 'confirmReleaseLabel'), ta: sub('ta', 'confirmReleaseLabel') }, tone: 'primary' });
+      if (answer === 'unavailable') { paintResult({ tone: 'error', icon: '⚠', label: t('confirmUnavailable'), announcement: t('confirmUnavailable') }); return; }
+      if (answer === null) return;
+    }
     const result = await session.release(runId, qcPassed);
     paintResult(session.presentReleaseResult(lang, result));
     if (result === 'released' || result === 'held') { await refresh(); }

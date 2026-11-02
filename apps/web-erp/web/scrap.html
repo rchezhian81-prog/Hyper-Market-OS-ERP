@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -71,7 +71,7 @@
           <label for="v-from"><span id="v-from-l"></span><input id="v-from" inputmode="numeric" autocomplete="off" /></label>
           <label for="v-to"><span id="v-to-l"></span><input id="v-to" inputmode="numeric" autocomplete="off" /></label>
         </div>
-        <button id="v-show" type="button"><span id="v-show-text"></span></button>
+        <button id="v-show" type="button" class="sre-btn"><span id="v-show-text"></span></button>
         <p class="status" id="v-status" role="status" aria-live="polite"></p>
         <div class="figures" id="v-figures"></div>
         <h4 id="rates-h"></h4>
@@ -92,7 +92,7 @@
           <label for="s-recycler"><span id="s-recycler-l"></span><input id="s-recycler" autocomplete="off" /></label>
           <label for="s-by"><span id="s-by-l"></span><input id="s-by" autocomplete="off" /></label>
         </div>
-        <button id="s-record" type="button"><span id="s-record-text"></span></button>
+        <button id="s-record" type="button" class="sre-btn sre-btn-primary"><span id="s-record-text"></span></button>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
       </section>
     </main>

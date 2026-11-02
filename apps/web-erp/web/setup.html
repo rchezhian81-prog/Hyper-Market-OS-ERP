@@ -78,7 +78,7 @@
         min-height: var(--tap); border-radius: 10px; border: 0; font-weight: 600; padding: 0 14px;
         background: var(--line); color: var(--ink);
       }
-      .edit button.primary { background: var(--good); color: var(--on-accent); }
+      .edit button.primary { background: var(--good);  }
       .edit button[disabled] { opacity: 0.5; }
       .fieldmsg { font-size: var(--fs-sm); color: var(--muted); }
       .fieldmsg.good { color: var(--ok); }
@@ -87,6 +87,9 @@
         outline: 3px solid var(--focus); outline-offset: 2px;
       }
       @media (max-width: 560px) { .edit { flex-direction: column; align-items: stretch; } }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -128,7 +131,7 @@
               <label class="pn" for="pn-till"><span id="pn-till-label">Till</span><input type="text" id="pn-till" autocomplete="off" /></label>
               <label class="pn" for="pn-prefix"><span id="pn-prefix-label">Prefix</span><input type="text" id="pn-prefix" autocomplete="off" maxlength="16" /></label>
               <select id="pn-year" aria-label="Financial year"></select>
-              <button type="button" class="primary" id="pn-save">Issue prefix</button>
+              <button type="button" class="primary sre-btn sre-btn-primary" id="pn-save">Issue prefix</button>
               <small class="fieldmsg" id="pn-msg" role="status" aria-live="polite"></small>
             </div>
           </div>

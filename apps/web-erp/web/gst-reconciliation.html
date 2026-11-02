@@ -47,7 +47,7 @@
       .action .permit { font-size: var(--fs-sm); padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
       .action .permit.ok { color: var(--ink); }
       .action .do { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .do-btn { min-height: var(--tap); padding: 0 16px; border: 0; border-radius: 10px; background: var(--info); color: var(--on-info); font-size: 15px; font-weight: 600; cursor: pointer; }
+      .do-btn { min-height: var(--tap); padding: 0 16px; border: 0; border-radius: 10px;   font-size: 15px; font-weight: 600; cursor: pointer; }
       .do-btn:disabled { background: var(--line); color: var(--muted); cursor: default; }
       .do-note { font-size: var(--fs-sm); color: var(--muted); }
       .row .mismatch { font-size: 14px; color: var(--danger-text); }
@@ -55,6 +55,7 @@
       p.state { margin: 0; padding: 16px; background: var(--panel); border-radius: 12px; color: var(--muted); font-size: 15px; display: inline-flex; gap: 8px; align-items: center; }
       p.state .icon { font-size: 18px; }
       p.state.tone-error { color: var(--danger-text); }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
     </style>
   </head>
   <body>

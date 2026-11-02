@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 4px 0 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -37,6 +37,8 @@
       #doc { border: 2px solid var(--ink); }
       .draft { font-weight: 700; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
     <style>
       table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -71,7 +73,7 @@
           <label for="c-from"><span id="c-from-l"></span><input id="c-from" inputmode="numeric" autocomplete="off" /></label>
           <label for="c-to"><span id="c-to-l"></span><input id="c-to" inputmode="numeric" autocomplete="off" /></label>
         </div>
-        <button id="c-go" type="button"><span id="c-go-text"></span></button>
+        <button id="c-go" type="button" class="sre-btn sre-btn-primary"><span id="c-go-text"></span></button>
         <p class="status" id="c-status" role="status" aria-live="polite"></p>
       </section>
       <section id="result" hidden aria-labelledby="result-h">
@@ -85,7 +87,7 @@
       <section id="txns" hidden aria-labelledby="txns-h">
         <h3 id="txns-h"></h3>
         <div class="table-wrap"><table><thead><tr><th id="tx-when"></th><th id="tx-branch"></th><th id="tx-what"></th><th class="num" id="tx-amount"></th></tr></thead><tbody id="tx-rows"></tbody></table></div>
-        <button id="tx-close" class="quiet" type="button"><span id="tx-close-text"></span></button>
+        <button id="tx-close" class="quiet sre-btn sre-btn-quiet" type="button"><span id="tx-close-text"></span></button>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

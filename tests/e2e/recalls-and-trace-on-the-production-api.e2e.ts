@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 
 /**
  * **Recalls and trace (P-07 · M10-FR-03 · M10-FR-04 · WF-09 · OB-297 · OB-328 · OB-329) — in a real browser, on the
@@ -96,7 +97,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
       // ── start the recall ──
       await page.fill('#r-batch', 'B-77');
       await page.fill('#r-reason', 'supplier contamination notice SN-17');
-      await page.click('#r-start');
+      // U1 · OB-626: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
+      await askedThenConfirmed(page, () => page.click('#r-start'), /Recall batch B-77/, writeCounter(page));
       await page.locator('#result.tone-ok').waitFor({ timeout: 15_000 });
       const said = (await page.textContent('#result')) ?? '';
       expect(said).toMatch(/Recall started: B-77/);

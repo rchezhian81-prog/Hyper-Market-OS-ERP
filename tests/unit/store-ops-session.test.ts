@@ -96,7 +96,7 @@ describe('food-safety checks', () => {
     const { s } = session(ALL, fakeHttp(() => ({ status: 422, body: { error: { code: 'corrective_action_required', whatHappened: 'write it down' } } })));
     const out = await s.recordCheck(chiller, { checkId: 'chiller', slotDueAt: 'T', readingC: '3', itemResults: {}, correctiveAction: '' });
     expect(out).toEqual({ result: 'refused', status: 422, code: 'corrective_action_required', whatHappened: 'write it down' });
-    expect(outcomeWords('en', out)).toBe('Head office refused: write it down');
+    expect(outcomeWords('en', out)).toMatch(/^Head office refused: write it down\. Nothing was changed\. .+/); // U1: the three parts
   });
 });
 
