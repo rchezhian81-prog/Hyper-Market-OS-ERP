@@ -121,7 +121,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a markdown
     await c.page.fill('#price-why', 'Batch B-7 has two days left; 80 of 100 will not sell.');
     await c.page.click('#ask-price');
     await says(c.page, '#banner-title', /\S/);
-    const asked = (await call('GET', '/v1/approvals/requests', OWNER)).body as { waitingForMe: { requestId: string; kind: string; subjectRef: string }[] };
+    // The banner speaks as the ask is sent; the request lands a moment later — wait for it in the owner's inbox.
+    type Inbox = { waitingForMe: { requestId: string; kind: string; subjectRef: string }[] };
+    let asked: Inbox = { waitingForMe: [] };
+    await expect.poll(async () => {
+      asked = (await call('GET', '/v1/approvals/requests', OWNER)).body as Inbox;
+      return asked.waitingForMe.some((r) => r.kind === 'price_change' && r.subjectRef.includes('p-bread'));
+    }, { message: 'the price change waits for the owner', timeout: 15_000 }).toBe(true);
     const request = asked.waitingForMe.find((r) => r.kind === 'price_change' && r.subjectRef.includes('p-bread'));
     expect(request, JSON.stringify(asked)).toBeDefined();
     expect(await shelf('p-bread')).toBe(5_000); // asking changed no price either
