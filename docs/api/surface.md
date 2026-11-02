@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1654 | 956 | 956 | 183 | 436 |
+| 13 | 1657 | 958 | 958 | 183 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1038,6 +1038,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/bank-statements` | `settlement.batch.import` | core | yes |
 | GET | `/v1/finance/budgets/:period` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/budgets/:period` | `finance.posting.configure` | core | yes |
+| GET | `/v1/finance/cash-deposits` | `settlement.review.read` | core | — |
+| POST | `/v1/finance/cash-deposits/:depositId` | `settlement.batch.import` | core | yes |
+| POST | `/v1/finance/cash-deposits/:depositId/cancel` | `settlement.batch.import` | core | yes |
 | POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |

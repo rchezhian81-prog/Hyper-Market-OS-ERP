@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2084,
+  "testFiles": 2089,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -507,7 +507,7 @@
         "unit": 21,
         "integration": 24,
         "realDb": 14,
-        "browser": 10,
+        "browser": 11,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -588,7 +588,8 @@
           "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-rebates-screen-works-through-the-store-computer.e2e.ts",
-          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
+          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts",
+          "tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
@@ -1278,7 +1279,7 @@
         "unit": 20,
         "integration": 20,
         "realDb": 8,
-        "browser": 6,
+        "browser": 7,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1344,7 +1345,8 @@
           "tests/e2e/manager-day-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts",
-          "tests/e2e/the-served-till-closes.e2e.ts"
+          "tests/e2e/the-served-till-closes.e2e.ts",
+          "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts"
@@ -1516,7 +1518,7 @@
         "unit": 12,
         "integration": 19,
         "realDb": 6,
-        "browser": 6,
+        "browser": 7,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -1571,7 +1573,8 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/stored-value-oversight-delivery.e2e.ts",
           "tests/e2e/the-served-till-names-a-member.e2e.ts",
-          "tests/e2e/the-served-till-spends-points-and-store-credit.e2e.ts"
+          "tests/e2e/the-served-till-spends-points-and-store-credit.e2e.ts",
+          "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -1956,10 +1959,10 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 28,
-        "integration": 38,
+        "unit": 29,
+        "integration": 39,
         "realDb": 24,
-        "browser": 8,
+        "browser": 9,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1993,7 +1996,8 @@
           "tests/unit/supplier-account-fold.test.ts",
           "tests/unit/tally-daily-outbox.test.ts",
           "tests/unit/tally-export.test.ts",
-          "tests/unit/trial-balance-and-centres.test.ts"
+          "tests/unit/trial-balance-and-centres.test.ts",
+          "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -2033,6 +2037,7 @@
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
           "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts",
+          "tests/integration/w3-cash-deposited-to-the-bank-is-recorded-and-checked-at-the-close.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
@@ -2069,7 +2074,8 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts",
           "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts",
-          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
+          "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
@@ -3133,10 +3139,10 @@
       "id": "D03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 17,
         "realDb": 9,
-        "browser": 8,
+        "browser": 9,
         "connected": 4,
         "device": 0,
         "uat": 0
@@ -3153,7 +3159,8 @@
           "tests/unit/rebate-claims.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
           "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts",
-          "tests/unit/vmi.test.ts"
+          "tests/unit/vmi.test.ts",
+          "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
@@ -3193,7 +3200,8 @@
           "tests/e2e/supplier-portal-vmi-top-up.e2e.ts",
           "tests/e2e/the-buyer-decides-a-supplier-managed-top-up.e2e.ts",
           "tests/e2e/the-rebates-screen-works-through-the-store-computer.e2e.ts",
-          "tests/e2e/the-supplier-page-shows-purchase-price-variance.e2e.ts"
+          "tests/e2e/the-supplier-page-shows-purchase-price-variance.e2e.ts",
+          "tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
@@ -3550,10 +3558,10 @@
       "id": "D10",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 13,
         "realDb": 8,
-        "browser": 3,
+        "browser": 5,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3562,7 +3570,8 @@
         "unit": [
           "tests/unit/finance-close-session.test.ts",
           "tests/unit/supplier-advances-session.test.ts",
-          "tests/unit/trial-balance-and-centres.test.ts"
+          "tests/unit/trial-balance-and-centres.test.ts",
+          "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
@@ -3592,7 +3601,9 @@
         "browser": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/finance-month-close-delivery.e2e.ts",
-          "tests/e2e/supplier-advances-are-paid-used-and-undone-on-the-supplier-bills-page.e2e.ts"
+          "tests/e2e/supplier-advances-are-paid-used-and-undone-on-the-supplier-bills-page.e2e.ts",
+          "tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts",
+          "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts"

@@ -26186,6 +26186,238 @@
         }
       }
     },
+    "/v1/finance/cash-deposits": {
+      "get": {
+        "operationId": "getFinanceCashDeposits",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "settlement.review.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFinanceCashDepositsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"settlement.review.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/finance/cash-deposits/{depositId}": {
+      "post": {
+        "operationId": "postFinanceCashDepositsByDepositId",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "settlement.batch.import",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "depositId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"settlement.batch.import\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/finance/cash-deposits/{depositId}/cancel": {
+      "post": {
+        "operationId": "postFinanceCashDepositsByDepositIdCancel",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "settlement.batch.import",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "depositId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdCancelRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdCancelReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdCancelReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"settlement.batch.import\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/finance/credit-notes": {
       "post": {
         "operationId": "postFinanceCreditNotes",
@@ -125725,6 +125957,42 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/budgets-assets.ts"
       },
+      "GetFinanceCashDepositsReply": {
+        "type": "object",
+        "required": [
+          "recordedMinor",
+          "inBankMinor",
+          "notInBank",
+          "asAt",
+          "deposits"
+        ],
+        "properties": {
+          "recordedMinor": {
+            "type": "number"
+          },
+          "inBankMinor": {
+            "type": "number"
+          },
+          "notInBank": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "deposits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashDepositView"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
       "GetFinanceCreditNotesReconciliationReply": {
         "type": "object",
         "required": [
@@ -128522,6 +128790,29 @@
                   "type": "string"
                 },
                 "netMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "depositsNotInBank": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "depositId",
+                "slipRef",
+                "amountMinor"
+              ],
+              "properties": {
+                "depositId": {
+                  "type": "string"
+                },
+                "slipRef": {
+                  "type": "string"
+                },
+                "amountMinor": {
                   "type": "number"
                 }
               },
@@ -180060,6 +180351,121 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/independent-evidence.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdCancelReply200": {
+        "type": "object",
+        "required": [
+          "cancelled",
+          "alreadyCancelled"
+        ],
+        "properties": {
+          "cancelled": {
+            "$ref": "#/components/schemas/CashDepositCancelled"
+          },
+          "alreadyCancelled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdCancelReply201": {
+        "type": "object",
+        "required": [
+          "cancelled",
+          "alreadyCancelled"
+        ],
+        "properties": {
+          "cancelled": {
+            "$ref": "#/components/schemas/CashDepositCancelled"
+          },
+          "alreadyCancelled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdCancelRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdReply200": {
+        "type": "object",
+        "required": [
+          "deposit",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "deposit": {
+            "$ref": "#/components/schemas/CashDeposit"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdReply201": {
+        "type": "object",
+        "required": [
+          "deposit",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "deposit": {
+            "$ref": "#/components/schemas/CashDeposit"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdRequest": {
+        "type": "object",
+        "required": [
+          "accountRef",
+          "amountMinor",
+          "depositedOn",
+          "slipRef"
+        ],
+        "properties": {
+          "accountRef": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "integer"
+          },
+          "depositedOn": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "slipRef": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
       },
       "PostFinanceCreditNotesReply": {
         "type": "object",
@@ -260346,6 +260752,148 @@
             }
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CashDeposit": {
+        "type": "object",
+        "required": [
+          "depositId",
+          "depositedOn",
+          "amountMinor",
+          "slipRef",
+          "accountRef",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "depositId": {
+            "type": "string"
+          },
+          "depositedOn": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "slipRef": {
+            "type": "string"
+          },
+          "accountRef": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CashDepositCancelled": {
+        "type": "object",
+        "required": [
+          "depositId",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "depositId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CashDepositView": {
+        "type": "object",
+        "required": [
+          "state",
+          "bankLine",
+          "depositId",
+          "depositedOn",
+          "amountMinor",
+          "slipRef",
+          "accountRef",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "in_bank",
+              "not_in_bank"
+            ]
+          },
+          "bankLine": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "statementId",
+                  "lineId",
+                  "date"
+                ],
+                "properties": {
+                  "statementId": {
+                    "type": "string"
+                  },
+                  "lineId": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "cancelled": {
+            "$ref": "#/components/schemas/CashDepositCancelled"
+          },
+          "depositId": {
+            "type": "string"
+          },
+          "depositedOn": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "slipRef": {
+            "type": "string"
+          },
+          "accountRef": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
             "type": "string"
           }
         },

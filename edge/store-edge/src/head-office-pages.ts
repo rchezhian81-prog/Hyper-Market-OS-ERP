@@ -58,6 +58,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'space-setup', 'display-contracts', 'range-clusters', 'product-checks',
   // Round 4d (money, facilities and production): the accounts set-up (posting map and Tally names), the facilities set-up.
   'posting-map', 'facilities-setup', 'production-recipes',
+  // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
+  'settlement',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -148,6 +150,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'range-clusters': 'rangeClustersData',
   'product-checks': 'productChecksData',
   'posting-map': 'postingMapData',
+  settlement: 'settlementBankData',
   'facilities-setup': 'facilitiesSetupData',
   'production-recipes': 'productionRecipesData',
 });

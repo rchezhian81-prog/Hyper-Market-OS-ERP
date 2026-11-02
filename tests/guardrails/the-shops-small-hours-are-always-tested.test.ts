@@ -30,6 +30,8 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/round-a-the-office-pages-show-head-offices-records.e2e.ts',
   'tests/integration/r7d-an-expired-food-certificate-blocks-food-work-and-marks-are-relayed.test.ts',
   'tests/integration/r7d-the-roster-and-certificates-ride-the-signed-pack-to-the-box.test.ts',
+  // W3 (money): the rebate period runs to the shop's today.
+  'tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts',
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')

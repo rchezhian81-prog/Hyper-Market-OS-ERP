@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Card, UPI and bank</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Card, UPI and bank (W3 · M23-FR-03 · M14-FR-03 · C14). A THIN CLIENT over head office's settlement routes: load the
+      provider's settlement file (POST /v1/settlement/batches) and the bank's statement (POST /v1/finance/bank-statements),
+      record cash taken to the bank (/v1/finance/cash-deposits*), check the tills' card and UPI takings against what was paid
+      (GET /v1/settlement/review), work the cases (/v1/settlement/investigations*) and the payment disputes
+      (/v1/finance/payment-disputes*). Its session is apps/web-erp/src/settlement-bank-session.ts. Nothing is read or written
+      on open; no card number is ever typed here.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; justify-self: start; display: inline-flex; gap: 6px; align-items: center; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; display: grid; gap: 6px; }
+      ul.rows > li.attention { border-left-color: var(--danger); }
+      ul.rows > li.good { border-left-color: var(--good); }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .lead { margin: 0; color: var(--muted); }
+      .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+      .tile { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+      .tile b { font-size: 20px; font-variant-numeric: tabular-nums; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Card, UPI and bank</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Card, UPI and bank</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="load" hidden aria-labelledby="load-h">
+        <h2 id="load-h"></h2>
+        <h3 id="batch-h"></h3>
+        <div class="row">
+          <label for="batch-file"><span id="batch-file-l"></span><input id="batch-file" type="file" accept=".json,application/json" /></label>
+        </div>
+        <button id="batch-load" type="button"><span id="batch-load-text"></span></button>
+        <p class="status" id="batch-status" role="status" aria-live="polite"></p>
+        <h3 id="statement-h"></h3>
+        <div class="row">
+          <label for="st-id"><span id="st-id-l"></span><input id="st-id" autocomplete="off" /></label>
+          <label for="st-account"><span id="st-account-l"></span><input id="st-account" autocomplete="off" /></label>
+          <label for="st-from"><span id="st-from-l"></span><input id="st-from" autocomplete="off" inputmode="numeric" /></label>
+          <label for="st-to"><span id="st-to-l"></span><input id="st-to" autocomplete="off" inputmode="numeric" /></label>
+          <label for="st-opening"><span id="st-opening-l"></span><input id="st-opening" autocomplete="off" inputmode="decimal" /></label>
+          <label for="st-closing"><span id="st-closing-l"></span><input id="st-closing" autocomplete="off" inputmode="decimal" /></label>
+          <label for="st-file"><span id="st-file-l"></span><input id="st-file" type="file" accept=".csv,text/csv" /></label>
+        </div>
+        <button id="st-load" type="button"><span id="st-load-text"></span></button>
+        <p class="status" id="st-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="bank" hidden aria-labelledby="statements-h">
+        <h2 id="statements-h"></h2>
+        <ul class="rows" id="statement-rows"></ul>
+        <h2 id="deposits-h"></h2>
+        <p class="meta" id="deposit-totals"></p>
+        <ul class="rows" id="deposit-rows"></ul>
+        <div id="deposit-form" hidden>
+          <div class="row">
+            <label for="dep-on"><span id="dep-on-l"></span><input id="dep-on" autocomplete="off" inputmode="numeric" /></label>
+            <label for="dep-amount"><span id="dep-amount-l"></span><input id="dep-amount" autocomplete="off" inputmode="decimal" /></label>
+            <label for="dep-slip"><span id="dep-slip-l"></span><input id="dep-slip" autocomplete="off" /></label>
+            <label for="dep-account"><span id="dep-account-l"></span><input id="dep-account" autocomplete="off" /></label>
+            <label for="dep-note"><span id="dep-note-l"></span><input id="dep-note" autocomplete="off" /></label>
+          </div>
+          <button id="dep-record" type="button"><span id="dep-record-text"></span></button>
+        </div>
+        <p class="status" id="dep-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="review" hidden aria-labelledby="review-h">
+        <h2 id="review-h"></h2>
+        <div class="row">
+          <label for="rv-date"><span id="rv-date-l"></span><input id="rv-date" autocomplete="off" inputmode="numeric" /></label>
+          <label for="rv-cycle"><span id="rv-cycle-l"></span><input id="rv-cycle" autocomplete="off" inputmode="numeric" /></label>
+        </div>
+        <button id="rv-go" type="button"><span id="rv-go-text"></span></button>
+        <p class="status" id="rv-status" role="status" aria-live="polite"></p>
+        <div class="tiles" id="rv-tiles"></div>
+        <p class="meta" id="rv-window"></p>
+        <h3 id="exceptions-h"></h3>
+        <ul class="rows" id="exception-rows"></ul>
+        <h3 id="cases-h"></h3>
+        <p class="meta" id="cases-ageing"></p>
+        <ul class="rows" id="case-rows"></ul>
+      </section>
+
+      <section id="disputes" hidden aria-labelledby="disputes-h">
+        <h2 id="disputes-h"></h2>
+        <p class="meta" id="dispute-totals"></p>
+        <ul class="rows" id="dispute-rows"></ul>
+        <div id="dispute-form" hidden>
+          <div class="row">
+            <label for="d-id"><span id="d-id-l"></span><input id="d-id" autocomplete="off" /></label>
+            <label for="d-instrument"><span id="d-instrument-l"></span><select id="d-instrument"><option value="upi" id="d-i-upi">UPI</option><option value="card" id="d-i-card">Card</option></select></label>
+            <label for="d-ref"><span id="d-ref-l"></span><input id="d-ref" autocomplete="off" /></label>
+            <label for="d-amount"><span id="d-amount-l"></span><input id="d-amount" autocomplete="off" inputmode="decimal" /></label>
+            <label for="d-received"><span id="d-received-l"></span><input id="d-received" autocomplete="off" inputmode="numeric" /></label>
+            <label for="d-respond-by"><span id="d-respond-by-l"></span><input id="d-respond-by" autocomplete="off" inputmode="numeric" /></label>
+            <label for="d-reason"><span id="d-reason-l"></span><input id="d-reason" autocomplete="off" /></label>
+            <label for="d-sale"><span id="d-sale-l"></span><input id="d-sale" autocomplete="off" /></label>
+          </div>
+          <button id="d-record" type="button"><span id="d-record-text"></span></button>
+        </div>
+        <p class="status" id="d-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./settlement.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
