@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1681 | 970 | 970 | 189 | 438 |
+| 13 | 1683 | 971 | 971 | 192 | 438 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1056,7 +1056,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/cash-deposits` | `settlement.review.read` | core | — |
 | POST | `/v1/finance/cash-deposits/:depositId` | `settlement.batch.import` | core | yes |
 | POST | `/v1/finance/cash-deposits/:depositId/cancel` | `settlement.batch.import` | core | yes |
-| POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
+| POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | `b2b` | yes |
+| GET | `/v1/finance/credit-notes/customers/:customerId` | `finance.creditnote.issue` | `b2b` | — |
+| POST | `/v1/finance/credit-notes/preview` | `finance.creditnote.issue` | `b2b` | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |
 | POST | `/v1/finance/day-book/:tradingDay/post` | `finance.journal.post` | core | yes |

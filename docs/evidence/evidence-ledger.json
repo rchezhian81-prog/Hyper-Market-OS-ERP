@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2154,
+  "testFiles": 2157,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2000,11 +2000,11 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 29,
-        "integration": 39,
-        "realDb": 24,
-        "browser": 9,
-        "connected": 2,
+        "unit": 31,
+        "integration": 41,
+        "realDb": 26,
+        "browser": 10,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2020,6 +2020,7 @@
           "tests/unit/erp-finance-session.test.ts",
           "tests/unit/erp-suppliers-session.test.ts",
           "tests/unit/finance-close-session.test.ts",
+          "tests/unit/finance-credit-note-route.test.ts",
           "tests/unit/finance-credit-notes.test.ts",
           "tests/unit/finance-day-book-routes.test.ts",
           "tests/unit/finance-day-book.test.ts",
@@ -2038,6 +2039,7 @@
           "tests/unit/tally-daily-outbox.test.ts",
           "tests/unit/tally-export.test.ts",
           "tests/unit/trial-balance-and-centres.test.ts",
+          "tests/unit/w3-gst-notes-to-business-customers.test.ts",
           "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
@@ -2070,6 +2072,7 @@
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
           "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
+          "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
           "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
@@ -2079,6 +2082,7 @@
           "tests/integration/the-till-exchanges.test.ts",
           "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts",
           "tests/integration/w3-cash-deposited-to-the-bank-is-recorded-and-checked-at-the-close.test.ts",
+          "tests/integration/w3-gst-notes-to-business-customers.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
@@ -2101,11 +2105,13 @@
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
+          "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
-          "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts"
+          "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts",
+          "tests/integration/w3-gst-notes-to-business-customers.test.ts"
         ],
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
@@ -2116,11 +2122,13 @@
           "tests/e2e/suppliers-delivery.e2e.ts",
           "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
-          "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts"
+          "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts",
+          "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
-          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
+          "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -5007,8 +5015,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
-        "integration": 9,
-        "realDb": 5,
+        "integration": 11,
+        "realDb": 7,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -5025,14 +5033,18 @@
           "tests/integration/returns-reconcile-on-sync.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/store-credit-refund.test.ts",
-          "tests/integration/the-till-exchanges.test.ts"
+          "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/w3-gst-notes-to-business-customers.test.ts"
         ],
         "realDb": [
           "tests/integration/a-held-returned-unit-gets-a-persons-decision.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/returns-guard-the-refund.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
-          "tests/integration/the-till-exchanges.test.ts"
+          "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/w3-gst-notes-to-business-customers.test.ts"
         ],
         "browser": [
           "tests/e2e/held-returns-decided-on-the-production-api.e2e.ts",
