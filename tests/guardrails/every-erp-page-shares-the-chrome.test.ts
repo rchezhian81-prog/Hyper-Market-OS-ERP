@@ -303,6 +303,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'product-tobacco.js': 'apps/web-erp/src/tobacco-warning-session.ts',
     'range-gaps.js': 'apps/web-erp/src/range-gaps-session.ts',
     'concession-invoices.js': 'apps/web-erp/src/concession-invoices-session.ts',
+    // W3 (M22-FR-04): finance's queue of payments customers say they sent, on the Business customers page.
+    'b2b-payments.js': 'apps/web-erp/src/b2b-transfer-notes-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {
