@@ -17,6 +17,11 @@
       says what still blocks it; a tax-class change or an age-limited product waits for a second person, asked here and
       approved on the Approvals page in that person's own session. The page decides nothing itself, writes nothing on open,
       and has no prompt/confirm/alert or timer.
+      W3 (D01-FR-05 · B16 · COTPA s.7 · OB-140 "A"): the tobacco health-warning section — the government's warning pictures
+      on record (GET/POST /v1/catalogue/tobacco-warning-pictures[/:id], the owner records one) and every tobacco product's
+      standing, with a named person's confirmation that one product's packs carry the picture
+      (POST /v1/catalogue/products/:id/tobacco-warning-confirmation). Its session is apps/web-erp/src/tobacco-warning-session.ts
+      and its view product-tobacco.js.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -210,9 +215,34 @@
         </div>
         <p class="status" id="subs-status" role="status" aria-live="polite"></p>
       </section>
+      <section id="tobacco" aria-labelledby="tobacco-h" hidden>
+        <h3 id="tobacco-h">Tobacco health warning</h3>
+        <p class="lead" id="tobacco-lead"></p>
+        <p class="status" id="tobacco-status" role="status" aria-live="polite"></p>
+        <h4 id="pictures-h"></h4>
+        <p class="muted" id="pictures-now"></p>
+        <ol class="rows" id="picture-rows"></ol>
+        <form id="picture-form" hidden novalidate>
+          <h4 id="picture-form-h"></h4>
+          <p class="muted" id="picture-note"></p>
+          <div class="row">
+            <label for="tw-id"><span id="l-tw-id"></span><input id="tw-id" autocomplete="off" maxlength="40" /></label>
+            <label for="tw-notified"><span id="l-tw-notified"></span><input id="tw-notified" type="date" /></label>
+            <label for="tw-from"><span id="l-tw-from"></span><input id="tw-from" type="date" /></label>
+            <label for="tw-ref"><span id="l-tw-ref"></span><input id="tw-ref" autocomplete="off" maxlength="120" /></label>
+            <label for="tw-evidence"><span id="l-tw-evidence"></span><input id="tw-evidence" autocomplete="off" maxlength="200" /></label>
+            <button id="tw-record" type="submit"></button>
+          </div>
+          <p class="status" id="picture-status" role="status" aria-live="polite"></p>
+        </form>
+        <h4 id="tobacco-products-h"></h4>
+        <ol class="rows" id="tobacco-rows"></ol>
+        <p class="status" id="confirm-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./product-details.js" type="module"></script>
+    <script src="./product-tobacco.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>
