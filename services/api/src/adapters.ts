@@ -12039,6 +12039,22 @@ export function reportingAdapter(input: {
   };
 }
 
+/**
+ * MG-06 · QG-07: the control totals the migration register holds — the first record of each total, with the first signature
+ * applied over it (append-only underneath). Shared by the migration routes and the QG-07 gate reading (gates-adapters.ts).
+ */
+export async function migrationControlTotalsOn(store: EventStore, tenantId: string): Promise<readonly ControlTotal[]> {
+  const recorded = await allOf<ControlTotal>(store, tenantId, STREAM.migration, 'MigrationControlTotalRecorded');
+  const signatures = await allOf<{ readonly totalId: string; readonly signature: TotalSignature }>(store, tenantId, STREAM.migration, 'MigrationTotalSigned');
+  const byId = new Map<string, ControlTotal>();
+  for (const t of recorded) if (!byId.has(t.totalId)) byId.set(t.totalId, t);
+  for (const sg of signatures) {
+    const t = byId.get(sg.totalId);
+    if (t !== undefined && t.signature === undefined) byId.set(sg.totalId, { ...t, signature: sg.signature });
+  }
+  return [...byId.values()];
+}
+
 export function migrationAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -12374,17 +12390,7 @@ export function migrationAdapter(input: {
         idempotencyKey: `mig-exception-resolved-${tenantId}-${exceptionId}`, source: 'api/migration', payload: { exceptionId, resolution },
       }));
     },
-    controlTotals: async (tenantId) => {
-      const recorded = await allOf<ControlTotal>(input.store, tenantId, STREAM.migration, 'MigrationControlTotalRecorded');
-      const signatures = await allOf<{ readonly totalId: string; readonly signature: TotalSignature }>(input.store, tenantId, STREAM.migration, 'MigrationTotalSigned');
-      const byId = new Map<string, ControlTotal>();
-      for (const t of recorded) if (!byId.has(t.totalId)) byId.set(t.totalId, t);
-      for (const sg of signatures) {
-        const t = byId.get(sg.totalId);
-        if (t !== undefined && t.signature === undefined) byId.set(sg.totalId, { ...t, signature: sg.signature });
-      }
-      return [...byId.values()];
-    },
+    controlTotals: (tenantId) => migrationControlTotalsOn(input.store, tenantId),
     recordControlTotal: async (tenantId, total) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
         id: `mig-total-${total.totalId}`, type: 'MigrationControlTotalRecorded', occurredAt: input.now(),

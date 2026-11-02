@@ -110,7 +110,8 @@ describe.each(backings)('scanner findings and gate decisions are recorded — on
     expect(codeOf(await decide('QG-06', 'GO'))).toBe('go_refused_while_blocked');
     const canPass = (await ok(call(h, 'GET', '/v1/compliance/gates/QG-06/can-pass', OWNER), 'can-pass')).body as { canPass: boolean; alsoBlockedBy: { kind: string }[] };
     expect(canPass.canPass).toBe(false);
-    expect(canPass.alsoBlockedBy.map((b) => b.kind)).toEqual(['finding']);
+    // The finding, and (W3) the independent penetration test not yet on file (§22 QG-06 · §35.1 — counted from R4).
+    expect(canPass.alsoBlockedBy.map((b) => `${b.kind} ${(b as { ref?: string }).ref ?? ''}`)).toEqual([expect.stringMatching(/^finding /), 'check evidence:independent_pentest']);
     expect((await decide('QG-06', 'HOLD', MGR)).status).toBe(403);
     expect(codeOf(await decide('QG-06', 'HOLD', OWNER, []))).toBe('gate_decision_not_readable'); // no evidence, no decision
     expect((await ok(decide('QG-06', 'HOLD'), 'hold')).body).toMatchObject({ decision: { decision: 'HOLD', decidedBy: OWNER } });
@@ -123,6 +124,8 @@ describe.each(backings)('scanner findings and gate decisions are recorded — on
     // ── 3 · The image is rebuilt; a COMPLETE scan no longer sees the critical → it is fixed, QG-06 may now be GO.
     const clean = await ok(call(h, 'POST', '/v1/compliance/finding-scans', MGR, { report: report(obs.filter((o) => o.severity !== 'critical'), 'ci-102', '2026-10-24T08:00:00.000Z') }), 'clean');
     expect(clean.body).toMatchObject({ scan: { fixed: 1, stillOpen: 1 } });
+    // W3: the independent penetration test is on file too (otherwise QG-06 stays blocked for R5 — missing is never passed).
+    await ok(call(h, 'POST', '/v1/compliance/gate-evidence/pt-2026-10', OWNER, { kind: 'independent_pentest', result: 'passed', where: 'Synthetic Security Ltd (independent)', reportRef: 'pentest/2026-10.pdf', testedOn: '2026-10-24', statement: 'report received; its findings are on the register' }), 'pentest on file');
     expect((await ok(call(h, 'GET', '/v1/compliance/gates/QG-06/can-pass', OWNER), 'can-pass 2')).body).toMatchObject({ canPass: true });
 
     // A risk registered against QG-06 blocks the GO too, by name.
