@@ -40,6 +40,7 @@ import {
   STREAM, streamName, foldPurchaseOrders, ordersForExport, averageBuyingCosts, dayBookAdapter, nearExpiryAdapter, orgStructureAdapter,
 } from './adapters';
 import { tillSignInRecords } from './wave5-followups-adapters';
+import { officeSignInRecords } from './office-sign-in-log'; // D13-FR-06 (W3)
 import { FAILED_SIGN_IN_REASONS, lockoutEpisodes } from '../../identity/src/till-sign-in-log';
 
 /** The ids this file produces — each a `case` in `produceMore` below. */
@@ -689,8 +690,11 @@ export function produceMore(kit: ProducerKit) {
         const asAt = newestOf(allTimes);
         const mk = kit.at(asAt, 'no grant of access, support session or incident has ever been recorded at head office');
         // OB-365: the store computers send their till sign-in logs — failed till sign-ins and lockouts are counted from them.
-        // The office sign-in lockout is still held in memory by the API, so that one stays "not known" (P-08).
-        const OFFICE_NOT_HELD = 'head office keeps no record of failed OFFICE sign-ins or lockouts: that lockout is held in memory by the API';
+        // D13-FR-06 (W3): head office now KEEPS each failed office sign-in and each lockout it trips (the lockout itself
+        // stays in the API's memory), on this shop's own append-only record — so those are counted too, through a restart.
+        const office = (await officeSignInRecords(kit.store, tenantId)).filter((r) => inPeriod(r.at));
+        const officeFailed = office.filter((r) => r.p.outcome === 'failed');
+        const officeLockouts = office.filter((r) => r.p.outcome === 'locked_out');
         const TILL_NOT_YET = 'no till sign-in record has reached head office yet — each store computer sends its sign-in log (OB-365)';
         const tillLog = await tillSignInRecords(kit.store, tenantId);
         const tillInPeriod = tillLog.map((x) => x.p).filter((r) => inPeriod(r.at));
@@ -706,6 +710,13 @@ export function produceMore(kit: ProducerKit) {
           ...remoteOpened.map((r) => ({ what: 'remote_session', ref: r.p.sessionId, who: r.p.userId ?? '', by: r.p.by, at: r.at, detail: `${r.p.kind ?? 'remote'} session on device ${r.p.deviceId ?? 'not named'}` })),
           ...incidents.map((r) => ({ what: 'incident_opened', ref: r.p.incidentId, who: '', by: r.p.by, at: r.at, detail: `${r.p.severity ?? ''} ${r.p.title ?? ''}`.trim() })),
           ...findings.map((r) => ({ what: 'security_finding', ref: r.p.findingId, who: '', by: r.p.openedBy, at: r.p.firstSeenAt, detail: `${r.p.severity}: ${r.p.title}` })),
+          // D13-FR-06 (W3): each failed office sign-in and lockout — who the refused token claimed, the address class, when.
+          ...office.map((r, i) => ({
+            what: r.p.outcome === 'failed' ? 'office_sign_in_failed' : 'office_sign_in_lockout', ref: `${r.p.traceId}#${i}`, who: r.p.claimedUserId ?? 'not readable', by: '', at: r.at,
+            detail: r.p.outcome === 'failed'
+              ? `failed office sign-in from a ${r.p.sourceClass} address (${r.p.sourceNetwork}) on ${r.p.path}`
+              : `office sign-in locked out a ${r.p.sourceClass} address (${r.p.sourceNetwork}) for ${r.p.lockedForSeconds ?? 0} s`,
+          })),
         ].sort((a, b) => a.at.localeCompare(b.at) || a.ref.localeCompare(b.ref));
         const countTx = (what: string): SourceTransaction[] => rows.filter((r) => r.what === what).map((r) => ({ transactionId: r.ref, at: r.at, branchId: 'company', staffId: r.by, amountMinor: 1, description: `${r.what}: ${r.detail}` }));
         return {
@@ -725,7 +736,9 @@ export function produceMore(kit: ProducerKit) {
             tillAsAt === null
               ? figure({ name: 'Sign-in lockouts', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: TILL_NOT_YET })
               : figure({ name: 'Sign-in lockouts', unit: 'count', valueMinor: tillLockouts.length, asAt: tillAsAt, now: kit.now() }),
-            figure({ name: 'Office sign-in lockouts', unit: 'count', asAt: null, now: kit.now(), notAvailableBecause: OFFICE_NOT_HELD }),
+            // D13-FR-06: every failed office sign-in is written as it happens, so a count of none is a real none, read now.
+            figure({ name: 'Office failed sign-ins', unit: 'count', valueMinor: officeFailed.length, asAt: newestOf(officeFailed.map((r) => r.at)) ?? kit.now(), now: kit.now() }),
+            figure({ name: 'Office sign-in lockouts', unit: 'count', valueMinor: officeLockouts.length, asAt: newestOf(officeLockouts.map((r) => r.at)) ?? kit.now(), now: kit.now() }),
           ],
           rows,
           drill: {
@@ -735,6 +748,9 @@ export function produceMore(kit: ProducerKit) {
             'Security findings first seen': countTx('security_finding'),
             // OB-365: each failed till sign-in, and each lockout (its first refusal), from the till sign-in logs.
             'Failed sign-ins': tillFailed.map((r) => ({ transactionId: r.entryId, at: r.at, branchId: r.storeId ?? r.laneId ?? 'store', staffId: r.person, amountMinor: 1, description: `failed till sign-in: ${r.reason ?? ''}${r.laneId === null ? '' : ` on ${r.laneId}`}` })),
+            // D13-FR-06: who was tried (the refused token's claim), from which address class, and when — never a secret.
+            'Office failed sign-ins': officeFailed.map((r, i) => ({ transactionId: `office-sign-in-${r.p.traceId}-${i}`, at: r.at, branchId: 'company', staffId: r.p.claimedUserId ?? 'not readable', amountMinor: 1, description: `failed office sign-in as ${r.p.claimedUserId ?? 'nobody readable'} from a ${r.p.sourceClass} address (${r.p.sourceNetwork})` })),
+            'Office sign-in lockouts': officeLockouts.map((r, i) => ({ transactionId: `office-lockout-${r.p.traceId}-${i}`, at: r.at, branchId: 'company', staffId: r.p.claimedUserId ?? 'not readable', amountMinor: 1, description: `office sign-in locked out a ${r.p.sourceClass} address (${r.p.sourceNetwork}) for ${r.p.lockedForSeconds ?? 0} s after a try as ${r.p.claimedUserId ?? 'nobody readable'}` })),
             'Sign-in lockouts': tillLockouts.map((l) => ({ transactionId: l.entryIds[0]!, at: l.firstAt, branchId: 'store', staffId: l.who, amountMinor: 1, description: `till sign-in locked out: ${l.who} (${l.entryIds.length} refused tr${l.entryIds.length === 1 ? 'y' : 'ies'})` })),
           },
         };

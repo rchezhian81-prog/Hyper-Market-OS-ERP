@@ -381,7 +381,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | A01 | Owner Intelligence | E2E VERIFIED |
 | A02 | Purchase | PARTIALLY WIRED |
 | A03 | Inventory | WIRED |
-| A04 | Customer Shopping | INTEGRATION TESTED |
+| A04 | Customer Shopping | E2E VERIFIED |
 | A05 | Service | E2E VERIFIED |
 | A06 | Operations | E2E VERIFIED |
 | A07 | Security/Fraud | E2E VERIFIED |
@@ -409,7 +409,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | WF-19 | Migration/cutover | INTEGRATION TESTED |
 | WF-20 | Release/incident | E2E VERIFIED |
 | QG-01 | Requirements gate | PARTIALLY WIRED |
-| QG-02 | UX gate | PARTIALLY WIRED |
+| QG-02 | UX gate | E2E VERIFIED |
 | QG-03 | Code gate | PARTIALLY WIRED |
 | QG-04 | Offline gate | INTEGRATION TESTED |
 | QG-05 | Performance gate | PARTIALLY WIRED |
@@ -1699,3 +1699,6 @@ modules still wait on the Stage 1 facts (finding A-11).
 | MG-09 (W3) — two old-system exports are compared on screen; every difference becomes an exception to decide | `apps/web-erp/src/old-system-session.ts`; `apps/web-erp/web/old-system.js` | `tests/unit/the-old-system-checks-session.test.ts`; `tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` | W3 | Built and tested |
 | MG-11 (W3) — the switch-over window and the night check against the owner's agreed limits are read on screen | `apps/web-erp/src/old-system-session.ts`; `apps/web-erp/web/old-system.js` | `tests/unit/the-old-system-checks-session.test.ts`; `tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` | W3 | Built and tested |
 | MG-12 (W3) — whether the old system may be switched off is checked on screen, every blocker named; the old data is never deleted | `apps/web-erp/src/old-system-session.ts`; `apps/web-erp/web/old-system.js` | `tests/unit/the-old-system-checks-session.test.ts`; `tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` | W3 | Built and tested |
+| QG-02 (W3, OB-675) — a scored check per role (questions and watched tasks), its pass mark set by the owner ("not set" until set), attempts recorded by a trainer (append-only; a retake is a new attempt); the gate register reads QG-02 passed only when ≥90% of each role's trained staff passed (pilot, R0–R2) and ≥95% (after), never with no check, no pass mark or nobody trained; the Training checks page | `packages/workforce/src/role-check.ts`; `services/finance/src/role-checks.ts`; `services/api/src/lp-workforce-adapters.ts`; `services/api/src/gates-adapters.ts`; `apps/web-erp/src/training-checks-session.ts`; `apps/web-erp/web/training-checks.html`; `apps/web-erp/web/training-checks.js` | `tests/unit/w3-the-scored-check-per-role.test.ts`; `tests/unit/w3-training-checks-session.test.ts`; `tests/integration/w3-the-training-gate-reads-a-scored-check-per-role.test.ts`; `tests/e2e/w3-a-cashier-check-is-set-scored-and-read-by-the-training-gate.e2e.ts` | W3 | Built and tested |
+| D13-FR-06 (W3) — each failed office sign-in and each lockout is kept append-only on PostgreSQL (who the refused token claimed, when, the address class with its last part masked, the outcome; never a token, password, PIN or secret); the in-memory lockout is unchanged; the security report counts them through a restart | `services/kernel/src/sign-in-attempts.ts`; `services/kernel/src/pipeline.ts`; `services/api/src/office-sign-in-log.ts`; `services/api/src/report-producers-more.ts`; `services/api/src/main.ts` | `tests/unit/w3-office-sign-in-attempts.test.ts`; `tests/integration/w3-failed-office-sign-ins-and-lockouts-are-kept-through-a-restart.test.ts`; `tests/integration/owner-dashboard-covers-every-domain.test.ts` | W3 | Built and tested |
+| A04 (W3, OB-674) — records: the customer app's search and saved lists are A04's search and list-to-cart legs (the saved list goes back in the basket on the customer's tap); AI guided shopping deferred to R8 | `apps/customer-app/web/app.js`; `services/api/src/ai-shopping.ts`; `docs/completion-status.json` | `tests/e2e/customer-order-delivery.e2e.ts`; `tests/integration/ai-shopping-agent-offers-in-stock-alternatives.test.ts` | W3 | Built and tested |

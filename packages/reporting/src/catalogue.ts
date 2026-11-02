@@ -318,8 +318,9 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   },
   {
     // D13-FR-06 (OB-288 P2): the security report — access given and taken away, emergency access, support sessions and
-    // security incidents, from the identity ledger and the platform's own registers. Failed sign-ins and lockouts are
-    // listed as NOT KNOWN with the reason (head office keeps no record of them yet) — never as nought.
+    // security incidents, from the identity ledger and the platform's own registers. Failed till sign-ins and lockouts come
+    // from the store computers' sign-in logs (NOT KNOWN until the first arrives, never nought); failed OFFICE sign-ins and
+    // lockouts from head office's own kept record of them (W3 · D13-FR-06).
     id: 'security', family: 'operations', name: 'Security',
     answers: 'who was given or lost access, who reached the system for support, and what security incidents were opened',
     needs: ['access_changes_and_incidents_recorded'],

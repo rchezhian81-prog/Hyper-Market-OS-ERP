@@ -205,6 +205,8 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'range-clusters': { en: 'cluster season range assortment festival', ta: 'பருவம் வரிசை' },
   'product-checks': { en: 'hsn gst tax missing allergen ingredient barcode data check', ta: 'விடுபட்ட பார்கோடு ஒவ்வாமை' },
   // Wave 3 (security, people and operations).
+  // Wave 3 (OB-675 · QG-02): the scored check per role.
+  'training-checks': { en: 'training test assessment score pass mark exam check quiz', ta: 'பயிற்சி தேர்வு மதிப்பெண்' },
   'emergency-access': { en: 'temporary access break glass elevated support urgent', ta: 'தற்காலிக அணுகல் அவசரம்' },
   'safety-incidents': { en: 'injury accident near miss fire first aid safety incident', ta: 'காயம் விபத்து தீ பாதுகாப்பு' },
   'ops-alerts': { en: 'alert backup down offline escalation owner acknowledge', ta: 'எச்சரிக்கை காப்புப் பிரதி' },
@@ -659,6 +661,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'help', label: 'Help and procedures', labelTa: 'உதவி மற்றும் நடைமுறைகள்', path: '/help', requires: 'workforce.help.read', group: 'Mine' },
   // QG-09 · M25-FR-01/03 · D11-FR-04 · OB-317 · OB-320: training, competency, curriculum, champions and the adoption gate.
   { id: 'adoption', label: 'Training and adoption', labelTa: 'பயிற்சி மற்றும் ஏற்பு', path: '/adoption', requires: 'workforce.roster.read', group: 'People' },
+  // Wave 3 (OB-675 · QG-02 · §2.3): a scored check per role, the owner's pass mark, attempts, and the training gate by role.
+  { id: 'training-checks', label: 'Training checks', labelTa: 'பயிற்சித் தேர்வுகள்', path: '/training-checks', requires: 'workforce.roster.read', group: 'People' },
   // C17 · OB-323: appointment letters made from the staff record, with the signed copy kept.
   { id: 'appointment-letters', label: 'Appointment letters', labelTa: 'நியமனக் கடிதங்கள்', path: '/appointment-letters', requires: 'hr.appointmentletter.issue', group: 'People' },
   // M15-FR-03 · OB-301: the related-party list, staff buying rules, staff and salary accounts.

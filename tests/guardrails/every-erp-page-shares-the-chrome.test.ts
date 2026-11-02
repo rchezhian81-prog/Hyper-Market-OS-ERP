@@ -326,6 +326,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'ops-alerts.js': 'apps/web-erp/src/ops-alerts-session.ts',
     'document-retention.js': 'apps/web-erp/src/document-retention-session.ts',
     'sales-commission.js': 'apps/web-erp/src/sales-commission-session.ts',
+    // W3 (OB-675 · QG-02): the Training checks page's words are in its tested session model.
+    'training-checks.js': 'apps/web-erp/src/training-checks-session.ts',
     // W3 (money): each new page's words are in its tested session model.
     'settlement.js': 'apps/web-erp/src/settlement-bank-session.ts',
   };

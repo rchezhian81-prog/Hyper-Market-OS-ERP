@@ -125,6 +125,7 @@ import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facili
 import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
 import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
 import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
+import { wireW3TrainingChecks } from './w3-training-checks-browser-wiring'; // Wave 3 · OB-675 Training checks (QG-02)
 import { wireW3Money } from './w3-money-browser-wiring'; // W3 · money: card, UPI and bank; rebate accruals; owed to customers
 import { wireW3Orders } from './w3-orders-browser-wiring'; // W3 · online orders desk and delivery area (M18 · D05-FR-03)
 import { wireW3Migration } from './w3-browser-wiring'; // W3 · the Old system checks page (MG-01/03/07/08/09/11/12)
@@ -7515,6 +7516,7 @@ if (browserWindow !== undefined) {
   wireWave3Catalogue(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · D01-FR-05, D02-FR-04, D06-FR-05, D06-FR-06
   wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
   wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
+  wireW3TrainingChecks(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · OB-675 Training checks (QG-02)
   wireW3Money(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · money
   wireW3Orders(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · M18 · D05-FR-03
   wireW3Migration(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · Old system checks

@@ -45701,6 +45701,397 @@
         }
       }
     },
+    "/v1/hr/workforce/role-checks": {
+      "get": {
+        "operationId": "getHrWorkforceRoleChecks",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetHrWorkforceRoleChecksReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/role-checks/{roleId}": {
+      "post": {
+        "operationId": "postHrWorkforceRoleChecksByRoleId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.training.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.training.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/role-checks/{roleId}/attempts": {
+      "get": {
+        "operationId": "getHrWorkforceRoleChecksByRoleIdAttempts",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetHrWorkforceRoleChecksByRoleIdAttemptsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/role-checks/{roleId}/attempts/{attemptId}": {
+      "post": {
+        "operationId": "postHrWorkforceRoleChecksByRoleIdAttemptsByAttemptId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.training.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdAttemptsByAttemptIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdAttemptsByAttemptIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdAttemptsByAttemptIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.training.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/role-checks/{roleId}/pass-mark": {
+      "post": {
+        "operationId": "postHrWorkforceRoleChecksByRoleIdPassMark",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.curriculum.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdPassMarkRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdPassMarkReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceRoleChecksByRoleIdPassMarkReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.curriculum.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/hr/workforce/roster": {
       "get": {
         "operationId": "getHrWorkforceRoster",
@@ -135119,6 +135510,226 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/workforce-enablement.ts"
       },
+      "GetHrWorkforceRoleChecksByRoleIdAttemptsReply": {
+        "type": "object",
+        "required": [
+          "roleId",
+          "attempts",
+          "count"
+        ],
+        "properties": {
+          "roleId": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckAttempt"
+            }
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "GetHrWorkforceRoleChecksReply": {
+        "type": "object",
+        "required": [
+          "roles",
+          "levels",
+          "rule",
+          "asAt"
+        ],
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "items",
+                "roleId",
+                "check",
+                "passMarkPercent",
+                "trained",
+                "passedCount",
+                "passedPercent",
+                "pilot",
+                "final",
+                "why"
+              ],
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleCheckItem"
+                  }
+                },
+                "roleId": {
+                  "type": "string"
+                },
+                "check": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "version",
+                        "items"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "number"
+                        },
+                        "items": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                "passMarkPercent": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "trained": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "employeeId",
+                      "name",
+                      "latest"
+                    ],
+                    "properties": {
+                      "employeeId": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "latest": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "scorePercent",
+                              "passed",
+                              "recordedAt"
+                            ],
+                            "properties": {
+                              "scorePercent": {
+                                "type": "number"
+                              },
+                              "passed": {
+                                "type": "boolean"
+                              },
+                              "recordedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": true
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "passedCount": {
+                  "type": "number"
+                },
+                "passedPercent": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "pilot": {
+                  "type": "string",
+                  "enum": [
+                    "not_passed",
+                    "passed"
+                  ]
+                },
+                "final": {
+                  "type": "string",
+                  "enum": [
+                    "not_passed",
+                    "passed"
+                  ]
+                },
+                "why": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "levels": {
+            "type": "object",
+            "required": [
+              "pilotPercent",
+              "finalPercent",
+              "pilotReleases",
+              "finalReleases"
+            ],
+            "properties": {
+              "pilotPercent": {
+                "type": "number",
+                "const": 90
+              },
+              "finalPercent": {
+                "type": "number",
+                "const": 95
+              },
+              "pilotReleases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finalReleases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "rule": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
       "GetHrWorkforceRosterGapsReply": {
         "type": "object",
         "required": [
@@ -194398,6 +195009,196 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/schedule-store.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdAttemptsByAttemptIdReply200": {
+        "type": "object",
+        "required": [
+          "attempt",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/CheckAttempt"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdAttemptsByAttemptIdReply201": {
+        "type": "object",
+        "required": [
+          "attempt"
+        ],
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/CheckAttempt"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdAttemptsByAttemptIdRequest": {
+        "type": "object",
+        "required": [
+          "employeeId"
+        ],
+        "properties": {
+          "employeeId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdPassMarkReply200": {
+        "type": "object",
+        "required": [
+          "passMark",
+          "alreadySet"
+        ],
+        "properties": {
+          "passMark": {
+            "$ref": "#/components/schemas/RolePassMark"
+          },
+          "alreadySet": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdPassMarkReply201": {
+        "type": "object",
+        "required": [
+          "passMark"
+        ],
+        "properties": {
+          "passMark": {
+            "$ref": "#/components/schemas/RolePassMark"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdPassMarkRequest": {
+        "type": "object",
+        "required": [
+          "passMarkPercent"
+        ],
+        "properties": {
+          "passMarkPercent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdReply200": {
+        "type": "object",
+        "required": [
+          "check",
+          "alreadySet"
+        ],
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/RoleCheck"
+          },
+          "alreadySet": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdReply201": {
+        "type": "object",
+        "required": [
+          "check"
+        ],
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/RoleCheck"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
+      },
+      "PostHrWorkforceRoleChecksByRoleIdRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "itemId",
+                "kind",
+                "text"
+              ],
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "question",
+                    "task"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "textTa": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/role-checks.ts"
       },
       "PostHrWorkforceRosterGapsReply": {
         "type": "object",
@@ -262675,6 +263476,73 @@
         },
         "additionalProperties": true
       },
+      "CheckAttempt": {
+        "type": "object",
+        "required": [
+          "attemptId",
+          "roleId",
+          "employeeId",
+          "checkVersion",
+          "results",
+          "scorePercent",
+          "passMarkPercent",
+          "passed",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "attemptId": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "employeeId": {
+            "type": "string"
+          },
+          "checkVersion": {
+            "type": "number"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "itemId",
+                "passed"
+              ],
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "scorePercent": {
+            "type": "number"
+          },
+          "passMarkPercent": {
+            "type": "number"
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "CheckedLine": {
         "type": "object",
         "required": [
@@ -299742,6 +300610,88 @@
             "items": {
               "type": "string"
             }
+          }
+        },
+        "additionalProperties": true
+      },
+      "RoleCheck": {
+        "type": "object",
+        "required": [
+          "roleId",
+          "version",
+          "items",
+          "definedBy",
+          "definedAt"
+        ],
+        "properties": {
+          "roleId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleCheckItem"
+            }
+          },
+          "definedBy": {
+            "type": "string"
+          },
+          "definedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RoleCheckItem": {
+        "type": "object",
+        "required": [
+          "itemId",
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "question",
+              "task"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "textTa": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RolePassMark": {
+        "type": "object",
+        "required": [
+          "roleId",
+          "passMarkPercent",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "roleId": {
+            "type": "string"
+          },
+          "passMarkPercent": {
+            "type": "number"
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true

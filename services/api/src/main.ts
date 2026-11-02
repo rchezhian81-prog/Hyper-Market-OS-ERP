@@ -388,6 +388,7 @@ import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 —
 import { r16aSaleBranches } from './r16a-check-gaps-adapters'; // R16-A · OB-612: the bill findings narrow to the caller's branches
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
+import { officeSignInLogAdapter } from './office-sign-in-log'; // W3 · D13-FR-06: failed office sign-ins and lockouts kept
 import { gatesRoutes, gateBlockersBeyondRisks, twoSignatureAdapter } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
 import { qg10EvidenceRoutes } from './qg10-evidence-adapters'; // OB-423 — the release script's QG-10 evidence on the gate register
 
@@ -2678,6 +2679,9 @@ export async function startApi(
     // per-tenant traffic; the auth lockout is deliberately strict.
     rateLimit: new TokenBucketRateLimiter({ capacity: 240, refillPerSecond: 20 }),
     authThrottle: new BackoffAuthThrottle({ threshold: 5, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
+    // W3 · D13-FR-06: each failed office sign-in and each lockout it trips is KEPT, append-only on PostgreSQL on the shop's
+    // own record (the lockout above stays in memory, for speed) — the security report counts them through a restart.
+    signInLog: officeSignInLogAdapter({ store, log: err }),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,
