@@ -114,7 +114,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Old sy
       await s.page.locator('#disc-result li[data-complete]').waitFor({ timeout: 15_000 });
       expect(await s.page.locator('#disc-result li[data-complete]').getAttribute('data-complete')).toBe('false');
       expect(await s.page.locator('#disc-result li[data-complete]').innerText()).toMatch(/⚠ 4 gap\(s\) — the list is not complete[\s\S]*15000 rows counted/);
-      const gaps = await s.page.locator('#disc-result li[data-gap]').evaluateAll((els) => els.map((e) => `${(e as HTMLElement).dataset['source']} ${(e as HTMLElement).dataset['gap']}`));
+      const gaps = await s.page.locator('#disc-result li[data-gap]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-source')} ${e.getAttribute('data-gap')}`));
       expect(gaps).toEqual(['paper-ledgers no_named_owner', 'paper-ledgers volume_unknown', 'paper-ledgers no_retention_period', 'paper-ledgers not_extractable']);
 
       // ── MG-03: approve a tax-code mapping in the owner's name; then measure it against the old data.
@@ -157,7 +157,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Old sy
       await s.page.locator('#retire-result li[data-may-retire]').waitFor({ timeout: 15_000 });
       expect(await s.page.locator('#retire-result li[data-may-retire]').getAttribute('data-may-retire')).toBe('false');
       expect(await s.page.locator('#retire-result li[data-may-retire]').innerText()).toMatch(/⚠ Not yet[\s\S]*keep the records until 2034-10-31/);
-      expect(await s.page.locator('#retire-result li[data-blocker]').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset['blocker']))).toEqual(['retention_not_elapsed', 'restore_never_verified', 'cutover_not_accepted']);
+      expect(await s.page.locator('#retire-result li[data-blocker]').evaluateAll((els) => els.map((e) => e.getAttribute('data-blocker')))).toEqual(['retention_not_elapsed', 'restore_never_verified', 'cutover_not_accepted']);
       expect(await s.page.locator('#retire-result').innerText()).toMatch(/The old data is never deleted, whatever else happens\./);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }

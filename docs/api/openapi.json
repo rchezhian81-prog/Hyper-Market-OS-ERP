@@ -13918,6 +13918,144 @@
         }
       }
     },
+    "/v1/compliance/gate-evidence": {
+      "get": {
+        "operationId": "getComplianceGateEvidence",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.gate.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetComplianceGateEvidenceReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.gate.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/compliance/gate-evidence/{evidenceId}": {
+      "post": {
+        "operationId": "postComplianceGateEvidenceByEvidenceId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.gate.decide",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "evidenceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostComplianceGateEvidenceByEvidenceIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostComplianceGateEvidenceByEvidenceIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostComplianceGateEvidenceByEvidenceIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.gate.decide\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/compliance/gate-register": {
       "get": {
         "operationId": "getComplianceGateRegister",
@@ -121677,6 +121815,91 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/gate-decisions.ts"
       },
+      "GetComplianceGateEvidenceReply": {
+        "type": "object",
+        "required": [
+          "records",
+          "kinds",
+          "asAt"
+        ],
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GateEvidenceRecord"
+            }
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "standing",
+                "latest",
+                "kind",
+                "gate",
+                "words",
+                "roadmap"
+              ],
+              "properties": {
+                "standing": {
+                  "type": "string"
+                },
+                "latest": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GateEvidenceRecord"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "independent_pentest",
+                    "offline_72h_simulation",
+                    "power_process_chaos",
+                    "scan_to_line_p95",
+                    "total_tender_p95"
+                  ]
+                },
+                "gate": {
+                  "type": "string",
+                  "enum": [
+                    "QG-04",
+                    "QG-05",
+                    "QG-06"
+                  ]
+                },
+                "words": {
+                  "type": "string"
+                },
+                "roadmap": {
+                  "type": "string"
+                },
+                "maxMs": {
+                  "type": "number"
+                },
+                "releases": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
       "GetComplianceGateRegisterQg10EvidenceReply": {
         "type": "object",
         "required": [
@@ -171727,6 +171950,82 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/gate-decisions.ts"
+      },
+      "PostComplianceGateEvidenceByEvidenceIdReply200": {
+        "type": "object",
+        "required": [
+          "evidence",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/GateEvidenceRecord"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
+      "PostComplianceGateEvidenceByEvidenceIdReply201": {
+        "type": "object",
+        "required": [
+          "evidence",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/GateEvidenceRecord"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
+      "PostComplianceGateEvidenceByEvidenceIdRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "independent_pentest",
+              "offline_72h_simulation",
+              "power_process_chaos",
+              "scan_to_line_p95",
+              "total_tender_p95"
+            ]
+          },
+          "measuredMs": {
+            "type": "integer"
+          },
+          "reportRef": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "passed"
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "testedOn": {
+            "type": "string"
+          },
+          "where": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
       },
       "PostComplianceGateRegisterQg10EvidenceReply200": {
         "type": "object",
@@ -276081,6 +276380,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true
@@ -276136,6 +276441,68 @@
             "items": {
               "$ref": "#/components/schemas/GateBlocker"
             }
+          }
+        },
+        "additionalProperties": true
+      },
+      "GateEvidenceRecord": {
+        "type": "object",
+        "required": [
+          "evidenceId",
+          "kind",
+          "gate",
+          "result",
+          "where",
+          "reportRef",
+          "testedOn",
+          "statement",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "evidenceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "independent_pentest",
+              "offline_72h_simulation",
+              "power_process_chaos",
+              "scan_to_line_p95",
+              "total_tender_p95"
+            ]
+          },
+          "gate": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "passed"
+            ]
+          },
+          "measuredMs": {
+            "type": "number"
+          },
+          "where": {
+            "type": "string"
+          },
+          "reportRef": {
+            "type": "string"
+          },
+          "testedOn": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -287345,6 +287712,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1654 | 956 | 956 | 183 | 436 |
+| 13 | 1656 | 957 | 957 | 183 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1301,6 +1301,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/fssai-licence` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.decide` | core | yes |
+| GET | `/v1/compliance/gate-evidence` | `compliance.gate.read` | core | — |
+| POST | `/v1/compliance/gate-evidence/:evidenceId` | `compliance.gate.decide` | core | yes |
 | GET | `/v1/compliance/gate-register` | `compliance.gate.read` | core | — |
 | GET | `/v1/compliance/gate-register/qg10-evidence` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-register/qg10-evidence` | `compliance.qg10.evidence.push` | core | yes |
