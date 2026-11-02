@@ -147,7 +147,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     // ── Two bills on the till through the box: rice + 1.2 kg tomato (costed); a salt (no cost).
     const html = await (await fetch(`http://127.0.0.1:${edge.screens!.port}/pos/`)).text();
     const catalogue = JSON.parse(/<script>window\.posCatalogue = ([\s\S]*?);<\/script>/.exec(html)![1]!) as CatalogueSnapshot;
-    const till = bootPos({ laneId: LANE, catalogue, lanePort: edge.lane!.port, tradingDayCutoff: '00:00', laneScales: { known: true, scales: [{ assetId: 'SCALE-1', reverificationDueOn: '2099-12-31' }] } });
+    const till = bootPos({ laneId: LANE, timeZone: 'UTC', catalogue, lanePort: edge.lane!.port, tradingDayCutoff: '00:00', laneScales: { known: true, scales: [{ assetId: 'SCALE-1', reverificationDueOn: '2099-12-31' }] } });
     await signInTill(till, CASHIER);
     const T0 = Date.now();
     const tradingDay = tradingDateOf(new Date(T0).toISOString(), makeTradingDayRule('00:00'));

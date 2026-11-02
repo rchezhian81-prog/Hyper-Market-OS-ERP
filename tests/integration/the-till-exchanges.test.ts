@@ -139,7 +139,7 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
     expect(catalogue.products.map((p) => p.productId).sort()).toEqual([GHEE.productId, PREMIUM.productId, SMALL.productId].sort());
     const policy = (await servedGlobal<{ approvalThresholdMinor: number; noReceiptCapMinor: number }>(edge, 'posRefundPolicy'))!;
     expect(policy.approvalThresholdMinor).toBe(0);
-    const till = bootPos({ laneId: LANE, catalogue, lanePort: edge.lane!.port, refundPolicy: policy });
+    const till = bootPos({ laneId: LANE, timeZone: 'UTC', catalogue, lanePort: edge.lane!.port, refundPolicy: policy });
     await signInTill(till, CASHIER);
 
     // ── 2. Two customers buy a tin of ghee each, by barcode, in cash. Banked at head office.
