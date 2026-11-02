@@ -122,6 +122,7 @@ import { wireFindings } from './findings-browser-wiring'; // OB-609
 import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
 import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
 import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
+import { wireW3Migration } from './w3-browser-wiring'; // W3 · the Old system checks page (MG-01/03/07/08/09/11/12)
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7506,4 +7507,5 @@ if (browserWindow !== undefined) {
   wireUsers(browserWindow as unknown as Record<string, unknown>, viewerIdentity, HEAD_OFFICE_PEOPLE); // Round 4c
   wireRound4c(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4c
   wireRound4d(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4d
+  wireW3Migration(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · Old system checks
 }

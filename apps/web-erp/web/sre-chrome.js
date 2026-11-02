@@ -654,6 +654,7 @@
     'posting-map': 'book-open', // Round 4d — an icon already in the set
     'facilities-setup': 'wrench', // Round 4d — an icon already in the set
     'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
+    'old-system': 'history', // W3 — an icon already in the set
     'cert-in': 'shield-check', // Round 4c — an icon already in the set
     'space-setup': 'boxes', // Wave 2 — an icon already in the set
     'display-contracts': 'banknote', // Wave 2 — an icon already in the set

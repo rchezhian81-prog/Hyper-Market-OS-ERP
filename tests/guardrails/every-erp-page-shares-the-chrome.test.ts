@@ -296,6 +296,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'posting-map.js': 'apps/web-erp/src/posting-map-session.ts',
     'facilities-setup.js': 'apps/web-erp/src/facilities-setup-session.ts',
     'production-recipes.js': 'apps/web-erp/src/production-recipes-session.ts',
+    // W3 (migration controls): the Old system checks page's words are in its tested session model.
+    'old-system.js': 'apps/web-erp/src/old-system-session.ts',
     'production-repack.js': 'apps/web-erp/src/production-repack-session.ts',
     'concession-invoices.js': 'apps/web-erp/src/concession-invoices-session.ts',
   };
