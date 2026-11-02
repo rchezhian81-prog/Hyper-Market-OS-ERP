@@ -126,6 +126,7 @@ import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · cat
 import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
 import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
 import { wireW3Money } from './w3-money-browser-wiring'; // W3 · money: card, UPI and bank; rebate accruals; owed to customers
+import { wireW3Orders } from './w3-orders-browser-wiring'; // W3 · online orders desk and delivery area (M18 · D05-FR-03)
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7514,4 +7515,5 @@ if (browserWindow !== undefined) {
   wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
   wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
   wireW3Money(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · money
+  wireW3Orders(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · M18 · D05-FR-03
 }

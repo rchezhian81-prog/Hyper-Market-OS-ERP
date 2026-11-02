@@ -182,6 +182,8 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'message-queue': { en: 'message queue sms whatsapp email notification budget dead letter withheld stuck', ta: 'செய்தி வரிசை அறிவிப்பு செலவு வரம்பு' },
   'compensation-limits': { en: 'compensation goodwill limit authority ceiling service desk refund credit', ta: 'இழப்பீடு வரம்பு சேவை மேசை' },
   'gift-cards': { en: 'gift card voucher balance issue redeem stored value', ta: 'பரிசு அட்டை இருப்பு வழங்கு' },
+  'online-orders': { en: 'order cancel backorder payment pending bank reconcile channel reservation buffer online stock app', ta: 'ஆர்டர் ரத்து கட்டணம் வங்கி ஒப்பிடு ஒதுக்கீடு ஆன்லைன் சரக்கு' },
+  'delivery-area': { en: 'delivery radius km slots capacity fee minimum order serviceability area', ta: 'டெலிவரி தூரம் நேரம் கட்டணம் குறைந்தபட்ச ஆர்டர் பகுதி' },
   'facilities-setup': { en: 'asset spare parts amc chiller freezer cold room range schedule pest fire food safety check setup', ta: 'சொத்து உதிரி பாகம் குளிர் அறை அட்டவணை சோதனை அமைப்பு' },
   'loss-prevention': { en: 'theft fraud investigation case', ta: 'திருட்டு மோசடி' },
   'dispatch': { en: 'delivery driver van route', ta: 'டெலிவரி' },
@@ -585,6 +587,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // OB-288 wave 3 (M18-FR-04): refund an online order to its own payment token after a second person approves, and the
   // worklist of payments and refunds still waiting on the bank — a head-office page (served by the store computer since OB-380).
   // Gated on the read the worklist checks (`order.read`); issuing checks `order.refund.issue` on the server.
+  // W3 (M18-FR-01/02/04 · D05-FR-03): the online-orders desk — an order's lifecycle step by step, a cancel that gives its stock
+  // back, a backorder, a payment the bank has not answered settled from the statement, the stock held for orders, a channel's
+  // list compared with ours, and the stock the app keeps back for the store. Gated on the order read its first route checks
+  // (`order.read`); every act is re-checked by head office on its own permission. Head office's page, served by the store computer.
+  { id: 'online-orders', label: 'Online orders', labelTa: 'ஆன்லைன் ஆர்டர்கள்', path: '/online-orders', requires: 'order.read', group: 'Orders' },
+  // W3 (M18-FR-01/03 · D08 · AVR-13): how far the shop delivers, its fee and minimum, and its delivery slots — "not set" until the
+  // owner types his figures. Gated on the read its routes check (`delivery.serviceability.read`); a change needs `…manage`.
+  { id: 'delivery-area', label: 'Delivery area and slots', labelTa: 'டெலிவரி பகுதி மற்றும் நேரங்கள்', path: '/delivery-area', requires: 'delivery.serviceability.read', group: 'Orders' },
   { id: 'order-refunds', label: 'Order refunds', labelTa: 'ஆர்டர் பணத் திருப்பம்', path: '/order-refunds', requires: 'order.read', group: 'Orders' },
   // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or

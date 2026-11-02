@@ -66,6 +66,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'emergency-access', 'safety-incidents', 'ops-alerts', 'document-retention', 'sales-commission',
   // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
   'settlement',
+  // W3 (M18 · D05-FR-03): the online-orders desk and the delivery area and slots.
+  'online-orders', 'delivery-area',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -169,6 +171,8 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'ops-alerts': 'opsAlertsData',
   'document-retention': 'documentRetentionData',
   'sales-commission': 'salesCommissionData',
+  'online-orders': 'onlineOrdersData',
+  'delivery-area': 'deliveryAreaData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
@@ -224,6 +228,8 @@ export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
   'facilities-setup': findingsPagePayload,
   // Wave 3: the safety incidents page starts on the box's own store (head office keeps each to the stores the person holds).
   'safety-incidents': findingsPagePayload,
+  // W3: the online-orders desk starts its store boxes (stock held, the app's buffer) on the box's own store.
+  'online-orders': findingsPagePayload,
 }) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */
