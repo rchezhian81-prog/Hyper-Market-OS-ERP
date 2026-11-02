@@ -17,6 +17,8 @@ const storesWords = (scope) => (scope === 'all' ? 'all' : scope.join(', '));
 let asks = null;
 let grants = null;
 
+// What "Give it" said for each grant, kept across the list's refresh so the answer is never wiped as the list repaints.
+const givenWords = new Map();
 function paintAsks() {
   $('asks').replaceChildren();
   if (asks === null) return;
@@ -32,9 +34,12 @@ function paintAsks() {
         status.textContent = t('reading');
         const out = await session.give(a);
         status.textContent = out.result === 'ok' ? `${t('given')} ${when(out.value.expiresAt)}.` : api.outcomeWords(lang, out);
-        if (out.result === 'ok') void load();
+        if (out.result === 'ok') { givenWords.set(a.grantId, status.textContent); void load(); }
       });
       li.append(b, status);
+    } else if (givenWords.has(a.grantId)) {
+      const status = text('p', givenWords.get(a.grantId), 'status'); status.setAttribute('role', 'status');
+      li.append(status);
     }
     $('asks').append(li);
   }

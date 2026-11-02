@@ -94,6 +94,7 @@ const PRODUCT_COUNT = numberRule({ min: 1, max: 1_000_000, whole: true }, 'Give 
 const LOYALTY_RATE = numberRule({ min: 0, max: 100, whole: true }, 'Give a whole number of points per ₹100, from 0 (loyalty off) to 100.');
 const POINT_VALUE = numberRule({ min: 0, max: 10_000, whole: true }, 'Give the value of one point in paise, from 0 to 10000 (₹100).');
 const TILL_SPEND_CAP = numberRule({ min: 0, max: 10_000_000, whole: true }, 'Give the most one member may spend at the till in a day, in paise, from 0 (off) to 10000000 (₹1,00,000).');
+const GIFT_CARD_OFFLINE_CAP = numberRule({ min: 0, max: 10_000_000, whole: true }, 'Give the most one till may take from one gift card with head office out of reach, in paise, from 0 (none offline) to 10000000 (₹1,00,000).');
 const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
 const WARN_HOURS = numberRule({ min: 1, max: 720, whole: true }, 'Give a whole number of trading hours, from 1 to 720.');
@@ -246,7 +247,7 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     group: 'check_default',
     required: false,
     question: 'At most how much may one till take from one gift card while the store computer cannot reach head office, in paise? (0 takes no gift card offline.)',
-    ...TILL_SPEND_CAP,
+    ...GIFT_CARD_OFFLINE_CAP,
   },
   {
     // OB-78 "A" (owner, 12 Oct 2026): the early disk warning for each store computer, in hours of trading left.
