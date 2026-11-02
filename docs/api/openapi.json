@@ -181476,76 +181476,52 @@
         "x-derived-from": "services/finance/src/cash-deposits.ts"
       },
       "PostFinanceCreditNotesPreviewReply": {
-        "anyOf": [
-          {
-            "type": "object",
-            "required": [
-              "approval",
-              "note",
-              "needsApproval"
-            ],
-            "properties": {
-              "approval": {
-                "type": "object",
-                "required": [
-                  "kind",
-                  "subjectRef",
-                  "valueMinor",
-                  "details",
-                  "summary"
-                ],
-                "properties": {
-                  "kind": {
-                    "type": "string"
-                  },
-                  "subjectRef": {
-                    "type": "string"
-                  },
-                  "valueMinor": {
-                    "type": "number"
-                  },
-                  "details": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "x-untyped": "unknown"
-                    }
-                  },
-                  "summary": {
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": true
-              },
-              "note": {
-                "$ref": "#/components/schemas/CustomerNote"
-              },
-              "needsApproval": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": true
+        "type": "object",
+        "required": [
+          "note",
+          "needsApproval",
+          "approval"
+        ],
+        "properties": {
+          "note": {
+            "$ref": "#/components/schemas/CustomerNote"
           },
-          {
+          "needsApproval": {
+            "type": "boolean"
+          },
+          "approval": {
             "type": "object",
             "required": [
-              "noApprovalWhy",
-              "note",
-              "needsApproval"
+              "kind",
+              "subjectRef",
+              "valueMinor",
+              "details",
+              "summary"
             ],
             "properties": {
-              "noApprovalWhy": {
+              "kind": {
                 "type": "string"
               },
-              "note": {
-                "$ref": "#/components/schemas/CustomerNote"
+              "subjectRef": {
+                "type": "string"
               },
-              "needsApproval": {
-                "type": "boolean"
+              "valueMinor": {
+                "type": "number"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              },
+              "summary": {
+                "type": "string"
               }
             },
             "additionalProperties": true
           }
-        ],
+        },
+        "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/credit-notes.ts"
       },
@@ -181626,80 +181602,40 @@
         "x-derived-from": "services/finance/src/credit-notes.ts"
       },
       "PostFinanceCreditNotesReply201": {
-        "anyOf": [
-          {
-            "type": "object",
-            "required": [
-              "invoiceUnchanged",
-              "approvedBy",
-              "note",
-              "number",
-              "taxAdjustable",
-              "declareInPeriod",
-              "posting"
-            ],
-            "properties": {
-              "invoiceUnchanged": {
-                "type": "boolean"
-              },
-              "approvedBy": {
-                "type": "string"
-              },
-              "note": {
-                "$ref": "#/components/schemas/CustomerNote"
-              },
-              "number": {
-                "type": "string"
-              },
-              "taxAdjustable": {
-                "type": "boolean"
-              },
-              "declareInPeriod": {
-                "type": "string"
-              },
-              "posting": {
-                "$ref": "#/components/schemas/NotePosting"
-              }
-            },
-            "additionalProperties": true
-          },
-          {
-            "type": "object",
-            "required": [
-              "invoiceUnchanged",
-              "noApprovalWhy",
-              "note",
-              "number",
-              "taxAdjustable",
-              "declareInPeriod",
-              "posting"
-            ],
-            "properties": {
-              "invoiceUnchanged": {
-                "type": "boolean"
-              },
-              "noApprovalWhy": {
-                "type": "string"
-              },
-              "note": {
-                "$ref": "#/components/schemas/CustomerNote"
-              },
-              "number": {
-                "type": "string"
-              },
-              "taxAdjustable": {
-                "type": "boolean"
-              },
-              "declareInPeriod": {
-                "type": "string"
-              },
-              "posting": {
-                "$ref": "#/components/schemas/NotePosting"
-              }
-            },
-            "additionalProperties": true
-          }
+        "type": "object",
+        "required": [
+          "note",
+          "number",
+          "taxAdjustable",
+          "declareInPeriod",
+          "posting",
+          "approvedBy",
+          "invoiceUnchanged"
         ],
+        "properties": {
+          "note": {
+            "$ref": "#/components/schemas/CustomerNote"
+          },
+          "number": {
+            "type": "string"
+          },
+          "taxAdjustable": {
+            "type": "boolean"
+          },
+          "declareInPeriod": {
+            "type": "string"
+          },
+          "posting": {
+            "$ref": "#/components/schemas/NotePosting"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "invoiceUnchanged": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/credit-notes.ts"
       },
