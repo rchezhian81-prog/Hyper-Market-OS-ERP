@@ -11,6 +11,9 @@ import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
  * PostgreSQL: "The morning brief is still prepared every day, but its sending is a switched-off link with a test
  * stand-in. Nothing is sent while switched off, and the brief's screen says it was not sent."
  *
+ * A01 (Owner Intelligence, roadmap §7 "daily brief"): this is A01's daily-brief leg end to end — the brief is prepared from the
+ * day's own sales on head office's schedule, shown to the owner on the page, kept from a manager, and not marked sent.
+ *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
