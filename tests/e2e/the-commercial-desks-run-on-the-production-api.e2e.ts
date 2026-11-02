@@ -10,7 +10,7 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 /**
  * OB-288 commercial desks — the three office screens in a real browser, on the PRODUCTION API over real PostgreSQL:
- *   • Business customers (M22-FR-01/02): the accountant proposes a contract and asks; the OWNER approves; the accountant
+ *   • Business customers (M22-FR-01 · M22-FR-02 the quote → sales order → challan → tax invoice chain): the accountant proposes a contract and asks; the OWNER approves; the accountant
  *     puts it in force; the store manager quotes WITHOUT typing a price (the contract prices it), makes the order, sends the
  *     challan and the tax invoice — and a cashier opens nothing; (OB-416) the accountant records the customer's GSTIN, a
  *     mistyped one refused by name, and the tax invoice is made out to it; (OB-426) its delivery State starts as the
@@ -88,7 +88,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     await ok(shop.cloud().request({ method: 'POST', path: `/v1/approvals/requests/${r!.requestId}/decide`, userId: OWNER, idempotencyKey: `decide-${r!.requestId}`, body: { decision: 'approved', reason: 'terms checked (synthetic)' } }), 'owner approves');
   };
 
-  it('business customers: contract proposed → owner approves → in force; the manager quotes without a price and runs the chain', async () => {
+  it('business customers (M22-FR-01 · M22-FR-02): contract proposed → owner approves → in force; the manager quotes without a price and runs the chain quote → order → challan → tax invoice', async () => {
     // ── The accountant proposes and asks.
     const acct = await open('u-acct', '/b2b');
     await acct.page.waitForSelector('#customers:not([hidden])');
