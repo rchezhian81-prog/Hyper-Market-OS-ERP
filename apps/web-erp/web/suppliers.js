@@ -445,7 +445,7 @@ function recordsFn() {
   }
   return paintRecords;
 }
-// eslint-disable-next-line no-var -- read by paint() above, which may run before this line (it then skips the section).
+// A `var`: read by paint() above, which may run before this line (it then skips the section).
 var paintRecords = recordsFn();
 paint();
 
