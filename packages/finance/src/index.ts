@@ -17,6 +17,7 @@ export * from './posting';
 export * from './day-book';
 export * from './payables';
 export * from './credit-notes';
+export * from './customer-notes'; // M23-FR-02 · OB-678: notes against a business tax invoice head office holds
 export * from './inclusive-tax';
 export * from './discount';
 export * from './promo-tax';
