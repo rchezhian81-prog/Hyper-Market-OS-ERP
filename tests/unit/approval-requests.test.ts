@@ -248,6 +248,6 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(51); // Round 4d: concession_invoice · Round 4a: cess_rate_change · R11-A OB-602: quotation_below_floor_owner_quoted · R10-A OB-542: quotation_floor_not_known_owner_quoted · OB-503: regulated_product_publish · R9-A OB-532: quotation_floor_not_known · R7 OB-512: mrp_replacement · and the earlier kinds listed in the history of this line
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(52); // W3 OB-678: customer_credit_note · Round 4d: concession_invoice · Round 4a: cess_rate_change · R11-A OB-602: quotation_below_floor_owner_quoted · R10-A OB-542: quotation_floor_not_known_owner_quoted · OB-503: regulated_product_publish · R9-A OB-532: quotation_floor_not_known · R7 OB-512: mrp_replacement · and the earlier kinds listed in the history of this line
   });
 });

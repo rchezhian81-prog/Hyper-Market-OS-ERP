@@ -26568,7 +26568,7 @@
           }
         ],
         "x-permission": "finance.creditnote.issue",
-        "x-entitlement": null,
+        "x-entitlement": "b2b",
         "x-idempotent": true,
         "parameters": [
           {
@@ -26583,7 +26583,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -26594,12 +26594,22 @@
         },
         "x-body-schema": "derived",
         "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCreditNotesReply200"
+                }
+              }
+            }
+          },
           "201": {
             "description": "The reply, as the handler builds it.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PostFinanceCreditNotesReply"
+                  "$ref": "#/components/schemas/PostFinanceCreditNotesReply201"
                 }
               }
             }
@@ -26611,7 +26621,137 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"finance.creditnote.issue\".",
+            "description": "Not \"finance.creditnote.issue\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/finance/credit-notes/customers/{customerId}": {
+      "get": {
+        "operationId": "getFinanceCreditNotesCustomersByCustomerId",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "finance.creditnote.issue",
+        "x-entitlement": "b2b",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFinanceCreditNotesCustomersByCustomerIdReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"finance.creditnote.issue\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/finance/credit-notes/preview": {
+      "post": {
+        "operationId": "postFinanceCreditNotesPreview",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "finance.creditnote.issue",
+        "x-entitlement": "b2b",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFinanceCreditNotesPreviewRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCreditNotesPreviewReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"finance.creditnote.issue\", or the plan lacks \"b2b\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -126304,6 +126444,234 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/cash-deposits.ts"
       },
+      "GetFinanceCreditNotesCustomersByCustomerIdReply": {
+        "type": "object",
+        "required": [
+          "customerId",
+          "invoices",
+          "notes",
+          "asAt"
+        ],
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "invoices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "hasGstSplit",
+                "lines",
+                "documentId",
+                "number",
+                "issuedOn",
+                "grossMinor"
+              ],
+              "properties": {
+                "hasGstSplit": {
+                  "type": "boolean"
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "lineId",
+                      "description",
+                      "qty",
+                      "rateBps",
+                      "chargedMinor",
+                      "creditedMinor",
+                      "leftMinor"
+                    ],
+                    "properties": {
+                      "lineId": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "qty": {
+                        "type": "number"
+                      },
+                      "rateBps": {
+                        "type": "number"
+                      },
+                      "chargedMinor": {
+                        "type": "number"
+                      },
+                      "creditedMinor": {
+                        "type": "number"
+                      },
+                      "leftMinor": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "recipientGstin": {
+                  "type": "string"
+                },
+                "documentId": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string"
+                },
+                "issuedOn": {
+                  "type": "string"
+                },
+                "grossMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "posting",
+                "invoiceDocumentId",
+                "invoiceIssuedOn",
+                "lines",
+                "cgstMinor",
+                "sgstMinor",
+                "igstMinor",
+                "taxMinor",
+                "placeOfSupplyStateCode",
+                "financialYear",
+                "noteId",
+                "number",
+                "kind",
+                "againstInvoiceId",
+                "againstInvoiceNumber",
+                "customerId",
+                "issuedOn",
+                "reason",
+                "taxableMinor",
+                "taxes",
+                "grossMinor",
+                "taxAdjustable",
+                "declareInPeriod",
+                "detail"
+              ],
+              "properties": {
+                "posting": {
+                  "$ref": "#/components/schemas/NotePosting"
+                },
+                "invoiceDocumentId": {
+                  "type": "string"
+                },
+                "invoiceIssuedOn": {
+                  "type": "string"
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerNoteLine"
+                  }
+                },
+                "cgstMinor": {
+                  "type": "number"
+                },
+                "sgstMinor": {
+                  "type": "number"
+                },
+                "igstMinor": {
+                  "type": "number"
+                },
+                "taxMinor": {
+                  "type": "number"
+                },
+                "placeOfSupplyStateCode": {
+                  "type": "string"
+                },
+                "recipientGstin": {
+                  "type": "string"
+                },
+                "financialYear": {
+                  "type": "string"
+                },
+                "issuedBy": {
+                  "type": "string"
+                },
+                "approvedBy": {
+                  "type": "string"
+                },
+                "noteId": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "credit_note",
+                    "debit_note"
+                  ]
+                },
+                "againstInvoiceId": {
+                  "type": "string"
+                },
+                "againstInvoiceNumber": {
+                  "type": "string"
+                },
+                "customerId": {
+                  "type": "string"
+                },
+                "issuedOn": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "deficiency_in_service",
+                    "goods_returned",
+                    "order_cancelled",
+                    "post_supply_discount",
+                    "price_correction",
+                    "tax_rate_correction"
+                  ]
+                },
+                "taxableMinor": {
+                  "type": "number"
+                },
+                "taxes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxComponent"
+                  }
+                },
+                "grossMinor": {
+                  "type": "number"
+                },
+                "taxAdjustable": {
+                  "type": "boolean"
+                },
+                "declareInPeriod": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/credit-notes.ts"
+      },
       "GetFinanceCreditNotesReconciliationReply": {
         "type": "object",
         "required": [
@@ -127407,6 +127775,7 @@
           "hsn",
           "totalTaxableMinor",
           "totalTaxMinor",
+          "creditDebitNotes",
           "from",
           "to",
           "documentCount"
@@ -127438,6 +127807,9 @@
           },
           "totalTaxMinor": {
             "type": "number"
+          },
+          "creditDebitNotes": {
+            "$ref": "#/components/schemas/Gstr1NotesSection"
           },
           "from": {
             "type": "string"
@@ -181103,84 +181475,91 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/cash-deposits.ts"
       },
-      "PostFinanceCreditNotesReply": {
-        "type": "object",
-        "required": [
-          "taxAdjustable",
-          "declareInPeriod"
-        ],
-        "properties": {
-          "note": {
-            "$ref": "#/components/schemas/CreditNote"
+      "PostFinanceCreditNotesPreviewReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "approval",
+              "note",
+              "needsApproval"
+            ],
+            "properties": {
+              "approval": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "subjectRef",
+                  "valueMinor",
+                  "details",
+                  "summary"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "subjectRef": {
+                    "type": "string"
+                  },
+                  "valueMinor": {
+                    "type": "number"
+                  },
+                  "details": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "x-untyped": "unknown"
+                    }
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "note": {
+                "$ref": "#/components/schemas/CustomerNote"
+              },
+              "needsApproval": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
           },
-          "taxAdjustable": {
-            "type": "boolean"
-          },
-          "declareInPeriod": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "noApprovalWhy",
+              "note",
+              "needsApproval"
+            ],
+            "properties": {
+              "noApprovalWhy": {
+                "type": "string"
+              },
+              "note": {
+                "$ref": "#/components/schemas/CustomerNote"
+              },
+              "needsApproval": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/credit-notes.ts"
       },
-      "PostFinanceCreditNotesRequest": {
+      "PostFinanceCreditNotesPreviewRequest": {
         "type": "object",
-        "required": [
-          "invoice",
-          "reason",
-          "taxableMinor"
-        ],
         "properties": {
           "customerId": {
             "type": "string"
           },
           "invoice": {
-            "type": "object",
-            "properties": {
-              "customerId": {
-                "type": "string"
-              },
-              "financialYear": {
-                "type": "string"
-              },
-              "grossMinor": {
-                "type": "number"
-              },
-              "invoiceId": {
-                "type": "string"
-              },
-              "issuedOn": {
-                "type": "string"
-              },
-              "number": {
-                "type": "string"
-              },
-              "taxableMinor": {
-                "type": "number"
-              },
-              "taxes": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "amountMinor": {
-                      "type": "number"
-                    },
-                    "component": {
-                      "type": "string"
-                    },
-                    "rateBps": {
-                      "type": "number"
-                    }
-                  },
-                  "additionalProperties": true
-                }
-              }
-            },
-            "additionalProperties": true
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
           },
-          "issuedOn": {
+          "invoiceDocumentId": {
             "type": "string"
           },
           "kind": {
@@ -181190,10 +181569,26 @@
               "debit_note"
             ]
           },
-          "noteId": {
-            "type": "string"
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "lineId",
+                "taxableMinor"
+              ],
+              "properties": {
+                "lineId": {
+                  "type": "string"
+                },
+                "taxableMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
           },
-          "number": {
+          "noteId": {
             "type": "string"
           },
           "reason": {
@@ -181206,27 +181601,163 @@
               "price_correction",
               "tax_rate_correction"
             ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/credit-notes.ts"
+      },
+      "PostFinanceCreditNotesReply200": {
+        "type": "object",
+        "required": [
+          "note",
+          "alreadyIssued"
+        ],
+        "properties": {
+          "note": {
+            "$ref": "#/components/schemas/CustomerNote"
           },
-          "taxableMinor": {
-            "type": "number"
+          "alreadyIssued": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/credit-notes.ts"
+      },
+      "PostFinanceCreditNotesReply201": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "invoiceUnchanged",
+              "approvedBy",
+              "note",
+              "number",
+              "taxAdjustable",
+              "declareInPeriod",
+              "posting"
+            ],
+            "properties": {
+              "invoiceUnchanged": {
+                "type": "boolean"
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "note": {
+                "$ref": "#/components/schemas/CustomerNote"
+              },
+              "number": {
+                "type": "string"
+              },
+              "taxAdjustable": {
+                "type": "boolean"
+              },
+              "declareInPeriod": {
+                "type": "string"
+              },
+              "posting": {
+                "$ref": "#/components/schemas/NotePosting"
+              }
+            },
+            "additionalProperties": true
           },
-          "taxes": {
+          {
+            "type": "object",
+            "required": [
+              "invoiceUnchanged",
+              "noApprovalWhy",
+              "note",
+              "number",
+              "taxAdjustable",
+              "declareInPeriod",
+              "posting"
+            ],
+            "properties": {
+              "invoiceUnchanged": {
+                "type": "boolean"
+              },
+              "noApprovalWhy": {
+                "type": "string"
+              },
+              "note": {
+                "$ref": "#/components/schemas/CustomerNote"
+              },
+              "number": {
+                "type": "string"
+              },
+              "taxAdjustable": {
+                "type": "boolean"
+              },
+              "declareInPeriod": {
+                "type": "string"
+              },
+              "posting": {
+                "$ref": "#/components/schemas/NotePosting"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/credit-notes.ts"
+      },
+      "PostFinanceCreditNotesRequest": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "invoice": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "invoiceDocumentId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "credit_note",
+              "debit_note"
+            ]
+          },
+          "lines": {
             "type": "array",
             "items": {
               "type": "object",
+              "required": [
+                "lineId",
+                "taxableMinor"
+              ],
               "properties": {
-                "amountMinor": {
-                  "type": "number"
-                },
-                "component": {
+                "lineId": {
                   "type": "string"
                 },
-                "rateBps": {
-                  "type": "number"
+                "taxableMinor": {
+                  "type": "integer"
                 }
               },
               "additionalProperties": true
             }
+          },
+          "noteId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "deficiency_in_service",
+              "goods_returned",
+              "order_cancelled",
+              "post_supply_discount",
+              "price_correction",
+              "tax_rate_correction"
+            ]
           }
         },
         "additionalProperties": true,
@@ -257167,6 +257698,8 @@
           "kind": {
             "type": "string",
             "enum": [
+              "credit_note",
+              "debit_note",
               "invoice",
               "receipt"
             ]
@@ -266322,85 +266855,6 @@
         },
         "additionalProperties": true
       },
-      "CreditNote": {
-        "type": "object",
-        "required": [
-          "noteId",
-          "number",
-          "kind",
-          "againstInvoiceId",
-          "againstInvoiceNumber",
-          "customerId",
-          "issuedOn",
-          "reason",
-          "taxableMinor",
-          "taxes",
-          "grossMinor",
-          "taxAdjustable",
-          "declareInPeriod",
-          "detail"
-        ],
-        "properties": {
-          "noteId": {
-            "type": "string"
-          },
-          "number": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "credit_note",
-              "debit_note"
-            ]
-          },
-          "againstInvoiceId": {
-            "type": "string"
-          },
-          "againstInvoiceNumber": {
-            "type": "string"
-          },
-          "customerId": {
-            "type": "string"
-          },
-          "issuedOn": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "deficiency_in_service",
-              "goods_returned",
-              "order_cancelled",
-              "post_supply_discount",
-              "price_correction",
-              "tax_rate_correction"
-            ]
-          },
-          "taxableMinor": {
-            "type": "number"
-          },
-          "taxes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaxComponent"
-            }
-          },
-          "grossMinor": {
-            "type": "number"
-          },
-          "taxAdjustable": {
-            "type": "boolean"
-          },
-          "declareInPeriod": {
-            "type": "string"
-          },
-          "detail": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": true
-      },
       "CrossedLimit": {
         "type": "object",
         "required": [
@@ -266680,6 +267134,173 @@
           },
           "reversalReason": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CustomerNote": {
+        "type": "object",
+        "required": [
+          "invoiceDocumentId",
+          "invoiceIssuedOn",
+          "lines",
+          "cgstMinor",
+          "sgstMinor",
+          "igstMinor",
+          "taxMinor",
+          "placeOfSupplyStateCode",
+          "financialYear",
+          "noteId",
+          "number",
+          "kind",
+          "againstInvoiceId",
+          "againstInvoiceNumber",
+          "customerId",
+          "issuedOn",
+          "reason",
+          "taxableMinor",
+          "taxes",
+          "grossMinor",
+          "taxAdjustable",
+          "declareInPeriod",
+          "detail"
+        ],
+        "properties": {
+          "invoiceDocumentId": {
+            "type": "string"
+          },
+          "invoiceIssuedOn": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerNoteLine"
+            }
+          },
+          "cgstMinor": {
+            "type": "number"
+          },
+          "sgstMinor": {
+            "type": "number"
+          },
+          "igstMinor": {
+            "type": "number"
+          },
+          "taxMinor": {
+            "type": "number"
+          },
+          "placeOfSupplyStateCode": {
+            "type": "string"
+          },
+          "recipientGstin": {
+            "type": "string"
+          },
+          "financialYear": {
+            "type": "string"
+          },
+          "issuedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "noteId": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "credit_note",
+              "debit_note"
+            ]
+          },
+          "againstInvoiceId": {
+            "type": "string"
+          },
+          "againstInvoiceNumber": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "issuedOn": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "deficiency_in_service",
+              "goods_returned",
+              "order_cancelled",
+              "post_supply_discount",
+              "price_correction",
+              "tax_rate_correction"
+            ]
+          },
+          "taxableMinor": {
+            "type": "number"
+          },
+          "taxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxComponent"
+            }
+          },
+          "grossMinor": {
+            "type": "number"
+          },
+          "taxAdjustable": {
+            "type": "boolean"
+          },
+          "declareInPeriod": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CustomerNoteLine": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "productId",
+          "description",
+          "rateBps",
+          "taxableMinor",
+          "cgstMinor",
+          "sgstMinor",
+          "igstMinor"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "rateBps": {
+            "type": "number"
+          },
+          "taxableMinor": {
+            "type": "number"
+          },
+          "cgstMinor": {
+            "type": "number"
+          },
+          "sgstMinor": {
+            "type": "number"
+          },
+          "igstMinor": {
+            "type": "number"
           }
         },
         "additionalProperties": true
@@ -278644,6 +279265,65 @@
         },
         "additionalProperties": true
       },
+      "Gstr1NotesSection": {
+        "type": "object",
+        "required": [
+          "registered",
+          "unregistered",
+          "outsideTaxWindow",
+          "creditTaxableMinor",
+          "creditTaxMinor",
+          "debitTaxableMinor",
+          "debitTaxMinor",
+          "inGstnFile",
+          "caSignOff",
+          "detail"
+        ],
+        "properties": {
+          "registered": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutwardNoteRow"
+            }
+          },
+          "unregistered": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutwardNoteRow"
+            }
+          },
+          "outsideTaxWindow": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutwardNoteRow"
+            }
+          },
+          "creditTaxableMinor": {
+            "type": "number"
+          },
+          "creditTaxMinor": {
+            "type": "number"
+          },
+          "debitTaxableMinor": {
+            "type": "number"
+          },
+          "debitTaxMinor": {
+            "type": "number"
+          },
+          "inGstnFile": {
+            "type": "boolean",
+            "const": false
+          },
+          "caSignOff": {
+            "type": "string",
+            "const": "C-01 — how notes are filed (Table 9B) waits for the CA's sign-off"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "Gstr1SubmissionAggregate": {
         "type": "object",
         "required": [
@@ -286795,6 +287475,65 @@
         },
         "additionalProperties": true
       },
+      "NotePosting": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "entryId",
+              "period"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "const": "posted"
+              },
+              "entryId": {
+                "type": "string"
+              },
+              "period": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "why"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "const": "not_posted_yet"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "why"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "const": "waiting_for_posting_rule"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
       "NoticeRecall": {
         "type": "object",
         "required": [
@@ -288967,6 +289706,59 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "OutwardNoteRow": {
+        "type": "object",
+        "required": [
+          "noteValueMinor",
+          "noteNumber",
+          "noteDate",
+          "noteType",
+          "againstInvoiceNumber",
+          "againstInvoiceDate",
+          "taxAdjustable",
+          "rateLines"
+        ],
+        "properties": {
+          "noteValueMinor": {
+            "type": "number"
+          },
+          "noteNumber": {
+            "type": "string"
+          },
+          "noteDate": {
+            "type": "string"
+          },
+          "noteType": {
+            "type": "string",
+            "enum": [
+              "C",
+              "D"
+            ]
+          },
+          "againstInvoiceNumber": {
+            "type": "string"
+          },
+          "againstInvoiceDate": {
+            "type": "string"
+          },
+          "recipientGstin": {
+            "type": "string"
+          },
+          "placeOfSupplyStateCode": {
+            "type": "string"
+          },
+          "taxAdjustable": {
+            "type": "boolean"
+          },
+          "rateLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateSummary"
+            }
           }
         },
         "additionalProperties": true
