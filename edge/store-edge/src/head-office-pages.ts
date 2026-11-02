@@ -64,6 +64,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   // Wave 3 (security, people and operations): emergency access, safety incidents, operational alerts, document retention,
   // sales commission.
   'emergency-access', 'safety-incidents', 'ops-alerts', 'document-retention', 'sales-commission',
+  // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
+  'settlement',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -154,6 +156,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'range-clusters': 'rangeClustersData',
   'product-checks': 'productChecksData',
   'posting-map': 'postingMapData',
+  settlement: 'settlementBankData',
   'facilities-setup': 'facilitiesSetupData',
   'production-recipes': 'productionRecipesData',
   'data-requests': 'dataRequestsData',

@@ -125,6 +125,7 @@ import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facili
 import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
 import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
 import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
+import { wireW3Money } from './w3-money-browser-wiring'; // W3 · money: card, UPI and bank; rebate accruals; owed to customers
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7512,4 +7513,5 @@ if (browserWindow !== undefined) {
   wireWave3Catalogue(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · D01-FR-05, D02-FR-04, D06-FR-05, D06-FR-06
   wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
   wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
+  wireW3Money(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · money
 }

@@ -652,6 +652,7 @@
     'branches': 'store', // Round 4c — an icon already in the set
     'do-not-contact': 'message-circle', // Round 4c — an icon already in the set
     'posting-map': 'book-open', // Round 4d — an icon already in the set
+    'settlement': 'banknote', // W3 — an icon already in the set
     'facilities-setup': 'wrench', // Round 4d — an icon already in the set
     'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
     'data-requests': 'shield-check', // W3 — an icon already in the set

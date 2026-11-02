@@ -67,6 +67,7 @@ import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty
 import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
 import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
 import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement, type MonthEvidence } from '../../finance/src/independent-evidence';
+import { cashDepositViews, type CashDeposit, type CashDepositCancelled, type CashDepositDeps } from '../../finance/src/cash-deposits';
 import type { ControlTotalCheck } from '../../finance/src/index';
 import { stockAdjustmentSources, stockAdjustmentCheck, type PeriodBooksDeps, type CountForBooks, type WriteOffForBooks, type StockAdjustmentJournal, type AccountClass } from '../../finance/src/period-books';
 import { reconcilePayables, PAYABLES_LEFT_DERIVATION, PAYABLES_RIGHT_DERIVATION } from '../../../packages/finance/src/payables';
@@ -9730,10 +9731,39 @@ export function independentEvidenceAdapter(input: { readonly store: EventStore; 
         .filter((t) => typeof t.ref === 'string' && t.ref.trim() !== '')
         .map((t) => ({ ref: t.ref as string, kind: t.kind, amountMinor: t.amountMinor, saleId: sale.saleId })));
       const batches = await allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
-      const base = monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
+      const imported = await statements(tenantId);
+      const deposits = cashDepositAdapter({ store: input.store, now: input.now });
+      const depositViews = cashDepositViews({ deposits: await deposits.deposits(tenantId), cancelled: await deposits.cancellations(tenantId), statements: imported });
+      const base = monthEvidence({ period, tenders, batches, statements: imported, deposits: depositViews });
       // WF-18: the books reconciled to their registers inside the close (stock adjustments, payables, receivables).
       const books = await bookChecksFor(input, tenantId, period);
       return { ...base, checks: [...base.checks, ...books.checks], notChecked: [...base.notChecked, ...books.notChecked], books: books.books };
+    },
+  };
+}
+
+/**
+ * W3 (M23-FR-03): cash deposited to the bank — each deposit and each cancellation a fact of its own on the settlement
+ * stream, append-only (a cancel never edits or removes the deposit, hard rules #2 and #6). Once per deposit id.
+ */
+const CASH_DEPOSITS = streamName(STREAM.settlement, 'cash-deposits');
+export function cashDepositAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<CashDepositDeps, 'recordAudit'> {
+  return {
+    now: input.now,
+    deposits: (tenantId) => allOf<CashDeposit>(input.store, tenantId, CASH_DEPOSITS, 'CashDepositRecorded'),
+    cancellations: (tenantId) => allOf<CashDepositCancelled>(input.store, tenantId, CASH_DEPOSITS, 'CashDepositCancelled'),
+    statements: (tenantId) => allOf<ImportedStatement>(input.store, tenantId, BANK_STATEMENTS, 'BankStatementImported'),
+    recordDeposit: async (tenantId, d) => {
+      await input.store.append(tenantId, CASH_DEPOSITS, makeEvent({
+        id: `cash-deposit-${d.depositId}`, type: 'CashDepositRecorded', occurredAt: d.recordedAt,
+        idempotencyKey: `cash-deposit-${tenantId}-${d.depositId}`, source: 'api/finance', payload: d,
+      }));
+    },
+    recordCancel: async (tenantId, c) => {
+      await input.store.append(tenantId, CASH_DEPOSITS, makeEvent({
+        id: `cash-deposit-cancel-${c.depositId}`, type: 'CashDepositCancelled', occurredAt: c.at,
+        idempotencyKey: `cash-deposit-cancel-${tenantId}-${c.depositId}`, source: 'api/finance', payload: c,
+      }));
     },
   };
 }

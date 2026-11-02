@@ -91,6 +91,7 @@
         <button id="tab-stock" type="button">Stock adjustment</button>
         <button id="tab-plan" type="button">Budget and assets</button>
         <button id="tab-month" type="button">Close or reopen the month</button>
+        <button id="tab-owed" type="button">Owed to customers</button>
       </nav>
 
       <section id="view-payments" class="panel" aria-labelledby="pay-h">
@@ -161,6 +162,19 @@
         <p class="lead" id="run-lede"></p>
         <button id="run-depreciation" type="button">Run depreciation for this month</button>
         <p class="status" id="run-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W3 (D10-FR-04): what the shop owes customers — loyalty points, store credit and referral rewards as the members
+           hold them against the books, and the referral rewards put in the books. Its session is
+           apps/web-erp/src/liabilities-session.ts (window.liabilities). -->
+      <section id="view-owed" class="panel" hidden aria-labelledby="owed-h">
+        <h2 id="owed-h">What the shop owes customers</h2>
+        <p class="lead" id="owed-lede"></p>
+        <button id="owed-show" type="button" class="quiet">Read the figures</button>
+        <div class="tiles sre-summary" id="owed-tiles"></div>
+        <ul class="register" id="owed-list"></ul>
+        <button id="owed-post" type="button" hidden>Put referral rewards in the books</button>
+        <p class="status" id="owed-status" role="status" aria-live="polite"></p>
       </section>
 
       <!-- OB-567 (owner, 31 Oct 2026): a month is closed and reopened HERE, and nowhere else — two people, head office's

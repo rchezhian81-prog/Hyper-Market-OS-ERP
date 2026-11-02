@@ -152,6 +152,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'reconciliation': { en: 'card upi bank payments match settlement', ta: 'அட்டை யுபிஐ வங்கி' },
   'finance': { en: 'accounts money totals tally', ta: 'கணக்குகள்' },
   'tally-files': { en: 'tally export accounts', ta: 'டேலி' },
+  settlement: { en: 'card upi bank statement settlement file provider payout cash deposit slip dispute chargeback reconciliation', ta: 'அட்டை UPI வங்கி அறிக்கை தீர்வு ரொக்கச் செலுத்தல் தகராறு' },
   'posting-map': { en: 'posting map ledger chart of accounts mapping tally ledger names setup', ta: 'கணக்கு வரைபடம் லெட்ஜர் டேலி பெயர்' },
   'gst-returns': { en: 'gst gstr tax return filing', ta: 'ஜிஎஸ்டி வரி' },
   'gst-reconciliation': { en: 'gst e-invoice irn e-way bill', ta: 'ஜிஎஸ்டி மின் விலைப்பட்டியல்' },
@@ -369,6 +370,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // map) and what each account is called in Tally. Without it the Day book, Tally files, Month-end and Supplier offer
   // funding post nothing. A head-office page served by the store computer. Gated on the read both routes check
   // (`finance.period.read`); saving checks `finance.posting.configure` on the server.
+  // W3 (M23-FR-03 · M14-FR-03 · C14): the provider's settlement file and the bank's statement loaded, cash taken to the bank
+  // recorded, the tills' card and UPI takings checked against what was paid, the cases and the payment disputes. A
+  // head-office page served by the store computer. Gated on the read the review checks (`settlement.review.read`); loading,
+  // cases and disputes each check their own word on the server.
+  { id: 'settlement', label: 'Card, UPI and bank', labelTa: 'அட்டை, UPI மற்றும் வங்கி', path: '/settlement', requires: 'settlement.review.read', group: 'Finance' },
   { id: 'posting-map', label: 'Accounts and Tally names', labelTa: 'கணக்குகளும் டேலி பெயர்களும்', path: '/posting-map', requires: 'finance.period.read', group: 'Finance' },
   // QG-02 lane 1 R4 (M05-FR-04): supplier funding of offers, earned from the bills and reconciled to the books. Gated on the
   // register's read (`finance.period.read`); recording an agreement needs `promotion.launch`, a receipt `finance.journal.post`.
