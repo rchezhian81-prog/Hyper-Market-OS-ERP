@@ -45,6 +45,8 @@ import type { TrainingAssignment, TrainingCompletion, CompetencySignOff, Approve
 import { currentChampions, type FloorChampion } from '../../../packages/workforce/src/adoption-gate';
 import type { LetterWording, AppointmentLetter, SignedScan } from '../../../packages/workforce/src/appointment-letter';
 import { workforceEnablementRoutes, readAdoptionGate, type WorkforceEnablementDeps } from '../../finance/src/workforce-enablement';
+import { roleCheckRoutes, readRoleChecks, type RoleCheckDeps } from '../../finance/src/role-checks'; // W3 · OB-675 · QG-02
+import { qg02Blockers, type RoleCheck, type RolePassMark, type CheckAttempt } from '../../../packages/workforce/src/role-check';
 import type { OtherGateBlocker } from '../../compliance/src/risk';
 import { helpCentreRoutes, helpLibrary, type HelpCentreDeps, type SopContent, type EmergencyContacts, type EmergencyDrill } from '../../finance/src/help-centre';
 import { appointmentLetterRoutes, type AppointmentLetterDeps } from '../../finance/src/appointment-letters';
@@ -251,6 +253,8 @@ export function relatedPartyOrderGuardAdapter(input: Base): RelatedPartyOrderGua
 export const WF_STREAMS = Object.freeze({
   training: streamName(STREAM.workforce, 'training'),
   curricula: streamName(STREAM.workforce, 'curricula'),
+  /** W3 · OB-675 (QG-02): the scored check per role, its pass mark, and every attempt — append-only. */
+  roleChecks: streamName(STREAM.workforce, 'role-checks'),
   champions: streamName(STREAM.workforce, 'floor-champions'),
   sopContent: streamName(STREAM.workforce, 'sop-content'),
   emergency: streamName(STREAM.workforce, 'emergency'),
@@ -321,6 +325,32 @@ export function workforceEnablementAdapter(input: Base): WorkforceEnablementDeps
     salesByDepartment: (t, from, to) => salesByDepartmentOf(input, t, from, to),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
+}
+
+/** W3 · OB-675 (QG-02): the scored check per role on head office's append-only stream. */
+export function roleCheckAdapter(input: Base): RoleCheckDeps {
+  const { store, now } = input;
+  const wf = workforceEnablementAdapter(input);
+  return {
+    now,
+    employees: wf.employees, owners: wf.owners, curricula: wf.curricula, trainingAssignments: wf.trainingAssignments, trainingCompletions: wf.trainingCompletions,
+    checks: (t) => all<RoleCheck>(store, t, WF_STREAMS.roleChecks, 'RoleCheckSet'),
+    recordCheck: (t, c) => put(store, t, WF_STREAMS.roleChecks, 'RoleCheckSet', `${c.roleId}-v${c.version}`, c.definedAt, c),
+    passMarks: (t) => all<RolePassMark>(store, t, WF_STREAMS.roleChecks, 'RolePassMarkSet'),
+    recordPassMark: (t, m) => put(store, t, WF_STREAMS.roleChecks, 'RolePassMarkSet', `${m.roleId}-${m.setAt}-${m.passMarkPercent}`, m.setAt, m),
+    attempts: (t) => all<CheckAttempt>(store, t, WF_STREAMS.roleChecks, 'RoleCheckAttemptRecorded'),
+    recordAttempt: (t, a) => put(store, t, WF_STREAMS.roleChecks, 'RoleCheckAttemptRecorded', a.attemptId, a.recordedAt, a),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
+/**
+ * W3 · OB-675: QG-02 as a gate check the owner's gate decisions read (QG-12) — a role whose trained staff have not passed
+ * the scored check at the pilot level blocks every release; one short of the final level blocks the releases after the
+ * pilot. The same reading the Training checks page shows.
+ */
+export async function qg02TrainingBlockers(store: EventStore, now: () => string, tenantId: string): Promise<readonly OtherGateBlocker[]> {
+  return qg02Blockers(await readRoleChecks(roleCheckAdapter({ store, now }), tenantId)).map((b) => ({ gate: b.gate, kind: b.kind, ref: b.ref, reason: b.reason, ...(b.releases === undefined ? {} : { releases: b.releases }) }));
 }
 
 export function helpCentreAdapter(input: Base): HelpCentreDeps {
@@ -583,6 +613,7 @@ export function lpWorkforceSurface(surface: Route[], raw: LpWorkforceInput): voi
   surface.push(...lpControlsRoutes(lpControlsAdapter(input)));
   const cal = raw.calendar === undefined ? {} : { calendar: raw.calendar }; // R1c: the shop's today
   surface.push(...workforceEnablementRoutes({ ...workforceEnablementAdapter(input), ...cal }));
+  surface.push(...roleCheckRoutes(roleCheckAdapter(input))); // W3 · OB-675 · QG-02
   surface.push(...helpCentreRoutes({ ...helpCentreAdapter(input), ...cal }));
   surface.push(...appointmentLetterRoutes(appointmentLetterAdapter(input)));
   surface.push(...facilitiesOfficeRoutes({ ...facilitiesOfficeAdapter(input, surface), ...cal }));

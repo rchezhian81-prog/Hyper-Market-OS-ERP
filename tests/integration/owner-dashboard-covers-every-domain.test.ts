@@ -22,7 +22,8 @@ import { KPI_DOMAINS } from '../../services/api/src/dashboard-figures';
  *   • a manager scoped to S2 sees S2's sales in the headline and the sales block — never S1's (§28).
  *   • the waste report: energy and scrap are "not known" until recorded; once recorded they are on the report, with the
  *     waste records, scrap sales and readings behind the totals.
- *   • the security report: access given is counted from the identity ledger; failed sign-ins are NOT KNOWN, with why.
+ *   • the security report: access given is counted from the identity ledger; failed TILL sign-ins are NOT KNOWN, with why
+ *     (none reached head office); failed OFFICE sign-ins and lockouts are counted from head office's own record (W3 · D13-FR-06).
  */
 
 const OWNER = 'u-owner'; const MGR = 'u-mgr-s2'; const CASHIER = 'u-cash';
@@ -125,11 +126,13 @@ async function securityChecks(h: ApiHarness, T: string): Promise<void> {
   expect(f('Access given').valueMinor).toBeGreaterThanOrEqual(3);
   expect(r.rows.filter((x) => x.what === 'access_given').map((x) => x.who)).toEqual(expect.arrayContaining([CASHIER, MGR]));
   // OB-365: the till sign-in log comes from the store computers — none has arrived in this shop, so not known (never 0);
-  // the office lockout is held in memory by the API, so it stays not known.
+  // W3 · D13-FR-06: head office keeps every failed office sign-in and lockout, so none tried is a real none (counted).
   expect(f('Failed sign-ins').valueMinor).toBeUndefined();
   expect(f('Failed sign-ins').notAvailableBecause).toContain('no till sign-in record has reached head office yet');
   expect(f('Sign-in lockouts').valueMinor).toBeUndefined();
-  expect(f('Office sign-in lockouts').notAvailableBecause).toContain('held in memory by the API');
+  expect(f('Office failed sign-ins').valueMinor).toBe(0);
+  expect(f('Office sign-in lockouts').valueMinor).toBe(0);
+  expect(f('Office sign-in lockouts').notAvailableBecause).toBeUndefined();
   // Company-wide records: a branch-limited reader is told, not shown a part.
   const mgr = (await get(h, T, MGR, '/v1/reports/security', { day: '2026-08-07' }, 'S2')).body as { figures: Fig[] };
   expect(mgr.figures[0]!.notAvailableBecause).toContain('company-wide');

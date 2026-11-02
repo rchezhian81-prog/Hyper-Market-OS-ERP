@@ -26,6 +26,7 @@ import {
 import { isWrite, type Method, type Router } from './router';
 import { evaluateStepUp } from './step-up';
 import type { RateLimiter, AuthThrottle } from './rate-limit';
+import { officeSignInAttempt, type SignInAttemptLog } from './sign-in-attempts';
 import { newWriteWitness, witnessing } from '../../../packages/persistence/src/write-witness';
 
 export interface Principal {
@@ -324,6 +325,12 @@ export interface KernelOptions {
    */
   readonly authThrottle?: AuthThrottle;
   /**
+   * D13-FR-06 (W3): where each failed office sign-in, and each lockout it trips, is KEPT (head office writes it
+   * append-only on PostgreSQL). The lockout itself stays the in-memory `authThrottle`; this is only the record. Never
+   * the token or any secret. A failure to keep it never changes the reply.
+   */
+  readonly signInLog?: SignInAttemptLog;
+  /**
    * Observability sink — called once per request with a `RequestObservation`. Optional in the type
    * (a test does not want one) and NOT optional in a deployment, like `audit`: structured logs,
    * metrics and traces are all fed from here. Provider-neutral.
@@ -488,6 +495,18 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       // Record the failure so repeated guessing from this source backs off. Reported after the
       // audit is written on the way out; the caller still gets a plain 401, not a hint of the lock.
       opts.authThrottle?.fail(`ip:${clientIp}`);
+      // D13-FR-06: keep the failed try, and the lockout if this one tripped it (the source was not locked a moment ago).
+      if (opts.signInLog !== undefined) {
+        const at = new Date(opts.now?.() ?? Date.now()).toISOString();
+        const keep = async (outcome: 'failed' | 'locked_out', lockedForSeconds?: number): Promise<void> => {
+          try {
+            await opts.signInLog!.record(officeSignInAttempt({ at, outcome, token, clientIp, path: request.path, traceId, ...(lockedForSeconds === undefined ? {} : { lockedForSeconds }) }));
+          } catch { /* the record is the adapter's to report; the caller is told "unauthenticated" and no more */ }
+        };
+        await keep('failed');
+        const lock = opts.authThrottle?.status(`ip:${clientIp}`);
+        if (lock?.locked === true) await keep('locked_out', lock.retryAfterSeconds);
+      }
       throw unauthenticated();
     }
     // A genuine sign-in clears the source's failure count — one good login is not held against it.

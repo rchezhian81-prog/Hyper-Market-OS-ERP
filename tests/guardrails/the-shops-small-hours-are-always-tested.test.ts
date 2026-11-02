@@ -24,6 +24,7 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts',
   'tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts',
   'tests/integration/the-owners-takings-are-net-of-refunds.test.ts',
+  'tests/integration/w3-failed-office-sign-ins-and-lockouts-are-kept-through-a-restart.test.ts', // W3 · D13-FR-06
   'tests/integration/price-list-effective-dating.test.ts',
   'tests/integration/a-price-set-just-after-the-shops-midnight-still-needs-a-second-person.test.ts',
   'tests/integration/a-rebate-claim-under-an-unapproved-scheme-warns-and-a-sent-claim-is-withdrawn-with-a-reason.test.ts',

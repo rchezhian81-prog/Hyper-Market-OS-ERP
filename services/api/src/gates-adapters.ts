@@ -30,7 +30,7 @@ import { FINDINGS_PUSH_ROLE_ID } from './roles';
 import { gateDecisionRoutes, type GateDecisionDeps } from '../../compliance/src/gate-decisions';
 import type { OtherGateBlocker } from '../../compliance/src/risk';
 import { STREAM, streamName, riskRegisterAdapter, drReadinessAdapter } from './adapters';
-import { adoptionGateBlockers } from './lp-workforce-adapters'; // QG-09 adoption reading (OB-288 LP/workforce package)
+import { adoptionGateBlockers, qg02TrainingBlockers } from './lp-workforce-adapters'; // QG-09 adoption reading (OB-288 LP/workforce package)
 
 export const FINDINGS_STREAM = streamName(STREAM.compliance, 'findings');
 export const FINDING_SCANS_STREAM = streamName(STREAM.compliance, 'finding-scans');
@@ -96,6 +96,7 @@ export function gateEvidenceAdapter(input: { readonly store: EventStore; readonl
 /**
  * Everything that blocks a gate apart from the risk register: open critical/high findings (QG-03, QG-06), the QG-08
  * rehearsal reading when it is HOLD, the QG-09 adoption reading, and (W3) the readings no gate had before —
+ *   QG-02  the scored check per role (OB-675): ≥90% of each role's trained staff passed (pilot, R0–R2), ≥95% (after);
  *   QG-04  the outside evidence (72-hour run, chaos test) and every store computer's own sync report (none, or a dead letter);
  *   QG-05  the p95 timings on certified hardware against the fixed §32 targets;
  *   QG-06  the independent penetration test (from R4, the first customer-facing release);
@@ -117,6 +118,7 @@ export async function gateBlockersBeyondRisks(store: EventStore, now: () => stri
   const fromReleases = qg10Blockers(await qg10EvidenceAdapter({ store, now }).notes(tenantId)).map(asCheck);
   return [
     ...fromFindings, ...fromRecovery, ...await adoptionGateBlockers(store, now, tenantId), // QG-09 (OB-288 LP/workforce package)
+    ...await qg02TrainingBlockers(store, now, tenantId), // W3 · OB-675: QG-02 training — the scored check per role
     ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases,
   ];
 }
