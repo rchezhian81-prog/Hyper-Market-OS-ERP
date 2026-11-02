@@ -51,7 +51,7 @@ export const DISPATCH_COPY = {
   en: {
     lang: 'தமிழ்', title: 'Dispatch',
     lead: 'Build pickers’ waves from confirmed orders, plan the day’s routes, hand each route to its driver, and see every door and the cash. Distances are straight lines, not a map.',
-    storeL: 'Store', dateL: 'Run date (YYYY-MM-DD)', badDate: 'Write the date as YYYY-MM-DD.', needStore: 'Say which store.',
+    storeL: 'Store', yourStore: 'your store', dateL: 'Run date', badDate: 'Pick the run date.', needStore: 'Say which store.',
     wavesH: 'Waves from confirmed orders', showOrders: 'Show orders waiting', waveIdL: 'Wave id', pickerL: 'Picker', build: 'Build the wave and give it to the picker',
     deliveryK: 'Delivery', pickupK: 'Collection',
     readyK: 'Ready to pick', heldK: 'Held for a manager', onWaveK: 'Already on a wave', noneReady: 'No confirmed order is waiting to be picked.',
@@ -88,7 +88,7 @@ export const DISPATCH_COPY = {
   ta: {
     lang: 'English', title: 'அனுப்புதல்',
     lead: 'உறுதிசெய்த ஆர்டர்களிலிருந்து எடுப்பவர்களின் அலைகளை உருவாக்குங்கள், நாளின் வழிகளைத் திட்டமிடுங்கள், ஒவ்வொரு வழியையும் டிரைவரிடம் கொடுங்கள், ஒவ்வொரு வாசலையும் பணத்தையும் பாருங்கள். தூரங்கள் நேர்கோடு, வரைபடம் அல்ல.',
-    storeL: 'கடை', dateL: 'ஓட்ட நாள் (YYYY-MM-DD)', badDate: 'தேதியை YYYY-MM-DD என எழுதுங்கள்.', needStore: 'எந்தக் கடை என்று சொல்லுங்கள்.',
+    storeL: 'கடை', yourStore: 'உங்கள் கடை', dateL: 'ஓட்ட நாள்', badDate: 'ஓட்ட நாளைத் தேர்வு செய்யுங்கள்.', needStore: 'எந்தக் கடை என்று சொல்லுங்கள்.',
     wavesH: 'உறுதிசெய்த ஆர்டர்களிலிருந்து அலைகள்', showOrders: 'காத்திருக்கும் ஆர்டர்களைக் காட்டு', waveIdL: 'அலை எண்', pickerL: 'எடுப்பவர்', build: 'அலையை உருவாக்கி எடுப்பவரிடம் கொடு',
     deliveryK: 'டெலிவரி', pickupK: 'கடையில் பெறுதல்',
     readyK: 'எடுக்கத் தயார்', heldK: 'மேலாளருக்காக நிறுத்தப்பட்டது', onWaveK: 'ஏற்கனவே அலையில்', noneReady: 'எடுக்கக் காத்திருக்கும் உறுதிசெய்த ஆர்டர் இல்லை.',

@@ -56,7 +56,34 @@ function row(p) {
   return li;
 }
 
+// U2 · G14 (UI/UX gap audit): the month is PICKED from the last 24 months, named in the reader's language — never typed as
+// "YYYY-MM". The value the page sends stays "YYYY-MM"; the choice survives a language change.
+const MONTHS = {
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'],
+};
+function monthChoices() {
+  // The SHOP's today (the store computer's clock, OB-606) — never the device's clock. With no shop clock (the page opened
+  // off the box) there is no honest month to anchor on, and the plain month field stays as it was.
+  const shopToday = window.sreShopDay?.today?.() ?? null;
+  if (shopToday === null) return null;
+  const y = Number(shopToday.slice(0, 4)); const m = Number(shopToday.slice(5, 7));
+  return Array.from({ length: 24 }, (_, i) => { const n = y * 12 + (m - 1) - i; return `${Math.floor(n / 12)}-${String((n % 12) + 1).padStart(2, '0')}`; });
+}
+function paintMonthList() {
+  const was = $('tb-month');
+  const choices = monthChoices();
+  if (was === null || choices === null) return;
+  const chosen = was.value;
+  const select = was.tagName === 'SELECT' ? was : Object.assign(document.createElement('select'), { id: 'tb-month' });
+  select.className = 'sre-select';
+  select.replaceChildren(...choices.map((ym) => { const o = document.createElement('option'); o.value = ym; o.textContent = `${(MONTHS[lang] ?? MONTHS.en)[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`; return o; }));
+  if (was !== select) was.replaceWith(select);
+  if ([...select.options].some((o) => o.value === chosen)) select.value = chosen;
+}
+
 function paint() {
+  paintMonthList();
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['read-text', 'read'], ['run-text', 'run'],
     ['posted-k', 'postedK'], ['queued-k', 'queuedK'], ['dead-k', 'deadK'], ['company-k', 'companyK'], ['dead-h', 'deadH'], ['files-h', 'filesH'],

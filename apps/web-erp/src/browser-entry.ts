@@ -22,6 +22,7 @@ import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { wireLpWorkforcePages } from './lpw-browser-wiring';
+import { refusalWords as refusalWordsOf, whatHappenedWords, nextSafeActionWords, causeOf, headOfficeSaid } from './refusal-words'; // U2: the one source of the three-part refusal words, for the chrome too
 import { wireR7dPages } from './r7d-browser-wiring'; // Round 7 · OB-507 attendance, OB-502 food-handling check
 import { wireCommercialDeskPages } from './commercial-desks-browser-wiring'; // OB-288 commercial desks
 import { createFreeSampleSession, freeSampleWords, freeSampleOutcomeWords } from './free-sample-session'; // FG-4 · OB-386 free samples
@@ -7493,3 +7494,8 @@ if (browserWindow !== undefined) {
   // OB-609: Bill findings and attendance flags.
   wireFindings(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
 }
+
+// U2 (G10): the chrome's `sreOffice.refusalWords(outcome)` turns an outcome into the three parts in the reader's language.
+// The words have ONE source — `refusal-words.ts` — so the chrome (plain JS, no bundler) reads them from this bundle, which
+// every office page loads; a guardrail keeps the chrome delegating here rather than carrying a copy that could drift.
+(globalThis as { sreRefusalWords?: unknown }).sreRefusalWords = Object.freeze({ refusalWords: refusalWordsOf, whatHappenedWords, nextSafeActionWords, causeOf, headOfficeSaid });

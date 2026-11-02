@@ -5,6 +5,60 @@
 // idempotency key; afterwards the register is read again. Every word has a Tamil twin and follows the one toggle.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2 (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+const pickWords = {
+  en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
+  ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
+};
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+// A date a shop person reads (dd/mm/yyyy, the shop's calendar) through the chrome's shared field; read back as ISO.
+function dateable(inputId, label, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.dateable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => dateable(inputId, label, extra), { once: true }); return; }
+  const holder = input.closest('label') ?? input;
+  const was = input.value;
+  const field = office.dateField({ id: inputId, label: typeof label === 'function' ? label() : label, required: extra.required !== false, ...(extra.min ? { min: extra.min } : {}), ...(was === '' ? {} : { value: was }) });
+  if (!field) return;
+  holder.replaceWith(field);
+  field.dataset.dateable = 'on';
+}
+const dateOf = (fieldId) => {
+  const f = document.getElementById(fieldId);
+  if (f && f.tagName === 'INPUT' && f.type === 'date') return f.value;
+  const office = window.sreOffice;
+  return office && typeof office.dateValue === 'function' ? (office.dateValue(fieldId) ?? '') : (f && 'value' in f ? f.value : '');
+};
 const who = window.delegationData && typeof window.delegationData === 'object' ? window.delegationData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const mayRead = perms.has('approvals.delegation.read');
@@ -58,6 +112,8 @@ const t = (k) => WORDS[lang][k] ?? WORDS.en[k] ?? k;
 const idem = () => ((crypto.randomUUID && crypto.randomUUID()) || `dlg-${Date.now()}-${Math.random()}`);
 
 let rows = null;
+/** The names the person picked (shown on the sheet); the ids are what head office gets. */
+const pickedNames = {};
 
 async function post(path, body) {
   try {
@@ -140,8 +196,8 @@ async function load() {
 $('lend').addEventListener('click', async () => {
   const fromUserId = $('from').value.trim();
   const toUserId = $('to').value.trim();
-  const fromDate = $('from-date').value;
-  const untilDate = $('until-date').value;
+  const fromDate = dateOf('from-date');
+  const untilDate = dateOf('until-date');
   const reason = $('reason').value.trim();
   const subjectTypes = [...document.querySelectorAll('input[name="kind"]:checked')].map((i) => i.value);
   const status = $('lend-status');
@@ -156,7 +212,8 @@ $('lend').addEventListener('click', async () => {
   const kinds = subjectTypes.map((k) => t(k)).join(', ');
   const capWords = capMinor === null ? t('noCap') : `₹${(capMinor / 100).toFixed(2)}`;
   if (!window.sreOffice || typeof window.sreOffice.confirm !== 'function') { status.className = 'status err'; status.textContent = t('noChrome'); return; }
-  const vars = { to: toUserId, from: fromUserId, kinds, fromDate, until: untilDate, cap: capWords };
+  const dateWords = (iso) => (window.sreOffice && typeof window.sreOffice.dateWords === 'function' ? window.sreOffice.dateWords(iso) : iso);
+  const vars = { to: pickedNames.to ?? toUserId, from: pickedNames.from ?? fromUserId, kinds, fromDate: dateWords(fromDate), until: dateWords(untilDate), cap: capWords };
   const said = (key) => ({ en: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), WORDS.en[key]), ta: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), WORDS.ta[key]) });
   const answer = await window.sreOffice.confirm({
     title: said('confirmLend'), detail: said('confirmLendDetail'), authority: said('confirmLendAuthority'),
@@ -180,9 +237,17 @@ $('lang').addEventListener('click', () => {
   document.documentElement.lang = lang;
   paintWords();
   render();
+  repaintPickers();
 });
 
 paintWords();
+// U2: the lender and the borrower are picked by name from the store's people; the dates through the shared dd/mm field.
+pickable('from', 'person', 'pickPerson', { onPick: (p) => { pickedNames.from = p.name; } });
+pickable('to', 'person', 'pickPerson', { onPick: (p) => { pickedNames.to = p.name; } });
+$('from').addEventListener('input', () => { delete pickedNames.from; });
+$('to').addEventListener('input', () => { delete pickedNames.to; });
+dateable('from-date', () => ({ en: WORDS.en.fromDate, ta: WORDS.ta.fromDate }));
+dateable('until-date', () => ({ en: WORDS.en.untilDate, ta: WORDS.ta.untilDate }));
 if (who !== null) { $('list-status').textContent = t('reading'); void load(); }
 
 if ('serviceWorker' in navigator) {

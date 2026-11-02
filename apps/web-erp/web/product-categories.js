@@ -14,6 +14,16 @@ const mayPropose = perms.has('catalogue.category.propose');
 const mayDefine = perms.has('catalogue.category.approve');
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const KINDS = ['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous', 'bis_controlled', 'liquor'];
 const TYPES = ['text', 'number', 'boolean', 'enum', 'date'];
 
@@ -82,7 +92,7 @@ async function call(method, path, body) {
   } catch { return { ok: false, status: 0, body: null }; }
 }
 const tell = (el, ok, text) => { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; };
-const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
+const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error));
 function canonical(v) {
   if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;

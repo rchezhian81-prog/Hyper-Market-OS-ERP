@@ -147,7 +147,7 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Day book', langName: 'தமிழ்',
     lead: 'One trading day, posted into the accounts: sales, returns, the takings by tender and the refunds by tender, each a balanced journal through the posting map into the open period. What could not be posted is an exception that stays open until a later posting covers it — never dropped. Posting is your act, in your name; a day posted twice is one posting.',
-    dayLabel: 'Trading day', loadBtn: 'Show the day', postBtn: 'Post this day to the accounts', badDay: 'Pick a trading day (YYYY-MM-DD).',
+    dayLabel: 'Trading day', loadBtn: 'Show the day', postBtn: 'Post this day to the accounts', badDay: 'Pick a trading day.',
     notPosted: 'Nothing posted for this day yet.', postedSummary: 'journals posted',
     salesTotalLabel: 'Sales posted', returnsTotalLabel: 'Returns posted', coveredLabel: 'Receipts covered', openLabel: 'open exceptions',
     journalsHeading: 'Journals', accountsHeading: 'Accounts moved', exceptionsHeading: 'Exceptions', noExceptions: 'No exceptions on this day.',
@@ -175,7 +175,7 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
   ta: {
     title: 'நாள் புத்தகம்', langName: 'English',
     lead: 'ஒரு வர்த்தக நாள், கணக்குகளில் பதிவு: விற்பனை, திருப்பங்கள், ஒவ்வொரு பணவகை வசூல் மற்றும் திருப்பிச் செலுத்தல் — ஒவ்வொன்றும் பதிவு வரைபடத்தின் வழியாகத் திறந்த காலத்திற்குச் சமநிலை ஜர்னல். பதிவு செய்ய முடியாதது ஒரு விதிவிலக்காக, பின்னர் ஒரு பதிவு அதை மூடும் வரை திறந்திருக்கும் — ஒருபோதும் கைவிடப்படாது. பதிவு உங்கள் பெயரில் உங்கள் செயல்; இருமுறை பதிவு செய்த நாள் ஒரே பதிவு.',
-    dayLabel: 'வர்த்தக நாள்', loadBtn: 'நாளைக் காட்டு', postBtn: 'இந்த நாளைக் கணக்குகளில் பதிவு செய்', badDay: 'ஒரு வர்த்தக நாளைத் தேர்வு செய்யுங்கள் (YYYY-MM-DD).',
+    dayLabel: 'வர்த்தக நாள்', loadBtn: 'நாளைக் காட்டு', postBtn: 'இந்த நாளைக் கணக்குகளில் பதிவு செய்', badDay: 'ஒரு வர்த்தக நாளைத் தேர்வு செய்யுங்கள்.',
     notPosted: 'இந்த நாளுக்கு இன்னும் எதுவும் பதிவு செய்யப்படவில்லை.', postedSummary: 'ஜர்னல்கள் பதிவு செய்யப்பட்டன',
     salesTotalLabel: 'பதிவான விற்பனை', returnsTotalLabel: 'பதிவான திருப்பங்கள்', coveredLabel: 'உள்ளடக்கிய ரசீதுகள்', openLabel: 'திறந்த விதிவிலக்குகள்',
     journalsHeading: 'ஜர்னல்கள்', accountsHeading: 'நகர்ந்த கணக்குகள்', exceptionsHeading: 'விதிவிலக்குகள்', noExceptions: 'இந்த நாளில் விதிவிலக்குகள் இல்லை.',

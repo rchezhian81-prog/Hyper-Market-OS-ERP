@@ -7,6 +7,9 @@ import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { sealedDayReopen } from '../support/store-seal';
 import { auditPage } from './lib/a11y-audit';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **M14-FR-04 — the accountant's day-book screen downloads the closed-day evidence pack for the CA, in a real browser, on
  * the PRODUCTION API over real PostgreSQL.**
@@ -55,7 +58,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the day bo
   afterAll(async () => { await browser?.close(); await shop?.stop(); });
 
   const says = (page: Page, id: string, re: RegExp) => page.waitForFunction(([i, src]) => new RegExp(src!).test((globalThis as unknown as Doc).document.getElementById(i!)?.textContent ?? ''), [id, re.source], { timeout: 15_000 });
-  const showDay = async (page: Page, day: string) => { await page.fill('#day', day); await page.click('#load'); };
+  const showDay = async (page: Page, day: string) => { await page.fill('#day', ddmm(day)); await page.click('#load'); };
 
   it('locked day: CSV and JSON downloads carry head office\'s seal; a reopened day is NOT FINAL; an unclosed day says so; Tamil', async () => {
     const context = await browser.newContext({ acceptDownloads: true });

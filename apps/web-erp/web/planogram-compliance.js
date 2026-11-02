@@ -30,7 +30,21 @@ function bayRow(b) {
   return li;
 }
 
+
+// U2 · G5 (UI/UX gap audit): the signed-in person's own store is filled in from the store computer (`sreOffice.me`) —
+// the id stays what the page sends, the store's NAME is said beside it, and a person who may hold more than one store can
+// still change it. Off the box, or before the chrome has loaded, nothing is filled in.
+function ownStore(inputId) {
+  const me = window.sreOffice?.me?.() ?? null;
+  const input = $(inputId);
+  if (me === null || !me.storeId || input === null) return;
+  if (input.value.trim() === '') input.value = me.storeId;
+  let note = document.getElementById(`${inputId}-own`);
+  if (note === null) { note = document.createElement('small'); note.id = `${inputId}-own`; note.className = 'sre-why own-store'; input.after(note); }
+  note.textContent = `${me.storeName ?? me.storeId} — ${t('yourStore')}`;
+}
 function paint() {
+  ownStore('store');
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-store', 'store'], ['show', 'show'], ['photo-h', 'photoH'], ['l-bay', 'bay'], ['l-photo', 'photo'], ['keep', 'keep']]) $(id).textContent = t(k);
   $('lang').textContent = t('lang');
@@ -112,3 +126,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// the chrome (and `sreOffice.me`) loads after this script: fill the store in once it is there
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });

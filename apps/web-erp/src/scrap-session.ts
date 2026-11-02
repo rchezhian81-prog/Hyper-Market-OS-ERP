@@ -29,7 +29,7 @@ export type ScrapDisposal = (typeof SCRAP_DISPOSALS)[number];
 export const SCRAP_COPY = {
   en: {
     title: 'Scrap and recycling', lead: 'Every carton, crate, dead freezer, can of used oil and damaged stock that leaves the shop — sold, recycled, donated or destroyed — with its weight, its money and its evidence. Money not yet in the books is shown until it is.',
-    reviewH: 'Review a branch', branch: 'Branch code', from: 'From (YYYY-MM-DD)', to: 'To (YYYY-MM-DD)', show: 'Show the review',
+    reviewH: 'Review a branch', branch: 'Branch', choose: 'Choose…', pickUnavailable: 'The list could not open — type the code instead.', whichBranch: 'Which branch?', from: 'From', to: 'To', show: 'Show the review',
     sales: 'Disposals', proceeds: 'Money', weight: 'Weight', unposted: 'Not yet in the books', ratesH: 'Average rate per tonne (this window)', noRates: 'No sale with a weight yet — no average to compare with.',
     findingsH: 'Questions to ask', noFindings: 'Nothing to question in this window.', perTonne: 'per tonne',
     fl_no_evidence: 'No evidence (slip, receipt or photograph)', fl_no_buyer_named: 'No buyer named', fl_not_posted_to_finance: 'Money not yet in the books',
@@ -45,7 +45,7 @@ export const SCRAP_COPY = {
     c_cardboard: 'Cardboard', c_plastic: 'Plastic', c_metal: 'Metal', c_e_waste: 'E-waste', c_used_oil: 'Used oil', c_damaged_stock: 'Damaged stock', c_expired_stock: 'Expired stock', c_other: 'Other',
     d_sold: 'Sold', d_recycled: 'Recycled', d_donated: 'Donated', d_destroyed: 'Destroyed',
     recorded: 'Recorded at head office. It is NOT in the books until finance takes it up — it shows on the review until then.', posted: 'Marked as taken into the books.',
-    needReview: 'Write the branch code and both days (YYYY-MM-DD), from on or before to.', needRecord: 'Fill in the branch, what it was, what happened to it, the weight in kg, the money in rupees (0 if none) and who handled it.',
+    needReview: 'Choose the branch and both days, from on or before to.', needRecord: 'Fill in the branch, what it was, what happened to it, the weight in kg, the money in rupees (0 if none) and who handled it.',
     nobody: 'Nobody is signed in on this screen.', cannotReview: 'Your role cannot read the scrap review.', cannotRecord: 'Your role cannot record scrap disposals.',
     // Round B · OB-515 (owner, 28 Oct 2026): the owner and the accountant record a scrap sale; a store manager reviews.
     recordNotYours: 'You can read the review, but recording a scrap or recycling sale is for the owner or the accountant (the owner\'s decision) — your role does not hold it, so the form is not shown.',
@@ -53,7 +53,7 @@ export const SCRAP_COPY = {
   },
   ta: {
     title: 'கழிவுப் பொருள் மற்றும் மறுசுழற்சி', lead: 'கடையை விட்டுச் செல்லும் ஒவ்வொரு அட்டைப்பெட்டி, கூடை, பழுதான உறைவிப்பான், பயன்படுத்திய எண்ணெய், சேதமான சரக்கு — விற்றது, மறுசுழற்சி, நன்கொடை அல்லது அழித்தது — அதன் எடை, பணம், சான்றுடன். கணக்கில் சேராத பணம் சேரும் வரை காட்டப்படும்.',
-    reviewH: 'ஒரு கிளையை மதிப்பாய்வு செய்', branch: 'கிளைக் குறியீடு', from: 'முதல் (YYYY-MM-DD)', to: 'வரை (YYYY-MM-DD)', show: 'மதிப்பாய்வைக் காட்டு',
+    reviewH: 'ஒரு கிளையை மதிப்பாய்வு செய்', branch: 'கிளை', choose: 'தேர்ந்தெடு…', pickUnavailable: 'பட்டியலைத் திறக்க முடியவில்லை — குறியீட்டைத் தட்டச்சு செய்யவும்.', whichBranch: 'எந்தக் கிளை?', from: 'முதல்', to: 'வரை', show: 'மதிப்பாய்வைக் காட்டு',
     sales: 'அகற்றல்கள்', proceeds: 'பணம்', weight: 'எடை', unposted: 'இன்னும் கணக்கில் சேரவில்லை', ratesH: 'டன்னுக்குச் சராசரி விலை (இந்தக் காலம்)', noRates: 'எடையுடன் விற்பனை இன்னும் இல்லை — ஒப்பிடச் சராசரி இல்லை.',
     findingsH: 'கேட்க வேண்டிய கேள்விகள்', noFindings: 'இந்தக் காலத்தில் கேள்விக்குரியது எதுவும் இல்லை.', perTonne: 'டன்னுக்கு',
     fl_no_evidence: 'சான்று இல்லை (சீட்டு, ரசீது அல்லது புகைப்படம்)', fl_no_buyer_named: 'வாங்குபவர் பெயர் இல்லை', fl_not_posted_to_finance: 'பணம் இன்னும் கணக்கில் சேரவில்லை',
@@ -68,7 +68,7 @@ export const SCRAP_COPY = {
     c_cardboard: 'அட்டைப்பெட்டி', c_plastic: 'பிளாஸ்டிக்', c_metal: 'உலோகம்', c_e_waste: 'மின்-கழிவு', c_used_oil: 'பயன்படுத்திய எண்ணெய்', c_damaged_stock: 'சேதமான சரக்கு', c_expired_stock: 'காலாவதியான சரக்கு', c_other: 'மற்றவை',
     d_sold: 'விற்றது', d_recycled: 'மறுசுழற்சி', d_donated: 'நன்கொடை', d_destroyed: 'அழித்தது',
     recorded: 'தலைமை அலுவலகத்தில் பதிவானது. நிதித்துறை எடுக்கும் வரை இது கணக்கில் இல்லை — அதுவரை மதிப்பாய்வில் காட்டப்படும்.', posted: 'கணக்கில் சேர்த்ததாகக் குறிக்கப்பட்டது.',
-    needReview: 'கிளைக் குறியீட்டையும் இரண்டு நாட்களையும் (YYYY-MM-DD) எழுதுங்கள், முதல் நாள் வரை நாளுக்கு முன்.', needRecord: 'கிளை, என்ன, அதற்கு என்ன ஆனது, கிலோவில் எடை, ரூபாயில் பணம் (இல்லையெனில் 0), கையாண்டவர் ஆகியவற்றை நிரப்புங்கள்.',
+    needReview: 'கிளையையும் இரண்டு நாட்களையும் தேர்ந்தெடுங்கள், முதல் நாள் வரை நாளுக்கு முன்.', needRecord: 'கிளை, என்ன, அதற்கு என்ன ஆனது, கிலோவில் எடை, ரூபாயில் பணம் (இல்லையெனில் 0), கையாண்டவர் ஆகியவற்றை நிரப்புங்கள்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotReview: 'உங்கள் பணி கழிவு மதிப்பாய்வைப் படிக்க முடியாது.', cannotRecord: 'உங்கள் பணி கழிவு அகற்றல்களைப் பதிவு செய்ய முடியாது.',
     recordNotYours: 'நீங்கள் மதிப்பாய்வைப் படிக்கலாம்; ஆனால் கழிவு அல்லது மறுசுழற்சி விற்பனையைப் பதிவு செய்வது உரிமையாளர் அல்லது கணக்காளரின் பணி (உரிமையாளரின் முடிவு) — உங்கள் பணிக்கு அந்த அனுமதி இல்லை, எனவே படிவம் காட்டப்படவில்லை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',

@@ -393,6 +393,32 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 .sre-confirm-actions .sre-btn-primary, .sre-confirm-actions .sre-btn-danger { min-height: 48px; }
 .sre-confirm .sre-field textarea.sre-input { min-height: 88px; }
 
+/* The picker (U2 · G5): pick a product, supplier, person, place, store, customer or approval by its NAME — one sheet
+   with a search box and a list; rows are 44px targets; the typed-code fallback sits below the list, never a dead end. */
+.sre-picker { z-index: 46; }
+.sre-picker .sre-sheet-inner { gap: var(--space-3); width: min(640px, 100%); }
+.sre-picker h2 { margin: 0; font-size: var(--fs-lg); line-height: var(--leading-tight); color: var(--ink); }
+.sre-picker-search .sre-input { width: 100%; }
+.sre-picker-count { margin: 0; font-size: var(--fs-sm); color: var(--strip-ink); min-height: 1.4em; }
+.sre-picker-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); max-height: min(48dvh, 420px); overflow-y: auto; }
+.sre-picker-list:empty { display: none; }
+.sre-picker-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-3); width: 100%; min-height: var(--tap); padding: var(--space-2) var(--space-3); text-align: left; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); font-size: var(--fs-base); cursor: pointer; }
+.sre-picker-row:hover { background: var(--hover); border-color: var(--ink-2); }
+.sre-picker-row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.sre-picker-name { font-weight: 600; }
+.sre-picker-code-word { font-size: var(--fs-sm); color: var(--strip-ink); font-variant-numeric: var(--numbers); }
+.sre-picker-state:empty { display: none; }
+.sre-picker-state .sre-empty { margin: 0; }
+.sre-picker-code { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line-soft); }
+.sre-picker-code[hidden] { display: none; }
+.sre-picker-code .sre-btn { justify-self: start; min-height: 44px; }
+
+/* A pick field: "name (code)" shown read-only, Choose… beside it, the id kept in a hidden input (U2 · G5). */
+.sre-pick-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: stretch; }
+.sre-pick-row .sre-pick-shown { flex: 1 1 220px; min-width: 0; cursor: pointer; background: var(--field); }
+.sre-pick-row .sre-btn { min-height: var(--tap); }
+.sre-date .sre-input { max-width: 220px; font-variant-numeric: var(--numbers); }
+
 
 /* The banner that must not be missed: full width, top, stays until acknowledged (design system §1 rule 5). */
 .sre-banner { position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px; background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; box-shadow: var(--shadow-lg); }

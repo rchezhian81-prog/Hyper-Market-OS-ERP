@@ -7,6 +7,16 @@
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const WORDS = {
   en: {
     title: 'App content', langName: 'தமிழ்', lead: 'What the customer app shows and searches for a product. Each change is a new version and reaches the app on the next publish.',
@@ -40,7 +50,7 @@ async function post(path, body, what) {
   try {
     const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'idempotency-key': newKey(what) }, body: JSON.stringify(body) });
     const answer = await res.json().catch(() => ({}));
-    if (res.ok) tell(true, t('done')); else tell(false, `${t('refused')}: ${answer?.error?.whatHappened ?? res.status}`);
+    if (res.ok) tell(true, t('done')); else tell(false, refusalLine(res.status, answer?.error));
     return res.ok;
   } catch { tell(false, t('unreachable')); return false; }
 }

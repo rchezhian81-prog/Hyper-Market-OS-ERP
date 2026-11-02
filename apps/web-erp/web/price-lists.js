@@ -17,6 +17,16 @@ const mayZone = perms.has('price.zone.manage');
 const mayRead = perms.has('catalogue.pack.read') || mayPropose;
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const WORDS = {
   en: {
     lang: 'தமிழ்', title: 'Price lists',
@@ -82,6 +92,25 @@ const WORDS = {
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const setShopDate = (id, iso) => { const n = $(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 const rupees = (minor) => `₹${(minor / 100).toFixed(2)}`;
 const subjectWords = (s) => WORDS[lang][`subject:${s}`] ?? s;
@@ -102,7 +131,7 @@ async function call(method, path, body) {
   } catch { return { ok: false, status: 0, body: null }; }
 }
 const tell = (el, ok, text) => { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; };
-const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
+const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error));
 function canonical(v) {
   if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
@@ -227,6 +256,7 @@ function paintChannels() {
 }
 
 function paint() {
+  repaintShopDates();
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-same', 'kSame'], ['k-pending', 'kPending'], ['k-zoned', 'kZoned'],
     ['tab-prices', 'tabPrices'], ['tab-zones', 'tabZones'], ['tab-channels', 'tabChannels'], ['prices-h', 'tabPrices'], ['prices-lead', 'pricesLead'],
@@ -273,7 +303,7 @@ async function loadHistory() {
 
 async function readBasis() {
   const st = $('price-status');
-  const id = $('p-product').value.trim(); const scope = $('p-scope').value; const ref = $('p-ref').value.trim(); const from = $('p-from').value;
+  const id = $('p-product').value.trim(); const scope = $('p-scope').value; const ref = $('p-ref').value.trim(); const from = dateOf('p-from');
   if (id === '' || ref === '' || from === '') { tell(st, false, t('needAll')); return false; }
   const out = await call('GET', `/v1/prices/list/${encodeURIComponent(id)}/basis?${new URLSearchParams({ scope, scopeRef: ref, on: from })}`);
   if (!out.ok) { basis = null; basisFor = ''; say(st, out, ''); paintBasis(); return false; }
@@ -291,7 +321,7 @@ $('read-basis').addEventListener('click', () => { void readBasis(); });
 $('save').addEventListener('click', async () => {
   const st = $('price-status');
   const id = $('p-product').value.trim(); const scope = $('p-scope').value; const ref = $('p-ref').value.trim();
-  const from = $('p-from').value; const to = $('p-to').value; const price = $('p-price').value.trim();
+  const from = dateOf('p-from'); const to = dateOf('p-to'); const price = $('p-price').value.trim();
   if (id === '' || ref === '' || from === '' || price === '') { tell(st, false, t('needAll')); return; }
   if (basis === null || basisFor !== formKey()) { if (!(await readBasis())) return; }
   if (basis.mrpMinor === null) { tell(st, false, t('noMrp')); return; }
@@ -352,7 +382,7 @@ $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; 
 paint();
 if (named && !mayRead) tell($('page-status'), false, t('noRight'));
 if (named && mayRead) {
-  $('p-from').value = today();
+  setShopDate('p-from', today());
   if (!mayPropose) { $('page-status').className = 'status'; $('page-status').textContent = t('readOnly'); }
   const asked = new URLSearchParams(location.search).get('product');
   if (asked !== null && /^[A-Za-z0-9_.:-]{1,64}$/.test(asked)) $('p-product').value = asked;
@@ -390,3 +420,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('p-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('p-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });

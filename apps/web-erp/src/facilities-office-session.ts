@@ -17,7 +17,7 @@ export type Lang = 'en' | 'ta';
 
 export const FACILITIES_OFFICE_COPY = {
   en: {
-    officeH: 'Assets, cold rooms and energy', branch: 'Store', asOf: 'As of (optional)', read: 'Read', assetsH: 'Asset register', alertsH: 'Needs attention', noAlerts: 'No asset needs attention.',
+    officeH: 'Assets, cold rooms and energy', branch: 'Store', yourStore: 'your store', asOf: 'As of (optional)', read: 'Read', assetsH: 'Asset register', alertsH: 'Needs attention', noAlerts: 'No asset needs attention.',
     equipmentH: 'Cold rooms and cabinets', downtimeH: 'Downtime', energyH: 'Energy (last 30 days)', incidentsH: 'Facility incidents', none: 'None.',
     warranty: 'warranty until', amc: 'AMC until', lastService: 'last serviced', never: 'never', notRecorded: 'not recorded', critical: 'critical', important: 'important', routine: 'routine',
     amc_expiring: 'AMC ending soon', amc_expired: 'AMC ended', amc_missing: 'No AMC recorded', warranty_expiring: 'Warranty ending soon', service_overdue: 'Service overdue', never_serviced: 'Never serviced',
@@ -32,7 +32,7 @@ export const FACILITIES_OFFICE_COPY = {
     saved: 'Saved.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read.', needBranch: 'Type the store first.',
   },
   ta: {
-    officeH: 'சொத்துகள், குளிர் அறைகள் மற்றும் மின்சாரம்', branch: 'கடை', asOf: 'நாள் (விருப்பம்)', read: 'படி', assetsH: 'சொத்துப் பதிவேடு', alertsH: 'கவனம் தேவை', noAlerts: 'எந்தச் சொத்துக்கும் கவனம் தேவையில்லை.',
+    officeH: 'சொத்துகள், குளிர் அறைகள் மற்றும் மின்சாரம்', branch: 'கடை', yourStore: 'உங்கள் கடை', asOf: 'நாள் (விருப்பம்)', read: 'படி', assetsH: 'சொத்துப் பதிவேடு', alertsH: 'கவனம் தேவை', noAlerts: 'எந்தச் சொத்துக்கும் கவனம் தேவையில்லை.',
     equipmentH: 'குளிர் அறைகள் மற்றும் அலமாரிகள்', downtimeH: 'செயலிழப்பு நேரம்', energyH: 'மின்சாரம் (கடந்த 30 நாள்)', incidentsH: 'வசதி நிகழ்வுகள்', none: 'எதுவும் இல்லை.',
     warranty: 'உத்தரவாதம் வரை', amc: 'AMC வரை', lastService: 'கடைசி சேவை', never: 'இல்லை', notRecorded: 'பதியப்படவில்லை', critical: 'முக்கியமானது', important: 'தேவையானது', routine: 'வழக்கமானது',
     amc_expiring: 'AMC விரைவில் முடிகிறது', amc_expired: 'AMC முடிந்தது', amc_missing: 'AMC பதியப்படவில்லை', warranty_expiring: 'உத்தரவாதம் விரைவில் முடிகிறது', service_overdue: 'சேவை தாமதம்', never_serviced: 'சேவை செய்யப்படவில்லை',

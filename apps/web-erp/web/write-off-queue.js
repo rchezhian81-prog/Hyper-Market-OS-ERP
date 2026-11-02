@@ -5,6 +5,41 @@
 // Tamil twin; every button carries an icon beside its word.
 
 const el = (id) => document.getElementById(id);
+
+// ── U2 (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+const pickWords = {
+  en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
+  ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
+};
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
 const q = window.writeOffQueue ?? null;
 const dec = window.writeOffDecide ?? null;
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -93,7 +128,9 @@ async function loadDecide() {
   if (o.result === 'ok') pending = o.value; else el('wod-status').textContent = dec.outcomeWords(lang(), o);
   paintDecide();
 }
-el('lang').addEventListener('click', () => { paintQueue(); paintDecide(); });
+el('lang').addEventListener('click', () => { paintQueue(); paintDecide(); repaintPickers(); });
+// U2: the line-down loss and the free sample pick the item and the place by name too.
+if (q !== null) { pickable('woq-product', 'product', 'pickProduct'); pickable('woq-location', 'place', 'pickPlace'); }
 paintQueue(); paintDecide();
 void loadDecide();
 
@@ -120,6 +157,7 @@ if (fs !== null && fs.session.may.named) {
   });
   el('lang').addEventListener('click', () => { paintFreeSample(); });
   paintFreeSample();
+  pickable('fs-product', 'product', 'pickProduct'); pickable('fs-location', 'place', 'pickPlace');
 }
 
 // ── OB-393: the free samples waiting for a store manager other than the giver. Read on a click, never on open; the giver's

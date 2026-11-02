@@ -44,7 +44,14 @@
       td, th { text-align: left; }
       .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
       [hidden] { display: none !important; }
-    </style>
+          /* U2 · G5: a store or product field with its "Choose…" button beside it; the products chosen one by one */
+      .form-row label { display: grid; gap: 4px; }
+      .pick-btn { align-self: end;  min-width: var(--tap); padding-left: 14px; padding-right: 14px; }
+      .pick-name { grid-column: 1 / -1; color: var(--muted); font-size: var(--fs-sm); min-height: 1.2em; }
+      .products-pick { grid-column: 1 / -1; display: grid; gap: 8px; }
+      .products-pick .field-name { font-weight: 600; }
+      #product-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+</style>
   </head>
   <body>
     <header>
@@ -71,8 +78,14 @@
           <label for="kind"><span id="l-kind">Kind</span><select id="kind"><option value="festival" id="o-festival">Festival</option><option value="local_event" id="o-local">Local event</option></select></label>
           <label for="ev-from"><span id="l-ev-from">From</span><input id="ev-from" type="date" /></label>
           <label for="ev-to"><span id="l-ev-to">To</span><input id="ev-to" type="date" /></label>
-          <label for="effect"><span id="l-effect">Expected effect</span><input id="effect" inputmode="decimal" autocomplete="off" /></label>
-          <label for="products"><span id="l-products">Only these products (codes, optional)</span><input id="products" autocomplete="off" /></label>
+          <label for="effect"><span id="l-effect">Expected effect</span><input id="effect" inputmode="decimal" autocomplete="off" /><small class="muted" id="effect-words"></small></label>
+          <div class="products-pick">
+            <span id="l-products" class="field-name">Only these products (optional)</span>
+            <small class="muted" id="products-hint">Every product of the store, unless you add some here.</small>
+            <ul class="rows" id="product-list" aria-labelledby="l-products"></ul>
+            <button id="add-product" type="button" class="sre-btn">Add a product…</button>
+            <input id="products" type="hidden" />
+          </div>
           <button id="save" type="submit" class="sre-btn sre-btn-primary">Record the event</button>
         </form>
         <p class="status" id="record-status" role="status" aria-live="polite"></p>

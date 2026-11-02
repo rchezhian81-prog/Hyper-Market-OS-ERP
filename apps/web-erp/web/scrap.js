@@ -17,6 +17,65 @@ async function confirmFirst(spec) {
   return answer && answer.ok === true ? answer : null;
 }
 
+
+
+// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
+// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
+// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
+// list cannot be read (head office down, no right) typing the code is the fallback, never a dead end (P-01, P-08).
+const pickers = [];
+function pickerBeside(input, kind, titleKey, extra = {}) {
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
+  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
+  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
+  host.after(btn, name);
+  btn.addEventListener('click', async () => {
+    const office = window.sreOffice;
+    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
+    const picked = await office.pick({ kind, title: { en: api.words('en', titleKey), ta: api.words('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
+    if (!picked || picked.ok !== true) return;
+    input.value = picked.id;
+    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+  pickers.push(btn);
+  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
+  return btn;
+}
+const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+/** U2 · G5: the person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
+function myStore() {
+  const office = window.sreOffice;
+  const me = office && typeof office.me === 'function' ? office.me() : null;
+  return (me && me.storeId) || (window.sreDirectory && window.sreDirectory.store && window.sreDirectory.store.id) || '';
+}
+/** The branch fields start as the person's own store (changeable); the chrome may load after this page. */
+function prefillBranches() {
+  const id = myStore(); if (id === '') return;
+  for (const f of ['v-branch', 's-branch']) if ($(f).value.trim() === '') $(f).value = id;
+}
+
+// U2 · G14: the review's two days are the chrome's shared date field (dd/mm/yyyy, the shop's calendar; read back as ISO);
+// until the chrome is there the plain boxes stay (ISO typed), so the page is never a dead end.
+function dateable(inputId, labelKey, value) {
+  const input = $(inputId);
+  if (!input || input.dataset.dateable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => dateable(inputId, labelKey, value), { once: true }); return; }
+  const holder = input.closest('label') ?? input;
+  const field = office.dateField({ id: inputId, label: { en: api.words('en', labelKey), ta: api.words('ta', labelKey) }, required: true, ...(value ? { value } : {}) });
+  if (!field) return;
+  field.dataset.dateable = 'on';
+  holder.replaceWith(field);
+}
+const dateOf = (fieldId) => {
+  const office = window.sreOffice;
+  const f = $(fieldId);
+  if (office && typeof office.dateValue === 'function' && f && f.closest('.sre-date')) return office.dateValue(fieldId) ?? '';
+  return f ? f.value : '';
+};
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, act, iconName, quiet) {
@@ -66,14 +125,15 @@ function paint() {
   $('page-status').textContent = pageStatusKey === null ? '' : t(pageStatusKey);
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['review-h', 'reviewH'], ['v-branch-l', 'branch'], ['v-from-l', 'from'], ['v-to-l', 'to'], ['v-show-text', 'show'],
+  for (const [elId, key] of [['review-h', 'reviewH'], ['v-branch-l', 'branch'], ['v-from-l', 'from'], ['v-to-l', 'to'], ['v-show-text', 'show'],
     ['record-h', 'recordH'], ['s-branch-l', 'branch'], ['s-category-l', 'category'], ['s-disposal-l', 'disposal'], ['s-kg-l', 'kg'], ['s-proceeds-l', 'proceedsRs'],
-    ['s-buyer-l', 'buyer'], ['s-evidence-l', 'evidence'], ['s-recycler-l', 'recycler'], ['s-by-l', 'handledBy'], ['s-record-text', 'record']]) $(id).textContent = t(key);
+    ['s-buyer-l', 'buyer'], ['s-evidence-l', 'evidence'], ['s-recycler-l', 'recycler'], ['s-by-l', 'handledBy'], ['s-record-text', 'record']]) { const n = $(elId); if (n !== null) n.textContent = t(key); } // a day label belongs to the chrome's date field once mounted
   if (api !== null) { fillSelect('s-category', api.categories, 'c_'); fillSelect('s-disposal', api.disposals, 'd_'); }
+  paintPickers();
   paintReview();
 }
 async function showReview() {
-  const out = await session.review({ branchId: $('v-branch').value, from: $('v-from').value, to: $('v-to').value });
+  const out = await session.review({ branchId: $('v-branch').value, from: dateOf('v-from'), to: dateOf('v-to') });
   if (out.result !== 'ok') { review = null; $('v-status').textContent = api.outcomeWords(lang, out); paintReview(); return; }
   review = out.value; $('v-status').textContent = ''; paintReview();
 }
@@ -81,10 +141,14 @@ async function showReview() {
 for (const [id, name] of [['v-show', 'search'], ['s-record', 'list-plus']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
+prefillBranches();
+document.addEventListener('sre:chrome', prefillBranches);
 if (may.named && may.review) {
   const today = api.today();
   $('v-from').value = today; $('v-to').value = today;
   $('review').hidden = false;
+  dateable('v-from', 'from', today); dateable('v-to', 'to', today);
+  pickerBeside($('v-branch'), 'store', 'whichBranch');
   $('v-show').addEventListener('click', () => { void showReview(); });
   $('finding-rows').addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-act="posted"]'); if (b === null) return;
@@ -97,6 +161,7 @@ if (may.named && may.review) {
   });
   if (may.record) {
     $('record').hidden = false;
+    pickerBeside($('s-branch'), 'store', 'whichBranch');
     $('s-by').value = session.userId ?? '';
     $('s-record').addEventListener('click', async () => {
       // U1 · OB-626: the consequence-and-confirm sheet before the disposal is recorded — Go back sends nothing.

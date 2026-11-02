@@ -15,7 +15,7 @@ export type Lang = 'en' | 'ta';
 export const TILL_DESK_COPY = {
   en: {
     tillJobsH: 'Deliveries from the till', tillJobsLead: 'Bills the till marked for delivery. A customer with the app chooses the address and slot there; otherwise enter them here from the till’s delivery slip. Once booked, plan them with the day’s routes.',
-    showTillJobs: 'Show the till deliveries', dayL: 'Slot day (YYYY-MM-DD)', none: 'No till delivery is waiting.',
+    showTillJobs: 'Show the till deliveries', dayL: 'Slot day', none: 'No till delivery is waiting.',
     waiting_for_delivery_desk: 'Waiting for the desk — enter it from the slip', waiting_for_customer_app: 'Waiting for the customer — they choose in the app', booked: 'Booked',
     bill: 'Bill', job: 'Job', byApp: 'chosen in the app', byDesk: 'entered at the desk by', slotL: 'Slot', latL: 'Latitude', lonL: 'Longitude', landmarkL: 'Landmark (optional)',
     enter: 'Book this delivery', needFields: 'Choose a slot and give the map point (latitude and longitude) from the slip.', badPoint: 'The map point is not a latitude and longitude.',
@@ -28,7 +28,7 @@ export const TILL_DESK_COPY = {
   },
   ta: {
     tillJobsH: 'கவுண்டரிலிருந்து டெலிவரிகள்', tillJobsLead: 'கவுண்டர் டெலிவரிக்குக் குறித்த பில்கள். செயலி உள்ள வாடிக்கையாளர் முகவரியையும் நேரத்தையும் அதில் தேர்வு செய்வார்; இல்லையெனில் கவுண்டரின் டெலிவரி சீட்டிலிருந்து இங்கே உள்ளிடுங்கள். பதிவானதும், நாளின் வழிகளுடன் திட்டமிடுங்கள்.',
-    showTillJobs: 'கவுண்டர் டெலிவரிகளைக் காட்டு', dayL: 'டெலிவரி நாள் (YYYY-MM-DD)', none: 'காத்திருக்கும் கவுண்டர் டெலிவரி இல்லை.',
+    showTillJobs: 'கவுண்டர் டெலிவரிகளைக் காட்டு', dayL: 'டெலிவரி நாள்', none: 'காத்திருக்கும் கவுண்டர் டெலிவரி இல்லை.',
     waiting_for_delivery_desk: 'மேசைக்காகக் காத்திருக்கிறது — சீட்டிலிருந்து உள்ளிடுங்கள்', waiting_for_customer_app: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது — செயலியில் தேர்வு செய்வார்', booked: 'பதிவானது',
     bill: 'பில்', job: 'பணி', byApp: 'செயலியில் தேர்வு செய்யப்பட்டது', byDesk: 'மேசையில் உள்ளிட்டவர்', slotL: 'நேரம்', latL: 'அட்சரேகை', lonL: 'தீர்க்கரேகை', landmarkL: 'அடையாளம் (விருப்பம்)',
     enter: 'இந்த டெலிவரியைப் பதிவு செய்', needFields: 'ஒரு நேரத்தைத் தேர்ந்தெடுத்து, சீட்டிலிருந்து வரைபடப் புள்ளியை (அட்சரேகை, தீர்க்கரேகை) கொடுங்கள்.', badPoint: 'வரைபடப் புள்ளி அட்சரேகை, தீர்க்கரேகை அல்ல.',

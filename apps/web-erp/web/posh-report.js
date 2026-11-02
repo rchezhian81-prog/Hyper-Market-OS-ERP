@@ -8,6 +8,16 @@
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const WORDS = {
   en: {
     title: 'Committee annual report', langName: 'தமிழ்',
@@ -179,7 +189,7 @@ async function send(year, values, button) {
     // Answered: recorded or refused, the key is done with — a new attempt is a new filing request.
     pendingKeys.delete(year);
     if (res.ok) tell(true, `${t('recorded')}: ${year} — ${answer.onTime ? t('onTime') : t('late')}`);
-    else tell(false, `${t('refused')}: ${answer?.error?.whatHappened ?? res.status} ${answer?.error?.nextSafeAction ?? ''}`.trim());
+    else tell(false, refusalLine(res.status, answer?.error));
   } catch {
     tell(false, t('unreachable'));
   } finally {

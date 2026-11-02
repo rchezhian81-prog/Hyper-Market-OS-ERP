@@ -61,6 +61,16 @@ const WORDS = {
   },
 };
 let lang = 'en';
+
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
 const t = (k) => WORDS[lang][k] ?? WORDS.en[k] ?? k;
 const idem = () => ((crypto.randomUUID && crypto.randomUUID()) || `org-${Date.now()}-${Math.random()}`);
 
@@ -89,7 +99,7 @@ async function askedActivation(nodeId) {
 }
 function say(el, out, good) {
   el.className = `status ${out.ok ? 'good' : 'err'}`;
-  el.textContent = out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`;
+  el.textContent = out.ok ? good : out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error);
 }
 
 /** The tree in reading order: each company, then what sits under it, depth first, by name. */

@@ -52,7 +52,14 @@
       label.check { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); }
       label.check input { min-height: auto; width: 20px; height: 20px; }
       [hidden] { display: none !important; }
-    </style>
+          /* U2 · G5: a place field with its "Choose…" button beside it; the products chosen one by one, then the bulk box second */
+      .row label { display: grid; gap: 4px; }
+      .pick-btn { margin-top: 6px;  min-width: var(--tap); padding-left: 14px; padding-right: 14px; }
+      .pick-name { display: block; color: var(--muted); font-size: var(--fs-sm); min-height: 1.2em; }
+      .products-pick { display: grid; gap: 8px; }
+      .products-pick .field-name { font-weight: 600; }
+      #product-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+</style>
   </head>
   <body>
     <header>
@@ -83,7 +90,12 @@
           <label for="place"><span id="l-place">Place</span><input id="place" autocomplete="off" /></label>
           <label for="threshold"><span id="l-threshold">Recount threshold</span><input id="threshold" inputmode="decimal" autocomplete="off" /></label>
         </div>
-        <label for="products"><span id="l-products">Products</span><textarea id="products" autocomplete="off"></textarea></label>
+        <div class="products-pick">
+          <span id="l-products" class="field-name">Products to count</span>
+          <ul class="rows" id="product-list" aria-labelledby="l-products"></ul>
+          <button id="add-product" type="button" class="sre-btn">Add a product…</button>
+        </div>
+        <label for="products"><span id="l-products-bulk">Many at once (ids, one per line)</span><textarea id="products" autocomplete="off"></textarea></label>
         <fieldset>
           <legend id="l-freeze">Freeze</legend>
           <label><input type="radio" name="freeze" value="default" checked /><span id="f-default">Default</span></label>

@@ -163,6 +163,16 @@ const WORDS = {
   },
 };
 let lang = 'en';
+
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 
 /** Why the page itself did not send an act — one entry per `ACT_REFUSAL_KINDS`, both languages. */
@@ -259,7 +269,7 @@ async function act(check, good) {
   if (!out.ok) {
     // OB-557: the switched-on list changed since this screen read it — said in plain words, and the latest is shown.
     if (out.body?.error?.code === 'enabled_list_changed') { tell(t('read'), t('listChanged')); await refresh(); return false; }
-    tell(t('read'), out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
+    tell(t('read'), out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error));
     return false;
   }
   tell(t('done'), good(out.body), true);

@@ -9,6 +9,16 @@
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const WORDS = {
   en: {
     title: 'EPR registers', langName: 'தமிழ்',
@@ -177,7 +187,7 @@ async function post(path, body, slot) {
   pendingKeys.delete(slot);
   return { ok: res.ok, answer, status: res.status };
 }
-const refusal = (out) => `${t('refused')}: ${out.answer?.error?.whatHappened ?? out.status}`;
+const refusal = (out) => refusalLine(out.status, out.answer?.error);
 const newId = (what) => `${what}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 async function recordTakeBack(event) {

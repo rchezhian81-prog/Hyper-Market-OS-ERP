@@ -32,6 +32,7 @@ import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, catalogueForViewer
 import { packTimeZone } from './shop-zone'; // OB-606
 import { wallClockIn } from '../../../packages/calendar/src/trading-day'; // Round A: the copy's time in the shop's clock
 import { navigationPayload, type NavigationPayload, asSignedInPerson, permissionsOf } from './screen-navigation';
+import { directoryPayload } from './screen-directory'; // U2: who and where, from the signed pack
 import { ERP_NAVIGATION, permissionsOpening } from '../../../apps/web-erp/src/navigation';
 import {
   SIGN_OUT_BAR, notAllowedPage, officeCookie, officeTokenOf, readSignInForm, safeNext, signInPage, signedInGlobals,
@@ -846,6 +847,10 @@ export function startScreenServer(input: {
           // OB-288 P6: the owner's self-checkout watch numbers / the kiosk's "stop quoting after" — only when set (P-08).
           ...customerFacingGlobals(route.screen, snap.pack.policies.known ? snap.pack.policies.value : undefined),
           ...(navigation === undefined ? {} : { sreNavigation: navigation }),
+          // U2 (G5 · G16): the store's own people and places, the store, the shop's zone and the person signed in — so a page
+          // lets a person PICK a colleague or a place by name and SHOWS a name where it showed an id. From the signed pack,
+          // so it is there with head office down (P-01). Only the office pages: the till and the handhelds have their own.
+          ...(APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreDirectory: directoryPayload(snap.pack, signedIn) }),
           // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
           // present when this box serves a lane socket to post to; the screen falls back to read-only
           // (a local preview) when it is absent.

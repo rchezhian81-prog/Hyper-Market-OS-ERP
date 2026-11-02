@@ -12,6 +12,9 @@ import { P3, p3Shop } from '../support/p3-purchase';
 import { decide } from '../support/approval-request';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **Supplier terms put on head office's record from a screen, in a real browser served by the store computer (M06-FR-03
  * "contracts, schemes, rebates, lead times and supplier scorecards" · §28 · ADR-0024).**
@@ -111,7 +114,7 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier contracts and rebate schemes re
     await p.click('#s-ask');
     await says(p, '#s-status', /^Fill in the scheme code, the supplier/);
     expect(writes).toEqual([]);
-    await p.fill('#s-rate', '2.5'); await p.fill('#s-starts', today); await p.fill('#s-ends', nextYear);
+    await p.fill('#s-rate', '2.5'); await p.fill('#s-starts', ddmm(today)); await p.fill('#s-ends', ddmm(nextYear));
     await p.click('#s-ask');
     await says(p, '#s-status', /^Asked\. A different person who approves suppliers approves exactly these terms/);
     await approveAsAccountant('rb-9');
@@ -130,7 +133,7 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier contracts and rebate schemes re
   it('a contract with its lead time: recorded unapproved (shown so), then asked, approved and recorded again — in force; the scorecard uses it', async () => {
     const { page: p, errors, writes } = await open(P3.BUYER, '/supplier-scorecard/');
     await p.waitForSelector('#contract-form:not([hidden])');
-    await p.fill('#k-id', 'ct-1'); await p.fill('#k-supplier', 'sup-1'); await p.fill('#k-starts', today); await p.fill('#k-ends', nextYear); await p.fill('#k-lead', '4');
+    await p.fill('#k-id', 'ct-1'); await p.fill('#k-supplier', 'sup-1'); await p.fill('#k-starts', ddmm(today)); await p.fill('#k-ends', ddmm(nextYear)); await p.fill('#k-lead', '4');
     await p.click('#k-record');
     await says(p, '#k-status', /^Recorded WITHOUT an approval/);
     await p.waitForSelector('#contracts tr[data-contract="ct-1"][data-finding="unapproved"]');

@@ -59,6 +59,7 @@ function sampleSession() {
 
 let session = window.stockHealthSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
+const nameOf = (kind, id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf(kind, key) || key) : key; };
 
 /** One health-signal row. Every row reads as a state — a tone AND an icon AND a word (colour is never alone). */
 function signalNode(s) {
@@ -86,7 +87,8 @@ function signalNode(s) {
   const facts = document.createElement('div');
   facts.className = 'facts';
   if (s.kind === 'negative_stock' && s.productId !== null) {
-    const where = document.createElement('span'); where.textContent = `${s.productId} @ ${s.locationId}`;
+    // U2 · G16: the product's and the place's NAME where the ids were shown (the id itself when no name is known)
+    const where = document.createElement('span'); where.textContent = `${nameOf('product', s.productId)} @ ${nameOf('place', s.locationId)}`;
     facts.append(where);
     if (s.amountMinor !== null) { const qty = document.createElement('span'); qty.textContent = `${(s.amountMinor / 100).toLocaleString('en-IN')}`; facts.append(qty); }
     if (s.detail) { const act = document.createElement('span'); act.textContent = s.detail; facts.append(act); }

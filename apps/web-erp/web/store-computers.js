@@ -32,6 +32,10 @@ function paintSummary() {
 }
 
 function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
+
+// U2 · G16 (UI/UX gap audit): a NAME where an id was shown — the store's name, the store computer's name, the time zone in
+// words — through the chrome (`sreOffice.nameOf`); the id itself when no name is known, never blank.
+const nameOf = (kind, id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf(kind, key) || key) : key; };
 function button(text, act, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = text; b.dataset.act = act; b.addEventListener('click', onClick); return b; }
 
 function paintBindings() {
@@ -43,7 +47,7 @@ function paintBindings() {
   for (const b of rows) {
     const tr = document.createElement('tr');
     tr.dataset.store = b.storeId; tr.dataset.prefix = b.prefix; tr.dataset.computer = b.computer; tr.dataset.via = b.via;
-    tr.append(cell(b.storeId), cell(b.prefix), cell(b.computer), cell(b.via === 'replacement' ? t('viaReplaced') : t('viaFirst')), cell(when(b.since)));
+    tr.append(cell(nameOf('store', b.storeId)), cell(b.prefix), cell(nameOf('person', b.computer)), cell(b.via === 'replacement' ? t('viaReplaced') : t('viaFirst')), cell(when(b.since)));
     if (you().mayReplace) {
       // Open the drawer for this till, the old store computer already filled in.
       tr.tabIndex = 0;
@@ -65,7 +69,7 @@ function paintUnused() {
   for (const u of rows) {
     const tr = document.createElement('tr');
     tr.dataset.store = u.storeId; tr.dataset.prefix = u.prefix; tr.dataset.day = u.day; tr.dataset.count = String(u.count);
-    tr.append(cell(u.storeId), cell(u.prefix), cell(u.day), cell(String(u.count)), cell(api.unusedWords(lang, u)));
+    tr.append(cell(nameOf('store', u.storeId)), cell(u.prefix), cell(u.day), cell(String(u.count)), cell(api.unusedWords(lang, u)));
     body.append(tr);
   }
 }
@@ -81,7 +85,7 @@ function paintZones() {
     const tr = document.createElement('tr');
     tr.dataset.store = z.storeId; tr.dataset.verdict = z.verdict;
     if (z.verdict === 'differs') tr.className = 'attention';
-    tr.append(cell(z.storeId), cell(z.computer ?? ''), cell(z.machineTimeZone), cell(`${z.shopTimeZone}${z.shopTimeZoneFrom === 'shop_default' ? ` ${t('zoneDefault')}` : ''}`), cell(api.zoneWords(lang, z)), cell(when(z.lastReportAt)));
+    tr.append(cell(nameOf('store', z.storeId)), cell(nameOf('person', z.computer ?? '')), cell(nameOf('zone', z.machineTimeZone)), cell(`${nameOf('zone', z.shopTimeZone)}${z.shopTimeZoneFrom === 'shop_default' ? ` ${t('zoneDefault')}` : ''}`), cell(api.zoneWords(lang, z)), cell(when(z.lastReportAt)));
     body.append(tr);
   }
 }
@@ -96,7 +100,7 @@ function paintFindings() {
     const li = document.createElement('li');
     li.dataset.kind = f.kind; li.dataset.store = f.storeId; li.dataset.prefix = f.prefix;
     const head = document.createElement('strong');
-    head.textContent = `${api.findingWords(lang, f)} — ${f.storeId} · ${f.prefix}`;
+    head.textContent = `${api.findingWords(lang, f)} — ${nameOf('store', f.storeId)} · ${f.prefix}`;
     const detail = document.createElement('span');
     detail.textContent = f.detail;
     li.append(head, detail);
@@ -123,7 +127,7 @@ function paintRequests() {
     li.dataset.requestId = r.requestId; li.dataset.status = r.status;
     const d = r.details;
     const head = document.createElement('strong');
-    head.textContent = `${d.prefix} · ${d.storeId}: ${d.fromComputer} → ${d.toComputer}`;
+    head.textContent = `${d.prefix} · ${nameOf('store', d.storeId)}: ${nameOf('person', d.fromComputer)} → ${nameOf('person', d.toComputer)}`;
     const state = document.createElement('span');
     state.textContent = `${api.requestWords(lang, r)} — ${d.reason}`;
     li.append(head, state);

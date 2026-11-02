@@ -10,6 +10,24 @@ const may = session?.may ?? { named: false, read: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 let card = null;
 let contractId = null;
 // FG-4 · D03-FR-05: the price variance shown (the roll-ups), and the drill-through open on it (the lines behind one row).
@@ -43,8 +61,9 @@ function panel(figure, r) {
 }
 
 function paint() {
+  repaintShopDates();
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-supplier', 'supplier'], ['l-from', 'from'], ['l-to', 'to'], ['show', 'show']]) $(id).textContent = t(k);
+  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-supplier', 'supplier'], ['l-from', 'from'], ['l-to', 'to'], ['show', 'show']]) { const n = $(id); if (n) n.textContent = t(k); }
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.supplierScorecardData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
@@ -107,7 +126,7 @@ function lineRows(table, lines) {
 }
 
 function paintPpv() {
-  for (const [id, k] of [['ppv-h', 'ppvTitle'], ['ppv-lead', 'ppvLead'], ['ppv-show-text', 'ppvShow'], ['ppv-h-product', 'ppvByProduct'], ['ppv-h-receipt', 'ppvByReceipt'], ['ppv-back-text', 'ppvBack']]) $(id).textContent = t(k);
+  for (const [id, k] of [['ppv-h', 'ppvTitle'], ['ppv-lead', 'ppvLead'], ['ppv-show-text', 'ppvShow'], ['ppv-h-product', 'ppvByProduct'], ['ppv-h-receipt', 'ppvByReceipt'], ['ppv-back-text', 'ppvBack']]) { const n = $(id); if (n) n.textContent = t(k); }
   for (const [id, name] of [['ppv-h', 'percent'], ['ppv-show', 'chart-column'], ['ppv-h-product', 'package'], ['ppv-h-receipt', 'receipt'], ['ppv-back', 'rotate-ccw']]) withIcon($(id), name);
   $('ppv-show').disabled = !may.read; whyDisabled($('ppv-show'), may.read ? '' : 'role');
   $('ppv-rollups').hidden = ppv === null || drill !== null;
@@ -129,7 +148,7 @@ function paintPpv() {
 }
 
 async function showPpv() {
-  ppvAsked = { supplier: $('supplier').value, from: $('from').value, to: $('to').value };
+  ppvAsked = { supplier: $('supplier').value, from: dateOf('from'), to: dateOf('to') };
   const out = await session.priceVariance(ppvAsked.supplier, ppvAsked.from, ppvAsked.to);
   drill = null;
   if (out.result === 'ok') { ppv = out.value; $('ppv-status').className = 'status'; $('ppv-status').textContent = ''; }
@@ -147,7 +166,7 @@ async function openDrill(kind, key) {
 
 async function show(event) {
   event?.preventDefault();
-  const out = await session.scorecard($('supplier').value, $('from').value, $('to').value);
+  const out = await session.scorecard($('supplier').value, dateOf('from'), dateOf('to'));
   if (out.result === 'ok') { card = out.value.scorecard; contractId = out.value.contractId; $('page-status').className = 'status'; $('page-status').textContent = ''; }
   else { card = null; $('page-status').className = 'status err'; $('page-status').textContent = api.outcomeWords(lang, out); }
   paint();
@@ -159,7 +178,7 @@ const tt = (k) => (terms === null ? k : terms.words(lang, k));
 let contracts = null;
 function paintContracts() {
   for (const [id, key] of [['contracts-h', 'contractsH'], ['contracts-show-text', 'contractsShow'], ['contract-h', 'contractH'], ['contract-lead', 'contractLead'], ['k-id-l', 'contractId'],
-    ['k-supplier-l', 'supplier'], ['k-starts-l', 'startsOn'], ['k-ends-l', 'endsOn'], ['k-lead-l', 'leadDays'], ['k-ask-text', 'ask'], ['k-record-text', 'record']]) $(id).textContent = tt(key);
+    ['k-supplier-l', 'supplier'], ['k-starts-l', 'startsOn'], ['k-ends-l', 'endsOn'], ['k-lead-l', 'leadDays'], ['k-ask-text', 'ask'], ['k-record-text', 'record']]) { const n = $(id); if (n) n.textContent = tt(key); }
   const body = $('contracts').querySelector('tbody');
   body.replaceChildren();
   if (contracts === null) return;
@@ -179,7 +198,7 @@ async function showContracts() {
   else { contracts = null; $('contracts-status').className = 'status err'; $('contracts-status').textContent = terms.outcomeWords(lang, out); }
   paintContracts();
 }
-const contractForm = () => ({ contractId: $('k-id').value, supplierId: $('k-supplier').value, startsOn: $('k-starts').value, endsOn: $('k-ends').value, leadDays: $('k-lead').value });
+const contractForm = () => ({ contractId: $('k-id').value, supplierId: $('k-supplier').value, startsOn: dateOf('k-starts'), endsOn: dateOf('k-ends'), leadDays: $('k-lead').value });
 const kSay = (out) => { $('k-status').className = `status${out.result === 'ok' ? '' : ' err'}`; $('k-status').textContent = terms.outcomeWords(lang, out); };
 if (terms !== null && terms.session.may.read) {
   $('contracts-section').hidden = false;
@@ -227,3 +246,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { if (terms !== null) { shopDate('k-starts', { en: terms.words('en', 'startsOn'), ta: terms.words('ta', 'startsOn') }); shopDate('k-ends', { en: terms.words('en', 'endsOn'), ta: terms.words('ta', 'endsOn') }); } shopDate('from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });

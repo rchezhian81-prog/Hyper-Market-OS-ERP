@@ -10,6 +10,24 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, open: false, gate: false, approve: false, train: false, champion: false, productivity: false, homeDepartment: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, cls) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
@@ -121,9 +139,10 @@ function paintHomeDepartments() {
 }
 
 function paint() {
+  repaintShopDates();
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['gate-h', 'gateH'], ['th-role', 'role'], ['th-people', 'people'], ['th-cur', 'curriculum'], ['th-missing', 'missing'], ['gate-read-text', 'readGate'], ['cur-h', 'curriculumH'], ['train-h', 'trainingH'], ['t-emp-l', 'employee'], ['t-item-l', 'item'], ['t-due-l', 'due'], ['t-assign-text', 'assign'], ['champ-h', 'championsH'], ['access-h', 'accessH'], ['x-read-text', 'checkAccess'], ['prod-h', 'productivityH'], ['pr-from-l', 'from'], ['pr-to-l', 'to'], ['pr-read-text', 'readProductivity'], ['hd-h', 'homeH'], ['hd-emp-l', 'homeEmployee'], ['hd-dept-l', 'homeDept'], ['hd-set-text', 'homeSet']]) $(id).textContent = t(key);
+  for (const [id, key] of [['gate-h', 'gateH'], ['th-role', 'role'], ['th-people', 'people'], ['th-cur', 'curriculum'], ['th-missing', 'missing'], ['gate-read-text', 'readGate'], ['cur-h', 'curriculumH'], ['train-h', 'trainingH'], ['t-emp-l', 'employee'], ['t-item-l', 'item'], ['t-due-l', 'due'], ['t-assign-text', 'assign'], ['champ-h', 'championsH'], ['access-h', 'accessH'], ['x-read-text', 'checkAccess'], ['prod-h', 'productivityH'], ['pr-from-l', 'from'], ['pr-to-l', 'to'], ['pr-read-text', 'readProductivity'], ['hd-h', 'homeH'], ['hd-emp-l', 'homeEmployee'], ['hd-dept-l', 'homeDept'], ['hd-set-text', 'homeSet']]) { const n = $(id); if (n) n.textContent = t(key); }
   paintGate(); paintCurriculum(); paintTraining(); paintChampions(); paintAccess(); paintProductivity(); paintHomeDepartments();
 }
 async function loadGate() { if (!may.gate) return; const o = await session.gate(); if (o.result === 'ok') gate = o.value; else say('page-status', o); paintGate(); }
@@ -141,16 +160,18 @@ else {
   $('cur').hidden = false; void loadCurriculum();
   $('train').hidden = false; void loadTraining();
   $('train-form').hidden = !may.train; $('t-assign').hidden = !may.train;
-  $('t-assign').addEventListener('click', async () => { const out = await session.assign({ employeeId: $('t-emp').value, itemId: $('t-item').value, title: '', dueOn: $('t-due').value }); say('t-status', out); if (out.result === 'ok') { await loadTraining(); await loadGate(); } });
+  $('t-assign').addEventListener('click', async () => { const out = await session.assign({ employeeId: $('t-emp').value, itemId: $('t-item').value, title: '', dueOn: dateOf('t-due') }); say('t-status', out); if (out.result === 'ok') { await loadTraining(); await loadGate(); } });
   $('champ').hidden = false; void loadChampions();
   $('access').hidden = false;
   $('x-read').addEventListener('click', async () => { const o = await session.access(); if (o.result === 'ok') { access = o.value; $('x-status').textContent = ''; } else say('x-status', o); paintAccess(); });
   if (may.productivity) {
     $('prod').hidden = false;
-    $('pr-read').addEventListener('click', async () => { const o = await session.productivity($('pr-from').value, $('pr-to').value); if (o.result === 'ok') { prod = o.value; $('pr-status').textContent = ''; } else say('pr-status', o); paintProductivity(); });
+    $('pr-read').addEventListener('click', async () => { const o = await session.productivity(dateOf('pr-from'), dateOf('pr-to')); if (o.result === 'ok') { prod = o.value; $('pr-status').textContent = ''; } else say('pr-status', o); paintProductivity(); });
   }
   if (may.homeDepartment) {
     $('home-dept').hidden = false;
     $('hd-set').addEventListener('click', async () => { const out = await session.setHomeDepartment($('hd-emp').value, $('hd-dept').value); say('hd-status', out); });
   }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('t-due', { en: wordsIn('en', 'due'), ta: wordsIn('ta', 'due') }); shopDate('pr-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('pr-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });

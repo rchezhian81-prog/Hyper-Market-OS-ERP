@@ -6,6 +6,9 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **The accountant posts a trading day into the accounts, in a real browser (M23-FR-01 · API-09 · §28 — the E2E matrix).**
  *
@@ -145,7 +148,7 @@ describe.skipIf(!HAVE_BROWSER)('the accountant posts a trading day, end to end i
     const page = await context.newPage();
     await page.goto(`${srv.base}/`, { waitUntil: 'load' });
     // Choose the day under test and read it: the screen defaults to yesterday, the stub answers any day.
-    await page.fill('#day', DAY);
+    await page.fill('#day', ddmm(DAY));
     await page.click('#load');
     await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.getElementById('posted-state')?.textContent !== '', undefined, { timeout: 10_000 });
     return { srv, context, page, teardown: async () => { await context.close(); await srv.stop(); } };

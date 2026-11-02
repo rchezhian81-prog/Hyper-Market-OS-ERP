@@ -14,8 +14,26 @@ const may = session?.may ?? { named: false, read: false, waves: false, dispatch:
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 const store = () => $('store').value;
-const runDate = () => $('run-date').value;
+const runDate = () => dateOf('run-date');
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show-orders', 'search'], ['show-waves', 'list-checks'], ['build', 'package'], ['plan', 'navigation'], ['off-road', 'rotate-ccw'],
@@ -228,14 +246,29 @@ function settled(out) {
   good('settle-status', `${s.routeId} · ${t('stage')}: ${s.stage}${s.proposed ? ` · ${api.rupees(s.proposed.amountMinor)} (${s.proposed.drops} ${t('drops')})` : ''}${s.differenceMinor !== null && s.differenceMinor !== 0 ? ` · ⚠ ${t('varianceK')} ${api.rupees(s.differenceMinor)}` : ''} · ${t('settleBooks')}: ${s.books}`);
 }
 
+
+// U2 · G5 (UI/UX gap audit): the signed-in person's own store is filled in from the store computer (`sreOffice.me`) —
+// the id stays what the page sends, the store's NAME is said beside it, and a person who may hold more than one store can
+// still change it. Off the box, or before the chrome has loaded, nothing is filled in.
+function ownStore(inputId) {
+  const me = window.sreOffice?.me?.() ?? null;
+  const input = $(inputId);
+  if (me === null || !me.storeId || input === null) return;
+  if (input.value.trim() === '') input.value = me.storeId;
+  let note = document.getElementById(`${inputId}-own`);
+  if (note === null) { note = document.createElement('small'); note.id = `${inputId}-own`; note.className = 'sre-why own-store'; input.after(note); }
+  note.textContent = `${me.storeName ?? me.storeId} — ${t('yourStore')}`;
+}
 function paint() {
+  repaintShopDates();
+  ownStore('store');
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['store-l', 'storeL'], ['date-l', 'dateL'], ['waves-h', 'wavesH'],
     ['show-orders-text', 'showOrders'], ['show-waves-text', 'boardWaves'], ['ready-h', 'readyK'], ['held-orders-h', 'heldK'], ['on-wave-h', 'onWaveK'], ['wave-id-l', 'waveIdL'],
     ['picker-l', 'pickerL'], ['build-text', 'build'], ['routes-h', 'routesH'], ['drivers-l', 'driversL'], ['speed-l', 'speedL'], ['minutes-l', 'minutesL'], ['plan-text', 'plan'],
     ['off-driver-l', 'pickerL'], ['off-reason-l', 'reasonL'], ['off-road-text', 'offRoad'], ['board-h', 'boardH'], ['show-board-text', 'showBoard'], ['contribution-h', 'heldH'],
     ['show-held-text', 'showHeld'], ['controls-h', 'controlsH'], ['show-controls-text', 'showControls'], ['settle-h', 'settleH'], ['settle-route-l', 'routeIdL'],
-    ['propose-text', 'propose'], ['approve-settle-text', 'approveSettle'], ['paid-amount-l', 'amountL'], ['voucher-l', 'voucherL'], ['paid-text', 'paid']]) $(id).textContent = t(k);
+    ['propose-text', 'propose'], ['approve-settle-text', 'approveSettle'], ['paid-amount-l', 'amountL'], ['voucher-l', 'voucherL'], ['paid-text', 'paid']]) { const n = $(id); if (n) n.textContent = t(k); }
   $('off-driver-l').textContent = lang === 'ta' ? 'டிரைவர்' : 'Driver';
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.dispatchData?.userId ?? '';
@@ -323,14 +356,14 @@ function paintTillJobs() {
 }
 async function showTillJobs(say = true) {
   if (desk === null || !desk.session.may.read) { $('till-jobs-status').className = 'status err'; $('till-jobs-status').textContent = dk('cannotRead'); return; }
-  const out = await desk.session.jobs(store(), $('till-day').value);
+  const out = await desk.session.jobs(store(), dateOf('till-day'));
   if (out.result !== 'ok') { deskSay(out); return; }
   tillJobs = out.value;
   if (say) { $('till-jobs-status').className = 'status'; $('till-jobs-status').textContent = `${tillJobs.waitingForDesk} ${dk('waitingDesk')} · ${tillJobs.waitingForCustomer} ${dk('waitingApp')}`; }
   paintTillJobs();
 }
 function paintDesk() {
-  for (const [id, k] of [['till-jobs-h', 'tillJobsH'], ['till-jobs-lead', 'tillJobsLead'], ['till-day-l', 'dayL'], ['show-till-jobs-text', 'showTillJobs']]) $(id).textContent = dk(k);
+  for (const [id, k] of [['till-jobs-h', 'tillJobsH'], ['till-jobs-lead', 'tillJobsLead'], ['till-day-l', 'dayL'], ['show-till-jobs-text', 'showTillJobs']]) { const n = $(id); if (n) n.textContent = dk(k); }
   $('show-till-jobs').disabled = desk === null || !desk.session.may.read; whyDisabled($('show-till-jobs'), desk === null ? 'offline' : desk.session.may.read ? '' : 'role');
   paintTillJobs();
 }
@@ -362,3 +395,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// the chrome (and `sreOffice.me`) loads after this script: fill the store in once it is there
+document.addEventListener('sre:chrome', () => { if (desk !== null) shopDate('till-day', { en: desk.words('en', 'dayL'), ta: desk.words('ta', 'dayL') }); shopDate('run-date', { en: wordsIn('en', 'dateL'), ta: wordsIn('ta', 'dateL') }); paint(); }, { once: true });

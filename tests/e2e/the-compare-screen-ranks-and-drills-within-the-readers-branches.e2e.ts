@@ -11,6 +11,9 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **The Compare side by side page (M29-FR-02 · §27 Owner "branch comparison" · NFR-15 · §28) in a real browser, served by
  * the store computer, over head office's real governed drill and compare.**
@@ -126,7 +129,7 @@ describe.skipIf(!HAVE_BROWSER)('the Compare side by side page through the store 
   it('the owner ranks branches, departments and staff on head office\'s figures and opens a row to its exact bills', async () => {
     const { page: p, errors } = await open(OWNER, '/branch-compare/');
     await p.waitForSelector('#form:not([hidden])');
-    expect(await p.inputValue('#c-from')).toBe(TODAY);
+    expect(await p.inputValue('#c-from')).toBe(ddmm(TODAY)); // U2: shown as a shop person writes it; ISO is what the page sends
     await compare(p, 'branch');
     expect(await rows(p)).toEqual(['store-2', 'store-1']);
     expect(await p.textContent('#r-rows tr[data-key="store-2"]')).toContain('₹500.00');

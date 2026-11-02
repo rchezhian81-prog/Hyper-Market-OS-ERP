@@ -153,7 +153,10 @@
       .version.superseded { color: var(--muted); text-decoration: line-through; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
-    </style>
+          /* U2 · G5: an id field with its "Choose…" button beside it and the picked thing's name under it */
+      .field .pick-btn { margin-top: 6px;  min-width: var(--tap); padding-left: 14px; padding-right: 14px; }
+      .field .pick-name { display: block; color: var(--muted); font-size: var(--fs-sm); min-height: 1.2em; }
+</style>
   </head>
   <body>
     <header>
@@ -263,7 +266,7 @@
           <input id="po-store" type="text" autocomplete="off" />
         </div>
         <div class="field">
-          <label for="po-product" id="po-product-label">Item code</label>
+          <label for="po-product" id="po-product-label">Item</label>
           <input id="po-product" type="text" autocomplete="off" />
         </div>
         <div class="field">

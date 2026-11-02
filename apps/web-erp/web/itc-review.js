@@ -9,6 +9,16 @@
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const WORDS = {
   en: {
     title: 'Input tax credit', langName: 'தமிழ்',
@@ -192,7 +202,7 @@ async function post(path, body, key) {
   const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(body) });
   return { ok: res.ok, answer: await res.json().catch(() => ({})), status: res.status };
 }
-const refusal = (out) => `${t('refused')}: ${out.answer?.error?.whatHappened ?? out.status} ${out.answer?.error?.nextSafeAction ?? ''}`.trim();
+const refusal = (out) => refusalLine(out.status, out.answer?.error);
 const newKey = (what) => `itc-${what}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 async function decide(line, action, reason, form) {

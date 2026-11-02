@@ -8,6 +8,41 @@
 // own idempotency key, so a double click is one act. Every word has a Tamil twin and follows the one language toggle.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2 (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+const pickWords = {
+  en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
+  ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
+};
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
 const who = window.serviceDeskData && typeof window.serviceDeskData === 'object' ? window.serviceDeskData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const mayAct = perms.has('service.case.manage');
@@ -16,7 +51,7 @@ const WORDS = {
   en: {
     title: 'Customer cases', casesH: 'Open and recent cases', casesLede: 'Breaching cases first. Pick one to work it.',
     case: 'Case', kind: 'Kind', priority: 'Priority', state: 'State', first: 'First reply', resolution: 'Resolution',
-    openH: 'Open a case', caseNo: 'Case number', customer: 'Customer code', order: 'Order (optional)', said: 'What the customer said', openCase: 'Open the case',
+    openH: 'Open a case', caseNo: 'Case (its reference is given by the shop)', customer: 'Customer', order: 'Order (optional)', said: 'What the customer said', openCase: 'Open the case',
     complaint: 'Complaint', enquiry: 'Enquiry', warranty: 'Warranty', lost_and_found: 'Lost and found',
     low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent',
     open: 'open', waiting_on_customer: 'waiting on the customer', resolved: 'resolved', closed: 'closed',
@@ -46,7 +81,7 @@ const WORDS = {
   ta: {
     title: 'வாடிக்கையாளர் வழக்குகள்', casesH: 'திறந்த மற்றும் சமீபத்திய வழக்குகள்', casesLede: 'காலம் மீறியவை முதலில். ஒன்றைத் தேர்ந்தெடுத்து வேலை செய்யுங்கள்.',
     case: 'வழக்கு', kind: 'வகை', priority: 'முன்னுரிமை', state: 'நிலை', first: 'முதல் பதில்', resolution: 'தீர்வு',
-    openH: 'வழக்கைத் திற', caseNo: 'வழக்கு எண்', customer: 'வாடிக்கையாளர் குறியீடு', order: 'ஆர்டர் (விருப்பம்)', said: 'வாடிக்கையாளர் சொன்னது', openCase: 'வழக்கைத் திற',
+    openH: 'வழக்கைத் திற', caseNo: 'வழக்கு (அதன் குறிப்பு கடை வழங்கியது)', customer: 'வாடிக்கையாளர்', order: 'ஆர்டர் (விருப்பம்)', said: 'வாடிக்கையாளர் சொன்னது', openCase: 'வழக்கைத் திற',
     complaint: 'புகார்', enquiry: 'விசாரணை', warranty: 'உத்தரவாதம்', lost_and_found: 'தொலைந்ததும் கண்டெடுத்ததும்',
     low: 'குறைவு', normal: 'சாதாரணம்', high: 'அதிகம்', urgent: 'அவசரம்',
     open: 'திறந்துள்ளது', waiting_on_customer: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது', resolved: 'தீர்ந்தது', closed: 'மூடப்பட்டது',
@@ -129,7 +164,7 @@ function paintWords() {
   const nobody = $('nobody');
   nobody.hidden = mayAct;
   nobody.textContent = who === null ? t('nobody') : t('readOnly');
-  for (const id of ['open-case', 'ask-draft', 'resolve', 'rc-save']) { $(id).disabled = !mayAct; whyDisabled($(id), mayAct ? '' : 'role'); }
+  for (const btn of ['open-case', 'ask-draft', 'resolve', 'rc-save']) { $(btn).disabled = !mayAct; whyDisabled($(btn), mayAct ? '' : 'role'); }
   $('open-section').hidden = !mayAct;
 }
 
@@ -285,18 +320,37 @@ async function loadCases() {
   if (picked !== null) picked = { ...picked, ...(cases.find((c) => c.caseId === picked.caseId) ?? {}) };
   renderCases();
   renderCase();
+  if (mayAct && $('new-id').value.trim() === '') proposeCaseNumber();
   renderSummary();
 }
 
+/** U2: the case number is GIVEN by the page — the shop's day and the next free number in head office's own list — never
+ *  typed by the desk. Head office refuses a number that exists; then the next one is proposed. */
+function proposeCaseNumber() {
+  // OB-606: the SHOP's day, never the UTC date of "now"; without the bundle's shop day no number is proposed (the open refuses).
+  const shopDay = window.sreShopDay && typeof window.sreShopDay.today === 'function' ? window.sreShopDay.today() : null;
+  if (shopDay === null) return;
+  const day = shopDay.replace(/-/g, '');
+  const prefix = `C-${day}-`;
+  const taken = new Set(cases.map((c) => c.caseId));
+  let n = 1;
+  while (taken.has(`${prefix}${String(n).padStart(3, '0')}`)) n += 1;
+  $('new-id').value = `${prefix}${String(n).padStart(3, '0')}`;
+}
+
 $('open-case').addEventListener('click', async () => {
+  if ($('new-id').value.trim() === '') proposeCaseNumber();
   const caseId = $('new-id').value.trim();
   const body = { kind: $('new-kind').value, priority: $('new-priority').value, customerRef: $('new-customer').value.trim(), summary: $('new-summary').value.trim(), assignedTo: who?.userId ?? '' };
   const orderRef = $('new-order').value.trim();
   const channel = $('new-channel').value;
   const out = await post(`/v1/service/cases/${encodeURIComponent(caseId)}`, { ...body, ...(orderRef === '' ? {} : { orderRef }), ...(channel === '' ? {} : { channel }) });
   say($('open-status'), out);
-  if (out.ok) { await loadCases(); await pick(caseId); }
+  if (out.ok) { await loadCases(); await pick(caseId); $('new-id').value = ''; proposeCaseNumber(); }
+  else if (out.status === 409) { $('new-id').value = ''; proposeCaseNumber(); }
 });
+// U2: the customer is picked by name; the number is proposed, never typed.
+pickable('new-customer', 'customer', 'pickCustomer', { idOf: (p) => String(p.id ?? '') });
 
 $('ask-draft').addEventListener('click', async () => {
   if (picked === null) return;
@@ -338,6 +392,7 @@ $('lang').addEventListener('click', () => {
   renderCases();
   renderCase();
   renderSummary();
+  repaintPickers();
 });
 
 paintWords();

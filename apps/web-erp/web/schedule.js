@@ -11,6 +11,24 @@ const may = session?.may ?? { named: false, read: false, draft: false, commit: f
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 let demand = null;
 let draft = null;
 let actuals = null;
@@ -26,9 +44,10 @@ function row(cells, attrs = {}) {
 function say(id, out, good) { $(id).className = `status ${good ? 'good' : 'err'}`; $(id).textContent = good ? out : api.outcomeWords(lang, out); }
 
 function paint() {
+  repaintShopDates();
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-branch', 'branch'], ['l-week', 'week'], ['show', 'show'], ['draft', 'draft'], ['actuals', 'actuals'],
-    ['limits-h', 'limitsH'], ['demand-h', 'demandH'], ['draft-h', 'draftH'], ['uncovered-h', 'uncoveredH'], ['breaches-h', 'breachesH'], ['cost-h', 'costH'], ['commit', 'commit'], ['actuals-h', 'actualsH']]) $(id).textContent = t(k);
+    ['limits-h', 'limitsH'], ['demand-h', 'demandH'], ['draft-h', 'draftH'], ['uncovered-h', 'uncoveredH'], ['breaches-h', 'breachesH'], ['cost-h', 'costH'], ['commit', 'commit'], ['actuals-h', 'actualsH']]) { const n = $(id); if (n) n.textContent = t(k); }
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.scheduleData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
@@ -65,7 +84,7 @@ function paint() {
 }
 
 const branch = () => $('branch').value;
-const week = () => $('week').value;
+const week = () => dateOf('week');
 async function show(event) {
   event?.preventDefault();
   const out = await session.demand(branch(), week());
@@ -130,3 +149,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('week', { en: wordsIn('en', 'week'), ta: wordsIn('ta', 'week') }); paint(); }, { once: true });

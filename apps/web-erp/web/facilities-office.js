@@ -52,10 +52,43 @@ async function syncReadings() {
 let read = null;
 const rupees = (m) => (office === null ? String(m) : office.rupees(m));
 const deg = (t) => (office === null ? String(t) : office.degrees(t));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = el(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = el(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (el(id)?.value ?? ''));
+
+// U2 · G5 (UI/UX gap audit): the signed-in person's own store is filled in from the store computer (`sreOffice.me`) —
+// the id stays what the page sends, the store's NAME is said beside it, and a person who may hold more than one store can
+// still change it. Off the box, or before the chrome has loaded, nothing is filled in.
+function ownStore(inputId) {
+  const me = window.sreOffice?.me?.() ?? null;
+  const input = el(inputId);
+  if (me === null || !me.storeId || input === null) return;
+  if (input.value.trim() === '') input.value = me.storeId;
+  let note = document.getElementById(`${inputId}-own`);
+  if (note === null) { note = document.createElement('small'); note.id = `${inputId}-own`; note.className = 'sre-why own-store'; input.after(note); }
+  note.textContent = `${me.storeName ?? me.storeId} — ${w('yourStore')}`;
+}
 function paintOffice() {
+  repaintShopDates();
+
+  ownStore('office-branch');
   if (office === null || !office.session.may.read) { el('office').hidden = true; return; }
   el('office').hidden = false;
-  for (const [id, key] of [['office-heading', 'officeH'], ['office-branch-l', 'branch'], ['office-asof-l', 'asOf'], ['office-read-text', 'read'], ['o-alerts-h', 'alertsH'], ['o-assets-h', 'assetsH'], ['o-equipment-h', 'equipmentH'], ['o-downtime-h', 'downtimeH'], ['o-energy-h', 'energyH'], ['o-incidents-h', 'incidentsH']]) el(id).textContent = w(key);
+  for (const [id, key] of [['office-heading', 'officeH'], ['office-branch-l', 'branch'], ['office-asof-l', 'asOf'], ['office-read-text', 'read'], ['o-alerts-h', 'alertsH'], ['o-assets-h', 'assetsH'], ['o-equipment-h', 'equipmentH'], ['o-downtime-h', 'downtimeH'], ['o-energy-h', 'energyH'], ['o-incidents-h', 'incidentsH']]) { const n = el(id); if (n) n.textContent = w(key); }
   el('office-parts').hidden = read === null;
   if (read === null) return;
   const alerts = [...read.health.critical, ...read.health.other];
@@ -75,7 +108,7 @@ if (office !== null && office.session.may.read) {
   if (office.storeId) el('office-branch').value = office.storeId;
   el('office-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const out = await office.session.read(el('office-branch').value, el('office-asof').value);
+    const out = await office.session.read(el('office-branch').value, dateOf('office-asof'));
     if (out.result === 'ok') { read = out.value; el('office-status').textContent = `${w('read')} · ${read.asAt}`; } else el('office-status').textContent = office.outcomeWords(lang(), out);
     paintOffice();
   });
@@ -84,3 +117,5 @@ el('lang').addEventListener('click', () => { paintReadings(); paintOffice(); });
 paintReadings(); paintOffice();
 void syncReadings();
 setInterval(() => { void syncReadings(); }, 15_000);
+// the chrome (and `sreOffice.me`) loads after this script: fill the store in once it is there
+document.addEventListener('sre:chrome', () => { if (office !== null) shopDate('office-asof', { en: office.words('en', 'asOf'), ta: office.words('ta', 'asOf') }); paintOffice(); }, { once: true });

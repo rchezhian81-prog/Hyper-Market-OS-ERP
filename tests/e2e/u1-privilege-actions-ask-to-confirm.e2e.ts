@@ -20,6 +20,10 @@ import { startOfficeShop, PEOPLE, type OfficeShop } from './lib/office-shop';
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DESK = { viewport: { width: 1280, height: 860 } };
 const day = (plus: number): string => new Date(Date.now() + plus * 86_400_000).toISOString().slice(0, 10);
+// U2: the dates are the shared dd/mm field; the sheet says them in words.
+const ddmm = (d: string): string => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const words = (d: string): string => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
 
 describe.skipIf(!existsSync(CHROMIUM))('U1: the Delegation page asks to confirm before authority is lent', () => {
   let browser: Browser;
@@ -41,8 +45,8 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: the Delegation page asks to confirm 
       const fill = async () => {
         await s.page.fill('#from', PEOPLE.manager);
         await s.page.fill('#to', PEOPLE.accountant);
-        await s.page.fill('#from-date', day(0));
-        await s.page.fill('#until-date', day(10));
+        await s.page.fill('#from-date', ddmm(day(0)));
+        await s.page.fill('#until-date', ddmm(day(10)));
         await s.page.fill('#cap', '2000');
         await s.page.check('input[name="kind"][value="refund"]');
         await s.page.fill('#reason', 'Manager on leave for ten days');
@@ -51,7 +55,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: the Delegation page asks to confirm 
       await s.page.click('#lend');
       const sheet = s.page.locator('#sre-confirm');
       await sheet.waitFor({ timeout: 15_000 });
-      expect(await s.page.textContent('#sre-confirm-title')).toBe(`${PEOPLE.accountant} will be able to decide Refunds as ${PEOPLE.manager}, from ${day(0)} until ${day(10)}, up to ₹2000.00.`);
+      expect(await s.page.textContent('#sre-confirm-title')).toBe(`${PEOPLE.accountant} will be able to decide Refunds as ${PEOPLE.manager}, from ${words(day(0))} until ${words(day(10))}, up to ₹2000.00.`);
       expect(await s.page.textContent('#sre-confirm .sre-confirm-authority')).toMatch(/Authorised by you — a different person from the lender/);
       expect(await s.page.textContent('#sre-confirm-go')).toBe('Lend this authority');
       expect(await s.page.evaluate('document.activeElement && document.activeElement.id'), 'the safe choice has the focus').toBe('sre-confirm-back');
@@ -95,7 +99,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: the Delegation page asks to confirm 
       await s.page.waitForFunction('globalThis.sreOffice !== undefined');
       await s.page.evaluate('delete globalThis.sreOffice');
       await s.page.fill('#from', PEOPLE.manager); await s.page.fill('#to', PEOPLE.accountant);
-      await s.page.fill('#from-date', day(0)); await s.page.fill('#until-date', day(10));
+      await s.page.fill('#from-date', ddmm(day(0))); await s.page.fill('#until-date', ddmm(day(10)));
       await s.page.check('input[name="kind"][value="refund"]'); await s.page.fill('#reason', 'cover');
       await s.page.click('#lend');
       await expect.poll(() => s.page.textContent('#lend-status')).toMatch(/did not finish loading[\s\S]*Nothing was lent/);

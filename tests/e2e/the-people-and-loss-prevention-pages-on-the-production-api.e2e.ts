@@ -6,6 +6,9 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, type InboxShop } from './lib/ai-inbox-shop';
 import { auditPage } from './lib/a11y-audit';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * OB-288 LP/workforce package — the people and loss-prevention pages in a real browser, on the PRODUCTION API over real
  * PostgreSQL: Help and procedures (M25-FR-04: a cashier sees the cashier procedure and acknowledges it in their own name),
@@ -124,7 +127,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the people
     await waitText(page, '#cur-status', 'Saved.');
     await waitText(page, '#cur-roles .role-block[data-role="cashier"]', 'approved, version 1');
     // OB-357: sales per labour hour — Asha has no home department yet: her 8 hours are "not attributed", by name.
-    await page.fill('#pr-from', TODAY); await page.fill('#pr-to', TODAY);
+    await page.fill('#pr-from', ddmm(TODAY)); await page.fill('#pr-to', ddmm(TODAY));
     await page.click('#pr-read');
     await waitText(page, '#pr-rows li[data-row="not-attributed"]', 'Asha (u-cash, 8)');
     expect(await page.locator('#pr-read svg').count()).toBe(1);
@@ -160,7 +163,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the people
     const { page, errors, close } = await open('u-mgr', '/appointment-letters');
     await page.waitForSelector('#make:not([hidden])');
     expect(await page.isHidden('#wording-form')).toBe(true); // the words are the owner's
-    await page.fill('#mk-emp', 'u-cash'); await page.fill('#mk-from', TODAY);
+    await page.fill('#mk-emp', 'u-cash'); await page.fill('#mk-from', ddmm(TODAY));
     await page.click('#mk-save');
     await waitText(page, '#mk-status', 'Saved.');
     const row = page.locator('#letter-rows li[data-employee="u-cash"]');

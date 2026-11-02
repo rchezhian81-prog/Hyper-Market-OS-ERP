@@ -36,6 +36,14 @@ function sampleSession() {
 const real = window.categoryPolicySession;
 const session = real ?? sampleSession();
 const t = (key) => session.text(lang, key);
+// U2 · G16 (UI/UX gap audit): the category's name where its id was shown — from the page's own data when the store computer
+// gave names, else the chrome's directory (`sreOffice.nameOf`); the id itself when no name is known, never blank.
+const categoryName = (id) => {
+  const names = window.categoryPolicyData?.categoryNames;
+  if (names && typeof names === 'object' && typeof names[id] === 'string' && names[id] !== '') return names[id];
+  const o = window.sreOffice;
+  return o && typeof o.nameOf === 'function' ? (o.nameOf('category', id) || id) : id;
+};
 let attentionOnly = false;
 const VIEW_WORDS = { en: { filterAll: 'Show all', filterAttention: 'Only the ones needing attention' }, ta: { filterAll: 'அனைத்தையும் காட்டு', filterAttention: 'கவனம் தேவைப்படுபவை மட்டும்' } };
 const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
@@ -46,7 +54,8 @@ function rowNode(c) {
 
   const head = document.createElement('div');
   head.className = 'head';
-  const cat = document.createElement('span'); cat.className = 'cat'; cat.textContent = c.categoryId;
+  // U2 · G16: the category's name, never its raw id, when the store computer or the chrome knows one
+  const cat = document.createElement('span'); cat.className = 'cat'; cat.textContent = categoryName(c.categoryId);
   const status = document.createElement('span');
   status.className = 'status';
   const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = c.status.icon;

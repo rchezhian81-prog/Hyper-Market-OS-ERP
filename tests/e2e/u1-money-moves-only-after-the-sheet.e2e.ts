@@ -52,7 +52,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: money moves only after the confirm s
 
   it('Day book: posting a day asks first, with the day in words; Go back posts nothing, Confirm posts once', async () => {
     const { context, page, writes, errors } = await open(PEOPLE.accountant, '/day-book');
-    await page.fill('#day', '2026-10-01');
+    await page.fill('#day', '01/10/2026');
     await page.click('#load');
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForSelector('#post:not([hidden])');

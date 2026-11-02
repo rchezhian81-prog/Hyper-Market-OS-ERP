@@ -15,6 +15,24 @@ let measure = 'sales';
 let heat = null;
 const t = (k) => (api === null ? k : api.words(lang, k));
 
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['m-sales', 'indian-rupee'], ['m-margin', 'percent'], ['show', 'layout-grid']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 
@@ -85,9 +103,24 @@ function drawTable() {
   $('off-plan').textContent = off.products.length === 0 ? `✓ ${t('offPlanNone')}` : `⚠ ${t('offPlan')}: ${off.products.join(', ')} (${api.rupees(off.salesMinor)})`;
 }
 
+
+// U2 · G5 (UI/UX gap audit): the signed-in person's own store is filled in from the store computer (`sreOffice.me`) —
+// the id stays what the page sends, the store's NAME is said beside it, and a person who may hold more than one store can
+// still change it. Off the box, or before the chrome has loaded, nothing is filled in.
+function ownStore(inputId) {
+  const me = window.sreOffice?.me?.() ?? null;
+  const input = $(inputId);
+  if (me === null || !me.storeId || input === null) return;
+  if (input.value.trim() === '') input.value = me.storeId;
+  let note = document.getElementById(`${inputId}-own`);
+  if (note === null) { note = document.createElement('small'); note.id = `${inputId}-own`; note.className = 'sre-why own-store'; input.after(note); }
+  note.textContent = `${me.storeName ?? me.storeId} — ${t('yourStore')}`;
+}
 function paint() {
+  repaintShopDates();
+  ownStore('store');
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['store-l', 'store'], ['from-l', 'from'], ['to-l', 'to'], ['m-sales-text', 'sales'], ['m-margin-text', 'margin'], ['show-text', 'show'], ['th-area', 'area'], ['th-sqft', 'sqft'], ['th-heat', 'heat'], ['th-note', 'note']]) $(id).textContent = t(k);
+  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['store-l', 'store'], ['from-l', 'from'], ['to-l', 'to'], ['m-sales-text', 'sales'], ['m-margin-text', 'margin'], ['show-text', 'show'], ['th-area', 'area'], ['th-sqft', 'sqft'], ['th-heat', 'heat'], ['th-note', 'note']]) { const n = $(id); if (n) n.textContent = t(k); }
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.floorHeatMapData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
@@ -102,7 +135,7 @@ function paint() {
 }
 
 async function show() {
-  const out = await session.read({ storeId: $('store').value, from: $('from').value, to: $('to').value, measure });
+  const out = await session.read({ storeId: $('store').value, from: dateOf('from'), to: dateOf('to'), measure });
   if (out.result === 'ok') { heat = out.value; $('page-status').className = 'status'; $('page-status').textContent = ''; } else { heat = null; say(out); }
   paint();
 }
@@ -140,3 +173,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// the chrome (and `sreOffice.me`) loads after this script: fill the store in once it is there
+document.addEventListener('sre:chrome', () => { shopDate('from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });

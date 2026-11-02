@@ -11,6 +11,24 @@ const may = session?.may ?? { named: false, readIncidents: false, manageIncident
 
 let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 // OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never the UTC clock.
 const when = (iso) => (typeof iso === 'string' ? window.sreShopDay?.dateTimeOf(iso) ?? '' : '');
 
@@ -117,6 +135,7 @@ function paintRecord() {
 }
 
 function paintWords() {
+  repaintShopDates();
   document.title = `SRE ${t('title')}`;
   const pairs = [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['open-new', 'newIncident'], ['k-open', 'sumOpen'], ['k-actions', 'sumActions'], ['k-drills', 'sumDrills'], ['k-posture', 'sumPosture'],
     ['tab-incidents', 'tabIncidents'], ['tab-drills', 'tabDrills'], ['incidents-h', 'tabIncidents'], ['incidents-lead', 'incidentsLead'], ['drills-h', 'tabDrills'], ['drills-lead', 'drillsLead'],
@@ -199,7 +218,7 @@ $('t-add').addEventListener('click', async () => {
   if (out.result === 'ok') { $('t-note').value = ''; await refreshAll(current.incidentId); }
 });
 $('a-add').addEventListener('click', async () => {
-  const out = await session.addAction(current.incidentId, { description: $('a-desc').value, ownerUserId: $('a-owner').value, dueOn: $('a-due').value });
+  const out = await session.addAction(current.incidentId, { description: $('a-desc').value, ownerUserId: $('a-owner').value, dueOn: dateOf('a-due') });
   say($('record-status'), out, t('actionAdded'));
   if (out.result === 'ok') { $('a-desc').value = ''; $('a-owner').value = ''; await refreshAll(current.incidentId); }
 });
@@ -234,3 +253,5 @@ if ('serviceWorker' in navigator) {
     // No offline copy this time; the screen still works online.
   });
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('a-due', { en: wordsIn('en', 'aDue'), ta: wordsIn('ta', 'aDue') }); paintWords(); }, { once: true });

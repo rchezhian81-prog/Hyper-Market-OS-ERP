@@ -49,7 +49,10 @@
       .table-wrap { overflow-x: auto; }
       label.check { display: flex; gap: 8px; align-items: center; min-height: var(--tap); }
       label.check input { min-height: 0; width: 24px; height: 24px; }
-    </style>
+          /* U2 · G5: a branch field with its "Choose…" button beside it and the picked store's name under it */
+      .row-form .pick-btn { flex: 0 0 auto;  min-width: var(--tap); padding-left: 14px; padding-right: 14px; }
+      .row-form .pick-name { flex: 1 1 100%; color: var(--muted); font-size: var(--fs-sm); min-height: 1.2em; }
+</style>
   </head>
   <body>
     <header>

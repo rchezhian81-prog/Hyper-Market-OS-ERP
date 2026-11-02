@@ -46,6 +46,10 @@
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      /* U2: a picked thing — the id the page sends, the Choose button, the name beside it */
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -75,7 +79,7 @@
       <section aria-labelledby="open-h" id="open-section">
         <h2 id="open-h">Open a case</h2>
         <div class="row">
-          <label for="new-id"><span id="l-new-id">Case number</span><input id="new-id" autocomplete="off" /></label>
+          <label for="new-id"><span id="l-new-id">Case number</span><input id="new-id" autocomplete="off" readonly aria-describedby="l-new-id" /></label>
           <label for="new-kind"><span id="l-new-kind">Kind</span>
             <select id="new-kind"><option value="complaint" id="o-complaint">Complaint</option><option value="enquiry" id="o-enquiry">Enquiry</option><option value="warranty" id="o-warranty">Warranty</option><option value="lost_and_found" id="o-lost_and_found">Lost and found</option></select>
           </label>

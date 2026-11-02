@@ -66,13 +66,14 @@ const WORDS = {
     item: 'Item', ordered: 'Ordered', received: 'Arrived', invoiced: 'Invoiced', payable: 'May be paid',
     blocked: 'Do not pay this yet', agreed: 'These agree', withheld: 'Held back',
     poLead: 'Somebody else has to approve it before it goes to the supplier.',
-    itemCode: 'Item code', howMany: 'How many', agreedPrice: 'Agreed price each (in rupees)',
+    itemCode: 'Item', howMany: 'How many', agreedPrice: 'Agreed price each (in rupees)',
     // OB-31: a loose item is ordered in its own unit — "2.5" kg — and priced per whole kg / litre, never per gram.
     howManyIn: 'How many {unit}', pricePer: 'Agreed price per {one} (in rupees)',
     unitMany: { ea: 'items', kg: 'kg', L: 'litres', g: 'grams', ml: 'ml' },
     unitOne: { ea: 'item', kg: 'kg', L: 'litre', g: 'gram', ml: 'ml' },
     needWholeItems: 'Items are ordered in whole numbers. Loose goods take up to three decimals of a kg or a litre (2.5 kg).',
     addItem: 'Add this item', raiseIt: 'Raise the order', noLinesYet: 'No items added yet.',
+    choose: 'Choose…', pickUnavailable: 'The list could not open — type the code instead.', whichSupplier: 'Which supplier?', whichItem: 'Which item? (name or barcode)', whichStore: 'Which store?',
     needPoLine: 'Add at least one item first.', needPoFields: 'Fill in the item, how many, and the price.',
     orderRaised: 'Order raised', whoApprovesPo: 'Who approved this order?',
     orderProposed: 'Order proposed — waiting for a second person to approve it',
@@ -129,12 +130,13 @@ const WORDS = {
     item: 'பொருள்', ordered: 'ஆர்டர்', received: 'வந்தது', invoiced: 'கேட்டது', payable: 'செலுத்தலாம்',
     blocked: 'இதை இன்னும் செலுத்த வேண்டாம்', agreed: 'இவை பொருந்துகின்றன', withheld: 'நிறுத்தி வைக்கப்பட்டது',
     poLead: 'சப்ளையருக்குச் செல்வதற்கு முன் வேறு ஒருவர் ஒப்புதல் அளிக்க வேண்டும்.',
-    itemCode: 'பொருள் குறியீடு', howMany: 'எத்தனை', agreedPrice: 'ஒப்புக்கொண்ட விலை (ரூபாயில்)',
+    itemCode: 'பொருள்', howMany: 'எத்தனை', agreedPrice: 'ஒப்புக்கொண்ட விலை (ரூபாயில்)',
     howManyIn: 'எத்தனை {unit}', pricePer: 'ஒரு {one}-க்கு ஒப்புக்கொண்ட விலை (ரூபாயில்)',
     unitMany: { ea: 'பொருட்கள்', kg: 'கிலோ', L: 'லிட்டர்', g: 'கிராம்', ml: 'மி.லி.' },
     unitOne: { ea: 'பொருள்', kg: 'கிலோ', L: 'லிட்டர்', g: 'கிராம்', ml: 'மி.லி.' },
     needWholeItems: 'பொருட்கள் முழு எண்ணில் ஆர்டர் செய்யப்படும். தளர்வான பொருட்கள் கிலோ / லிட்டரில் மூன்று தசம இடங்கள் வரை (2.5 கிலோ).',
     addItem: 'இந்தப் பொருளைச் சேர்', raiseIt: 'ஆர்டரைத் தயாரி', noLinesYet: 'இன்னும் பொருட்கள் சேர்க்கப்படவில்லை.',
+    choose: 'தேர்ந்தெடு…', pickUnavailable: 'பட்டியலைத் திறக்க முடியவில்லை — குறியீட்டைத் தட்டச்சு செய்யவும்.', whichSupplier: 'எந்த சப்ளையர்?', whichItem: 'எந்தப் பொருள்? (பெயர் அல்லது பார்கோடு)', whichStore: 'எந்தக் கடை?',
     needPoLine: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needPoFields: 'பொருள், எண்ணிக்கை, விலை — எல்லாவற்றையும் நிரப்பவும்.',
     orderRaised: 'ஆர்டர் தயாரிக்கப்பட்டது', whoApprovesPo: 'இந்த ஆர்டரை யார் ஒப்புதல் அளித்தார்?',
     orderProposed: 'ஆர்டர் முன்மொழியப்பட்டது — வேறு ஒருவர் ஒப்புதல் அளிக்கக் காத்திருக்கிறது',
@@ -168,6 +170,39 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+
+// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
+// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
+// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
+// list cannot be read (head office down, no right) typing the code is the fallback, never a dead end (P-01, P-08).
+const pickers = [];
+function pickerBeside(input, kind, titleKey, extra = {}) {
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
+  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
+  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
+  host.after(btn, name);
+  btn.addEventListener('click', async () => {
+    const office = window.sreOffice;
+    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
+    const picked = await office.pick({ kind, title: { en: WORDS.en[titleKey], ta: WORDS.ta[titleKey] }, allowCode: true, ...extra });
+    if (!picked || picked.ok !== true) return;
+    input.value = picked.id;
+    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+  pickers.push(btn);
+  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
+  return btn;
+}
+const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+/** The signed-in person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
+function myStore() {
+  const office = window.sreOffice;
+  const me = office && typeof office.me === 'function' ? office.me() : null;
+  return (me && me.storeId) || (window.sreDirectory && window.sreDirectory.store && window.sreDirectory.store.id) || '';
+}
 
 /** Why a capture was refused — one entry per `CaptureRefusal` in the model, in both languages. */
 const REFUSAL_WORDS = {
@@ -580,6 +615,14 @@ function paintPoUnit() {
   el('po-cost-label').textContent = t('pricePer').replace('{one}', one);
 }
 el('po-product').addEventListener('input', paintPoUnit);
+pickerBeside(el('po-supplier'), 'supplier', 'whichSupplier');
+pickerBeside(el('po-store'), 'store', 'whichStore');
+pickerBeside(el('po-product'), 'product', 'whichItem');
+paintPickers();
+// "Deliver to store" is the person's own store unless they change it (U2 · G5); the chrome may load after this page.
+const prefillStore = () => { if (el('po-store').value.trim() === '') { const id = myStore(); if (id !== '') el('po-store').value = id; } };
+prefillStore();
+document.addEventListener('sre:chrome', prefillStore);
 
 el('add-po-line').addEventListener('click', () => {
   const productId = el('po-product').value.trim();
@@ -1055,6 +1098,7 @@ function paintChrome() {
   el('po-supplier-label').textContent = t('supplier');
   el('po-store-label').textContent = t('deliverTo');
   el('po-product-label').textContent = t('itemCode');
+  paintPickers();
   paintPoUnit();
   el('add-po-line').textContent = t('addItem');
   el('raise-po').textContent = t('raiseIt');

@@ -70,6 +70,10 @@
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
+      /* U2: a picked thing — the id the page sends, the Choose button, the name beside it */
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>

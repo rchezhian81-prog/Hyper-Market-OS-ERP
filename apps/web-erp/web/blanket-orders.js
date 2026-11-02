@@ -8,6 +8,24 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, propose: false, approve: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, cls) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
@@ -42,10 +60,11 @@ function paintList() {
   for (const v of list.agreements) ul.append(agreementRow(v));
 }
 function paint() {
+  repaintShopDates();
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['list-h', 'listH'], ['l-show-text', 'show'], ['propose-h', 'proposeH'], ['p-supplier-l', 'supplier'], ['p-ceiling-l', 'ceilingRs'], ['p-from-l', 'validFrom'], ['p-to-l', 'validTo'],
-    ['p-deliver-l', 'deliverTo'], ['p-lines-l', 'lines'], ['p-propose-text', 'propose']]) $(id).textContent = t(key);
+    ['p-deliver-l', 'deliverTo'], ['p-lines-l', 'lines'], ['p-propose-text', 'propose']]) { const n = $(id); if (n) n.textContent = t(key); }
   paintList();
 }
 async function showList() {
@@ -65,9 +84,11 @@ else {
   if (may.propose) {
     $('propose').hidden = false;
     $('p-propose').addEventListener('click', async () => {
-      const out = await session.propose({ supplierId: $('p-supplier').value, ceilingRupees: $('p-ceiling').value, validFrom: $('p-from').value, validTo: $('p-to').value, deliverTo: $('p-deliver').value, lines: $('p-lines').value });
+      const out = await session.propose({ supplierId: $('p-supplier').value, ceilingRupees: $('p-ceiling').value, validFrom: dateOf('p-from'), validTo: dateOf('p-to'), deliverTo: $('p-deliver').value, lines: $('p-lines').value });
       say('p-status', out);
       if (out.result === 'ok') await showList();
     });
   }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('p-from', { en: wordsIn('en', 'validFrom'), ta: wordsIn('ta', 'validFrom') }); shopDate('p-to', { en: wordsIn('en', 'validTo'), ta: wordsIn('ta', 'validTo') }); paint(); }, { once: true });

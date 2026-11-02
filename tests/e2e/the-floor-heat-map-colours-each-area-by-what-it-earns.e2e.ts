@@ -6,6 +6,9 @@ import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * M04-FR-04 · OB-308 (OB-288 P2) — the Floor heat map page, in a real browser, on the PRODUCTION API over real PostgreSQL.
  * Head office holds the store's shelf map, its planogram and its floor plan (coordinates per shelf area), the buying cost of
@@ -81,8 +84,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     expect(await page.inputValue('#to')).toBe(today);
     expect(await page.inputValue('#from')).toBe(`${today.slice(0, 7)}-01`);
     await page.fill('#store', STORE);
-    await page.fill('#from', today);
-    await page.fill('#to', today);
+    await page.fill('#from', ddmm(today));
+    await page.fill('#to', ddmm(today));
     await page.click('#show');
     await page.locator('#floor .area').first().waitFor({ timeout: 15_000 });
     expect(reads).toEqual([`GET /v1/merchandising/stores/${STORE}/heat-map`]);

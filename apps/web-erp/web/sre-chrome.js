@@ -266,6 +266,20 @@
     if (slot.textContent !== text) slot.textContent = text;
   }
 
+  // U2 (G16): the header's "who" small — a page writes the signed-in person's ID there (`u-mgr`); when the signed pack
+  // names that person, the name is shown in its place. Only an id the directory really knows is replaced; anything
+  // else stays exactly as the page wrote it (never a guess).
+  function paintWhoAmI() {
+    const small = document.querySelector('header h1.who #whoami, header #whoami');
+    if (!small) return;
+    const text = small.textContent ?? '';
+    if (text.trim() === '') return;
+    const d = directory();
+    if (!d || !Array.isArray(d.people) || d.people.length === 0) return;
+    const replaced = text.replace(/\bu-[A-Za-z0-9][A-Za-z0-9_.-]*\b/g, (id) => { const hit = d.people.find((p) => p.id === id); return hit ? hit.name : id; });
+    if (replaced !== text) small.textContent = replaced;
+  }
+
   // ── The toggle says what you get ─────────────────────────────────────────────────────────────────
   function paintToggle() {
     const toggle = byId('lang');
@@ -1041,6 +1055,16 @@
       denied: 'Your role cannot open this', deniedDetail: 'Ask the owner or the manager if you need it.',
       notKnown: 'Not known', required: 'required', fillIn: 'Fill in "{f}".', fixFields: 'Some answers need fixing before this can be sent:', tryAgain: 'Try again',
       beforeThis: 'Before this is sent', goBack: 'Go back', confirm: 'Confirm', reasonShort: 'Say why in at least {n} letters.',
+      pick_product: 'Which product?', pick_supplier: 'Which supplier?', pick_person: 'Which person?', pick_place: 'Which place?', pick_store: 'Which store?', pick_customer: 'Which customer?', pick_approval: 'Which approval?',
+      pickSearch: 'Type a few letters of the name, or the code', pickHint: 'A name, a code or a barcode',
+      pickHint_product: 'A name, an item code or a barcode', pickHint_supplier: 'A supplier\'s name or code', pickHint_person: 'A person\'s name', pickHint_place: 'A place or bin', pickHint_store: 'A store\'s name', pickHint_customer: 'A customer number', pickHint_approval: 'What was asked for',
+      pickCount: '{n} found', pickMore: '{n} more — type more letters', pickRecent: 'Chosen recently on this computer', recentPick: 'recent',
+      pickEmptyDetail: 'Head office holds nothing in this list yet, so there is nothing to pick from.', pickNoMatchDetail: 'Nothing in this list matches what was typed. The list has {n} to choose from.',
+      pickUnknownDetail: 'The store computer has not been given this list, so it cannot be searched here.', pickCodeDetail: 'The list could not be read. If you know the code, type it below.',
+      pickNoBarcode: 'No product carries that barcode at head office.',
+      typeCodeInstead: 'Type the code instead', useThisCode: 'Use this code', choose: 'Choose…', clearPick: 'Clear', nothingChosen: 'Nothing chosen yet',
+      dateHint: 'Day / month / year, for example 31/10/2026', dateBad: 'That is not a real date. Write it as day/month/year, for example 31/10/2026.', dateTooEarly: 'That is before {d}.', dateTooLate: 'That is after {d}.',
+      refused: 'Head office refused:', refusedPlain: 'it did not accept what was sent', nothingChangedWord: 'Nothing was changed.', tryAgainTell: 'Try again; if it keeps happening, tell the manager.',
     },
     ta: {
       search: 'இந்தப் பட்டியலில் தேடு', filterAll: 'அனைத்தும்', columns: 'நெடுவரிசைகள்', columnsShown: 'காட்ட வேண்டிய நெடுவரிசைகள்', open: 'திற', close: 'மூடு',
@@ -1054,6 +1078,16 @@
       denied: 'உங்கள் பங்கால் இதைத் திறக்க முடியாது', deniedDetail: 'தேவையெனில் உரிமையாளர் அல்லது மேலாளரிடம் கேளுங்கள்.',
       notKnown: 'தெரியவில்லை', required: 'கட்டாயம்', fillIn: '"{f}" நிரப்பவும்.', fixFields: 'அனுப்பும் முன் சில பதில்களைச் சரிசெய்ய வேண்டும்:', tryAgain: 'மீண்டும் முயல்',
       beforeThis: 'இது அனுப்பப்படும் முன்', goBack: 'பின் செல்', confirm: 'உறுதிப்படுத்து', reasonShort: 'குறைந்தது {n} எழுத்துகளில் ஏன் என்று சொல்லவும்.',
+      pick_product: 'எந்தப் பொருள்?', pick_supplier: 'எந்த விநியோகஸ்தர்?', pick_person: 'யார்?', pick_place: 'எந்த இடம்?', pick_store: 'எந்தக் கடை?', pick_customer: 'எந்த வாடிக்கையாளர்?', pick_approval: 'எந்த அனுமதி?',
+      pickSearch: 'பெயரின் சில எழுத்துகள், அல்லது குறியீடு', pickHint: 'பெயர், குறியீடு அல்லது பார்கோடு',
+      pickHint_product: 'பெயர், பொருள் குறியீடு அல்லது பார்கோடு', pickHint_supplier: 'விநியோகஸ்தரின் பெயர் அல்லது குறியீடு', pickHint_person: 'ஒருவரின் பெயர்', pickHint_place: 'இடம் அல்லது தட்டு', pickHint_store: 'கடையின் பெயர்', pickHint_customer: 'வாடிக்கையாளர் எண்', pickHint_approval: 'என்ன கேட்கப்பட்டது',
+      pickCount: '{n} கிடைத்தன', pickMore: 'இன்னும் {n} — மேலும் எழுத்துகளைத் தட்டச்சு செய்க', pickRecent: 'இந்தக் கணினியில் சமீபத்தில் தேர்ந்தவை', recentPick: 'சமீபம்',
+      pickEmptyDetail: 'இந்தப் பட்டியலில் தலைமை அலுவலகத்தில் இன்னும் எதுவும் இல்லை, எனவே தேர்ந்தெடுக்க எதுவும் இல்லை.', pickNoMatchDetail: 'தட்டச்சு செய்ததற்கு இந்தப் பட்டியலில் எதுவும் பொருந்தவில்லை. பட்டியலில் {n} உள்ளன.',
+      pickUnknownDetail: 'கடை கணினிக்கு இந்தப் பட்டியல் கொடுக்கப்படவில்லை, எனவே இங்கு தேட முடியாது.', pickCodeDetail: 'பட்டியலைப் படிக்க முடியவில்லை. குறியீடு தெரிந்தால் கீழே தட்டச்சு செய்யவும்.',
+      pickNoBarcode: 'அந்தப் பார்கோடு கொண்ட பொருள் தலைமை அலுவலகத்தில் இல்லை.',
+      typeCodeInstead: 'அதற்குப் பதிலாகக் குறியீட்டைத் தட்டச்சு செய்க', useThisCode: 'இந்தக் குறியீட்டைப் பயன்படுத்து', choose: 'தேர்ந்தெடு…', clearPick: 'அழி', nothingChosen: 'இன்னும் எதுவும் தேர்ந்தெடுக்கப்படவில்லை',
+      dateHint: 'நாள் / மாதம் / ஆண்டு, எடுத்துக்காட்டாக 31/10/2026', dateBad: 'அது உண்மையான தேதி அல்ல. நாள்/மாதம்/ஆண்டு என எழுதவும், எடுத்துக்காட்டாக 31/10/2026.', dateTooEarly: 'அது {d} க்கு முன்.', dateTooLate: 'அது {d} க்குப் பின்.',
+      refused: 'தலைமை அலுவலகம் மறுத்தது:', refusedPlain: 'அனுப்பியதை அது ஏற்கவில்லை', nothingChangedWord: 'எதுவும் மாற்றப்படவில்லை.', tryAgainTell: 'மீண்டும் முயலவும்; தொடர்ந்தால் மேலாளரிடம் சொல்லவும்.',
     },
   };
   const ow = (key) => OFFICE_WORDS[lang()][key] ?? OFFICE_WORDS.en[key];
@@ -1193,7 +1227,11 @@
   function officeCheck(form) {
     const bad = [];
     for (const field of form.querySelectorAll('.sre-field')) {
-      const control = field.querySelector('input, select, textarea');
+      // a pick field keeps its id in a hidden input; the words and the focus go to what the person sees (U2)
+      const isPick = field.classList.contains('sre-pick');
+      const control = isPick ? field.querySelector('input[type="hidden"]') : field.querySelector('input, select, textarea');
+      const seen = isPick ? field.querySelector('.sre-pick-shown') : control;
+      const landing = isPick ? field.querySelector('.sre-pick-choose') : control;
       const msg = field.querySelector('.sre-field-msg');
       if (!control || !msg) continue;
       const name = (field.querySelector('.sre-field-label')?.firstChild?.textContent ?? '').trim();
@@ -1202,7 +1240,7 @@
       else if (typeof control.checkValidity === 'function' && !control.checkValidity()) problem = control.validationMessage || fill(ow('fillIn'), { f: name });
       msg.hidden = problem === '';
       msg.textContent = problem;
-      if (problem === '') control.removeAttribute('aria-invalid'); else { control.setAttribute('aria-invalid', 'true'); bad.push(control); }
+      if (problem === '') seen.removeAttribute('aria-invalid'); else { seen.setAttribute('aria-invalid', 'true'); bad.push(landing); }
     }
     if (bad.length > 0) bad[0].focus();
     return bad.length === 0;
@@ -1372,6 +1410,446 @@
     });
   }
 
+  // ── U2 (G5 · G14 · G16): pick a thing by its NAME, a date a shop person reads, a name for an id, who is looking ──────
+  //
+  // A shop person knows "Toor dal", "Ravi" and "the back store", not `p-dal`, `u-ravi` and `S1-BACK`. The picker is one
+  // sheet with a search box and a list; the lists come from the store computer's signed pack (people, places, the store —
+  // there with head office down, P-01) or from head office's own routes in the person's session (products, suppliers,
+  // customers, approvals) — never from a route the person may not read. When a list cannot be read the sheet SAYS so and,
+  // where the page allows, offers "Type the code instead", so nothing is ever a dead end (P-08). The last ten picks per
+  // kind are this browser's convenience only.
+  const directory = () => (window.sreDirectory && typeof window.sreDirectory === 'object' ? window.sreDirectory : null);
+  const PICK_KINDS = Object.freeze(['product', 'supplier', 'person', 'place', 'store', 'customer', 'approval']);
+  const listCache = new Map(); // kind → { at, rows } for a minute: the person types, the list does not re-read on every key
+  const LIST_TTL_MS = 60_000;
+  const pickKey = (kind) => `sre.pick.${kind}.${String(navigation()?.userId ?? directory()?.me?.userId ?? 'nobody')}`;
+  function recentPicks(kind) {
+    try { const v = JSON.parse(window.localStorage.getItem(pickKey(kind)) ?? '[]'); return Array.isArray(v) ? v.filter((x) => x && typeof x.id === 'string' && typeof x.name === 'string') : []; } catch { return []; }
+  }
+  function rememberPick(kind, row) {
+    try {
+      const kept = [{ id: row.id, name: row.name, ...(row.code === undefined ? {} : { code: row.code }) }, ...recentPicks(kind).filter((r) => r.id !== row.id)].slice(0, 10);
+      window.localStorage.setItem(pickKey(kind), JSON.stringify(kept));
+    } catch { /* a convenience only */ }
+  }
+  const asRow = (id, name, code, item) => ({ id: String(id), name: String(name ?? id), ...(code === undefined || code === null || code === '' ? {} : { code: String(code) }), item });
+  /** Head office, in the person's own session — the same relative `/v1` read every office page makes. */
+  async function readHeadOffice(path) {
+    const res = await fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' }, cache: 'no-store' });
+    if (res.status === 401 || res.status === 403) return { state: 'denied' };
+    if (!res.ok) return { state: 'error' };
+    try { return { state: 'ok', body: await res.json() }; } catch { return { state: 'error' }; }
+  }
+  /**
+   * The rows of one kind: `{ state: 'ok', rows }` or `{ state: 'denied' | 'offline' | 'error' | 'unknown' }`.
+   * `unknown` is a register the pack never held (said, not guessed).
+   */
+  async function listOf(kind, scope = {}) {
+    const d = directory();
+    if (kind === 'person') {
+      if (d && d.known && d.known.people) return { state: 'ok', rows: d.people.map((p) => asRow(p.id, p.name, p.roleId ?? undefined, p)) };
+      const got = await readHeadOffice('/v1/identity/people').catch(() => ({ state: 'offline' }));
+      return got.state === 'ok' ? { state: 'ok', rows: (got.body.people ?? []).map((p) => asRow(p.userId, p.displayName, p.username, p)) } : got;
+    }
+    if (kind === 'place') {
+      if (d && d.known && d.known.places) {
+        const storeId = scope.storeId ?? d.store?.id;
+        return { state: 'ok', rows: d.places.filter((p) => storeId === undefined || p.kind !== 'bin' || true).map((p) => asRow(p.id, p.name, p.kind, p)) };
+      }
+      return { state: 'unknown' };
+    }
+    if (kind === 'store') {
+      const rows = d && d.store ? [asRow(d.store.id, d.store.name, 'store', d.store)] : [];
+      const got = await readHeadOffice('/v1/org/nodes').catch(() => ({ state: 'offline' }));
+      if (got.state === 'ok') {
+        for (const n of got.body.nodes ?? []) if (n.kind === 'branch' && !rows.some((r) => r.id === n.nodeId)) rows.push(asRow(n.nodeId, n.name, n.gstin ?? undefined, n));
+        return { state: 'ok', rows };
+      }
+      return rows.length > 0 ? { state: 'ok', rows } : got;
+    }
+    const cached = listCache.get(kind);
+    if (cached && Date.now() - cached.at < LIST_TTL_MS) return { state: 'ok', rows: cached.rows };
+    const paths = { product: '/v1/catalogue/products', supplier: '/v1/purchase/suppliers', customer: '/v1/customer/overview', approval: '/v1/approvals/requests' };
+    const got = await readHeadOffice(paths[kind]).catch(() => ({ state: 'offline' }));
+    if (got.state !== 'ok') return got;
+    let rows = [];
+    if (kind === 'product') rows = (got.body.products ?? []).map((p) => asRow(p.productId, p.name, p.sku, p));
+    else if (kind === 'supplier') rows = (got.body.suppliers ?? []).map((s) => asRow(s.supplierId, s.name ?? s.supplierId, s.status, s));
+    else if (kind === 'customer') rows = (got.body.customers ?? []).map((c) => asRow(c.customerRef, c.customerRef, c.segment, c));
+    else if (kind === 'approval') rows = [...(got.body.waitingForMe ?? []), ...(got.body.mine ?? [])].map((a) => asRow(a.requestId, a.summary ?? a.label ?? a.requestId, a.status, a));
+    listCache.set(kind, { at: Date.now(), rows });
+    return { state: 'ok', rows };
+  }
+  /** A product by its barcode — head office's own lookup, when the person typed digits that look like one. */
+  async function productByBarcode(code) {
+    const got = await readHeadOffice(`/v1/catalogue/barcodes/${encodeURIComponent(code)}`).catch(() => ({ state: 'offline' }));
+    if (got.state !== 'ok' || !got.body.barcode) return null;
+    const b = got.body.barcode;
+    const productId = b.productId ?? b.product?.productId;
+    if (typeof productId !== 'string') return null;
+    const known = (listCache.get('product')?.rows ?? []).find((r) => r.id === productId);
+    return known ?? asRow(productId, b.product?.name ?? b.name ?? productId, code, b);
+  }
+  const normalise = (s) => String(s ?? '').toLowerCase().normalize('NFC');
+  /** Every word typed must be found in the name or the code — the same rule as the rail's search. */
+  function matches(row, query) {
+    const hay = `${normalise(row.name)} ${normalise(row.code)} ${normalise(row.id)}`;
+    return normalise(query).split(/\s+/).filter((w) => w !== '').every((w) => hay.includes(w));
+  }
+
+  let pickOpen = null;
+  function officePick(spec) {
+    if (pickOpen) pickOpen.finish({ ok: false });
+    const kind = PICK_KINDS.includes(spec.kind) ? spec.kind : 'product';
+    return new Promise((resolve) => {
+      const opener = document.activeElement;
+      const sheet = document.createElement('div');
+      sheet.className = 'sre-sheet sre-picker';
+      sheet.id = 'sre-picker';
+      sheet.dataset.kind = kind;
+      sheet.setAttribute('role', 'dialog');
+      sheet.setAttribute('aria-modal', 'true');
+      sheet.setAttribute('aria-labelledby', 'sre-picker-title');
+      const inner = document.createElement('form');
+      inner.className = 'sre-sheet-inner';
+      inner.noValidate = true;
+      inner.addEventListener('submit', (e) => { e.preventDefault(); });
+      const h = document.createElement('h2');
+      h.id = 'sre-picker-title';
+      const searchWrap = document.createElement('div');
+      searchWrap.className = 'sre-field sre-picker-search';
+      const searchLabel = document.createElement('label');
+      searchLabel.htmlFor = 'sre-picker-q';
+      searchLabel.className = 'sre-field-label';
+      const search = document.createElement('input');
+      search.type = 'search';
+      search.id = 'sre-picker-q';
+      search.className = 'sre-input';
+      search.autocomplete = 'off';
+      search.setAttribute('aria-describedby', 'sre-picker-count');
+      const count = document.createElement('p');
+      count.id = 'sre-picker-count';
+      count.className = 'sre-picker-count';
+      count.setAttribute('role', 'status');
+      searchWrap.append(searchLabel, search, count);
+      const list = document.createElement('ul');
+      list.className = 'sre-picker-list';
+      list.id = 'sre-picker-list';
+      list.setAttribute('aria-label', '');
+      const stateHost = document.createElement('div');
+      stateHost.className = 'sre-picker-state';
+      const codeWrap = document.createElement('div');
+      codeWrap.className = 'sre-picker-code';
+      codeWrap.hidden = true;
+      const codeField = officeField({ id: 'sre-picker-typed', label: { en: 'Type the code instead', ta: 'அதற்குப் பதிலாகக் குறியீட்டைத் தட்டச்சு செய்க' } });
+      const useCode = document.createElement('button');
+      useCode.type = 'button';
+      useCode.className = 'sre-btn';
+      useCode.id = 'sre-picker-use-code';
+      codeWrap.append(codeField, useCode);
+      const actions = document.createElement('div');
+      actions.className = 'sre-confirm-actions';
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'sre-btn';
+      back.id = 'sre-picker-back';
+      actions.append(back);
+      inner.append(h, searchWrap, stateHost, list, codeWrap, actions);
+      sheet.append(inner);
+
+      let rows = null; // null until read
+      let listState = 'loading';
+      let shownRows = [];
+      const MAX = 50;
+      const paintWords = () => {
+        h.textContent = said(spec.title ?? ow(`pick_${kind}`));
+        searchLabel.textContent = ow('pickSearch');
+        search.placeholder = ow(`pickHint_${kind}`) ?? ow('pickHint');
+        back.textContent = ow('goBack');
+        useCode.textContent = ow('useThisCode');
+        const lab = codeField.querySelector('.sre-field-label');
+        if (lab) lab.replaceChildren(document.createTextNode(ow('typeCodeInstead')));
+        list.setAttribute('aria-label', said(spec.title ?? ow(`pick_${kind}`)));
+        paintList();
+      };
+      const choose = (row) => { rememberPick(kind, row); finish({ ok: true, id: row.id, name: row.name, ...(row.code === undefined ? {} : { code: row.code }), item: row.item ?? null }); };
+      const rowButton = (row, recent) => {
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'sre-picker-row';
+        b.dataset.id = row.id;
+        const name = document.createElement('span');
+        name.className = 'sre-picker-name';
+        name.textContent = row.name;
+        b.append(name);
+        if (row.code !== undefined || recent) {
+          const small = document.createElement('small');
+          small.className = 'sre-picker-code-word';
+          small.textContent = [row.code, recent ? ow('recentPick') : ''].filter((x) => x).join(' · ');
+          b.append(small);
+        }
+        b.addEventListener('click', () => choose(row));
+        li.append(b);
+        return li;
+      };
+      const paintList = () => {
+        stateHost.replaceChildren();
+        list.replaceChildren();
+        codeWrap.hidden = true;
+        const q = search.value.trim();
+        if (listState !== 'ok') {
+          if (listState === 'loading') { stateHost.append(officeState(document.createElement('div'), 'loading')); count.textContent = ''; return; }
+          const kindWord = listState === 'denied' ? 'denied' : listState === 'offline' ? 'offline' : listState === 'unknown' ? 'unknown' : 'error';
+          const detail = listState === 'unknown' ? ow('pickUnknownDetail') : spec.allowCode ? ow('pickCodeDetail') : undefined;
+          stateHost.append(officeState(document.createElement('div'), kindWord, { title: listState === 'unknown' ? ow('notKnown') : undefined, ...(detail === undefined ? {} : { detail }) }));
+          count.textContent = '';
+          codeWrap.hidden = !spec.allowCode;
+          return;
+        }
+        const pool = (spec.filter ? rows.filter((r) => { try { return spec.filter(r.item ?? r); } catch { return true; } }) : rows);
+        let hits;
+        let recent = false;
+        if (q === '') {
+          const remembered = recentPicks(kind).map((r) => pool.find((p) => p.id === r.id) ?? { ...r, item: null }).filter((r) => pool.some((p) => p.id === r.id) || pool.length === 0);
+          if (remembered.length > 0) { hits = remembered; recent = true; } else hits = pool.slice(0, MAX);
+        } else hits = pool.filter((r) => matches(r, q));
+        shownRows = hits.slice(0, MAX);
+        if (pool.length === 0) { stateHost.append(officeState(document.createElement('div'), 'empty', { detail: ow('pickEmptyDetail') })); count.textContent = ''; codeWrap.hidden = !spec.allowCode; return; }
+        if (hits.length === 0) {
+          stateHost.append(officeState(document.createElement('div'), 'noMatch', { detail: fill(ow('pickNoMatchDetail'), { n: pool.length }) }));
+          count.textContent = '';
+          codeWrap.hidden = !spec.allowCode;
+          return;
+        }
+        for (const r of shownRows) list.append(rowButton(r, recent));
+        count.textContent = recent ? ow('pickRecent') : hits.length > MAX ? fill(ow('pickMore'), { n: hits.length - MAX }) : fill(ow('pickCount'), { n: hits.length });
+      };
+      const observer = new MutationObserver(paintWords);
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+      const finish = (answer) => {
+        if (pickOpen !== me) return;
+        pickOpen = null;
+        observer.disconnect();
+        window.removeEventListener('pagehide', onLeave);
+        sheet.remove();
+        if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+        resolve(answer);
+      };
+      const onLeave = () => finish({ ok: false });
+      const me = { finish };
+      pickOpen = me;
+      window.addEventListener('pagehide', onLeave);
+      back.addEventListener('click', () => finish({ ok: false }));
+      useCode.addEventListener('click', () => {
+        const typed = String(codeField.querySelector('input').value ?? '').trim();
+        const msg = codeField.querySelector('.sre-field-msg');
+        if (typed === '') { msg.hidden = false; msg.textContent = fill(ow('fillIn'), { f: ow('typeCodeInstead') }); codeField.querySelector('input').focus(); return; }
+        finish({ ok: true, id: typed, name: typed, code: typed, item: null, typed: true });
+      });
+      sheet.addEventListener('click', (e) => { if (e.target === sheet) finish({ ok: false }); });
+      sheet.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); finish({ ok: false }); return; }
+        if (e.key === 'Enter' && e.target === search) {
+          e.preventDefault();
+          // Enter in the search box: a barcode or a code typed in full picks it; one hit picks it; otherwise nothing.
+          const q = search.value.trim();
+          if (shownRows.length === 1 && q !== '') { choose(shownRows[0]); return; }
+          const exact = (rows ?? []).find((r) => r.id === q || r.code === q);
+          if (exact) { choose(exact); return; }
+          if (kind === 'product' && /^\d{8,14}$/.test(q)) { void productByBarcode(q).then((row) => { if (row && pickOpen === me) choose(row); else if (pickOpen === me) { count.textContent = ow('pickNoBarcode'); } }); }
+          return;
+        }
+        if (e.key === 'Enter' && e.target !== back && e.target !== useCode && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); return; }
+        if (e.key === 'Tab') {
+          const items = [...inner.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.disabled && el.closest('[hidden]') === null);
+          if (items.length === 0) return;
+          const first = items[0]; const last = items[items.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      });
+      search.addEventListener('input', () => {
+        paintList();
+        const q = search.value.trim();
+        if (kind === 'product' && listState === 'ok' && /^\d{8,14}$/.test(q) && shownRows.length === 0) {
+          void productByBarcode(q).then((row) => { if (row && pickOpen === me && search.value.trim() === q) { shownRows = [row]; list.replaceChildren(rowButton(row, false)); stateHost.replaceChildren(); count.textContent = fill(ow('pickCount'), { n: 1 }); } });
+        }
+      });
+      paintWords();
+      document.body.append(sheet);
+      search.focus();
+      void listOf(kind, spec.scope ?? {}).then((got) => {
+        if (pickOpen !== me) return;
+        listState = got.state;
+        rows = got.state === 'ok' ? got.rows : [];
+        paintList();
+      }).catch(() => { if (pickOpen !== me) return; listState = 'error'; rows = []; paintList(); });
+    });
+  }
+
+  /** A form field that holds a picked thing: "name (code)" shown, the id kept, "Choose…" ≥ 44px, "(required)" in words. */
+  function officePickField({ id, label, kind, required = false, scope, filter, allowCode, hint, value }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sre-field sre-pick';
+    wrap.dataset.kind = kind;
+    const lab = document.createElement('label');
+    lab.htmlFor = `${id}-shown`;
+    lab.className = 'sre-field-label';
+    lab.append(document.createTextNode(said(label)));
+    if (required) { const mark = document.createElement('span'); mark.className = 'sre-req'; mark.textContent = ` (${ow('required')})`; lab.append(mark); }
+    const row = document.createElement('div');
+    row.className = 'sre-pick-row';
+    const shown = document.createElement('input');
+    shown.type = 'text';
+    shown.id = `${id}-shown`;
+    shown.className = 'sre-input sre-pick-shown';
+    shown.readOnly = true;
+    shown.placeholder = ow('nothingChosen');
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.id = id;
+    hidden.name = id;
+    if (required) { hidden.required = true; hidden.setAttribute('aria-required', 'true'); }
+    const choose = document.createElement('button');
+    choose.type = 'button';
+    choose.className = 'sre-btn sre-pick-choose';
+    choose.id = `${id}-choose`;
+    choose.textContent = ow('choose');
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'sre-btn sre-btn-quiet sre-pick-clear';
+    clear.id = `${id}-clear`;
+    clear.textContent = ow('clearPick');
+    clear.hidden = true;
+    row.append(shown, choose, clear);
+    const describedBy = [];
+    if (hint !== undefined) { const hnt = document.createElement('span'); hnt.className = 'sre-field-hint'; hnt.id = `${id}-hint`; hnt.textContent = said(hint); describedBy.push(hnt.id); wrap.append(lab, hnt); } else wrap.append(lab);
+    const msg = document.createElement('span');
+    msg.className = 'sre-field-msg';
+    msg.id = `${id}-msg`;
+    msg.hidden = true;
+    describedBy.push(msg.id);
+    shown.setAttribute('aria-describedby', describedBy.join(' '));
+    wrap.append(row, hidden, msg);
+    const set = (picked) => {
+      if (picked === null) { hidden.value = ''; shown.value = ''; delete wrap.dataset.name; delete wrap.dataset.code; clear.hidden = true; return; }
+      hidden.value = picked.id;
+      wrap.dataset.name = picked.name;
+      if (picked.code !== undefined) wrap.dataset.code = picked.code; else delete wrap.dataset.code;
+      shown.value = picked.code !== undefined && picked.code !== picked.name ? `${picked.name} (${picked.code})` : picked.name;
+      clear.hidden = false;
+      msg.hidden = true;
+      shown.removeAttribute('aria-invalid');
+      hidden.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    wrap.sreSet = set;
+    const open = async () => {
+      const picked = await officePick({ kind, title: { en: `${said(label)}?`, ta: `${said(label)}?` }, ...(scope === undefined ? {} : { scope }), ...(filter === undefined ? {} : { filter }), ...(allowCode === undefined ? {} : { allowCode }) });
+      if (picked.ok) set(picked);
+      choose.focus();
+    };
+    choose.addEventListener('click', () => { void open(); });
+    shown.addEventListener('click', () => { void open(); });
+    shown.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void open(); } });
+    clear.addEventListener('click', () => { set(null); choose.focus(); });
+    if (value) set(value);
+    return wrap;
+  }
+  const pickedValue = (id) => { const el = byId(id); const v = el ? String(el.value ?? '').trim() : ''; return v === '' ? null : v; };
+  const setPicked = (id, picked) => { const el = byId(id); const wrap = el ? el.closest('.sre-pick') : null; if (wrap && typeof wrap.sreSet === 'function') wrap.sreSet(picked); };
+
+  // ── A date a shop person reads: dd/mm/yyyy (NFR-08), the shop's calendar; the page gets ISO ──────────────────────
+  const TA_MONTHS = ['ஜன', 'பிப்', 'மார்', 'ஏப்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆக', 'செப்', 'அக்', 'நவ', 'டிச'];
+  const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // the calendar's own arithmetic — no Date, no clock, no zone: a date typed by a person is a date, not an instant
+  const leap = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const daysIn = (y, m) => [31, leap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+  /** "31/10/2026" (also "31-10-2026", "31.10.2026", "31/10/26") → "2026-10-31", or null when it is not a real day. */
+  function parseShopDate(text) {
+    const m = /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})\s*$/.exec(String(text ?? ''));
+    if (!m) return null;
+    const d = Number(m[1]); const mo = Number(m[2]); const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    if (mo < 1 || mo > 12 || d < 1 || d > daysIn(y, mo) || y < 1900 || y > 2200) return null;
+    return `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  function dateWords(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
+    if (!m) return ow('notKnown');
+    const months = lang() === 'ta' ? TA_MONTHS : EN_MONTHS;
+    return `${Number(m[3])} ${months[Number(m[2]) - 1]} ${m[1]}`;
+  }
+  const shownDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? '')); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+  function officeDateField({ id, label, required = false, min, max, hint, value }) {
+    const wrap = officeField({ id, label, type: 'text', required, hint: hint ?? ow('dateHint'), inputmode: 'numeric', autocomplete: 'off' });
+    wrap.classList.add('sre-date');
+    const control = wrap.querySelector('input');
+    control.placeholder = 'dd/mm/yyyy';
+    control.setAttribute('pattern', '\\s*\\d{1,2}[/.\\-]\\d{1,2}[/.\\-](\\d{2}|\\d{4})\\s*');
+    control.dataset.min = min ?? '';
+    control.dataset.max = max ?? '';
+    const check = () => {
+      const msg = wrap.querySelector('.sre-field-msg');
+      const text = control.value.trim();
+      if (text === '') { delete control.dataset.iso; control.setCustomValidity(''); msg.hidden = true; return; }
+      const iso = parseShopDate(text);
+      let problem = '';
+      if (iso === null) problem = ow('dateBad');
+      else if (control.dataset.min && iso < control.dataset.min) problem = fill(ow('dateTooEarly'), { d: dateWords(control.dataset.min) });
+      else if (control.dataset.max && iso > control.dataset.max) problem = fill(ow('dateTooLate'), { d: dateWords(control.dataset.max) });
+      if (problem === '') { control.dataset.iso = iso; control.setCustomValidity(''); msg.hidden = true; control.removeAttribute('aria-invalid'); }
+      else { delete control.dataset.iso; control.setCustomValidity(problem); msg.hidden = false; msg.textContent = problem; control.setAttribute('aria-invalid', 'true'); }
+    };
+    control.addEventListener('input', check);
+    control.addEventListener('blur', check);
+    if (value) { control.value = shownDate(value); check(); }
+    wrap.sreSetDate = (iso) => { control.value = shownDate(iso); check(); };
+    return wrap;
+  }
+  const dateValue = (id) => { const el = byId(id); if (!el) return null; const iso = el.dataset.iso; return iso ? iso : (el.value.trim() === '' ? null : parseShopDate(el.value)); };
+
+  // ── A name for an id, and who is looking ─────────────────────────────────────────────────────────────────────
+  const ZONE_WORDS = { 'Asia/Kolkata': { en: 'India time (Kolkata)', ta: 'இந்திய நேரம் (கொல்கத்தா)' }, 'Asia/Dubai': { en: 'Gulf time (Dubai)', ta: 'வளைகுடா நேரம் (துபாய்)' }, UTC: { en: 'UTC', ta: 'UTC' } };
+  function nameOf(kind, id) {
+    const key = String(id ?? '');
+    if (key === '') return '';
+    const d = directory();
+    if (kind === 'person') {
+      const hit = d?.people?.find((p) => p.id === key);
+      if (hit) return hit.name;
+      const session = window.sreOfficeSession;
+      if (session && session.userId === key && session.displayName) return session.displayName;
+      return key;
+    }
+    if (kind === 'store') return d?.store && d.store.id === key ? d.store.name : key;
+    if (kind === 'place') { const hit = d?.places?.find((p) => p.id === key); return hit ? hit.name : (d?.store && d.store.id === key ? d.store.name : key); }
+    if (kind === 'zone') return ZONE_WORDS[key] ? said(ZONE_WORDS[key]) : key;
+    if (kind === 'role') { const r = navigation()?.roles?.find?.((x) => x.id === key); return r ? r.name : key; }
+    const cached = listCache.get(kind)?.rows?.find((r) => r.id === key) ?? recentPicks(kind).find((r) => r.id === key);
+    return cached ? cached.name : key;
+  }
+  function me() {
+    const d = directory();
+    const session = window.sreOfficeSession;
+    const nav = navigation();
+    const userId = d?.me?.userId ?? session?.userId ?? nav?.userId ?? null;
+    const storeId = d?.store?.id ?? nav?.branch?.branchId ?? nav?.branchId ?? null;
+    return {
+      userId,
+      name: userId === null ? null : nameOf('person', userId),
+      storeId,
+      storeName: storeId === null ? null : nameOf('store', storeId),
+      roleIds: d?.me?.roleIds ?? [],
+      permissions: d?.me?.permissions ?? [],
+    };
+  }
+  /** The three-part refusal words, from the ONE source (`refusal-words.ts`, exposed by the bundle every page loads). */
+  function officeRefusalWords(out) {
+    const words = window.sreRefusalWords;
+    if (words && typeof words.refusalWords === 'function') return words.refusalWords(lang(), out ?? {});
+    const said = (out && typeof out.whatHappened === 'string' && out.whatHappened.trim() !== '' && !/^status \d{3}$/i.test(out.whatHappened)) ? out.whatHappened.trim() : ow('refusedPlain');
+    return `${ow('refused')} ${said}${/[.!?।]$/.test(said) ? '' : '.'} ${ow('nothingChangedWord')} ${ow('tryAgainTell')}`;
+  }
   /** A record's facts as a definition list, for the drawer: `[[label, value], …]`; a missing value is "Not known". */
   function officeFacts(pairs) {
     const dl = document.createElement('dl');
@@ -1632,13 +2110,15 @@
   window.sreOffice = Object.freeze({
     table: officeTable, state: officeState, cards: officeCards, chip: officeChip, field: officeField, check: officeCheck,
     drawer: officeDrawer, closeDrawer, facts: officeFacts, stateOf: officeStateOf, words: (key) => ow(key),
+    // U2: pick a thing by its name, a date a shop person reads, a name for an id, who is looking, the three-part refusal
+    pick: officePick, pickField: officePickField, pickedValue, setPicked, dateField: officeDateField, dateValue, dateWords, nameOf, me, refusalWords: officeRefusalWords, parseShopDate,
     confirm: officeConfirm,
   });
 
   // a register that is still on the page is redrawn in the new language; one its page has since replaced is let go
   function repaintTables() { for (const table of [...liveTables]) { if (table.connected()) table.repaint(); else liveTables.delete(table); } }
 
-  function repaint() { paintToggle(); paintHeading(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
+  function repaint() { paintToggle(); paintHeading(); paintWhoAmI(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   new MutationObserver(repaintTables).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });

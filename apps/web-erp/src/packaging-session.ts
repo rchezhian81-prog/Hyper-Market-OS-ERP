@@ -22,7 +22,7 @@ export const PACKAGING_MOVES = ['received', 'issued_to_customer', 'issued_to_del
 export const PACKAGING_COPY = {
   en: {
     title: 'Packaging and crates', lead: 'Carry bags, crates, delivery bags and cold boxes kept like any other stock — what came in, what went out, what came back. For crates and cold boxes: how many are still out and never came back.',
-    positionH: 'Where an item stands', item: 'Item code', branch: 'Branch code', show: 'Show the position',
+    positionH: 'Where an item stands', item: 'Packaging item (as registered on this page)', branch: 'Branch', choose: 'Choose…', pickUnavailable: 'The list could not open — type the code instead.', whichBranch: 'Which branch?', show: 'Show the position',
     onHand: 'On hand', negativeWarn: 'NEGATIVE — more went out than was ever recorded coming in. A goods-in was probably never entered.',
     inCirculation: 'Still out (not come back)', issued: 'Sent out in all', returned: 'Came back in all', writtenOff: 'Written off', lossRate: 'Never came back', notMeaningful: 'not measurable yet',
     registerH: 'Register or restate an item', name: 'Name', kind: 'Kind', returnable: 'Comes back (returnable)', charge: 'Charge to the customer (₹, optional)', tax: 'Tax rate (%, optional)', deposit: 'Deposit (₹, optional)', register: 'Save the item',
@@ -35,13 +35,13 @@ export const PACKAGING_COPY = {
     confirmLabel: 'Record it', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     m_received: 'Received', m_issued_to_customer: 'Given to a customer', m_issued_to_delivery: 'Sent out with a delivery', m_returned: 'Came back', m_written_off: 'Written off (lost or broken)',
     registered: 'Saved at head office.', moved: 'Recorded at head office.',
-    needPosition: 'Write the item code and the branch code.', needItem: 'Write the item code, a name and its kind; charge, tax and deposit must be numbers if given.', needMove: 'Write the item code, the branch, what happened and a whole number more than 0.',
+    needPosition: 'Say which packaging item and which branch.', needItem: 'Say which packaging item, a name and its kind; charge, tax and deposit must be numbers if given.', needMove: 'Say which packaging item, the branch, what happened and a whole number more than 0.',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot read packaging stock.', cannotMove: 'Your role cannot register packaging or record its movements.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
   ta: {
     title: 'பொதிப் பொருட்களும் கூடைகளும்', lead: 'பைகள், கூடைகள், டெலிவரிப் பைகள், குளிர்ப் பெட்டிகள் — மற்ற சரக்கைப் போலவே: வந்தது, போனது, திரும்பி வந்தது. கூடைகள், குளிர்ப் பெட்டிகளுக்கு: இன்னும் வெளியே இருப்பவை, திரும்பி வராதவை.',
-    positionH: 'ஒரு பொருளின் நிலை', item: 'பொருள் குறியீடு', branch: 'கிளைக் குறியீடு', show: 'நிலையைக் காட்டு',
+    positionH: 'ஒரு பொருளின் நிலை', item: 'பேக்கேஜிங் பொருள் (இந்தப் பக்கத்தில் பதிவு செய்தபடி)', branch: 'கிளை', choose: 'தேர்ந்தெடு…', pickUnavailable: 'பட்டியலைத் திறக்க முடியவில்லை — குறியீட்டைத் தட்டச்சு செய்யவும்.', whichBranch: 'எந்தக் கிளை?', show: 'நிலையைக் காட்டு',
     onHand: 'கையிருப்பு', negativeWarn: 'எதிர்மறை — உள்ளே வந்ததாகப் பதிவானதை விட அதிகம் வெளியே போனது. ஒரு வரவு பதிவு செய்யப்படவில்லை போலும்.',
     inCirculation: 'இன்னும் வெளியே (திரும்பவில்லை)', issued: 'மொத்தம் வெளியே அனுப்பியது', returned: 'மொத்தம் திரும்பி வந்தது', writtenOff: 'தள்ளுபடி செய்தது', lossRate: 'திரும்பி வராதது', notMeaningful: 'இன்னும் அளவிட முடியாது',
     registerH: 'ஒரு பொருளைப் பதிவு செய் அல்லது மாற்று', name: 'பெயர்', kind: 'வகை', returnable: 'திரும்பி வரும் (திரும்பத்தக்கது)', charge: 'வாடிக்கையாளர் கட்டணம் (₹, விருப்பம்)', tax: 'வரி விகிதம் (%, விருப்பம்)', deposit: 'வைப்புத் தொகை (₹, விருப்பம்)', register: 'பொருளைச் சேமி',

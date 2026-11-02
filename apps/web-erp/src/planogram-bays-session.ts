@@ -35,7 +35,7 @@ export const BAYS_COPY = {
   en: {
     lang: 'தமிழ்', title: 'Shelf compliance by bay',
     lead: 'Each bay\'s shelf compared with the approved planogram, from the staff counts, with every gap named. A photo can go with a shelf check; it is kept on the shop\'s own computer.',
-    store: 'Store', show: 'Show the bays', score: 'Score', notScored: 'Not scored', counted: 'counted', planned: 'facings planned', noGaps: 'No gaps.',
+    store: 'Store', yourStore: 'your store', show: 'Show the bays', score: 'Score', notScored: 'Not scored', counted: 'counted', planned: 'facings planned', noGaps: 'No gaps.',
     photos: 'Photos', measuredBy: 'Measured by: counted by staff', recognitionOff: 'Image recognition is switched off: no photo leaves the shop.',
     photoH: 'Add a photo to a shelf check', bay: 'Bay', photo: 'Photo', keep: 'Keep this photo', kept: 'Photo kept on the shop\'s own computer. It was not sent anywhere.',
     typeNotAllowed: 'image type not allowed — use a JPEG, PNG or WebP photo. Nothing was sent.', tooLarge: 'image too large — at most 700 KB. Nothing was sent.',
@@ -45,7 +45,7 @@ export const BAYS_COPY = {
   ta: {
     lang: 'English', title: 'அலமாரி இணக்கம் — பகுதி வாரியாக',
     lead: 'ஒவ்வொரு பகுதியின் அலமாரியும் ஒப்புதல் பெற்ற திட்ட வரைபடத்துடன், பணியாளர் எண்ணிக்கையிலிருந்து ஒப்பிடப்படுகிறது; ஒவ்வொரு இடைவெளியும் பெயரிடப்படுகிறது. அலமாரிச் சரிபார்ப்புடன் ஒரு புகைப்படம் சேர்க்கலாம்; அது கடையின் சொந்தக் கணினியில் வைக்கப்படும்.',
-    store: 'கடை', show: 'பகுதிகளைக் காட்டு', score: 'மதிப்பெண்', notScored: 'மதிப்பிடப்படவில்லை', counted: 'எண்ணப்பட்டது', planned: 'திட்டமிட்ட இடங்கள்', noGaps: 'இடைவெளி இல்லை.',
+    store: 'கடை', yourStore: 'உங்கள் கடை', show: 'பகுதிகளைக் காட்டு', score: 'மதிப்பெண்', notScored: 'மதிப்பிடப்படவில்லை', counted: 'எண்ணப்பட்டது', planned: 'திட்டமிட்ட இடங்கள்', noGaps: 'இடைவெளி இல்லை.',
     photos: 'புகைப்படங்கள்', measuredBy: 'அளந்தது: பணியாளர் எண்ணிக்கை', recognitionOff: 'பட அடையாளம் அணைக்கப்பட்டுள்ளது: எந்தப் புகைப்படமும் கடையை விட்டு வெளியே செல்லாது.',
     photoH: 'அலமாரிச் சரிபார்ப்புக்கு ஒரு புகைப்படம் சேர்', bay: 'பகுதி', photo: 'புகைப்படம்', keep: 'இந்தப் புகைப்படத்தை வை', kept: 'புகைப்படம் கடையின் சொந்தக் கணினியில் வைக்கப்பட்டது. எங்கும் அனுப்பப்படவில்லை.',
     typeNotAllowed: 'இந்தப் பட வகை அனுமதிக்கப்படவில்லை — JPEG, PNG அல்லது WebP புகைப்படம் பயன்படுத்தவும். எதுவும் அனுப்பப்படவில்லை.', tooLarge: 'படம் மிகப் பெரியது — அதிகபட்சம் 700 KB. எதுவும் அனுப்பப்படவில்லை.',

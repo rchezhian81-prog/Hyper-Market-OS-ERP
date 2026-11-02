@@ -5,6 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * D-23 (R4, signed OB-227) — the Bought together page, in a real browser, on the PRODUCTION API over real PostgreSQL:
  * "From banked sales for a period and department, the system lists product pairs bought together more often than chance,
@@ -64,8 +67,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Bought
       await page.waitForFunction(() => (globalThis as unknown as { basketAffinity?: unknown }).basketAffinity !== undefined);
       expect(await page.isHidden('#pairs-section')).toBe(true); // nothing read or written on open
 
-      await page.fill('#from', DAY);
-      await page.fill('#to', DAY);
+      await page.fill('#from', ddmm(DAY));
+      await page.fill('#to', ddmm(DAY));
       await page.click('#show');
       await expect.poll(() => page.textContent('#page-status')).toMatch(/There is no default/);
 

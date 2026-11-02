@@ -13,6 +13,16 @@ const mayRead = perms.has('catalogue.pack.read');
 const mayEdit = perms.has('catalogue.pack.publish');
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const NUTRIENTS = [['energyKcal', 'energy (kcal)', 'ஆற்றல் (கிலோ கலோரி)'], ['proteinG', 'protein (g)', 'புரதம் (கி)'], ['carbohydrateG', 'carbohydrate (g)', 'கார்போஹைட்ரேட் (கி)'],
   ['totalSugarsG', 'total sugars (g)', 'மொத்த சர்க்கரை (கி)'], ['addedSugarsG', 'added sugars (g)', 'சேர்க்கப்பட்ட சர்க்கரை (கி)'], ['totalFatG', 'total fat (g)', 'மொத்த கொழுப்பு (கி)'],
   ['saturatedFatG', 'saturated fat (g)', 'நிறைவுற்ற கொழுப்பு (கி)'], ['transFatG', 'trans fat (g)', 'டிரான்ஸ் கொழுப்பு (கி)'], ['cholesterolMg', 'cholesterol (mg)', 'கொலஸ்ட்ரால் (மி.கி)'], ['sodiumMg', 'sodium (mg)', 'சோடியம் (மி.கி)']];
@@ -84,6 +94,25 @@ const WORDS = {
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const setShopDate = (id, iso) => { const n = $(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 
 // ── head office, in the person's own session ────────────────────────────────────────────────────────────────────────
@@ -100,7 +129,7 @@ async function call(method, path, body) {
 }
 function say(el, out, good) {
   el.className = `status ${out.ok ? 'good' : 'err'}`;
-  el.textContent = out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`;
+  el.textContent = out.ok ? good : out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error);
 }
 function tell(el, ok, text) { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; }
 
@@ -215,7 +244,7 @@ function fillRecord() {
   const n = s.nutrition ?? {};
   $('n-basis').value = n.basis ?? 'per_100g';
   for (const [key] of [...NUTRIENTS, ['servingSize']]) $(`n-${key}`).value = n[key] === undefined ? '' : String(n[key]);
-  $('m-from').value = ''; $('m-rupees').value = ''; $('r-why').value = '';
+  setShopDate('m-from', ''); $('m-rupees').value = ''; $('r-why').value = '';
   paintAttributes();
 }
 
@@ -255,7 +284,7 @@ function recordFromForm() {
     s.nutrition = n;
   }
   if (Object.keys(s).length === 0) delete p.safety; else p.safety = s;
-  const from = $('m-from').value; const rupees = text('m-rupees');
+  const from = dateOf('m-from'); const rupees = text('m-rupees');
   if (from !== '' || rupees !== '') {
     const minor = Math.round(Number(rupees) * 100);
     p.mrpHistory = [...(Array.isArray(p.mrpHistory) ? p.mrpHistory : []), { value: { minor: Number.isFinite(minor) ? minor : rupees, currency: 'INR' }, effectiveFrom: from }];
@@ -354,6 +383,7 @@ function paintWords() {
 }
 
 function paint() {
+  repaintShopDates();
   paintWords();
   const shown = productId !== '' && !readFailed && mayRead;
   $('tabs').hidden = false; // the tiles always say what the page holds; a section opens once a product is shown
@@ -537,3 +567,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('m-from', { en: wordsIn('en', 'mrpFrom'), ta: wordsIn('ta', 'mrpFrom') }); paint(); }, { once: true });

@@ -14,6 +14,60 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 let events = null;
 let forecast = null;
 
+
+// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
+// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
+// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
+// list cannot be read (head office down, no right) typing the code is the fallback, never a dead end (P-01, P-08).
+const pickers = [];
+function pickerBeside(input, kind, titleKey, extra = {}) {
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
+  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
+  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
+  host.after(btn, name);
+  btn.addEventListener('click', async () => {
+    const office = window.sreOffice;
+    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
+    const picked = await office.pick({ kind, title: { en: api.words('en', titleKey), ta: api.words('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
+    if (!picked || picked.ok !== true) return;
+    input.value = picked.id;
+    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+  pickers.push(btn);
+  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
+  return btn;
+}
+const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+/** The signed-in person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
+function myStore() {
+  const office = window.sreOffice;
+  const me = office && typeof office.me === 'function' ? office.me() : null;
+  return (me && me.storeId) || (window.sreDirectory && window.sreDirectory.store && window.sreDirectory.store.id) || '';
+}
+const prefillStore = () => { if ($('store').value.trim() === '') { const id = myStore(); if (id !== '') $('store').value = id; } };
+/** The products an event is limited to, chosen one by one: { id, name }. The hidden #products carries the ids the session reads. */
+let pickedProducts = [];
+function paintPickedProducts() {
+  $('products').value = pickedProducts.map((p) => p.id).join(',');
+  $('product-list').replaceChildren(...(pickedProducts.length === 0 ? [] : pickedProducts.map((p) => {
+    const li = el('li'); li.dataset.product = p.id;
+    const remove = el('button', 'sre-btn sre-btn-quiet', t('remove')); remove.type = 'button';
+    remove.setAttribute('aria-label', `${t('remove')} ${p.name}`);
+    remove.addEventListener('click', () => { pickedProducts = pickedProducts.filter((x) => x.id !== p.id); paintPickedProducts(); });
+    li.append(el('span', '', p.name === p.id ? p.id : `${p.name} (${p.id})`), remove);
+    return li;
+  })));
+}
+/** What the typed effect means, in words beside the box ("That means orders 50% higher than usual."). */
+function paintEffectWords() {
+  const effect = Number($('effect').value);
+  const pct = Number.isFinite(effect) && effect > 0 && $('effect').value.trim() !== '' ? Math.round(Math.abs(effect - 1) * 100) : null;
+  const w = (k) => api.words(lang, k);
+  $('effect-words').textContent = pct === null ? '' : w('effectHint').replace('{effect}', pct === 0 ? w('effectSame') : w(effect > 1 ? 'effectMore' : 'effectLess').replace('{pct}', String(pct)));
+}
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 function row(cells, attrs = {}) {
   const tr = document.createElement('tr');
@@ -30,6 +84,8 @@ function paint() {
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-store', 'store'], ['show', 'show'], ['record-h', 'recordH'], ['l-label', 'label'], ['l-kind', 'kind'], ['o-festival', 'festival'], ['o-local', 'local_event'],
     ['l-ev-from', 'from'], ['l-ev-to', 'to'], ['l-effect', 'effect'], ['l-products', 'products'], ['save', 'save'], ['events-h', 'eventsH'], ['forecast-h', 'forecastH'], ['l-product', 'product'], ['forecast', 'forecast']]) $(id).textContent = t(k);
   $('lang').textContent = t('lang');
+  $('products-hint').textContent = t('allProductsHint'); $('add-product').textContent = t('addProduct');
+  paintPickers(); paintPickedProducts(); paintEffectWords();
   $('whoami').textContent = window.demandEventsData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('save').disabled = !may.manage; $('show').disabled = !may.read; $('forecast').disabled = !may.read;
@@ -100,7 +156,7 @@ async function record(event) {
   const pct = Number.isFinite(effect) && effect > 0 ? Math.round(Math.abs(effect - 1) * 100) : null;
   const w = (l, k) => api.words(l, k);
   const effectWords = (l) => (pct === null ? $('effect').value : pct === 0 ? w(l, 'effectSame') : w(l, effect > 1 ? 'effectMore' : 'effectLess').replace('{pct}', String(pct)));
-  const productsWords = (l) => ($('products').value.trim() === '' ? w(l, 'allProducts') : $('products').value.trim());
+  const productsWords = (l) => (pickedProducts.length === 0 ? w(l, 'allProducts') : pickedProducts.map((p) => p.name).join(', '));
   const sub = (l, key) => String(w(l, key)).replace('{label}', $('label').value.trim()).replace('{kind}', w(l, $('kind').value)).replace('{from}', $('ev-from').value).replace('{to}', $('ev-to').value).replace('{effect}', effectWords(l)).replace('{products}', productsWords(l)).replace('{store}', store());
   // An incomplete form skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
   const complete = store().trim() !== '' && $('label').value.trim() !== '' && $('ev-from').value !== '' && $('ev-to').value !== '' && pct !== null;
@@ -108,7 +164,7 @@ async function record(event) {
   if (answer === 'unavailable') { say('record-status', t('confirmUnavailable'), false); return; }
   if (answer === null) return;
   const out = await session.record({ storeId: store(), label: $('label').value, kind: $('kind').value, from: $('ev-from').value, to: $('ev-to').value, effect: $('effect').value, products: $('products').value });
-  if (out.result === 'ok') { say('record-status', t('recorded'), true); await show(); } else say('record-status', out, false);
+  if (out.result === 'ok') { say('record-status', t('recorded'), true); pickedProducts = []; paintPickedProducts(); await show(); } else say('record-status', out, false);
 }
 async function withdraw(eventId, reason) {
   const out = await session.withdraw(eventId, reason);
@@ -125,7 +181,20 @@ $('ask').addEventListener('submit', (e) => { void show(e); });
 $('record').addEventListener('submit', (e) => { void record(e); });
 $('fc').addEventListener('submit', (e) => { void showForecast(e); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+pickerBeside($('store'), 'store', 'whichStore');
+pickerBeside($('product'), 'product', 'whichProduct');
+$('add-product').addEventListener('click', async () => {
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { say('record-status', t('pickUnavailable'), false); return; }
+  const picked = await office.pick({ kind: 'product', title: { en: api.words('en', 'whichProduct'), ta: api.words('ta', 'whichProduct') }, allowCode: true });
+  if (!picked || picked.ok !== true) return;
+  if (!pickedProducts.some((p) => p.id === picked.id)) pickedProducts.push({ id: picked.id, name: picked.name || picked.id });
+  paintPickedProducts();
+});
+$('effect').addEventListener('input', paintEffectWords);
 paint();
+prefillStore();
+document.addEventListener('sre:chrome', prefillStore);
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 
 if ('serviceWorker' in navigator) {
