@@ -12,10 +12,10 @@
     "onDevice": 0
   },
   "labels": {
-    "E2E_VERIFIED": 42,
-    "INTEGRATION_TESTED": 18,
-    "WIRED": 5,
-    "PARTIALLY_WIRED": 39
+    "E2E_VERIFIED": 55,
+    "INTEGRATION_TESTED": 24,
+    "PARTIALLY_WIRED": 21,
+    "WIRED": 4
   },
   "totals": {
     "unit": 97,
@@ -263,7 +263,7 @@
     },
     {
       "id": "M03",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 21,
         "integration": 22,
@@ -347,7 +347,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M04",
@@ -1437,7 +1437,7 @@
     },
     {
       "id": "M16",
-      "label": "WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 12,
         "integration": 19,
@@ -1507,7 +1507,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "M17",
@@ -1582,7 +1582,7 @@
     },
     {
       "id": "M18",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 12,
         "integration": 14,
@@ -1640,7 +1640,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "M19",
@@ -1813,7 +1813,7 @@
     },
     {
       "id": "M21",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
         "integration": 19,
@@ -1876,7 +1876,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M22",
@@ -3031,11 +3031,11 @@
     },
     {
       "id": "D01",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 3,
-        "integration": 10,
-        "realDb": 3,
+        "integration": 11,
+        "realDb": 4,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -3048,6 +3048,7 @@
           "tests/unit/storefront-browse.test.ts"
         ],
         "integration": [
+          "tests/integration/a-tobacco-pack-without-a-current-warning-attestation-is-not-sellable.test.ts",
           "tests/integration/barcode-register.test.ts",
           "tests/integration/catalogue-pack-publish.test.ts",
           "tests/integration/catalogue-product-duplicates.test.ts",
@@ -3060,6 +3061,7 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-tobacco-pack-without-a-current-warning-attestation-is-not-sellable.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/product-content-and-synonyms-reach-the-customer-app.test.ts",
           "tests/integration/product-content-versions-and-images-are-kept-on-the-shops-server.test.ts"
@@ -3075,11 +3077,11 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D02",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 4,
         "integration": 10,
@@ -3127,11 +3129,11 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D03",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 11,
         "integration": 17,
@@ -3205,16 +3207,16 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D04",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
         "integration": 18,
         "realDb": 10,
-        "browser": 7,
+        "browser": 8,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3267,6 +3269,7 @@
         ],
         "browser": [
           "tests/e2e/manager-day-close-delivery.e2e.ts",
+          "tests/e2e/the-price-kiosk-quotes-from-the-signed-list-and-says-how-old-it-is.e2e.ts",
           "tests/e2e/the-queue-till-scans-in-the-queue-and-hands-over-to-a-till.e2e.ts",
           "tests/e2e/the-self-checkout-lane-sends-what-the-customer-must-not-decide-to-a-colleague.e2e.ts",
           "tests/e2e/the-served-till-drives-the-customer-display.e2e.ts",
@@ -3281,11 +3284,11 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "D05",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 2,
         "integration": 14,
@@ -3336,11 +3339,11 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D06",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 5,
         "integration": 8,
@@ -3384,7 +3387,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D07",
@@ -3437,7 +3440,7 @@
     },
     {
       "id": "D08",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
         "integration": 7,
@@ -3486,7 +3489,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "D09",
@@ -3548,7 +3551,7 @@
     },
     {
       "id": "D10",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 3,
         "integration": 13,
@@ -3601,15 +3604,15 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D11",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 2,
-        "integration": 12,
-        "realDb": 5,
+        "integration": 13,
+        "realDb": 6,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -3622,6 +3625,7 @@
         ],
         "integration": [
           "tests/integration/a-relabel-task-goes-to-the-floor-champion-else-the-store-manager.test.ts",
+          "tests/integration/an-emergency-grant-confers-its-role-while-live.test.ts",
           "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/attendance-store.test.ts",
           "tests/integration/checklist-store.test.ts",
@@ -3636,6 +3640,7 @@
         ],
         "realDb": [
           "tests/integration/a-relabel-task-goes-to-the-floor-champion-else-the-store-manager.test.ts",
+          "tests/integration/an-emergency-grant-confers-its-role-while-live.test.ts",
           "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/the-adoption-gate-names-who-is-not-ready.test.ts",
           "tests/integration/the-help-centre-emergency-procedures-and-appointment-letters.test.ts",
@@ -3653,7 +3658,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D12",
@@ -3704,7 +3709,7 @@
     },
     {
       "id": "D13",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 7,
         "integration": 13,
@@ -3762,14 +3767,14 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "D14",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 8,
-        "integration": 12,
+        "unit": 9,
+        "integration": 13,
         "realDb": 5,
         "browser": 1,
         "connected": 0,
@@ -3785,9 +3790,11 @@
           "tests/unit/office-sign-in.test.ts",
           "tests/unit/p6-floor-device-rules.test.ts",
           "tests/unit/p6-self-checkout-lane-and-kiosk.test.ts",
-          "tests/unit/self-checkout.test.ts"
+          "tests/unit/self-checkout.test.ts",
+          "tests/unit/the-partner-sdk-keeps-its-promises.test.ts"
         ],
         "integration": [
+          "tests/integration/a-partner-builds-against-the-sandbox-with-the-sdk.test.ts",
           "tests/integration/connector-delivery.test.ts",
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/every-domain-route-schemas-match-the-handlers.test.ts",
@@ -3820,13 +3827,13 @@
     },
     {
       "id": "A01",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
         "integration": 14,
         "realDb": 9,
-        "browser": 1,
-        "connected": 1,
+        "browser": 2,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3872,16 +3879,18 @@
           "tests/integration/the-shop-is-metered-for-information.test.ts"
         ],
         "browser": [
-          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/the-morning-brief-page-says-it-was-not-sent.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/the-morning-brief-page-says-it-was-not-sent.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "A02",
@@ -3984,7 +3993,7 @@
     },
     {
       "id": "A04",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 9,
         "integration": 7,
@@ -4034,7 +4043,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "A05",
@@ -4337,13 +4346,13 @@
     },
     {
       "id": "WF-01",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
         "integration": 10,
         "realDb": 3,
-        "browser": 3,
-        "connected": 1,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -4369,16 +4378,18 @@
         "browser": [
           "tests/e2e/product-publish-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
-          "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts"
+          "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/product-publish-on-the-production-api.e2e.ts"
+          "tests/e2e/product-publish-on-the-production-api.e2e.ts",
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-02",
@@ -4428,13 +4439,13 @@
     },
     {
       "id": "WF-03",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 3,
         "integration": 14,
         "realDb": 8,
-        "browser": 4,
-        "connected": 3,
+        "browser": 5,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -4472,11 +4483,13 @@
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
           "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
@@ -4485,7 +4498,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-04",
@@ -4530,7 +4543,7 @@
     },
     {
       "id": "WF-05",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
         "integration": 9,
@@ -4573,7 +4586,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-06",
@@ -4623,7 +4636,7 @@
     },
     {
       "id": "WF-07",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 4,
         "integration": 8,
@@ -4670,7 +4683,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-08",
@@ -5000,13 +5013,13 @@
     },
     {
       "id": "WF-15",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
         "integration": 8,
         "realDb": 3,
-        "browser": 3,
-        "connected": 1,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -5028,22 +5041,24 @@
           "tests/integration/pick-to-doorstep.test.ts"
         ],
         "browser": [
+          "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/delivery-route-partial-delivery.e2e.ts",
           "tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts",
           "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-16",
-      "label": "PARTIALLY_WIRED",
+      "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 3,
         "integration": 7,
@@ -5086,7 +5101,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "an integration test cites it"
     },
     {
       "id": "WF-17",
@@ -5130,7 +5145,7 @@
     },
     {
       "id": "WF-18",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 1,
         "integration": 16,
@@ -5189,7 +5204,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-19",
@@ -5244,7 +5259,7 @@
     },
     {
       "id": "WF-20",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
         "integration": 10,
@@ -5291,7 +5306,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "QG-01",
@@ -6180,7 +6195,7 @@
     },
     {
       "id": "MG-10",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
         "integration": 7,
@@ -6224,7 +6239,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
     },
     {
       "id": "MG-11",
