@@ -29,7 +29,11 @@
 // inventory (D03-FR-04) — the supplier's OWN VMI items only (`GET /v1/supplier-portal/me/vmi`, scoped on the server), each
 // with the buyer's minimum and maximum, on hand, on order and the room left. It sends a replenishment PROPOSAL
 // (`POST /v1/supplier-portal/me/vmi/proposals/:proposalId`) that waits for a buyer; it orders nothing and sets no price
-// (P-05, §28). `readTopUpProposal` checks it against the room before anything is sent; nothing else on this screen writes.
+// (P-05, §28). `readTopUpProposal` checks it against the room before anything is sent.
+//
+// OB-624 (owner, 1 Nov 2026, in writing: "allow both" — widening OB-362/OB-389): an "Invoice" form and a "Delivery note
+// (ASN)" form, each sending the existing `invoice` / `asn` submission for a buyer to accept. `readInvoiceSubmission` and
+// `readAsnSubmission` check them before anything is sent; nothing counts until a buyer accepts it. Nothing else here writes.
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -45,6 +49,9 @@ export interface SubmissionView {
   readonly kind: SubmissionKind;
   readonly requiresReview: boolean;
   readonly receivedAt: string;
+  /** OB-624: the buyer's decision on an invoice / delivery note / proposal, with its reason — absent while it waits. */
+  readonly decision?: 'accepted' | 'rejected';
+  readonly reason?: string;
 }
 
 /** The supplier's statement (`…/me/statement`) — its own account with the shop. */
@@ -201,6 +208,147 @@ export function readTopUpProposal(input: TopUpInput, feed: SupplierVmiFeed | nul
   return { ok: true, document: { storeId, lines, ...(note === '' ? {} : { note }) } };
 }
 
+// ── OB-624 (owner, 1 Nov 2026, in writing: "allow both"): an invoice and a delivery note (ASN) from the supplier ──────────
+// The THIRD and FOURTH writes on this screen. Each sends the existing `invoice` / `asn` submission to the supplier's OWN
+// submissions route (the partner is the login's binding, never the request); head office keeps it exactly as sent and it
+// waits for a BUYER (never the supplier) to accept it on the Supplier submissions page — nothing counts until then: an
+// accepted invoice reaches the three-way match, an accepted delivery note the receiving compare. Each form is checked here
+// first, against the supplier's own open orders, with head office's own arithmetic (OB-31: quantities in the unit's
+// smallest step; a line is quantity × price per whole unit, rounded once) so a bill that would not add up is refused
+// before it is sent, in the supplier's words.
+
+/** The units a supplier names on a line (OB-31): pieces, kilograms, litres. */
+export const DOCUMENT_UNITS = Object.freeze(['ea', 'kg', 'L'] as const);
+export type DocumentUnit = (typeof DOCUMENT_UNITS)[number];
+const UNIT_STEPS: Readonly<Record<DocumentUnit, number>> = Object.freeze({ ea: 0, kg: 3, L: 3 });
+/** At most this many lines in one invoice or delivery note. */
+export const DOCUMENT_MAX_LINES = 50;
+
+/** A quantity as typed, in the unit's smallest step (2.5 kg → 2500), or undefined when it cannot be read for that unit. */
+export function minorOfTyped(typed: string, uom: string): number | undefined {
+  if (!(DOCUMENT_UNITS as readonly string[]).includes(uom)) return undefined;
+  const places = UNIT_STEPS[uom as DocumentUnit];
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(typed.trim());
+  if (m === null || (m[2] ?? '').length > places) return undefined;
+  const minor = Number(m[1]) * 10 ** places + Number((m[2] ?? '').padEnd(places, '0') || '0');
+  return Number.isSafeInteger(minor) && minor > 0 ? minor : undefined;
+}
+
+/** Rupees as typed ("18.50", "18") in paise, or undefined. */
+export function paiseOfTyped(typed: string): number | undefined {
+  const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(typed.trim().replace(/^₹\s*/, '').replace(/,/g, ''));
+  if (m === null) return undefined;
+  const paise = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
+  return Number.isSafeInteger(paise) ? paise : undefined;
+}
+
+/** A line's value: quantity (smallest step) × price per WHOLE unit, rounded once, half up — head office's own rule. */
+export function lineValueMinor(quantityMinor: number, uom: DocumentUnit, unitPriceMinor: number): number {
+  const scale = 10 ** UNIT_STEPS[uom];
+  if (scale === 1) return quantityMinor * unitPriceMinor;
+  const n = BigInt(quantityMinor) * BigInt(unitPriceMinor);
+  const d = BigInt(scale);
+  return Number(n / d + ((n % d) * 2n >= d ? 1n : 0n));
+}
+
+/** One invoice line as typed. */
+export interface InvoiceLineInput { readonly productId: string; readonly quantity: string; readonly uom: string; readonly unitPrice: string }
+/** The invoice form as typed. */
+export interface InvoiceInput { readonly poId: string; readonly invoiceId: string; readonly lines: readonly InvoiceLineInput[]; readonly total: string }
+export type DocumentRefusal =
+  | 'cannotSubmit' | 'ordersUnknownSend' | 'notYourOrder' | 'needInvoiceNo' | 'needAsnNo' | 'needLine' | 'tooManyLines'
+  | 'needItem' | 'badUnit' | 'badLineQty' | 'badPrice' | 'needTotal' | 'totalDisagrees' | 'needExpectedAt' | 'badExpiry' | 'badMade' | 'badBatch';
+/** The `invoice` document the form sends — or why it is not sent (with the line, counting from 1). */
+export type InvoiceRead =
+  | { readonly ok: true; readonly document: { readonly invoiceId: string; readonly poId?: string; readonly declaredTotalMinor: number; readonly lines: readonly { readonly productId: string; readonly quantity: number; readonly uom: DocumentUnit; readonly unitPriceMinor: number; readonly lineTotalMinor: number }[] } }
+  | { readonly ok: false; readonly why: DocumentRefusal; readonly line?: number; readonly linesMinor?: number; readonly totalMinor?: number };
+
+/** Lines the supplier left blank are not lines (the unit chooser always holds a unit, so it does not count as typed). */
+const filled = <T extends object>(lines: readonly T[]): { readonly line: T; readonly n: number }[] =>
+  lines.map((line, i) => ({ line, n: i + 1 })).filter(({ line }) => Object.entries(line).some(([k, v]) => k !== 'uom' && typeof v === 'string' && v.trim() !== ''));
+
+/** The order a document names: blank = none; otherwise one of the supplier's own open orders (refused before sending). */
+function orderOf(poId: string, feed: SupplierOrdersFeed | null | undefined): { readonly ok: true; readonly poId?: string } | { readonly ok: false; readonly why: DocumentRefusal } {
+  const po = poId.trim();
+  if (po === '') return { ok: true };
+  if (feed === null || feed === undefined || !feed.ordersKnown) return { ok: false, why: 'ordersUnknownSend' };
+  return feed.orders.some((o) => o.poId === po) ? { ok: true, poId: po } : { ok: false, why: 'notYourOrder' };
+}
+
+/** OB-624: read the invoice form — refused here, before anything is sent. `maySubmit` is the login's own grant. */
+export function readInvoiceSubmission(input: InvoiceInput, feed: SupplierOrdersFeed | null | undefined, maySubmit: boolean): InvoiceRead {
+  if (!maySubmit) return { ok: false, why: 'cannotSubmit' };
+  const order = orderOf(input.poId, feed);
+  if (!order.ok) return { ok: false, why: order.why };
+  const invoiceId = input.invoiceId.trim();
+  if (invoiceId === '' || invoiceId.length > 64) return { ok: false, why: 'needInvoiceNo' };
+  const rows = filled(input.lines);
+  if (rows.length === 0) return { ok: false, why: 'needLine' };
+  if (rows.length > DOCUMENT_MAX_LINES) return { ok: false, why: 'tooManyLines' };
+  const lines: { productId: string; quantity: number; uom: DocumentUnit; unitPriceMinor: number; lineTotalMinor: number }[] = [];
+  for (const { line, n } of rows) {
+    const productId = line.productId.trim();
+    if (productId === '') return { ok: false, why: 'needItem', line: n };
+    if (!(DOCUMENT_UNITS as readonly string[]).includes(line.uom)) return { ok: false, why: 'badUnit', line: n };
+    const uom = line.uom as DocumentUnit;
+    const quantity = minorOfTyped(line.quantity, uom);
+    if (quantity === undefined) return { ok: false, why: 'badLineQty', line: n };
+    const unitPriceMinor = paiseOfTyped(line.unitPrice);
+    if (unitPriceMinor === undefined) return { ok: false, why: 'badPrice', line: n };
+    lines.push({ productId, quantity, uom, unitPriceMinor, lineTotalMinor: lineValueMinor(quantity, uom, unitPriceMinor) });
+  }
+  const linesMinor = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
+  const declared = paiseOfTyped(input.total);
+  if (declared === undefined) return { ok: false, why: 'needTotal', linesMinor };
+  if (declared !== linesMinor) return { ok: false, why: 'totalDisagrees', linesMinor, totalMinor: declared };
+  return { ok: true, document: { invoiceId, ...(order.poId === undefined ? {} : { poId: order.poId }), declaredTotalMinor: declared, lines } };
+}
+
+/** One delivery-note line as typed. `manufacturedOn` is a month (YYYY-MM) — packed goods need it (B4 · OB-504). */
+export interface AsnLineInput { readonly productId: string; readonly quantity: string; readonly uom: string; readonly batchId: string; readonly expiry: string; readonly manufacturedOn: string }
+/** The delivery-note form as typed. `expectedAt` is the shop's wall clock (a `datetime-local` field, OB-608). */
+export interface AsnInput { readonly poId: string; readonly asnId: string; readonly expectedAt: string; readonly lines: readonly AsnLineInput[] }
+/** The `asn` document the form sends — or why it is not sent. */
+export type AsnRead =
+  | { readonly ok: true; readonly document: { readonly asnId: string; readonly poId?: string; readonly expectedAt: string; readonly lines: readonly { readonly lineId: string; readonly productId: string; readonly quantityMinor: number; readonly uom: DocumentUnit; readonly batchId?: string; readonly expiry?: string; readonly manufacturedOn?: string }[] } }
+  | { readonly ok: false; readonly why: DocumentRefusal; readonly line?: number };
+
+const isDay = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+
+/** OB-624: read the delivery-note form — refused here, before anything is sent. `instantOf` reads the shop's wall clock. */
+export function readAsnSubmission(input: AsnInput, feed: SupplierOrdersFeed | null | undefined, maySubmit: boolean, instantOf: (typed: string) => string): AsnRead {
+  if (!maySubmit) return { ok: false, why: 'cannotSubmit' };
+  const order = orderOf(input.poId, feed);
+  if (!order.ok) return { ok: false, why: order.why };
+  const asnId = input.asnId.trim();
+  if (asnId === '' || asnId.length > 64) return { ok: false, why: 'needAsnNo' };
+  const expectedAt = instantOf(input.expectedAt.trim());
+  if (expectedAt === '') return { ok: false, why: 'needExpectedAt' };
+  const rows = filled(input.lines);
+  if (rows.length === 0) return { ok: false, why: 'needLine' };
+  if (rows.length > DOCUMENT_MAX_LINES) return { ok: false, why: 'tooManyLines' };
+  const lines: { lineId: string; productId: string; quantityMinor: number; uom: DocumentUnit; batchId?: string; expiry?: string; manufacturedOn?: string }[] = [];
+  for (const { line, n } of rows) {
+    const productId = line.productId.trim();
+    if (productId === '') return { ok: false, why: 'needItem', line: n };
+    if (!(DOCUMENT_UNITS as readonly string[]).includes(line.uom)) return { ok: false, why: 'badUnit', line: n };
+    const uom = line.uom as DocumentUnit;
+    const quantityMinor = minorOfTyped(line.quantity, uom);
+    if (quantityMinor === undefined) return { ok: false, why: 'badLineQty', line: n };
+    const batchId = line.batchId.trim();
+    if (batchId.length > 64) return { ok: false, why: 'badBatch', line: n };
+    const expiry = line.expiry.trim();
+    if (expiry !== '' && !isDay(expiry)) return { ok: false, why: 'badExpiry', line: n };
+    const made = line.manufacturedOn.trim();
+    if (made !== '' && !/^\d{4}-(0[1-9]|1[0-2])$/.test(made)) return { ok: false, why: 'badMade', line: n };
+    lines.push({
+      lineId: `L${lines.length + 1}`, productId, quantityMinor, uom,
+      ...(batchId === '' ? {} : { batchId }), ...(expiry === '' ? {} : { expiry }), ...(made === '' ? {} : { manufacturedOn: made }),
+    });
+  }
+  return { ok: true, document: { asnId, ...(order.poId === undefined ? {} : { poId: order.poId }), expectedAt, lines } };
+}
+
 export interface SupplierPortalPorts {
   /** The feeds the portal last read. */
   portal(): SupplierPortalData;
@@ -223,7 +371,7 @@ export type CopyKey =
   | 'openingLabel' | 'invoicedLabel' | 'creditedLabel' | 'debitedLabel' | 'paidLabel' | 'closingLabel' | 'disputedLabel'
   | 'reconciledLabel' | 'notReconciledLabel' | 'disputedSeparate'
   | 'kindRfq' | 'kindCatalogue' | 'kindAsn' | 'kindInvoice' | 'kindPoAck' | 'kindClaim' | 'kindDelivery'
-  | 'awaitingState' | 'processedState'
+  | 'awaitingState' | 'processedState' | 'acceptedState' | 'rejectedState'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'notIdentified' | 'staleShell' | 'sampleData'
   | 'deliveryH' | 'deliveryLead' | 'orderL' | 'chooseOrder' | 'statusL' | 'status_dispatched' | 'status_in_transit' | 'status_delayed'
@@ -233,12 +381,18 @@ export type CopyKey =
   | 'cannotPropose' | 'needStore' | 'notYourStore' | 'needQuantity' | 'badQuantity' | 'aboveRoom' | 'notYourItem'
   | 'vmiUnknown' | 'vmiProposalsH' | 'vmiAwaiting' | 'vmiAccepted' | 'vmiRejected' | 'vmiBelowMin' | 'topUpNotSent'
   | 'rebateH' | 'rebateLead' | 'rebateNone' | 'rebateUnknown' | 'rebateFacts' | 'rebateDueNotSet'
-  | 'rebate_sent' | 'rebate_partly_answered' | 'rebate_answered' | 'rebate_withdrawn';
+  | 'rebate_sent' | 'rebate_partly_answered' | 'rebate_answered' | 'rebate_withdrawn'
+  // OB-624: the invoice and delivery-note forms.
+  | 'invoiceH' | 'invoiceLead' | 'asnH' | 'asnLead' | 'docOrderL' | 'noOrder' | 'invoiceNoL' | 'asnNoL' | 'expectedAtL'
+  | 'lineItemL' | 'lineQtyL' | 'lineUomL' | 'linePriceL' | 'lineValueL' | 'lineBatchL' | 'lineExpiryL' | 'lineMadeL' | 'uom_ea' | 'uom_kg' | 'uom_L'
+  | 'addLine' | 'removeLine' | 'lineN' | 'invoiceTotalL' | 'linesAddUp' | 'sendInvoice' | 'sendAsn' | 'docSent' | 'docNotSent'
+  | 'cannotSubmit' | 'ordersUnknownSend' | 'needInvoiceNo' | 'needAsnNo' | 'needLine' | 'tooManyLines' | 'needItem' | 'badUnit' | 'badLineQty'
+  | 'badPrice' | 'needTotal' | 'totalDisagrees' | 'needExpectedAt' | 'badExpiry' | 'badMade' | 'badBatch';
 
 export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Your account with SRE', langName: 'தமிழ்',
-    lead: 'What you have sent us and where each stands, and your statement — the money we owe you. Anything you send waits for a buyer to check it; it is never in force on its own. This page shows your own account only; it changes nothing.',
+    lead: 'What you have sent us and where each stands, and your statement — the money we owe you. Anything you send waits for a buyer to check it; it is never in force on its own. This page shows your own account only.',
     refresh: 'Refresh', asOfLabel: 'As of',
     sentHeading: 'What you have sent us', awaitingLabel: 'Waiting on us', processedLabel: 'Processed', sentNone: 'You have not sent us anything yet.',
     statementHeading: 'Your statement', notAccessible: 'Your login cannot see the statement. Ask us to turn it on — this does not mean nothing is owed.',
@@ -247,7 +401,7 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     reconciledLabel: 'Balance reconciles', notReconciledLabel: 'Balance does not reconcile — please raise it with us',
     disputedSeparate: 'A disputed amount is shown on its own — it is neither owed nor written off until it is settled.',
     kindRfq: 'RFQ reply', kindCatalogue: 'Catalogue', kindAsn: 'Delivery note', kindInvoice: 'Invoice', kindPoAck: 'Order acknowledgement', kindClaim: 'Claim', kindDelivery: 'Delivery update',
-    awaitingState: 'Waiting on us', processedState: 'Processed',
+    awaitingState: 'Waiting on us', processedState: 'Processed', acceptedState: 'Accepted by our buyer', rejectedState: 'Not accepted',
     scrReady: 'Showing your account', scrEmpty: 'Nothing to show yet — you have sent us nothing and your statement is clear.',
     stateNotPermitted: 'This login is not a supplier login for this portal.',
     notIdentified: 'This login was not identified.',
@@ -272,10 +426,28 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     rebateNone: 'We have sent you no rebate claim.', rebateUnknown: 'Your rebate claims could not be read just now.',
     rebateFacts: 'Claim {claim} · scheme {scheme} · {amount} · sent {sent} · due {due} · paid {paid} · still to pay {left}', rebateDueNotSet: 'not set',
     rebate_sent: 'Waiting for your payment', rebate_partly_answered: 'Partly paid', rebate_answered: 'Paid in full — thank you', rebate_withdrawn: 'Withdrawn by us',
+
+    // OB-624: the invoice and delivery-note forms.
+    invoiceH: 'Send an invoice', invoiceLead: 'Send us your bill for goods you delivered, line by line. It waits for a buyer to check it against what we received; it is not counted or paid until a buyer accepts it.',
+    asnH: 'Send a delivery note (ASN)', asnLead: 'Tell us what is coming before it arrives, line by line. It waits for a buyer to accept it; our receiving team still counts what arrives.',
+    docOrderL: 'Your order', noOrder: 'Not against one of your orders', invoiceNoL: 'Your invoice number', asnNoL: 'Your delivery note number', expectedAtL: 'When it should arrive',
+    lineItemL: 'Item code (as on our order)', lineQtyL: 'How many', lineUomL: 'Unit', linePriceL: 'Price per unit (₹)', lineValueL: 'Line value',
+    lineBatchL: 'Batch (optional)', lineExpiryL: 'Best before (optional)', lineMadeL: 'Month made (packed goods)', uom_ea: 'pieces', uom_kg: 'kg', uom_L: 'litres',
+    addLine: 'Add a line', removeLine: 'Remove this line', lineN: 'Line {n}', invoiceTotalL: 'Invoice total as on your paper (₹)', linesAddUp: 'The lines add up to {total}.',
+    sendInvoice: 'Send the invoice', sendAsn: 'Send the delivery note', docSent: 'Sent — it waits for a buyer to check it. Nothing counts until a buyer accepts it.',
+    docNotSent: 'No connection — it was not sent. Try again when you are online.',
+    cannotSubmit: 'Your login cannot send invoices or delivery notes. Ask us to turn it on.', ordersUnknownSend: 'Your orders could not be read just now, so we cannot check the order. Choose "not against one of your orders" or try again.',
+    needInvoiceNo: 'Give your invoice number. Nothing was sent.', needAsnNo: 'Give your delivery note number. Nothing was sent.',
+    needLine: 'Fill in at least one line. Nothing was sent.', tooManyLines: 'Send at most 50 lines at a time. Nothing was sent.',
+    needItem: 'Line {n}: give the item code. Nothing was sent.', badUnit: 'Line {n}: choose the unit. Nothing was sent.',
+    badLineQty: 'Line {n}: give how many as a number above 0 (pieces are whole numbers; kg and litres up to 3 decimals). Nothing was sent.',
+    badPrice: 'Line {n}: give the price per unit in rupees, for example 18.50. Nothing was sent.', needTotal: 'Give the invoice total as on your paper. Nothing was sent.',
+    totalDisagrees: 'The lines add up to {lines} but your total says {total}. Check the lines. Nothing was sent.', needExpectedAt: 'Give the day and time it should arrive. Nothing was sent.',
+    badExpiry: 'Line {n}: best before is a date. Nothing was sent.', badMade: 'Line {n}: the month made is a month, for example 2026-10. Nothing was sent.', badBatch: 'Line {n}: the batch is too long. Nothing was sent.',
   },
   ta: {
     title: 'SRE உடன் உங்கள் கணக்கு', langName: 'English',
-    lead: 'நீங்கள் எங்களுக்கு அனுப்பியவை மற்றும் அவற்றின் நிலை, மேலும் உங்கள் அறிக்கை — நாங்கள் உங்களுக்குச் செலுத்த வேண்டிய பணம். நீங்கள் அனுப்பும் எதுவும் ஒரு வாங்குபவர் சரிபார்க்கும் வரை காத்திருக்கும்; அது தானாகவே அமலுக்கு வராது. இந்தப் பக்கம் உங்கள் சொந்தக் கணக்கை மட்டுமே காட்டுகிறது; எதையும் மாற்றாது.',
+    lead: 'நீங்கள் எங்களுக்கு அனுப்பியவை மற்றும் அவற்றின் நிலை, மேலும் உங்கள் அறிக்கை — நாங்கள் உங்களுக்குச் செலுத்த வேண்டிய பணம். நீங்கள் அனுப்பும் எதுவும் ஒரு வாங்குபவர் சரிபார்க்கும் வரை காத்திருக்கும்; அது தானாகவே அமலுக்கு வராது. இந்தப் பக்கம் உங்கள் சொந்தக் கணக்கை மட்டுமே காட்டுகிறது.',
     refresh: 'புதுப்பி', asOfLabel: 'நிலவரம்',
     sentHeading: 'நீங்கள் அனுப்பியவை', awaitingLabel: 'எங்களிடம் காத்திருக்கிறது', processedLabel: 'செயலாக்கப்பட்டது', sentNone: 'நீங்கள் இன்னும் எதையும் அனுப்பவில்லை.',
     statementHeading: 'உங்கள் அறிக்கை', notAccessible: 'உங்கள் உள்நுழைவு அறிக்கையைப் பார்க்க முடியாது. இயக்க எங்களிடம் கேளுங்கள் — இதற்கு எதுவும் நிலுவை இல்லை என்று அர்த்தம் அல்ல.',
@@ -284,7 +456,7 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     reconciledLabel: 'இருப்பு பொருந்துகிறது', notReconciledLabel: 'இருப்பு பொருந்தவில்லை — தயவுசெய்து எங்களிடம் தெரிவிக்கவும்',
     disputedSeparate: 'தகராறில் உள்ள தொகை தனியாகக் காட்டப்படுகிறது — தீர்க்கப்படும் வரை அது செலுத்த வேண்டியதோ தள்ளுபடி செய்யப்பட்டதோ அல்ல.',
     kindRfq: 'RFQ பதில்', kindCatalogue: 'பட்டியல்', kindAsn: 'விநியோகக் குறிப்பு', kindInvoice: 'விலைப்பட்டியல்', kindPoAck: 'ஆர்டர் ஒப்புகை', kindClaim: 'உரிமைகோரல்', kindDelivery: 'டெலிவரி நிலவரம்',
-    awaitingState: 'எங்களிடம் காத்திருக்கிறது', processedState: 'செயலாக்கப்பட்டது',
+    awaitingState: 'எங்களிடம் காத்திருக்கிறது', processedState: 'செயலாக்கப்பட்டது', acceptedState: 'எங்கள் வாங்குபவர் ஏற்றார்', rejectedState: 'ஏற்கப்படவில்லை',
     scrReady: 'உங்கள் கணக்கைக் காட்டுகிறது', scrEmpty: 'இன்னும் காட்ட எதுவும் இல்லை — நீங்கள் எதையும் அனுப்பவில்லை, உங்கள் அறிக்கையும் தெளிவாக உள்ளது.',
     stateNotPermitted: 'இந்த உள்நுழைவு இந்த போர்ட்டலுக்கான சப்ளையர் உள்நுழைவு அல்ல.',
     notIdentified: 'இந்த உள்நுழைவு அடையாளம் காணப்படவில்லை.',
@@ -309,6 +481,24 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     rebateNone: 'நாங்கள் உங்களுக்கு எந்தத் தள்ளுபடிக் கோரிக்கையும் அனுப்பவில்லை.', rebateUnknown: 'உங்கள் தள்ளுபடிக் கோரிக்கைகளை இப்போது படிக்க முடியவில்லை.',
     rebateFacts: 'கோரிக்கை {claim} · திட்டம் {scheme} · {amount} · அனுப்பியது {sent} · செலுத்த வேண்டியது {due} · செலுத்தியது {paid} · இன்னும் செலுத்த {left}', rebateDueNotSet: 'அமைக்கப்படவில்லை',
     rebate_sent: 'உங்கள் கட்டணத்துக்காகக் காத்திருக்கிறது', rebate_partly_answered: 'பகுதி செலுத்தப்பட்டது', rebate_answered: 'முழுமையாகச் செலுத்தப்பட்டது — நன்றி', rebate_withdrawn: 'எங்களால் திரும்பப் பெறப்பட்டது',
+
+    // OB-624: விலைப்பட்டியல் மற்றும் விநியோகக் குறிப்புப் படிவங்கள்.
+    invoiceH: 'விலைப்பட்டியல் அனுப்பு', invoiceLead: 'நீங்கள் வழங்கிய பொருட்களுக்கான பில்லை வரி வரியாக அனுப்புங்கள். நாங்கள் பெற்றதுடன் ஒரு வாங்குபவர் சரிபார்க்கும் வரை அது காத்திருக்கும்; வாங்குபவர் ஏற்கும் வரை அது கணக்கில் சேராது, செலுத்தப்படாது.',
+    asnH: 'விநியோகக் குறிப்பு (ASN) அனுப்பு', asnLead: 'வருவதற்கு முன்பே என்ன வருகிறது என்று வரி வரியாகச் சொல்லுங்கள். ஒரு வாங்குபவர் ஏற்கும் வரை அது காத்திருக்கும்; வருவதை எங்கள் பெறும் குழு இன்னும் எண்ணும்.',
+    docOrderL: 'உங்கள் ஆர்டர்', noOrder: 'உங்கள் ஆர்டர் எதற்கும் எதிராக அல்ல', invoiceNoL: 'உங்கள் விலைப்பட்டியல் எண்', asnNoL: 'உங்கள் விநியோகக் குறிப்பு எண்', expectedAtL: 'எப்போது வந்து சேர வேண்டும்',
+    lineItemL: 'பொருள் குறியீடு (எங்கள் ஆர்டரில் உள்ளபடி)', lineQtyL: 'எத்தனை', lineUomL: 'அலகு', linePriceL: 'ஒரு அலகின் விலை (₹)', lineValueL: 'வரி மதிப்பு',
+    lineBatchL: 'தொகுதி (விருப்பம்)', lineExpiryL: 'காலாவதி நாள் (விருப்பம்)', lineMadeL: 'தயாரித்த மாதம் (பொதிந்த பொருட்கள்)', uom_ea: 'எண்ணிக்கை', uom_kg: 'கிலோ', uom_L: 'லிட்டர்',
+    addLine: 'ஒரு வரியைச் சேர்', removeLine: 'இந்த வரியை நீக்கு', lineN: 'வரி {n}', invoiceTotalL: 'உங்கள் பில்லில் உள்ள மொத்தத் தொகை (₹)', linesAddUp: 'வரிகளின் கூட்டுத்தொகை {total}.',
+    sendInvoice: 'விலைப்பட்டியலை அனுப்பு', sendAsn: 'விநியோகக் குறிப்பை அனுப்பு', docSent: 'அனுப்பப்பட்டது — ஒரு வாங்குபவர் சரிபார்க்கக் காத்திருக்கிறது. வாங்குபவர் ஏற்கும் வரை எதுவும் கணக்கில் சேராது.',
+    docNotSent: 'இணைப்பு இல்லை — அனுப்பப்படவில்லை. இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
+    cannotSubmit: 'உங்கள் உள்நுழைவு விலைப்பட்டியல்களையோ விநியோகக் குறிப்புகளையோ அனுப்ப முடியாது. இயக்க எங்களிடம் கேளுங்கள்.', ordersUnknownSend: 'உங்கள் ஆர்டர்களை இப்போது படிக்க முடியவில்லை, எனவே ஆர்டரைச் சரிபார்க்க முடியாது. "உங்கள் ஆர்டர் எதற்கும் எதிராக அல்ல" என்பதைத் தேர்ந்தெடுங்கள் அல்லது மீண்டும் முயலுங்கள்.',
+    needInvoiceNo: 'உங்கள் விலைப்பட்டியல் எண்ணைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.', needAsnNo: 'உங்கள் விநியோகக் குறிப்பு எண்ணைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    needLine: 'குறைந்தது ஒரு வரியை நிரப்புங்கள். எதுவும் அனுப்பப்படவில்லை.', tooManyLines: 'ஒரே முறையில் அதிகபட்சம் 50 வரிகள் அனுப்புங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    needItem: 'வரி {n}: பொருள் குறியீட்டைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.', badUnit: 'வரி {n}: அலகைத் தேர்ந்தெடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    badLineQty: 'வரி {n}: எத்தனை என்பதை 0-க்கு மேற்பட்ட எண்ணாகக் கொடுங்கள் (எண்ணிக்கை முழு எண்; கிலோ, லிட்டர் 3 தசம இடங்கள் வரை). எதுவும் அனுப்பப்படவில்லை.',
+    badPrice: 'வரி {n}: ஒரு அலகின் விலையை ரூபாயில் கொடுங்கள், எ.கா. 18.50. எதுவும் அனுப்பப்படவில்லை.', needTotal: 'உங்கள் பில்லில் உள்ள மொத்தத் தொகையைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    totalDisagrees: 'வரிகளின் கூட்டுத்தொகை {lines}, ஆனால் உங்கள் மொத்தம் {total} என்கிறது. வரிகளைச் சரிபாருங்கள். எதுவும் அனுப்பப்படவில்லை.', needExpectedAt: 'வந்து சேர வேண்டிய நாளையும் நேரத்தையும் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    badExpiry: 'வரி {n}: காலாவதி நாள் ஒரு தேதியாக இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.', badMade: 'வரி {n}: தயாரித்த மாதம் ஒரு மாதமாக இருக்க வேண்டும், எ.கா. 2026-10. எதுவும் அனுப்பப்படவில்லை.', badBatch: 'வரி {n}: தொகுதி மிக நீளமாக உள்ளது. எதுவும் அனுப்பப்படவில்லை.',
   },
 };
 
@@ -385,9 +575,13 @@ export function createSupplierPortalSession(
 
   const presentSubmission = (lang: Lang, s: SubmissionView): PresentedSubmission => {
     const t = translator(SUPPLIER_PORTAL_COPY, lang);
+    // OB-624: a buyer's decision is said as itself — accepted, or not accepted with the buyer's reason — never just "processed".
+    const decided = s.decision === undefined ? undefined : `${t(s.decision === 'accepted' ? 'acceptedState' : 'rejectedState')}${s.reason === undefined || s.reason === '' ? '' : ` — ${s.reason}`}`;
     const status = s.requiresReview
       ? presentStatus({ tone: 'degraded', icon: '⏳', label: t('awaitingState'), announcement: t('awaitingState'), needsAttention: true })
-      : presentStatus({ tone: 'ok', icon: '✓', label: t('processedState'), announcement: t('processedState'), needsAttention: false });
+      : s.decision === 'rejected'
+        ? presentStatus({ tone: 'error', icon: '✕', label: decided!, announcement: decided!, needsAttention: true })
+        : presentStatus({ tone: 'ok', icon: '✓', label: decided ?? t('processedState'), announcement: decided ?? t('processedState'), needsAttention: false });
     return { submissionId: s.submissionId, kindLabel: t(KIND_KEY[s.kind]), receivedAt: s.receivedAt, awaiting: s.requiresReview, status };
   };
 

@@ -8,7 +8,7 @@ import { aBranch } from '../support/a-branch';
  *   • the owner approves it on the page; the new person then holds the role;
  *   • the manager asks to take one of two roles back from a person; the owner approves on head office (the Approvals page's
  *     route); the manager applies it on the page; the person keeps only the other role;
- *   • the four roadmap §28 roles show as waiting for the owner, with their permissions (OB-615);
+ *   • the roadmap §28 roles are live and offered to give (OB-622 · OB-571); nothing shows as waiting;
  *   • a cashier the box lets open the page is refused by head office, in its words; nothing is written.
  */
 
@@ -46,16 +46,18 @@ describe.skipIf(!HAVE_BROWSER)('Users & roles: give and take back a role, two pe
     await says(m.page, '#give-status', /once the owner approves it/);
     // The manager asks; deciding is the owner's — the manager is shown no list of decisions to make.
     expect(await m.page.isVisible('#pending')).toBe(false);
-    // OB-615: no waiting role is offered to give.
-    expect(await m.page.$$('#g-role option[value="purchase_user"]')).toHaveLength(0);
+    // OB-622 · OB-571: the §28 roles are live, so each is offered to give.
+    for (const id of ['purchase_user', 'purchase_approver', 'receiver_qc', 'warehouse_user', 'picker', 'delivery_driver']) {
+      expect(await m.page.$$(`#g-role option[value="${id}"]`), id).toHaveLength(1);
+    }
 
     const o = await shop.open(OWNER, '/users/');
     await o.page.waitForSelector('#pending-rows li[data-grant] button');
     await o.page.click('#pending-rows li[data-grant] button:has-text("Approve")');
     await o.page.waitForSelector(`#holder-rows li[data-person="${NEW}"] [data-role="cashier"]`);
-    // OB-615: the four roles wait for the owner, each with its permissions and why.
-    expect(await o.page.$$eval('#waiting-rows > li', (ls) => ls.map((l) => (l as unknown as { dataset: { role: string } }).dataset.role))).toEqual(['purchase_user', 'purchase_approver', 'receiver_qc', 'warehouse_user']);
-    await says(o.page, '#waiting-rows li[data-role="receiver_qc"]', /Receive\/count\/QC\/quarantine.*purchase\.order\.receive — Record the goods received/);
+    // OB-622: nothing waits for the owner any more — the section is not shown.
+    expect(await o.page.isVisible('#waiting')).toBe(false);
+    expect(await o.page.$$('#waiting-rows > li')).toHaveLength(0);
     expect(o.errors).toEqual([]);
 
     // Take back the security reviewer role from the cashier (they keep the cashier role).

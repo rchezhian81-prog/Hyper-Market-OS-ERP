@@ -64,6 +64,7 @@ import {
   type BoxItemStatus, type RelayReply,
 } from '../../../packages/sync/src/device-relay';
 import { HANDHELD_AUTHORITY } from './handheld-sign-in';
+import { OFFICE_SOURCE, officeDoorPerson, officeDoorRefusal, judgeOfficeItems, inSentOrder } from './office-door'; // OB-572
 import type {
   CashMovementRequest, CashMovementOutcome, ShiftCloseRequest, ShiftCloseOutcome, TillCashStatus, CountedDenomination,
 } from './till-cash';
@@ -819,6 +820,29 @@ export function startLaneServer(input: {
     const cors = corsHeadersFor(req.headers.origin, isOfficeLaneRoute(pathname));
     const route = LANE_ROUTES.find((r) => r === req.url);
 
+    // OB-572 "B" (owner, 31 Oct 2026): the hosted copy's OFFICE door takes office work only, from a person the front named,
+    // each route held to its own permission here and each office item to its own below (office-door.ts) — never "may sell".
+    {
+      const ops = input.operators;
+      const trust = ops?.trustForwardedUser === true;
+      const doorSays = officeDoorRefusal({
+        trustForwardedUser: trust, door: req.headers['x-sre-door'], user: req.headers['x-sre-user'], pathname,
+        officeRoutes: [...Object.keys(OFFICE_LANE_ROUTES), DEVICE_OUTBOX_STATUS_PATH],
+      });
+      if (doorSays !== undefined) {
+        send(res, doorSays.status, { acks: [], refusedBecause: doorSays.refusedBecause, reason: doorSays.reason }, cors);
+        req.resume();
+        return;
+      }
+      const person = officeDoorPerson(trust, req.headers['x-sre-door'], req.headers['x-sre-user']);
+      const needs = person === undefined ? null : OFFICE_LANE_ROUTES[pathname] ?? null;
+      if (person !== undefined && needs !== null && !(input.forwardedPermissionsOf?.(person) ?? []).includes(needs)) {
+        send(res, 403, { acks: [], refusedBecause: 'lacks_permission', reason: `${person} may not use this (it needs ${needs}). Nothing was changed.` }, cors);
+        req.resume();
+        return;
+      }
+    }
+
     // The READ route: GET /lane/lookup?receipt=… — resolve a bill this lane rang for the refund
     // screen (M13-FR-01). No write happens here, so a foreign-origin call cannot mutate anything; but
     // it returns a customer's bill, so a foreign origin is refused outright (403, no data) rather than
@@ -1320,9 +1344,21 @@ export function startLaneServer(input: {
             send(res, forwardRefusal.status, { acks: [], refusedBecause: forwardRefusal.refusedBecause, reason: forwardRefusal.reason }, cors);
             return;
           }
+          // OB-572: on the hosted copy's office door, an office page's batch only, each item held to its own permission.
+          const officePerson = officeDoorPerson(input.operators?.trustForwardedUser === true, req.headers['x-sre-door'], req.headers['x-sre-user']);
+          if (officePerson !== undefined && batch.source !== OFFICE_SOURCE) {
+            send(res, 403, { acks: [], refusedBecause: 'not_office_work', reason: `The office door takes an office page's work only, not ${batch.source} work. Nothing was taken.` }, cors);
+            return;
+          }
+          const judged = officePerson === undefined ? undefined : judgeOfficeItems(batch.items, officePerson, input.forwardedPermissionsOf?.(officePerson) ?? null);
           try {
             // OB-259: with the office gate on, the person who signed in to the office screens — never a till's sign-in.
             const verifiedPerson = office.person ?? verifiedPersonOf(req);
+            if (judged !== undefined) {
+              const relayed = judged.allowed.length === 0 ? { acks: [] } : await relay({ source: batch.source, items: judged.allowed, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) });
+              send(res, 200, { ...relayed, acks: inSentOrder(batch.items, relayed.acks, judged.refused) }, cors);
+              return;
+            }
             send(res, 200, await relay({ source: batch.source, items: batch.items, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
           } catch (e) {
             // The box itself failed mid-batch: no verdict on any item. The device keeps them all (a 5xx is a

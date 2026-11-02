@@ -6,7 +6,8 @@
 // "Delivery update" form (OB-362) for one of the supplier's OWN open orders, which the bundle sends
 // (window.supplierPortal.sendDeliveryUpdate — this file issues no write verb itself) — and, since OB-389, the "Top-up
 // proposal" form for the supplier's OWN vendor-managed items at one store (window.supplierPortal.sendTopUpProposal),
-// which waits for a buyer and orders nothing. Refresh re-reads the feeds (GETs).
+// which waits for a buyer and orders nothing — and, since OB-624, the "Invoice" and "Delivery note (ASN)" forms
+// (window.supplierPortal.sendInvoice / sendAsn), each waiting for a buyer to accept it. Refresh re-reads the feeds (GETs).
 // Offline the screen keeps its view and the stale strip says the page is what it was last shown; an update not sent is
 // said so. No prompt/confirm/alert.
 
@@ -142,6 +143,8 @@ function paint() {
     for (const id of sections) el(id).hidden = true;
     el('delivery').hidden = true;
     el('vmi').hidden = true;
+    el('invoice').hidden = true;
+    el('asn').hidden = true;
     return;
   }
   state.hidden = true;
@@ -159,6 +162,7 @@ function paint() {
   paintStatement(view);
   paintDelivery();
   paintVmi();
+  paintDocuments();
   paintRebates();
 }
 
@@ -324,6 +328,123 @@ function paintRebates() {
     return li;
   }));
 }
+// OB-624: the Invoice and Delivery note (ASN) forms — the supplier's own documents; the bundle checks and sends each, and
+// a buyer accepts it before it counts. The lines live in this page's memory as typed, so a repaint (a language switch, a
+// refresh) never loses them.
+const DOC_UNITS = ['ea', 'kg', 'L'];
+const blankInvoiceLine = () => ({ productId: '', quantity: '', uom: 'ea', unitPrice: '' });
+const blankAsnLine = () => ({ productId: '', quantity: '', uom: 'ea', batchId: '', expiry: '', manufacturedOn: '' });
+const docLines = { inv: [blankInvoiceLine()], asn: [blankAsnLine()] };
+const DOC_FIELDS = {
+  inv: [['productId', 'lineItemL', 'text'], ['quantity', 'lineQtyL', 'decimal'], ['uom', 'lineUomL', 'unit'], ['unitPrice', 'linePriceL', 'decimal']],
+  asn: [['productId', 'lineItemL', 'text'], ['quantity', 'lineQtyL', 'decimal'], ['uom', 'lineUomL', 'unit'], ['batchId', 'lineBatchL', 'text'], ['expiry', 'lineExpiryL', 'date'], ['manufacturedOn', 'lineMadeL', 'month']],
+};
+const typedPaise = (v) => { const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(v).trim()); return m === null ? null : Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0')); };
+const typedMinor = (v, uom) => { const places = uom === 'ea' ? 0 : 3; const m = /^(\d+)(?:\.(\d+))?$/.exec(String(v).trim()); if (m === null || (m[2] ?? '').length > places) return null; return Number(m[1]) * 10 ** places + Number((m[2] ?? '').padEnd(places, '0') || '0'); };
+// What a line comes to, shown as the supplier types — the bundle's tested reader is still the one that decides.
+const lineValue = (l) => { const q = typedMinor(l.quantity, l.uom); const p = typedPaise(l.unitPrice); if (q === null || p === null) return null; const scale = l.uom === 'ea' ? 1 : 1000; return Math.round((q * p) / scale); };
+function paintDocLines(form) {
+  const list = el(`${form}-lines`);
+  list.replaceChildren(...docLines[form].map((line, i) => {
+    const li = document.createElement('li');
+    li.dataset.line = String(i + 1);
+    const head = document.createElement('div'); head.className = 'doc-line-h';
+    const name = document.createElement('span'); name.textContent = fill(t('lineN'), { n: i + 1 });
+    head.append(name);
+    if (docLines[form].length > 1) {
+      const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'secondary doc-remove'; rm.textContent = t('removeLine');
+      rm.setAttribute('aria-label', `${t('removeLine')} — ${fill(t('lineN'), { n: i + 1 })}`);
+      rm.addEventListener('click', () => { docLines[form].splice(i, 1); paintDocLines(form); paintInvoiceSum(); });
+      head.append(rm);
+    }
+    li.append(head);
+    for (const [field, labelKey, type] of DOC_FIELDS[form]) {
+      const id = `${form}-l${i + 1}-${field}`;
+      const label = document.createElement('label'); label.htmlFor = id;
+      const lw = document.createElement('span'); lw.textContent = t(labelKey);
+      let input;
+      if (type === 'unit') {
+        input = document.createElement('select');
+        input.replaceChildren(...DOC_UNITS.map((u) => new Option(t(`uom_${u}`), u)));
+        input.value = line[field];
+        input.addEventListener('change', () => { line[field] = input.value; paintInvoiceSum(); });
+      } else {
+        input = document.createElement('input');
+        input.autocomplete = 'off';
+        if (type === 'decimal') input.inputMode = 'decimal';
+        if (type === 'date') input.type = 'date';
+        if (type === 'month') input.type = 'month';
+        if (type === 'text') input.maxLength = 64;
+        input.value = line[field];
+        input.addEventListener('input', () => { line[field] = input.value; paintInvoiceSum(); });
+      }
+      input.id = id; input.dataset.field = field;
+      label.append(lw, input);
+      li.append(label);
+    }
+    return li;
+  }));
+}
+function paintInvoiceSum() {
+  const values = docLines.inv.filter((l) => l.productId.trim() !== '' || l.quantity.trim() !== '' || l.unitPrice.trim() !== '').map(lineValue);
+  el('inv-sum').textContent = values.length > 0 && values.every((v) => v !== null) ? fill(t('linesAddUp'), { total: rupeesOf(values.reduce((a, b) => a + b, 0)) }) : '';
+}
+function paintDocuments() {
+  const api = window.supplierPortal;
+  const v = session.view(lang);
+  const notPermitted = v.screenState.tone === 'error' && v.awaiting.length === 0 && v.processed.length === 0 && v.statement === null && !v.statementInaccessible;
+  const feed = api && typeof api.orders === 'function' ? api.orders() : null;
+  const may = api && typeof api.maySubmitDocuments === 'function' ? api.maySubmitDocuments() : false;
+  for (const form of ['inv', 'asn']) {
+    el(form === 'inv' ? 'invoice' : 'asn').hidden = window.supplierPortalSession === undefined || notPermitted;
+    el(`${form}-h`).textContent = t(form === 'inv' ? 'invoiceH' : 'asnH');
+    el(`${form}-lead`).textContent = t(form === 'inv' ? 'invoiceLead' : 'asnLead');
+    el(`${form}-order-l`).textContent = t('docOrderL');
+    el(`${form}-no-l`).textContent = t(form === 'inv' ? 'invoiceNoL' : 'asnNoL');
+    el(`${form}-add-text`).textContent = t('addLine');
+    el(`${form}-send-text`).textContent = t(form === 'inv' ? 'sendInvoice' : 'sendAsn');
+    const order = el(`${form}-order`);
+    const keep = order.value;
+    order.replaceChildren(new Option(t('noOrder'), ''), ...(feed?.orders ?? []).map((o) => new Option(`${o.number}${o.issuedAt && api ? ` · ${api.dateOf(o.issuedAt)}` : ''}`, o.poId)));
+    if ([...order.options].some((x) => x.value === keep)) order.value = keep;
+    const said = el(`${form}-said`);
+    said.textContent = may ? '' : t('cannotSubmit');
+    said.hidden = said.textContent === '';
+    el(`${form}-form`).hidden = !may;
+    paintDocLines(form);
+  }
+  el('inv-total-l').textContent = t('invoiceTotalL');
+  el('asn-expected-l').textContent = t('expectedAtL');
+  paintInvoiceSum();
+}
+function documentResult(form, out) {
+  const st = el(`${form}-result`);
+  st.className = `status-line ${out.result === 'sent' ? 'tone-ok' : 'tone-error'}`;
+  st.textContent = out.result === 'sent' ? `✓ ${t('docSent')}`
+    : out.result === 'invalid' ? `⚠ ${fill(t(out.why), { n: out.line ?? '', lines: out.linesMinor === undefined ? '' : rupeesOf(out.linesMinor), total: out.totalMinor === undefined ? '' : rupeesOf(out.totalMinor) })}`
+    : out.result === 'refused' ? `⚠ ${t('refusedSay')} ${out.whatHappened}` : `⚠ ${t('docNotSent')}`;
+  st.dataset.result = out.result;
+}
+async function sendInvoice() {
+  const api = window.supplierPortal;
+  if (!api || typeof api.sendInvoice !== 'function') return;
+  const out = await api.sendInvoice({ poId: el('inv-order').value, invoiceId: el('inv-no').value, lines: docLines.inv, total: el('inv-total').value });
+  documentResult('inv', out);
+  if (out.result === 'sent') { docLines.inv = [blankInvoiceLine()]; el('inv-no').value = ''; el('inv-total').value = ''; await refresh(); }
+}
+async function sendAsn() {
+  const api = window.supplierPortal;
+  if (!api || typeof api.sendAsn !== 'function') return;
+  const out = await api.sendAsn({ poId: el('asn-order').value, asnId: el('asn-no').value, expectedAt: el('asn-expected').value, lines: docLines.asn });
+  documentResult('asn', out);
+  if (out.result === 'sent') { docLines.asn = [blankAsnLine()]; el('asn-no').value = ''; el('asn-expected').value = ''; await refresh(); }
+}
+el('inv-add').addEventListener('click', () => { docLines.inv.push(blankInvoiceLine()); paintDocLines('inv'); });
+el('asn-add').addEventListener('click', () => { docLines.asn.push(blankAsnLine()); paintDocLines('asn'); });
+el('inv-send').addEventListener('click', () => { void sendInvoice(); });
+el('asn-send').addEventListener('click', () => { void sendAsn(); });
+{ const i = icon('receipt-text'); if (i !== null) el('inv-send').prepend(i); }
+{ const i = icon('clipboard-list'); if (i !== null) el('asn-send').prepend(i); }
 el('vmi-store').addEventListener('change', () => { paintVmi(); });
 { const i = icon('package'); if (i !== null) el('vmi-send').prepend(i); }
 { const i = icon('truck'); if (i !== null) el('du-send').prepend(i); }
@@ -341,7 +462,7 @@ async function refresh() {
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
   ordersTried = true;
-  if (data) { session = api.present(data); paint(); } else { paintDelivery(); paintVmi(); paintRebates(); }
+  if (data) { session = api.present(data); paint(); } else { paintDelivery(); paintVmi(); paintDocuments(); paintRebates(); }
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 

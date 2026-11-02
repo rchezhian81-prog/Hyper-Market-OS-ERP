@@ -271,7 +271,10 @@ describe('OB-543: the accountant reads the goods-receipt screen through its own 
     expect(accountant.permissions).toContain('purchase.invoice.match');
     expect(accountant.permissions).not.toContain('inventory.availability.read');
     expect(GOODS_RECEIPT_SCREEN_READ_PERMISSION).toMatch(/^[a-z]+(\.[a-z]+)+$/);
-    expect(ROLE_CATALOGUE.filter((r) => r.permissions.includes('inventory.goodsreceipt.read')).map((r) => r.id).sort()).toEqual([ACCOUNTANT_ROLE_ID, OWNER_ROLE_ID].sort());
+    // OB-622 (owner, in writing): the receiving & quality role went live with the goods-receipt list it was proposed with —
+    // it receives the goods, so it reads that list; it never matches the bill.
+    expect(ROLE_CATALOGUE.filter((r) => r.permissions.includes('inventory.goodsreceipt.read')).map((r) => r.id).sort()).toEqual([ACCOUNTANT_ROLE_ID, OWNER_ROLE_ID, 'receiver_qc'].sort());
+    expect(role('receiver_qc').permissions).not.toContain('purchase.invoice.match');
   });
 
   it('the narrow word opens exactly ONE route — the screen\'s receipt list — and that route nothing else', () => {

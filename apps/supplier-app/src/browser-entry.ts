@@ -14,7 +14,10 @@
 // `POST /v1/supplier-portal/me/submissions`, checked first by the tested `readDeliveryUpdate` — and, since OB-389, ONE
 // more: a vendor-managed-inventory "Top-up proposal" for the supplier's own VMI items at one store,
 // `POST /v1/supplier-portal/me/vmi/proposals/:proposalId`, checked first by the tested `readTopUpProposal`. A proposal
-// waits for a buyer; it orders nothing (P-05, §28). Exactly these two writes, nothing else.
+// waits for a buyer; it orders nothing (P-05, §28). OB-624 (owner, 1 Nov 2026, "allow both"): TWO more — an invoice and a
+// delivery note (ASN), each the existing `invoice` / `asn` submission to `POST /v1/supplier-portal/me/submissions`, checked
+// first by the tested `readInvoiceSubmission` / `readAsnSubmission`; nothing counts until a buyer accepts it on the Supplier
+// submissions page. Exactly these four writes, nothing else.
 //
 // ── What may cache (§31) ─────────────────────────────────────────────────────
 //
@@ -22,14 +25,15 @@
 // never treated as current from a cache — they are re-read live on load and Refresh.
 
 import {
-  createSupplierPortalSession, readDeliveryUpdate, readTopUpProposal,
+  createSupplierPortalSession, readDeliveryUpdate, readTopUpProposal, readInvoiceSubmission, readAsnSubmission,
+  type InvoiceInput, type AsnInput, type DocumentRefusal,
   type SupplierPortalSession, type SupplierPortalData, type SupplierPortalPorts,
   type SubmissionView, type StatementView, type SubmissionKind, type SupplierOrdersFeed, type DeliveryUpdateInput, type SupplierRebateClaimsFeed,
   type SupplierVmiFeed, type SupplierVmiItem, type SupplierVmiProposalView, type TopUpInput,
 } from './supplier-portal-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
-import { attachShopDay, shopDateOf } from '../../../packages/calendar/src/shop-day'; // OB-606 · OB-607
+import { attachShopDay, shopDateOf, instantOfTyped } from '../../../packages/calendar/src/shop-day'; // OB-606 · OB-607 · OB-608
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
@@ -61,13 +65,19 @@ interface SupplierWindow {
     rebateClaims(): SupplierRebateClaimsFeed | null;
     /** OB-389: send the Top-up proposal — checked first; the second and last write this surface makes. */
     sendTopUpProposal(input: TopUpInput): Promise<TopUpOutcome>;
+    /** OB-624: may this login send an invoice or a delivery note (`supplier.portal.self.submit`; the server re-checks it). */
+    maySubmitDocuments(): boolean;
+    /** OB-624: send an invoice — checked first; the third write this surface makes. */
+    sendInvoice(input: InvoiceInput): Promise<DocumentOutcome>;
+    /** OB-624: send a delivery note (ASN) — checked first; the fourth and last write this surface makes. */
+    sendAsn(input: AsnInput): Promise<DocumentOutcome>;
     /** OB-606: the SHOP's date of a moment (the shop's zone, never the supplier's device's) — an order's issue date. */
     dateOf(value: unknown): string;
   };
 }
 
 const SELF_PERMISSION = 'supplier.portal.self';
-/** OB-389: the grant a top-up proposal needs (the server re-checks it). */
+/** OB-389 · OB-624: the grant a top-up proposal, an invoice and a delivery note need (the server re-checks it). */
 const SUBMIT_PERMISSION = 'supplier.portal.self.submit';
 const KINDS: readonly SubmissionKind[] = ['rfq_response', 'catalogue', 'asn', 'invoice', 'po_acknowledgement', 'claim', 'delivery_status'];
 
@@ -112,12 +122,18 @@ async function getPortal(path: string): Promise<Record<string, unknown> | null> 
 export async function fetchSupplierSubmissions(): Promise<readonly SubmissionView[] | null> {
   const body = await getPortal('/v1/supplier-portal/me/submissions');
   if (body === null || !Array.isArray(body['submissions'])) return null;
-  return (body['submissions'] as Record<string, unknown>[]).map((s) => ({
-    submissionId: String(s['submissionId']),
-    kind: KINDS.includes(s['kind'] as SubmissionKind) ? (s['kind'] as SubmissionKind) : 'invoice',
-    requiresReview: s['requiresReview'] === true,
-    receivedAt: String(s['receivedAt'] ?? ''),
-  }));
+  return (body['submissions'] as Record<string, unknown>[]).map((s): SubmissionView => {
+    // OB-624: once a buyer has decided, the submission no longer waits on us — and the decision and its reason are shown.
+    const review = s['review'] !== null && typeof s['review'] === 'object' ? s['review'] as Record<string, unknown> : null;
+    const decision = review?.['decision'] === 'accepted' || review?.['decision'] === 'rejected' ? review['decision'] : undefined;
+    return {
+      submissionId: String(s['submissionId']),
+      kind: KINDS.includes(s['kind'] as SubmissionKind) ? (s['kind'] as SubmissionKind) : 'invoice',
+      requiresReview: s['requiresReview'] === true && decision === undefined,
+      receivedAt: String(s['receivedAt'] ?? ''),
+      ...(decision === undefined ? {} : { decision, ...(typeof review?.['reason'] === 'string' ? { reason: review['reason'] } : {}) }),
+    };
+  });
 }
 
 /** Read the supplier's OWN statement (GET, read-only); null when unreadable. Partner scoped server-side. */
@@ -257,7 +273,68 @@ export async function postDeliveryUpdate(input: DeliveryUpdateInput, feed: Suppl
   }
 }
 
-/** Wire the portal onto the given window: boot the session and expose the refresh/present api (and the two writes: OB-362, OB-389). */
+/** OB-624: what sending an invoice or a delivery note came to. */
+export type DocumentOutcome =
+  | { readonly result: 'sent'; readonly submissionId: string }
+  | { readonly result: 'invalid'; readonly why: DocumentRefusal; readonly line?: number; readonly linesMinor?: number; readonly totalMinor?: number }
+  | { readonly result: 'refused'; readonly whatHappened: string }
+  | { readonly result: 'lost_link' };
+
+const newDocumentId = (): string => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+/**
+ * OB-624: the THIRD write — the supplier's own invoice, as the existing `invoice` submission. Checked first (its own open
+ * orders, head office's arithmetic); head office keeps it exactly as sent, for a buyer to accept. Nothing counts until then.
+ */
+export async function postInvoice(input: InvoiceInput, feed: SupplierOrdersFeed | null, maySubmit: boolean, newId: () => string = newDocumentId): Promise<DocumentOutcome> {
+  const read = readInvoiceSubmission(input, feed, maySubmit);
+  if (!read.ok) return { result: 'invalid', why: read.why, ...(read.line === undefined ? {} : { line: read.line }), ...(read.linesMinor === undefined ? {} : { linesMinor: read.linesMinor }), ...(read.totalMinor === undefined ? {} : { totalMinor: read.totalMinor }) };
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const submissionId = `inv-${newId()}`;
+  try {
+    const res = await fetchFn('/v1/supplier-portal/me/submissions', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { accept: 'application/json', 'content-type': 'application/json', 'idempotency-key': submissionId },
+      body: JSON.stringify({ submissionId, kind: 'invoice', document: read.document }),
+    });
+    if (res.status >= 400) {
+      const b = (await res.json().catch(() => ({}))) as { error?: { whatHappened?: string } };
+      return { result: 'refused', whatHappened: b.error?.whatHappened ?? `status ${res.status}` };
+    }
+    return { result: 'sent', submissionId };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/**
+ * OB-624: the FOURTH and last write — the supplier's own delivery note (ASN), as the existing `asn` submission. Checked
+ * first; the arrival time is the SHOP's clock (OB-608). A buyer accepts it before the receiving compare reads it.
+ */
+export async function postAsn(input: AsnInput, feed: SupplierOrdersFeed | null, maySubmit: boolean, newId: () => string = newDocumentId): Promise<DocumentOutcome> {
+  const read = readAsnSubmission(input, feed, maySubmit, (typed) => instantOfTyped(typed));
+  if (!read.ok) return { result: 'invalid', why: read.why, ...(read.line === undefined ? {} : { line: read.line }) };
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const submissionId = `asn-${newId()}`;
+  try {
+    const res = await fetchFn('/v1/supplier-portal/me/submissions', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { accept: 'application/json', 'content-type': 'application/json', 'idempotency-key': submissionId },
+      body: JSON.stringify({ submissionId, kind: 'asn', document: read.document }),
+    });
+    if (res.status >= 400) {
+      const b = (await res.json().catch(() => ({}))) as { error?: { whatHappened?: string } };
+      return { result: 'refused', whatHappened: b.error?.whatHappened ?? `status ${res.status}` };
+    }
+    return { result: 'sent', submissionId };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** Wire the portal onto the given window: boot the session and expose the refresh/present api (and the four writes: OB-362, OB-389, OB-624). */
 export function attachSupplierPortal(win: SupplierWindow): void {
   const data = win.supplierData;
   let current: SupplierPortalData = { submissions: [], statement: null, asAt: '' };
@@ -292,6 +369,9 @@ export function attachSupplierPortal(win: SupplierWindow): void {
     vmi: () => current.vmi ?? null,
     rebateClaims: () => current.rebateClaims ?? null,
     sendTopUpProposal: (input) => postTopUpProposal(input, current.vmi ?? null),
+    maySubmitDocuments: () => new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION),
+    sendInvoice: (input) => postInvoice(input, current.orders ?? null, new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION)),
+    sendAsn: (input) => postAsn(input, current.orders ?? null, new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION)),
   };
 }
 
