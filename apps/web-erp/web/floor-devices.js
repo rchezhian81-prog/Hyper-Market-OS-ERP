@@ -201,11 +201,16 @@ $('r-save').addEventListener('click', async () => {
       : kind === 'iot_sensor' ? { assetId: $('r-asset').value.trim() }
         : { cameraId: $('r-camera').value.trim(), laneIds: $('r-lanes').value.split(',').map((x) => x.trim()).filter((x) => x !== '') };
   if (id === '' || base.label === '' || base.vendor === '' || base.publicKey.trim() === '' || Object.values(bind).some((v) => v === '' || (Array.isArray(v) && v.length === 0))) { tell(st, false, t('needReg')); return; }
-  const out = await call('POST', `/v1/devices/floor/${encodeURIComponent(id)}`, { ...base, ...bind });
-  if (!out.ok) { say(st, out, ''); return; }
-  for (const f of ['r-id', 'r-label', 'r-key', 'r-product', 'r-shelf', 'r-asset', 'r-camera', 'r-lanes']) $(f).value = '';
-  await load();
-  tell(st, true, fill(t('regDone'), { switch: out.body?.switchOn === true ? t('regSwitchOn') : t('regSwitchOff') }));
+  // While this one saves, the last "Registered" is taken down and the button held, so the next device's details are never
+  // typed into a form this save is about to clear.
+  st.textContent = ''; $('r-save').disabled = true;
+  try {
+    const out = await call('POST', `/v1/devices/floor/${encodeURIComponent(id)}`, { ...base, ...bind });
+    if (!out.ok) { say(st, out, ''); return; }
+    for (const f of ['r-id', 'r-label', 'r-key', 'r-product', 'r-shelf', 'r-asset', 'r-camera', 'r-lanes']) $(f).value = '';
+    await load();
+    tell(st, true, fill(t('regDone'), { switch: out.body?.switchOn === true ? t('regSwitchOn') : t('regSwitchOff') }));
+  } finally { $('r-save').disabled = false; }
 });
 $('cam-form').addEventListener('submit', async (e) => {
   e.preventDefault();

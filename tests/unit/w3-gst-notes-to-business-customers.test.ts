@@ -74,7 +74,7 @@ describe('the note engine works from the invoice head office holds (M23-FR-02 ·
     expect(note({ lines: [{ lineId: 'l1', taxableMinor: 100 }, { lineId: 'l1', taxableMinor: 100 }] }).outcome).toBe('line_twice');
     expect(note({ lines: [] }).outcome).toBe('no_lines');
     expect(note({ lines: [{ lineId: 'l1', taxableMinor: 0 }] }).outcome).toBe('zero_value');
-    const { gst: _gst, ...unsplit } = INV;
+    const unsplit = { ...INV } as Partial<typeof INV>; delete unsplit.gst;
     const r = note({ invoice: unsplit });
     expect(r).toMatchObject({ issued: false, outcome: 'invoice_has_no_gst_split' });
     expect(r.detail).toMatch(/without guessing/);
@@ -92,7 +92,7 @@ describe('the GSTR-1 data carries a credit/debit-note section (M23-FR-02 · OB-6
   it('lists notes to registered buyers note by note, unregistered apart, out-of-window apart, with the period totals — and says the CA signs off how they are filed', () => {
     const cn = note().note!;
     const dn = note({ noteId: 'D1', number: 'CDN-000001', kind: 'debit_note', reason: 'price_correction', lines: [{ lineId: 'l1', taxableMinor: 1_000 }] }).note!;
-    const { recipientGstin: _g, ...toUnregistered } = note({ noteId: 'N2', number: 'CN-000002' }).note!;
+    const toUnregistered = { ...note({ noteId: 'N2', number: 'CN-000002' }).note! } as Record<string, unknown>; delete toUnregistered['recipientGstin'];
     const late = note({ noteId: 'N3', number: 'CN-000003', issuedOn: '2027-12-01' }).note!;
     const section = gstr1NotesSection([cn, dn, toUnregistered as CustomerNote, late].map(outwardNoteOf));
     expect(section.registered.map((r) => [r.noteNumber, r.noteType, r.recipientGstin, r.noteValueMinor, r.againstInvoiceNumber])).toEqual([

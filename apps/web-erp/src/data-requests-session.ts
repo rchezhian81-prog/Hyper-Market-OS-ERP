@@ -187,7 +187,7 @@ export function createDataRequestsSession(input: {
       const pii = await readHeld(request.customerRef);
       if (pii.result !== 'ok') return pii;
       const out = await call<{ payload?: unknown; detail?: unknown }>('POST', `/v1/privacy/data-requests/${enc(request.requestId)}/fulfilment`, {
-        held: { customerRecord, personalDataHeld: pii.value.categories.map(({ fate: _fate, ...c }) => c) },
+        held: { customerRecord, personalDataHeld: pii.value.categories.map((cat) => { const c = { ...cat }; delete (c as { fate?: unknown }).fate; return c; }) },
       });
       if (out.result !== 'ok') return out;
       const contents = JSON.stringify({ requestId: request.requestId, customerRef: request.customerRef, kind: request.kind, data: out.value.payload ?? {} }, null, 2);
