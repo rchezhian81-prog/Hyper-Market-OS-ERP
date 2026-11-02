@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
-import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { startInboxShop, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import type { RealCloud } from '../support/real-store';
 import type { ApiHarness } from '../support/api-harness';
 import { prepareCutoverEvidence, askTheGate } from '../support/cutover-go';

@@ -156,7 +156,7 @@ export function createOpsAlertsSession(input: { readonly viewer: { readonly user
       const owner = ownerOf(form); if (owner.result !== 'ok') return owner;
       const rules = r.rules.map((x) => {
         if (x.alertId !== alertId) return x;
-        const { escalatesToUserId: _drop, ...rest } = x;
+        const rest = { ...x }; delete (rest as { escalatesToUserId?: unknown }).escalatesToUserId;
         return { ...rest, ...owner.value };
       });
       return save(r, rules, r.backupMaxAgeSeconds);
