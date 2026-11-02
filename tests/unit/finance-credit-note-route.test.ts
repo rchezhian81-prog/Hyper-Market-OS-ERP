@@ -3,11 +3,13 @@ import { creditNoteRoutes, CUSTOMER_NOTE_SERIES, type CreditNoteDeps } from '../
 import type { CustomerNote } from '../../packages/finance/src/index';
 import type { StoredB2BDocument } from '../../services/finance/src/b2b-documents';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
+import { fingerprintOf, type ApprovalPort, type ApprovalState } from '../../services/identity/src/approval-requests';
 
 // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing) — the running route for GST notes to business customers. Before W3 it
 // took the "original invoice" from the request body and head office never looked it up. Now it LOOKS UP the business tax
 // invoice head office holds and works every figure from it; a body that still carries an invoice is refused by name; a
-// credit note is issued only on a second person's approval (a refund under OB-290); each kind draws its own number series,
+// credit note is issued only on a second person's approval (a refund under OB-290), and OB-679 a debit note too (at any
+// amount); each kind draws its own number series,
 // and a refused note draws none. The tax arithmetic is pinned in tests/unit/w3-gst-notes-to-business-customers.test.ts; the
 // whole path with the real approvals engine in tests/integration/w3-gst-notes-to-business-customers.test.ts.
 
@@ -79,17 +81,32 @@ describe('POST /v1/finance/credit-notes works from the business tax invoice head
     expect(saved).toEqual([]); expect(drawn).toEqual([]);
   });
 
-  it('a debit note needs no approval (OB-678 sets none) and draws from its OWN series, apart from credit notes and supplier DN', async () => {
-    const { issue, saved, drawn } = routes();
-    const res = await issue.handler(ctx(asked({ noteId: 'D-1', kind: 'debit_note', reason: 'price_correction', lines: [{ lineId: 'l1', taxableMinor: 1_000 }] })));
+  it('OB-679: a debit note needs a second person\'s approval of exactly it (any amount) and draws from its OWN series, apart from credit notes and supplier DN', async () => {
+    const debit = asked({ noteId: 'D-1', kind: 'debit_note', reason: 'price_correction', lines: [{ lineId: 'l1', taxableMinor: 1_000 }] });
+    // An approved request for exactly this debit note, decided by the store manager (no money ladder for a debit note).
+    const state: ApprovalState = {
+      request: { requestId: 'req-d1', kind: 'customer_debit_note', subjectRef: 'debit-note:CUST1/D-1', valueMinor: 1_050, fingerprint: fingerprintOf(debit), details: debit, summary: 's', reason: 'r', requestedBy: 'u-acct', requestedAt: NOW },
+      decision: { requestId: 'req-d1', decision: 'approved', decidedBy: 'u-mgr', reason: 'ok', decidedAt: NOW, expiresAt: '2026-11-03T06:00:00.000Z' },
+    };
+    let used: string | undefined;
+    const approvals: ApprovalPort = {
+      approvalState: () => (used === undefined ? state : { ...state, usedBy: used }), approvalVersion: () => 1,
+      spendApproval: (_t, _r, by) => { used = by; return true; }, permissionsOfUser: (_t, u) => (u === 'u-mgr' ? ['finance.creditnote.approve'] : []),
+    };
+    const { issue, preview, saved, drawn } = routes({ approvals });
+    expect((await preview.handler(ctx(debit))).body).toMatchObject({ needsApproval: true, approval: { kind: 'customer_debit_note', subjectRef: 'debit-note:CUST1/D-1', valueMinor: 1_050 } });
+    await expect(issue.handler(ctx(debit))).rejects.toMatchObject({ status: 422, body: { code: 'debit_note_needs_approval' } });
+    expect(drawn).toEqual([]);
+    const res = await issue.handler(ctx({ ...debit, approvalId: 'req-d1' }));
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ number: 'CDN-000001', noApprovalWhy: expect.stringContaining('OB-678'), invoiceUnchanged: true, posting: { state: 'waiting_for_posting_rule' } });
+    expect(res.body).toMatchObject({ number: 'CDN-000001', approvedBy: 'u-mgr', invoiceUnchanged: true, posting: { state: 'waiting_for_posting_rule' } });
+    expect(used).toBe('u-acct');
     expect(drawn).toEqual([CUSTOMER_NOTE_SERIES.debit_note]);
     expect(CUSTOMER_NOTE_SERIES).toEqual({ credit_note: 'customer_credit_note', debit_note: 'customer_debit_note' });
     expect(Object.values(CUSTOMER_NOTE_SERIES)).not.toContain('debit_note'); // the supplier debit note's series (DN)
     expect(saved[0]).toMatchObject({ kind: 'debit_note', taxableMinor: 1_000, cgstMinor: 25, sgstMinor: 25, grossMinor: 1_050, issuedBy: 'u-acct' });
     // The same note sent again is the same note — never a second debit, never a second number.
-    const again = await issue.handler(ctx(asked({ noteId: 'D-1', kind: 'debit_note', reason: 'price_correction', lines: [{ lineId: 'l1', taxableMinor: 1_000 }] })));
+    const again = await issue.handler(ctx(debit));
     expect(again).toMatchObject({ status: 200, body: { alreadyIssued: true } });
     expect(drawn).toHaveLength(1); expect(saved).toHaveLength(1);
     // A different note under the same id is refused.

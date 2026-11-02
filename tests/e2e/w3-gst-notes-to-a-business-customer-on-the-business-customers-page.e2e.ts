@@ -17,7 +17,8 @@ import { customerListPrice, unpriced } from '../support/b2b-price-on-record';
  * left to credit. A credit note for more than the line carries is refused in head office's words; a ₹200 credit note is
  * worked out by head office (₹10 GST) and its approval asked — nothing is issued yet. The STORE MANAGER approves it in his
  * own session (within his ₹5,000 refund limit). Back on the page the accountant issues the approved credit note: CN-000001,
- * "waiting for the accountant's posting rule". A ₹10 debit note is issued at once (CDN-000001). The words switch to Tamil.
+ * "waiting for the accountant's posting rule". A ₹10 debit note is asked the same way (OB-679: every debit note needs a
+ * second person, at any amount); once the store manager approves it the accountant issues it (CDN-000001). Tamil too.
  * Head office then holds: the invoice unchanged, the balance moved, the notes in the GSTR-1 data's note section.
  *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS. Synthetic data only.
@@ -141,20 +142,31 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
       expect(await cn.innerText()).toMatch(/Waiting for the accountant's posting rule/);
       await says(s.page, '#cn-invoices', /credited ₹200\.00 · left to credit ₹800\.00/);
 
-      // A debit note: issued at once, from its own series.
+      // OB-679: a debit note is asked for approval too — nothing is issued until a second person approves it.
       const inv = s.page.locator('#cn-invoices li[data-invoice="inv-c1"]');
       await inv.locator('select.cn-kind').selectOption('debit_note');
-      expect(await inv.locator('button.cn-raise').innerText()).toBe('Issue the debit note');
       await inv.locator('input.cn-line').fill('10');
       await inv.locator('select.cn-reason').selectOption('price_correction');
       await inv.locator('button.cn-raise').click();
+      await says(s.page, '#cn-status', /^Asked for approval\./);
+      await says(s.page, '#cn-asked', /Debit note to CATERER against INV-\d+: ₹10\.50 \(price correction\) — waiting for approval/);
+      expect(await s.page.locator('#cn-notes li[data-note="CDN-000001"]').count(), 'no debit note before approval').toBe(0);
+      const mine = (await shop.cloud().request({ method: 'GET', path: '/v1/approvals/requests', userId: MANAGER })).body as { waitingForMe: { requestId: string; kind: string }[] };
+      const dReq = mine.waitingForMe.find((r) => r.kind === 'customer_debit_note');
+      expect(dReq, 'the debit note waits for a second person').toBeDefined();
+      await ok(shop.cloud().request({ method: 'POST', path: `/v1/approvals/requests/${dReq!.requestId}/decide`, userId: MANAGER, idempotencyKey: 'decide-dn', body: { decision: 'approved', reason: 'the price list was wrong' } }), 'manager approves the debit note');
+      await s.page.click('#cn-show');
+      const dAsked = s.page.locator('#cn-asked li[data-status="approved"]');
+      await dAsked.waitFor({ timeout: 15_000 });
+      await dAsked.locator('button.cn-issue').click();
       await says(s.page, '#cn-status', /^Issued\./);
       await s.page.locator('#cn-notes li[data-note="CDN-000001"]').waitFor({ timeout: 15_000 });
 
       await s.page.click('#lang');
       await says(s.page, '#cn-h', /GST வரவு மற்றும் பற்றுக் குறிப்புகள்/);
       await says(s.page, '#cn-notes', /கணக்காளரின் பதிவு விதிக்காகக் காத்திருக்கிறது/);
-      expect(s.writes.filter((w) => w.startsWith('POST /v1/finance/credit-notes'))).toEqual(['POST /v1/finance/credit-notes', 'POST /v1/finance/credit-notes']);
+      expect(s.writes.filter((w) => w === 'POST /v1/finance/credit-notes')).toEqual(['POST /v1/finance/credit-notes', 'POST /v1/finance/credit-notes']);
+      expect(s.writes.filter((w) => w === 'POST /v1/finance/credit-notes/preview')).toHaveLength(1); // the debit note, worked out first
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
 
@@ -162,7 +174,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
     expect((await shop.cloud().request({ method: 'GET', path: '/v1/b2b/documents/CATERER/inv-c1', userId: ACCOUNTANT })).body).toEqual(before);
     expect(await owed()).toBe(105_000 - 21_000 + 1_050);
     const desk2 = (await shop.cloud().request({ method: 'GET', path: '/v1/finance/credit-notes/customers/CATERER', userId: ACCOUNTANT })).body as { notes: { number: string; issuedOn: string; approvedBy?: string }[] };
-    expect(desk2.notes.map((n) => [n.number, n.approvedBy ?? null])).toEqual([['CDN-000001', null], ['CN-000001', MANAGER]]);
+    expect(desk2.notes.map((n) => [n.number, n.approvedBy ?? null])).toEqual([['CDN-000001', MANAGER], ['CN-000001', MANAGER]]);
     const day = desk2.notes[0]!.issuedOn;
     const ret = (await shop.cloud().request({ method: 'GET', path: `/v1/finance/gstr1/return?from=${day.slice(0, 7)}-01&to=${day.slice(0, 7)}-31`, userId: ACCOUNTANT })).body as { creditDebitNotes?: { registered: { noteNumber: string; recipientGstin: string }[] } };
     expect(ret.creditDebitNotes?.registered.map((r) => [r.noteNumber, r.recipientGstin])).toEqual([['CDN-000001', BUYER_GSTIN], ['CN-000001', BUYER_GSTIN]]);

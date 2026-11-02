@@ -117,6 +117,14 @@ describe('a credit note is a refund under the money limits; the posting rule is 
     expect([holds('owner'), holds('store_manager'), holds('accountant'), holds('cashier')]).toEqual([true, true, false, false]);
   });
 
+  it('OB-679: every debit note is approved by a second person at any amount; a credit note the owner raises, by the accountant at any amount', () => {
+    expect(APPROVAL_KINDS['customer_debit_note']).toMatchObject({ makerPermission: 'finance.creditnote.issue', checkerPermission: 'finance.creditnote.approve' });
+    expect(limitedSubjectOf('customer_debit_note')).toBeUndefined(); // no money ladder
+    expect(APPROVAL_KINDS['customer_credit_note']!.whenTheOwnerAsks).toEqual({ checkerPermission: 'finance.creditnote.ownerrequest.approve', checkerRole: 'accountant', anyAmount: true });
+    const holds = (role: string) => ROLE_CATALOGUE.find((r) => r.id === role)!.permissions.includes('finance.creditnote.ownerrequest.approve');
+    expect([holds('accountant'), holds('owner'), holds('store_manager')]).toEqual([true, true, false]);
+  });
+
   it('the posting map lists both note kinds for the accountant WITHOUT a suggested account — never invented', () => {
     const kinds = POSTING_KINDS_TO_MAP.filter((k) => k.kind.startsWith('b2b:') && k.kind.endsWith('_note'));
     expect(kinds.map((k) => [k.kind, k.components])).toEqual([['b2b:credit_note', ['total', 'net', 'tax']], ['b2b:debit_note', ['total', 'net', 'tax']]]);
@@ -139,12 +147,12 @@ describe('the office screen\'s notes session (Business customers page)', () => {
     expect(createNotesSession({ viewer: { userId: 'u-cash', permissions: [] } }).may).toEqual({ named: true, issue: false });
   });
 
-  it('a credit note is previewed and its approval asked with exactly head office\'s figures; a debit note is issued at once', async () => {
+  it('a note is previewed and its approval asked with exactly head office\'s figures — a debit note too (OB-679)', async () => {
     const calls: { url: string; body: unknown }[] = [];
     const answer: Record<string, unknown> = {
       '/v1/finance/credit-notes/preview': { approval: { kind: 'customer_credit_note', subjectRef: 'credit-note:CUST1/N-1', valueMinor: 21_000, details: { noteId: 'N-1' }, summary: 'Credit note ₹210.00' } },
       '/v1/approvals/requests': { requestId: 'req-1' },
-      '/v1/finance/credit-notes': { number: 'CDN-000001' },
+      '/v1/finance/credit-notes': { number: 'CN-000001' },
     };
     const fake = (async (url: string, init: { body?: string }) => { calls.push({ url, body: init.body === undefined ? undefined : JSON.parse(init.body) }); return new Response(JSON.stringify(answer[url] ?? {}), { status: 200 }); }) as unknown as typeof fetch;
     const s = createNotesSession({ viewer, fetch: fake, newNoteId: () => 'N-1' });
@@ -155,8 +163,9 @@ describe('the office screen\'s notes session (Business customers page)', () => {
       .toMatchObject({ result: 'ok' });
     expect(calls[2]).toEqual({ url: '/v1/finance/credit-notes', body: { noteId: 'N-1', approvalId: 'req-1' } });
     calls.length = 0;
-    expect(await s.raise({ kind: 'debit_note', customerId: 'CUST1', invoiceDocumentId: 'inv1', reason: 'price_correction', rupeesByLine: { l1: '10' } })).toEqual({ result: 'ok', value: { number: 'CDN-000001' } });
-    expect(calls.map((c) => c.url)).toEqual(['/v1/finance/credit-notes']);
+    expect(await s.raise({ kind: 'debit_note', customerId: 'CUST1', invoiceDocumentId: 'inv1', reason: 'price_correction', rupeesByLine: { l1: '10' } })).toEqual({ result: 'ok', value: { asked: 'req-1' } });
+    expect(calls.map((c) => c.url)).toEqual(['/v1/finance/credit-notes/preview', '/v1/approvals/requests']);
+    expect(calls[1]!.body).toMatchObject({ reason: 'GST debit note — price correction' });
   });
 
   it('every word has a Tamil twin', () => {
