@@ -460,7 +460,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'scales', label: 'Weighing scales', labelTa: 'எடைத் தராசுகள்', path: '/scales', requires: 'facilities.asset.read', group: 'Systems' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
-  { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Administration' },
+  { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Systems' },
   // Tills and devices — the fleet screen (M33): health, registration, status. Gated on `platform.health.read`;
   // registering or changing a device needs `platform.device.manage`, which the routes enforce.
   { id: 'fleet', label: 'Tills & devices', labelTa: 'கல்லாக்களும் சாதனங்களும்', path: '/fleet/', requires: 'platform.health.read', group: 'Systems' },
@@ -690,7 +690,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // R4 Lane 2 · B23 · A26 · WF-16: the online store — the shop's details every listing carries (the grievance officer
   // "not set" until named, OB-223), each product's listing, the complaint clock, the TCS line and online returns. Gated on
   // the read its routes check (`online.store.read`). A head-office page (served by the store computer since OB-380).
-  { id: 'online-store', label: 'Online store', labelTa: 'ஆன்லைன் கடை', path: '/online-store', requires: 'online.store.read', group: 'Customers' },
+  { id: 'online-store', label: 'Online store', labelTa: 'ஆன்லைன் கடை', path: '/online-store', requires: 'online.store.read', group: 'Orders' },
   // R4 Lane 2 · D01-FR-06: the product content editor — app description, synonyms, versions, completeness and the image
   // on the shop's own server (OB-215). Gated on the catalogue read its editor read checks (`catalogue.pack.read`).
   { id: 'product-content', label: 'App content', labelTa: 'செயலி உள்ளடக்கம்', path: '/product-content', requires: 'catalogue.pack.read', group: 'Products' },

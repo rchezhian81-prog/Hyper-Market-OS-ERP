@@ -10,7 +10,7 @@
       Operational alerts (W3 · M35-FR-04 · §32 · P-03 · P-08). A THIN CLIENT over head office's alert lifecycle and alert
       rules: my alerts (GET /v1/platform/alerts/inbox), every live alert (GET /v1/platform/alerts), tick one as seen
       (POST /v1/platform/alerts/:alertId/acknowledge), and who owns each alert and the backup age (GET and PUT
-      /v1/platform/alert-rules, based on the version read). Its session is apps/web-erp/src/ops-alerts-session.ts.
+      /v1/platform/alert-rules, sending basedOnVersion — the version read). Its session is apps/web-erp/src/ops-alerts-session.ts.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
