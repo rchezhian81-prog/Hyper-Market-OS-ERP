@@ -22,6 +22,7 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 
 const PINNED_SUITES: readonly string[] = [
   'tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts',
+  'tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts',
   'tests/integration/the-owners-takings-are-net-of-refunds.test.ts',
   'tests/integration/price-list-effective-dating.test.ts',
   'tests/integration/a-price-set-just-after-the-shops-midnight-still-needs-a-second-person.test.ts',

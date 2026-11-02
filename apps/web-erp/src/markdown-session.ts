@@ -83,9 +83,10 @@ export const markdownWords = (lang: Lang, key: string, slots?: Readonly<Record<s
 };
 export const markdownOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => markdownWords(lang, k), out);
 
-/** "Change a price" on Products and prices, holding this product and this price (in rupees) — where approval happens. */
+/** "Change a price" on Products and prices, holding this product and this price (in rupees) — where approval happens.
+ *  Relative, as the office pages link to one another (each is served at /<page>/ on the store computer). */
 export function priceChangeLink(productId: string, priceMinor: number): string {
-  return `/catalogue?tab=price&product=${encodeURIComponent(productId)}&price=${encodeURIComponent((priceMinor / 100).toFixed(2))}`;
+  return `../catalogue/?tab=price&product=${encodeURIComponent(productId)}&price=${encodeURIComponent((priceMinor / 100).toFixed(2))}`;
 }
 
 type Why = 'nobody' | 'cannotPropose' | 'cannotSetRule' | 'needProduct' | 'badDays' | 'badQty' | 'badPrice' | 'badRate' | 'noStore' | 'noShelfPrice' | 'badGap' | 'badAge' | 'needReason';

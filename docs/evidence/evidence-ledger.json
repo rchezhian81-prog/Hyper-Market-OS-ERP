@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2084,
+  "testFiles": 2092,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 102,
     "browser": 91,
-    "connected": 72,
+    "connected": 73,
     "device": 0,
     "uat": 0
   },
@@ -910,8 +910,8 @@
         "unit": 30,
         "integration": 34,
         "realDb": 11,
-        "browser": 9,
-        "connected": 1,
+        "browser": 10,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1006,10 +1006,12 @@
           "tests/e2e/the-expiry-page-shows-what-was-taken-off-sale.e2e.ts",
           "tests/e2e/the-recall-trace-page-is-served-from-the-store-box.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
+          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts"
+          "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1021,11 +1023,11 @@
       "id": "M11",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 9,
         "realDb": 4,
-        "browser": 4,
-        "connected": 0,
+        "browser": 5,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1038,7 +1040,8 @@
           "tests/unit/production.test.ts",
           "tests/unit/r4d-production-recipes-session.test.ts",
           "tests/unit/r4d-production-repack-session.test.ts",
-          "tests/unit/the-box-works-from-what-it-holds.test.ts"
+          "tests/unit/the-box-works-from-what-it-holds.test.ts",
+          "tests/unit/w3-production-departments-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-counter-label-carries-its-marks-sizes-and-unit-price.test.ts",
@@ -1061,9 +1064,12 @@
           "tests/e2e/production-delivery.e2e.ts",
           "tests/e2e/production-works-at-the-counter-with-the-line-down.e2e.ts",
           "tests/e2e/r4d-a-batch-is-repacked-on-the-production-page.e2e.ts",
-          "tests/e2e/r4d-recipes-are-set-up-for-the-production-page.e2e.ts"
+          "tests/e2e/r4d-recipes-are-set-up-for-the-production-page.e2e.ts",
+          "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3033,11 +3039,11 @@
       "id": "D01",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 3,
-        "integration": 10,
+        "unit": 4,
+        "integration": 11,
         "realDb": 3,
-        "browser": 2,
-        "connected": 1,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3045,7 +3051,8 @@
         "unit": [
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/ratings-receipts-and-images.test.ts",
-          "tests/unit/storefront-browse.test.ts"
+          "tests/unit/storefront-browse.test.ts",
+          "tests/unit/w3-catalogue-pricing-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/barcode-register.test.ts",
@@ -3057,7 +3064,8 @@
           "tests/integration/product-content-versions-and-images-are-kept-on-the-shops-server.test.ts",
           "tests/integration/product-master.test.ts",
           "tests/integration/recalls-reach-the-offline-till.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/w3-a-tobacco-product-never-confirmed-says-so.test.ts"
         ],
         "realDb": [
           "tests/integration/pack-chain-case-to-base.test.ts",
@@ -3066,10 +3074,12 @@
         ],
         "browser": [
           "tests/e2e/product-publish-delivery.e2e.ts",
-          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
+          "tests/e2e/w3-a-tobacco-product-goes-on-sale-from-the-product-page.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
+          "tests/e2e/w3-a-tobacco-product-goes-on-sale-from-the-product-page.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3081,10 +3091,10 @@
       "id": "D02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 10,
         "realDb": 4,
-        "browser": 4,
+        "browser": 5,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3094,7 +3104,8 @@
           "tests/unit/approval-requests.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
           "tests/unit/merchandising-space.test.ts",
-          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
+          "tests/unit/w3-catalogue-pricing-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
@@ -3118,7 +3129,8 @@
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/w2-store-groups-and-seasons-set-the-range.e2e.ts",
-          "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts"
+          "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts",
+          "tests/e2e/w3-the-range-gap-report-on-the-store-groups-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
@@ -3342,11 +3354,11 @@
       "id": "D06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 5,
+        "unit": 6,
         "integration": 8,
         "realDb": 1,
-        "browser": 3,
-        "connected": 2,
+        "browser": 5,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -3356,7 +3368,8 @@
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/finance-close-session.test.ts",
           "tests/unit/p2-offers-are-deterministic-and-never-reach-tobacco.test.ts",
-          "tests/unit/self-checkout.test.ts"
+          "tests/unit/self-checkout.test.ts",
+          "tests/unit/w3-catalogue-pricing-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-launched-offer-is-the-offer-the-till-gives.test.ts",
@@ -3374,11 +3387,15 @@
         "browser": [
           "tests/e2e/catalogue-price-change-delivery.e2e.ts",
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
-          "tests/e2e/the-served-till-charges-the-markdown.e2e.ts"
+          "tests/e2e/the-served-till-charges-the-markdown.e2e.ts",
+          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
+          "tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
-          "tests/e2e/the-served-till-charges-the-markdown.e2e.ts"
+          "tests/e2e/the-served-till-charges-the-markdown.e2e.ts",
+          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
+          "tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
