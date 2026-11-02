@@ -309,6 +309,7 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'concession-invoices.js': 'apps/web-erp/src/concession-invoices-session.ts',
     // W3 (M22-FR-04): finance's queue of payments customers say they sent, on the Business customers page.
     'b2b-payments.js': 'apps/web-erp/src/b2b-transfer-notes-session.ts',
+    'b2b-notes.js': 'apps/web-erp/src/b2b-notes-session.ts',
     // W3 (customers): each new page's words are in its tested session model.
     'data-requests.js': 'apps/web-erp/src/data-requests-session.ts',
     'customer-value.js': 'apps/web-erp/src/customer-value-session.ts',

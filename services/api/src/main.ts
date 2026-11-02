@@ -1624,9 +1624,15 @@ export function buildSurface(deps: {
     // every total (the ledger vs an independent second source the caller supplies) and produce the CA's
     // signable pack; a non-reconciling pack is still produced but marked not signable. Stateless reads.
     ...periodEvidenceRoutes({ now, ...(store === undefined ? {} : finBridgeEvidenceHooks({ store, now })) }), // OB-288 P5: the dead letters are the Tally outbox's
+    // M23-FR-02 · OB-678: GST credit / debit notes to business customers, worked from the tax invoice head office holds; a
+    // credit note is a refund under the money limits (OB-290), approved by a second person; its own number series.
     ...creditNoteRoutes(store === undefined ? {
-      alreadyCredited: empty(0), appendCreditNote: () => {}, notes: empty([]), now,
-    } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
+      notes: empty([]), now,
+    } : {
+      ...financeNotesAdapter({ store, now, numberSeries: deps.numberSeries, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) }),
+      approvals: approvalRequestsAdapter({ store, now }),
+      ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }),
+    }),
     // GST-from-inclusive-MRP calculator (A9/A8) — stateless, folds no ledger, so no deps/stub.
     ...taxRoutes(),
     // Statutory retention (A28) — stateless: longest statute wins + legal-hold-blocks-deletion.

@@ -7,6 +7,7 @@ import { createB2BDeskSession, b2bDeskWords, b2bDeskOutcomeWords, rupees as b2bR
 import { createSupplierSubmissionsSession, supplierSubmissionsWords, supplierSubmissionsOutcomeWords, documentLine } from './supplier-submissions-session';
 import { createConcessionSession, concessionWords, concessionOutcomeWords, rupees as concessionRupees } from './concession-session';
 import { createTransferNotesSession, transferNotesWords, transferNotesOutcomeWords } from './b2b-transfer-notes-session'; // W3 · M22-FR-04
+import { createNotesSession, notesWords, notesOutcomeWords } from './b2b-notes-session'; // W3 · M23-FR-02 · OB-678
 import { createVmiDeskSession, vmiDeskWords, vmiDeskOutcomeWords, itemWords as vmiItemWords } from './vmi-desk-session'; // FG-4 · D03-FR-04
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
@@ -16,6 +17,8 @@ export function wireCommercialDeskPages(win: Record<string, unknown>, viewerIden
     win['b2bDesk'] = { session: createB2BDeskSession({ viewer: viewerIdentity(win['b2bDeskData']) }), words: b2bDeskWords, outcomeWords: b2bDeskOutcomeWords, rupees: b2bRupees, deliveryStatePrefill: deliveryStatePrefillOf };
     // W3 · M22-FR-04: finance matches (or rejects) the payments customers told the shop about on their portal.
     win['b2bTransferNotes'] = { session: createTransferNotesSession({ viewer: viewerIdentity(win['b2bDeskData']) }), words: transferNotesWords, outcomeWords: transferNotesOutcomeWords, rupees: b2bRupees };
+    // W3 · M23-FR-02 · OB-678: GST credit and debit notes against the customer's business tax invoices.
+    win['b2bNotes'] = { session: createNotesSession({ viewer: viewerIdentity(win['b2bDeskData']) }), words: notesWords, outcomeWords: notesOutcomeWords, rupees: b2bRupees };
   }
   if (win['supplierSubmissionsData'] !== undefined) {
     win['supplierSubmissions'] = { session: createSupplierSubmissionsSession({ viewer: viewerIdentity(win['supplierSubmissionsData']) }), words: supplierSubmissionsWords, outcomeWords: supplierSubmissionsOutcomeWords, documentLine };

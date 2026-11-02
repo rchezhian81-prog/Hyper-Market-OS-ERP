@@ -704,4 +704,16 @@ export const POSTING_KINDS_TO_MAP: readonly { readonly kind: string; readonly co
   { kind: 'supplier_rebate_accrual', components: ['amount'] }, // services/finance/src/rebate-accruals.ts — a rebate earned, not yet paid
   { kind: 'supplier_advance', components: ['amount'] }, // services/finance/src/supplier-advances.ts — paid to a supplier before the bill
   { kind: 'supplier_advance_applied', components: ['amount'] }, // services/finance/src/supplier-advances.ts — an advance used against a bill
+  // M23-FR-02 · OB-678 (services/finance/src/credit-notes.ts): a GST credit note to a business customer takes the value and
+  // its tax back off what they owe; a debit note adds them. No account is suggested — which revenue and which output-tax
+  // ledgers a note reverses is the CA's sign-off (C-01). Until the accountant writes the rule, a note posts nothing and
+  // shows "waiting for the accountant's posting rule".
+  {
+    kind: 'b2b:credit_note', components: ['total', 'net', 'tax'],
+    legs: [{ side: 'debit', component: 'net' }, { side: 'debit', component: 'tax' }, { side: 'credit', component: 'total' }],
+  },
+  {
+    kind: 'b2b:debit_note', components: ['total', 'net', 'tax'],
+    legs: [{ side: 'debit', component: 'total' }, { side: 'credit', component: 'net' }, { side: 'credit', component: 'tax' }],
+  },
 ]);

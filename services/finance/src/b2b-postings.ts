@@ -20,11 +20,12 @@ import type { StoredPostingMap } from './day-book';
 /** One B2B money fact the books must carry. */
 export interface B2BPostable {
   readonly sourceId: string;
-  readonly kind: 'invoice' | 'receipt';
+  /** M23-FR-02 · OB-678: a credit or debit note to a business customer is a postable too ({ total, net, tax }). */
+  readonly kind: 'invoice' | 'receipt' | 'credit_note' | 'debit_note';
   readonly customerId: string;
   /** The invoice's issue date, or the day the money was received. */
   readonly documentDate: string;
-  /** invoice: { total, net, tax }; receipt: { amount }. */
+  /** invoice / credit_note / debit_note: { total, net, tax }; receipt: { amount }. */
   readonly components: Readonly<Record<string, number>>;
   readonly ref: string;
 }
@@ -38,6 +39,8 @@ export interface B2BPostingDeps extends Pick<FinanceDeps, 'periodStates' | 'next
   readonly postables: (tenantId: string) => Promise<readonly B2BPostable[]> | readonly B2BPostable[];
   readonly b2bJournals: (tenantId: string) => Promise<readonly B2BJournal[]> | readonly B2BJournal[];
 }
+
+const NARRATIVE_OF: Readonly<Record<B2BPostable['kind'], string>> = { invoice: 'tax invoice', receipt: 'collection', credit_note: 'credit note', debit_note: 'debit note' };
 
 export function b2bPostingRoutes(deps: B2BPostingDeps): readonly Route[] {
   const position = async (t: string) => {
@@ -78,7 +81,7 @@ export function b2bPostingRoutes(deps: B2BPostingDeps): readonly Route[] {
           const period = closed ? await deps.nextOpenPeriod(t) : belongsTo;
           const journal: B2BJournal = {
             entryId: `b2b:${f.sourceId}`, period, documentDate: f.documentDate,
-            narrative: `B2B ${f.kind === 'invoice' ? 'tax invoice' : 'collection'} ${f.ref} — customer ${f.customerId}${closed ? ` (posted to ${period}: ${belongsTo} is closed)` : ''}`,
+            narrative: `B2B ${NARRATIVE_OF[f.kind]} ${f.ref} — customer ${f.customerId}${closed ? ` (posted to ${period}: ${belongsTo} is closed)` : ''}`,
             lines: mapped.lines.map((l) => ({ accountCode: l.account, debitMinor: l.side === 'debit' ? l.amount.minor : 0, creditMinor: l.side === 'credit' ? l.amount.minor : 0 })),
             postedBy: ctx.userId,
             b2b: { sourceId: f.sourceId, kind, customerId: f.customerId, ...(closed ? { belongsTo } : {}) },
