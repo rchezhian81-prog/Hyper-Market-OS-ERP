@@ -250,8 +250,9 @@ import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlert
 import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
 import type { DayBookSale, DayBookLoyalty } from '../../../packages/finance/src/index';
-import type { CreditNoteDeps } from '../../finance/src/credit-notes';
-import type { CreditNote, ProductTaxEntry, OutwardSupplyLine } from '../../../packages/finance/src/index';
+import { notePostableSourceId, type CreditNoteDeps } from '../../finance/src/credit-notes';
+import type { CreditNote, CustomerNote, ProductTaxEntry, OutwardSupplyLine } from '../../../packages/finance/src/index';
+import { isCustomerNote, outwardNoteOf } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { SegmentDeps } from '../../customer/src/segments';
 import { collapseConsent } from '../../customer/src/segments';
@@ -1260,6 +1261,13 @@ export function gstReturnsAdapter(input: {
   const calendarOf = shopCalendarOf(input.calendar);
   return {
     now: input.now,
+
+    // M23-FR-02 · OB-678: the GST notes to business customers, from the CreditNoteIssued facts (first record of an id stands).
+    customerNotes: async (tenantId) => {
+      const byId = new Map<string, CustomerNote>();
+      for (const n of (await allOf<CreditNote>(input.store, tenantId, STREAM.finance, 'CreditNoteIssued')).filter(isCustomerNote)) if (!byId.has(n.noteId)) byId.set(n.noteId, n);
+      return [...byId.values()].map(outwardNoteOf);
+    },
 
     documents: async (tenantId) => {
       const all = await allOf<StoredOutwardDoc>(input.store, tenantId, STREAM.gstreturns, 'OutwardSupplyRecorded');
@@ -4186,6 +4194,48 @@ export function b2bCustomerGstinAdapter(input: { readonly store: EventStore; rea
   };
 }
 
+/**
+ * The stock on the ledger valued at weighted-average cost, one row per product and place AND per owner (M27-FR-02): each
+ * ownership pool valued SEPARATELY — a concessionaire's cost is never averaged into the store's. Reads the append-only
+ * ledger; writes nothing. The store valuation splits these; a concessionaire's own login reads only its own (OB-676).
+ */
+export async function ownedStockRows(store: EventStore, tenantId: string): Promise<OwnedStockValue[]> {
+  const events = await store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+  const movements = events
+    .map((e) => payloadOf<Movement>(e))
+    .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+
+  const adjustments = await stockCostAdjustments(store, tenantId); // OB-288 P3: the store's own stock carries its landed cost
+  const groups = new Map<string, Movement[]>();
+  for (const m of movements) {
+    const ownership: StockOwnership = m.ownership ?? 'own';
+    const ownerId = ownership === 'own' ? 'store' : (m.ownerId ?? 'unknown');
+    const key = `${ownership}\u001f${ownerId}`;
+    groups.set(key, [...(groups.get(key) ?? []), m]);
+  }
+
+  const rows: OwnedStockValue[] = [];
+  for (const [key, ms] of groups) {
+    const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
+    const valued = weightedAverageValuation(
+      withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
+        productId: m.productId, locationId: m.locationId,
+        effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+        isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+        ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+      })),
+      'INR',
+    );
+    for (const v of valued) {
+      rows.push({
+        productId: v.productId, locationId: v.locationId,
+        ownership, ownerId, valueMinor: v.value.minor, onHandMinor: v.onHandMinor,
+      });
+    }
+  }
+  return rows;
+}
+
 export function concessionAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4242,42 +4292,7 @@ export function concessionAdapter(input: {
      * `splitStoreValuation` reports what the store owns and names what it does not. Reads the
      * append-only ledger; writes nothing.
      */
-    storeValuation: async (tenantId, branchId) => {
-      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
-      const movements = events
-        .map((e) => payloadOf<Movement>(e))
-        .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
-
-      const adjustments = await stockCostAdjustments(input.store, tenantId); // OB-288 P3: the store's own stock carries its landed cost
-      const groups = new Map<string, Movement[]>();
-      for (const m of movements) {
-        const ownership: StockOwnership = m.ownership ?? 'own';
-        const ownerId = ownership === 'own' ? 'store' : (m.ownerId ?? 'unknown');
-        const key = `${ownership}\u001f${ownerId}`;
-        groups.set(key, [...(groups.get(key) ?? []), m]);
-      }
-
-      const rows: OwnedStockValue[] = [];
-      for (const [key, ms] of groups) {
-        const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
-        const valued = weightedAverageValuation(
-          withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
-            productId: m.productId, locationId: m.locationId,
-            effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
-            ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
-          })),
-          'INR',
-        );
-        for (const v of valued) {
-          rows.push({
-            productId: v.productId, locationId: v.locationId,
-            ownership, ownerId, valueMinor: v.value.minor, onHandMinor: v.onHandMinor,
-          });
-        }
-      }
-      return splitStoreValuation({ branchId, rows });
-    },
+    storeValuation: async (tenantId, branchId) => splitStoreValuation({ branchId, rows: await ownedStockRows(input.store, tenantId) }),
 
     recordDepositMovement: async (tenantId, movement) => {
       await input.store.append(tenantId, forConcessionaire(movement.concessionaireId), makeEvent({
@@ -9331,11 +9346,49 @@ export function financeNotesAdapter(input: {
    * rebuilt from the ledger) — just rebuilt on each cold start.
    */
   readonly snapshots?: SnapshotStore;
-}): CreditNoteDeps {
+  /** M23-FR-02 · OB-678: the gap-free number series the customer credit-note and debit-note series are drawn from. */
+  readonly numberSeries?: NumberSeriesStore;
+}): CreditNoteDeps & {
+  readonly alreadyCredited: (tenantId: string, invoiceId: string) => Promise<number>;
+  readonly appendCreditNote: (tenantId: string, note: CreditNote) => Promise<void>;
+} {
   const snapshots = input.snapshots ?? new InMemorySnapshotStore();
+  const numberSeries = input.numberSeries ?? new InMemoryNumberSeriesStore();
+  const b2bDocs = b2bDocumentsAdapter({ store: input.store, now: input.now, numberSeries });
+  const books = b2bPostingAdapter({ store: input.store, now: input.now });
 
   return {
     now: input.now,
+
+    // M23-FR-02 · OB-678: the business tax invoice head office holds — the only source a note is worked from.
+    businessInvoice: (tenantId, customerId, documentId) => b2bDocs.document(tenantId, customerId, documentId),
+    businessDocuments: (tenantId, customerId) => b2bDocs.documents(tenantId, customerId),
+    allocateNumber: (tenantId, series) => numberSeries.allocate(tenantId, series),
+    // The posting rules in force (kinds only) and the B2B facts already journalled — where each note stands in the books.
+    postingState: async (tenantId) => {
+      const [map, journals] = await Promise.all([books.postingMap(tenantId), books.b2bJournals(tenantId)]);
+      return { ruleKinds: map?.rules.map((r) => r.kind), journals: journals.map((j) => ({ sourceId: j.b2b.sourceId, entryId: j.entryId, period: j.period })) };
+    },
+    // ONE batch: the note, its movement on the customer's AR ledger (a credit note brings what is owed down, a debit note
+    // up) and its fact for the books (posted by the accountant's B2B posting run through HIS rule, or visibly waiting).
+    recordCustomerNote: async (tenantId, note, issuedBy) => {
+      const at = input.now();
+      const credit = note.kind === 'credit_note';
+      const ar: RecordedReceivable = {
+        movementId: `${credit ? 'cn' : 'dn'}-${note.noteId}`, customerId: note.customerId, kind: credit ? 'credit_note' : 'invoice',
+        deltaMinor: credit ? -note.grossMinor : note.grossMinor, at, ref: note.number, on: note.issuedOn,
+      };
+      const postable: B2BPostable = {
+        sourceId: notePostableSourceId(note), kind: note.kind, customerId: note.customerId, documentDate: note.issuedOn,
+        components: { total: note.grossMinor, net: note.taxableMinor, tax: note.taxMinor }, ref: note.number,
+      };
+      await input.store.appendBatch(tenantId, [
+        { stream: STREAM.finance, event: makeEvent({ id: note.noteId, type: 'CreditNoteIssued', occurredAt: at, idempotencyKey: `creditnote-${tenantId}-${note.noteId}`, source: 'api/finance', payload: { ...note, issuedBy } }) },
+        { stream: forB2BCustomer(note.customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+        receivableCustomerIndexEntry(tenantId, note.customerId, at),
+      ]);
+    },
 
     // Σ of what earlier CREDIT notes already took off this invoice, projected through the snapshot
     // facility rather than re-summing the whole history. This is what makes the s.34 cap hold across
@@ -10180,6 +10233,12 @@ export function couponAdapter(input: {
         idempotencyKey: `coupon-${tenantId}-${coupon.code}-${key}`,
         source: 'api/customer',
         payload: coupon,
+      }));
+      // D06-FR-03 · OB-673: every coupon goes on the coupon index (the same fact the stored fraud signals read, idempotent per
+      // code), so the store pack can carry every live coupon to the till — whichever route issued it.
+      await input.store.append(tenantId, streamName(STREAM.lossPrevention, 'coupon-index'), makeEvent({
+        id: `CouponIndexed-${coupon.code}`, type: 'CouponIndexed', occurredAt: input.now(),
+        idempotencyKey: `${tenantId}-CouponIndexed-${coupon.code}`, source: 'api/lp-workforce', payload: { code: coupon.code },
       }));
     },
     coupon: async (tenantId, code) => {
@@ -14663,6 +14722,14 @@ export async function outsideLoginOf(store: EventStore, tenantId: string, userId
   return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && (r.state === 'invited' || r.state === 'approved'))?.role;
 }
 
+/**
+ * OB-676 (M27-FR-02): the concessionaire a login is bound to NOW — its approved, unrevoked concessionaire invite, read from
+ * head office's own records (never the request). undefined: bound to nobody (never approved, rejected or revoked).
+ */
+export async function concessionaireBoundTo(store: EventStore, tenantId: string, userId: string): Promise<string | undefined> {
+  return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && r.role === 'concessionaire' && r.state === 'approved')?.partyId;
+}
+
 /** Round 14 (verifier G6): the per-login write guard an outside-login invite and approval claim the login under. */
 const outsideLoginGuard = (userId: string): string => `outside-login:${userId}`;
 
@@ -14757,6 +14824,8 @@ export function outsidePartyLoginAdapter(input: {
     partyExists: async (tenantId, role, partyId) => {
       if (role === 'b2b_customer') return (await b2bCreditAdapter(input).account(tenantId, partyId)) !== undefined;
       if (role === 'supplier') return (await supplierPortalAdapter(input).partner(tenantId, partyId)) !== undefined;
+      // OB-676: a concessionaire is on record when a counter's contract names it (the contract index, written with each contract).
+      if (role === 'concessionaire') return (await allOf<{ concessionaireId: string }>(input.store, tenantId, CONCESSION_CONTRACT_INDEX, 'ConcessionContractIndexed')).some((x) => x.concessionaireId === partyId);
       // A customer record is what the shop holds about them: a purchase, a return or a loyalty membership (customer 360).
       const c = customer360Adapter(input);
       await c.catchUp(tenantId);
@@ -14783,6 +14852,8 @@ export function outsidePartyLoginAdapter(input: {
         }));
       }
       // An app customer's login IS the customer record (the storefront scopes to the signed-in subject): nothing more to bind.
+      // OB-676: a concessionaire's login is bound by its APPROVED invite itself — the portal reads the login's current party
+      // from the approved, unrevoked invite (`concessionaireBoundTo`), so a revocation unbinds it in the same act.
     },
   };
 }

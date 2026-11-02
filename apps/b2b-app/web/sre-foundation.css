@@ -711,11 +711,13 @@ body.sre-shell main :focus-visible { outline: 3px solid var(--focus); outline-of
   .sre-chart-row > .sre-chart-track { grid-column: 1 / -1; grid-row: 2; }
 }
 .sre-chart-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; align-items: end; min-height: 180px; border-bottom: 1px solid var(--line-strong); }
-.sre-chart-col { display: grid; grid-template-rows: auto 140px auto; align-items: end; justify-items: center; min-width: 0; }
+.sre-chart-col { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 140px auto; align-items: end; justify-items: center; min-width: 0; }
 .sre-chart-stem { display: block; width: 100%; max-width: 40px; height: 140px; }
 .sre-chart-top { font-size: 14px; color: var(--muted); white-space: nowrap; min-height: 20px; }
 .sre-chart-tick { font-size: 14px; color: var(--muted); white-space: nowrap; min-height: 20px; padding-top: 4px; }
 .sre-chart-unknown .sre-chart-top { color: var(--warn); font-weight: 700; }
+.sre-chart-col-start > .sre-chart-top { justify-self: start; }
+.sre-chart-col-end > .sre-chart-top { justify-self: end; }
 .sre-chart-gap, .sre-chart-empty { margin: 0; font-size: 14px; color: var(--warn); }
 /* While the table is for screen readers only, it is clipped inside its 1px box — never a sideways scroll on a phone. */
 .sre-chart-table-wrap.sr-only { overflow: hidden; }

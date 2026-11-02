@@ -19,7 +19,8 @@ import { acceptPack, type SignedPack, type PackSigner } from '../../../services/
 import { commitLocally, type CommitOutcome, type DurableLog } from './durability';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
-import { toCloudSale } from './cloud-sale';
+import { toCloudSale, toCloudGiftCardSale } from './cloud-sale';
+import { isGiftCardSaleRecord } from '../../../packages/loyalty/src/till-vouchers';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudReturn } from './cloud-return';
 import { toCloudChecklist, toCloudTaskCompletion } from './cloud-completion';
@@ -198,7 +199,14 @@ export function createEdgeNode(input: {
           saleId, record: kept, log: input.log,
           ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
         });
-        if (outcome.committed && input.outbox !== undefined) {
+        if (outcome.committed && input.outbox !== undefined && isGiftCardSaleRecord(JSON.parse(kept) as unknown)) {
+          // OB-677: a gift card's SALE is not a goods bill — it goes to head office's gift-card door, never to /v1/sales.
+          input.outbox.enqueue(makeEvent({
+            id: `edge-giftcard-sale-${saleId}`, type: 'GiftCardSold', occurredAt: new Date().toISOString(),
+            idempotencyKey: `edge-${input.tenantId}-${saleId}`, source: 'edge/lane',
+            payload: toCloudGiftCardSale(JSON.parse(kept) as unknown, input.storeId?.(), input.laneId?.()),
+          }));
+        } else if (outcome.committed && input.outbox !== undefined) {
           input.outbox.enqueue(makeEvent({
             id: `edge-sale-${saleId}`,
             type: 'SaleCommitted',

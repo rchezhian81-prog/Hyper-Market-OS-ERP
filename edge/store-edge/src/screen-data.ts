@@ -1366,7 +1366,8 @@ export function dispatchPlanFor(input: ScreenInput): DispatchPlan | null {
  */
 export function driverPayload(input: ScreenInput, driverId?: string): Record<string, unknown> | null {
   const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
-  const tolerance = policies === undefined ? {} : { handoverToleranceMinor: policies.handoverToleranceMinor };
+  // OB-676: the limit AND whether the owner confirmed it — the phone says "not confirmed" beside a cash difference until he has.
+  const tolerance = policies === undefined ? {} : { handoverToleranceMinor: policies.handoverToleranceMinor, handoverToleranceConfirmed: policies.handoverToleranceConfirmed !== undefined };
 
   if (input.pack.route.known && input.pack.route.value !== null) {
     const route = input.pack.route.value;

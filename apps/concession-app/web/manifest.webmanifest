@@ -1,0 +1,12 @@
+{
+  "name": "SRE Hyper Market — Your counter",
+  "short_name": "SRE Counter",
+  "description": "See your own counter at SRE: its terms, its sales, your stock on the shop's shelves and the invoices issued to you.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}

@@ -19,7 +19,7 @@ const runDate = () => $('run-date').value;
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show-orders', 'search'], ['show-waves', 'list-checks'], ['build', 'package'], ['plan', 'navigation'], ['off-road', 'rotate-ccw'],
-  ['show-board', 'truck'], ['show-held', 'percent'], ['show-controls', 'sliders'], ['propose', 'wallet'], ['approve-settle', 'badge-check'], ['paid', 'receipt']]) {
+  ['show-board', 'truck'], ['show-held', 'percent'], ['show-controls', 'sliders'], ['show-tolerance', 'wallet'], ['confirm-tolerance', 'check'], ['propose', 'wallet'], ['approve-settle', 'badge-check'], ['paid', 'receipt']]) {
   const i = icon(name); if (i !== null) $(id).prepend(i, ' ');
 }
 
@@ -125,6 +125,13 @@ async function showBoard() {
   if (out.result !== 'ok') { say('board-status', out); return; }
   $('board-status').className = 'status'; $('board-status').textContent = '';
   $('board').hidden = false;
+  // OB-676: the limit the cash differences below are judged against, said "not confirmed by the owner" until he confirms it.
+  const tolWords = api.toleranceNote(lang, out.value.handoverTolerance);
+  $('board-tolerance').hidden = tolWords === '';
+  $('board-tolerance').className = 'status err';
+  $('board-tolerance').textContent = tolWords === '' ? '' : `⚠ ${tolWords}`;
+  $('board-tolerance').dataset.state = out.value.handoverTolerance?.state ?? 'not_told';
+  const tolConfirmed = out.value.handoverTolerance?.state === 'confirmed';
   $('board').replaceChildren(...out.value.routes.map((r) => {
     const li = document.createElement('li');
     const flagged = r.flags.length > 0 || (r.cash.handover !== null && r.cash.handover.material);
@@ -148,7 +155,7 @@ async function showBoard() {
     }
     li.append(stops);
     const h = r.cash.handover;
-    li.append(text('span', `${t('expectedK')} ${api.rupees(r.cash.fromStops.expectedMinor)} · ${t('collectedK')} ${api.rupees(r.cash.fromStops.collectedMinor)}${h === null ? '' : ` · ${t('countedK')} ${api.rupees(h.countedMinor)} · ${t('varianceK')} ${api.rupees(h.varianceMinor)}${h.material ? ` · ⚠ ${t('cashOffice')}` : ''}`}`, 'facts cash'));
+    li.append(text('span', `${t('expectedK')} ${api.rupees(r.cash.fromStops.expectedMinor)} · ${t('collectedK')} ${api.rupees(r.cash.fromStops.collectedMinor)}${h === null ? '' : ` · ${t('countedK')} ${api.rupees(h.countedMinor)} · ${t('varianceK')} ${api.rupees(h.varianceMinor)}${h.material ? ` · ⚠ ${t('cashOffice')}` : ''}${tolConfirmed ? '' : ` · ⚠ ${t('tolNotConfirmedShort')}`}`}`, 'facts cash'));
     return li;
   }));
 }
@@ -221,6 +228,40 @@ async function setNumber(key, value) {
   drawControls(out.value);
 }
 
+// ── OB-676: the driver cash hand-over limit ─────────────────────────────────
+function drawTolerance(v) {
+  $('tolerance').hidden = false;
+  const state = $('tolerance-state');
+  state.dataset.state = v.state;
+  state.className = `status ${v.state === 'confirmed' ? 'good' : 'err'}`;
+  const inForce = v.valueMinor === null ? t('toleranceNoSettings') : api.rupees(v.valueMinor);
+  const who = v.confirmed === null ? '' : ` (${t('tolConfirmedBy')} ${v.confirmed.by}, ${window.sreShopDay?.dateTimeOf(v.confirmed.at) ?? v.confirmed.at})`;
+  state.textContent = `${v.state === 'confirmed' ? '✓' : '⚠'} ${t('toleranceInForce')} ${inForce} — ${t(`tol_${v.state}`)}${who}.${v.changedSinceConfirmed ? ` ${t('tolChangedSince')}` : ''}`
+    + (v.state === 'confirmed' ? '' : ` ${t('toleranceSuggested')} ${api.rupees(v.suggestedMinor)}.`);
+  $('tolerance-form').hidden = !may.setNumbers;
+  if (may.setNumbers) $('tolerance-value').value = (v.suggestedMinor / 100).toFixed(2).replace(/\.00$/, '');
+  $('tolerance-history-h').hidden = v.history.length === 0;
+  $('tolerance-history').replaceChildren(...[...v.history].reverse().map((c) => {
+    const li = document.createElement('li'); li.className = 'row tone-ok'; li.dataset.version = String(c.version); li.dataset.kind = c.kind;
+    const what = c.kind === 'changed' ? `${t('tolKind_changed')} ${c.previousMinor === null ? '—' : api.rupees(c.previousMinor)}` : t('tolKind_as_suggested');
+    li.append(text('strong', `v${c.version} · ${api.rupees(c.valueMinor)} — ${what}`), text('span', `${c.by} · ${window.sreShopDay?.dateTimeOf(c.at) ?? c.at}${c.reason ? ` · ${c.reason}` : ''}`, 'facts'));
+    return li;
+  }));
+}
+async function showTolerance() {
+  const out = await session.tolerance(store());
+  if (out.result !== 'ok') { say('tolerance-status', out); return; }
+  $('tolerance-status').className = 'status'; $('tolerance-status').textContent = '';
+  drawTolerance(out.value);
+}
+async function confirmTolerance() {
+  const out = await session.confirmTolerance(store(), $('tolerance-value').value, $('tolerance-note').value);
+  if (out.result !== 'ok') { say('tolerance-status', out); return; }
+  good('tolerance-status', `${t('confirmed')} ${api.rupees(out.value.valueMinor ?? 0)}`);
+  $('tolerance-note').value = '';
+  drawTolerance(out.value);
+}
+
 // ── Own-fleet settlement ─────────────────────────────────────────────────────
 function settled(out) {
   if (out.result !== 'ok') { say('settle-status', out); return; }
@@ -234,7 +275,8 @@ function paint() {
     ['show-orders-text', 'showOrders'], ['show-waves-text', 'boardWaves'], ['ready-h', 'readyK'], ['held-orders-h', 'heldK'], ['on-wave-h', 'onWaveK'], ['wave-id-l', 'waveIdL'],
     ['picker-l', 'pickerL'], ['build-text', 'build'], ['routes-h', 'routesH'], ['drivers-l', 'driversL'], ['speed-l', 'speedL'], ['minutes-l', 'minutesL'], ['plan-text', 'plan'],
     ['off-driver-l', 'pickerL'], ['off-reason-l', 'reasonL'], ['off-road-text', 'offRoad'], ['board-h', 'boardH'], ['show-board-text', 'showBoard'], ['contribution-h', 'heldH'],
-    ['show-held-text', 'showHeld'], ['controls-h', 'controlsH'], ['show-controls-text', 'showControls'], ['settle-h', 'settleH'], ['settle-route-l', 'routeIdL'],
+    ['show-held-text', 'showHeld'], ['controls-h', 'controlsH'], ['show-controls-text', 'showControls'],
+    ['tolerance-h', 'toleranceH'], ['show-tolerance-text', 'showTolerance'], ['tolerance-value-l', 'toleranceL'], ['tolerance-note-l', 'toleranceReasonL'], ['confirm-tolerance-text', 'confirmTolerance'], ['tolerance-history-h', 'tolHistoryH'], ['settle-h', 'settleH'], ['settle-route-l', 'routeIdL'],
     ['propose-text', 'propose'], ['approve-settle-text', 'approveSettle'], ['paid-amount-l', 'amountL'], ['voucher-l', 'voucherL'], ['paid-text', 'paid']]) $(id).textContent = t(k);
   $('off-driver-l').textContent = lang === 'ta' ? 'டிரைவர்' : 'Driver';
   $('lang').textContent = t('lang');
@@ -242,7 +284,7 @@ function paint() {
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('show-orders').disabled = !may.waves; $('show-waves').disabled = !may.waves; $('build').disabled = !may.waves;
   $('plan').disabled = !may.dispatch; $('off-road').disabled = !may.dispatch; $('propose').disabled = !may.dispatch;
-  $('show-board').disabled = !may.read; $('show-held').disabled = !may.read; $('show-controls').disabled = !may.read;
+  $('show-board').disabled = !may.read; $('show-held').disabled = !may.read; $('show-controls').disabled = !may.read; $('show-tolerance').disabled = !may.read;
   $('approve-settle').disabled = !may.approveSettlement; $('paid').disabled = !may.approveSettlement;
 }
 
@@ -254,6 +296,8 @@ $('off-road').addEventListener('click', () => { void offRoad(); });
 $('show-board').addEventListener('click', () => { void showBoard(); });
 $('show-held').addEventListener('click', () => { void showHeld(); });
 $('show-controls').addEventListener('click', () => { void showControls(); });
+$('show-tolerance').addEventListener('click', () => { void showTolerance(); });
+$('confirm-tolerance').addEventListener('click', () => { void confirmTolerance(); });
 $('propose').addEventListener('click', async () => settled(await session.propose($('settle-route').value.trim())));
 $('approve-settle').addEventListener('click', async () => settled(await session.approveSettlement($('settle-route').value.trim())));
 $('paid').addEventListener('click', async () => settled(await session.recordPaid($('settle-route').value.trim(), $('paid-amount').value, $('voucher').value)));

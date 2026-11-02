@@ -123,6 +123,8 @@ export function returnAcceptedRoute(payload: Record<string, unknown>): string | 
  */
 export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   SaleCommitted: '/v1/sales',
+  // W3 · OB-677: a gift card sold at the till — issued at head office once, never refused (services/customer/src/till-vouchers.ts).
+  GiftCardSold: '/v1/stored-value/till-sales',
   InventoryMoved: '/v1/inventory/movements',
   DeliveryAttempted: '/v1/delivery/attempts',
   ConsentRecorded: '/v1/customers/:customerId/consent',

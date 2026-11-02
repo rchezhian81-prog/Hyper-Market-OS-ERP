@@ -37,9 +37,10 @@ export function signalRedUnderWords(css: string): string[] {
 }
 
 describe('the shells outside the back office', () => {
-  it('are the eleven apps the owner\'s staff and customers hold in their hands or stand at', () => {
+  it('are the twelve apps the owner\'s staff, customers and partners hold in their hands or stand at', () => {
+    // OB-676 (M27-FR-02): the concessionaire's own counter portal joined.
     // OB-288 P6: the self-checkout lane and the price kiosk joined (R8-3 · D14-FR-02); Pkg 6b: the queue till (D04-FR-05).
-    expect(outside).toEqual(['b2b-app', 'customer-app', 'delivery-app', 'owner-app', 'picker-app', 'pos', 'price-kiosk', 'queue-pos', 'self-checkout', 'supplier-app', 'warehouse-app']);
+    expect(outside).toEqual(['b2b-app', 'concession-app', 'customer-app', 'delivery-app', 'owner-app', 'picker-app', 'pos', 'price-kiosk', 'queue-pos', 'self-checkout', 'supplier-app', 'warehouse-app']);
     expect(outside.flatMap(pagesOf).length).toBeGreaterThanOrEqual(10);
   });
 

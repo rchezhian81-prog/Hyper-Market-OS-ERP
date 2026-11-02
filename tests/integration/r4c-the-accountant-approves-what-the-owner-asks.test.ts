@@ -48,7 +48,7 @@ describe('OB-613: the store\'s accountant approves what the owner asks for himse
       expect(checkersOf({ kind })).toEqual([{ permission: APPROVAL_KINDS[kind]!.checkerPermission }]);
     }
     // Every other kind is unchanged.
-    expect(Object.values(APPROVAL_KINDS).filter((k) => k.whenTheOwnerAsks !== undefined).map((k) => k.kind).sort()).toEqual(['approval_rule_change', 'org_structure_change', 'store_computer_replaced']);
+    expect(Object.values(APPROVAL_KINDS).filter((k) => k.whenTheOwnerAsks !== undefined).map((k) => k.kind).sort()).toEqual(['approval_rule_change', 'customer_credit_note', 'org_structure_change', 'store_computer_replaced']); // W3 · OB-679: the owner's own credit note
   });
 
   it('the owner\'s branch activation goes to the accountant, who alone approves it; then the branch opens', async () => {

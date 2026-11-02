@@ -65,7 +65,7 @@ const VOLUME_STREAM = streamName(STREAM.privacy, 'data-volume-thresholds');
 const LOYALTY_MEMBERS_STREAM = streamName(STREAM.loyalty, 'members');
 const ORDER_FACTS_STREAM = streamName(STREAM.customer, 'order-facts');
 /** Roles held by parties outside the business: not the shop's staff users (M36 metering counts staff). */
-const OUTSIDE_PARTY_ROLES: ReadonlySet<string> = new Set(['customer', 'supplier', 'b2b_customer']);
+const OUTSIDE_PARTY_ROLES: ReadonlySet<string> = new Set(['customer', 'supplier', 'b2b_customer', 'concessionaire']);
 
 /** OB-321: the fields white-label may set — the name, the logo, the colours (tenantId is the caller's, never the body's). */
 export const WHITE_LABEL_FIELDS: ReadonlySet<string> = new Set(['tenantId', 'productName', 'legalName', 'logoRef', 'faviconRef', 'colours']);

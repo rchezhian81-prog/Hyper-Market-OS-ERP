@@ -83,6 +83,8 @@ import { lpCasesRoutes, lpRulesRoutes, lpActivityRoutes } from '../../pos/src/lo
 import { fraudSignalsRoutes } from '../../pos/src/fraud-signals';
 import { storedValueRoutes } from '../../customer/src/stored-value';
 import { couponRoutes } from '../../customer/src/coupons';
+import { tillVoucherEffects, tillGiftCardSaleRoutes } from '../../customer/src/till-vouchers'; // W3 · OB-673 · OB-677
+import { tillVoucherDepsOf } from './till-vouchers-adapters';
 import { promotionRoutes } from '../../pricing/src/promotions';
 import { settlementRoutes } from '../../finance/src/settlement';
 import { pendingTenderRoutes } from '../../finance/src/pending-tender';
@@ -285,6 +287,9 @@ import { storefrontRoutes, type StorefrontDeps } from '../../orders/src/storefro
 import { storefrontSelfRoutes } from '../../orders/src/storefront-self';
 import { competitorPriceRoutes } from '../../pricing/src/competitor-prices';
 import { exceptionOwnershipRoutes, raiseBreachAlerts, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
+import { queueStaffingRoutes } from '../../orders/src/exception-queue-staffing';
+import { queueStaffingAdapter, queueStaffingOf, concessionPortalAdapter, SUGGESTED_QUEUE_STAFFING, ROLES_THAT_MAY_WORK_EXCEPTIONS } from './ob676-settings-adapters'; // OB-676
+import { concessionPortalRoutes } from '../../finance/src/concession-portal';
 import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { deliveryServiceRoutes } from '../../orders/src/delivery-service';
@@ -356,7 +361,7 @@ import { movementJobsSurface } from './w2-movement-jobs'; // OB-623: each stock 
 import { fg4BuyingSurface, contractExpirySweep } from './fg4-buying-adapters'; // FG-4 final gaps — contract-expiry alerts, PPV, free samples, scopes, VMI
 import { commercialDesksRoutes, commercialDeskB2BHooks, withSupplierPartnerIndex, commercialDesksSweep, commercialDeskContractState, b2bRecurringOrdersAdapter } from './commercial-desks-adapters'; // OB-288 commercial desks — B2B contracts and desk, supplier review desk, concessions
 import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep, finBridgeDayBookHooks, finBridgePaymentHooks } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
-import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
+import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting, handoverTolerancePackConfirmationOf } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
 import { customerFollowupsRoutes } from './customer-followups-adapters'; // OB-288 customer & delivery follow-ups — referrals (OB-351), scan-and-go (OB-350)
 import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
 import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
@@ -388,6 +393,7 @@ import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 —
 import { r16aSaleBranches } from './r16a-check-gaps-adapters'; // R16-A · OB-612: the bill findings narrow to the caller's branches
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
+import { officeSignInLogAdapter } from './office-sign-in-log'; // W3 · D13-FR-06: failed office sign-ins and lockouts kept
 import { gatesRoutes, gateBlockersBeyondRisks, twoSignatureAdapter } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
 import { qg10EvidenceRoutes } from './qg10-evidence-adapters'; // OB-423 — the release script's QG-10 evidence on the gate register
 
@@ -1248,6 +1254,8 @@ export function buildSurface(deps: {
         calendar: shopCalendar, // R1a: the shop's zone rides the pack, so the store box dates by it
         tillControls: tillControlsPackSectionOf({ store, now, settings, signer }), versionPolicy: versionPolicyPackSectionOf({ store, now }), // OB-500 · OB-501 (R7-A)
         reportingRecords: REPORTING_RECORDS, // Round A: the store's Reports page reads the same list head office's catalogue does
+        tillVouchers: { giftCardOfflineCapMinor: (tt) => settings.value(tt, SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE) }, // W3 · OB-673 · OB-677
+        handoverToleranceConfirmation: handoverTolerancePackConfirmationOf({ store }), // OB-676: whether the owner confirmed the driver hand-over limit
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1314,6 +1322,8 @@ export function buildSurface(deps: {
     } : {
       ...posAdapter({ store, now }), ...r16aSaleBranches({ store, now }) /* OB-612 */, tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
+      // W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: a till bill's coupons and gift cards — recorded once, never refused.
+      vouchersOnSale: tillVoucherEffects(tillVoucherDepsOf({ store, now, calendar: shopCalendar })),
       // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
       huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
       shopStateOf: shopStateOf({ store, now }), deliveryOnSale: tillDeliveryOnSale({ store, now }), // OB-288 till side: OB-348 · OB-299
@@ -1471,6 +1481,11 @@ export function buildSurface(deps: {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
     } : { ...storedValueAdapter({ store, now }), calendar: shopCalendar }), // R1b · A12: the GST date is the shop's day
+    // W3 · OB-677: a gift card SOLD at the till, relayed by its store computer — issued once, never refused.
+    ...tillGiftCardSaleRoutes(store === undefined ? {
+      now, coupon: async () => undefined, redemptions: async () => [], recordRedemption: async () => {}, instrument: async () => undefined, movements: async () => [],
+      recordMovement: async () => {}, recordIssue: async () => {}, recordGiftCardSale: async () => {}, recordExceptions: async () => {},
+    } : tillVoucherDepsOf({ store, now, calendar: shopCalendar })),
     // Coupons / personalised offers / referrals (M17-FR-02) — issue, redeem (authoritative single-use guard), read.
     ...couponRoutes(store === undefined ? {
       issue: () => {}, coupon: empty(undefined), redemptions: empty([]), recordRedemption: () => {},
@@ -1478,7 +1493,12 @@ export function buildSurface(deps: {
     } : couponAdapter({ store, now })),
     // M19-FR-01 / Item 2 — the substitution exception worklist WITH ownership. Registered BEFORE the orders
     // routes so its literal `/v1/orders/substitution-exceptions…` paths are never captured as an order id.
-    ...exceptionOwnershipRoutes(ordersDeps),
+    // OB-676: the owner sets and confirms which roles staff each queue (the code's map is the starting suggestion) — also
+    // registered before the orders routes, for the same reason.
+    ...queueStaffingRoutes(store === undefined
+      ? { suggested: SUGGESTED_QUEUE_STAFFING, rolesThatMayWork: ROLES_THAT_MAY_WORK_EXCEPTIONS, now, versions: async () => [], recordVersion: async () => {} }
+      : queueStaffingAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
+    ...exceptionOwnershipRoutes(store === undefined ? ordersDeps : { ...ordersDeps, queueStaffing: queueStaffingOf({ store }) }),
     ...ordersRoutes(afterOrderFact === undefined ? ordersDeps : { ...ordersDeps, afterOrderFact }),
     ...(orderFulfilment === undefined ? [] : orderFulfilmentRoutes(orderFulfilment)),
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
@@ -1604,9 +1624,15 @@ export function buildSurface(deps: {
     // every total (the ledger vs an independent second source the caller supplies) and produce the CA's
     // signable pack; a non-reconciling pack is still produced but marked not signable. Stateless reads.
     ...periodEvidenceRoutes({ now, ...(store === undefined ? {} : finBridgeEvidenceHooks({ store, now })) }), // OB-288 P5: the dead letters are the Tally outbox's
+    // M23-FR-02 · OB-678: GST credit / debit notes to business customers, worked from the tax invoice head office holds; a
+    // credit note is a refund under the money limits (OB-290), approved by a second person; its own number series.
     ...creditNoteRoutes(store === undefined ? {
-      alreadyCredited: empty(0), appendCreditNote: () => {}, notes: empty([]), now,
-    } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
+      notes: empty([]), now,
+    } : {
+      ...financeNotesAdapter({ store, now, numberSeries: deps.numberSeries, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) }),
+      approvals: approvalRequestsAdapter({ store, now }),
+      ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }),
+    }),
     // GST-from-inclusive-MRP calculator (A9/A8) — stateless, folds no ledger, so no deps/stub.
     ...taxRoutes(),
     // Statutory retention (A28) — stateless: longest statute wins + legal-hold-blocks-deletion.
@@ -1719,6 +1745,10 @@ export function buildSurface(deps: {
       depositMovements: empty([]), recordDepositMovement: () => {},
       storeValuation: (_t, branchId) => ({ branchId, ownedValueMinor: 0, ownedLots: 0, excluded: [], excludedValueMinor: 0, detail: 'no store' }), now,
     } : { ...concessionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    // OB-676 · M27-FR-02: the concessionaire's own login reads its own counter's sales, stock and invoices — nothing else.
+    ...concessionPortalRoutes(store === undefined ? {
+      now, boundConcessionaire: async () => undefined, contracts: async () => [], sales: async () => [], depositMovements: async () => [], stockOwnedBy: async () => [], invoices: async () => [],
+    } : concessionPortalAdapter({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     // Concession docket tags (M27-FR-03): the till's line-by-line attribution lands here, append-only, and
     // reaches the period charge + settlement through the concession adapter's `sales`.
     ...calendared(concessionTagRoutes)(store === undefined ? {
@@ -2678,6 +2708,9 @@ export async function startApi(
     // per-tenant traffic; the auth lockout is deliberately strict.
     rateLimit: new TokenBucketRateLimiter({ capacity: 240, refillPerSecond: 20 }),
     authThrottle: new BackoffAuthThrottle({ threshold: 5, baseCooldownSeconds: 5, maxCooldownSeconds: 900 }),
+    // W3 · D13-FR-06: each failed office sign-in and each lockout it trips is KEPT, append-only on PostgreSQL on the shop's
+    // own record (the lockout above stays in memory, for speed) — the security report counts them through a restart.
+    signInLog: officeSignInLogAdapter({ store, log: err }),
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,

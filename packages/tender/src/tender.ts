@@ -29,6 +29,11 @@ export interface Tender {
    * Read through `readCardTokenReference`, which refuses any other field and any value shaped like a card number.
    */
   readonly card?: CardTokenReference;
+  /**
+   * D07-FR-04 · OB-677: on a `gift_card` tender, the gift card's OWN code (the shop's stored-value instrument — never a bank
+   * card, hard rule #3) and, stamped by the store computer, whether it was taken while head office could not be reached.
+   */
+  readonly giftCard?: { readonly code: string; readonly capturedOffline?: boolean };
 }
 
 /** Statuses that count as actually paid. 'pending'/'uncertain'/'declined' do not. */

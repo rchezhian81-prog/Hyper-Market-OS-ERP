@@ -120,6 +120,9 @@ const KIND_WORDS: Record<string, { en: string; ta: string }> = {
   'loyalty:takeback': { en: 'Loyalty points taken back on a return (Day book)', ta: 'திருப்பத்தில் திரும்பப் பெற்ற புள்ளிகள் (நாள் புத்தகம்)' },
   'b2b:invoice': { en: 'A business customer\'s tax invoice', ta: 'வணிக வாடிக்கையாளரின் வரி விலைப்பட்டியல்' },
   'b2b:receipt': { en: 'Money received from a business customer', ta: 'வணிக வாடிக்கையாளரிடமிருந்து பெற்ற பணம்' },
+  // M23-FR-02 · OB-678: a GST credit note / debit note to a business customer — which accounts is the accountant's rule (C-01).
+  'b2b:credit_note': { en: 'A credit note to a business customer', ta: 'வணிக வாடிக்கையாளருக்கான வரவுக் குறிப்பு' },
+  'b2b:debit_note': { en: 'A debit note to a business customer', ta: 'வணிக வாடிக்கையாளருக்கான பற்றுக் குறிப்பு' },
   'stock_loss:floor_indent': { en: 'Stock lost on a shelf refill', ta: 'அலமாரி நிரப்புதலில் இழந்த சரக்கு' },
   'stock_loss:transfer': { en: 'Stock lost in a transfer', ta: 'இடமாற்றத்தில் இழந்த சரக்கு' },
   'stock_count:shortage': { en: 'A stock count shortage', ta: 'சரக்கு எண்ணிக்கையில் குறைவு' },

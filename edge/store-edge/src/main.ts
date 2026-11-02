@@ -128,7 +128,9 @@ import { SoldHuids } from './sold-huids';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import { closeDay as decideDayClose, reopenDay as decideReopenDay, carriedForwardOf } from '../../../packages/day-close/src/day-close';
-import { toCloudSale } from './cloud-sale';
+import { toCloudSale, toCloudGiftCardSale } from './cloud-sale';
+import { TillVouchers } from './till-vouchers'; // W3 · OB-673 · OB-677
+import { isGiftCardSaleRecord } from '../../../packages/loyalty/src/till-vouchers';
 import { toCloudReturn } from './cloud-return';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
@@ -894,6 +896,14 @@ export async function startEdge(
       try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
       const saleId = (parsed as { id?: string; saleId?: string }).id
         ?? (parsed as { saleId?: string }).saleId ?? `record-${index}`;
+      // OB-677: a gift card's SALE is not a goods bill — it goes to head office's gift-card door, never to /v1/sales.
+      if (isGiftCardSaleRecord(parsed)) {
+        return makeEvent({
+          id: `edge-giftcard-sale-${saleId}`, type: 'GiftCardSold', occurredAt: new Date().toISOString(),
+          idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
+          payload: toCloudGiftCardSale(parsed, storeIdOfThisBox(), laneIdOfThisBox()),
+        });
+      }
       return makeEvent({
         id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
         idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
@@ -1387,6 +1397,19 @@ export async function startEdge(
   // PF-13: the partner counters' agreement terms as this box last pulled them.
   const concessionTrading = await ConcessionTrading.open({ dataDir: settings['EDGE_DATA_DIR']!, tenantId });
   if (loyaltyWallets.heldCopy() !== undefined) say(`loyalty balances as of ${loyaltyWallets.heldCopy()!.feed.generatedAt} restored from disk.`);
+  // W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: the shop's coupons and gift cards as the signed store pack carries them, and
+  // every coupon use, gift card spend and gift card sale the tills made since — read back from the sale log, so a reboot with
+  // the cable out still knows them. The offline limit applies while head office has not answered in the last five minutes.
+  const cloudLink: { lastContactMs: number | null; offline: boolean } = { lastContactMs: null, offline: true };
+  const tillVouchers = TillVouchers.open({
+    sections: () => ({
+      ...(pack.coupons?.known === true ? { coupons: pack.coupons.value } : {}),
+      ...(pack.giftCards?.known === true ? { giftCards: pack.giftCards.value } : {}),
+      receivedAt: pack.receivedAt,
+    }),
+    linkUp: () => !cloudLink.offline && cloudLink.lastContactMs !== null && Date.now() - cloudLink.lastContactMs <= 5 * 60_000,
+    timeZone: () => packTimeZone(pack),
+  }, salesRecords);
 
   const node = createEdgeNode({
     tenantId,
@@ -1981,6 +2004,9 @@ export async function startEdge(
     // OB-264: every mirror sale's old ERP bill number, never keyed twice; a mirror refund looks its sale up by it.
     oldErpBills,
     // PF-09 step 3: a sale paying with points or store credit is decided against this box's copy, one at a time.
+    // W3 · OB-673 · OB-677: coupons and gift cards, judged on this box from its store pack — a gift card one sale at a time.
+    vouchers: tillVouchers,
+    isMember: (memberRef: string) => loyaltyWallets.heldFeed()?.members.some((m) => m.memberRef === memberRef) === true,
     loyalty: {
       check: (record) => loyaltyWallets.check(record),
       note: (spends) => { loyaltyWallets.note(spends); },
@@ -2768,6 +2794,9 @@ export async function startEdge(
     lastPackStatus = outcome.status;
     // Anything but `offline` means head office answered — that is contact, whether or not a pack moved.
     if (outcome.status !== 'offline') lastContactAt = new Date().toISOString();
+    // OB-677: whether head office answered — the gift-card offline limit reads it.
+    cloudLink.offline = outcome.status === 'offline';
+    if (outcome.status !== 'offline') cloudLink.lastContactMs = Date.now();
     return outcome;
   };
 

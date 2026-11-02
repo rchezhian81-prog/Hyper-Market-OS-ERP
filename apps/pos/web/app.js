@@ -216,6 +216,26 @@ const WORDS = {
     refundChangeAmount: 'Change the amount',
     refundHow: 'How is the refund given?',
     storeCredit: 'Store credit',
+    // W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: coupons and gift cards at the till.
+    coupon: 'Coupon',
+    couponAsk: 'Type or scan the coupon code',
+    couponHint: 'The store computer checks it — it works with the internet down',
+    couponOn: 'Coupon {code}: {off} off this bill.',
+    couponStale: 'The store computer\'s coupon list is old, so a use on another till may not be counted yet. Head office will check it.',
+    couponRemove: 'Take coupon {code} off',
+    couponRemoved: 'The coupon is off this bill.',
+    couponLine: 'Coupon {code}: −{off}',
+    giftCard: 'Gift card',
+    giftCardAsk: 'Type or scan the gift card code',
+    giftCardHint: 'The code printed on the card',
+    giftCardHolds: 'Gift card ••••{last4} holds {balance}. This till may take up to {may} now.',
+    giftCardOffline: 'Head office cannot be reached: at most {cap} from one card on this till until the link is back ({left} left on this card). Take the rest another way.',
+    giftCardExpired: 'Gift card ••••{last4} has expired. Take another payment.',
+    giftCardEmpty: 'Gift card ••••{last4} has nothing this till may take now. Take another payment.',
+    sellGiftCard: 'Sell a gift card',
+    sellGiftCardValue: 'Value of the gift card (₹)',
+    sellGiftCardHow: 'How is the customer paying for the card?',
+    sellGiftCardDone: 'Gift card sold',
     refundCustomerId: 'Store credit: key the loyalty member\'s mobile number',
     refundCustomerHint: 'Store credit is money on the member\'s account — it goes to the mobile number they joined with',
     refundNeedCustomer: 'Store credit must go to a loyalty member. Key their mobile number — or choose a different refund method.',
@@ -461,6 +481,26 @@ const WORDS = {
     refundChangeAmount: 'தொகையை மாற்று',
     refundHow: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?',
     storeCredit: 'கடை வரவு',
+    // W3 · OB-673 · OB-677: கூப்பன்கள் மற்றும் பரிசு அட்டைகள்.
+    coupon: 'கூப்பன்',
+    couponAsk: 'கூப்பன் குறியீட்டைத் தட்டச்சு செய்யுங்கள் அல்லது ஸ்கேன் செய்யுங்கள்',
+    couponHint: 'கடைக் கணினி சரிபார்க்கிறது — இணையம் இல்லாவிட்டாலும் வேலை செய்யும்',
+    couponOn: 'கூப்பன் {code}: இந்த பில்லில் {off} தள்ளுபடி.',
+    couponStale: 'கடைக் கணினியின் கூப்பன் பட்டியல் பழையது; வேறு கவுண்டரில் பயன்படுத்தியது இன்னும் கணக்கில் வராமல் இருக்கலாம். தலைமை அலுவலகம் சரிபார்க்கும்.',
+    couponRemove: 'கூப்பன் {code}-ஐ நீக்கு',
+    couponRemoved: 'கூப்பன் இந்த பில்லில் இருந்து நீக்கப்பட்டது.',
+    couponLine: 'கூப்பன் {code}: −{off}',
+    giftCard: 'பரிசு அட்டை',
+    giftCardAsk: 'பரிசு அட்டைக் குறியீட்டைத் தட்டச்சு செய்யுங்கள் அல்லது ஸ்கேன் செய்யுங்கள்',
+    giftCardHint: 'அட்டையில் அச்சிடப்பட்ட குறியீடு',
+    giftCardHolds: 'பரிசு அட்டை ••••{last4}-ல் {balance} உள்ளது. இந்த கவுண்டர் இப்போது {may} வரை எடுக்கலாம்.',
+    giftCardOffline: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை: இணைப்பு திரும்பும் வரை ஒரு அட்டையிலிருந்து இந்த கவுண்டரில் அதிகபட்சம் {cap} ({left} மீதம்). மீதியை வேறு வழியில் பெறுங்கள்.',
+    giftCardExpired: 'பரிசு அட்டை ••••{last4} காலாவதியானது. வேறு வழியில் பணம் பெறுங்கள்.',
+    giftCardEmpty: 'பரிசு அட்டை ••••{last4}-லிருந்து இப்போது எதுவும் எடுக்க முடியாது. வேறு வழியில் பணம் பெறுங்கள்.',
+    sellGiftCard: 'பரிசு அட்டை விற்பனை',
+    sellGiftCardValue: 'பரிசு அட்டையின் மதிப்பு (₹)',
+    sellGiftCardHow: 'வாடிக்கையாளர் அட்டைக்கு எப்படி பணம் செலுத்துகிறார்?',
+    sellGiftCardDone: 'பரிசு அட்டை விற்கப்பட்டது',
     refundCustomerId: 'கடை வரவு: லாயல்டி உறுப்பினரின் கைபேசி எண்ணை உள்ளிடவும்',
     refundCustomerHint: 'கடை வரவு என்பது வாடிக்கையாளர் கணக்கில் உள்ள பணம் — அது ஒரு பெயரிடப்பட்ட வாடிக்கையாளருக்கே செல்ல வேண்டும்',
     refundNeedCustomer: 'கடை வரவு ஒரு லாயல்டி உறுப்பினருக்கே செல்ல வேண்டும். அவர்களின் கைபேசி எண்ணை உள்ளிடவும் — அல்லது வேறு முறையைத் தேர்ந்தெடுக்கவும்.',
@@ -1339,6 +1379,13 @@ function render() {
   el('empty').toggleAttribute('data-held', Boolean(suspended));
   setLeadIcon(el('empty'), suspended ? 'pause-circle' : 'scan-barcode', 28);
   el('total').textContent = inr(session.payableMinor());
+  // W3 · OB-673: the coupon on this bill, said beside the total (what it takes off is already in the total).
+  const couponNow = typeof session.couponOnBill === 'function' ? session.couponOnBill() : null;
+  const couponRow = document.getElementById('coupon-on-bill');
+  if (couponRow) {
+    couponRow.hidden = couponNow === null || !couponNow.applied;
+    couponRow.textContent = couponNow && couponNow.applied ? t('couponLine').replace('{code}', couponNow.code).replace('{off}', inr(couponNow.offMinor)) : '';
+  }
   // OB-299: a bill marked for delivery SAYS so beside its total — words and the truck icon.
   const forDelivery = typeof session.isForDelivery === 'function' && session.isForDelivery();
   const totalLabel = el('total-label');
@@ -1690,9 +1737,12 @@ el('tender').addEventListener('click', async () => {
     { value: 'upi', label: `${t('upi')} — ${inr(payable)}`, icon: 'monitor-smartphone' },
     // A split across tenders, and a loyalty member's points and store credit (M12-FR-03 · PF-09 step 3).
     ...(session.tenderSplit ? [{ value: 'split', label: t('split'), icon: 'arrow-left-right' }] : []),
+    // W3 · OB-677: a gift card the shop sold — the store computer says what this till may take from it now.
+    ...(session.tenderSplit && typeof session.giftCardBalance === 'function' ? [{ value: 'gift_card', label: t('giftCard'), icon: 'wallet' }] : []),
   ]);
   if (kind === null) return;
   if (kind === 'split') return splitPayment(payable);
+  if (kind === 'gift_card') return splitPayment(payable, 'gift_card');
   if (kind !== 'cash') return takeCardOrUpi(kind, payable);
 
   const changeFor = (rupees) => Math.round(rupees * 100) - payable;
@@ -2094,7 +2144,30 @@ function tierWords(tier) {
   return t('tierIs').replace('{name}', tier.name).replace('{times}', String(tier.multiplierBps / 10000));
 }
 
-async function splitPayment(payable) {
+/**
+ * W3 · OB-677: one gift-card part of a payment — the code, what the store computer says this till may take from it now, and
+ * the amount. Returns the part, or null when nothing can be taken (said in words; the cashier takes another payment).
+ */
+async function giftCardPart(remaining) {
+  const code = await ask({ title: t('giftCardAsk'), mode: 'text', hint: t('giftCardHint'), initial: '' });
+  if (code === null || String(code).trim() === '') return null;
+  const card = await session.giftCardBalance(String(code));
+  if (!card.ok) { tell(t('giftCard'), card.laneMessage, STOP); return null; }
+  if (card.expired) { tell(t('giftCard'), t('giftCardExpired').replace('{last4}', card.last4), STOP); return null; }
+  const max = Math.min(remaining, card.mayTakeMinor);
+  const said = t('giftCardHolds').replace('{last4}', card.last4).replace('{balance}', inr(card.balanceMinor)).replace('{may}', inr(card.mayTakeMinor))
+    + (card.linkUp ? '' : ` ${t('giftCardOffline').replace('{cap}', inr(card.offlineCapMinor)).replace('{left}', inr(card.offlineRemainingMinor))}`);
+  if (max <= 0) { tell(t('giftCard'), `${said} ${t('giftCardEmpty').replace('{last4}', card.last4)}`, STOP); return null; }
+  const typed = await ask({ title: `${t('giftCard')} ••••${card.last4} — ${t('splitLeft')} ${inr(remaining)}`, mode: 'number', hint: said, initial: String(max / 100),
+    quick: [{ label: `${t('upTo')} ${inr(max)}`, value: String(max / 100) }] });
+  if (typed === null) return null;
+  const amountMinor = Math.round(Number(typed) * 100);
+  if (!(amountMinor > 0)) return null;
+  if (amountMinor > max) { tell(t('giftCard'), `${t('upTo')} ${inr(max)}. ${said}`, STOP); return null; }
+  return { kind: 'gift_card', amountMinor, giftCardCode: String(code).replace(/\s+/g, '').toUpperCase() };
+}
+
+async function splitPayment(payable, first) {
   let wallet = null;
   if (session.loyaltyWallet && session.loyaltyMemberLast4 && session.loyaltyMemberLast4() !== null) {
     wallet = await session.loyaltyWallet();
@@ -2105,7 +2178,7 @@ async function splitPayment(payable) {
         // OB-295: the member's tier multiplier from the box's copy — "not set" until the owner sets tiers.
         + ' ' + tierWords(wallet.tier), STOP);
     }
-  } else if (session.loyaltyWallet && !guestOnly()) {
+  } else if (session.loyaltyWallet && !guestOnly() && first !== 'gift_card') {
     tell(t('read'), t('splitNoMember'), STOP);
   }
   const parts = [];
@@ -2113,6 +2186,15 @@ async function splitPayment(payable) {
   let change = 0;
   let walletSpent = 0;
   while (remaining > 0) {
+    // W3 · OB-677: "Gift card" chosen at the first question starts here.
+    if (first === 'gift_card' && parts.length === 0) {
+      first = undefined;
+      const part = await giftCardPart(remaining);
+      if (part === null) return;
+      parts.push(part);
+      remaining -= part.amountMinor;
+      continue;
+    }
     const used = new Set(parts.map((p) => p.kind));
     const capLeft = wallet ? wallet.capRemainingMinor - walletSpent : 0;
     const pointsMax = wallet && wallet.pointValuePaise > 0
@@ -2124,8 +2206,16 @@ async function splitPayment(payable) {
       { value: 'upi', label: t('upi') },
       ...(pointsMax > 0 && !used.has('loyalty_points') ? [{ value: 'loyalty_points', label: `${t('points')} — ${t('upTo')} ${inr(pointsMax)}` }] : []),
       ...(creditMax > 0 && !used.has('store_credit') ? [{ value: 'store_credit', label: `${t('storeCredit')} — ${t('upTo')} ${inr(creditMax)}` }] : []),
+      ...(typeof session.giftCardBalance === 'function' ? [{ value: 'gift_card', label: t('giftCard') }] : []),
     ]);
     if (kind === null) return;
+    if (kind === 'gift_card') {
+      const part = await giftCardPart(remaining);
+      if (part === null) continue;
+      parts.push(part);
+      remaining -= part.amountMinor;
+      continue;
+    }
     const max = kind === 'loyalty_points' ? pointsMax : kind === 'store_credit' ? creditMax : remaining;
     const typed = await ask({ title: `${kind === 'loyalty_points' ? t('points') : kind === 'store_credit' ? t('storeCredit') : t(kind)} — ${t('splitLeft')} ${inr(remaining)}`, mode: 'number', hint: kind === 'cash' ? `${t('notEnough')} ${inr(remaining)}` : `${t('upTo')} ${inr(max)}`, initial: kind === 'cash' ? '0' : String(max / 100),
       // One tap: the notes that cover what is left, or the most this part may be.
@@ -2208,6 +2298,11 @@ el('more').addEventListener('click', async () => {
     ...(typeof session.deliverThisBill === 'function'
       ? [session.isForDelivery() ? { value: 'undeliver', label: t('undeliverBill'), icon: 'truck' } : { value: 'deliver', label: t('deliverBill'), icon: 'truck' }] : []),
     ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange') }] : []),
+    // W3 · D06-FR-03 · OB-673: a coupon on this bill — checked by the store computer, so it works with the internet down.
+    ...(typeof session.couponAtTill === 'function' && session.basket().some((l) => !l.voided)
+      ? [session.couponOnBill() === null ? { value: 'coupon', label: t('coupon'), icon: 'receipt-text' } : { value: 'coupon_remove', label: t('couponRemove').replace('{code}', session.couponOnBill().code), icon: 'x' }] : []),
+    // W3 · D07-FR-04 · OB-677: sell a gift card — onto an empty till (it is its own record, never a goods bill).
+    ...(typeof session.sellGiftCard === 'function' && session.basket().length === 0 && !mirror() ? [{ value: 'sell_gift_card', label: t('sellGiftCard'), icon: 'wallet' }] : []),
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
     ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption') }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
       ? [{ value: 'member', label: t('member') }]
@@ -2235,6 +2330,9 @@ el('more').addEventListener('click', async () => {
   if (what === 'deliver') return deliverThisBill();
   if (what === 'undeliver') { session.undeliverThisBill(t('deliveryRemovedReason')); render(); tell(t('deliveryTitle'), t('deliveryRemoved'), SUCCESS); return undefined; }
   if (what === 'price_change') return changeLinePrice();
+  if (what === 'coupon') return putCouponOnBill();
+  if (what === 'coupon_remove') { session.removeCouponAtTill(); render(); tell(t('coupon'), t('couponRemoved'), SUCCESS); return undefined; }
+  if (what === 'sell_gift_card') return sellGiftCardAtTill();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
 });
 
@@ -2300,6 +2398,42 @@ async function changeLinePrice() {
  * keypad; the number stays in this page's memory and goes to the store computer with the sale, which turns it into the
  * member code before anything is written. Only the last four digits are ever shown.
  */
+/** W3 · OB-673: a coupon on this bill — the store computer's copy says what it is; the till's engine judges the basket. */
+async function putCouponOnBill() {
+  const code = await ask({ title: t('couponAsk'), mode: 'text', hint: t('couponHint'), initial: '' });
+  if (code === null || String(code).trim() === '') return;
+  const r = await session.couponAtTill(String(code));
+  if (!r.ok) { tell(t('coupon'), r.laneMessage, STOP); return; }
+  render();
+  tell(t('coupon'), `${t('couponOn').replace('{code}', r.code).replace('{off}', inr(r.offMinor))}${r.mayBeStale ? ` ${t('couponStale')}` : ''}`, SUCCESS);
+}
+
+/** W3 · OB-677: sell a gift card — the code, its value, and the payment; saved on the store computer, synced to head office. */
+async function sellGiftCardAtTill() {
+  const code = await ask({ title: t('giftCardAsk'), mode: 'text', hint: t('giftCardHint'), initial: '' });
+  if (code === null || String(code).trim() === '') return;
+  const value = await ask({ title: t('sellGiftCardValue'), mode: 'number', hint: t('sellGiftCardValue'), initial: '' });
+  if (value === null) return;
+  const valueMinor = Math.round(Number(value) * 100);
+  if (!(valueMinor > 0)) return;
+  const kind = await choose(`${t('sellGiftCardHow')} — ${inr(valueMinor)}`, [
+    { value: 'cash', label: t('cash'), icon: 'banknote' },
+    { value: 'card', label: t('card'), icon: 'wallet' },
+    { value: 'upi', label: t('upi'), icon: 'monitor-smartphone' },
+  ]);
+  if (kind === null) return;
+  const saleId = `GC-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+  let ref;
+  if (kind !== 'cash') {
+    ref = await cardAttempt(kind, valueMinor);
+    if (ref === null) return;
+  }
+  const out = await session.sellGiftCard({ saleId, code: String(code), valueMinor, kind, ...(ref ? { ref } : {}), ...(ref && machineRefs.get(ref) ? { machineRef: machineRefs.get(ref) } : {}), atIsoUtc: new Date().toISOString() });
+  if (!out.ok) { tell(t('notSavedTitle'), out.laneMessage, STOP); return; }
+  tell(t('sellGiftCardDone'), out.laneMessage, SUCCESS);
+  void refreshBadge();
+}
+
 async function nameLoyaltyMember() {
   const typed = await ask({ title: t('memberAsk'), mode: 'number', hint: t('memberHint'), initial: '' });
   if (typed === null || typed === '' || typed === '0') return;

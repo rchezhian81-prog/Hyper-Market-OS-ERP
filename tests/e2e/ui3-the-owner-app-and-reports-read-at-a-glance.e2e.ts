@@ -76,7 +76,8 @@ describe.skipIf(!HAVE_BROWSER)('UI-3: the owner app and the reports read at a gl
       dir, key: KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }],
       pack: {
         lossPreventionRules: [],
-        policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Test Store', warehouseId: 'S1-BACK', tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+        // The shop's own setting: the day ends at midnight, so the box's trading day and the shop's date agree at every hour (W3).
+        policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Test Store', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
         receiptSeries: [{ laneId: 'lane-1', prefix: 'MS-', padTo: 6, rangeStart: 1, rangeEnd: 999, bankedThrough: 0 }],
         approvals: [
           { id: 'a1', subjectType: 'purchase_order', subjectRef: 'PO-1 · Rice, 200 bags', requestedBy: 'u-buyer', branchId: 'store-1', valueMinor: 8_120_000 },

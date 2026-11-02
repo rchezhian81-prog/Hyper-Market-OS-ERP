@@ -127,12 +127,12 @@ describe('the demo front behind the proxy', () => {
     expect(NGINX).toMatch(/location @sre_sign_in \{ return 302 \/login\/\?next=\$uri; \}/);
   });
 
-  it('serves every shell the overlay mounts — the supplier and B2B portals behind the demo sign-in, the customer app open — and nothing it does not mount', () => {
+  it('serves every shell the overlay mounts — the supplier, B2B and concessionaire portals behind the demo sign-in, the customer app open — and nothing it does not mount', () => {
     const mounted = [...serviceBlock(PILOT, 'web').matchAll(/:\/usr\/share\/nginx\/html\/([a-z0-9]+):ro/g)].map((m) => m[1]!);
-    expect([...mounted].sort()).toEqual(['b2b', 'customer', 'supplier']);
+    expect([...mounted].sort()).toEqual(['b2b', 'concession', 'customer', 'supplier']); // OB-676: the concessionaire's own counter
     const routed = [...NGINX.matchAll(/location ~ \^\/\(([a-z0-9|]+)\)\//g)].flatMap((m) => m[1]!.split('|'));
     expect([...routed].sort()).toEqual([...mounted].sort());
-    const staff = location('location ~ ^/(supplier|b2b)/');
+    const staff = location('location ~ ^/(supplier|b2b|concession)/');
     expect(staff).toMatch(/auth_request \/_auth\/verify;/);
     expect(staff).toMatch(/error_page 401 = @sre_sign_in;/);
     const customer = location('location ~ ^/(customer)/');

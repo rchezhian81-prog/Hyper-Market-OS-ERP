@@ -114,7 +114,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the B2B po
       await says(s.page, '#order-status', /^Order placed at the quoted price\. .* · ₹1,050\.00$/);
       await s.page.locator('#ord-orders li[data-order]').waitFor({ timeout: 15_000 });
       expect(await s.page.locator('#ord-orders').innerText()).toContain('₹1,050.00 · q-c1');
-      expect(await s.page.locator('#order-quote option').count(), 'an ordered quotation is offered no more').toBe(0);
+      // The quotation list repaints after the order list does: wait for it, rather than counting once.
+      await expect.poll(() => s.page.locator('#order-quote option').count(), { message: 'an ordered quotation is offered no more', timeout: 15_000 }).toBe(0);
 
       // PAY — a note, not money: what the customer owes does not change.
       await s.page.fill('#pay-amount', '1,000');

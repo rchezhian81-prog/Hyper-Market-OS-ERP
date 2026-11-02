@@ -62,6 +62,9 @@ export const BRIDGED_PAGES: Readonly<Record<string, BridgedPage>> = Object.freez
   // Round 3 (OB-559): the business-customer portal — identity only; its account, bills, statement and documents are read
   // live from /v1, each scoped to the caller's own customer on the server.
   '/b2b/index.html': { global: 'b2bData' },
+  // OB-676 (M27-FR-02): the concessionaire's own counter — identity only; its counters, sales, stock and invoices are read
+  // live from /v1, each scoped to the login's own concessionaire on the server.
+  '/concession/index.html': { global: 'concessionData' },
 });
 
 const GLOBAL_SHAPE = /^[A-Za-z][A-Za-z0-9]*$/;

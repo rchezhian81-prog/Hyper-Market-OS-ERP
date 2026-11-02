@@ -143,6 +143,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       data_import_rollback: { en: APPROVALS_COPY.en.kindDataImportRollback, ta: APPROVALS_COPY.ta.kindDataImportRollback },
       category_define: { en: APPROVALS_COPY.en.kindCategoryDefine, ta: APPROVALS_COPY.ta.kindCategoryDefine },
       supplier_bank_change: { en: APPROVALS_COPY.en.kindSupplierBank, ta: APPROVALS_COPY.ta.kindSupplierBank },
+      customer_credit_note: { en: APPROVALS_COPY.en.kindCustomerCreditNote, ta: APPROVALS_COPY.ta.kindCustomerCreditNote }, // W3 · M23-FR-02 · OB-678
+      customer_debit_note: { en: APPROVALS_COPY.en.kindCustomerDebitNote, ta: APPROVALS_COPY.ta.kindCustomerDebitNote }, // W3 · OB-679
       price_change: { en: APPROVALS_COPY.en.kindPriceChange, ta: APPROVALS_COPY.ta.kindPriceChange },
       price_list_entry: { en: APPROVALS_COPY.en.kindPriceListEntry, ta: APPROVALS_COPY.ta.kindPriceListEntry },
       promotion_launch: { en: APPROVALS_COPY.en.kindPromotionLaunch, ta: APPROVALS_COPY.ta.kindPromotionLaunch },

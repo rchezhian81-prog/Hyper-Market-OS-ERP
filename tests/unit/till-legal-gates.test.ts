@@ -64,7 +64,7 @@ const catalogue: CatalogueSnapshot = {
 function till(laneScales?: LaneScales) {
   const written: Record<string, unknown>[] = [];
   const pos = bootPos({
-    laneId: 'lane-1', cashierId: 'u-cashier', tradingDay: day(0), catalogue, taxPercent: 0,
+    laneId: 'lane-1', cashierId: 'u-cashier', tradingDay: day(0), timeZone: 'UTC', catalogue, taxPercent: 0,
     ...(laneScales === undefined ? {} : { laneScales }),
     durable: async (_id, record) => {
       written.push(JSON.parse(record) as Record<string, unknown>);

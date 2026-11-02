@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Hyper Market — Your counter</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      The concessionaire's own counter (M27-FR-02 "only the concessionaire accesses it", M27-FR-03, OB-676 "A", API-09,
+      §35, P-04, P-08). A surface a party OUTSIDE the business uses: a concessionaire trading a counter inside the shop,
+      signed in with its OWN login (invited by one person who manages concessions, approved by a different one). Every rule
+      lives in the tested session model (apps/concession-app/src/concession-portal-session.ts), attached as
+      window.concessionPortalSession. It reads FOUR things about its OWN counter only, each scoped ON THE SERVER to the
+      concessionaire its login is bound to (never a parameter the browser can change): its counters and terms, the sales at
+      them, the stock it owns on the shop's shelves, and the invoices issued to it. A feed that could not be read is said so
+      — never an empty list or a zero (P-08). It is READ-ONLY: app.js has no write verb. Read live on load and Refresh
+      (GETs). Offline it shows the stale strip. Bilingual EN/TA. No prompt/confirm/alert. WCAG 2.2 AA (NFR-07).
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <script src="./sre-update.js" defer></script>
+    <style>
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
+      .skip { position:absolute; left:-9999px; top:0; background:var(--ink); color:var(--bg); padding:12px 16px; border-radius:0 0 8px 0; z-index:50; }
+      .skip:focus { left:0; }
+      .lang { background:var(--line); color:var(--ink); min-height:44px; padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+      .sample,.stale { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:960px; width:100%; box-sizing:border-box; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
+      .asof { color:var(--muted); font-size:14px; }
+      button { min-height:44px; padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
+      button:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; overflow-wrap:anywhere; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
+      p.total { margin:0; font-weight:700; font-variant-numeric:tabular-nums; }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      .muted { color:var(--muted); font-size:14px; margin:0; }
+      .note { margin:0; padding:10px 14px; border-radius:12px; background:var(--warn-surface); color:var(--on-warn-surface); font-size:14px; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+
+    <header>
+      <span class="who" id="who">Your counter <small id="whoami"></small></span>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main id="main">
+      <div>
+        <h2 id="title">Your counter at SRE</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="bar">
+        <span class="asof" id="asof" role="status" aria-live="polite"></span>
+        <button class="refresh" id="refresh" type="button"></button>
+      </div>
+
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <section id="counters-section" aria-labelledby="counters-heading">
+        <h3 id="counters-heading"></h3>
+        <ul class="rows" id="counters" aria-label="Your counters"></ul>
+        <p class="total" id="deposit" hidden></p>
+        <p class="muted" id="counters-note" hidden></p>
+      </section>
+
+      <section id="sales-section" aria-labelledby="sales-heading">
+        <h3 id="sales-heading"></h3>
+        <ul class="rows" id="sales" aria-label="Sales at your counters"></ul>
+        <p class="total" id="sales-total" hidden></p>
+        <p class="muted" id="sales-note" hidden></p>
+      </section>
+
+      <section id="stock-section" aria-labelledby="stock-heading">
+        <h3 id="stock-heading"></h3>
+        <ul class="rows" id="stock" aria-label="Your stock on the shop's shelves"></ul>
+        <p class="total" id="stock-total" hidden></p>
+        <p class="muted" id="stock-note" hidden></p>
+      </section>
+
+      <section id="invoices-section" aria-labelledby="invoices-heading">
+        <h3 id="invoices-heading"></h3>
+        <ul class="rows" id="invoices" aria-label="Invoices issued to you"></ul>
+        <p class="muted" id="invoices-note" hidden></p>
+      </section>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./concession-app.bundle.js" type="module"></script>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

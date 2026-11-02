@@ -127,6 +127,17 @@ describe('the drawing', () => {
     expect(wrap.className.includes('sr-only')).toBe(true);
   });
 
+  it('a figure over a column near either edge lines up with that edge, so it never pokes past a phone screen\'s side', () => {
+    const days = Array.from({ length: 6 }, (_, i) => ({ key: `d${i}`, label: `${i + 1}`, value: i === 5 ? 2500 : 100, text: `₹${i}` }));
+    const cols = all(drawChart(fakeDoc(), null, spec(days, 'columns')) as unknown as Fake).filter((n) => n.className.split(' ').includes('sre-chart-col'));
+    expect(cols.map((c) => (c.className.includes('sre-chart-col-start') ? 'start' : c.className.includes('sre-chart-col-end') ? 'end' : 'mid'))).toEqual(['start', 'start', 'mid', 'mid', 'end', 'end']);
+    const css = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
+    expect(css).toContain('.sre-chart-col-start > .sre-chart-top { justify-self: start; }');
+    expect(css).toContain('.sre-chart-col-end > .sre-chart-top { justify-self: end; }');
+    // the column's own track is held to the column's width — otherwise a wide figure widens the track past the column
+    expect(css).toMatch(/\.sre-chart-col \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/);
+  });
+
   it('draws no picture at all for an empty chart — only the words that nothing was read', () => {
     const nodes = all(drawChart(fakeDoc(), null, spec([])) as unknown as Fake);
     expect(nodes.some((n) => n.tag === 'svg')).toBe(false);

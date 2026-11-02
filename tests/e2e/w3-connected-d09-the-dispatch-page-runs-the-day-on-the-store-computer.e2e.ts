@@ -1,0 +1,175 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { CONNECTED, DATABASE_URL, OWNER, ok, startBoxPageOnCloud, type BoxCloudShop } from './lib/box-page-on-cloud';
+import { setUpPracticeStores } from '../support/real-store';
+import { listableProduct } from '../support/sell-online';
+import { SqlEventStore } from '../../packages/persistence/src/event-store';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
+import { makeEvent } from '../../packages/contracts/src/event';
+
+/**
+ * **W3 · D09 (D09-FR-03 wave picking · D09-FR-04 dispatch · D09-FR-05 route/proof/geofence · D09-FR-06 contribution stop
+ * rules · M19-FR-01/03/04 · WF-14/15 · OB-343/344): ONE connected run — the Dispatch page in a real browser, served by a
+ * REAL store computer, over the PRODUCTION API on real PostgreSQL.** Synthetic data only.
+ *   • the box serves the page with head office's own words for the person; nothing is read on open;
+ *   • the dispatcher sees the two confirmed online orders waiting, ticks them and builds a wave for the picker; sees its
+ *     progress; enters the drivers on shift and the day's speed, plans the day from head office's own orders and hands the
+ *     route to its driver; the route shows on the board;
+ *   • the driver's phone reaches head office with a WRONG delivery code, handed over ~4 km from the door: it is recorded
+ *     (never refused) and the board flags it in words against the shop's default radius (250 m, OB-343);
+ *   • the contribution rule reads "not set — the rule only flags" (OB-313: no number is invented); the owner sets the
+ *     proof-location radius to 150 m and head office holds it; Tamil; no page errors;
+ *   • a cashier, whose own head-office words hold no dispatch word, is not served the page by the box at all.
+ * Needs DATABASE_URL and Chromium; else it SKIPS.
+ */
+
+const STORE = { lat: 11.0168, lon: 76.9558 };
+
+describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on the store computer, over the real cloud on PostgreSQL', () => {
+  let shop: BoxCloudShop;
+  let runDate = '';
+  beforeAll(async () => {
+    shop = await startBoxPageOnCloud({
+      name: 'd09-dispatch', store: 'br-1',
+      people: [{ userId: OWNER }, { userId: 'u-cash', branchId: 'br-1' }],
+      seed: async (cloud) => {
+        await setUpPracticeStores(cloud, OWNER, ['br-1']);
+        const req = (method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, userId = OWNER) => cloud.request({ method, path, userId, ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
+        for (const f of ['delivery', 'customer_app']) await ok(req('PUT', `/v1/platform/entitlements/${f}`, { enabled: true }), `feature ${f}`);
+        for (const [u, role] of [['u-picker', 'store_manager'], ['u-driver', 'store_manager']] as const) await cloud.grant(u, role);
+        await cloud.grant('u-cash', 'cashier', undefined, ['br-1']);
+        // A customer's storefront login is an outside party's (OB-76), invited through its own flow; for this page's journey
+        // the two synthetic customers are provisioned straight onto the ledger, the way tenant provisioning seeds a login.
+        const pool = new Pool({ connectionString: DATABASE_URL, max: 1, options: '-c app.tenant_id=*' });
+        try {
+          const ledger = new SqlEventStore(pgPoolClient(pool));
+          for (const c of ['c-1', 'c-2']) {
+            await ledger.append(cloud.tenantId, 'identity', makeEvent({
+              id: `grant-customer-${c}`, type: 'RoleGranted', occurredAt: new Date().toISOString(), idempotencyKey: `grant-${cloud.tenantId}-customer-${c}`, source: 'test/provision',
+              payload: { userId: c, roleId: 'customer', branchScope: 'all', request: { grantId: `customer-${c}`, userId: c, roleId: 'customer', branchScope: 'all', requestedBy: 'test', approvedBy: 'test', requestedAt: new Date().toISOString() } },
+            }));
+          }
+        } finally { await pool.end(); }
+        for (const [productId, priceMinor] of [['RICE', 80_00], ['DAL', 75_00]] as const) {
+          await listableProduct((path, body) => req('POST', path, body), { productId, storeId: 'br-1', priceMinor });
+          await ok(req('POST', '/v1/inventory/movements', { movementId: `rcv-${productId}`, productId, locationId: 'br-1', kind: 'received', quantityMinor: 50, uom: 'each', unitCostMinor: 50_00, occurredAt: new Date().toISOString(), enteredBy: OWNER }), `receive ${productId}`);
+        }
+        await ok(req('POST', '/v1/warehouse/bins/A-01', { storeId: 'br-1', capacityMinor: 500, pickable: true }), 'bin');
+        for (const p of ['RICE', 'DAL']) await ok(req('POST', `/v1/warehouse/movements/pa-${p}`, { kind: 'put_away', storeId: 'br-1', productId: p, batchId: null, quantityMinor: 30, uom: 'each', fromBinId: null, toBinId: 'A-01' }), `put away ${p}`);
+        await ok(req('PUT', '/v1/serviceability/delivery-service', { storeLocation: STORE, slotsPerDay: 6, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 }), 'delivery service');
+        const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+        const svc = (await cloud.request({ method: 'GET', path: `/v1/serviceability/delivery-service?day=${tomorrow}`, userId: OWNER })).body as { day: string; slots: { startsAt: string }[] };
+        runDate = svc.day;
+        for (const [c, orderId, productId, door] of [['c-1', 'ORD-1', 'RICE', { lat: 11.02, lon: 76.96 }], ['c-2', 'ORD-2', 'DAL', { lat: 11.03, lon: 76.97 }]] as const) {
+          await ok(req('POST', `/v1/storefront/orders/${orderId}`, { lines: [{ productId, quantityMinor: 1 }], locationId: 'br-1', fulfilment: 'delivery', deliverySlot: { startsAt: svc.slots[1]!.startsAt }, deliveryLocation: door }, c), `place ${orderId}`);
+          await ok(req('POST', `/v1/orders/${orderId}/transition`, { event: 'confirm' }), `confirm ${orderId}`);
+        }
+      },
+    });
+  }, 300_000);
+  afterAll(async () => { await shop?.stop(); });
+
+  it('orders waiting → a wave for the picker → its progress → plan → the route to its driver → the board → the rule → the owner\'s radius; Tamil; a cashier is offered nothing', async () => {
+    const o = await shop.open(OWNER, '/dispatch');
+    const { page, errors } = o;
+    expect(o.status).toBe(200);
+    expect([...o.reads, ...o.writes], 'nothing is read on open').toEqual([]);
+    await page.fill('#store', 'br-1');
+    await page.fill('#run-date', runDate);
+
+    // ── Waves from confirmed orders.
+    await page.click('#show-orders');
+    await page.locator('#ready li.row[data-order="ORD-2"]').waitFor({ timeout: 15_000 });
+    expect(await page.locator('#ready li.row').count()).toBe(2);
+    await page.click('#build');
+    expect(await page.textContent('#waves-status')).toBe('Name the picker and the wave.');
+    await page.fill('#wave-id', 'W-1');
+    await page.fill('#picker', 'u-picker');
+    await page.click('#build');
+    expect(await page.textContent('#waves-status')).toBe('Tick at least one order.');
+    await page.check('#ready li.row[data-order="ORD-1"] input.choose');
+    await page.check('#ready li.row[data-order="ORD-2"] input.choose');
+    await page.click('#build');
+    await page.locator('#waves-status', { hasText: '✓' }).waitFor({ timeout: 15_000 }).catch(async () => { throw new Error(`wave status: ${await page.textContent('#waves-status')}`); });
+    expect(await page.textContent('#waves-status')).toBe('✓ Wave given to the picker — W-1 · u-picker · 2 lines');
+    expect(await page.locator('#on-wave li.row').count()).toBe(2);
+    await page.click('#show-waves');
+    await page.locator('#waves li.row[data-wave="W-1"]').waitFor({ timeout: 15_000 });
+    expect(await page.getAttribute('#waves li.row[data-wave="W-1"]', 'data-stage')).toBe('not_started');
+    expect(await page.innerText('#waves li.row[data-wave="W-1"]')).toMatch(/⏱ W-1 · u-picker — Not started/);
+
+    // ── The day's routes from head office's own orders; the route to its driver.
+    await page.fill('#drivers', 'u-driver, 10, 06:00, 23:00');
+    await page.fill('#speed', '20');
+    await page.click('#plan');
+    expect(await page.textContent('#plan-status')).toBe('Enter the day’s speed and minutes at each door.');
+    await page.fill('#minutes', '5');
+    await page.click('#plan');
+    await page.locator('#planned li.row').first().waitFor({ timeout: 15_000 });
+    expect(await page.textContent('#plan-status')).toBe('✓ Planned — 1 routes');
+    expect(await page.innerText('#planned li.row')).toMatch(/1\. ORD-1 · Slot .* · ~/);
+    await page.locator('#planned li.row button', { hasText: 'Give this route to its driver' }).click();
+    await page.locator('#plan-status', { hasText: 'Given to' }).waitFor({ timeout: 15_000 });
+    expect(await page.textContent('#plan-status')).toMatch(/^✓ Given to u-driver — /);
+
+    await page.click('#show-board');
+    await page.locator('#board li.row').first().waitFor({ timeout: 15_000 });
+    expect(await page.getAttribute('#board li.row', 'data-status')).toBe('assigned');
+    expect(await page.innerText('#board li.row')).toMatch(/With the driver/);
+    expect(await page.innerText('#board li.row')).toMatch(/no door yet/);
+
+    // ── OB-343 · OB-344: the driver's phone reaches head office with a WRONG code, handed over ~4 km from the door. It is
+    // recorded (never refused) and the board flags it in words — against the shop's default radius of 250 metres.
+    const cloud = shop.cloud;
+    const day = (await cloud.request({ method: 'GET', path: `/v1/delivery/dispatch/${runDate}/board?storeId=br-1`, userId: OWNER })).body as { routes: { routeId: string; stops: { stopId: string; orderRef: string }[] }[] };
+    const route = day.routes[0]!; const stop = route.stops.find((x) => x.orderRef === 'ORD-1')!;
+    const issued = ((await cloud.request({ method: 'GET', path: '/v1/storefront/orders/ORD-1/delivery-code', userId: 'c-1' })).body as { code: string }).code;
+    for (const [state, extra] of [['out_for_delivery', {}], ['delivered', { proofKind: 'otp', proofCode: issued === '0000' ? '0001' : '0000', deviceFix: { lat: 11.06, lon: 76.99, accuracyMetres: 8 } }]] as const) {
+      const r = await cloud.request({ method: 'POST', path: `/v1/delivery/routes/${encodeURIComponent(route.routeId)}/stops/${encodeURIComponent(stop.stopId)}/synced`, userId: OWNER, idempotencyKey: `door-${state}`, body: {
+        routeId: route.routeId, stopId: stop.stopId, driverId: 'u-driver', orderRef: 'ORD-1', state, codExpectedMinor: 0, codCollectedMinor: 0, codMethod: null, proofKind: null,
+        geofenceMismatch: false, failureReason: null, contributionFlag: null, currency: 'INR', occurredAt: new Date().toISOString(), ...extra,
+      } });
+      expect(r.status, JSON.stringify(r.body)).toBe(202);
+    }
+    await page.click('#show-board');
+    const flagged = page.locator('#board li.flagged[data-order="ORD-1"]');
+    await flagged.waitFor({ timeout: 15_000 });
+    expect(await flagged.locator('.flag-words').getAttribute('data-flags')).toBe('delivery_code_wrong outside_geofence');
+    expect(await flagged.locator('.flag-words').innerText()).toBe(' · ⚠ Needs a person to look: the code the driver typed is NOT the customer’s; handed over away from the address (farther than the radius)');
+    expect(await flagged.innerText()).toMatch(/Code: .* WRONG · Where: ⚠ AWAY from the address \(\d+ m\)/);
+
+    // ── The contribution rule: not set — the rule only flags.
+    await page.click('#show-held');
+    await page.locator('#threshold').waitFor({ state: 'visible', timeout: 15_000 });
+    expect(await page.textContent('#threshold')).toBe('Owner’s threshold: ○ Not set — the rule only flags');
+
+    // ── The owner's numbers: the radius is the shop's default (OB-343, 250 m) until he enters another.
+    await page.click('#show-controls');
+    const radius = page.locator('#controls li.row[data-key="geofenceRadiusMetres"]');
+    await radius.waitFor({ timeout: 15_000 });
+    expect(await radius.getAttribute('data-state')).toBe('default');
+    expect(await radius.locator('strong').innerText()).toBe('Proof-location radius (metres): 250 (the shop’s default, OB-343)');
+    await radius.locator('input.value').fill('150');
+    await radius.locator('button', { hasText: 'Save' }).click();
+    await page.locator('#controls-status', { hasText: '✓ Saved.' }).waitFor({ timeout: 15_000 });
+    expect(await page.locator('#controls li.row[data-key="geofenceRadiusMetres"] strong').innerText()).toBe('Proof-location radius (metres): 150');
+
+    await page.click('#lang');
+    expect(await page.textContent('#page-h')).toBe('அனுப்புதல்');
+    await page.click('#show-board');
+    await page.locator('#board li.flagged .flag-words', { hasText: 'டிரைவர் உள்ளிட்ட குறியீடு வாடிக்கையாளருடையது அல்ல' }).waitFor({ timeout: 15_000 });
+    expect(await page.textContent('#show-board-text')).toBe('வழிகளைக் காட்டு');
+    // Head office holds the radius the owner typed — on PostgreSQL, read back under his own token.
+    expect(JSON.stringify((await shop.call('GET', '/v1/delivery/controls', OWNER)).body)).toContain('150');
+    expect(errors).toEqual([]);
+    await o.close();
+
+    // A cashier: head office's own words for her hold no dispatch word, so the store computer does not serve her the page,
+    // and nothing reaches head office.
+    const c = await shop.open('u-cash', '/dispatch');
+    expect(c.status).toBe(403);
+    expect([...c.reads, ...c.writes]).toEqual([]);
+    await c.close();
+  }, 180_000);
+});

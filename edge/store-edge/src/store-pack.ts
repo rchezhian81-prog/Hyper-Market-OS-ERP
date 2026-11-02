@@ -992,6 +992,11 @@ export interface PackPolicies {
   /** |over/short| at or above which a driver's cash handover needs the cash office. */
   readonly handoverToleranceMinor: number;
   /**
+   * OB-676 (owner, 2 Nov 2026): who confirmed `handoverToleranceMinor` and when. Absent → the owner has NOT confirmed the
+   * figure: the box and the driver's phone keep working on it and say "not confirmed" wherever a cash difference shows.
+   */
+  readonly handoverToleranceConfirmed?: { readonly by: string; readonly at: string; readonly version: number };
+  /**
    * |over/short| at or above which a TILL's shift close is material — needs a reason and is raised for the cash office
    * (M14-FR-02, SP-4c). Optional: a pack that names none makes the box apply its default AND say so on every close
    * (`toleranceKnown: false`), never a silent constant.
@@ -1454,6 +1459,18 @@ export interface StorePack {
    */
   readonly tillControls?: Register<unknown>;
   /**
+   * D06-FR-03 · OB-673 — head office's live coupons and every redemption it holds of them (`readCouponPack`,
+   * packages/loyalty/src/till-vouchers.ts), so the till honours a coupon with the internet down. Absent → the box was not
+   * told, and the till says it cannot check coupons here.
+   */
+  readonly coupons?: Register<unknown>;
+  /**
+   * D07-FR-04 · OB-677 — the gift cards head office holds, each with its balance and the till redemptions already in it,
+   * and the owner's offline limit per till per card (`readGiftCardPack`). Absent → the box was not told, and no gift card is
+   * taken at the till.
+   */
+  readonly giftCards?: Register<unknown>;
+  /**
    * OB-172 · D-6 — the receiving checklists head office has in force for this store, and which products are cold-chain by
    * its product master (`{ checks, coldChainProductIds }`, read by `readReceivingChecklistSetup`). The manager's screen and
    * the warehouse handheld offer the checklist from it with no network, and it travels inside the receipt. Absent → the
@@ -1653,6 +1670,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     weighingScales: notKnown(why),
     rollout: notKnown(why),
     tillControls: notKnown(why),
+    coupons: notKnown(why),
+    giftCards: notKnown(why),
     receivingChecklist: notKnown(why),
     packedProductIds: notKnown(why),
     roster: notKnown(why),
@@ -1805,6 +1824,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     weighingScales: section<readonly unknown[]>('weighingScales'),
     rollout: section<unknown>('rollout'),
     tillControls: section<unknown>('tillControls'),
+    coupons: section<unknown>('coupons'),
+    giftCards: section<unknown>('giftCards'),
     receivingChecklist: section<unknown>('receivingChecklist'),
     packedProductIds: section<readonly unknown[]>('packedProductIds'),
     roster: section<unknown>('roster'),

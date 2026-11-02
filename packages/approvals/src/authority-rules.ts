@@ -43,6 +43,8 @@ const SUBJECT_OF: Readonly<Record<string, LimitedSubject>> = Object.freeze({
   no_receipt_return: 'refund',
   out_of_window: 'refund',
   tender_exception: 'refund',
+  // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): a GST credit note to a business customer counts as a refund.
+  customer_credit_note: 'refund',
   purchase_order: 'purchase_order',
   stock_adjustment: 'stock_adjustment',
   stock_adjustment_up: 'stock_adjustment',
