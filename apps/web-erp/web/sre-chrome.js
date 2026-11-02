@@ -707,6 +707,8 @@
     'tally-files': 'book-open', // OB-288 P5 (OB-293) — an icon already in the set
     'dispatch': 'truck', // OB-288 fulfilment & delivery — an icon already in the set
     'loyalty-desk': 'badge-check', // OB-288 wave 3 (OB-329 · OB-295) — an icon already in the set
+    'online-orders': 'package-check', // W3 (M18) — an icon already in the set
+    'delivery-area': 'truck', // W3 (M18-FR-01/03) — an icon already in the set
     'order-refunds': 'indian-rupee', // OB-288 wave 3 (M18-FR-04) — an icon already in the set
     'campaigns': 'send', // OB-288 wave 3 (M21-FR-01) — an icon already in the set
     'b2b': 'building', // OB-288 commercial desks (M22) — an icon already in the set

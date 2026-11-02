@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Delivery area and slots</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Delivery area and slots (W3 · M18-FR-01/03 · D08 · AVR-13 · hard rule #2). A THIN CLIENT over head office's
+      GET /v1/serviceability, GET /v1/serviceability/periods, POST /v1/serviceability/periods/:effectiveFrom,
+      GET /v1/serviceability/delivery-service, PUT /v1/serviceability/delivery-service, GET /v1/delivery/locations and
+      POST /v1/delivery/locations/:locationId (a branch or dark store, its express minutes). Its session is
+      apps/web-erp/src/delivery-area-session.ts. Every figure reads "not set" until the owner types it; a change starts from a
+      date and the earlier figures are kept. Nothing is read or written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); }
+      label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); } label.tick input { width: 24px; height: 24px; min-height: 0; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; justify-self: start; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      dl.area { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+      dl.area dt { font-weight: 600; } dl.area dd { margin: 0; } dl.area dd.unset { color: var(--muted); font-style: italic; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); }
+      .facts { font-size: 14px; color: var(--muted); }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Delivery area and slots</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Delivery area and slots</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="area-h">
+        <h3 id="area-h">Delivery area</h3>
+        <div class="row-form">
+          <label for="area-on"><span id="l-area-on">For the day</span><input id="area-on" type="date" /></label>
+          <button id="show-area" type="button"><span id="show-area-text">Show the area</span></button>
+        </div>
+        <p class="status" id="area-status" role="status" aria-live="polite"></p>
+        <dl class="area" id="area"></dl>
+        <p class="facts" id="area-default" hidden></p>
+      </section>
+      <section aria-labelledby="set-area-h">
+        <h3 id="set-area-h">Set new figures</h3>
+        <div class="row-form">
+          <label for="a-from"><span id="l-a-from">Start from</span><input id="a-from" type="date" /></label>
+          <label for="a-radius"><span id="l-a-radius">Delivers up to (km)</span><input id="a-radius" inputmode="decimal" autocomplete="off" /></label>
+          <label for="a-minimum"><span id="l-a-minimum">Minimum order (₹)</span><input id="a-minimum" inputmode="decimal" autocomplete="off" /></label>
+          <label for="a-fee"><span id="l-a-fee">Delivery fee (₹)</span><input id="a-fee" inputmode="decimal" autocomplete="off" /></label>
+          <label for="a-free"><span id="l-a-free">Free delivery above (₹)</span><input id="a-free" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <button id="save-area" type="button"><span id="save-area-text">Save from that date</span></button>
+        <p class="status" id="set-area-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="history-h">
+        <h3 id="history-h">Every figure set</h3>
+        <button id="show-history" type="button"><span id="show-history-text">Show the history</span></button>
+        <p class="status" id="history-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="history"></ul>
+      </section>
+      <section aria-labelledby="slots-h">
+        <h3 id="slots-h">Delivery slots</h3>
+        <div class="row-form">
+          <label for="slots-day"><span id="l-slots-day">Day</span><input id="slots-day" type="date" /></label>
+          <button id="show-slots" type="button"><span id="show-slots-text">Show the slots</span></button>
+        </div>
+        <p class="status" id="slots-status" role="status" aria-live="polite"></p>
+        <p class="facts" id="service"></p>
+        <ul class="rows" id="slots"></ul>
+      </section>
+      <section aria-labelledby="set-slots-h">
+        <h3 id="set-slots-h">Set the slots</h3>
+        <div class="row-form">
+          <label for="s-lat"><span id="l-s-lat">Store latitude</span><input id="s-lat" inputmode="decimal" autocomplete="off" /></label>
+          <label for="s-lon"><span id="l-s-lon">Store longitude</span><input id="s-lon" inputmode="decimal" autocomplete="off" /></label>
+          <label for="s-count"><span id="l-s-count">Slots a day</span><input id="s-count" inputmode="numeric" autocomplete="off" /></label>
+          <label for="s-open"><span id="l-s-open">First slot starts</span><input id="s-open" placeholder="09:00" autocomplete="off" /></label>
+          <label for="s-close"><span id="l-s-close">Last slot ends</span><input id="s-close" placeholder="21:00" autocomplete="off" /></label>
+          <label for="s-capacity"><span id="l-s-capacity">Orders each slot can take</span><input id="s-capacity" inputmode="numeric" autocomplete="off" /></label>
+          <label for="s-lead"><span id="l-s-lead">Notice needed (minutes)</span><input id="s-lead" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <button id="save-slots" type="button"><span id="save-slots-text">Save the slots</span></button>
+        <p class="status" id="set-slots-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="places-h">
+        <h3 id="places-h">Places that fulfil online orders</h3>
+        <p class="lead" id="places-lead"></p>
+        <button id="show-places" type="button"><span id="show-places-text">Show the places</span></button>
+        <p class="status" id="places-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="places"></ul>
+        <div class="row-form">
+          <label for="p-id"><span id="l-p-id">Place code</span><input id="p-id" autocomplete="off" /></label>
+          <label for="p-kind"><span id="l-p-kind">Kind</span><select id="p-kind"><option value="store">Branch</option><option value="dark_store">Dark store</option></select></label>
+          <label for="p-lat"><span id="l-p-lat">Latitude</span><input id="p-lat" inputmode="decimal" autocomplete="off" /></label>
+          <label for="p-lon"><span id="l-p-lon">Longitude</span><input id="p-lon" inputmode="decimal" autocomplete="off" /></label>
+          <label for="p-radius"><span id="l-p-radius">Delivers up to (km)</span><input id="p-radius" inputmode="decimal" autocomplete="off" /></label>
+          <label for="p-express"><span id="l-p-express">Express minutes</span><input id="p-express" inputmode="numeric" autocomplete="off" /></label>
+          <label for="p-slot"><span id="l-p-slot">Orders a slot</span><input id="p-slot" inputmode="numeric" autocomplete="off" /></label>
+          <label class="tick" for="p-pickup"><input id="p-pickup" type="checkbox" /><span id="l-p-pickup">Takes pickup</span></label>
+          <label class="tick" for="p-delivery"><input id="p-delivery" type="checkbox" checked /><span id="l-p-delivery">Delivers</span></label>
+        </div>
+        <button id="save-place" type="button"><span id="save-place-text">Save the place</span></button>
+        <p class="status" id="set-place-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./delivery-area.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

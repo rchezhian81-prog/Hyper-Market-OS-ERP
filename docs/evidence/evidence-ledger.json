@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2084,
+  "testFiles": 2088,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1584,11 +1584,11 @@
       "id": "M18",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 14,
         "realDb": 5,
-        "browser": 1,
-        "connected": 1,
+        "browser": 3,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -1605,6 +1605,7 @@
           "tests/unit/orders.test.ts",
           "tests/unit/storefront-serviceability-schedule.test.ts",
           "tests/unit/the-order-refunds-session.test.ts",
+          "tests/unit/w3-the-online-orders-and-delivery-area-sessions.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
@@ -1631,10 +1632,14 @@
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [
-          "tests/e2e/the-order-refunds-page-refunds-to-the-token-after-a-second-person.e2e.ts"
+          "tests/e2e/the-order-refunds-page-refunds-to-the-token-after-a-second-person.e2e.ts",
+          "tests/e2e/w3-the-online-orders-desk-and-the-delivery-area.e2e.ts",
+          "tests/e2e/w3-wf16-a-customer-cancels-and-returns-in-the-app-and-the-office-settles-it.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-order-refunds-page-refunds-to-the-token-after-a-second-person.e2e.ts"
+          "tests/e2e/the-order-refunds-page-refunds-to-the-token-after-a-second-person.e2e.ts",
+          "tests/e2e/w3-the-online-orders-desk-and-the-delivery-area.e2e.ts",
+          "tests/e2e/w3-wf16-a-customer-cancels-and-returns-in-the-app-and-the-office-settles-it.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3287,18 +3292,19 @@
       "id": "D05",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
+        "unit": 3,
         "integration": 14,
         "realDb": 7,
-        "browser": 2,
-        "connected": 1,
+        "browser": 4,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/count-plans-session.test.ts",
-          "tests/unit/goods-in.test.ts"
+          "tests/unit/goods-in.test.ts",
+          "tests/unit/w3-the-online-orders-and-delivery-area-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
@@ -3327,10 +3333,14 @@
         ],
         "browser": [
           "tests/e2e/count-plans-on-the-production-api.e2e.ts",
-          "tests/e2e/expiry-recall-delivery.e2e.ts"
+          "tests/e2e/expiry-recall-delivery.e2e.ts",
+          "tests/e2e/w3-the-online-orders-desk-and-the-delivery-area.e2e.ts",
+          "tests/e2e/w3-wf16-a-customer-cancels-and-returns-in-the-app-and-the-office-settles-it.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/count-plans-on-the-production-api.e2e.ts"
+          "tests/e2e/count-plans-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-the-online-orders-desk-and-the-delivery-area.e2e.ts",
+          "tests/e2e/w3-wf16-a-customer-cancels-and-returns-in-the-app-and-the-office-settles-it.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3439,11 +3449,11 @@
       "id": "D08",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 7,
         "realDb": 3,
-        "browser": 4,
-        "connected": 1,
+        "browser": 5,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3457,7 +3467,8 @@
           "tests/unit/storefront-checkout.test.ts",
           "tests/unit/storefront-serviceability-schedule.test.ts",
           "tests/unit/the-customer-apps-commerce-rules.test.ts",
-          "tests/unit/voice-and-sms-links-are-switched-off.test.ts"
+          "tests/unit/voice-and-sms-links-are-switched-off.test.ts",
+          "tests/unit/w3-the-online-orders-and-delivery-area-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts",
@@ -3477,10 +3488,12 @@
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/the-customer-app-meets-wcag-aa.e2e.ts",
           "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
-          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
+          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
+          "tests/e2e/w3-the-online-orders-desk-and-the-delivery-area.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/customer-order-delivery.e2e.ts"
+          "tests/e2e/customer-order-delivery.e2e.ts",
+          "tests/e2e/w3-the-online-orders-desk-and-the-delivery-area.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -5048,8 +5061,8 @@
         "unit": 3,
         "integration": 7,
         "realDb": 4,
-        "browser": 3,
-        "connected": 1,
+        "browser": 5,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -5075,12 +5088,15 @@
           "tests/integration/the-driver-collects-an-online-return-through-the-box.test.ts"
         ],
         "browser": [
+          "tests/e2e/lib/customer-shop-on-cloud.ts",
           "tests/e2e/the-driver-collects-an-online-return-on-his-phone.e2e.ts",
           "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
-          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
+          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
+          "tests/e2e/w3-wf16-a-customer-cancels-and-returns-in-the-app-and-the-office-settles-it.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
+          "tests/e2e/w3-wf16-a-customer-cancels-and-returns-in-the-app-and-the-office-settles-it.e2e.ts"
         ],
         "device": [],
         "uat": []
