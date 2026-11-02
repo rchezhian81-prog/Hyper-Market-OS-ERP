@@ -10,6 +10,10 @@
 // Quantities are typed in each product's own unit (OB-31: "2.5" kg is 2500 g, "10" pieces is 10) and sent as the unit's
 // smallest step, never rounded. Reading needs `production.read`; saving `production.recipe.manage` (the owner, the store
 // manager) — head office re-checks each. Every word here has a Tamil twin; head office's own sentences stay English.
+//   • DEPARTMENTS (W3 · M11-FR-04) — `GET /v1/production/departments`: the departments this shop runs and every one the
+//     product supports; `POST /v1/production/departments/:departmentId` switches one on (`production.recipe.manage`). Head
+//     office refuses a department the shop's plan does not include, in its own words. Without this a new shop dead-ended:
+//     the page said "switch one on first" and nothing on any screen could.
 
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
 import { typedQuantityMinor, quantityLabel } from '../../../packages/contracts/src/quantity';
@@ -23,6 +27,8 @@ export interface RecipeRow {
   readonly inputs: readonly RecipeInputRow[]; readonly shelfLifeHours: number; readonly expectedYieldBp: number | null; readonly yieldToleranceBp: number | null; readonly version: number | null;
 }
 export interface RecipesRead { readonly recipes: readonly RecipeRow[]; readonly departments: readonly string[] }
+/** The departments this shop runs (on) and every one the product supports (available). */
+export interface DepartmentsRead { readonly on: readonly string[]; readonly available: readonly string[] }
 
 export const PRODUCTION_RECIPES_COPY = {
   en: {
@@ -37,6 +43,8 @@ export const PRODUCTION_RECIPES_COPY = {
     u_ea: 'pieces', u_kg: 'kg', u_g: 'g', u_L: 'litres', u_ml: 'ml',
     d_cafe: 'Café', d_bakery: 'Bakery', d_deli: 'Deli counter', d_meat_fish: 'Meat and fish', d_kitchen: 'Central kitchen',
     noDepartments: 'No production department is switched on for this shop. Switch one on first; a recipe belongs to one.',
+    deptH: 'Production departments', deptLead: 'A recipe belongs to a department this shop runs. Switch a department on here; head office checks that the shop\'s plan includes it.',
+    deptIsOn: 'Switched on', deptIsOff: 'Not switched on', switchOn: 'Switch on', switchedOn: 'Switched on:', switching: 'Switching on…', needDepartmentId: 'Choose a department to switch on.',
     emptyTitle: 'No recipe set up yet', emptyDetail: 'Add a recipe for each item the café, bakery or deli makes. No recipe means no run can be recorded — not that nothing is made.',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot see the recipes.', cannotManage: 'You can see the recipes; changing them needs the store manager\'s permission.',
     needCode: 'Type a recipe code: letters, numbers and dashes.', needDepartment: 'Choose the department.', needProduct: 'Type the product it makes.', badQty: 'Type an amount the unit holds exactly, e.g. 10 pieces or 2.5 kg.', badHours: 'Type the hours it keeps, a whole number above 0.', badPercent: 'Type a percentage, e.g. 92.5.', needIngredient: 'Add at least one ingredient with its amount.',
@@ -54,6 +62,8 @@ export const PRODUCTION_RECIPES_COPY = {
     u_ea: 'எண்ணிக்கை', u_kg: 'கிலோ', u_g: 'கிராம்', u_L: 'லிட்டர்', u_ml: 'மி.லி',
     d_cafe: 'கஃபே', d_bakery: 'பேக்கரி', d_deli: 'டெலி கவுண்டர்', d_meat_fish: 'இறைச்சி மற்றும் மீன்', d_kitchen: 'மையச் சமையலறை',
     noDepartments: 'இந்தக் கடைக்கு எந்த உற்பத்திப் பிரிவும் இயக்கப்படவில்லை. முதலில் ஒன்றை இயக்குங்கள்; ஒரு முறை ஒரு பிரிவைச் சேர்ந்தது.',
+    deptH: 'உற்பத்திப் பிரிவுகள்', deptLead: 'ஒரு சமையல் முறை இந்தக் கடை நடத்தும் ஒரு பிரிவைச் சேர்ந்தது. ஒரு பிரிவை இங்கே இயக்குங்கள்; கடையின் திட்டத்தில் அது உள்ளதா என்று தலைமை அலுவலகம் சரிபார்க்கும்.',
+    deptIsOn: 'இயக்கத்தில் உள்ளது', deptIsOff: 'இயக்கப்படவில்லை', switchOn: 'இயக்கு', switchedOn: 'இயக்கப்பட்டது:', switching: 'இயக்குகிறது…', needDepartmentId: 'இயக்க ஒரு பிரிவைத் தேர்ந்தெடுங்கள்.',
     emptyTitle: 'இன்னும் சமையல் முறை அமைக்கப்படவில்லை', emptyDetail: 'கஃபே, பேக்கரி அல்லது டெலி செய்யும் ஒவ்வொன்றுக்கும் ஒரு முறையைச் சேருங்கள். முறை இல்லை என்றால் எந்த ஓட்டத்தையும் பதிய முடியாது — எதுவும் செய்யப்படவில்லை என்பதல்ல.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பங்கு சமையல் முறைகளைப் பார்க்க முடியாது.', cannotManage: 'முறைகளைப் பார்க்கலாம்; மாற்ற கடை மேலாளர் அனுமதி தேவை.',
     needCode: 'முறைக் குறியீட்டைத் தட்டச்சு செய்யுங்கள்: எழுத்துகள், எண்கள், கோடுகள்.', needDepartment: 'பிரிவைத் தேர்ந்தெடுங்கள்.', needProduct: 'செய்யும் பொருளைத் தட்டச்சு செய்யுங்கள்.', badQty: 'அலகு சரியாக வைத்திருக்கும் அளவைத் தட்டச்சு செய்யுங்கள், எ.கா. 10 எண்ணிக்கை அல்லது 2.5 கிலோ.', badHours: 'கெடாமல் இருக்கும் மணி நேரத்தைத் தட்டச்சு செய்யுங்கள், 0க்கு மேல் முழு எண்.', badPercent: 'சதவீதத்தைத் தட்டச்சு செய்யுங்கள், எ.கா. 92.5.', needIngredient: 'குறைந்தது ஒரு பொருளை அதன் அளவுடன் சேருங்கள்.',
@@ -76,7 +86,7 @@ export function basisPointsOf(typed: string): number | null | undefined {
   return Math.round(Number(t) * 100);
 }
 
-type Why = 'nobody' | 'cannotRead' | 'cannotManage' | 'needCode' | 'needDepartment' | 'needProduct' | 'badQty' | 'badHours' | 'badPercent' | 'needIngredient';
+type Why = 'nobody' | 'cannotRead' | 'cannotManage' | 'needCode' | 'needDepartment' | 'needProduct' | 'badQty' | 'badHours' | 'badPercent' | 'needIngredient' | 'needDepartmentId';
 
 export interface RecipeInput {
   readonly recipeId: string; readonly departmentId: string; readonly outputProductId: string; readonly outputQty: string; readonly outputUom: string;
@@ -88,6 +98,10 @@ export interface ProductionRecipesSession {
   readonly may: { readonly named: boolean; readonly read: boolean; readonly manage: boolean };
   read(): Promise<Outcome<RecipesRead, Why>>;
   save(r: RecipeInput): Promise<Outcome<{ readonly recipeId: string; readonly version: number | null; readonly changed: boolean }, Why>>;
+  /** W3 · M11-FR-04: the departments this shop runs, and every one the product supports. */
+  departments(): Promise<Outcome<DepartmentsRead, Why>>;
+  /** W3 · M11-FR-04: switch one department on — head office checks the shop's plan includes it. */
+  switchOn(departmentId: string): Promise<Outcome<{ readonly departmentId: string }, Why>>;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -142,6 +156,23 @@ export function createProductionRecipesSession(input: { readonly viewer: { reado
         ...(yieldBp === null ? {} : { expectedYieldBp: yieldBp }), ...(toleranceBp === null ? {} : { yieldToleranceBp: toleranceBp }),
       });
       return out.result === 'ok' ? { result: 'ok', value: { recipeId, version: typeof out.value.version === 'number' ? out.value.version : null, changed: out.value.changed !== false } } : out;
+    },
+    departments: async () => {
+      if (!named) return no('nobody');
+      if (!may.read) return no('cannotRead');
+      const out = await call<{ operated?: unknown; available?: unknown }>('GET', '/v1/production/departments');
+      if (out.result !== 'ok') return out;
+      const on = (Array.isArray(out.value.operated) ? out.value.operated : []).filter(isObj).map((d) => str(d['departmentId'])).filter((d) => d !== '');
+      const available = (Array.isArray(out.value.available) ? out.value.available : []).filter((d): d is string => typeof d === 'string');
+      return { result: 'ok', value: { on, available } };
+    },
+    switchOn: async (departmentId) => {
+      if (!named) return no('nobody');
+      if (!may.manage) return no('cannotManage');
+      const id = departmentId.trim();
+      if (!/^[a-z][a-z_]{0,31}$/.test(id)) return no('needDepartmentId');
+      const out = await call<{ departmentId?: unknown }>('POST', `/v1/production/departments/${encodeURIComponent(id)}`, {});
+      return out.result === 'ok' ? { result: 'ok', value: { departmentId: typeof out.value.departmentId === 'string' ? out.value.departmentId : id } } : out;
     },
   };
 }

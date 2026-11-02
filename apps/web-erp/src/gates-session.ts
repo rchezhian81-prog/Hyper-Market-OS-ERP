@@ -10,7 +10,7 @@
 // hidden or collapsed into "latest".
 
 import type { ViewerIdentity } from './browser-entry';
-import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
+import { makeCaller, outcomeIn, newId, type Outcome } from './r4-insight-call';
 
 export type Lang = 'en' | 'ta';
 export type GateDecisionKind = 'GO' | 'HOLD' | 'REWORK';
@@ -63,6 +63,20 @@ export const GATES_COPY = {
     o_refused_books_unreadable: 'refused — the books could not be read before it',
     s_verified: 'verified', s_failed: 'failed', s_not_run: 'not run', s_not_run_on_this_box: 'not run on this box', s_ready: 'ready, not used',
     s_exercised_ok: 'used, and it worked', s_exercised_failed: 'used, and it failed',
+    // W3 · QG-04 / QG-05 / QG-06: the outside evidence only real hardware, the store or an independent vendor can give.
+    outsideH: 'Outside evidence (tests the software cannot run by itself)',
+    outsideLead: 'A gate whose outside test is not on file stays blocked — nothing on file is never a pass. Speeds are worked out from the measured figure against the fixed target; you do not type "passed".',
+    outsideNone: 'nothing on file', outsidePassed: 'passed', outsideFailed: 'failed', outsideLatestK: 'latest',
+    outsideUnread: 'The outside evidence could not be read — this is not the same as "none".',
+    outsideKindLabel: 'Which test', outsideResultLabel: 'Result', outsideMsLabel: 'Measured p95 (milliseconds)',
+    outsideWhereLabel: 'Where it was done (the certified store PC and lanes, or the vendor)', outsideRefLabel: 'Where the report is (file or link)',
+    outsideOnLabel: 'Day it was tested', outsideStatementLabel: 'What you saw (this is the record)', outsideRecord: 'Record this evidence',
+    outsideRecorded: 'Recorded at head office, in your name.', outsideNot: 'Recording outside evidence is the owner\'s — you can read it.',
+    noKind: 'Choose which test.', noResult: 'Choose passed or failed.', noMs: 'Type the measured p95 in whole milliseconds.',
+    noWhere: 'Say where it was done.', noRef: 'Say where the report is.', noDay: 'Give the day it was tested.', noStatement: 'Say, in writing, what you saw.',
+    ev_offline_72h_simulation: '72-hour offline trading run (QG-04)', ev_power_process_chaos: 'Power, process and chaos test (QG-04)',
+    ev_scan_to_line_p95: 'Scan-to-line speed, ≤300 ms (QG-05)', ev_total_tender_p95: 'Total and tender screen speed, ≤500 ms (QG-05)',
+    ev_independent_pentest: 'Independent penetration test (QG-06, from R4)',
   },
   ta: {
     lang: 'English', title: 'தர வாயில்கள்',
@@ -92,6 +106,19 @@ export const GATES_COPY = {
     o_refused_books_unreadable: 'மறுக்கப்பட்டது — முன்பே கணக்குகளைப் படிக்க முடியவில்லை',
     s_verified: 'சரிபார்க்கப்பட்டது', s_failed: 'தோற்றது', s_not_run: 'செய்யப்படவில்லை', s_not_run_on_this_box: 'இந்தக் கணினியில் செய்யப்படவில்லை', s_ready: 'தயார், பயன்படுத்தப்படவில்லை',
     s_exercised_ok: 'பயன்படுத்தப்பட்டது, வேலை செய்தது', s_exercised_failed: 'பயன்படுத்தப்பட்டது, தோற்றது',
+    outsideH: 'வெளிச் சான்று (மென்பொருள் தானே செய்ய முடியாத சோதனைகள்)',
+    outsideLead: 'வெளிச் சோதனை பதிவில் இல்லாத வாயில் தடுக்கப்பட்டே இருக்கும் — பதிவில் இல்லாதது ஒருபோதும் தேர்ச்சி அல்ல. வேகம் அளந்த எண்ணிலிருந்து நிலையான இலக்குடன் கணக்கிடப்படுகிறது; "தேறியது" என்று நீங்கள் தட்டச்சு செய்வதில்லை.',
+    outsideNone: 'பதிவில் எதுவும் இல்லை', outsidePassed: 'தேறியது', outsideFailed: 'தோற்றது', outsideLatestK: 'சமீபத்தியது',
+    outsideUnread: 'வெளிச் சான்றைப் படிக்க முடியவில்லை — இது "எதுவும் இல்லை" என்பதற்குச் சமம் அல்ல.',
+    outsideKindLabel: 'எந்தச் சோதனை', outsideResultLabel: 'முடிவு', outsideMsLabel: 'அளந்த p95 (மில்லி வினாடிகள்)',
+    outsideWhereLabel: 'எங்கே செய்யப்பட்டது (சான்றளிக்கப்பட்ட கடைக் கணினி, கவுண்டர்கள், அல்லது நிறுவனம்)', outsideRefLabel: 'அறிக்கை எங்கே உள்ளது (கோப்பு அல்லது இணைப்பு)',
+    outsideOnLabel: 'சோதித்த நாள்', outsideStatementLabel: 'நீங்கள் கண்டது (இதுவே பதிவு)', outsideRecord: 'இந்தச் சான்றைப் பதிவு செய்',
+    outsideRecorded: 'உங்கள் பெயரில் தலைமை அலுவலகத்தில் பதிவு செய்யப்பட்டது.', outsideNot: 'வெளிச் சான்றைப் பதிவு செய்வது உரிமையாளருடையது — நீங்கள் படிக்கலாம்.',
+    noKind: 'எந்தச் சோதனை என்று தேர்ந்தெடுக்கவும்.', noResult: 'தேறியது அல்லது தோற்றது என்று தேர்ந்தெடுக்கவும்.', noMs: 'அளந்த p95-ஐ முழு மில்லி வினாடிகளில் தட்டச்சு செய்யவும்.',
+    noWhere: 'எங்கே செய்யப்பட்டது என்று சொல்லவும்.', noRef: 'அறிக்கை எங்கே என்று சொல்லவும்.', noDay: 'சோதித்த நாளைக் கொடுக்கவும்.', noStatement: 'நீங்கள் கண்டதை எழுத்தில் சொல்லவும்.',
+    ev_offline_72h_simulation: '72 மணி நேர இணையமில்லா விற்பனை ஓட்டம் (QG-04)', ev_power_process_chaos: 'மின், செயல்முறை, குழப்பச் சோதனை (QG-04)',
+    ev_scan_to_line_p95: 'ஸ்கேன்-முதல்-வரி வேகம், ≤300 ms (QG-05)', ev_total_tender_p95: 'மொத்தம் மற்றும் செலுத்தும் திரை வேகம், ≤500 ms (QG-05)',
+    ev_independent_pentest: 'சுயாதீன ஊடுருவல் சோதனை (QG-06, R4 முதல்)',
   },
 } as const;
 export type GatesCopyKey = keyof typeof GATES_COPY.en;
@@ -149,6 +176,31 @@ export function qg10NoteView(lang: Lang, n: Qg10NoteRead): { readonly icon: stri
   };
 }
 
+/** W3: the outside evidence kinds, in the register's order (packages/compliance GATE_EVIDENCE_SPECS). */
+export const OUTSIDE_KINDS = Object.freeze(['offline_72h_simulation', 'power_process_chaos', 'scan_to_line_p95', 'total_tender_p95', 'independent_pentest'] as const);
+export type OutsideKind = (typeof OUTSIDE_KINDS)[number];
+/** The two that are timings: their result is worked out at head office from the measured p95. */
+export const OUTSIDE_TIMINGS: readonly OutsideKind[] = Object.freeze(['scan_to_line_p95', 'total_tender_p95']);
+export interface OutsideRecordRead {
+  readonly evidenceId: string; readonly kind: OutsideKind; readonly gate: string; readonly result: 'passed' | 'failed'; readonly measuredMs?: number;
+  readonly where: string; readonly reportRef: string; readonly testedOn: string; readonly statement: string; readonly recordedBy: string; readonly recordedAt: string;
+}
+export interface OutsideEvidenceRead {
+  readonly records: readonly OutsideRecordRead[];
+  readonly kinds: readonly { readonly kind: OutsideKind; readonly gate: string; readonly maxMs?: number; readonly standing: 'nothing_on_file' | 'passed' | 'failed'; readonly latest: OutsideRecordRead | null }[];
+}
+
+/** One kind's standing as the page shows it: an icon AND words AND a tone — nothing on file is never a pass. */
+export function outsideStandingView(lang: Lang, k: OutsideEvidenceRead['kinds'][number]): { readonly icon: string; readonly tone: 'ok' | 'error' | 'idle'; readonly words: string } {
+  const w = (key: string) => gatesWords(lang, key);
+  if (k.standing === 'nothing_on_file' || k.latest === null) return { icon: '○', tone: 'idle', words: `${w(`ev_${k.kind}`)} — ${w('outsideNone')}` };
+  const figure = k.latest.measuredMs === undefined ? '' : ` · p95 ${k.latest.measuredMs} ms`;
+  return {
+    icon: k.standing === 'passed' ? '✓' : '⚠', tone: k.standing === 'passed' ? 'ok' : 'error',
+    words: `${w(`ev_${k.kind}`)} — ${w(k.standing === 'passed' ? 'outsidePassed' : 'outsideFailed')}${figure} · ${w('outsideLatestK')}: ${k.latest.testedOn} · ${k.latest.where} · ${k.latest.reportRef}`,
+  };
+}
+
 export interface GatesSession {
   readonly may: { readonly named: boolean; readonly read: boolean; readonly decide: boolean };
   read(release: string): Promise<Outcome<GateRegisterRead>>;
@@ -158,9 +210,17 @@ export interface GatesSession {
     readonly gate: string; readonly release: string; readonly decision: string;
     readonly evidenceLabel: string; readonly evidenceRef: string; readonly rationale: string;
   }): Promise<Outcome<{ readonly decision: { readonly decision: GateDecisionKind; readonly decidedBy: string } }>>;
+  /** W3: the outside evidence and each kind's standing (a GET — the register's read right). */
+  readOutside(): Promise<Outcome<OutsideEvidenceRead>>;
+  /** W3: record one piece of outside evidence in the signed-in owner's name (a timing sends only its measured p95). */
+  recordOutside(input: {
+    readonly kind: string; readonly result: string; readonly measuredMs: string; readonly where: string;
+    readonly reportRef: string; readonly testedOn: string; readonly statement: string;
+  }): Promise<Outcome<{ readonly evidence: OutsideRecordRead }>>;
 }
 
-export function createGatesSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): GatesSession {
+export function createGatesSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newEvidenceId?: (kind: string) => string }): GatesSession {
+  const newEvidenceId = input.newEvidenceId ?? ((kind: string) => newId(kind.replace(/_/g, '-')));
   const perms = new Set(input.viewer?.permissions ?? []);
   const named = input.viewer?.userId !== undefined;
   const may = { named, read: named && perms.has('compliance.gate.read'), decide: named && perms.has('compliance.gate.decide') };
@@ -189,6 +249,29 @@ export function createGatesSession(input: { readonly viewer: ViewerIdentity | un
       // The decider is NOT sent: head office takes it from the signed-in person (§36, a decision has an author).
       return call('POST', `/v1/compliance/gate-decisions/${encodeURIComponent(d.gate)}/${encodeURIComponent(d.release)}`, {
         decision: d.decision, evidence: [{ label: d.evidenceLabel.trim(), ref: d.evidenceRef.trim() }], rationale: d.rationale.trim(),
+      });
+    },
+    readOutside: async () => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (!may.read) return { result: 'invalid', why: 'cannotRead' };
+      return call('GET', '/v1/compliance/gate-evidence');
+    },
+    recordOutside: async (e) => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (!may.decide) return { result: 'invalid', why: 'cannotDecide' };
+      if (!(OUTSIDE_KINDS as readonly string[]).includes(e.kind)) return { result: 'invalid', why: 'noKind' };
+      const timing = OUTSIDE_TIMINGS.includes(e.kind as OutsideKind);
+      const ms = Number(e.measuredMs.trim());
+      if (timing && (!/^\d+$/.test(e.measuredMs.trim()) || ms <= 0)) return { result: 'invalid', why: 'noMs' };
+      if (!timing && e.result !== 'passed' && e.result !== 'failed') return { result: 'invalid', why: 'noResult' };
+      if (e.where.trim() === '') return { result: 'invalid', why: 'noWhere' };
+      if (e.reportRef.trim() === '') return { result: 'invalid', why: 'noRef' };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(e.testedOn.trim())) return { result: 'invalid', why: 'noDay' };
+      if (e.statement.trim() === '') return { result: 'invalid', why: 'noStatement' };
+      // The recorder is NOT sent (head office takes the signed-in person), nor a timing's result (worked out there).
+      return call('POST', `/v1/compliance/gate-evidence/${newEvidenceId(e.kind)}`, {
+        kind: e.kind, ...(timing ? { measuredMs: ms } : { result: e.result }),
+        where: e.where.trim(), reportRef: e.reportRef.trim(), testedOn: e.testedOn.trim(), statement: e.statement.trim(),
       });
     },
   };

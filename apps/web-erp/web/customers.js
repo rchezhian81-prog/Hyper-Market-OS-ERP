@@ -151,7 +151,9 @@ function caseItem(c) {
   return li;
 }
 function paintRecord() {
-  for (const [id, k] of [['record-h', 'recordH'], ['l-record-ref', 'recordRef'], ['record-open-text', 'open'], ['complaints-h', 'complaintsH'], ['othercases-h', 'otherCasesH']]) $(id).textContent = t(k);
+  for (const [id, k] of [['record-h', 'recordH'], ['l-record-ref', 'recordRef'], ['record-open-text', 'open'], ['complaints-h', 'complaintsH'], ['othercases-h', 'otherCasesH'],
+    ['household-h', 'householdH'], ['l-household-id', 'householdId'], ['household-link-text', 'link'], ['household-unlink-text', 'unlink'], ['history-h', 'historyH']]) $(id).textContent = t(k);
+  paintHousehold();
   $('record-open').disabled = !may.record;
   $('record').hidden = record === null;
   if (record === null) return;
@@ -175,10 +177,43 @@ function paintRecord() {
   $('record-complaints').replaceChildren(...(sh.complaints.recent.length === 0 ? [el('li', 'row', t('noComplaints'))] : sh.complaints.recent.map(caseItem)));
   $('record-other').replaceChildren(...(sh.otherCases.recent.length === 0 ? [nothingYet()] : sh.otherCases.recent.map(caseItem)));
 }
+// ── M16-FR-01 (W3) · the record's household and identity history ─────────────────────────────────────────────────────
+let history = null;
+function paintHousehold() {
+  if (record === null || record.mergedInto !== undefined) { $('record-household').textContent = ''; $('household-form').hidden = true; $('record-history').replaceChildren(); return; }
+  const h = record.household ?? null;
+  $('record-household').textContent = h === null ? t('noHousehold') : `${t('inHousehold')} ${h.householdId} — ${h.members.length} ${t('householdMembers')}: ${h.members.join(', ')}`;
+  $('record-household').dataset.household = h === null ? '' : h.householdId;
+  $('household-form').hidden = !may.propose;
+  $('household-unlink').hidden = h === null;
+  $('record-history').replaceChildren(...(history === null ? [] : history.length === 0 ? [el('li', 'row', t('noHistory'))] : history.map((m) => {
+    const state = m.reversedBy ? 'reversed' : m.inForce ? 'inforce' : 'proposed';
+    const li = el('li', 'row'); li.dataset.merge = m.mergeId; li.dataset.state = state;
+    li.append(el('span', '', `${mergeLine(m)} · ${t(`merge_${state}`)}`));
+    return li;
+  })));
+}
+async function readHistory(ref) {
+  const out = await session.identityHistory(ref);
+  history = out.result === 'ok' ? out.value.merges : null;
+}
+async function changeHousehold(unlink) {
+  const ref = record?.customerRef ?? '';
+  const out = unlink ? await session.unlinkHousehold(ref) : await session.linkHousehold(ref, $('household-id').value);
+  if (out.result !== 'ok') { say('household-status', out, false); return; }
+  say('household-status', t(unlink ? 'unlinked' : 'linked'), true);
+  const again = await session.record(ref);
+  if (again.result === 'ok') record = again.value;
+  paint();
+}
+$('household-form').addEventListener('submit', (e) => { e.preventDefault(); void changeHousehold(false); });
+$('household-unlink').addEventListener('click', () => { void changeHousehold(true); });
+
 async function openRecord(event) {
   event?.preventDefault();
   const out = await session.record($('record-ref').value);
-  if (out.result === 'ok') { record = out.value; $('record-status').className = 'status'; $('record-status').textContent = ''; } else { record = null; say('record-status', out, false); }
+  if (out.result === 'ok') { record = out.value; $('record-status').className = 'status'; $('record-status').textContent = ''; await readHistory(record.customerRef); } else { record = null; history = null; say('record-status', out, false); }
+  $('household-status').textContent = '';
   paint();
 }
 $('record-form').addEventListener('submit', (e) => { void openRecord(e); });

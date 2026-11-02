@@ -236,6 +236,15 @@ function renderExpiry() {
         : `${t('markdown')} ${item.expiry} (${item.daysToExpiry} ${t('daysLeft')}) · ${item.batchId}`;
       what.append(name, sub);
       row.append(what);
+      // W3 · D06-FR-05: stock close to its date gets "Work out a markdown" — the advisory ladder, never a price change.
+      row.dataset.product = item.productId; row.dataset.batch = item.batchId;
+      if (item.status !== 'expired' && typeof window.expiryMarkdownPick === 'function' && window.markdowns?.session?.may?.propose === true) {
+        const pick = document.createElement('button');
+        pick.type = 'button'; pick.className = 'pick-markdown';
+        pick.textContent = window.markdowns.words(lang, 'pickRow');
+        pick.addEventListener('click', () => { window.expiryMarkdownPick(item); });
+        row.append(pick);
+      }
       return row;
     })));
 }

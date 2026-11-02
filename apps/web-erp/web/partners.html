@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Partners and sandboxes</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Partners and sandboxes (W3 · M36-FR-04 · P-06 · OB-385 · hard rules #4 and #7). A THIN CLIENT over head office's partner
+      register (GET /v1/platform/partners): each partner credential — scoped to named shops or sandboxes, to an environment
+      (sandbox or production), to named scopes, with an expiry — registered and revoked (a new version; the history stays);
+      each sandbox, which holds generated data ONLY (a seed with anything from production is refused whole); each connector
+      certification and whether it still holds against today's API versions (read from head office's own manifest); and a
+      check of whether a credential may make a given call. No secret is made, typed, shown or stored on this page: a
+      credential is a scoped, dated grant, and its access token is issued out of band (hard rule #4). OB-385: for SRE's own
+      integrators until outside-shop pricing is decided. Every refusal is head office's; nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      input[type="checkbox"] { min-height: 0; width: 22px; height: 22px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 10px; align-items: end; }
+      .checks { display: flex; flex-wrap: wrap; gap: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin: 0; }
+      .checks label { display: inline-flex; gap: 8px; align-items: center; font-weight: 500; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.unknown { color: var(--warn); font-size: 16px; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; overflow-wrap: anywhere; }
+      td.warn { color: var(--warn); font-weight: 600; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      a.tap { display: inline-flex; align-items: center; min-height: var(--tap); font-size: 15px; font-weight: 600; color: var(--ink); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Partners and sandboxes</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Partners and sandboxes</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel"><span class="k" id="k-creds">Credentials in force</span><span class="v" id="v-creds">—</span></div>
+          <div class="panel"><span class="k" id="k-sandboxes">Sandboxes</span><span class="v" id="v-sandboxes">—</span></div>
+          <div class="panel"><span class="k" id="k-certs">Certified connectors</span><span class="v" id="v-certs">—</span></div>
+        </div>
+        <p class="muted"><a id="docs-link" class="tap" href="../developer-docs/">Developer guide</a></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="cred-h">
+        <h3 id="cred-h">Credentials</h3>
+        <p class="lead" id="cred-lead"></p>
+        <div class="table-wrap"><table aria-labelledby="cred-h">
+          <thead><tr><th id="c-cid">Credential</th><th id="c-partner">Partner</th><th id="c-env">Where</th><th id="c-reach">Reaches</th><th id="c-scopes">May do</th><th id="c-expires">Until</th><th id="c-state">State</th><th id="c-act"></th></tr></thead>
+          <tbody id="cred-rows"></tbody>
+        </table></div>
+        <form id="cred-form" class="row">
+          <label for="cr-id"><span id="l-cr-id">Credential name</span><input id="cr-id" autocomplete="off" maxlength="60" /></label>
+          <label for="cr-partner"><span id="l-cr-partner">Partner</span><input id="cr-partner" autocomplete="off" maxlength="80" /></label>
+          <label for="cr-env"><span id="l-cr-env">Where it works</span><select id="cr-env"><option value="sandbox" id="o-sandbox">Sandbox only</option><option value="production" id="o-production">The real shop</option></select></label>
+          <label for="cr-reach"><span id="l-cr-reach">Shops or sandboxes it may reach (names, commas)</span><input id="cr-reach" autocomplete="off" list="sandbox-ids" /></label>
+          <label for="cr-scopes"><span id="l-cr-scopes">What it may do (scopes, commas)</span><input id="cr-scopes" autocomplete="off" /></label>
+          <label for="cr-expires"><span id="l-cr-expires">Until (date)</span><input id="cr-expires" type="date" /></label>
+          <button id="cr-save" class="primary" type="submit">Register the credential</button>
+        </form>
+        <datalist id="sandbox-ids"></datalist>
+        <p class="status" id="cred-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="sb-h">
+        <h3 id="sb-h">Sandboxes</h3>
+        <p class="lead" id="sb-lead"></p>
+        <div class="table-wrap"><table aria-labelledby="sb-h">
+          <thead><tr><th id="c-sid">Sandbox</th><th id="c-spartner">Partner</th><th id="c-screated">Made</th><th id="c-sexpires">Until</th><th id="c-sdata">Data</th><th id="c-sact"></th></tr></thead>
+          <tbody id="sb-rows"></tbody>
+        </table></div>
+        <form id="sb-form" class="row">
+          <label for="sb-id"><span id="l-sb-id">Sandbox name</span><input id="sb-id" autocomplete="off" maxlength="60" /></label>
+          <label for="sb-partner"><span id="l-sb-partner">Partner</span><input id="sb-partner" autocomplete="off" maxlength="80" /></label>
+          <label for="sb-expires"><span id="l-sb-expires">Until (date)</span><input id="sb-expires" type="date" /></label>
+          <label for="sb-count"><span id="l-sb-count">Generated records to seed</span><input id="sb-count" inputmode="numeric" value="25" /></label>
+          <button id="sb-save" class="primary" type="submit">Make the sandbox</button>
+        </form>
+        <p class="status" id="sb-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="ce-h">
+        <h3 id="ce-h">Connector certifications</h3>
+        <p class="lead" id="ce-lead"></p>
+        <div class="table-wrap"><table aria-labelledby="ce-h">
+          <thead><tr><th id="c-ecpartner">Partner</th><th id="c-ecconn">Connector</th><th id="c-econ">Certified on</th><th id="c-ecby">By</th><th id="c-ecvs">Tested against</th><th id="c-ecnow">Today</th></tr></thead>
+          <tbody id="ce-rows"></tbody>
+        </table></div>
+        <form id="ce-form" class="row">
+          <label for="ce-id"><span id="l-ce-id">Certification name</span><input id="ce-id" autocomplete="off" maxlength="60" /></label>
+          <label for="ce-partner"><span id="l-ce-partner">Partner</span><input id="ce-partner" autocomplete="off" maxlength="80" /></label>
+          <label for="ce-conn"><span id="l-ce-conn">Connector</span><input id="ce-conn" autocomplete="off" maxlength="80" /></label>
+          <label for="ce-on"><span id="l-ce-on">Certified on (date)</span><input id="ce-on" type="date" /></label>
+          <button id="ce-save" class="primary" type="submit">Record the certification</button>
+        </form>
+        <fieldset class="checks" id="ce-apis" aria-labelledby="l-ce-apis"><legend id="l-ce-apis">Tested against these APIs (current version)</legend></fieldset>
+        <p class="status" id="ce-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="ac-h">
+        <h3 id="ac-h">May this credential make this call?</h3>
+        <p class="lead" id="ac-lead"></p>
+        <form id="ac-form" class="row">
+          <label for="ac-cred"><span id="l-ac-cred">Credential</span><select id="ac-cred"></select></label>
+          <label for="ac-env"><span id="l-ac-env">Where</span><select id="ac-env"><option value="sandbox" id="o-ac-sandbox">Sandbox</option><option value="production" id="o-ac-production">The real shop</option></select></label>
+          <label for="ac-tenant"><span id="l-ac-tenant">Shop or sandbox</span><input id="ac-tenant" autocomplete="off" list="sandbox-ids" /></label>
+          <label for="ac-scope"><span id="l-ac-scope">Scope it needs</span><input id="ac-scope" autocomplete="off" /></label>
+          <label for="ac-api"><span id="l-ac-api">API</span><select id="ac-api"></select></label>
+          <button id="ac-check" type="submit">Check</button>
+        </form>
+        <p class="status" id="ac-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./partners.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

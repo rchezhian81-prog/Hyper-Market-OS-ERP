@@ -223,7 +223,11 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         const existing = await deps.record(ctx.tenantId, supplierId);
         // Who verified each document is the person who did, under their own sign-in (2b-vi-c, PA-03): a document
         // verified now must name the caller; one re-sent exactly as stored keeps its verifier.
-        const verifiedDocuments = documentsVerifiedByTheCaller(ctx, documents, existing?.documents ?? [], now);
+        // W3 (WF-02): an update that sends no `documents` (the Suppliers page's "update the details" form) keeps the papers
+        // already on file — leaving the field out never deletes the record's documents.
+        const verifiedDocuments = b['documents'] === undefined && existing !== undefined
+          ? existing.documents
+          : documentsVerifiedByTheCaller(ctx, documents, existing?.documents ?? [], now);
         const others = (await deps.records(ctx.tenantId)).filter((r) => r.supplierId !== supplierId);
         const gstin = isStr(b['gstin']) ? b['gstin'].trim().toUpperCase() : null;
         const record: SupplierRecord = {

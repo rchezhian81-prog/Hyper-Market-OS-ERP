@@ -16,13 +16,14 @@
 //     close over it (P-08). A month with no electronic takings and no payouts has no such check, and with nothing else
 //     checked still does not close ("nothing was checked").
 //
-// Cash banked is NOT yet a check: the system records cash leaving the till for the safe, but no deposit of that cash to
-// the bank — there is nothing in the books to compare a bank credit with. Said, not invented.
+// Cash banked (W3): a deposit of cash to the bank is recorded (`cash-deposits.ts`), and the month's deposits are compared
+// with the bank credits that name their slips. A month with no deposit recorded says "not checked", never a zero.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { checkBankStatement, parseBankStatementCsv, type BankStatement } from '../../../packages/finance/src/bank-statement';
 import type { ControlTotalCheck } from './index';
+import { depositsOfPeriod, type CashDepositView } from './cash-deposits';
 
 /** Who brought a file in, when, and from which file — kept with the evidence, so a signature rests on something traceable. */
 export interface Provenance {
@@ -48,6 +49,8 @@ export interface MonthEvidence {
   readonly checks: readonly ControlTotalCheck[];
   readonly unsettledTenders: readonly EvidenceTender[];
   readonly payoutsNotInBank: readonly { readonly batchId: string; readonly netMinor: number }[];
+  /** W3 (M23-FR-03): the month's recorded cash deposits that no bank credit answers yet. */
+  readonly depositsNotInBank?: readonly { readonly depositId: string; readonly slipRef: string; readonly amountMinor: number }[];
   readonly notChecked: readonly string[];
   /** WF-18: what the books still lack against their registers — the sources each check above is short of. */
   readonly books?: {
@@ -68,6 +71,8 @@ export function monthEvidence(input: {
   readonly batches: readonly EvidenceBatch[];
   /** Every bank statement imported. */
   readonly statements: readonly BankStatement[];
+  /** W3 (M23-FR-03): every cash deposit recorded, each with the bank line that answers it (`cashDepositViews`). */
+  readonly deposits?: readonly CashDepositView[];
 }): MonthEvidence {
   const checks: ControlTotalCheck[] = [];
   const electronic = input.tenders.filter((t) => (t.kind === 'card' || t.kind === 'upi') && t.ref.trim() !== '');
@@ -94,11 +99,25 @@ export function monthEvidence(input: {
       rightDerivation: 'the credits on the imported bank statements that name each payout',
     });
   }
+  // W3 (M23-FR-03): cash banked — the deposits recorded for the month against the bank credits that name their slips.
+  const deposits = depositsOfPeriod(input.deposits ?? [], input.period);
+  if (deposits.length > 0) {
+    checks.push({
+      name: `Cash banked in ${input.period}`,
+      leftMinor: deposits.reduce((n, d) => n + d.amountMinor, 0),
+      rightMinor: deposits.filter((d) => d.state === 'in_bank').reduce((n, d) => n + d.amountMinor, 0),
+      leftDerivation: 'the cash deposits recorded for the month, as each stamped slip shows them',
+      rightDerivation: 'the credits on the imported bank statements that name each deposit slip, for the same amount',
+    });
+  }
   return {
     period: input.period, checks,
     unsettledTenders: electronic.filter((t) => (settledByRef.get(t.ref) ?? 0) !== t.amountMinor),
     payoutsNotInBank: payouts.filter((b) => inBank(b.batchId) !== b.declaredNetMinor).map((b) => ({ batchId: b.batchId, netMinor: b.declaredNetMinor })),
-    notChecked: ['Cash banked: the system records cash going to the safe but no deposit of it to the bank, so a bank credit has nothing in the books to be compared with.'],
+    depositsNotInBank: deposits.filter((d) => d.state !== 'in_bank').map((d) => ({ depositId: d.depositId, slipRef: d.slipRef, amountMinor: d.amountMinor })),
+    notChecked: deposits.length > 0
+      ? ['Cash to the safe against cash banked: the safe\'s own count is not recorded here, so the deposits are compared with the bank, not with what the tills sent to the safe.']
+      : [`Cash banked: no cash deposit to the bank is recorded for ${input.period}, so a bank credit for cash has nothing in the books to be compared with.`],
   };
 }
 

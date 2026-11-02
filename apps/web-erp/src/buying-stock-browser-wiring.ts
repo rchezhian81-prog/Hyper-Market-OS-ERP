@@ -10,6 +10,7 @@ import { shopMomentOf } from './findings-session';
 import { createExpiredRegisterSession, expiredWords, expiredOutcomeWords, expiredRowView } from './expired-register-session';
 import { createRepeatOrdersSession, repeatWords, repeatOutcomeWords, planWords, occurrenceWords } from './repeat-orders-session';
 import { createSupplierAdvancesSession, advancesWords, advancesOutcomeWords, rupees as advanceRupees } from './supplier-advances-session';
+import { createSupplierRecordsSession, supplierRecordsWords, supplierRecordsOutcomeWords, DOCUMENT_KINDS, REQUESTED_VIA } from './supplier-records-session';
 
 import { typedQuantityMinor, toDecimalString, normaliseUom } from '../../../packages/contracts/src/quantity';
 
@@ -55,6 +56,11 @@ export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerId
   }
   // D10-FR-01: supplier advances on the Supplier bills page — pay (asked for and approved by a second person), use against a
   // matched bill, undo a use.
+  // W3 · WF-02 (M06-FR-01): a supplier's papers (captured and checked), the two-person bank account change and the hold — on the
+  // Suppliers page, under its own viewer.
+  if (win['suppliersData'] !== undefined) {
+    win['supplierRecords'] = { session: createSupplierRecordsSession({ viewer: viewerIdentity(win['suppliersData']) }), words: supplierRecordsWords, outcomeWords: supplierRecordsOutcomeWords, kinds: DOCUMENT_KINDS, via: REQUESTED_VIA };
+  }
   if (win['supplierBillsData'] !== undefined) {
     win['supplierAdvances'] = { session: createSupplierAdvancesSession({ viewer: viewerIdentity(win['supplierBillsData']) }), words: advancesWords, outcomeWords: advancesOutcomeWords, rupees: advanceRupees };
   }

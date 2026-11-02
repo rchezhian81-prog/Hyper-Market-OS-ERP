@@ -114,6 +114,8 @@ export type BillCopyPrint =
 export function billCopyPrint(answer: BillCopyAnswer, options: {
   readonly realTrading: boolean; readonly identity?: TaxInvoiceIdentity | null; readonly language?: InvoiceLanguage;
   readonly template?: BillTemplate | null; readonly fssaiLicenceNo?: string; readonly b2cDynamicQr?: B2cDynamicQrSetting;
+  /** W3 · M36-FR-02: the shop's own name from the signed pack — the copy carries it as the bill did. */
+  readonly brandName?: string;
   readonly reason: string; readonly by: string; readonly at: string;
 }): BillCopyPrint {
   const made = committedBillOf(answer, options.realTrading ? (options.identity ?? null) : undefined);
@@ -124,6 +126,7 @@ export function billCopyPrint(answer: BillCopyAnswer, options: {
       template: options.template ?? null, duplicate: true, ...(options.language === undefined ? {} : { language: options.language }),
       ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
       ...(options.b2cDynamicQr === undefined ? {} : { b2cDynamicQr: options.b2cDynamicQr }),
+      ...(options.brandName === undefined ? {} : { brandName: options.brandName }),
     });
     if (!inv.ok) return inv;
     return {
@@ -133,6 +136,7 @@ export function billCopyPrint(answer: BillCopyAnswer, options: {
   }
   const rec: BillReceipt = billReceipt(made.bill, options.template ?? null, {
     ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
+    ...(options.brandName === undefined ? {} : { brandName: options.brandName }),
     reprintOf: { reason: `${options.reason} — ${copyLine}`, by: options.by, at: options.at },
   });
   if (!rec.ok) return rec;

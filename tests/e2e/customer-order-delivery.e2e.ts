@@ -415,6 +415,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     }
   }, 60_000);
 
+  // WF-15 (delivery, the customer's "track" step): the customer reads where the order is from the driver's own status.
   it('OB-77: the driver\'s delivery status and its as-of time reach the customer\'s screen — on its way, could not deliver — read back after a head-office restart, in English and Tamil', async () => {
     // On real PostgreSQL when DATABASE_URL is set (its own shop per run), otherwise the in-memory store; either way the restart
     // is a second head-office instance over the same records.

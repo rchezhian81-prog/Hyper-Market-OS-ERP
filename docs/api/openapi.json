@@ -13918,6 +13918,144 @@
         }
       }
     },
+    "/v1/compliance/gate-evidence": {
+      "get": {
+        "operationId": "getComplianceGateEvidence",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.gate.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetComplianceGateEvidenceReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.gate.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/compliance/gate-evidence/{evidenceId}": {
+      "post": {
+        "operationId": "postComplianceGateEvidenceByEvidenceId",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.gate.decide",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "evidenceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostComplianceGateEvidenceByEvidenceIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostComplianceGateEvidenceByEvidenceIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostComplianceGateEvidenceByEvidenceIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.gate.decide\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/compliance/gate-register": {
       "get": {
         "operationId": "getComplianceGateRegister",
@@ -26166,6 +26304,238 @@
           },
           "403": {
             "description": "Not \"finance.posting.configure\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/finance/cash-deposits": {
+      "get": {
+        "operationId": "getFinanceCashDeposits",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "settlement.review.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFinanceCashDepositsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"settlement.review.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/finance/cash-deposits/{depositId}": {
+      "post": {
+        "operationId": "postFinanceCashDepositsByDepositId",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "settlement.batch.import",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "depositId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"settlement.batch.import\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/finance/cash-deposits/{depositId}/cancel": {
+      "post": {
+        "operationId": "postFinanceCashDepositsByDepositIdCancel",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "settlement.batch.import",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "depositId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdCancelRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdCancelReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceCashDepositsByDepositIdCancelReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"settlement.batch.import\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -51698,6 +52068,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/integration/outbound-webhooks": {
+      "get": {
+        "operationId": "getIntegrationOutboundWebhooks",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.health.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIntegrationOutboundWebhooksReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.health.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -83097,6 +83511,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/platform/partners": {
+      "get": {
+        "operationId": "getPlatformPartners",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.partner.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPlatformPartnersReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.partner.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -121677,6 +122135,91 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/gate-decisions.ts"
       },
+      "GetComplianceGateEvidenceReply": {
+        "type": "object",
+        "required": [
+          "records",
+          "kinds",
+          "asAt"
+        ],
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GateEvidenceRecord"
+            }
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "standing",
+                "latest",
+                "kind",
+                "gate",
+                "words",
+                "roadmap"
+              ],
+              "properties": {
+                "standing": {
+                  "type": "string"
+                },
+                "latest": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GateEvidenceRecord"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "independent_pentest",
+                    "offline_72h_simulation",
+                    "power_process_chaos",
+                    "scan_to_line_p95",
+                    "total_tender_p95"
+                  ]
+                },
+                "gate": {
+                  "type": "string",
+                  "enum": [
+                    "QG-04",
+                    "QG-05",
+                    "QG-06"
+                  ]
+                },
+                "words": {
+                  "type": "string"
+                },
+                "roadmap": {
+                  "type": "string"
+                },
+                "maxMs": {
+                  "type": "number"
+                },
+                "releases": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
       "GetComplianceGateRegisterQg10EvidenceReply": {
         "type": "object",
         "required": [
@@ -125725,6 +126268,42 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/budgets-assets.ts"
       },
+      "GetFinanceCashDepositsReply": {
+        "type": "object",
+        "required": [
+          "recordedMinor",
+          "inBankMinor",
+          "notInBank",
+          "asAt",
+          "deposits"
+        ],
+        "properties": {
+          "recordedMinor": {
+            "type": "number"
+          },
+          "inBankMinor": {
+            "type": "number"
+          },
+          "notInBank": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "deposits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashDepositView"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
       "GetFinanceCreditNotesReconciliationReply": {
         "type": "object",
         "required": [
@@ -128522,6 +129101,29 @@
                   "type": "string"
                 },
                 "netMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "depositsNotInBank": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "depositId",
+                "slipRef",
+                "amountMinor"
+              ],
+              "properties": {
+                "depositId": {
+                  "type": "string"
+                },
+                "slipRef": {
+                  "type": "string"
+                },
+                "amountMinor": {
                   "type": "number"
                 }
               },
@@ -133538,7 +134140,7 @@
           "certifications": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Certification"
+              "$ref": "#/components/schemas/Certification.workforce.workforce"
             }
           },
           "count": {
@@ -136202,6 +136804,126 @@
               }
             },
             "additionalProperties": true
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/outbound-webhooks.ts"
+      },
+      "GetIntegrationOutboundWebhooksReply": {
+        "type": "object",
+        "required": [
+          "subscriptions",
+          "publishedEvents",
+          "transport",
+          "approvalKind",
+          "deadLettered",
+          "asAt"
+        ],
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "totals",
+                "subscriptionId",
+                "partnerId",
+                "url",
+                "eventTypes",
+                "signingKeyRef",
+                "maxAttempts",
+                "active",
+                "version",
+                "deliverFrom",
+                "setBy",
+                "setAt"
+              ],
+              "properties": {
+                "totals": {
+                  "type": "object",
+                  "required": [
+                    "all",
+                    "delivered",
+                    "pending",
+                    "deadLettered"
+                  ],
+                  "properties": {
+                    "all": {
+                      "type": "number"
+                    },
+                    "delivered": {
+                      "type": "number"
+                    },
+                    "pending": {
+                      "type": "number"
+                    },
+                    "deadLettered": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "subscriptionId": {
+                  "type": "string"
+                },
+                "partnerId": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "eventTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "signingKeyRef": {
+                  "type": "string"
+                },
+                "maxAttempts": {
+                  "type": "number"
+                },
+                "active": {
+                  "type": "boolean"
+                },
+                "version": {
+                  "type": "number"
+                },
+                "deliverFrom": {
+                  "type": "string"
+                },
+                "setBy": {
+                  "type": "string"
+                },
+                "setAt": {
+                  "type": "string"
+                },
+                "approvedBy": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "publishedEvents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "transport": {
+            "type": "string"
+          },
+          "approvalKind": {
+            "type": "string"
+          },
+          "deadLettered": {
+            "type": "number"
           },
           "asAt": {
             "type": "string"
@@ -149183,6 +149905,135 @@
             "type": "string"
           },
           "revokedOn": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/partners.ts"
+      },
+      "GetPlatformPartnersReply": {
+        "type": "object",
+        "required": [
+          "today",
+          "credentials",
+          "certifications",
+          "sandboxes",
+          "listed",
+          "asAt"
+        ],
+        "properties": {
+          "today": {
+            "type": "string"
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "state",
+                "credentialId",
+                "partnerId",
+                "environment",
+                "scopedTenantIds",
+                "scopes",
+                "issuedOn",
+                "expiresOn"
+              ],
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "expired",
+                    "not_yet",
+                    "revoked"
+                  ]
+                },
+                "credentialId": {
+                  "type": "string"
+                },
+                "partnerId": {
+                  "type": "string"
+                },
+                "environment": {
+                  "type": "string",
+                  "enum": [
+                    "production",
+                    "sandbox"
+                  ]
+                },
+                "scopedTenantIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "issuedOn": {
+                  "type": "string"
+                },
+                "expiresOn": {
+                  "type": "string"
+                },
+                "revokedOn": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "certifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Certification.platform.partner"
+            }
+          },
+          "sandboxes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "sandboxId",
+                "partnerId",
+                "createdOn",
+                "expiresOn",
+                "syntheticDataOnly",
+                "expired"
+              ],
+              "properties": {
+                "sandboxId": {
+                  "type": "string"
+                },
+                "partnerId": {
+                  "type": "string"
+                },
+                "createdOn": {
+                  "type": "string"
+                },
+                "expiresOn": {
+                  "type": "string"
+                },
+                "syntheticDataOnly": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "expired": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "listed": {
+            "type": "boolean"
+          },
+          "asAt": {
             "type": "string"
           }
         },
@@ -171728,6 +172579,82 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/gate-decisions.ts"
       },
+      "PostComplianceGateEvidenceByEvidenceIdReply200": {
+        "type": "object",
+        "required": [
+          "evidence",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/GateEvidenceRecord"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
+      "PostComplianceGateEvidenceByEvidenceIdReply201": {
+        "type": "object",
+        "required": [
+          "evidence",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/GateEvidenceRecord"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
+      "PostComplianceGateEvidenceByEvidenceIdRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "independent_pentest",
+              "offline_72h_simulation",
+              "power_process_chaos",
+              "scan_to_line_p95",
+              "total_tender_p95"
+            ]
+          },
+          "measuredMs": {
+            "type": "integer"
+          },
+          "reportRef": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "passed"
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "testedOn": {
+            "type": "string"
+          },
+          "where": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
       "PostComplianceGateRegisterQg10EvidenceReply200": {
         "type": "object",
         "required": [
@@ -180060,6 +180987,121 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/independent-evidence.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdCancelReply200": {
+        "type": "object",
+        "required": [
+          "cancelled",
+          "alreadyCancelled"
+        ],
+        "properties": {
+          "cancelled": {
+            "$ref": "#/components/schemas/CashDepositCancelled"
+          },
+          "alreadyCancelled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdCancelReply201": {
+        "type": "object",
+        "required": [
+          "cancelled",
+          "alreadyCancelled"
+        ],
+        "properties": {
+          "cancelled": {
+            "$ref": "#/components/schemas/CashDepositCancelled"
+          },
+          "alreadyCancelled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdCancelRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdReply200": {
+        "type": "object",
+        "required": [
+          "deposit",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "deposit": {
+            "$ref": "#/components/schemas/CashDeposit"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdReply201": {
+        "type": "object",
+        "required": [
+          "deposit",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "deposit": {
+            "$ref": "#/components/schemas/CashDeposit"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
+      },
+      "PostFinanceCashDepositsByDepositIdRequest": {
+        "type": "object",
+        "required": [
+          "accountRef",
+          "amountMinor",
+          "depositedOn",
+          "slipRef"
+        ],
+        "properties": {
+          "accountRef": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "integer"
+          },
+          "depositedOn": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "slipRef": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/cash-deposits.ts"
       },
       "PostFinanceCreditNotesReply": {
         "type": "object",
@@ -192436,7 +193478,7 @@
         ],
         "properties": {
           "certification": {
-            "$ref": "#/components/schemas/Certification"
+            "$ref": "#/components/schemas/Certification.workforce.workforce"
           }
         },
         "additionalProperties": true,
@@ -260351,6 +261393,148 @@
         },
         "additionalProperties": true
       },
+      "CashDeposit": {
+        "type": "object",
+        "required": [
+          "depositId",
+          "depositedOn",
+          "amountMinor",
+          "slipRef",
+          "accountRef",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "depositId": {
+            "type": "string"
+          },
+          "depositedOn": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "slipRef": {
+            "type": "string"
+          },
+          "accountRef": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CashDepositCancelled": {
+        "type": "object",
+        "required": [
+          "depositId",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "depositId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CashDepositView": {
+        "type": "object",
+        "required": [
+          "state",
+          "bankLine",
+          "depositId",
+          "depositedOn",
+          "amountMinor",
+          "slipRef",
+          "accountRef",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "in_bank",
+              "not_in_bank"
+            ]
+          },
+          "bankLine": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "statementId",
+                  "lineId",
+                  "date"
+                ],
+                "properties": {
+                  "statementId": {
+                    "type": "string"
+                  },
+                  "lineId": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "cancelled": {
+            "$ref": "#/components/schemas/CashDepositCancelled"
+          },
+          "depositId": {
+            "type": "string"
+          },
+          "depositedOn": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "slipRef": {
+            "type": "string"
+          },
+          "accountRef": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "CatalogueBarcode": {
         "type": "object",
         "required": [
@@ -260545,6 +261729,9 @@
             "items": {
               "$ref": "#/components/schemas/EmbeddedBarcodeRule"
             }
+          },
+          "branding": {
+            "$ref": "#/components/schemas/PackBranding"
           },
           "promotions": {
             "type": "array",
@@ -261132,7 +262319,55 @@
         },
         "additionalProperties": true
       },
-      "Certification": {
+      "Certification.platform.partner": {
+        "type": "object",
+        "required": [
+          "certificationId",
+          "partnerId",
+          "connectorId",
+          "certifiedOn",
+          "againstVersions",
+          "certifiedBy"
+        ],
+        "properties": {
+          "certificationId": {
+            "type": "string"
+          },
+          "partnerId": {
+            "type": "string"
+          },
+          "connectorId": {
+            "type": "string"
+          },
+          "certifiedOn": {
+            "type": "string"
+          },
+          "againstVersions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "contract",
+                "version"
+              ],
+              "properties": {
+                "contract": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "certifiedBy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Certification.workforce.workforce": {
         "type": "object",
         "required": [
           "certificationId",
@@ -276081,6 +277316,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true
@@ -276136,6 +277377,68 @@
             "items": {
               "$ref": "#/components/schemas/GateBlocker"
             }
+          }
+        },
+        "additionalProperties": true
+      },
+      "GateEvidenceRecord": {
+        "type": "object",
+        "required": [
+          "evidenceId",
+          "kind",
+          "gate",
+          "result",
+          "where",
+          "reportRef",
+          "testedOn",
+          "statement",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "evidenceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "independent_pentest",
+              "offline_72h_simulation",
+              "power_process_chaos",
+              "scan_to_line_p95",
+              "total_tender_p95"
+            ]
+          },
+          "gate": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "passed"
+            ]
+          },
+          "measuredMs": {
+            "type": "number"
+          },
+          "where": {
+            "type": "string"
+          },
+          "reportRef": {
+            "type": "string"
+          },
+          "testedOn": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -287345,6 +288648,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true
@@ -288151,6 +289460,40 @@
           },
           "lastAt": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PackBranding": {
+        "type": "object",
+        "properties": {
+          "productName": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "logoRef": {
+            "type": "string"
+          },
+          "colours": {
+            "type": "object",
+            "required": [
+              "primary",
+              "onPrimary"
+            ],
+            "properties": {
+              "primary": {
+                "type": "string"
+              },
+              "onPrimary": {
+                "type": "string"
+              },
+              "accent": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true

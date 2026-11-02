@@ -155,9 +155,22 @@
         <button id="pay-save" type="button"><span id="pay-save-text"></span></button>
         <p class="status" id="pay-status" role="status" aria-live="polite"></p>
       </section>
+
+      <!-- W3 · M22-FR-04: payments business customers SAY they sent on their portal — finance matches each to the shop's own
+           bank statement, or rejects it with a reason (apps/web-erp/src/b2b-transfer-notes-session.ts, window.b2bTransferNotes,
+           drawn by b2b-payments.js). Nothing is read on open; every call is a click. -->
+      <section id="tn" hidden aria-labelledby="tn-h">
+        <h3 id="tn-h"></h3>
+        <p class="meta" id="tn-lead"></p>
+        <button id="tn-show" type="button"><span id="tn-show-text"></span></button>
+        <p class="status" id="tn-summary" role="status" aria-live="polite"></p>
+        <ul class="rows" id="tn-list"></ul>
+        <p class="status" id="tn-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./b2b.js" type="module"></script>
+    <script src="./b2b-payments.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

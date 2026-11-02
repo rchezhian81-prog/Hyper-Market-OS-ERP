@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1654 | 956 | 956 | 183 | 436 |
+| 13 | 1661 | 959 | 959 | 183 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1038,6 +1038,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/bank-statements` | `settlement.batch.import` | core | yes |
 | GET | `/v1/finance/budgets/:period` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/budgets/:period` | `finance.posting.configure` | core | yes |
+| GET | `/v1/finance/cash-deposits` | `settlement.review.read` | core | — |
+| POST | `/v1/finance/cash-deposits/:depositId` | `settlement.batch.import` | core | yes |
+| POST | `/v1/finance/cash-deposits/:depositId/cancel` | `settlement.batch.import` | core | yes |
 | POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |
@@ -1301,6 +1304,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/fssai-licence` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.decide` | core | yes |
+| GET | `/v1/compliance/gate-evidence` | `compliance.gate.read` | core | — |
+| POST | `/v1/compliance/gate-evidence/:evidenceId` | `compliance.gate.decide` | core | yes |
 | GET | `/v1/compliance/gate-register` | `compliance.gate.read` | core | — |
 | GET | `/v1/compliance/gate-register/qg10-evidence` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-register/qg10-evidence` | `compliance.qg10.evidence.push` | core | yes |
@@ -1489,6 +1494,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/integration/health` | `platform.health.read` | core | — |
 | POST | `/v1/integration/matrix/:entryId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-deliveries/drain` | `platform.setup.write` | core | yes |
+| GET | `/v1/integration/outbound-webhooks` | `platform.health.read` | core | — |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId/deactivate` | `platform.setup.write` | core | yes |
 | GET | `/v1/integration/outbound-webhooks/:subscriptionId/dead-letters` | `platform.health.read` | core | — |
@@ -1564,6 +1570,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/platform/operational-health` | `platform.health.read` | core | yes |
 | GET | `/v1/platform/operational-health/observed` | `platform.health.read` | core | — |
 | POST | `/v1/platform/operational-health/observed/raise` | `platform.alert.manage` | core | yes |
+| GET | `/v1/platform/partners` | `platform.partner.read` | core | — |
 | GET | `/v1/platform/partners/:credentialId` | `platform.partner.read` | core | — |
 | POST | `/v1/platform/partners/:credentialId` | `platform.partner.manage` | core | yes |
 | POST | `/v1/platform/partners/:credentialId/revoke` | `platform.partner.manage` | core | yes |

@@ -152,6 +152,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'reconciliation': { en: 'card upi bank payments match settlement', ta: 'அட்டை யுபிஐ வங்கி' },
   'finance': { en: 'accounts money totals tally', ta: 'கணக்குகள்' },
   'tally-files': { en: 'tally export accounts', ta: 'டேலி' },
+  settlement: { en: 'card upi bank statement settlement file provider payout cash deposit slip dispute chargeback reconciliation', ta: 'அட்டை UPI வங்கி அறிக்கை தீர்வு ரொக்கச் செலுத்தல் தகராறு' },
   'posting-map': { en: 'posting map ledger chart of accounts mapping tally ledger names setup', ta: 'கணக்கு வரைபடம் லெட்ஜர் டேலி பெயர்' },
   'gst-returns': { en: 'gst gstr tax return filing', ta: 'ஜிஎஸ்டி வரி' },
   'gst-reconciliation': { en: 'gst e-invoice irn e-way bill', ta: 'ஜிஎஸ்டி மின் விலைப்பட்டியல்' },
@@ -175,7 +176,20 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'till': { en: 'billing pos checkout sell', ta: 'பில்லிங் விற்பனை' },
   'food-safety': { en: 'temperature fridge freezer hygiene', ta: 'வெப்பநிலை குளிர்சாதனம்' },
   'facilities': { en: 'maintenance repair electricity generator ac', ta: 'பராமரிப்பு பழுது' },
+  'partner-webhooks': { en: 'webhook partner subscription dead letter redeliver send again integration outbound connector queue', ta: 'கூட்டாளர் வெப்ஹூக் தேங்கிய செய்தி மீண்டும் அனுப்பு' },
+  'partners': { en: 'partner developer credential sandbox certification connector integrator api access', ta: 'கூட்டாளர் உருவாக்குநர் சான்று சோதனைத் தளம்' },
+  'developer-docs': { en: 'developer api documentation docs openapi reference endpoints sdk', ta: 'உருவாக்குநர் வழிகாட்டி API' },
+  'floor-devices': { en: 'electronic shelf label esl rfid camera cctv sensor iot floor device', ta: 'அலமாரி லேபிள் RFID கேமரா உணரி' },
+  'branding': { en: 'brand shop name logo colours colors white label receipt name', ta: 'கடைப் பெயர் சின்னம் வண்ணம்' },
   'production-recipes': { en: 'recipe bill of materials ingredients cafe bakery deli batch shelf life yield', ta: 'சமையல் முறை பொருட்கள் கஃபே பேக்கரி' },
+  'data-requests': { en: 'privacy data request access export copy erasure erase forget delete dpdp consent', ta: 'தனியுரிமை தரவு கோரிக்கை நகல் அழி' },
+  'customer-value': { en: 'customer value lifetime margin ranking segment rules groups loyal lapsing clv', ta: 'வாடிக்கையாளர் மதிப்பு தரவரிசை குழு விதிகள்' },
+  'message-queue': { en: 'message queue sms whatsapp email notification budget dead letter withheld stuck', ta: 'செய்தி வரிசை அறிவிப்பு செலவு வரம்பு' },
+  'compensation-limits': { en: 'compensation goodwill limit authority ceiling service desk refund credit', ta: 'இழப்பீடு வரம்பு சேவை மேசை' },
+  'gift-cards': { en: 'gift card voucher balance issue redeem stored value', ta: 'பரிசு அட்டை இருப்பு வழங்கு' },
+  'online-orders': { en: 'order cancel backorder payment pending bank reconcile channel reservation buffer online stock app', ta: 'ஆர்டர் ரத்து கட்டணம் வங்கி ஒப்பிடு ஒதுக்கீடு ஆன்லைன் சரக்கு' },
+  'delivery-area': { en: 'delivery radius km slots capacity fee minimum order serviceability area', ta: 'டெலிவரி தூரம் நேரம் கட்டணம் குறைந்தபட்ச ஆர்டர் பகுதி' },
+  'old-system': { en: 'migration old erp legacy discovery mapping codes exclusion export compare cutover night rollback undo opening load retire switch off archive', ta: 'பழைய முறை தரவு மாற்றம் குறியீடு ஒப்பீடு மாற்ற இரவு காப்பகம்' },
   'facilities-setup': { en: 'asset spare parts amc chiller freezer cold room range schedule pest fire food safety check setup', ta: 'சொத்து உதிரி பாகம் குளிர் அறை அட்டவணை சோதனை அமைப்பு' },
   'loss-prevention': { en: 'theft fraud investigation case', ta: 'திருட்டு மோசடி' },
   'dispatch': { en: 'delivery driver van route', ta: 'டெலிவரி' },
@@ -190,6 +204,12 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'display-contracts': { en: 'end cap gondola display contract supplier funding', ta: 'காட்சி ஒப்பந்தம்' },
   'range-clusters': { en: 'cluster season range assortment festival', ta: 'பருவம் வரிசை' },
   'product-checks': { en: 'hsn gst tax missing allergen ingredient barcode data check', ta: 'விடுபட்ட பார்கோடு ஒவ்வாமை' },
+  // Wave 3 (security, people and operations).
+  'emergency-access': { en: 'temporary access break glass elevated support urgent', ta: 'தற்காலிக அணுகல் அவசரம்' },
+  'safety-incidents': { en: 'injury accident near miss fire first aid safety incident', ta: 'காயம் விபத்து தீ பாதுகாப்பு' },
+  'ops-alerts': { en: 'alert backup down offline escalation owner acknowledge', ta: 'எச்சரிக்கை காப்புப் பிரதி' },
+  'document-retention': { en: 'retention dispose disposal archive keep documents', ta: 'ஆவணம் காப்பு அகற்று' },
+  'sales-commission': { en: 'commission salesperson rate incentive earned', ta: 'கமிஷன் விற்பனையாளர்' },
 });
 
 /**
@@ -358,6 +378,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // map) and what each account is called in Tally. Without it the Day book, Tally files, Month-end and Supplier offer
   // funding post nothing. A head-office page served by the store computer. Gated on the read both routes check
   // (`finance.period.read`); saving checks `finance.posting.configure` on the server.
+  // W3 (M23-FR-03 · M14-FR-03 · C14): the provider's settlement file and the bank's statement loaded, cash taken to the bank
+  // recorded, the tills' card and UPI takings checked against what was paid, the cases and the payment disputes. A
+  // head-office page served by the store computer. Gated on the read the review checks (`settlement.review.read`); loading,
+  // cases and disputes each check their own word on the server.
+  { id: 'settlement', label: 'Card, UPI and bank', labelTa: 'அட்டை, UPI மற்றும் வங்கி', path: '/settlement', requires: 'settlement.review.read', group: 'Finance' },
   { id: 'posting-map', label: 'Accounts and Tally names', labelTa: 'கணக்குகளும் டேலி பெயர்களும்', path: '/posting-map', requires: 'finance.period.read', group: 'Finance' },
   // QG-02 lane 1 R4 (M05-FR-04): supplier funding of offers, earned from the bills and reconciled to the books. Gated on the
   // register's read (`finance.period.read`); recording an agreement needs `promotion.launch`, a receipt `finance.journal.post`.
@@ -435,13 +460,23 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'scales', label: 'Weighing scales', labelTa: 'எடைத் தராசுகள்', path: '/scales', requires: 'facilities.asset.read', group: 'Systems' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
-  { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Administration' },
+  { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Systems' },
   // Tills and devices — the fleet screen (M33): health, registration, status. Gated on `platform.health.read`;
   // registering or changing a device needs `platform.device.manage`, which the routes enforce.
   { id: 'fleet', label: 'Tills & devices', labelTa: 'கல்லாக்களும் சாதனங்களும்', path: '/fleet/', requires: 'platform.health.read', group: 'Systems' },
   // Connections — integration health (M32): each connector's state, dead letters, last contact. Gated on the SAME
   // permission its route checks (`platform.health.read`).
   { id: 'integration-health', label: 'Connections', labelTa: 'இணைப்புகள்', path: '/integration-health/', requires: 'platform.health.read', group: 'Systems' },
+  // Wave 3 (D14-FR-06 · M32-FR-02 · P-08): partner webhooks — every subscription, its dead letters (sent again by a person,
+  // never deleted), a new one approved by a second admin, and the connector queues. Gated on the read its list checks.
+  { id: 'partner-webhooks', label: 'Partner webhooks', labelTa: 'கூட்டாளர் வெப்ஹூக்குகள்', path: '/partner-webhooks', requires: 'platform.health.read', group: 'Systems' },
+  // Wave 3 (M36-FR-04 · OB-385): partner credentials, sandboxes and connector certifications, and the developer guide made
+  // from the published contract. Gated on the partner read its routes check.
+  { id: 'partners', label: 'Partners and sandboxes', labelTa: 'கூட்டாளர்களும் சோதனைத் தளங்களும்', path: '/partners', requires: 'platform.partner.read', group: 'Systems' },
+  { id: 'developer-docs', label: 'Developer guide', labelTa: 'உருவாக்குநர் வழிகாட்டி', path: '/developer-docs', requires: 'platform.partner.read', group: 'Systems' },
+  // Wave 3 (D14-FR-05): the floor devices of this store — shelf labels, RFID readers, sensors and camera events (stand-ins
+  // until a vendor is contracted). Gated on the device-list read.
+  { id: 'floor-devices', label: 'Shelf labels and floor devices', labelTa: 'அலமாரி லேபிள்களும் தளச் சாதனங்களும்', path: '/floor-devices', requires: 'platform.health.read', group: 'Systems' },
   // Facilities — overdue maintenance and compliance tasks (M26). Gated on `facilities.overdue.read`.
   { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Floor' },
   // OB-154 (owner, 16 Oct 2026, "Add screens before pilot"): the store-operations pages — head-office pages over their own
@@ -469,6 +504,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // who asked, why) and lifted the same way, append-only. Gated on the list read (`notification.send.check`); the writes need
   // `notification.suppression.manage`. A head-office page (OB-380).
   { id: 'do-not-contact', label: 'Do not contact', labelTa: 'தொடர்பு கொள்ள வேண்டாம்', path: '/do-not-contact', requires: 'notification.send.check', group: 'Customers' },
+  // W3 (customers): head-office pages over their own routes (OB-380), each asking its own permission (OB-572); every write's
+  // route checks its own word. Data requests (M16-FR-03), Customer value (D07-FR-05 · M16-FR-04), Message queue
+  // (M31-FR-04), Compensation limits (M21-FR-03) and Gift cards (D07-FR-04).
+  { id: 'data-requests', label: 'Customer data requests', labelTa: 'வாடிக்கையாளர் தரவுக் கோரிக்கைகள்', path: '/data-requests', requires: 'privacy.request.manage', group: 'Customers' },
+  { id: 'customer-value', label: 'Customer value', labelTa: 'வாடிக்கையாளர் மதிப்பு', path: '/customer-value', requires: 'customer.segment.read', group: 'Customers' },
+  { id: 'message-queue', label: 'Message queue', labelTa: 'செய்தி வரிசை', path: '/message-queue', requires: 'notification.send.check', group: 'Customers' },
+  { id: 'compensation-limits', label: 'Compensation limits', labelTa: 'இழப்பீட்டு வரம்புகள்', path: '/compensation-limits', requires: 'service.case.read', group: 'Customers' },
+  { id: 'gift-cards', label: 'Gift cards', labelTa: 'பரிசு அட்டைகள்', path: '/gift-cards', requires: 'loyalty.value.read', group: 'Customers' },
   // OB-288 wave 3 (M21-FR-01 · M21-FR-02): plan, approve, send and follow a campaign, and switch the journeys on or off — a
   // head-office page (served by the store computer since OB-380). Gated on the campaign read (`customer.campaign.read`); each
   // write's route checks its own word (template manage, campaign send).
@@ -500,7 +543,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Migration — where the cutover stands, the figures, the data, the parallel run, the old system (MG-01–MG-12).
   // Gated on the exceptions read the desk route checks (`migration.cleaning.read`); a decision needs
   // `migration.exception.resolve` / `migration.controltotal.sign`, which the routes enforce.
-  { id: 'migration', label: 'Migration', labelTa: 'தரவு மாற்றம்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },  { id: 'store-setup', label: 'Store setup', labelTa: 'கடை அமைப்பு', path: '/setup', requires: 'platform.setup.read', group: 'Administration' },
+  { id: 'migration', label: 'Migration', labelTa: 'தரவு மாற்றம்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },
+  // W3 (MG-01/03/07/08/09/11/12): head office's migration controls that had no screen — discovery, code mappings, records
+  // left behind, two-export comparison, the switch-over night and window, undoing an opening load, switching the old system off.
+  { id: 'old-system', label: 'Old system checks', labelTa: 'பழைய முறை சோதனைகள்', path: '/old-system', requires: 'migration.reconciliation.read', group: 'Administration' },  { id: 'store-setup', label: 'Store setup', labelTa: 'கடை அமைப்பு', path: '/setup', requires: 'platform.setup.read', group: 'Administration' },
   // Document templates — the wording on every bill / invoice / PO / GRN / statement, versioned: drafted by one
   // person, approved by another, published; the previous version kept (M01-FR-02, §28). Gated on the SAME
   // permission the register route checks (`platform.setup.read`), so the menu never offers a screen the server
@@ -511,6 +557,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // going back to an earlier value (a new version; a high-impact one only with the owner's approval). Store setup keeps
   // answering the setup questions. Gated as Store setup is (`platform.setup.read`); going back needs `platform.setup.write`.
   { id: 'settings', label: 'Settings', labelTa: 'அமைப்புகள்', path: '/settings', requires: 'platform.setup.read', group: 'Administration' },
+  // Wave 3 (M36-FR-02 · OB-321): the shop's own name, logo and colours — they ride the signed pack to the tills' bills.
+  { id: 'branding', label: 'Shop name and colours', labelTa: 'கடைப் பெயரும் வண்ணங்களும்', path: '/branding', requires: 'platform.branding.read', group: 'Systems' },
   // Round 4c (M34-FR-01/02): the Audit log reads head office's stored domain trail — search, check the chain, rebuild one
   // thing from the evidence. Read only. Gated on the trail read (`audit.retention.read`). A head-office page (OB-380).
   { id: 'audit', label: 'Audit log', labelTa: 'தணிக்கைப் பதிவு', path: '/audit-log', requires: 'audit.retention.read', group: 'Administration' },
@@ -560,6 +608,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // OB-288 wave 3 (M18-FR-04): refund an online order to its own payment token after a second person approves, and the
   // worklist of payments and refunds still waiting on the bank — a head-office page (served by the store computer since OB-380).
   // Gated on the read the worklist checks (`order.read`); issuing checks `order.refund.issue` on the server.
+  // W3 (M18-FR-01/02/04 · D05-FR-03): the online-orders desk — an order's lifecycle step by step, a cancel that gives its stock
+  // back, a backorder, a payment the bank has not answered settled from the statement, the stock held for orders, a channel's
+  // list compared with ours, and the stock the app keeps back for the store. Gated on the order read its first route checks
+  // (`order.read`); every act is re-checked by head office on its own permission. Head office's page, served by the store computer.
+  { id: 'online-orders', label: 'Online orders', labelTa: 'ஆன்லைன் ஆர்டர்கள்', path: '/online-orders', requires: 'order.read', group: 'Orders' },
+  // W3 (M18-FR-01/03 · D08 · AVR-13): how far the shop delivers, its fee and minimum, and its delivery slots — "not set" until the
+  // owner types his figures. Gated on the read its routes check (`delivery.serviceability.read`); a change needs `…manage`.
+  { id: 'delivery-area', label: 'Delivery area and slots', labelTa: 'டெலிவரி பகுதி மற்றும் நேரங்கள்', path: '/delivery-area', requires: 'delivery.serviceability.read', group: 'Orders' },
   { id: 'order-refunds', label: 'Order refunds', labelTa: 'ஆர்டர் பணத் திருப்பம்', path: '/order-refunds', requires: 'order.read', group: 'Orders' },
   // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
@@ -574,6 +630,18 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // OB-288 lane 1 · P1 (M02-FR-01/02): who holds which role, where and up to how much — read-only, with the permission matrix as CSV.
   { id: 'access-review', label: 'Access review', labelTa: 'அணுகல் மீளாய்வு', path: '/access-review', requires: 'identity.access.review', group: 'Administration' },
   { id: 'approval-rules', label: 'Approval rules', labelTa: 'ஒப்புதல் விதிகள்', path: '/approval-rules', requires: 'approvals.rules.read', group: 'Administration' },
+  // Wave 3 (D11-FR-02 · M02-FR-04): ask for emergency access, give it once the owner approved it, end it early, and the review.
+  // Opened by the word that asks (`identity.role.request` — the owner and the store manager); head office re-checks each call.
+  // Under "Checks & investigations": the Administration workspace already holds its 16 screens (W1).
+  { id: 'emergency-access', label: 'Emergency access', labelTa: 'அவசர அணுகல்', path: '/emergency-access', requires: 'identity.role.request', group: 'Operations' },
+  // Wave 3 (D11-FR-06): record a staff injury or other safety incident, and close it with what was done.
+  { id: 'safety-incidents', label: 'Safety incidents', labelTa: 'பாதுகாப்பு நிகழ்வுகள்', path: '/safety-incidents', requires: 'facilities.incident.record', group: 'People' },
+  // Wave 3 (M35-FR-04): my alerts, every live alert, tick one as seen, and who owns each alert.
+  { id: 'ops-alerts', label: 'Operational alerts', labelTa: 'செயல்பாட்டு எச்சரிக்கைகள்', path: '/ops-alerts', requires: 'platform.health.read', group: 'Systems' },
+  // Wave 3 (M31-FR-01): documents past their keeping time, and record a disposal with a reason.
+  { id: 'document-retention', label: 'Document retention', labelTa: 'ஆவணக் காப்புக் காலம்', path: '/document-retention', requires: 'document.template.read', group: 'Operations' },
+  // Wave 3 (M22-FR-03): a business salesperson's commission rate — proposed, approved by someone else — and what they earned.
+  { id: 'sales-commission', label: 'Sales commission', labelTa: 'விற்பனைக் கமிஷன்', path: '/sales-commission', requires: 'b2b.commission.read', group: 'Customers' },
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
   // permission the locked-day list checks); the reopen itself needs `till.dayclose.approve`, which the box and
   // cloud enforce, and the screen offers the form only to a holder. Accountant/owner work.
@@ -622,7 +690,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // R4 Lane 2 · B23 · A26 · WF-16: the online store — the shop's details every listing carries (the grievance officer
   // "not set" until named, OB-223), each product's listing, the complaint clock, the TCS line and online returns. Gated on
   // the read its routes check (`online.store.read`). A head-office page (served by the store computer since OB-380).
-  { id: 'online-store', label: 'Online store', labelTa: 'ஆன்லைன் கடை', path: '/online-store', requires: 'online.store.read', group: 'Customers' },
+  { id: 'online-store', label: 'Online store', labelTa: 'ஆன்லைன் கடை', path: '/online-store', requires: 'online.store.read', group: 'Orders' },
   // R4 Lane 2 · D01-FR-06: the product content editor — app description, synonyms, versions, completeness and the image
   // on the shop's own server (OB-215). Gated on the catalogue read its editor read checks (`catalogue.pack.read`).
   { id: 'product-content', label: 'App content', labelTa: 'செயலி உள்ளடக்கம்', path: '/product-content', requires: 'catalogue.pack.read', group: 'Products' },

@@ -21,6 +21,8 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  */
 
 const PINNED_SUITES: readonly string[] = [
+  'tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts',
+  'tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts',
   'tests/integration/the-owners-takings-are-net-of-refunds.test.ts',
   'tests/integration/price-list-effective-dating.test.ts',
   'tests/integration/a-price-set-just-after-the-shops-midnight-still-needs-a-second-person.test.ts',
@@ -30,6 +32,11 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/round-a-the-office-pages-show-head-offices-records.e2e.ts',
   'tests/integration/r7d-an-expired-food-certificate-blocks-food-work-and-marks-are-relayed.test.ts',
   'tests/integration/r7d-the-roster-and-certificates-ride-the-signed-pack-to-the-box.test.ts',
+  'tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts',
+  // W3 (money): the rebate period runs to the shop's today.
+  'tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts',
+  // W3 · QG-04: the served till sells through a cloud outage — its price is dated the shop's today.
+  'tests/e2e/qg04-the-served-till-sells-through-a-cloud-outage-and-syncs-once.e2e.ts',
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')

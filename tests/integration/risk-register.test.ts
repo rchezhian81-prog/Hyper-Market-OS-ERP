@@ -39,6 +39,8 @@ const review = (h: ApiHarness, u: string, id: string, rationale: string) =>
 describe('risk register: an open critical risk blocks its gate until accepted (M34-FR-04)', () => {
   it('blocks a gate on an open critical risk, and unblocks it only on a named, reasoned acceptance', async () => {
     const h = await cast();
+    // W3: the independent penetration test is on file, so only the risk stands between QG-06 and can-pass here.
+    expect((await h.request({ method: 'POST', path: '/v1/compliance/gate-evidence/pt-1', userId: 'u-owner', tenantId: A, idempotencyKey: 'pt-1', body: { kind: 'independent_pentest', result: 'passed', where: 'Synthetic Security Ltd (independent)', reportRef: 'pentest/synthetic.pdf', testedOn: '2026-10-20', statement: 'report received' } })).status).toBe(201);
     expect((await register(h, 'u-mgr', 'r1', { title: 'unpatched edge OS', severity: 'critical', ownerUserId: 'u-sec', blocksGates: ['QG-06'] })).status).toBe(201);
 
     const b1 = (await blocked(h, 'u-owner')).body as Blocked;

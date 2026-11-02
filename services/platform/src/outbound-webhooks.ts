@@ -22,6 +22,9 @@
 // The pass runs on a timer in the head-office process (the PA-08 worker) only when an outbound transport is configured;
 // with none — today, no partner is live — messages wait, visible in the reconciliation read.
 //
+// W3 (D14-FR-06): `GET /v1/integration/outbound-webhooks` lists every subscription with its message totals for the office
+// "Partner webhooks" page, so a dead letter is seen without knowing a subscription's id first (P-08).
+//
 // Round 10:
 //   • SSRF GUARD (public-destination.ts) — a subscription URL must resolve only to public internet addresses: refused
 //     at subscribe (422 `webhook_destination_not_public`) and checked AGAIN before every send, because DNS can change
@@ -221,6 +224,30 @@ export function outboundWebhookRoutes(deps: OutboundWebhookDeps): readonly Route
     return rows.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   };
   return [
+    {
+      // W3 · D14-FR-06 (P-08): EVERY subscription for the office screen — its latest version, and how its messages stand
+      // (delivered, waiting, dead-lettered), plus the events head office publishes and whether a sender is configured. A
+      // read: nothing is sent, changed or removed. The signing secret is never here — only its vault:// reference (#4).
+      api: 'API-11', method: 'GET', path: '/v1/integration/outbound-webhooks',
+      permission: 'platform.health.read',
+      handler: async (ctx) => {
+        const projected = projectOutbound(await deps.facts(ctx.tenantId));
+        const subscriptions = [];
+        for (const sub of [...projected.subscriptions.values()].sort((a, b) => a.subscriptionId.localeCompare(b.subscriptionId))) {
+          const rows = await ledgerView(ctx.tenantId, sub, projected.messages, sub.deliverFrom);
+          const count = (s: string) => rows.filter((r) => r.status === s).length;
+          subscriptions.push({ ...sub, totals: { all: rows.length, delivered: count('delivered'), pending: count('pending'), deadLettered: count('dead_lettered') } });
+        }
+        return {
+          status: 200,
+          body: {
+            subscriptions, publishedEvents: Object.keys(deps.publishable).sort(),
+            transport: deps.transport?.name ?? 'none', approvalKind: PARTNER_SUBSCRIPTION_APPROVAL,
+            deadLettered: subscriptions.reduce((n, s) => n + s.totals.deadLettered, 0), asAt: deps.now(),
+          },
+        };
+      },
+    },
     {
       // SUBSCRIBE (or change: a new version) — { partnerId, url (https), eventTypes[], signingKeyRef (vault://), maxAttempts? }.
       api: 'API-11', method: 'POST', path: '/v1/integration/outbound-webhooks/:subscriptionId',

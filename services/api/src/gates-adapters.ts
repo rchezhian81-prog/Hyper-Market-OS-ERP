@@ -12,9 +12,13 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  blockedGates, findingBlocks,
-  type SecurityFinding, type GateDecision, type GateBlocker,
+  blockedGates, findingBlocks, gateEvidenceBlockers, qg07Blockers, qg10Blockers, qg04SyncBlockers,
+  type SecurityFinding, type GateDecision, type GateBlocker, type GateEvidenceRecord,
 } from '../../../packages/compliance/src/index';
+import { gateEvidenceRoutes, type GateEvidenceDeps } from '../../compliance/src/gate-evidence';
+import { qg10EvidenceAdapter } from './qg10-evidence-adapters';
+import { migrationControlTotalsOn, syncWatermarksAdapter } from './adapters';
+import { latestPerStore } from '../../platform/src/sync-watermarks';
 import { recoveryGateReading } from '../../../packages/ops/src/index';
 import { findingsRoutes, type FindingsDeps, type ScanRunRecord } from '../../compliance/src/findings';
 import type { TwoSignatureDeps } from '../../compliance/src/risk';
@@ -34,6 +38,8 @@ export const GATE_DECISIONS_STREAM = streamName(STREAM.compliance, 'gate-decisio
 /** OB-330: the security reviewer the owner names, and the two signatures on a critical/high risk's acceptance. */
 export const SECURITY_REVIEWER_STREAM = streamName(STREAM.compliance, 'security-reviewer');
 export const RISK_ACCEPTANCE_SIGNATURES_STREAM = streamName(STREAM.compliance, 'risk-acceptance-signatures');
+/** W3 · QG-04 / QG-05 / QG-06: the outside evidence (72-hour run, chaos test, p95 on certified hardware, pen test). */
+export const GATE_EVIDENCE_STREAM = streamName(STREAM.compliance, 'gate-evidence');
 
 const digest = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 24);
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -77,9 +83,25 @@ export function findingsAdapter(input: { readonly store: EventStore; readonly no
   };
 }
 
+/** W3: the gates' outside-evidence register on head office's append-only stream (one record per evidence id). */
+export function gateEvidenceAdapter(input: { readonly store: EventStore; readonly now: () => string }): GateEvidenceDeps {
+  const { store, now } = input;
+  return {
+    now,
+    records: (tenantId) => all<GateEvidenceRecord>(store, tenantId, GATE_EVIDENCE_STREAM, 'GateEvidenceRecorded'),
+    record: (tenantId, r) => put(store, tenantId, GATE_EVIDENCE_STREAM, 'GateEvidenceRecorded', r.evidenceId, r.recordedAt, r),
+  };
+}
+
 /**
- * Everything that blocks a gate apart from the risk register: open critical/high findings (QG-03, QG-06) and the
- * QG-08 rehearsal reading when it is HOLD.
+ * Everything that blocks a gate apart from the risk register: open critical/high findings (QG-03, QG-06), the QG-08
+ * rehearsal reading when it is HOLD, the QG-09 adoption reading, and (W3) the readings no gate had before —
+ *   QG-04  the outside evidence (72-hour run, chaos test) and every store computer's own sync report (none, or a dead letter);
+ *   QG-05  the p95 timings on certified hardware against the fixed §32 targets;
+ *   QG-06  the independent penetration test (from R4, the first customer-facing release);
+ *   QG-07  every one of the five domains' control totals recorded and signed;
+ *   QG-10  each computer's newest release attempt verified (no note at all is a blocker too).
+ * Nothing on record is never a pass (P-08).
  */
 export async function gateBlockersBeyondRisks(store: EventStore, now: () => string, tenantId: string): Promise<readonly OtherGateBlocker[]> {
   const fromFindings: OtherGateBlocker[] = findingBlocks(await foldFindings(store, tenantId))
@@ -88,7 +110,15 @@ export async function gateBlockersBeyondRisks(store: EventStore, now: () => stri
   const fromRecovery: OtherGateBlocker[] = recovery.verdict === 'GO' ? [] : [{
     gate: 'QG-08', kind: 'check', ref: 'recovery-gate', reason: `QG-08 rehearsals not all passed — ${recovery.why}`,
   }];
-  return [...fromFindings, ...fromRecovery, ...await adoptionGateBlockers(store, now, tenantId)]; // QG-09 (OB-288 LP/workforce package)
+  const asCheck = (b: GateBlocker): OtherGateBlocker => ({ gate: b.gate, kind: 'check', ref: b.ref, reason: b.reason, ...(b.releases === undefined ? {} : { releases: b.releases }) });
+  const fromEvidence = gateEvidenceBlockers(await gateEvidenceAdapter({ store, now }).records(tenantId)).map(asCheck);
+  const fromSync = qg04SyncBlockers([...latestPerStore(await syncWatermarksAdapter({ store }).records(tenantId)).values()]).map(asCheck);
+  const fromTotals = qg07Blockers(await migrationControlTotalsOn(store, tenantId)).map(asCheck);
+  const fromReleases = qg10Blockers(await qg10EvidenceAdapter({ store, now }).notes(tenantId)).map(asCheck);
+  return [
+    ...fromFindings, ...fromRecovery, ...await adoptionGateBlockers(store, now, tenantId), // QG-09 (OB-288 LP/workforce package)
+    ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases,
+  ];
 }
 
 export function gateDecisionAdapter(input: { readonly store: EventStore; readonly now: () => string }): GateDecisionDeps {
@@ -118,9 +148,9 @@ export function gatesRoutes(input: { readonly store: EventStore | undefined; rea
         throw apiError(503, { code: 'register_store_not_available', whatHappened: 'Head office is running without its durable store, so the findings and gate-decision registers cannot be read or written.', wasItSaved: 'not_saved', nextSafeAction: 'Start head office with its database. Nothing was read or saved.' });
       }),
     }) as T;
-    return [...findingsRoutes(absent<FindingsDeps>()), ...gateDecisionRoutes(absent<GateDecisionDeps>())];
+    return [...findingsRoutes(absent<FindingsDeps>()), ...gateDecisionRoutes(absent<GateDecisionDeps>()), ...gateEvidenceRoutes(absent<GateEvidenceDeps>())];
   }
-  return [...findingsRoutes(findingsAdapter({ store, now })), ...gateDecisionRoutes(gateDecisionAdapter({ store, now }))];
+  return [...findingsRoutes(findingsAdapter({ store, now })), ...gateDecisionRoutes(gateDecisionAdapter({ store, now })), ...gateEvidenceRoutes(gateEvidenceAdapter({ store, now }))];
 }
 
 /**

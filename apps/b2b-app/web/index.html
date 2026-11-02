@@ -14,8 +14,9 @@
       scoped to its own customer id ON THE SERVER (never a parameter the browser can change): its credit terms and
       what it owes, its invoices and how each stands (a disputed one is with a person, not a reminder), its
       statement aged from the due dates, and the documents issued to it. A feed the login may not see is said so
-      ("ask us to turn it on") — never a balance of zero (P-08). It reads and reports; it CHANGES nothing — no
-      write verb anywhere. Read live on load and Refresh (GETs). Offline it shows a sample stand-in and the stale
+      ("ask us to turn it on") — never a balance of zero (P-08). It reads and reports; app.js CHANGES nothing — no
+      write verb in it. W3 (M22-FR-04): the customer's own writes (quote request, order from a quotation, payment note) are
+      in ordering.js over their own tested session, each a click. Read live on load and Refresh (GETs). Offline it shows a sample stand-in and the stale
       strip. Bilingual EN/TA. No prompt/confirm/alert. A public surface, so WCAG 2.2 AA (NFR-07): real headings,
       real buttons, visible focus, every state in words + an icon, never colour alone.
     -->
@@ -53,6 +54,13 @@
       .muted { color:var(--muted); font-size:14px; margin:0; }
       .note { margin:0; padding:10px 14px; border-radius:12px; background:var(--warn-surface); color:var(--on-warn-surface); font-size:14px; }
       [hidden] { display:none !important; }
+      /* W3 · M22-FR-04: the ask / order / pay forms — labels you can read, one field per row on a phone. */
+      h4 { margin:8px 0 0; font-size:15px; }
+      .form-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); }
+      label.field { display:grid; gap:4px; font-size:14px; font-weight:600; }
+      label.field input, label.field select { min-height:44px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font:inherit; }
+      button.primary { background:var(--accent, var(--ink)); color:var(--on-accent, var(--bg)); justify-self:start; }
+      input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
     </style>
   </head>
   <body>
@@ -93,10 +101,49 @@
       <h3 id="documents-heading"></h3>
       <ul class="rows" id="documents" aria-label="Documents issued to you"></ul>
       <p class="muted" id="documents-note" hidden></p>
+
+      <!-- W3 · M22-FR-04: the customer's own writes — ask for a quote, place an order from a quotation the shop sent, tell
+           the shop a transfer was sent. Its own tested session (apps/b2b-app/src/b2b-portal-ordering-session.ts,
+           window.b2bOrdering), drawn by ordering.js; nothing is read or written on open, every call is a click. -->
+      <section class="panel" id="ordering" hidden aria-labelledby="ord-h">
+        <h3 id="ord-h"></h3>
+        <p class="muted" id="ord-lead"></p>
+        <button id="ord-show" type="button"></button>
+        <p class="muted" id="ord-status" role="status" aria-live="polite"></p>
+        <div id="ord-body" hidden>
+          <h4 id="ord-orders-h"></h4><ul class="rows" id="ord-orders"></ul>
+          <h4 id="ord-requests-h"></h4><ul class="rows" id="ord-requests"></ul>
+          <h4 id="ord-notes-h"></h4><p class="muted" id="ord-owed"></p><ul class="rows" id="ord-notes"></ul>
+        </div>
+
+        <h4 id="ask-h"></h4>
+        <div class="form-grid" id="ask-lines"></div>
+        <button id="ask-add" type="button"></button>
+        <label class="field"><span id="l-ask-note"></span><input id="ask-note" type="text" autocomplete="off" /></label>
+        <button id="ask-go" type="button" class="primary"></button>
+        <p class="muted" id="ask-status" role="status" aria-live="polite"></p>
+
+        <h4 id="order-h"></h4>
+        <label class="field"><span id="l-order-quote"></span><select id="order-quote"></select></label>
+        <p class="muted" id="order-none" hidden></p>
+        <button id="order-go" type="button" class="primary"></button>
+        <p class="muted" id="order-status" role="status" aria-live="polite"></p>
+
+        <h4 id="pay-h"></h4>
+        <div class="form-grid">
+          <label class="field"><span id="l-pay-amount"></span><input id="pay-amount" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label class="field"><span id="l-pay-on"></span><input id="pay-on" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" autocomplete="off" /></label>
+          <label class="field"><span id="l-pay-ref"></span><input id="pay-ref" type="text" autocomplete="off" /></label>
+          <label class="field"><span id="l-pay-against"></span><input id="pay-against" type="text" autocomplete="off" /></label>
+        </div>
+        <button id="pay-go" type="button" class="primary"></button>
+        <p class="muted" id="pay-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./b2b-app.bundle.js" type="module"></script>
     <script src="./app.js" type="module"></script>
+    <script src="./ordering.js" type="module"></script>
   </body>
 </html>

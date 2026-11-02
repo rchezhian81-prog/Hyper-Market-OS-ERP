@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Shelf labels and floor devices</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Shelf labels, RFID and cameras (W3 · D14-FR-05 · R8-4..R8-7 · OB-217 · OB-316 · OB-407 · P-08 · hard rules #2, #4, #5).
+      A THIN CLIENT over head office's floor-device routes for THIS store (the branch the box's signed pack names): every
+      registered electronic shelf label, RFID reader, sensor and camera event source, with its rollout switch, when it was
+      last heard and what was refused; registering one (with its own public key — never a secret) and blocking, reinstating
+      or retiring it with a reason (a new event; retired is final); each price push to the labels and which labels have
+      confirmed it, sent again to the ones that have not — the SAME price, never a new one; the RFID counts that differ from
+      the book, for a person to count (a reader never changes stock); the camera events linked to till exceptions on a day —
+      a place to look, never an accusation, metadata only (OB-217); and every refused batch and event, kept. No vendor is
+      connected: every device here is a stand-in, and head office says so on every answer. Switching a kind ON is the
+      owner's and the security reviewer's act on the Feature switches page (OB-407), never here. Nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      textarea { min-height: 96px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      td button { margin: 2px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.unknown, .panel .v.warn { color: var(--warn); }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; overflow-wrap: anywhere; }
+      td.warn { color: var(--warn); font-weight: 600; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; display: grid; gap: 6px; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .standin { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--warn-surface); color: var(--on-warn-surface); font-size: 15px; font-weight: 600; }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Shelf labels, RFID and cameras</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Shelf labels, RFID and cameras</h2>
+        <p class="lead" id="lead"></p>
+        <p class="standin" id="standin"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel"><span class="k" id="k-devices">Devices</span><span class="v" id="v-devices">—</span></div>
+          <div class="panel"><span class="k" id="k-silent">Never heard from</span><span class="v" id="v-silent">—</span></div>
+          <div class="panel"><span class="k" id="k-pushes">Prices not confirmed on the shelf</span><span class="v" id="v-pushes">—</span></div>
+          <div class="panel"><span class="k" id="k-rfid">RFID counts to check</span><span class="v" id="v-rfid">—</span></div>
+          <div class="panel"><span class="k" id="k-refused">Refused</span><span class="v" id="v-refused">—</span></div>
+        </div>
+        <div class="row"><button id="refresh" type="button">Refresh</button></div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="dev-h">
+        <h3 id="dev-h">Devices</h3>
+        <p class="lead" id="dev-lead"></p>
+        <div class="table-wrap"><table aria-labelledby="dev-h">
+          <thead><tr><th id="c-label">Device</th><th id="c-kind">Kind</th><th id="c-bound">Watches</th><th id="c-switch">Switch</th><th id="c-heard">Heard</th><th id="c-status">State</th><th id="c-act"></th></tr></thead>
+          <tbody id="dev-rows"></tbody>
+        </table></div>
+        <div class="row" id="status-form" hidden>
+          <label for="st-reason"><span id="l-st-reason">Why (for the record)</span><input id="st-reason" autocomplete="off" maxlength="300" /></label>
+        </div>
+        <p class="status" id="dev-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="reg" aria-labelledby="reg-h">
+        <h3 id="reg-h">Register a device</h3>
+        <p class="lead" id="reg-lead"></p>
+        <form id="reg-form" class="row">
+          <label for="r-id"><span id="l-r-id">Device name (as on its sticker)</span><input id="r-id" autocomplete="off" maxlength="80" /></label>
+          <label for="r-kind"><span id="l-r-kind">Kind</span><select id="r-kind"><option value="esl_label" id="o-esl">Electronic shelf label</option><option value="rfid_reader" id="o-rfid">RFID reader</option><option value="iot_sensor" id="o-iot">Temperature sensor</option><option value="cctv_source" id="o-cctv">Camera event source</option></select></label>
+          <label for="r-label"><span id="l-r-label">What people call it</span><input id="r-label" autocomplete="off" maxlength="120" /></label>
+          <label for="r-vendor"><span id="l-r-vendor">Maker</span><input id="r-vendor" autocomplete="off" maxlength="80" /></label>
+          <label for="r-product" data-for="esl_label"><span id="l-r-product">Product it shows</span><input id="r-product" autocomplete="off" /></label>
+          <label for="r-shelf" data-for="esl_label"><span id="l-r-shelf">Shelf place</span><input id="r-shelf" autocomplete="off" maxlength="60" /></label>
+          <label for="r-location" data-for="rfid_reader"><span id="l-r-location">Stock location it reads</span><input id="r-location" autocomplete="off" /></label>
+          <label for="r-asset" data-for="iot_sensor"><span id="l-r-asset">Equipment it sits in</span><input id="r-asset" autocomplete="off" /></label>
+          <label for="r-camera" data-for="cctv_source"><span id="l-r-camera">Camera</span><input id="r-camera" autocomplete="off" /></label>
+          <label for="r-lanes" data-for="cctv_source"><span id="l-r-lanes">Tills it looks at (names, commas)</span><input id="r-lanes" autocomplete="off" /></label>
+        </form>
+        <label for="r-key"><span id="l-r-key">The device's public key (from the maker's set-up tool — never a password)</span><textarea id="r-key" spellcheck="false" autocomplete="off"></textarea></label>
+        <div class="row"><button id="r-save" class="primary" type="button">Register it</button></div>
+        <p class="status" id="reg-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="esl-h">
+        <h3 id="esl-h">Prices sent to the shelf labels</h3>
+        <p class="lead" id="esl-lead"></p>
+        <ul class="rows" id="esl-list" aria-label="Price pushes"></ul>
+        <p class="status" id="esl-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="rfid-h">
+        <h3 id="rfid-h">RFID counts that differ from the book</h3>
+        <p class="lead" id="rfid-lead"></p>
+        <ul class="rows" id="rfid-list" aria-label="RFID variances"></ul>
+        <p class="status" id="rfid-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="cam-h">
+        <h3 id="cam-h">Camera events beside till exceptions</h3>
+        <p class="lead" id="cam-lead"></p>
+        <form id="cam-form" class="row">
+          <label for="cam-day"><span id="l-cam-day">Day</span><input id="cam-day" type="date" /></label>
+          <button id="cam-read" type="submit">Read that day</button>
+        </form>
+        <ul class="rows" id="cam-list" aria-label="Camera links"></ul>
+        <p class="status" id="cam-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="ex-h">
+        <h3 id="ex-h">Refused</h3>
+        <p class="lead" id="ex-lead"></p>
+        <ul class="rows" id="ex-list" aria-label="Refused batches and events"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./floor-devices.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
